@@ -1028,22 +1028,43 @@ function UploadStatus({ upload, idle }: { upload?: UploadState; idle: string }) 
 
 // 트랙 입력 행 — memo로 감싸 한 곡 입력 시 다른 곡이 리렌더되지 않도록 분리
 const TrackEditor = memo(function TrackEditor({
-  track: t, index: i, expanded, canDelete, upload,
+  track: t, index: i, expanded, canDelete, upload, collapsed = false, complete = false, onOpen, onCollapse,
   onToggleExpand, onDeleteTrack, setTrack, onTrackAudio,
 }: {
   track: Track; index: number; expanded: boolean; canDelete: boolean;
+  /** 곡이 여럿일 때 지금 고치는 곡만 펼치고 나머지는 한 줄 요약으로 접는다 */
+  collapsed?: boolean; complete?: boolean; onOpen?: (id: string) => void; onCollapse?: () => void;
   onToggleExpand: (id: string) => void; onDeleteTrack: (id: string) => void;
   setTrack: (id: string, key: keyof Track, value: string | boolean | number) => void;
   onTrackAudio: (id: string, e: React.ChangeEvent<HTMLInputElement>) => void;
   upload?: UploadState;
 }) {
+  if (collapsed) {
+    const meta = [t.composers.trim() && `작곡 ${t.composers.trim()}`, t.audioName ? (t.duration || '음원 등록') : '음원 없음'].filter(Boolean).join(' · ');
+    return (
+      <article className="track-editor is-collapsed">
+        <button type="button" className="aq-track-summary" aria-expanded={false} onClick={() => onOpen?.(t.id)}>
+          <span className="aq-track-summary-no" aria-hidden="true">{i + 1}</span>
+          <span className="min-0">
+            <strong>{t.title.trim() || '곡 제목 없음'}</strong>
+            <small>{meta}</small>
+          </span>
+          <Badge tone={complete ? 'green' : 'amber'}>{complete ? '입력 완료' : '입력 필요'}</Badge>
+          <Glyph name="chevron-down" size={18} className="aq-track-summary-chev" />
+        </button>
+      </article>
+    );
+  }
   return (
     <article className="track-editor">
       <div className="minor-actions">
         <h3>트랙 {i + 1}</h3>
-        {canDelete && (
-          <button type="button" className="ui-btn is-white is-sm" onClick={() => onDeleteTrack(t.id)}>삭제</button>
-        )}
+        <span className="ui-actions">
+          {onCollapse && <button type="button" className="ui-btn is-text is-sm is-muted" onClick={onCollapse}>접기</button>}
+          {canDelete && (
+            <button type="button" className="ui-btn is-white is-sm" onClick={() => onDeleteTrack(t.id)}>삭제</button>
+          )}
+        </span>
       </div>
       <div className="ui-field track-title-field">
         <label htmlFor={`tr-${i}-title`}>곡 제목 <span className="required">*</span></label>
@@ -1337,6 +1358,8 @@ export function Upload() {
   const [hasApplication, setHasApplication] = useState(false);
   const [origDate, setOrigDate] = useState('');
   const [expandedTracks, setExpandedTracks] = useState<Set<string>>(new Set());
+  // 트랙 단계: 곡이 여럿이면 하나만 펼친다 (null = 다 접음)
+  const [openTrack, setOpenTrack] = useState<string | null | undefined>(undefined);
   const [save, setSave] = useState<SaveState>({ kind: 'idle' });
   const [dragOver, setDragOver] = useState(false);
   // 업로드 진행 상태 — 키: 트랙 ID 또는 'cover'
@@ -1633,6 +1656,10 @@ export function Upload() {
 
   const fail = (msg: string, sel: string | null): boolean => {
     setError(msg);
+    // 접혀 있는 곡의 칸이면 먼저 펼친다 (접힌 곡은 입력칸이 그려지지 않는다)
+    const tm = sel && /#(?:tr|trackFile)-(\d+)/.exec(sel);
+    const tid = tm ? form.tracks[+tm[1]]?.id : undefined;
+    if (tid && tid !== openTrack) flushSync(() => setOpenTrack(tid));
     requestAnimationFrame(() => {
       if (sel) {
         const el = document.querySelector<HTMLElement>(sel);
@@ -1990,6 +2017,8 @@ export function Upload() {
       const t = form.tracks[+m[1]];
       if (t) setExpandedTracks(prev => new Set(prev).add(t.id));
     }
+    const tm = c.field && /^(?:tr|trackFile)-(\d+)/.exec(c.field);
+    if (tm && form.tracks[+tm[1]]) setOpenTrack(form.tracks[+tm[1]].id);
     if (c.step !== step) goStep(c.step);
     setFocusField(c.field ? { id: c.field, n: Date.now() } : null);
   };
@@ -2014,6 +2043,12 @@ export function Upload() {
   const signerName = signer.touched ? signer.name : (form.ownership || profile.name || '');
   const resubmit = !!editId && origStatus !== 'draft' && hasApplication;
   const s = STEPS[step];
+  // 곡 입력이 다 됐는지 — 접힌 곡 요약의 '입력 완료/필요' 표시
+  const trackComplete = (t: Track) => !!(t.title.trim() && t.composers.trim() && (t.instrumental || t.lyricists.trim()) && t.audioName && (MOCK || t.assetId));
+  // 처음엔 아직 덜 채운 첫 곡(없으면 첫 곡)을 펼친다
+  const shownTrack = openTrack === undefined
+    ? (form.tracks.find(t => !trackComplete(t)) ?? form.tracks[0])?.id ?? null
+    : openTrack;
   const nextLabel = submitting ? '접수하는 중' : step === STEPS.length - 1 ? (resubmit ? '다시 접수하기' : editId && origStatus !== 'draft' ? '서명하고 수정 완료' : '서명하고 접수하기') : '다음으로';
   const genreIsCustom = form.genre === '__other__';
   const availablePlatforms = dsps?.filter(d => d.available).map(d => d.slug) ?? [];
@@ -2286,6 +2321,10 @@ export function Upload() {
                   key={t.id}
                   track={t}
                   index={i}
+                  collapsed={form.tracks.length > 1 && shownTrack !== t.id}
+                  complete={trackComplete(t)}
+                  onOpen={setOpenTrack}
+                  onCollapse={form.tracks.length > 1 ? () => setOpenTrack(null) : undefined}
                   expanded={expandedTracks.has(t.id)}
                   canDelete={form.tracks.length > 1}
                   onToggleExpand={toggleTrackExpand}
@@ -2302,6 +2341,7 @@ export function Upload() {
                 onClick={() => {
                   const t = newTrack();
                   set('tracks', [...form.tracks, t]);
+                  setOpenTrack(t.id);
                   requestAnimationFrame(() => document.getElementById(`tr-${form.tracks.length}-title`)?.focus());
                 }}
               >
