@@ -105,13 +105,13 @@ export function initRowNav() {
   // 누르기 직전(capture)에 지금 고른 칸과 누른 칸의 순서를 재 두고, 새로 붙는 탭 내용(.ui-tab-panel)에 방향을 단다.
   // 새 내용이 그려지기 전(같은 작업 안의 microtask)에 달기 때문에 애니메이션이 처음부터 그 방향으로 시작한다.
   const TAB = '[role=tab],.ui-tab,.ui-seg>button';
-  let tabDir: { dir: 1 | -1; at: number } | null = null;
+  let tabDir: { dir: 1 | -1; at: number; list: HTMLElement | null } | null = null;
   document.addEventListener('click', e => {
     const t = e.target instanceof Element ? e.target.closest<HTMLElement>(TAB) : null;
     const items = t?.parentElement ? [...t.parentElement.children].filter(x => x.matches(TAB)) : [];
     const from = items.findIndex(x => x.matches(SELECTED));
     const to = t ? items.indexOf(t) : -1;
-    tabDir = from >= 0 && to >= 0 && from !== to ? { dir: to > from ? 1 : -1, at: performance.now() } : null;
+    tabDir = from >= 0 && to >= 0 && from !== to ? { dir: to > from ? 1 : -1, at: performance.now(), list: t?.parentElement ?? null } : null;
   }, { capture: true });
   new MutationObserver(records => {
     if (!tabDir || performance.now() - tabDir.at > 600) return;
@@ -121,7 +121,18 @@ export function initRowNav() {
         const panel = n.matches('.ui-tab-panel') ? n : n.querySelector<HTMLElement>(':scope > .ui-tab-panel');
         if (!panel) continue;
         panel.classList.add(tabDir.dir > 0 ? 'is-from-right' : 'is-from-left');
+        // 아래까지 내려 읽다가 탭을 바꾸면 새 내용의 중간·끝(짧은 탭이면 엉뚱한 자리)이 보였다 —
+        // 탭 줄이 화면 위로 지나가 있으면 탭 줄이 머리 바로 아래에 오도록 올려 새 내용을 처음부터 보여 준다
+        const list = tabDir.list;
         tabDir = null;
+        requestAnimationFrame(() => {
+          if (!list?.isConnected) return;
+          const head = (document.querySelector('.portal-header, .adm-header') as HTMLElement | null)?.offsetHeight ?? 64;
+          const top = list.getBoundingClientRect().top;
+          if (top >= head) return;
+          const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+          window.scrollTo({ top: window.scrollY + top - head - 8, behavior: reduce ? 'auto' : 'smooth' });
+        });
         return;
       }
     }

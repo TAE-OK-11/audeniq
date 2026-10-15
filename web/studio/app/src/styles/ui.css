@@ -981,3 +981,7 @@ legend{padding:0}
 .ui-tab-panel.is-from-right{animation:aq-panel-from-right .34s var(--aq-ease) both}
 .ui-tab-panel.is-from-left{animation:aq-panel-from-left .34s var(--aq-ease) both}
 @media (prefers-reduced-motion:reduce){.ui-tab-panel:is(.is-from-right,.is-from-left){animation:none}}
+
+/* 복사 버튼 — 누르면 잠깐 초록 '복사됨 ✓' (components/CopyButton.tsx) */
+.aq-copy-btn{gap:4px}
+.aq-copy-btn.is-copied{--btn-bg:var(--aq-green-50);--btn-fg:var(--aq-green-700);--btn-bg-hover:var(--aq-green-50);--btn-fg-hover:var(--aq-green-700)}
