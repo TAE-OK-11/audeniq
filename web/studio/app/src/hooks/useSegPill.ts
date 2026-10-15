@@ -31,6 +31,8 @@ export function useSegPill<T extends HTMLElement = HTMLDivElement>(active: unkno
     }
     const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
     ro?.observe(box);
+    // 칸 하나의 폭만 바뀌어도(숫자 배지가 뒤늦게 붙는 등) 다시 잰다 — 바깥 상자 폭은 그대로라 상자만 보면 놓친다
+    for (const c of Array.from(box.children)) ro?.observe(c);
     return () => { cancelAnimationFrame(raf); ro?.disconnect(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, live]);
@@ -40,6 +42,8 @@ export function useSegPill<T extends HTMLElement = HTMLDivElement>(active: unkno
     '--pill-y': `${pos?.y ?? 0}px`,
     '--pill-w': `${pos?.w ?? 0}px`,
     '--pill-h': `${pos?.h ?? 0}px`,
+    // 탭 밑줄은 폭 대신 가로 배율로 늘린다(기준 100px) — 폭을 움직이면 매 프레임 레이아웃을 다시 계산한다
+    '--pill-sx': `${(pos?.w ?? 0) / 100}`,
     opacity: pos ? 1 : 0,
   } as CSSProperties;
   return { ref, live, pillStyle: style };
