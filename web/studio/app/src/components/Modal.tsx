@@ -24,9 +24,12 @@ const EXIT_MS = 180;
 // body 스크롤 잠금 카운터 — 중첩 모달에서 하나가 닫혀도 잠금 유지
 let lockCount = 0;
 let savedPadding = '';
+/** 창을 열 때의 스크롤 위치 — iOS Safari는 창 안 입력칸에 커서가 가면 잠긴 뒤 화면까지 스크롤해 버린다. 닫으면 되돌린다 */
+let savedY = 0;
 function lockScroll() {
   lockCount += 1;
   if (lockCount === 1) {
+    savedY = window.scrollY;
     // 스크롤바가 사라지며 레이아웃이 밀리는 것을 방지
     const gap = window.innerWidth - document.documentElement.clientWidth;
     savedPadding = document.body.style.paddingRight;
@@ -41,6 +44,25 @@ function unlockScroll() {
   if (lockCount === 0) {
     document.documentElement.style.overflow = '';
     document.body.style.paddingRight = savedPadding;
+    if (Math.abs(window.scrollY - savedY) > 1) window.scrollTo({ top: savedY, behavior: 'instant' as ScrollBehavior });
+  }
+}
+
+/** iOS Safari: 키보드가 올라오면 '보이는 영역'(visual viewport)만 줄어들고 그 안에서 화면이 밀린다.
+ *  고정된 배경·아래 시트는 원래 화면 기준이라 시트가 중간에 뜨고, 그 아래로 어둡게 덮이지 않은 뒤 화면이 비쳤다.
+ *  키보드가 떠 있는 동안 배경을 지금 보이는 영역에 맞춰 시트가 키보드 바로 위에 붙게 한다. 키보드가 내려가면 원래대로. */
+export function fitToVisualViewport(el: HTMLElement, vv: VisualViewport, layoutHeight: number) {
+  const shifted = vv.offsetTop > 0.5 || vv.height < layoutHeight - 0.5;
+  if (shifted) {
+    el.style.setProperty('top', `${vv.offsetTop}px`, 'important');
+    el.style.setProperty('bottom', 'auto', 'important');
+    el.style.setProperty('height', `${vv.height}px`, 'important');
+    el.style.setProperty('--aq-vv-h', `${vv.height}px`);
+  } else {
+    el.style.removeProperty('top');
+    el.style.removeProperty('bottom');
+    el.style.removeProperty('height');
+    el.style.removeProperty('--aq-vv-h');
   }
 }
 
@@ -53,6 +75,17 @@ const stack: symbol[] = [];
 
 export function Modal({ title, onClose, children, modalClass, dismissible = true, closeDisabled = false }: ModalProps) {
   const innerRef = useRef<HTMLElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    const el = overlayRef.current;
+    if (!vv || !el) return;
+    const sync = () => fitToVisualViewport(el, vv, window.innerHeight);
+    sync();
+    vv.addEventListener('resize', sync);
+    vv.addEventListener('scroll', sync);
+    return () => { vv.removeEventListener('resize', sync); vv.removeEventListener('scroll', sync); };
+  }, []);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const closeDisabledRef = useRef(closeDisabled);
@@ -191,6 +224,7 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
   return createPortal(
     <div
       id="modal"
+      ref={overlayRef}
       className={cls}
       onMouseDown={e => {
         if (e.target !== e.currentTarget) return;
