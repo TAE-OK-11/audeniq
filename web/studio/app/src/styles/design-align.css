@@ -539,3 +539,12 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
   .auth-page>.aq-auth-brand{margin-bottom:18px}
   .auth-page>.aq-auth-brand img{width:118px}
 }
+/* 회원가입 약관 동의 — 누르기 쉬운 체크 줄(면), '필수'는 회색 글자, 개인정보 안내는 작게 */
+.auth-agree{gap:8px}
+.auth-terms{font-size:13px;line-height:1.55;color:var(--aq-text)}
+.auth-req{font-style:normal;font-size:12px;font-weight:600;color:var(--aq-text-4);margin-left:2px}
+.auth-privacy{margin:0;padding:0 4px;font-size:12px;line-height:1.65;color:var(--aq-text-4)}
+.auth-privacy .aq-inline-link{color:var(--aq-text-3)}
+.auth-agree>.aq-help-error{margin:0;padding:0 4px}
+/* 계정 찾기 안내 — 옅은 카드 위 흰 면 (같은 색 면이라 안 보이던 것) */
+.auth-card .auth-done p{background:#fff}
