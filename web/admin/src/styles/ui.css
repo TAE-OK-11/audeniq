@@ -820,5 +820,5 @@ legend{padding:0}
 /* 비활성 버튼 — 주 실행(파란) 버튼과 '저장 중' 표시를 뺀 나머지는 회색 면·회색 글자 (흐린 파랑이라 보조 버튼과 헷갈리던 것) */
 .ui-btn:disabled:not(.is-primary):not(.is-busy){opacity:1;--btn-bg:var(--aq-gray-100);--btn-fg:var(--aq-text-disabled);--btn-bg-hover:var(--btn-bg);--btn-fg-hover:var(--btn-fg)}
 .ui-btn:is(.is-text,.is-ghost):disabled:not(.is-busy){--btn-bg:transparent}
-/* 옅은 면 위 체크박스·라디오 — 흰 칸 + 옅은 테두리 (controls.css 변수) */
-:is(.ui-card,.ui-row,.ui-box,.ui-stat,.ui-callout,.ui-on-soft,.ui-check){--aqc-box:#fff;--aqc-box-hover:var(--aq-gray-50);--aqc-ring:var(--aq-gray-200)}
+/* 옅은 면 위 체크박스·라디오 — 회색 칸에 옅은 테두리 (controls.css 변수) */
+:is(.ui-card,.ui-row,.ui-box,.ui-stat,.ui-callout,.ui-on-soft,.ui-check){--aqc-ring:var(--aq-gray-200)}
