@@ -13,6 +13,14 @@ const AFTER_INPUT_MS = 900;
 const EASE = 'cubic-bezier(.22,1,.36,1)';
 
 let lastInput = -Infinity;
+/** 마지막으로 사용자가 머문 스크롤 위치 — 닫기 처리 중에 다른 부품이 크기를 재면 그 순간 브라우저가 이미 스크롤을
+ *  끌어올리므로 닫힌 뒤의 위치는 믿을 수 없다. 스크롤 이벤트는 그 다음 그림 차례에 오기 때문에, 여기 남은 값은
+ *  끌어올리기 전 위치다 */
+let lastY = 0;
+/** 마지막으로 누른 곳 — '저장'처럼 서버 응답을 기다린 뒤 닫히는 폼도 누른 폼이 빠지는 것으로 알아본다 */
+let lastTarget: Element | null = null;
+/** 누른 폼이 응답을 기다렸다 닫히는 경우를 이만큼까지 기다려 준다 */
+const AFTER_SAVE_MS = 15000;
 const reduced = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 /** 움직일 만한 블록인지 — 너무 작거나(한 줄 글자) 화면보다 훨씬 큰 블록은 움직이면 오히려 느리다 */
@@ -74,22 +82,100 @@ function collapse(removed: HTMLElement, parent: Node, next: Node | null) {
   anim.oncancel = () => ghost.remove();
 }
 
+/** 닫은 뒤 보던 자리 지키기 — 페이지 아래쪽에서 폼을 닫으면 페이지가 그만큼 짧아져 브라우저가 스크롤을 끌어올리고,
+ *  보던 카드가 화면 아래로 밀려 "바닥으로 간" 것처럼 보였다. 화면(.view)의 높이를 닫기 직전 높이로 붙잡아 두어
+ *  카드가 그 자리에 있게 하고, 사용자가 위로 올라가 붙잡은 높이가 필요 없어지면 그만큼씩 놓는다(다른 화면으로 가면 사라진다).
+ *  y는 누를 때의 스크롤 위치 — 그사이 브라우저가 끌어올렸으면 그림이 그려지기 전에 되돌린다. */
+function holdPlace(from: Node, y: number) {
+  const el = from instanceof Element ? from : from.parentElement;
+  const view = el?.closest<HTMLElement>('.view') ?? el?.closest<HTMLElement>('main') ?? null;
+  if (!view) return;
+  const doc = document.documentElement;
+  /** 붙잡은 높이 없이 내용만의 높이 — 붙잡은 높이를 풀지 않고 잰다(풀었다가 재면 그 순간 스크롤이 끌려 올라간다) */
+  const contentHeight = () => {
+    const top = view.getBoundingClientRect().top;
+    let bottom = top;
+    for (const c of view.children) bottom = Math.max(bottom, c.getBoundingClientRect().bottom + parseFloat(getComputedStyle(c).marginBottom || '0'));
+    return bottom - top + parseFloat(getComputedStyle(view).paddingBottom || '0');
+  };
+  /** 지금 스크롤 위치(at)를 지키는 데 필요한 화면 높이 — 내용이 충분하면 0 */
+  const needed = (at: number) => {
+    const extra = view.offsetHeight - contentHeight();
+    const lack = at + window.innerHeight - (doc.scrollHeight - extra);
+    return lack > 1 ? contentHeight() + lack : 0;
+  };
+  const apply = (at: number) => {
+    const h = needed(at);
+    if (h) { view.style.minHeight = `${Math.ceil(h)}px`; return true; }
+    view.style.minHeight = '';
+    return false;
+  };
+  if (!view.hasAttribute('data-aq-hold')) {
+    view.setAttribute('data-aq-hold', '');
+    // 위로 올라갈수록 필요한 높이가 줄어든다 — 필요한 만큼만 남기다가 더 필요 없으면 놓는다
+    const release = () => {
+      if (view.isConnected && apply(window.scrollY)) return;
+      view.removeAttribute('data-aq-hold');
+      window.removeEventListener('scroll', release);
+    };
+    window.addEventListener('scroll', release, { passive: true });
+  }
+  // 접히는 복사본이 아직 높이를 갖고 있어도, 다 접힌 뒤를 기준으로 붙잡아 둔다
+  view.style.minHeight = `${Math.ceil(Math.max(view.offsetHeight, contentHeight() + Math.max(0, y + window.innerHeight - doc.scrollHeight)))}px`;
+  if (window.scrollY !== y) window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior });
+}
+
+/** 누른 버튼이 폼과 함께 사라지면 커서(포커스)가 페이지 맨 처음으로 날아간다 — 같은 카드의 첫 버튼으로 돌려놓는다 */
+let lastFocused: Element | null = null;
+function restoreFocus(removed: Element, parent: Node) {
+  if (!lastFocused || lastFocused.isConnected || !removed.contains(lastFocused)) return;
+  if (document.activeElement && document.activeElement !== document.body) return;
+  const card = (parent instanceof Element ? parent : parent.parentElement)?.closest<HTMLElement>('section,.ui-card,.aq-manage-card,.aq-set-card,.ui-row');
+  const target = card ? [...card.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input,select,textarea')].find(x => !x.closest('[data-aq-ghost]')) : null;
+  target?.focus({ preventScroll: true });
+}
+
 export function initExpand(root: HTMLElement = document.body) {
-  const mark = () => { lastInput = performance.now(); };
+  const mark = (e: Event) => { lastInput = performance.now(); lastTarget = e.target instanceof Element ? e.target : null; };
+  lastY = window.scrollY;
+  window.addEventListener('scroll', () => { lastY = window.scrollY; }, { passive: true });
   document.addEventListener('pointerup', mark, { capture: true, passive: true });
   document.addEventListener('keydown', mark, { capture: true, passive: true });
   document.addEventListener('change', mark, { capture: true, passive: true });
+  document.addEventListener('focusin', e => { lastFocused = e.target instanceof Element ? e.target : null; }, true);
 
   new MutationObserver(records => {
-    if (reduced() || performance.now() - lastInput > AFTER_INPUT_MS) return;
+    const since = performance.now() - lastInput;
+    if (since > AFTER_SAVE_MS) return;
+    // 바로 닫힌 것, 또는 누른 폼이 저장을 기다렸다 닫힌 것만
+    const userRemoved = (n: Node): n is HTMLElement => n instanceof HTMLElement && n.matches(EXPAND) && !n.hasAttribute('data-aq-ghost')
+      && (since <= AFTER_INPUT_MS || (!!lastTarget && n.contains(lastTarget)));
+    if (since > AFTER_INPUT_MS && !records.some(r => [...r.removedNodes].some(userRemoved))) return;
+    const y = lastY;
+    // 누른 직후 빠진 펼침 블록: 보던 자리를 지키고 커서를 돌려놓는다 (동작 줄이기 설정이어도)
+    for (const r of records) {
+      for (const n of r.removedNodes) if (userRemoved(n)) restoreFocus(n, r.target);
+    }
+    if (reduced()) {
+      const r0 = records.find(r => [...r.removedNodes].some(userRemoved));
+      if (r0) holdPlace(r0.target, y);
+      return;
+    }
+    let held = false;
     for (const r of records) {
       // 새로 붙은(빠진) 덩어리의 맨 위가 펼침 블록일 때만 — 카드나 탭 전체가 새로 그려질 땐 그 안을 따로 움직이지 않는다
       // 닫힘 복사본(data-aq-ghost)이 붙고 빠지는 것은 건너뛴다
-      for (const n of r.addedNodes) {
-        if (n instanceof HTMLElement && n.matches(EXPAND) && !n.hasAttribute('data-aq-ghost') && typeof n.animate === 'function') expand(n);
+      if (since <= AFTER_INPUT_MS) {
+        for (const n of r.addedNodes) {
+          if (n instanceof HTMLElement && n.matches(EXPAND) && !n.hasAttribute('data-aq-ghost') && typeof n.animate === 'function') expand(n);
+        }
       }
       for (const n of r.removedNodes) {
-        if (n instanceof HTMLElement && n.matches(EXPAND) && !n.hasAttribute('data-aq-ghost') && typeof n.animate === 'function') collapse(n, r.target, r.nextSibling);
+        if (userRemoved(n) && typeof n.animate === 'function') {
+          collapse(n, r.target, r.nextSibling);
+          // 접히는 복사본이 줄어드는 동안에도 페이지가 짧아지지 않게 — 복사본까지 붙은 지금 높이를 붙잡는다
+          if (!held) { holdPlace(r.target, y); held = true; }
+        }
       }
     }
   }).observe(root, { childList: true, subtree: true });
