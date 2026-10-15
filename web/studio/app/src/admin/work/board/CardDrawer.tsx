@@ -196,7 +196,7 @@ export function CardDrawer({ cardId, boardWritable, onClose, onChanged, onArchiv
               {archived && <div className="ui-callout">보관한 카드예요 ({when(t.archived_at)}). 내용과 기록은 그대로 남아 있어요.</div>}
               {!editable && !archived && <div className="ui-callout">이 카드는 보기만 할 수 있어요. 바꾸려면 보드 쓰기 권한이 있거나 카드 담당·검토자여야 해요.</div>}
               {t.changes_requested && <div className="ui-callout is-warn">검토자가 보완을 요청했어요. 아래 이력에서 내용을 확인해 주세요.</div>}
-              <form className="adm-kb-form" onSubmit={save}>
+              <form className={`adm-kb-form${editable ? '' : ' is-readonly'}`} onSubmit={save}>
                 <div className="ui-field">
                   <label htmlFor="kbdTitle">제목</label>
                   <input id="kbdTitle" ref={titleInput} className="ui-input" maxLength={200} value={draft.title} disabled={!editable} onChange={e => set('title', e.target.value)} />

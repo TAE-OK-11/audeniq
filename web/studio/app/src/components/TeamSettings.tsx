@@ -14,13 +14,16 @@ const ROLE: Record<string, string> = { OWNER: '소유자', EDITOR: '편집', VIE
 const ROLE_HELP = '편집: 발매를 만들고 고칠 수 있어요 · 보기: 내용만 볼 수 있어요';
 
 function Row({ label, value, onClick }: { label: string; value?: string; onClick?: () => void }) {
-  return (
-    <button type="button" className="aq-set-row" onClick={onClick} disabled={!onClick}>
+  const body = (
+    <>
       <span className="aq-set-label">{label}</span>
       {value && <span className="aq-set-value">{value}</span>}
       {onClick && <Glyph name="chevron-right" size={16} className="aq-set-chev" />}
-    </button>
+    </>
   );
+  // 누를 일이 없는 줄(작업 공간이 하나뿐일 때)은 비활성 버튼이 아니라 보통 정보 줄로 — 회색으로 죽어 보이지 않게
+  if (!onClick) return <div className="aq-set-row">{body}</div>;
+  return <button type="button" className="aq-set-row" onClick={onClick}>{body}</button>;
 }
 
 function SwitchOrg() {
