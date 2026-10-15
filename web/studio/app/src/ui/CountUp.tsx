@@ -2,7 +2,7 @@
 // 프레임마다 React 상태를 바꾸면 매 프레임 리렌더가 일어나므로 DOM 텍스트를 직접 갱신한다.
 import { useLayoutEffect, useRef } from 'react';
 
-export function CountUp({ value, format = String, duration = 900 }: {
+export function CountUp({ value, format = String, duration = 600 }: {
   value: number;
   format?: (n: number) => string;
   duration?: number;
@@ -26,7 +26,8 @@ export function CountUp({ value, format = String, duration = 900 }: {
     let raf = 0;
     const tick = (now: number) => {
       const p = Math.min(1, (now - t0) / duration);
-      const v = Math.round(start + (value - start) * (1 - Math.pow(1 - p, 3)));
+      // 빠르게 출발해 끝에서 부드럽게 멈춘다 (ease-out quart) — 숫자를 금방 읽을 수 있게
+      const v = Math.round(start + (value - start) * (1 - Math.pow(1 - p, 4)));
       shown.current = v;
       el.textContent = formatRef.current(v);
       if (p < 1) raf = requestAnimationFrame(tick);
