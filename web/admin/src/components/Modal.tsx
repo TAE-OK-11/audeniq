@@ -31,15 +31,14 @@ function lockScroll() {
     const gap = window.innerWidth - document.documentElement.clientWidth;
     savedPadding = document.body.style.paddingRight;
     if (gap > 0) document.body.style.paddingRight = `${gap}px`;
-    document.body.style.overflow = 'hidden';
-    // iOS Safari는 body만 잠그면 뒤 화면이 끌려 스크롤되는 경우가 있어 html도 함께 잠근다
+    // html만 잠근다(뷰포트 스크롤이 멈춘다). body까지 잠그면 body가 따로 스크롤 상자가 돼
+    // 스크롤해 둔 화면에서 고정 머리글이 그만큼 위로 밀려 사라진다.
     document.documentElement.style.overflow = 'hidden';
   }
 }
 function unlockScroll() {
   lockCount = Math.max(0, lockCount - 1);
   if (lockCount === 0) {
-    document.body.style.overflow = '';
     document.documentElement.style.overflow = '';
     document.body.style.paddingRight = savedPadding;
   }
