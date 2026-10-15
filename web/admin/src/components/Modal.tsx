@@ -12,6 +12,11 @@ interface ModalProps {
   closeDisabled?: boolean;
 }
 
+/** 휴대폰 아래 시트를 이만큼 끌어내리면(또는 빠르게 튕기면) 닫는다 */
+const DRAG_CLOSE_PX = 96;
+/** 아래 시트가 아닌 창 — 전체 화면이거나 가운데 뜨는 확인 창 */
+const NOT_SHEET_MODES = ['aq-payout-setup-mode', 'aq-signature-mode', 'aq-confirm-mode', 'aq-sysdialog-mode'];
+
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 const EXIT_MS = 180;
 
@@ -26,12 +31,15 @@ function lockScroll() {
     savedPadding = document.body.style.paddingRight;
     if (gap > 0) document.body.style.paddingRight = `${gap}px`;
     document.body.style.overflow = 'hidden';
+    // iOS Safari는 body만 잠그면 뒤 화면이 끌려 스크롤되는 경우가 있어 html도 함께 잠근다
+    document.documentElement.style.overflow = 'hidden';
   }
 }
 function unlockScroll() {
   lockCount = Math.max(0, lockCount - 1);
   if (lockCount === 0) {
     document.body.style.overflow = '';
+    document.documentElement.style.overflow = '';
     document.body.style.paddingRight = savedPadding;
   }
 }
@@ -112,7 +120,51 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
     };
   }, [requestClose]);
 
-  const cls = ['modal', modalClass, leaving ? 'is-leaving' : ''].filter(Boolean).join(' ');
+  // 닫을 수 없는 창의 바깥을 누르면 아무 반응이 없는 대신 창이 살짝 튀어 '여기서 마쳐 주세요'를 알린다
+  const [nudge, setNudge] = useState(false);
+  const bump = () => {
+    if (nudge) return;
+    setNudge(true);
+    window.setTimeout(() => setNudge(false), 320);
+  };
+
+  // 휴대폰 아래 시트: 위쪽 머리(손잡이)를 잡고 끌어내려 닫는다. 덜 끌면 제자리로 튀어 돌아간다.
+  const sheet = useRef<{ y: number; t: number; dy: number } | null>(null);
+  const isSheet = () => window.matchMedia?.('(max-width: 760px)').matches && !NOT_SHEET_MODES.some(m => modalClass?.includes(m));
+  const onDragStart = (e: React.PointerEvent) => {
+    if (closeDisabledRef.current || e.pointerType === 'mouse' || !isSheet()) return;
+    if ((e.target as Element).closest('button,a,input,select,textarea')) return;
+    sheet.current = { y: e.clientY, t: performance.now(), dy: 0 };
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+  };
+  const onDragMove = (e: React.PointerEvent) => {
+    const d = sheet.current;
+    const el = innerRef.current;
+    if (!d || !el) return;
+    d.dy = Math.max(0, e.clientY - d.y);
+    // 위로는 끌리지 않고, 아래로는 손가락을 따라간다
+    el.style.transition = 'none';
+    el.style.animation = 'none';
+    el.style.transform = `translate3d(0,${d.dy}px,0)`;
+  };
+  const onDragEnd = () => {
+    const d = sheet.current;
+    const el = innerRef.current;
+    sheet.current = null;
+    if (!d || !el) return;
+    const speed = d.dy / Math.max(1, performance.now() - d.t); // px/ms
+    el.style.transition = 'transform .28s cubic-bezier(.3,1.4,.55,1)';
+    if (d.dy > DRAG_CLOSE_PX || (d.dy > 24 && speed > 0.6)) {
+      el.style.transition = 'transform .2s ease-in';
+      el.style.transform = 'translate3d(0,100%,0)';
+      leavingRef.current = true;
+      window.setTimeout(() => onCloseRef.current(), 190);
+    } else {
+      el.style.transform = '';
+    }
+  };
+
+  const cls = ['modal', modalClass, leaving ? 'is-leaving' : '', nudge ? 'is-nudge' : ''].filter(Boolean).join(' ');
 
   // body 바로 아래에 그린다 — 애니메이션(transform) 중인 부모 안에 있으면 position:fixed의 기준이
   // 화면이 아니라 부모가 되어 창이 밀리거나 다른 고정 요소에 가려지는 문제를 막는다
@@ -121,14 +173,15 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
       id="modal"
       className={cls}
       onMouseDown={e => {
-        if (dismissible && e.target === e.currentTarget) requestClose();
+        if (e.target !== e.currentTarget) return;
+        if (dismissible) requestClose(); else bump();
       }}
     >
       <section
         className="modal-inner" ref={innerRef} tabIndex={-1}
         role="dialog" aria-modal="true" aria-labelledby={titleId}
       >
-        <div className="modal-top">
+        <div className="modal-top" onPointerDown={onDragStart} onPointerMove={onDragMove} onPointerUp={onDragEnd} onPointerCancel={onDragEnd}>
           <h2 id={titleId}>{title}</h2>
           <button className="icon-button" type="button" aria-label="닫기" onClick={requestClose} disabled={closeDisabled}>
             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M6 6l12 12M18 6 6 18" /></svg>
