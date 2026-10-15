@@ -56,13 +56,17 @@ export function fitToVisualViewport(el: HTMLElement, vv: VisualViewport, layoutH
   if (shifted) {
     el.style.setProperty('top', `${vv.offsetTop}px`, 'important');
     el.style.setProperty('bottom', 'auto', 'important');
-    el.style.setProperty('height', `${vv.height}px`, 'important');
+    // 배경은 보이는 영역 위에서부터 키보드 아래까지 넉넉히 덮는다 — 키보드 위 Safari 주소창·자동완성 막대는 반투명이라,
+    // 보이는 영역에 딱 맞추면 그 막대 뒤로 어둡게 덮이지 않은 화면이 비쳤다. 시트는 --aq-kb로 따로 키보드 위에 붙는다
+    el.style.setProperty('height', `${vv.height + layoutHeight}px`, 'important');
     el.style.setProperty('--aq-vv-h', `${vv.height}px`);
+    el.style.setProperty('--aq-kb', `${Math.max(0, layoutHeight - vv.offsetTop - vv.height)}px`);
   } else {
     el.style.removeProperty('top');
     el.style.removeProperty('bottom');
     el.style.removeProperty('height');
     el.style.removeProperty('--aq-vv-h');
+    el.style.removeProperty('--aq-kb');
   }
 }
 
