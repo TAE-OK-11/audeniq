@@ -509,3 +509,42 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 #view-release .aq-manage-group+.aq-manage-group{margin-top:14px}
 #view-release .aq-manage-group-title{margin:0;padding:0 4px;font-size:13px;font-weight:700;letter-spacing:-.01em;color:var(--aq-text-3)}
 #view-release .aq-manage-group:not(:has(>:not(.aq-manage-group-title))){display:none}
+
+/* ==========================================================================
+   로그인·회원가입·계정 찾기 — 은은한 빛 번짐 배경 (왼쪽 위 파랑, 오른쪽 아래 보라) + 살짝 비치는 카드
+   ========================================================================== */
+.auth-page{background:#fff}
+.auth-page>.aq-auth-glow{display:none}
+.auth-page::before,.auth-page::after{content:"";position:absolute;z-index:0;border-radius:50%;filter:blur(80px);pointer-events:none}
+.auth-page::before{width:520px;height:520px;left:-120px;top:-140px;background:#c9d8ff;opacity:.9}
+.auth-page::after{width:480px;height:480px;right:-120px;bottom:-160px;background:#e2d6ff;opacity:.9}
+@media (max-width:760px){
+  .auth-page::before{width:340px;height:340px;left:-140px;top:-120px}
+  .auth-page::after{width:320px;height:320px;right:-140px;bottom:-120px}
+}
+
+/* 카드는 스튜디오 디자인 그대로 — 스튜디오 머리와 같은 로고 줄(로고 + STUDIO 표시)을 카드 위에 두고,
+   카드는 ui-card 면(옅은 파랑, 선·그림자 없음, 안쪽 입력칸은 흰색). 머리는 '관리' 카드처럼 아이콘 칸 + 제목 + 설명. */
+.auth-page>.aq-auth-brand{display:inline-flex;align-items:center;gap:10px;margin:0 0 22px}
+.auth-page>.aq-auth-brand img{width:132px;height:auto}
+.auth-page>.aq-auth-brand .ui-product{height:26px;padding:0 10px;border-radius:var(--aq-r-sm);font-size:11px;letter-spacing:var(--aq-tracking-eyebrow);background:var(--aq-primary-soft);color:var(--aq-primary)}
+.auth-split{width:min(480px,100%);background:transparent;box-shadow:none;border-radius:0;overflow:visible}
+.auth-card.ui-card{padding:40px 36px 36px;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
+.aq-auth-head{margin:0 0 28px}
+.aq-auth-head .ui-icon{margin-bottom:18px}
+.auth-card .aq-auth-head h1{margin:0;font-size:var(--aq-fs-title-lg);font-weight:800;letter-spacing:var(--aq-tracking-heading);line-height:1.35}
+.auth-card .aq-auth-head .auth-sub{margin:6px 0 0;font-size:14px;color:var(--aq-text-3)}
+@media (max-width:760px){
+  .auth-card.ui-card{padding:28px 22px 26px;border-radius:var(--aq-r-xl)}
+  .auth-page>.aq-auth-brand{margin-bottom:18px}
+  .auth-page>.aq-auth-brand img{width:118px}
+}
+/* 회원가입 약관 동의 — 누르기 쉬운 체크 줄(면), '필수'는 회색 글자, 개인정보 안내는 작게 */
+.auth-agree{gap:8px}
+.auth-terms{font-size:13px;line-height:1.55;color:var(--aq-text)}
+.auth-req{font-style:normal;font-size:12px;font-weight:600;color:var(--aq-text-4);margin-left:2px}
+.auth-privacy{margin:0;padding:0 4px;font-size:12px;line-height:1.65;color:var(--aq-text-4)}
+.auth-privacy .aq-inline-link{color:var(--aq-text-3)}
+.auth-agree>.aq-help-error{margin:0;padding:0 4px}
+/* 계정 찾기 안내 — 옅은 카드 위 흰 면 (같은 색 면이라 안 보이던 것) */
+.auth-card .auth-done p{background:#fff}

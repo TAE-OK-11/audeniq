@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from '../lib/router';
 import { useAuth } from '../api/auth';
 import { authErrorMessage } from '../api/errors';
-import { AuthLayout, PasswordInput } from '../components/AuthLayout';
+import { AUTO_FOCUS, AuthLayout, EMAIL_INPUT, FieldError, PasswordInput, focusFirst, isEmail } from '../components/AuthLayout';
 import { passkeySupported } from '../api/passkey';
 import { MOCK } from '../api/client';
 import { ApiError, messageForCode } from '../api/errors';
@@ -19,6 +19,7 @@ export function Login() {
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErr, setFieldErr] = useState<{ email?: string; password?: string }>({});
   const [busy, setBusy] = useState(false);
   // Google·Apple에서 돌아왔는데 로그인하지 못한 경우
   useEffect(() => { const r = takeOAuthResult(); if (r.error) setError(messageForCode(r.error)); }, []);
@@ -27,6 +28,13 @@ export function Login() {
     e.preventDefault();
     if (busy) return;
     setError('');
+    // 브라우저 기본 경고(영어 말풍선) 대신 칸 아래 한국어 안내
+    const fe = {
+      email: !email.trim() ? '이메일을 입력해 주세요.' : !isEmail(email) ? '이메일 주소를 확인해 주세요.' : undefined,
+      password: !password ? '비밀번호를 입력해 주세요.' : undefined,
+    };
+    setFieldErr(fe);
+    if (fe.email || fe.password) { focusFirst([fe.email && 'loginEmail', fe.password && 'loginPassword']); return; }
     setBusy(true);
     try {
       await login(email.trim(), password);
@@ -41,6 +49,7 @@ export function Login() {
   async function withPasskey() {
     if (busy) return;
     setError('');
+    if (email.trim() && !isEmail(email)) { setFieldErr({ email: '이메일 주소를 확인해 주세요.' }); focusFirst(['loginEmail']); return; }
     setBusy(true);
     try {
       await loginPasskey(email.trim());
@@ -52,25 +61,28 @@ export function Login() {
   }
 
   return (
-    <AuthLayout title="다시 만나서 반가워요." sub="아티스트 포털에 로그인하세요.">
+    <AuthLayout icon="lock" title="다시 만나서 반가워요." sub="아티스트 포털에 로그인하세요.">
       {error && <div className="ui-callout is-danger aq-shake" role="alert" key={error}>{error}</div>}
-      <form onSubmit={submit} noValidate={false}>
+      <form onSubmit={submit} noValidate>
         <div className="ui-field">
           <label htmlFor="loginEmail">이메일</label>
           <input
-            id="loginEmail" type="email" required autoComplete="email" autoFocus
-            placeholder="이메일을 입력해 주세요"
-            value={email} onChange={e => setEmail(e.target.value)}
+            id="loginEmail" {...EMAIL_INPUT} required autoComplete="username" autoFocus={AUTO_FOCUS}
+            placeholder="이메일을 입력해 주세요" aria-invalid={!!fieldErr.email} aria-describedby={fieldErr.email ? 'loginEmailErr' : undefined}
+            value={email} onChange={e => { setEmail(e.target.value); if (fieldErr.email) setFieldErr(f => ({ ...f, email: undefined })); }}
           />
+          <FieldError id="loginEmailErr">{fieldErr.email}</FieldError>
         </div>
         <div className="ui-field">
           <label htmlFor="loginPassword">비밀번호</label>
           <PasswordInput
             id="loginPassword" required autoComplete="current-password"
-            placeholder="비밀번호를 입력해 주세요"
-            value={password} onChange={e => setPassword(e.target.value)}
+            placeholder="비밀번호를 입력해 주세요" enterKeyHint="go"
+            aria-invalid={!!fieldErr.password} aria-describedby={fieldErr.password ? 'loginPasswordErr' : undefined}
+            value={password} onChange={e => { setPassword(e.target.value); if (fieldErr.password) setFieldErr(f => ({ ...f, password: undefined })); }}
             show={showPw} onToggle={() => setShowPw(v => !v)}
           />
+          <FieldError id="loginPasswordErr">{fieldErr.password}</FieldError>
         </div>
         <button className={`ui-btn is-primary auth-submit${busy ? ' is-busy' : ''}`} type="submit" disabled={busy} aria-busy={busy}>
           {busy ? '들어가는 중' : '로그인'}
