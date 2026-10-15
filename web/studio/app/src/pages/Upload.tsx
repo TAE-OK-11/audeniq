@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { FilePicker } from '../components/FilePicker';
 import { FileCard } from '../components/FileCard';
@@ -1536,8 +1536,8 @@ export function Upload() {
     return () => { cancelled = true; };
   }, [editId, nav, toast]); // eslint-disable-line react-hooks/exhaustive-deps -- fix 파라미터는 처음 불러올 때만 쓴다
 
-  // 위자드에서는 헤더 숨김 + 레이아웃 패딩 제거
-  useEffect(() => {
+  // 위자드에서는 헤더 숨김 + 레이아웃 패딩 제거 (그리기 전에 — 머리글이 한 번 보였다 사라지지 않게)
+  useLayoutEffect(() => {
     document.body.classList.add('wizard-mode');
     return () => document.body.classList.remove('wizard-mode');
   }, []);

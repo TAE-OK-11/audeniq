@@ -252,8 +252,8 @@
 .ui-tab[aria-selected=true]{color:var(--aq-primary)}
 .ui-tab[aria-selected=true] .ui-count{background:var(--aq-primary-soft);color:var(--aq-primary)}
 .ui-tab:focus-visible{outline:var(--aq-focus);outline-offset:-3px;border-radius:8px}
-.ui-tabs-bar{position:absolute;left:0;bottom:0;z-index:1;width:var(--pill-w);height:3px;transform:translate3d(var(--pill-x),0,0);border-radius:3px;background:var(--aq-primary);pointer-events:none}
-.ui-tabs.is-live .ui-tabs-bar{transition:transform var(--aq-dur-slow) var(--aq-glide),width var(--aq-dur-slow) var(--aq-glide),opacity var(--aq-dur)}
+.ui-tabs-bar{position:absolute;left:0;bottom:0;z-index:1;width:100px;height:3px;transform:translate3d(var(--pill-x),0,0) scaleX(var(--pill-sx,0));transform-origin:0 50%;border-radius:2px;background:var(--aq-primary);pointer-events:none}
+.ui-tabs.is-live .ui-tabs-bar{transition:transform var(--aq-dur-slow) var(--aq-glide),opacity var(--aq-dur)}
 .ui-tab-panel{animation:aq-fade-up .35s var(--aq-ease) both}
 
 /* ---------- 화면 머리 (PageHeader) ---------- */
