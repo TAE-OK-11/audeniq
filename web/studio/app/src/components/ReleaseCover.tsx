@@ -10,6 +10,22 @@ export function useImageOk(src?: string): [boolean, () => void] {
   return [!!src && failed !== src, () => setFailed(src)];
 }
 
+/** 크게 보여 줄 커버 — 먼저 작은 미리보기(240px)를 보여 주고, 원본을 다 받으면 원본으로 바꾼다.
+ *  미리보기를 그대로 키우면 휴대폰(3배 화면)에서 뭉개져 보인다. 원본을 못 받으면 미리보기를 그대로 둔다. */
+export function useSharpImage(preview?: string, full?: string): string | undefined {
+  const [loaded, setLoaded] = useState<string | undefined>();
+  useEffect(() => {
+    if (!full || full === preview) return;
+    let live = true;
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = () => { if (live) setLoaded(full); };
+    img.src = full;
+    return () => { live = false; img.onload = null; };
+  }, [full, preview]);
+  return loaded && loaded === full ? full : preview;
+}
+
 /** 발매 커버 — 등록한 커버 이미지가 있으면 이미지, 없거나 못 불러오면 ID 기반 그라디언트 */
 export function ReleaseCover({ id, src, className = 'cover aq-cover', size }: {
   id: string;
