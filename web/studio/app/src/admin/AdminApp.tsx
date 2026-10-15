@@ -284,7 +284,10 @@ export function AdminApp() {
                   return (
                     <Link key={i.to} to={i.to} aria-current={cur ? 'page' : undefined}>
                       <span><Icon name={i.icon} />{i.label}</span>
-                      {n > 0 && <b className={`ui-count${i.hot ? ' is-hot' : ''}`}>{n > 99 ? '99+' : n}</b>}
+                      {n > 0
+                        ? <b className={`ui-count${i.hot ? ' is-hot' : ''}`}>{n > 99 ? '99+' : n}</b>
+                        // 숫자를 받기 전에는 배지 자리를 비워 둔다 — 휴대폰 가로 탭에서 숫자가 뒤늦게 붙으며 뒤 탭들이 밀리지 않게
+                        : i.count && (!counts || !work) && <b className="ui-count is-pending" aria-hidden="true">0</b>}
                     </Link>
                   );
                 })}

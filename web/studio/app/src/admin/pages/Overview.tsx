@@ -52,8 +52,6 @@ export function OverviewPage() {
         <div className="adm-hero-num" aria-hidden="true">{counts ? <CountUp value={urgent} /> : '–'}<small>처리 대기</small></div>
       </div>
 
-      <InboxPeek />
-
       <StatGrid>
         {TILES.filter(t => dual || t.key !== 'second_approvals').map(t => {
           const n = counts ? Number(counts[t.key] ?? 0) : null;
@@ -68,6 +66,9 @@ export function OverviewPage() {
           );
         })}
       </StatGrid>
+
+      {/* 업무함은 늦게 불러와지므로 숫자 칸 아래에 둔다 — 위에 끼어들며 이미 보이는 칸들을 밀어내지 않게 */}
+      <InboxPeek />
 
       {me.role === 'ADMIN' && counts && counts.payout_requests > 0 && (
         <div className="ui-callout is-row">
