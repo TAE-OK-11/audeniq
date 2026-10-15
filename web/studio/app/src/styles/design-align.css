@@ -502,3 +502,10 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .aq-track-summary small{display:block;margin-top:2px;font-size:var(--aq-fs-xs);color:var(--aq-text-4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .aq-track-summary-chev{color:var(--aq-text-disabled)}
 #view-new .track-editor .minor-actions .ui-actions{gap:4px}
+
+/* 발매 상세 '관리' 탭 — 카드를 성격별 묶음(수익·홍보 / 권리 보호 / 서비스·계약)으로 나눈다.
+   묶음 안 카드가 모두 비면(해당 없음) 제목만 남지 않게 통째로 숨긴다. */
+#view-release .aq-manage-group{display:grid;gap:12px}
+#view-release .aq-manage-group+.aq-manage-group{margin-top:14px}
+#view-release .aq-manage-group-title{margin:0;padding:0 4px;font-size:13px;font-weight:700;letter-spacing:-.01em;color:var(--aq-text-3)}
+#view-release .aq-manage-group:not(:has(>:not(.aq-manage-group-title))){display:none}
