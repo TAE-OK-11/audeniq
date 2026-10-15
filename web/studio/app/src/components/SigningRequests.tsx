@@ -10,6 +10,7 @@ import { Modal } from './Modal';
 import { Segmented } from './Segmented';
 import { currentPath, useNavigate } from '../lib/router';
 import { refreshDocs } from '../store/portalSync';
+import { CopyButton } from './CopyButton';
 
 const TONE: Record<string, string> = { SIGNED: 'is-ok', DECLINED: 'is-bad', CANCELLED: 'is-off', EXPIRED: 'is-off', PENDING: '', VERIFIED: '' };
 
@@ -95,7 +96,7 @@ export function SigningRequests({ releases, tick, onOpenDoc }: {
             <p>{relink.signer_name}님께 새 링크를 보내 주세요. 이전 링크는 더 이상 쓸 수 없어요.</p>
             <div className="aq-sign-link"><code>{signingUrl(issued.token)}</code></div>
             <div className="doc-actions">
-              <button type="button" className="ui-btn is-soft" onClick={() => { void navigator.clipboard?.writeText(signingUrl(issued.token)).then(() => toast('링크를 복사했어요.', 'success')); }}>링크 복사</button>
+              <CopyButton text={signingUrl(issued.token)} label="링크 복사" className="ui-btn is-soft" />
               <button type="button" className="ui-btn is-primary" onClick={() => setRelink(null)}>완료</button>
             </div>
           </> : <>
