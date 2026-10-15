@@ -562,11 +562,9 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 /* 선택 칸·입력칸: 칸보다 긴 글자(고른 값·안내 문구)는 뚝 잘리지 않고 '…'로 끝나게 */
 .ui-select,.ui-field select{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}
 .ui-input,.ui-field input{text-overflow:ellipsis}
-/* 알림: 읽은 알림도 그대로 누를 수 있는 카드다. 흐리게(비활성처럼) 만들지 않고
-   흰 바탕 + 얇은 테두리(버튼 그림자는 전역에서 꺼져 있어 outline으로) + 보통 굵기 제목으로만 구분해, 안 읽은 알림(옅은 파랑 바탕·굵은 제목·점)이 먼저 눈에 띄게 */
-.aq-notice-card.is-read{background:#fff}
-.aq-notice-card.is-read:not(:focus-visible){outline:1px solid var(--aq-gray-100);outline-offset:-1px}
-.aq-notice-card.is-read .aq-notice-copy>strong{font-weight:600;color:var(--aq-text-2)}
+/* 알림: 읽은 알림도 색·바탕·아이콘을 그대로 둔다(흐리게·회색으로 만들지 않는다).
+   안 읽은 알림은 파란 점, 읽은 알림은 다시 열어 볼 수 있다는 화살표로만 구분한다 */
+.aq-notice-reopen{flex:none;color:var(--aq-text-4)}
 
 /* 발매 신청 머리 고정 — 뒤로 가기·제목·진행 막대를 한 덩어리(.aq-wiz-top)로 화면 위에 붙여 둔다.
    예전에는 enhance.css의 .wizard-topbar{position:relative}가 고정을 덮어써서 스크롤하면 같이 올라가 버렸다.
