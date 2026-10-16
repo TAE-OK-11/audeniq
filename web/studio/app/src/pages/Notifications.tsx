@@ -129,7 +129,7 @@ export function Notifications() {
           aria-pressed={filter === 'unread'}
           onClick={() => setFilter('unread')}
         >읽지 않음 <span id="unreadCount">{unread}</span></button>
-        <button type="button" className="ui-btn is-text" id="readAllNotices" onClick={readAll} disabled={!unread}>모두 읽음</button>
+        <button type="button" className="ui-btn is-text" id="readAllNotices" onClick={readAll} disabled={!unread}><Glyph name="check" size={14} />모두 읽음</button>
       </div>
 
       {shown.length ? (
@@ -146,9 +146,11 @@ export function Notifications() {
                 <strong>{n.title}</strong>
                 <span className="aq-notice-detail">{n.detail}</span>
               </span>
-              {n.read
-                ? <Glyph name="chevron-right" size={18} className="aq-notice-reopen" />
-                : <i className="aq-unread" aria-label="읽지 않음" />}
+              {/* 읽음·안 읽음 모두 눌러 열 수 있다는 화살표를 같게 두고, 안 읽은 알림만 파란 점을 더한다 */}
+              <span className="aq-notice-end">
+                {!n.read && <i className="aq-unread" aria-label="읽지 않음" />}
+                <Glyph name="chevron-right" size={18} className="aq-notice-reopen" />
+              </span>
             </button>
           ))}
         </div>

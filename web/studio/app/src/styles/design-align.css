@@ -670,4 +670,16 @@ button.aq-inline-link{display:inline;padding:0;border:0;background:none;font:inh
   #view-reports .report-chart.has-values .report-col,#view-reports .report-axis.is-all span{flex:0 1 96px;max-width:96px}
   #view-reports .report-chart.has-values .report-bar{flex:none!important;max-width:none}
   #view-reports .report-axis.is-all{justify-content:space-between;gap:24px}
+/* 정산 계좌 등록 — 수령인 칸 이름표·안내 (PaymentSetupModal) */
+.aq-pay-field .aq-pay-label{display:block;margin:0 0 8px;font-size:var(--aq-fs-sm,14px);font-weight:700;color:var(--aq-text-2)}
+.aq-pay-field .ui-field-help{display:block;margin-top:8px}
+/* 알림 줄 끝 — 파란 점(안 읽음)과 화살표를 한 줄로 */
+.aq-notice-end{display:inline-flex;align-items:center;gap:8px;flex:none}
+#readAllNotices{gap:4px}
+/* 달력에서 고를 수 없는 날도 읽을 수 있게 (거의 보이지 않던 회색 300 → 400) */
+.aq-cal-grid button:disabled{color:var(--aq-gray-400)}
+/* 머리의 알림·프로필 버튼도 터치 기기에서는 손가락 영역을 44px로 */
+@media (pointer:coarse){
+  .portal-header :is(.aq-header-bell,.header-profile){position:relative}
+  .portal-header :is(.aq-header-bell,.header-profile)::after{content:"";position:absolute;left:50%;top:50%;width:44px;height:44px;transform:translate(-50%,-50%)}
 }
