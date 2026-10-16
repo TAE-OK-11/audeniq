@@ -170,13 +170,16 @@ const EMPTY_OPTIONS: ReleaseOptions = {
   rerelease: false, previousTitle: '', previousId: '',
 };
 
+/** YouTube Content ID — 다른 사람 영상에 권리를 주장하는 별도 서비스라 '모두 배급'에 넣지 않고 따로 켠다 */
+const isContentId = (slug: string) => slug === 'youtube-cid' || slug === 'D-27';
+
 const EMPTY: WizardForm = {
   artist: '', title: '', type: 'single', language: 'ko', genre: '', genreCustom: '',
   label: '', notes: '',
   tracks: [newTrack()],
   coverName: '', coverData: '', coverAssetId: '', coverThumbAssetId: '', coverPreviewAssetId: '',
   releaseDate: '', releaseTime: '', preorderStart: '', originalDate: '', upc: '',
-  territories: ['WORLD'], platforms: MOCK ? DSP.map(d => d[0]) : [],
+  territories: ['WORLD'], platforms: MOCK ? DSP.map(d => d[0]).filter(s => !isContentId(s)) : [],
   ownership: '', phonogram: '', copyright: '',
   rightsChecks: {},
   options: EMPTY_OPTIONS,
@@ -215,16 +218,39 @@ function applicableConditionals(o: ReleaseOptions): [string, string][] {
     .map(([k, label]) => [k, label]);
 }
 
-function KoreanDateField({ id, label, required, value, min, onChange }: {
+function KoreanDateField({ id, label, required, value, min, onChange, help }: {
   id: string; label: React.ReactNode; required?: boolean;
-  value: string; min?: string; onChange: (v: string) => void;
+  value: string; min?: string; onChange: (v: string) => void; help?: React.ReactNode;
 }) {
   return (
     <div className="ui-field">
       <label htmlFor={id}>{label}{required && <> <span className="required">*</span></>}</label>
       <DateField id={id} value={value} min={min} required={required} onChange={onChange} />
+      {help && <small className="ui-field-help">{help}</small>}
     </div>
   );
+}
+
+/** 칸 바로 아래 안내 — 칸을 감싼 .ui-field(없으면 칸 자신) 뒤에 한 줄을 붙이고 칸과 aria-describedby로 잇는다.
+ *  한 번에 하나만 둔다 */
+const FIELD_ERROR_ID = 'wizardFieldError';
+function clearFieldError() {
+  const old = document.getElementById(FIELD_ERROR_ID);
+  if (!old) return;
+  document.querySelector(`[aria-describedby~="${FIELD_ERROR_ID}"]`)?.removeAttribute('aria-describedby');
+  old.remove();
+}
+function showFieldError(el: HTMLElement, msg: string) {
+  clearFieldError();
+  const host = el.closest<HTMLElement>('.ui-field, .aq-option-detail, .aq-pick, .ui-check') ?? el;
+  const note = document.createElement('p');
+  note.id = FIELD_ERROR_ID;
+  note.className = 'ui-field-help aq-help-error aq-field-error';
+  note.setAttribute('role', 'alert');
+  note.textContent = msg;
+  if (host.matches('.ui-field, .aq-option-detail')) host.appendChild(note);
+  else host.insertAdjacentElement('afterend', note);
+  if (!el.hasAttribute('aria-describedby')) el.setAttribute('aria-describedby', FIELD_ERROR_ID);
 }
 
 function BackIcon() {
@@ -886,6 +912,11 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
     ),
   };
   const list = group === 'service' ? SERVICE_OPTIONS : RIGHTS_OPTIONS;
+  // 권리 단계의 '해당하는 항목' 7개는 대부분 해당이 없다 — 먼저 '특별한 경우가 있나요?'를 묻고 '있어요'일 때만 펼친다.
+  // 이미 고른 항목이 있으면 처음부터 펼쳐 둔다
+  const anyRights = RIGHTS_OPTIONS.some(([id]) => !!o[id]);
+  const [special, setSpecial] = useState(anyRights);
+  const showList = group === 'service' || special || anyRights;
 
   return (
     <>
@@ -896,11 +927,16 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
         </>
       ) : (
         <>
-          <h2 className="subhead" style={{ marginTop: 25 }}>해당하는 항목</h2>
-          <p className="aq-option-intro">해당하는 항목을 모두 선택해 주세요. 누르면 바로 아래에 필요한 확인 사항이 열려요.</p>
+          <h2 className="subhead" style={{ marginTop: 25 }}>특별한 경우가 있나요?</h2>
+          <p className="aq-option-intro">커버곡·샘플링·피처링·AI 제작·공동 권리·미성년·재발매 중 해당하는 게 있으면 알려 주세요.</p>
+          <div className="aq-yesno" role="radiogroup" aria-label="특별한 경우가 있나요?">
+            <button type="button" role="radio" aria-checked={!showList} className={`ui-chip${!showList ? ' is-on' : ''}`} disabled={anyRights} onClick={() => setSpecial(false)}>없어요</button>
+            <button type="button" role="radio" aria-checked={showList} className={`ui-chip${showList ? ' is-on' : ''}`} onClick={() => setSpecial(true)}>있어요</button>
+          </div>
+          {showList && <p className="aq-option-intro">해당하는 항목을 모두 선택해 주세요. 누르면 바로 아래에 필요한 확인 사항이 열려요.</p>}
         </>
       )}
-      <div className="aq-options">
+      {showList && <div className="aq-options aq-reveal">
         {list.map(([id, title, sub]) => (
           <Fragment key={id}>
             <label className={`aq-option${o[id] ? ' is-on' : ''}${!MOCK && id === 'minor' ? ' is-unavailable' : ''}`}>
@@ -915,7 +951,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
             {!!o[id] && detail[id]}
           </Fragment>
         ))}
-      </div>
+      </div>}
       {group === 'rights' && form.platforms.some(p => p === 'youtube-cid' || p === 'D-27') && (
         <div className="aq-option-detail" id="aqContentIdRights">
           <h3>YouTube Content ID 권리 확인</h3>
@@ -928,7 +964,8 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
             <input type="checkbox" checked={!!o.contentIdOriginalRecordingAck} onChange={e => setOpt('contentIdOriginalRecordingAck', e.target.checked)} />
             <span>직접 제작한 고유한 녹음이며, 비독점 루프·무료 이용 음원·공공저작물 등을 포함하지 않아요.</span>
           </label>
-          <p className="hint">해당하지 않으면 Content ID 선택을 해제해 주세요. 커버·샘플·리믹스는 권리와 참조 제외 구간을 추가 확인합니다.</p>
+          <p className="hint">해당하지 않으면 Content ID를 꺼 주세요. 커버·샘플·리믹스는 권리와 참조 제외 구간을 추가 확인합니다.</p>
+          <button type="button" className="ui-btn is-soft is-sm" onClick={() => set('platforms', form.platforms.filter(p => !isContentId(p)))}>Content ID 사용 안 함</button>
         </div>
       )}
       {showGuardianModal && (
@@ -1350,8 +1387,8 @@ export function Upload() {
       if (!alive) return;
       setDsps(items);
       setDspError('');
-      // 플랫폼을 고르지 않은 발매(새 발매·대량 등록한 임시 저장)는 이용 가능한 플랫폼 전체가 기본값
-      setForm(f => f.platforms.length ? f : ({ ...f, platforms: items.filter(d => d.available).map(d => d.slug) }));
+      // 플랫폼을 고르지 않은 발매(새 발매·대량 등록한 임시 저장)는 이용 가능한 플랫폼 전체가 기본값 (Content ID는 따로 켠다)
+      setForm(f => f.platforms.length ? f : ({ ...f, platforms: items.filter(d => d.available && !isContentId(d.slug)).map(d => d.slug) }));
     }).catch(e => { if (alive) { setDsps(null); setDspError(errorMessage(e, '플랫폼 상태를 확인하지 못했어요.')); } });
     return () => { alive = false; };
   }, [editId]);
@@ -1665,22 +1702,25 @@ export function Upload() {
   }, [form, autoSave, loadingEdit, canAutoSave]);
 
   const fail = (msg: string, sel: string | null): boolean => {
-    setError(msg);
     // 접혀 있는 곡의 칸이면 먼저 펼친다 (접힌 곡은 입력칸이 그려지지 않는다)
     const tm = sel && /#(?:tr|trackFile)-(\d+)/.exec(sel);
     const tid = tm ? form.tracks[+tm[1]]?.id : undefined;
     if (tid && tid !== openTrack) flushSync(() => setOpenTrack(tid));
+    // 고칠 칸이 있으면 안내를 그 칸 바로 아래에 두고(폼 맨 아래 한 곳에 두면 휴대폰에서는 붉은 칸만 보이고 이유는 화면 밖이었다),
+    // 칸을 고치는 순간 안내도 함께 지운다. 칸이 없는 안내만 폼 아래에 띄운다
+    const target = sel ? document.querySelector<HTMLElement>(sel) : null;
+    if (target) { setError(''); showFieldError(target, msg); } else setError(msg);
     requestAnimationFrame(() => {
       if (sel) {
-        const el = document.querySelector<HTMLElement>(sel);
+        const el = target?.isConnected ? target : document.querySelector<HTMLElement>(sel);
         if (el) {
           // 먼저 focus()하면 화면이 그 칸으로 순간이동해 부드러운 스크롤이 묻힌다 — 굴러간 뒤 커서를 두고 흔든다
           revealField(el);
           el.classList.remove('aq-invalid');
           void el.offsetWidth;
           el.classList.add('aq-invalid');
-          // 고치면 바로 표시를 지운다 (체크한 뒤에도 붉게 남아 있지 않도록)
-          const clear = () => el.classList.remove('aq-invalid');
+          // 고치면 바로 표시와 안내를 지운다 (체크한 뒤에도 붉게 남아 있지 않도록)
+          const clear = () => { el.classList.remove('aq-invalid'); clearFieldError(); };
           el.addEventListener('change', clear, { once: true });
           el.addEventListener('input', clear, { once: true });
           return;
@@ -1795,7 +1835,7 @@ export function Upload() {
       }
       if (o.ai && !o.aiTool.trim()) return fail('AI를 어떻게 활용했는지 골라 주세요.', '#aqAiTool');
       if (form.platforms.some(p => p === 'youtube-cid' || p === 'D-27') && (!o.contentIdExclusiveRightsAck || !o.contentIdOriginalRecordingAck)) {
-        return fail('YouTube Content ID의 독점 권리와 원본 녹음 확인을 체크하거나 Content ID 선택을 해제해 주세요.', '#aqContentIdRights');
+        return fail('YouTube Content ID의 독점 권리와 원본 녹음을 확인해 주세요. 해당하지 않으면 아래 ‘Content ID 사용 안 함’을 눌러 주세요.', '#aqContentIdRights');
       }
       if (o.cover) {
         const valid = o.coverTracks.filter(c => form.tracks.some(t => t.id === c.trackId));
@@ -1827,6 +1867,7 @@ export function Upload() {
       if (missing) return fail('신청 확인 항목에 모두 동의해 주세요.', `#agree-${missing.id}`);
     }
     setError('');
+    clearFieldError();
     document.querySelectorAll('#view-new .aq-invalid').forEach(el => el.classList.remove('aq-invalid'));
     return true;
   };
@@ -1846,6 +1887,7 @@ export function Upload() {
     setStep(to);
     setReached(r => Math.max(r, to));
     setError('');
+    clearFieldError();
     setSubmitError('');
     // 부드러운 스크롤은 새 단계가 나타나는 동안 화면을 끌고 다녀 버벅여 보이므로 바로 맨 위로
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
@@ -2066,19 +2108,36 @@ export function Upload() {
   const nextLabel = submitting ? '접수하는 중' : step === STEPS.length - 1 ? (resubmit ? '다시 접수하기' : editId && origStatus !== 'draft' ? '서명하고 수정 완료' : '서명하고 접수하기') : '다음으로';
   const genreIsCustom = form.genre === '__other__';
   const availablePlatforms = dsps?.filter(d => d.available).map(d => d.slug) ?? [];
-  const allPlatforms = availablePlatforms.length > 0 && availablePlatforms.every(p => form.platforms.includes(p)) && form.platforms.every(p => availablePlatforms.includes(p));
+  // '모두 배급'은 Content ID를 뺀 음악 플랫폼 전체 — Content ID는 켜져 있든 아니든 따로 본다
+  const basePlatforms = availablePlatforms.filter(p => !isContentId(p));
+  const cidPlatforms = availablePlatforms.filter(isContentId);
+  const cidOn = form.platforms.some(isContentId);
+  const allPlatforms = basePlatforms.length > 0 && basePlatforms.every(p => form.platforms.includes(p)) && form.platforms.every(p => availablePlatforms.includes(p));
   // 기본은 ‘모두 배급’ 스위치만. 끄면 아래에 플랫폼별 선택이 열린다 (일부만 고른 발매는 처음부터 열림)
   const [pickPlatforms, setPickPlatforms] = useState(false);
   const showPlatforms = pickPlatforms || !allPlatforms;
 
-  const reviewSections: [string, string, number][] = [
+  // 플랫폼 이름 50여 개를 다 늘어놓으면 확인 화면이 휴대폰에서 3,000px 넘게 길어졌다 — 몇 곳만 보이고 개수로 줄인다
+  const platformSummary = (() => {
+    const base = form.platforms.filter(p => !isContentId(p));
+    const cid = cidOn ? ' · YouTube Content ID 포함' : '';
+    if (!form.platforms.length) return '선택하지 않음';
+    if (allPlatforms) return `주요 음악 플랫폼 ${base.length}곳 전체${cid}`;
+    const names = base.map(dspLabel);
+    return `${names.slice(0, 5).join(', ')}${names.length > 5 ? ` 외 ${names.length - 5}곳` : ''}${cid}`;
+  })();
+  const reviewSections: [string, React.ReactNode, number][] = [
     ['발매 정보', `${form.title || '제목 없음'} · ${form.artist || '아티스트 없음'} · ${kindLabel(form.type)}`, 0],
-    ['트랙', form.tracks.map(t => t.title || '곡명 없음').join(' / '), 1],
-    ['커버아트', form.coverName || '등록되지 않음', 2],
+    ['트랙', form.tracks.length > 1
+      ? <ol className="aq-review-tracks">{form.tracks.map(t => <li key={t.id}>{t.title || '곡명 없음'}</li>)}</ol>
+      : form.tracks[0]?.title || '곡명 없음', 1],
+    ['커버아트', form.coverData
+      ? <span className="aq-review-cover"><img src={form.coverData} alt="" width={56} height={56} />{form.coverName}</span>
+      : form.coverName || '등록되지 않음', 2],
     ['발매일', form.releaseDate ? `${formatKoreanDate(form.releaseDate)}${form.releaseTime ? ` · 한국 시간 ${form.releaseTime} 동시 발매` : ' · 나라별 자정'}` : '지정하지 않음', 3],
     ['사전 공개', form.preorderStart ? `${formatKoreanDate(form.preorderStart)}부터 (예약 판매·미리듣기)` : '없음', 3],
     ['배급 지역', territorySummary(form.territories, '선택하지 않음'), 3],
-    ['배급 플랫폼', form.platforms.map(dspLabel).join(', ') || '선택하지 않음', 3],
+    ['배급 플랫폼', platformSummary, 3],
     ['권리자', form.ownership || '미입력', 4],
     ['권리 확인', rightsOk(form) ? '필수 확인 완료' : '필수 확인 항목 누락', 4],
   ];
@@ -2438,6 +2497,16 @@ export function Upload() {
                 id="f-releaseDate" label="발매 예정일" required
                 value={form.releaseDate} min={origDate && origDate < minReleaseDate(form.options.express) ? origDate : minReleaseDate(form.options.express)}
                 onChange={v => set('releaseDate', v)}
+                help={<>
+                  가장 빠른 날짜는 <b>{formatKoreanDate(minReleaseDate(form.options.express))}</b>이에요{form.options.express ? ' (신속 발매, 최소 3일)' : ' (플랫폼 검수에 2주가 걸려요)'}.
+                  {' '}플레이리스트 추천을 받으려면 3~4주 뒤를 권해요.
+                  {!form.options.express && <>
+                    {' '}<button type="button" className="aq-inline-link" onClick={() => {
+                      set('options', { ...form.options, express: true });
+                      requestAnimationFrame(() => document.getElementById('aqExpressReason')?.closest('.aq-option-detail')?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+                    }}>더 빨리 발매해야 하나요?</button>
+                  </>}
+                </>}
               />
               <div className="ui-field">
                 <label htmlFor="f-releaseTime">발매 시각</label>
@@ -2491,12 +2560,30 @@ export function Upload() {
                   disabled={!dsps || availablePlatforms.length === 0}
                   onChange={e => {
                     // 켜면 모두 선택하고 목록을 닫고, 끄면 지금 선택 그대로 목록을 연다
-                    if (e.target.checked) { set('platforms', availablePlatforms); setPickPlatforms(false); } else setPickPlatforms(true);
+                    if (e.target.checked) { set('platforms', [...basePlatforms, ...form.platforms.filter(isContentId)]); setPickPlatforms(false); } else setPickPlatforms(true);
                   }}
                 />
                 <span />
               </label>
             </div>
+            {cidPlatforms.length > 0 && (
+              <div className="distribution-default aq-cid-optin">
+                <div>
+                  <strong>YouTube Content ID<span className="aq-optional">선택</span></strong>
+                  <p className="ui-field-help">다른 사람 영상에 내 음원이 쓰이면 권리를 주장하고 수익을 받아요. 직접 만든 고유한 녹음일 때만 켜 주세요. 커버·샘플·무료 음원이 들어 있으면 끄는 게 좋아요.</p>
+                </div>
+                <label className="aq-switch">
+                  <input
+                    type="checkbox" aria-label="YouTube Content ID 사용"
+                    checked={cidOn}
+                    onChange={e => set('platforms', e.target.checked
+                      ? [...form.platforms.filter(p => !isContentId(p)), ...cidPlatforms]
+                      : form.platforms.filter(p => !isContentId(p)))}
+                  />
+                  <span />
+                </label>
+              </div>
+            )}
             {showPlatforms && (
             <div id="aqPlatforms" className="aq-dsp-groups aq-reveal">
               {DSP_GROUPS.map(([region, match]) => [region, dsps?.filter(match) ?? []] as const).filter(([, list]) => list.length > 0).map(([region, list]) => (
@@ -2621,7 +2708,7 @@ export function Upload() {
                 <div key={h} className="aq-review-card">
                   <div className="aq-review-body">
                     <strong>{h}</strong>
-                    <p className="break">{t}</p>
+                    <div className="break aq-review-value">{t}</div>
                   </div>
                   <button type="button" className="ui-btn is-white is-xs aq-review-edit" onClick={() => goStep(target)} aria-label={`${h} 수정`}>수정</button>
                 </div>
