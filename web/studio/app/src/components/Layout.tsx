@@ -19,7 +19,8 @@ import { Glyph, type GlyphName } from './Glyph';
 function ViewEnter({ pathname, children }: { pathname: string; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const first = useRef(true);
-  useEffect(() => {
+  // 그리기 전에(useLayoutEffect) 다시 건다 — useEffect에서는 새 화면이 한 프레임 다 보였다가 사라진 뒤 들어와 깜빡였다
+  useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     if (first.current) { first.current = false; return; } // 첫 마운트는 CSS가 자동 재생

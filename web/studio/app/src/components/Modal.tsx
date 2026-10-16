@@ -19,7 +19,8 @@ const DRAG_CLOSE_PX = 96;
 const NOT_SHEET_MODES = ['aq-payout-setup-mode', 'aq-signature-mode', 'aq-confirm-mode', 'aq-sysdialog-mode'];
 
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-const EXIT_MS = 180;
+/** 닫힘 애니메이션이 끝나기를 기다리는 최대 시간 — 보통은 animationend로 바로 닫는다 */
+const EXIT_MAX_MS = 600;
 
 // body 스크롤 잠금 카운터 — 중첩 모달에서 하나가 닫혀도 잠금 유지
 let lockCount = 0;
@@ -135,6 +136,8 @@ export function coverOutsideFixedLayer(overlay: HTMLElement, sheet: HTMLElement)
   vv?.addEventListener('resize', burst);
   vv?.addEventListener('scroll', schedule);
   sheet.addEventListener('focusin', burst);
+  // 창이 닫히며 어둠이 걷히는 동안에도 위쪽 덮개 색이 따라가게
+  overlay.addEventListener('animationstart', burst);
   const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule);
   ro?.observe(sheet);
   return () => {
@@ -144,6 +147,7 @@ export function coverOutsideFixedLayer(overlay: HTMLElement, sheet: HTMLElement)
     vv?.removeEventListener('resize', burst);
     vv?.removeEventListener('scroll', schedule);
     sheet.removeEventListener('focusin', burst);
+    overlay.removeEventListener('animationstart', burst);
     ro?.disconnect();
     floor.remove();
     ceiling.remove();
@@ -216,7 +220,19 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
       return;
     }
     setLeaving(true);
-    window.setTimeout(() => onCloseRef.current(), EXIT_MS);
+    // 정해 둔 시간 대신 닫힘 애니메이션이 실제로 끝난 프레임에 닫는다 —
+    // 시간이 짧으면 시트가 화면 중간에서 툭 사라지고, 길면 다 내려간 뒤 한동안 멈춰 있었다
+    const inner = innerRef.current;
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      inner?.removeEventListener('animationend', onEnd);
+      onCloseRef.current();
+    };
+    const onEnd = (e: AnimationEvent) => { if (e.target === inner && /out|down/.test(e.animationName)) finish(); };
+    inner?.addEventListener('animationend', onEnd);
+    window.setTimeout(finish, EXIT_MAX_MS);
   }, []);
 
   useEffect(() => {
@@ -287,13 +303,14 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
   const bumpRef = useRef(guard);
   bumpRef.current = guard;
 
-  // 휴대폰 아래 시트: 위쪽 머리(손잡이)를 잡고 끌어내려 닫는다. 덜 끌면 제자리로 튀어 돌아간다.
-  const sheet = useRef<{ y: number; t: number; dy: number } | null>(null);
+  // 휴대폰 아래 시트: 위쪽 머리(손잡이)를 잡고 끌어내려 닫는다. 덜 끌면 제자리로 부드럽게 돌아간다.
+  // 놓는 순간의 속도(최근 움직임)로 닫을지 정하고, 닫을 때는 그 속도를 이어받아 내려간다
+  const sheet = useRef<{ y: number; dy: number; v: number; lastY: number; lastT: number } | null>(null);
   const isSheet = () => window.matchMedia?.('(max-width: 760px)').matches && !NOT_SHEET_MODES.some(m => modalClass?.includes(m));
   const onDragStart = (e: React.PointerEvent) => {
     if (closeDisabledRef.current || e.pointerType === 'mouse' || !isSheet()) return;
     if ((e.target as Element).closest('button,a,input,select,textarea')) return;
-    sheet.current = { y: e.clientY, t: performance.now(), dy: 0 };
+    sheet.current = { y: e.clientY, dy: 0, v: 0, lastY: e.clientY, lastT: performance.now() };
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
   };
   const onDragMove = (e: React.PointerEvent) => {
@@ -301,6 +318,11 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
     const el = innerRef.current;
     if (!d || !el) return;
     d.dy = Math.max(0, e.clientY - d.y);
+    const now = performance.now();
+    const dt = now - d.lastT;
+    if (dt > 0) d.v = d.v * 0.4 + ((e.clientY - d.lastY) / dt) * 0.6; // px/ms, 최근 움직임에 무게
+    d.lastY = e.clientY;
+    d.lastT = now;
     // 위로는 끌리지 않고, 아래로는 손가락을 따라간다
     el.style.transition = 'none';
     el.style.animation = 'none';
@@ -311,17 +333,22 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
     const el = innerRef.current;
     sheet.current = null;
     if (!d || !el) return;
-    const speed = d.dy / Math.max(1, performance.now() - d.t); // px/ms
-    el.style.transition = 'transform .28s cubic-bezier(.3,1.4,.55,1)';
-    if ((d.dy > DRAG_CLOSE_PX || (d.dy > 24 && speed > 0.6)) && dirtyRef.current) {
+    // 손을 뗀 뒤 잠깐 멈췄다 놓았으면 속도는 0으로 본다
+    const speed = performance.now() - d.lastT > 80 ? 0 : d.v;
+    const closing = d.dy > DRAG_CLOSE_PX ? speed > -0.2 : d.dy > 24 && speed > 0.5;
+    // 제자리로 돌아갈 때는 튀지 않고 부드럽게 멈춘다 (아이폰 시트처럼)
+    el.style.transition = 'transform .42s cubic-bezier(.32,.72,0,1)';
+    if (closing && dirtyRef.current) {
       // 작성 중이면 끌어내려도 닫지 않고 제자리로 튀어 돌아간 뒤 한 번 튄다
       el.style.transform = '';
       window.setTimeout(guard, 200);
-    } else if (d.dy > DRAG_CLOSE_PX || (d.dy > 24 && speed > 0.6)) {
-      el.style.transition = 'transform .2s ease-in';
-      el.style.transform = 'translate3d(0,100%,0)';
-      leavingRef.current = true;
-      window.setTimeout(() => onCloseRef.current(), 190);
+    } else if (closing) {
+      // 놓은 자리에서 손가락 속도 그대로 이어 내려가고, 뒤 어둠도 함께 걷힌다 (CSS의 닫힘 애니메이션이 지금 위치에서 출발)
+      const rest = Math.max(0, el.getBoundingClientRect().height - d.dy);
+      const ms = Math.round(Math.min(380, Math.max(180, (rest / Math.max(speed, 0.9)) * 2.2)));
+      el.style.transition = 'none';
+      (overlayRef.current ?? el).style.setProperty('--aq-sheet-out', `${ms}ms`);
+      requestClose();
     } else {
       el.style.transform = '';
     }
