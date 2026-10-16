@@ -182,6 +182,10 @@ export function ReleaseDetail() {
   const linkedDocs = new Set(requested.map(c => c.documentId).filter(Boolean));
   const proofs = pendingProofs(allDocs, rel.id, rel.title).filter(doc => !linkedDocs.has(doc.id));
   const docsOnly = needsFix && rel.fixKind === 'documents';
+  // 이미 발매된 뒤에도 '발매 예정일'이라 적혀 있었다
+  const dateLabel = rel.status === 'live' || rel.status === 'closed' ? '발매일' : '발매 예정일';
+  // 배지 건수는 아래에 보여 주는 고칠 칸과 요청 서류를 모두 센다 (2건이라면서 3개를 보여 주던 것)
+  const fixTotal = fixes.length + proofs.length;
 
   // 접수한 신청 취소 — 한 달 3회까지 직접, 그 이상·배급 시작 후는 문의로
   const canWithdraw = ['review', 'needs', 'scheduled'].includes(rel.status);
@@ -346,7 +350,7 @@ export function ReleaseDetail() {
       {needsFix && (
         <section className="aq-fix-panel" aria-labelledby="aqFixCardHead">
           <div className="aq-fix-top">
-            <Badge tone="amber">{docsOnly ? (proofs.length ? `서류 제출 요청 ${proofs.length}건` : '서류 확인 필요') : fixes.length ? `보완 요청 ${fixes.length}건` : '보완 필요'}</Badge>
+            <Badge tone="amber">{docsOnly ? (proofs.length ? `서류 제출 요청 ${proofs.length}건` : '서류 확인 필요') : fixTotal ? `보완 요청 ${fixTotal}건` : '보완 필요'}</Badge>
           </div>
           <h2 id="aqFixCardHead" className="aq-fix-title">
             {docsOnly ? '담당자가 요청한 서류를 제출해 주세요'
@@ -397,7 +401,7 @@ export function ReleaseDetail() {
                   <div><dt>아티스트</dt><dd>{rel.artist || <Empty>미입력</Empty>}</dd></div>
                   <div><dt>발매 유형</dt><dd>{kindLabel(d?.type) || <Empty>미입력</Empty>}</dd></div>
                   <div><dt>주요 언어</dt><dd>{languageLabel(d?.language) || <Empty>미입력</Empty>}</dd></div>
-                  <div><dt>발매 예정일</dt><dd>{rel.release_date || <Empty>미정</Empty>}</dd></div>
+                  <div><dt>{dateLabel}</dt><dd>{rel.release_date || <Empty>미정</Empty>}</dd></div>
                   <div><dt>UPC / EAN</dt><dd>{d?.upc || <Empty>등록 전</Empty>}</dd></div>
                   <div><dt>장르</dt><dd>{genre || <Empty>미입력</Empty>}</dd></div>
                   <div><dt>레이블</dt><dd>{d?.label || <Empty>미입력</Empty>}</dd></div>
@@ -474,7 +478,7 @@ export function ReleaseDetail() {
               <h2 className="subhead">배급 설정</h2>
               <dl className="ui-kv is-2">
                 <div><dt>배급 지역</dt><dd>{territorySummary(d?.territories)}</dd></div>
-                <div><dt>발매 예정일</dt><dd>{rel.release_date || <Empty>미정</Empty>}</dd></div>
+                <div><dt>{dateLabel}</dt><dd>{rel.release_date || <Empty>미정</Empty>}</dd></div>
                 {d?.originalDate && <div><dt>최초 발매일</dt><dd>{d.originalDate}</dd></div>}
               </dl>
               <div className="tag-row">
