@@ -95,7 +95,7 @@ export function Reports() {
   const [release, setRelease] = useState('all');
   const [showAll, setShowAll] = useState(false);
 
-  const { rows: MOCK_ROWS, loading } = useReportRows(range); // 체험 모드는 예시 행, 실서버는 플랫폼 리포트
+  const { rows: MOCK_ROWS, loading, pending } = useReportRows(range); // 체험 모드는 예시 행, 실서버는 플랫폼 리포트
   const [thisMonth = '', lastMonth = ''] = periods(MOCK_ROWS);
 
   const filtered = useMemo(() => MOCK_ROWS.filter(r => {
@@ -240,8 +240,10 @@ export function Reports() {
       </div>
 
       {customInvalid && <p className="ui-field-help aq-help-error" role="alert">시작 월이 끝 월보다 늦어요. 기간을 다시 골라 주세요.</p>}
-      {loading && <p className="ui-field-help" aria-live="polite">리포트를 불러오고 있어요…</p>}
+      {/* 불러오는 중 안내는 화면 읽기 프로그램에만 — 보이는 한 줄이 생겼다 사라지며 아래 카드를 밀어 올리고 내렸다 */}
+      <p className="sr-only" aria-live="polite">{loading ? '리포트를 불러오고 있어요.' : ''}</p>
 
+      {pending ? <ReportSkeleton title={`${periodLabel} 수익`} /> : (
       <div className="aq-report">
         <section className="aq-report-hero" aria-labelledby="reportHeroHeading">
           <h2 id="reportHeroHeading">{periodLabel} 수익</h2>
@@ -347,6 +349,65 @@ export function Reports() {
           )}
         </section>
       </div>
+      )}
+    </div>
+  );
+}
+
+/** 처음 불러오는 동안 — 실제 카드와 같은 칸·제목·대략 같은 높이로 자리를 잡아 둔다.
+ *  데이터가 오면 이 자리가 그대로 채워질 뿐이라 아래 카드가 400px씩 밀려 내려가지 않는다 */
+function ReportSkeleton({ title }: { title: string }) {
+  const rows = (n: number, compact = false) => (
+    <ul className={`aq-report-rows${compact ? ' is-compact' : ''}`}>
+      {Array.from({ length: n }, (_, i) => (
+        <li key={i}>
+          <div className="min-0">
+            <span className="aq-skel aq-skel-line" style={{ width: `${5 + (i % 3)}em` }} />
+            {!compact && <span className="aq-skel aq-skel-line is-sub" style={{ width: `${9 + (i % 2) * 3}em` }} />}
+          </div>
+          <span className="aq-skel aq-skel-line" style={{ width: '4.5em' }} />
+        </li>
+      ))}
+    </ul>
+  );
+  return (
+    <div className="aq-report is-pending" aria-busy="true">
+      <section className="aq-report-hero" aria-labelledby="reportHeroHeadingPending">
+        <h2 id="reportHeroHeadingPending">{title}</h2>
+        <span className="aq-skel aq-report-skel-amount" />
+        <span className="aq-skel aq-report-skel-pill" />
+        <span className="aq-skel aq-skel-line is-sub aq-report-skel-sub" />
+      </section>
+      <section className="aq-rp-card" aria-label="전월 대비 인사이트">
+        <h3>지난달과 비교</h3>
+        {rows(2)}
+        <h4>플랫폼별 변화</h4>
+        {rows(4, true)}
+        <span className="aq-skel aq-report-skel-note" />
+      </section>
+      <section className="aq-rp-card" aria-label="플랫폼별 수익">
+        <h3>플랫폼별 수익</h3>
+        <ul className="aq-platform-bars">
+          {Array.from({ length: 4 }, (_, i) => (
+            <li key={i}>
+              <div className="aq-platform-row">
+                <span className="aq-skel aq-skel-line" style={{ width: `${5 + i}em` }} />
+                <span className="aq-skel aq-skel-line" style={{ width: '4.5em' }} />
+              </div>
+              <div className="aq-platform-track" />
+              <span className="aq-skel aq-skel-line is-sub" style={{ width: '5em' }} />
+            </li>
+          ))}
+        </ul>
+      </section>
+      <section className="aq-rp-card" aria-label="기간별 추이">
+        <h3>기간별 추이</h3>
+        <div id="reportGraphPending"><span className="aq-skel aq-report-skel-chart" /></div>
+      </section>
+      <section className="aq-rp-card" aria-label="상세 내역">
+        <h3>상세 내역</h3>
+        {rows(5)}
+      </section>
     </div>
   );
 }
