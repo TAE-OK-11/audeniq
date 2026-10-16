@@ -616,3 +616,13 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .aq-picker.is-sheet .aq-picker-box{animation:aq-picker-up var(--aq-motion-sheet) var(--aq-sheet-ease) both}
 .aq-picker.is-leaving.is-sheet{animation:aq-picker-scrim-out var(--aq-motion-sheet-out) ease forwards}
 .aq-picker.is-leaving.is-sheet .aq-picker-box{animation:aq-picker-down var(--aq-motion-sheet-out) var(--aq-sheet-ease) forwards}
+
+/* 음악 리포트 — 처음 불러오는 동안의 자리 표시(Reports.tsx ReportSkeleton). 실제 카드와 같은 칸·대략 같은 높이,
+   옅은 파랑 카드 위에서 보이도록 흰 빛으로 반짝인다 */
+.aq-report.is-pending .aq-skel{background:linear-gradient(90deg,#fff 25%,rgba(255,255,255,.5) 45%,#fff 65%);background-size:300% 100%}
+.aq-report.is-pending .aq-report-rows .min-0{gap:8px}
+.aq-report-skel-amount{width:min(220px,60%);height:50px;margin:2px 0 0;border-radius:var(--aq-r-md)}
+.aq-report-skel-pill{width:118px;height:28px;margin-top:12px;border-radius:var(--aq-r-pill)}
+.aq-report-skel-sub{width:min(260px,70%);margin-top:16px}
+.aq-report-skel-note{height:64px;margin:8px 8px 4px;border-radius:var(--aq-r-md)}
+.aq-report-skel-chart{height:168px;margin:12px 14px 8px;border-radius:var(--aq-r-lg)}
