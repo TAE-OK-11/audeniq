@@ -771,3 +771,30 @@ button.settle-hero-account.is-button .min-0{display:grid}
 .settle-steps li.is-done{color:var(--aq-blue-500)}
 .settle-steps li.is-done+li.is-done::before{background:var(--aq-blue-500)}
 .settle-fail{display:block;margin-top:6px;font-size:12px;font-weight:600;color:var(--aq-amber-700)}
+
+/* 아이폰 사파리(앱처럼 홈 화면에서 연 경우 제외) — 사파리 자체 막대가 화면 아래에 떠 있어 탭 바와 두 줄로 겹치고,
+   막대 뒤 흐림 효과에 탭 바까지 비쳐 복잡해 보였다. 사파리에서는 탭 바 대신 머리의 메뉴 버튼을 쓴다 */
+@media (max-width:760px){
+  @supports (-webkit-touch-callout:none){
+    @media not all and (display-mode:standalone){
+      .aq-tabbar{display:none!important}
+      body:not(.wizard-mode) #main{padding-bottom:0}
+      body:not(.wizard-mode) .portal-header .menu-toggle{display:flex!important}
+      body:has(.aq-tabbar) .aq-toast-stack{bottom:calc(16px + env(safe-area-inset-bottom))}
+      body:not(.wizard-mode) .aq-form-actions.is-pinned{bottom:0}
+    }
+  }
+}
+
+/* 홈 '확인할 작업' — 한 줄에 하나씩 가볍게: 작은 아이콘, 설명은 한 줄, 버튼 대신 화살표 */
+.aq-task-list{gap:6px}
+.aq-task{gap:12px;padding:12px 12px 12px 12px}
+.aq-task .ui-icon{width:36px;height:36px;flex:0 0 36px;border-radius:var(--aq-r-md)}
+.aq-task .ui-icon svg{width:18px;height:18px}
+.aq-task-text strong{font-size:15px}
+.aq-task-text small{-webkit-line-clamp:1;line-clamp:1}
+.aq-task-go,.aq-task-list .aq-task.is-warn .aq-task-go{padding:0;background:none!important;font-size:0;gap:0;color:var(--aq-text-4)}
+.aq-task-go i{font-size:18px}
+.aq-task.is-warn .aq-task-go{color:var(--aq-amber-600)}
+.aq-task-more{display:flex;align-items:center;justify-content:center;gap:4px;width:100%;min-height:44px;margin-top:6px;border:0;border-radius:var(--aq-r-lg);background:none;font:inherit;font-size:14px;font-weight:600;color:var(--aq-text-3);cursor:pointer}
+.aq-task-more .is-flip{transform:rotate(180deg)}

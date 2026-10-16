@@ -1,8 +1,8 @@
+import { useState } from 'react';
 import { Link, useNavigate } from '../lib/router';
 import { fixPath, resolveCorrection, splitCorrections } from '../lib/corrections';
 import { api } from '../api/client';
 import { STATUS_LABEL, money, num, statusTone } from '../lib/format';
-import { useUnreadCount } from '../store/support';
 import { useProfile } from '../store/profile';
 import { isPaymentRegistered, usePayment } from '../store/payment';
 import { useAccount } from '../store/account';
@@ -39,6 +39,8 @@ const GRID_ITEMS = [
     icon: <Glyph name="doc" size={22} />,
   },
 ];
+
+const TASK_PREVIEW = 4;
 
 const TASK_ICONS = {
   alert: <Glyph name="warning" size={20} />,
@@ -91,10 +93,11 @@ function MiniTrend({ data }: { data: { period: string; revenue: number }[] }) {
 export function Dashboard() {
   const navigate = useNavigate();
   const profile = useProfile();
-  const unread = useUnreadCount();
   const docs = useDocs();
   const payment = usePayment();
   const account = useAccount();
+  // 할 일은 앞의 몇 개만 — 나머지는 '더 보기'로 (한 화면에 일곱 줄씩 쌓이면 무엇부터 할지 흐려진다)
+  const [allTasks, setAllTasks] = useState(false);
   const { data: releases = [], loading, error, reload } = useAsync(() => api.listReleases(), []);
   const { rows: reportRows } = useReportRows();
   const report = latestSummary(reportRows);
@@ -124,7 +127,7 @@ export function Dashboard() {
   if (!account.verified) tasks.push({ icon: 'lock', name: '본인인증', sub: '정산과 계약 서명에 필요해요. 예금주와 같은 이름이어야 해요.', btn: '인증', to: '/profile?open=verify', tone: 'info' });
   if (drafts) tasks.push({ icon: 'draft', name: `작성 중인 발매 ${drafts}건`, sub: '이어서 작성하고 접수해 보세요.', btn: '보기', to: '/releases?status=draft', tone: 'info' });
   if (!profileName) tasks.push({ icon: 'user', name: '계정 정보 등록', sub: '활동명과 연락처를 입력해 주세요.', btn: '등록', to: '/profile', tone: 'info' });
-  if (unread) tasks.push({ icon: 'bell', name: `읽지 않은 알림 ${unread}건`, sub: '최근 변경사항을 확인해 보세요.', btn: '확인', to: '/notifications', tone: 'info' });
+  // 읽지 않은 알림은 머리의 종 숫자로 이미 보인다 — 할 일 목록에서는 뺀다 (홈이 너무 길고 복잡해 보였다)
 
   // 정산·재생이 아직 하나도 없으면 빈 차트 대신 짧은 안내만
   const reportEmpty = report.revenue <= 0 && report.plays <= 0 && report.trend.every(d => !d.revenue);
@@ -164,8 +167,9 @@ export function Dashboard() {
             {loading ? (
               <SkeletonRows count={2} />
             ) : tasks.length ? (
+              <>
               <ul className="aq-task-list aq-stagger">
-                {tasks.map(t => (
+                {(allTasks ? tasks : tasks.slice(0, TASK_PREVIEW)).map(t => (
                   <li key={t.name}>
                     <button type="button" className={`aq-task is-${t.tone}`} onClick={() => navigate(t.to)}>
                       <span className="ui-icon" aria-hidden="true">{TASK_ICONS[t.icon]}</span>
@@ -178,6 +182,13 @@ export function Dashboard() {
                   </li>
                 ))}
               </ul>
+              {tasks.length > TASK_PREVIEW && (
+                <button type="button" className="aq-task-more" aria-expanded={allTasks} onClick={() => setAllTasks(v => !v)}>
+                  {allTasks ? '접기' : `${tasks.length - TASK_PREVIEW}건 더 보기`}
+                  <Glyph name="chevron-down" size={14} className={allTasks ? 'is-flip' : ''} />
+                </button>
+              )}
+              </>
             ) : (
               <div className="empty-note aq-all-done">
                 <span className="aq-check-badge"><CheckIcon size={12} /></span>
