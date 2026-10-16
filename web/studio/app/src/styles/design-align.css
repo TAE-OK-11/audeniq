@@ -617,6 +617,16 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .aq-picker.is-leaving.is-sheet{animation:aq-picker-scrim-out var(--aq-motion-sheet-out) ease forwards}
 .aq-picker.is-leaving.is-sheet .aq-picker-box{animation:aq-picker-down var(--aq-motion-sheet-out) var(--aq-sheet-ease) forwards}
 
+/* 음악 리포트 — 처음 불러오는 동안의 자리 표시(Reports.tsx ReportSkeleton). 실제 카드와 같은 칸·대략 같은 높이,
+   옅은 파랑 카드 위에서 보이도록 흰 빛으로 반짝인다 */
+.aq-report.is-pending .aq-skel{background:linear-gradient(90deg,#fff 25%,rgba(255,255,255,.5) 45%,#fff 65%);background-size:300% 100%}
+.aq-report.is-pending .aq-report-rows .min-0{gap:8px}
+.aq-report-skel-amount{width:min(220px,60%);height:50px;margin:2px 0 0;border-radius:var(--aq-r-md)}
+.aq-report-skel-pill{width:118px;height:28px;margin-top:12px;border-radius:var(--aq-r-pill)}
+.aq-report-skel-sub{width:min(260px,70%);margin-top:16px}
+.aq-report-skel-note{height:64px;margin:8px 8px 4px;border-radius:var(--aq-r-md)}
+.aq-report-skel-chart{height:168px;margin:12px 14px 8px;border-radius:var(--aq-r-lg)}
+
 /* 아이폰 사파리(iOS 26 이후) 아래 막대 색 — 사파리는 theme-color 대신 화면 아래 끝 3px 안에 닿은 넓은 고정 요소의
    바탕색으로 막대를 칠한다. 화면 아래에 붙은 파란 버튼(정산 계좌 등록의 '계좌 확인' 등) 쪽 색이 잡혀 막대가 파랗게 칠해졌다.
    화면 밖으로 대부분 빠진 흰 띠(index.html)를 맨 위에 두어 막대를 흰색으로 맞춘다. ::after는 사파리가 읽지 않아 실제 요소로 둔다.
