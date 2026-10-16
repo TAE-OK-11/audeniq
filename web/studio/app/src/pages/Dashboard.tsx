@@ -4,6 +4,8 @@ import { api } from '../api/client';
 import { STATUS_LABEL, money, num, statusTone } from '../lib/format';
 import { useUnreadCount } from '../store/support';
 import { useProfile } from '../store/profile';
+import { isPaymentRegistered, usePayment } from '../store/payment';
+import { useAccount } from '../store/account';
 import { useDocs } from '../store/docs';
 import { useAsync } from '../hooks/useAsync';
 import { SkeletonRows } from '../components/Skeleton';
@@ -45,6 +47,8 @@ const TASK_ICONS = {
   draft: <Glyph name="pencil" size={20} />,
   user: <Glyph name="user" size={20} />,
   bell: <Glyph name="bell" size={20} />,
+  won: <Glyph name="won" size={20} />,
+  lock: <Glyph name="lock" size={20} />,
 };
 
 function greeting(): string {
@@ -89,6 +93,8 @@ export function Dashboard() {
   const profile = useProfile();
   const unread = useUnreadCount();
   const docs = useDocs();
+  const payment = usePayment();
+  const account = useAccount();
   const { data: releases = [], loading, error, reload } = useAsync(() => api.listReleases(), []);
   const { rows: reportRows } = useReportRows();
   const report = latestSummary(reportRows);
@@ -113,6 +119,9 @@ export function Dashboard() {
   }
   if (docFix) tasks.push({ icon: 'doc', name: `보완 요청된 서류 ${docFix}건`, sub: '요청 사유를 보고 새 원본을 제출해 주세요.', btn: '제출', to: '/rights', tone: 'warn' });
   if (toSign) tasks.push({ icon: 'pen', name: `서명할 계약서 ${toSign}건`, sub: '검토가 끝난 계약서에 서명해 주세요.', btn: '서명', to: '/contracts', tone: 'info' });
+  // 수익을 받으려면 꼭 필요한 두 가지 — 예전엔 메뉴 안에서만 알려 줘서 놓치기 쉬웠다. 누르면 그 창이 바로 열린다
+  if (!isPaymentRegistered(payment)) tasks.push({ icon: 'won', name: '정산 계좌 등록', sub: '수익을 받을 계좌를 등록해 주세요. 2분이면 돼요.', btn: '등록', to: '/profile?open=payout', tone: 'info' });
+  if (!account.verified) tasks.push({ icon: 'lock', name: '본인인증', sub: '정산과 계약 서명에 필요해요. 예금주와 같은 이름이어야 해요.', btn: '인증', to: '/profile?open=verify', tone: 'info' });
   if (drafts) tasks.push({ icon: 'draft', name: `작성 중인 발매 ${drafts}건`, sub: '이어서 작성하고 접수해 보세요.', btn: '보기', to: '/releases?status=draft', tone: 'info' });
   if (!profileName) tasks.push({ icon: 'user', name: '계정 정보 등록', sub: '활동명과 연락처를 입력해 주세요.', btn: '등록', to: '/profile', tone: 'info' });
   if (unread) tasks.push({ icon: 'bell', name: `읽지 않은 알림 ${unread}건`, sub: '최근 변경사항을 확인해 보세요.', btn: '확인', to: '/notifications', tone: 'info' });
@@ -144,19 +153,39 @@ export function Dashboard() {
         </span>
       </Link>
 
-      <div className="dashboard-grid aq-stagger" aria-label="주요 업무">
-        {GRID_ITEMS.map(item => (
-          <Link key={item.to} className="service-item" to={item.to} onPointerEnter={() => prefetchRoute(item.to)} onFocus={() => prefetchRoute(item.to)}>
-            <span className="ui-icon">{item.icon}</span>
-            <div>
-              <h3>{item.title}</h3>
-              <p>{item.desc}</p>
-            </div>
-          </Link>
-        ))}
-      </div>
-
       <div className="dashboard-columns">
+        {/* 해야 할 일을 먼저 — 휴대폰에서 '확인할 작업'이 발매 목록 아래(약 1100px)에 묻혀 있었다 */}
+        <section className="ui-card" aria-labelledby="workTitle">
+          <div className="ui-section-head">
+            <h2 id="workTitle">확인할 작업</h2>
+            {tasks.length > 0 && <span className="ui-count is-soft">{tasks.length}</span>}
+          </div>
+          <div id="homeTasks">
+            {loading ? (
+              <SkeletonRows count={2} />
+            ) : tasks.length ? (
+              <ul className="aq-task-list aq-stagger">
+                {tasks.map(t => (
+                  <li key={t.name}>
+                    <button type="button" className={`aq-task is-${t.tone}`} onClick={() => navigate(t.to)}>
+                      <span className="ui-icon" aria-hidden="true">{TASK_ICONS[t.icon]}</span>
+                      <span className="aq-task-text">
+                        <strong>{t.name}</strong>
+                        <small>{t.sub}</small>
+                      </span>
+                      <span className="aq-task-go">{t.btn}<i aria-hidden="true"><Glyph name="chevron-right" size={14} /></i></span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="empty-note aq-all-done">
+                <span className="aq-check-badge"><CheckIcon size={12} /></span>
+                지금 확인할 작업이 없어요.
+              </div>
+            )}
+          </div>
+        </section>
         <section className="ui-card" aria-labelledby="upcomingTitle">
           <div className="ui-section-head">
             <h2 id="upcomingTitle">내 발매</h2>
@@ -193,37 +222,18 @@ export function Dashboard() {
             )}
           </div>
         </section>
-        <section className="ui-card" aria-labelledby="workTitle">
-          <div className="ui-section-head">
-            <h2 id="workTitle">확인할 작업</h2>
-            {tasks.length > 0 && <span className="ui-count is-soft">{tasks.length}</span>}
-          </div>
-          <div id="homeTasks">
-            {loading ? (
-              <SkeletonRows count={2} />
-            ) : tasks.length ? (
-              <ul className="aq-task-list aq-stagger">
-                {tasks.map(t => (
-                  <li key={t.name}>
-                    <button type="button" className={`aq-task is-${t.tone}`} onClick={() => navigate(t.to)}>
-                      <span className="ui-icon" aria-hidden="true">{TASK_ICONS[t.icon]}</span>
-                      <span className="aq-task-text">
-                        <strong>{t.name}</strong>
-                        <small>{t.sub}</small>
-                      </span>
-                      <span className="aq-task-go">{t.btn}<i aria-hidden="true"><Glyph name="chevron-right" size={14} /></i></span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <div className="empty-note aq-all-done">
-                <span className="aq-check-badge"><CheckIcon size={12} /></span>
-                지금 확인할 작업이 없어요.
-              </div>
-            )}
-          </div>
-        </section>
+      </div>
+
+      <div className="dashboard-grid aq-stagger" aria-label="주요 업무">
+        {GRID_ITEMS.map(item => (
+          <Link key={item.to} className="service-item" to={item.to} onPointerEnter={() => prefetchRoute(item.to)} onFocus={() => prefetchRoute(item.to)}>
+            <span className="ui-icon">{item.icon}</span>
+            <div>
+              <h3>{item.title}</h3>
+              <p>{item.desc}</p>
+            </div>
+          </Link>
+        ))}
       </div>
 
       <section className="ui-card aq-report-card" aria-label="이번 달 리포트 요약">

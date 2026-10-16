@@ -176,6 +176,13 @@ export function Profile() {
   const [showPayment, setShowPayment] = useState(false);
   const [showPasskeys, setShowPasskeys] = useState(false);
   const [showConnected, setShowConnected] = useState(false);
+  // 홈 '확인할 작업'에서 바로 온 경우 — 정산 계좌 등록·본인인증 창을 곧장 연다 (주소의 ?open=은 지운다)
+  useEffect(() => {
+    const open = new URLSearchParams(window.location.search).get('open');
+    if (open === 'payout') setShowPayment(true);
+    else if (open === 'verify') setAccountEdit('verify');
+    if (open) window.history.replaceState(window.history.state, '', window.location.pathname);
+  }, []);
   // Google·Apple 연결을 마치고 돌아온 경우
   useEffect(() => {
     const r = takeOAuthResult();
