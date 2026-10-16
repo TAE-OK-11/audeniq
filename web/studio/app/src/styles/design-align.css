@@ -670,6 +670,7 @@ button.aq-inline-link{display:inline;padding:0;border:0;background:none;font:inh
   #view-reports .report-chart.has-values .report-col,#view-reports .report-axis.is-all span{flex:0 1 96px;max-width:96px}
   #view-reports .report-chart.has-values .report-bar{flex:none!important;max-width:none}
   #view-reports .report-axis.is-all{justify-content:space-between;gap:24px}
+}
 /* 정산 계좌 등록 — 수령인 칸 이름표·안내 (PaymentSetupModal) */
 .aq-pay-field .aq-pay-label{display:block;margin:0 0 8px;font-size:var(--aq-fs-sm,14px);font-weight:700;color:var(--aq-text-2)}
 .aq-pay-field .ui-field-help{display:block;margin-top:8px}
