@@ -637,3 +637,12 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
     .aq-tint-bottom{display:block;position:fixed;left:0;right:0;bottom:-8px;min-height:12px;background:#fff;z-index:2147483000;pointer-events:none}
   }
 }
+
+/* 발매 신청 — 칸 바로 아래 안내(Upload.tsx showFieldError), Content ID 따로 켜기,
+   아래 고정 버튼·위 고정 머리에 입력 칸이 가리지 않게 스크롤 여백 */
+.aq-field-error{margin:6px 0 0;font-weight:600;animation:aq-fade-in var(--aq-motion-short) ease-out both}
+.aq-cid-optin{margin-top:10px}
+.aq-cid-optin strong{display:inline-flex;align-items:center;gap:6px}
+#aqContentIdRights>.ui-btn{margin-top:10px}
+html:has(body.wizard-mode){scroll-padding-top:calc(104px + env(safe-area-inset-top));scroll-padding-bottom:calc(96px + env(safe-area-inset-bottom))}
+button.aq-inline-link{display:inline;padding:0;border:0;background:none;font:inherit;font-weight:700;cursor:pointer;-webkit-appearance:none;appearance:none}
