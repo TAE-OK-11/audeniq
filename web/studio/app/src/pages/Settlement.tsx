@@ -249,34 +249,36 @@ export function Settlement() {
       </div>
 
       <section className="ui-card settle-hero" aria-labelledby="settleHeroHeading">
-        <h2 id="settleHeroHeading">요청 전 잔액</h2>
+        <h2 id="settleHeroHeading">받을 수 있는 금액</h2>
         <strong className="settle-hero-amount"><Money value={left} animate /></strong>
         <p className="settle-hero-sub">
           {MOCK ? `기록한 정산액 ${money(total)} · 지급 요청 합계 ${money(used)}` : `확정 정산액 ${money(total)} · 처리 중인 지급 ${money(used)}${held > 0 ? ` · 권리 확인 중 보류 ${money(held)}` : ''}`}
         </p>
-        <div className="settle-hero-account">
+        {/* 계좌 줄 전체를 누를 수 있게 — 오른쪽 작은 '등록·변경' 글자(44×38px)만 눌렸다 */}
+        <button type="button" className="settle-hero-account is-button" onClick={() => setShowPaymentSetup(true)}
+          aria-label={paymentRegistered && payment ? `받을 계좌 변경 — ${payment.bank} ${payment.last4}` : '받을 계좌 등록'}>
           {paymentRegistered && payment ? (
             <>
               <BankLogo name={payment.bank} />
-              <div className="min-0">
+              <span className="min-0">
                 <strong>{payment.bank}</strong>
                 <span>•••• {payment.last4} · {payment.recipient}</span>
-              </div>
-              <button type="button" className="settle-hero-link" onClick={() => setShowPaymentSetup(true)}>변경</button>
+              </span>
+              <span className="settle-hero-link" aria-hidden="true">변경</span>
             </>
           ) : (
             <>
               <span className="aq-payment-badge is-empty" aria-hidden="true"><Glyph name="won" size={18} /></span>
-              <div className="min-0">
+              <span className="min-0">
                 <strong>받을 계좌 없음</strong>
                 <span>수익을 받을 계좌를 등록해 주세요.</span>
-              </div>
-              <button type="button" className="settle-hero-link" onClick={() => setShowPaymentSetup(true)}>등록</button>
+              </span>
+              <span className="settle-hero-link" aria-hidden="true">등록</span>
             </>
           )}
-        </div>
+        </button>
         <div className="settle-hero-actions">
-          {MOCK && <button type="button" className="ui-btn is-soft is-lg" onClick={() => setShowStatement(true)}>정산 기록</button>}
+          {MOCK && <button type="button" className="ui-btn is-soft is-lg" onClick={() => setShowStatement(true)}>예시 정산 추가</button>}
           <button type="button" className="ui-btn is-primary is-lg" onClick={openPayoutModal}>수익 받기</button>
         </div>
       </section>
@@ -304,7 +306,7 @@ export function Settlement() {
                   <span className="aq-statement-icon" aria-hidden="true"><Glyph name="krw" size={17} /></span>
                   <div className="min-0">
                     <span className="ui-row-title">{s.period} · {s.platform}</span>
-                    <span className="ui-row-meta"><span>{s.note || (MOCK ? '수기 등록 정산 내역' : '플랫폼 정산')}</span><span>{niceDate(s.created)}</span></span>
+                    <span className="ui-row-meta"><span>{s.note || (MOCK ? '체험용으로 추가한 정산' : '플랫폼 정산')}</span><span>{niceDate(s.created)}</span></span>
                   </div>
                   <div className="aq-statement-end">
                     <strong><Money value={s.amount} /></strong>
