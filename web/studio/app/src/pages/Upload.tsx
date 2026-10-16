@@ -912,6 +912,11 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
     ),
   };
   const list = group === 'service' ? SERVICE_OPTIONS : RIGHTS_OPTIONS;
+  // 권리 단계의 '해당하는 항목' 7개는 대부분 해당이 없다 — 먼저 '특별한 경우가 있나요?'를 묻고 '있어요'일 때만 펼친다.
+  // 이미 고른 항목이 있으면 처음부터 펼쳐 둔다
+  const anyRights = RIGHTS_OPTIONS.some(([id]) => !!o[id]);
+  const [special, setSpecial] = useState(anyRights);
+  const showList = group === 'service' || special || anyRights;
 
   return (
     <>
@@ -922,11 +927,16 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
         </>
       ) : (
         <>
-          <h2 className="subhead" style={{ marginTop: 25 }}>해당하는 항목</h2>
-          <p className="aq-option-intro">해당하는 항목을 모두 선택해 주세요. 누르면 바로 아래에 필요한 확인 사항이 열려요.</p>
+          <h2 className="subhead" style={{ marginTop: 25 }}>특별한 경우가 있나요?</h2>
+          <p className="aq-option-intro">커버곡·샘플링·피처링·AI 제작·공동 권리·미성년·재발매 중 해당하는 게 있으면 알려 주세요.</p>
+          <div className="aq-yesno" role="radiogroup" aria-label="특별한 경우가 있나요?">
+            <button type="button" role="radio" aria-checked={!showList} className={`ui-chip${!showList ? ' is-on' : ''}`} disabled={anyRights} onClick={() => setSpecial(false)}>없어요</button>
+            <button type="button" role="radio" aria-checked={showList} className={`ui-chip${showList ? ' is-on' : ''}`} onClick={() => setSpecial(true)}>있어요</button>
+          </div>
+          {showList && <p className="aq-option-intro">해당하는 항목을 모두 선택해 주세요. 누르면 바로 아래에 필요한 확인 사항이 열려요.</p>}
         </>
       )}
-      <div className="aq-options">
+      {showList && <div className="aq-options aq-reveal">
         {list.map(([id, title, sub]) => (
           <Fragment key={id}>
             <label className={`aq-option${o[id] ? ' is-on' : ''}${!MOCK && id === 'minor' ? ' is-unavailable' : ''}`}>
@@ -941,7 +951,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
             {!!o[id] && detail[id]}
           </Fragment>
         ))}
-      </div>
+      </div>}
       {group === 'rights' && form.platforms.some(p => p === 'youtube-cid' || p === 'D-27') && (
         <div className="aq-option-detail" id="aqContentIdRights">
           <h3>YouTube Content ID 권리 확인</h3>
@@ -2107,14 +2117,27 @@ export function Upload() {
   const [pickPlatforms, setPickPlatforms] = useState(false);
   const showPlatforms = pickPlatforms || !allPlatforms;
 
-  const reviewSections: [string, string, number][] = [
+  // 플랫폼 이름 50여 개를 다 늘어놓으면 확인 화면이 휴대폰에서 3,000px 넘게 길어졌다 — 몇 곳만 보이고 개수로 줄인다
+  const platformSummary = (() => {
+    const base = form.platforms.filter(p => !isContentId(p));
+    const cid = cidOn ? ' · YouTube Content ID 포함' : '';
+    if (!form.platforms.length) return '선택하지 않음';
+    if (allPlatforms) return `주요 음악 플랫폼 ${base.length}곳 전체${cid}`;
+    const names = base.map(dspLabel);
+    return `${names.slice(0, 5).join(', ')}${names.length > 5 ? ` 외 ${names.length - 5}곳` : ''}${cid}`;
+  })();
+  const reviewSections: [string, React.ReactNode, number][] = [
     ['발매 정보', `${form.title || '제목 없음'} · ${form.artist || '아티스트 없음'} · ${kindLabel(form.type)}`, 0],
-    ['트랙', form.tracks.map(t => t.title || '곡명 없음').join(' / '), 1],
-    ['커버아트', form.coverName || '등록되지 않음', 2],
+    ['트랙', form.tracks.length > 1
+      ? <ol className="aq-review-tracks">{form.tracks.map(t => <li key={t.id}>{t.title || '곡명 없음'}</li>)}</ol>
+      : form.tracks[0]?.title || '곡명 없음', 1],
+    ['커버아트', form.coverData
+      ? <span className="aq-review-cover"><img src={form.coverData} alt="" width={56} height={56} />{form.coverName}</span>
+      : form.coverName || '등록되지 않음', 2],
     ['발매일', form.releaseDate ? `${formatKoreanDate(form.releaseDate)}${form.releaseTime ? ` · 한국 시간 ${form.releaseTime} 동시 발매` : ' · 나라별 자정'}` : '지정하지 않음', 3],
     ['사전 공개', form.preorderStart ? `${formatKoreanDate(form.preorderStart)}부터 (예약 판매·미리듣기)` : '없음', 3],
     ['배급 지역', territorySummary(form.territories, '선택하지 않음'), 3],
-    ['배급 플랫폼', form.platforms.map(dspLabel).join(', ') || '선택하지 않음', 3],
+    ['배급 플랫폼', platformSummary, 3],
     ['권리자', form.ownership || '미입력', 4],
     ['권리 확인', rightsOk(form) ? '필수 확인 완료' : '필수 확인 항목 누락', 4],
   ];
@@ -2685,7 +2708,7 @@ export function Upload() {
                 <div key={h} className="aq-review-card">
                   <div className="aq-review-body">
                     <strong>{h}</strong>
-                    <p className="break">{t}</p>
+                    <div className="break aq-review-value">{t}</div>
                   </div>
                   <button type="button" className="ui-btn is-white is-xs aq-review-edit" onClick={() => goStep(target)} aria-label={`${h} 수정`}>수정</button>
                 </div>
