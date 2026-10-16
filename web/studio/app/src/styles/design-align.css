@@ -683,3 +683,20 @@ button.aq-inline-link{display:inline;padding:0;border:0;background:none;font:inh
   .portal-header :is(.aq-header-bell,.header-profile){position:relative}
   .portal-header :is(.aq-header-bell,.header-profile)::after{content:"";position:absolute;left:50%;top:50%;width:44px;height:44px;transform:translate(-50%,-50%)}
 }
+/* 정산 — 받을 계좌 줄 전체가 버튼 (Settlement.tsx) */
+button.settle-hero-account.is-button{width:100%;border:0;font:inherit;text-align:left;color:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background-color var(--aq-dur) var(--aq-ease)}
+button.settle-hero-account.is-button .min-0{display:grid}
+@media (hover:hover){button.settle-hero-account.is-button:hover{background:var(--aq-gray-50,#f8fafc)}button.settle-hero-account.is-button:hover .settle-hero-link{background:var(--aq-blue-100)}}
+
+/* 문의 — 자주 묻는 질문 (components/HelpFaq.tsx) */
+.aq-faq{margin:0 0 28px}
+.aq-faq h2{margin:0 0 10px;font-size:var(--aq-fs-md,16px);font-weight:700;color:var(--aq-text-2)}
+.aq-faq-list{display:grid;gap:8px}
+.aq-faq-item{border-radius:var(--aq-r-xl);background:var(--aq-surface)}
+.aq-faq-item summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:52px;padding:14px 18px;font-size:15px;font-weight:600;color:var(--portal-ink);cursor:pointer;list-style:none}
+.aq-faq-item summary::-webkit-details-marker{display:none}
+.aq-faq-chev{flex:none;width:8px;height:8px;border-right:2px solid var(--aq-text-4);border-bottom:2px solid var(--aq-text-4);transform:rotate(45deg) translateY(-2px);transition:transform var(--aq-motion-base) var(--aq-enter)}
+.aq-faq-item[open] .aq-faq-chev{transform:rotate(-135deg) translateY(-2px)}
+.aq-faq-item p{margin:0;padding:0 18px 16px;font-size:14px;line-height:1.7;color:var(--aq-text-2)}
+.aq-faq-item p a{color:var(--aq-blue-500);font-weight:600}
+.aq-faq-foot{margin:10px 2px 0;font-size:13px;color:var(--aq-text-4)}
