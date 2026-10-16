@@ -92,7 +92,8 @@ export function coverOutsideFixedLayer(overlay: HTMLElement, sheet: HTMLElement)
     floor.style.top = `${Math.round(y + r.bottom - 40)}px`;
     floor.style.height = `${h}px`;
     ceiling.style.top = `${Math.round(y - h)}px`;
-    ceiling.style.background = dim();
+    // 화면 맨 위까지 차는 창(전체 화면)이면 위쪽도 흰 바탕, 아니면 어두운 배경 색
+    ceiling.style.background = r.top <= 8 ? '#fff' : dim();
     ceiling.style.height = `${h}px`;
   };
   const schedule = () => { if (!raf) raf = requestAnimationFrame(place); };
@@ -143,14 +144,13 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
     vv.addEventListener('scroll', sync);
     return () => { vv.removeEventListener('resize', sync); vv.removeEventListener('scroll', sync); };
   }, []);
-  // 휴대폰 아래 시트: 고정 레이어가 그려지지 않는 화면 바깥 띠를 페이지 안 덮개로 메운다 (iOS 26)
+  // 휴대폰의 모든 창(아래 시트·확인 창·전체 화면 창): 고정 레이어가 그려지지 않는 화면 바깥 띠를 페이지 안 덮개로 메운다 (iOS 26 이후)
   useEffect(() => {
     const overlay = overlayRef.current;
     const sheetEl = innerRef.current;
     if (!overlay || !sheetEl || !window.matchMedia?.('(max-width: 760px)').matches) return;
-    if (NOT_SHEET_MODES.some(m => modalClass?.includes(m))) return;
     return coverOutsideFixedLayer(overlay, sheetEl);
-  }, [modalClass]);
+  }, []);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const closeDisabledRef = useRef(closeDisabled);

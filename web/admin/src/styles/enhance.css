@@ -494,10 +494,10 @@ input[aria-invalid=true]{box-shadow:0 0 0 3px rgba(228,109,109,.3)!important}
 #modal .modal-inner{scroll-padding-bottom:96px}
 /* iOS 키보드가 떠 있는 동안(Modal이 --aq-vv-h를 단다) 아래 시트도 보이는 높이 안에 — 위가 화면 밖으로 잘리지 않게 */
 #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode)[style*="--aq-vv-h"]>.modal-inner{max-height:calc(var(--aq-vv-h) - 12px + var(--aq-kb,0px))!important}
-/* 휴대폰 아래 시트는 화면 바닥에 직접 붙인다 — 배경(grid)의 바닥 정렬에 맡겼더니 아이폰 Safari에서 시트가 화면 중간에 떠 있었다.
+/* 휴대폰 아래 시트(확인 창·시스템 안내 포함)는 화면 바닥에 직접 붙인다 — 배경(grid)의 바닥 정렬에 맡겼더니 아이폰 Safari에서 시트가 화면 중간에 떠 있었다.
    키보드가 떠 있는 동안은 시트를 바닥에 둔 채 Modal이 단 --aq-kb(키보드에 가린 높이)만큼 안쪽 아래 여백을 늘려 내용을 키보드 위로 올린다 */
 @media (max-width:760px){
-  #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode):not(.aq-confirm-mode):not(.aq-sysdialog-mode)>.modal-inner{
+  #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode)>.modal-inner{
     position:fixed!important;left:0!important;right:0!important;top:auto!important;bottom:0!important;margin:0 auto!important;
     /* iOS 26 Safari는 완전히 불투명한 고정 레이어를 떠 있는 아래 막대(주소창·자동완성) 위쪽 끝에서 잘라 그린다.
        흰색을 99%로 두면 막대 뒤까지 끝까지 그려져, 시트가 막대 위에서 잘려 뒤 화면이 비치지 않는다 */
@@ -507,13 +507,15 @@ input[aria-invalid=true]{box-shadow:0 0 0 3px rgba(228,109,109,.3)!important}
     padding-bottom:calc(24px + env(safe-area-inset-bottom) + var(--aq-kb,0px))!important
   }
   /* 배경 자체는 스크롤되지 않게 — 아이폰에서 배경이 스크롤되며 시트를 위로 끌고 올라갔다(긴 내용은 시트 안에서 스크롤) */
-  #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode):not(.aq-confirm-mode):not(.aq-sysdialog-mode){overflow:hidden!important}
+  #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode){overflow:hidden!important}
   /* 어두운 배경은 화면 위아래로 한 화면씩 더 넓게 — 아이폰 Safari는 키보드가 뜨면 고정 요소의 기준 영역 자체를 줄여서,
      그 아래(키보드 위 주소창·자동완성 띠 뒤)로 어둡게 덮이지 않은 화면이 비쳤다. 시트는 따로 바닥에 붙어 있어 영향이 없다 */
-  #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode):not(.aq-confirm-mode):not(.aq-sysdialog-mode){top:-100vh!important;bottom:-100vh!important}
+  #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode){top:-100vh!important;bottom:-100vh!important}
   /* 시트 흰 바탕을 아래로 길게 이어 붙인다 — 키보드가 뜨면 시트가 주소창·자동완성 띠 위에서 끝나고 그 뒤로 화면이 보여
      잘린 것처럼 보였다. 그림자(펼침 100vh, 아래로 100vh+30px)는 둥근 위 모서리 아래에서 시작해 아래로만 덮는다 */
-  #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode):not(.aq-confirm-mode):not(.aq-sysdialog-mode)>.modal-inner{box-shadow:0 calc(100vh + 30px) 0 100vh rgba(255,255,255,.99)!important}
+  #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode)>.modal-inner{box-shadow:0 calc(100vh + 30px) 0 100vh rgba(255,255,255,.99)!important}
+  /* 전체 화면 창(수익 정산 정보 등록·계약서 서명)도 흰색을 99%로 — 불투명하면 아래 주소창 위에서 잘려 그 아래로 뒤 화면이 비친다 */
+  #modal:is(.aq-payout-setup-mode,.aq-signature-mode)>.modal-inner{background:rgba(255,255,255,.99)!important}
 }
 
 /* 줄에서 고른 탭·칩으로 밀어 줄 때 부드럽게 (lib/rowNav.ts) */
