@@ -7,6 +7,7 @@
 // 기본 팝업이 꼭 필요한 곳은 조상에 data-native-select를 붙인다.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { coverOutsideFixedLayer } from './Modal';
 import { Glyph } from './Glyph';
 
 const SHEET_QUERY = '(max-width: 600px), (pointer: coarse) and (max-width: 900px)';
@@ -63,6 +64,12 @@ function Surface({ anchor, title, onClose, className, children, labelledBy, pop 
     const top = placeBelow ? anchor.bottom + 6 : anchor.top - 6 - Math.min(natural, maxHeight);
     setPos({ left, top, width, maxHeight });
   }, [anchor, sheet, className]);
+
+  // 휴대폰 선택 시트: 아래 주소창 뒤·화면 위 바깥 띠를 페이지 안 덮개로 메운다 (iOS 26 이후, Modal과 같은 방식)
+  useEffect(() => {
+    if (!sheet || !rootRef.current || !boxRef.current) return;
+    return coverOutsideFixedLayer(rootRef.current, boxRef.current);
+  }, [sheet]);
 
   // 휴대폰 시트가 열려 있는 동안 뒤 화면이 끌려 스크롤되지 않게
   useEffect(() => {
