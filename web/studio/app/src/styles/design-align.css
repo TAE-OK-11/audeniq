@@ -638,6 +638,38 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
   }
 }
 
+/* 발매 신청 — 칸 바로 아래 안내(Upload.tsx showFieldError), Content ID 따로 켜기,
+   아래 고정 버튼·위 고정 머리에 입력 칸이 가리지 않게 스크롤 여백 */
+.aq-field-error{margin:6px 0 0;font-weight:600;animation:aq-fade-in var(--aq-motion-short) ease-out both}
+.aq-cid-optin{margin-top:10px}
+.aq-cid-optin strong{display:inline-flex;align-items:center;gap:6px}
+#aqContentIdRights>.ui-btn{margin-top:10px}
+html:has(body.wizard-mode){scroll-padding-top:calc(104px + env(safe-area-inset-top));scroll-padding-bottom:calc(96px + env(safe-area-inset-bottom))}
+button.aq-inline-link{display:inline;padding:0;border:0;background:none;font:inherit;font-weight:700;cursor:pointer;-webkit-appearance:none;appearance:none}
+
+/* 발매 신청 마지막 확인 — 값 칸(글·목록·커버 미리보기), 곡 목록, 커버 썸네일 */
+#view-new .aq-review-value{font-size:14px;line-height:1.6;color:var(--aq-text-2)}
+#view-new .aq-review-tracks{margin:0;padding-left:1.3em}
+#view-new .aq-review-cover{display:flex;align-items:center;gap:12px}
+#view-new .aq-review-cover img{flex:none;width:56px;height:56px;border-radius:var(--aq-r-md);object-fit:cover;background:#fff}
+#view-new .aq-yesno{display:flex;gap:8px;margin:4px 0 12px}
+#view-new .aq-yesno .ui-chip{min-width:88px;justify-content:center}
+
+/* 음악 리포트 기간별 추이 — 막대마다 금액, 아래에는 모든 달 (Reports.tsx Chart) */
+.report-chart.has-values{height:190px}
+.report-chart.has-values .report-col{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;gap:4px}
+.report-chart.has-values .report-bar{flex:none;height:calc(var(--h) * .86)}
+.report-val{font-size:11px;font-weight:700;color:var(--aq-text-3);text-align:center;white-space:nowrap;font-variant-numeric:tabular-nums}
+.aq-rp-card .report-chart.has-values .report-bar:last-child{background:var(--aq-blue-300)}
+.aq-rp-card .report-chart.has-values .report-col:last-child .report-bar{background:var(--aq-blue-500)}
+.aq-rp-card .report-chart.has-values .report-col:last-child .report-val{color:var(--aq-blue-500)}
+.report-axis.is-all{justify-content:flex-start;gap:9px}
+.report-axis.is-all span{flex:1;min-width:0;text-align:center;white-space:nowrap}
+@media (min-width:1024px){
+  #view-reports .report-chart.has-values{height:190px}
+  #view-reports .report-chart.has-values .report-col,#view-reports .report-axis.is-all span{flex:0 1 96px;max-width:96px}
+  #view-reports .report-chart.has-values .report-bar{flex:none!important;max-width:none}
+  #view-reports .report-axis.is-all{justify-content:space-between;gap:24px}
 /* 정산 계좌 등록 — 수령인 칸 이름표·안내 (PaymentSetupModal) */
 .aq-pay-field .aq-pay-label{display:block;margin:0 0 8px;font-size:var(--aq-fs-sm,14px);font-weight:700;color:var(--aq-text-2)}
 .aq-pay-field .ui-field-help{display:block;margin-top:8px}

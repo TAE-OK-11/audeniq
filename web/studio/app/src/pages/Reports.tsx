@@ -40,6 +40,11 @@ const PERIODS = [
   { value: 'prev', label: '그 전 달' },
 ];
 
+/** '2026-09' → '9월' (해가 바뀌는 1월은 연도까지) */
+const monthShort = (k: string) => (/^\d{4}-\d{2}$/.test(k) ? (k.endsWith('-01') ? `${k.slice(2, 4)}년 1월` : `${+k.slice(5)}월`) : k);
+/** 막대 위 짧은 금액 — 1만 원 이상은 '1.2만', 그 아래는 그대로 */
+const shortWon = (v: number) => (v >= 10000 ? `${(v / 10000).toFixed(v >= 100000 ? 0 : 1).replace(/\.0$/, '')}만` : num(Math.round(v)));
+
 function Chart({ rows }: { rows: ReportRow[] }) {
   const chartRef = useGrowOnView<HTMLDivElement>();
   const buckets = new Map<string, number>();
@@ -62,19 +67,17 @@ function Chart({ rows }: { rows: ReportRow[] }) {
   });
   return (
     <>
-      <div className="report-chart" ref={chartRef} role="img" aria-label="기간별 수익 막대그래프">
+      {/* 막대마다 금액, 아래에는 모든 달 — 예전엔 값 없이 처음·끝 달만 있어 몇 달치인지·얼마인지 알 수 없었다 */}
+      <div className="report-chart has-values" ref={chartRef} role="img" aria-label={`기간별 수익 막대그래프: ${vals.map(([k, v]) => `${monthShort(k)} ${money(v)}`).join(', ')}`}>
         {vals.map(([k, v]) => (
-          <div
-            key={k}
-            className="report-bar"
-            style={barStyle(v)}
-            title={`${k} · ${money(v)}`}
-          />
+          <div key={k} className="report-col">
+            <span className="report-val" aria-hidden="true">{shortWon(v)}</span>
+            <div className="report-bar" style={barStyle(v)} title={`${k} · ${money(v)}`} />
+          </div>
         ))}
       </div>
-      <div className="report-axis">
-        <span>{vals[0][0]}</span>
-        <span>{vals[vals.length - 1][0]}</span>
+      <div className="report-axis is-all" aria-hidden="true">
+        {vals.map(([k]) => <span key={k}>{monthShort(k)}</span>)}
       </div>
     </>
   );
@@ -223,7 +226,7 @@ export function Reports() {
       </div>
 
       <div className="report-tools">
-        <select id="reportRange" className="ui-select" aria-label="불러올 기간" value={rangeKey} onChange={e => { setRangeKey(e.target.value as RangeKey); setPeriod('all'); }}>
+        <select id="reportRange" className="ui-select" aria-label="불러올 기간" title="불러올 기간" value={rangeKey} onChange={e => { setRangeKey(e.target.value as RangeKey); setPeriod('all'); }}>
           {RANGES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
         </select>
         {rangeKey === 'custom' && (<>
@@ -231,7 +234,8 @@ export function Reports() {
           <MonthField id="reportTo" aria-label="끝 월" value={customTo} min={customFrom || undefined} max={kstMonth()} onChange={setCustomTo} />
         </>)}
         <select id="reportPeriod" className="ui-select" aria-label="리포트 기간" value={period} onChange={e => setPeriod(e.target.value)}>
-          {PERIODS.map(p => <option key={p.value} value={p.value}>{p.value === 'all' ? '선택 기간 전체' : p.label}</option>)}
+          {/* '최근 12개월' 옆의 '선택 기간 전체'가 무엇을 고르는 칸인지 몰랐다 — 고른 기간 안에서 어느 달을 볼지 말로 적는다 */}
+          {PERIODS.map(p => <option key={p.value} value={p.value}>{p.value === 'all' ? '모든 달 합계' : p.value === 'month' ? '최근 달만' : '그 전 달만'}</option>)}
         </select>
         <select id="reportRelease" className="ui-select" aria-label="발매별 필터" value={release} onChange={e => setRelease(e.target.value)}>
           <option value="all">전체 발매</option>
