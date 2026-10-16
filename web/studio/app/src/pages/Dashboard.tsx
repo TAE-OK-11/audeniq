@@ -156,6 +156,19 @@ export function Dashboard() {
         </span>
       </Link>
 
+      {/* 자주 가는 화면 바로가기는 새 발매 바로 아래 — 할 일·발매 목록 아래로 내리면 누르러 한참 내려가야 했다 */}
+      <div className="dashboard-grid aq-stagger" aria-label="주요 업무">
+        {GRID_ITEMS.map(item => (
+          <Link key={item.to} className="service-item" to={item.to} onPointerEnter={() => prefetchRoute(item.to)} onFocus={() => prefetchRoute(item.to)}>
+            <span className="ui-icon">{item.icon}</span>
+            <div>
+              <h3>{item.title}</h3>
+              <p>{item.desc}</p>
+            </div>
+          </Link>
+        ))}
+      </div>
+
       <div className="dashboard-columns">
         {/* 해야 할 일을 먼저 — 휴대폰에서 '확인할 작업'이 발매 목록 아래(약 1100px)에 묻혀 있었다 */}
         <section className="ui-card" aria-labelledby="workTitle">
@@ -233,18 +246,6 @@ export function Dashboard() {
             )}
           </div>
         </section>
-      </div>
-
-      <div className="dashboard-grid aq-stagger" aria-label="주요 업무">
-        {GRID_ITEMS.map(item => (
-          <Link key={item.to} className="service-item" to={item.to} onPointerEnter={() => prefetchRoute(item.to)} onFocus={() => prefetchRoute(item.to)}>
-            <span className="ui-icon">{item.icon}</span>
-            <div>
-              <h3>{item.title}</h3>
-              <p>{item.desc}</p>
-            </div>
-          </Link>
-        ))}
       </div>
 
       <section className="ui-card aq-report-card" aria-label="이번 달 리포트 요약">
