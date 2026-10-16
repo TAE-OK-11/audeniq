@@ -42,7 +42,10 @@ function Surface({ anchor, title, onClose, className, children, labelledBy, pop 
       document.body.appendChild(ghost);
       const box = ghost.querySelector<HTMLElement>('.aq-picker-box');
       if (box) box.scrollTop = scrollTop;
-      window.setTimeout(() => ghost.remove(), 260);
+      // 내려가는(줄어드는) 애니메이션이 끝난 프레임에 치운다
+      const end = (e: AnimationEvent) => { if (e.target === box) ghost.remove(); };
+      box?.addEventListener('animationend', end);
+      window.setTimeout(() => ghost.remove(), 600);
     });
   }, []);
   const [pos, setPos] = useState<{ left: number; top: number; width: number; maxHeight: number } | null>(null);

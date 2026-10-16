@@ -600,3 +600,19 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 @media (max-width:760px){#view-new .aq-wiz-top{border-bottom:0;box-shadow:0 0 0 100vmax #fff,0 1px 0 100vmax var(--aq-gray-100);clip-path:inset(-100vmax -100vmax -1px -100vmax)}}
 #view-new .aq-wiz-top>.wizard-topbar{position:relative;top:auto;margin:0!important;border-bottom:0!important;-webkit-backdrop-filter:none;backdrop-filter:none}
 #view-new .aq-wiz-top>.wizard-progress{margin:0!important;padding-bottom:12px}
+
+/* ---------- 아이폰 같은 시트 움직임 ----------
+   아래 시트·선택 시트는 iOS 시트 곡선(빠르게 출발하되 첫 프레임에 툭 튀지 않고 길게 감속)으로 올라오고,
+   닫힐 때는 같은 곡선으로 화면 밖까지 다 내려간 뒤(animationend) 사라진다. 뒤 어둠도 같은 시간에 걷힌다.
+   끌어내려 닫을 때는 Modal이 손가락 속도로 정한 시간(--aq-sheet-out)을 쓴다. */
+:root{--aq-sheet-ease:cubic-bezier(.32,.72,0,1);--aq-motion-sheet:.46s;--aq-motion-sheet-out:.34s}
+@media (max-width:760px){
+  #modal:not([hidden]):not(.aq-payout-setup-mode):not(.aq-signature-mode){animation:aq-overlay-enter .36s ease-out both}
+  #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode)>.modal-inner{animation:aq-sheet-up var(--aq-motion-sheet) var(--aq-sheet-ease) both}
+  #modal.is-leaving:not(.aq-payout-setup-mode):not(.aq-signature-mode){animation:aq-overlay-out var(--aq-sheet-out,var(--aq-motion-sheet-out)) ease forwards!important}
+  #modal.is-leaving:not(.aq-payout-setup-mode):not(.aq-signature-mode)>.modal-inner{animation:aq-sheet-down var(--aq-sheet-out,var(--aq-motion-sheet-out)) var(--aq-sheet-ease) forwards!important}
+}
+.aq-picker.is-sheet{animation:aq-picker-fade .36s ease-out both}
+.aq-picker.is-sheet .aq-picker-box{animation:aq-picker-up var(--aq-motion-sheet) var(--aq-sheet-ease) both}
+.aq-picker.is-leaving.is-sheet{animation:aq-picker-scrim-out var(--aq-motion-sheet-out) ease forwards}
+.aq-picker.is-leaving.is-sheet .aq-picker-box{animation:aq-picker-down var(--aq-motion-sheet-out) var(--aq-sheet-ease) forwards}
