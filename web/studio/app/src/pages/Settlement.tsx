@@ -22,6 +22,18 @@ const PAYOUT_STATUS: Record<Payout['status'], [string, Tone]> = {
   failed: ['지급 실패', 'amber'],
   cancelled: ['요청 취소', 'gray'],
 };
+
+/** 지급이 지금 몇 번째 단계인지 — 요청 접수 → 처리 중 → 입금 완료 (실패·취소는 단계 밖) */
+const PAYOUT_STEPS = ['요청 접수', '처리 중', '입금 완료'] as const;
+const payoutStep = (st: Payout['status']) => (st === 'requested' ? 0 : st === 'processing' ? 1 : st === 'sent' ? 2 : -1);
+
+/** 다음 정산 반영 예상 — 보통 매월 중순에 전월 정산이 반영된다 (정산 약관 제5조: 매월 1회). 날짜를 약속하지 않고 '중순'으로만 */
+function nextSettlement(today = new Date()): { when: string; period: string } {
+  const y = today.getFullYear(), m = today.getMonth(); // 0-based
+  const target = today.getDate() < 15 ? new Date(y, m, 1) : new Date(y, m + 1, 1);
+  const prev = new Date(target.getFullYear(), target.getMonth() - 1, 1);
+  return { when: `${target.getMonth() + 1}월 중순`, period: `${prev.getMonth() + 1}월분` };
+}
 import { money, niceDate } from '../lib/format';
 import { monthKey, todayStr } from '../lib/date';
 import { uid } from '../lib/store';
@@ -237,6 +249,8 @@ export function Settlement() {
   };
 
   const orderedStatements = statements.slice().sort((a, b) => b.period.localeCompare(a.period));
+  const statementMonths = [...orderedStatements.reduce((m, s) => m.set(s.period, [...(m.get(s.period) ?? []), s]), new Map<string, Statement[]>())];
+  const monthTitle = (p: string) => (/^\d{4}-\d{2}/.test(p) ? `${p.slice(0, 4)}년 ${+p.slice(5, 7)}월 수익` : p);
 
   return (
     <div id="view-settlement" className="view">
@@ -251,9 +265,35 @@ export function Settlement() {
       <section className="ui-card settle-hero" aria-labelledby="settleHeroHeading">
         <h2 id="settleHeroHeading">받을 수 있는 금액</h2>
         <strong className="settle-hero-amount"><Money value={left} animate /></strong>
-        <p className="settle-hero-sub">
-          {MOCK ? `기록한 정산액 ${money(total)} · 지급 요청 합계 ${money(used)}` : `확정 정산액 ${money(total)} · 처리 중인 지급 ${money(used)}${held > 0 ? ` · 권리 확인 중 보류 ${money(held)}` : ''}`}
-        </p>
+        {/* 확정 정산액이 지금 어디에 있는지 — 받을 수 있음 / 지급 처리 중 / 보류를 한 막대로 */}
+        {total > 0 ? (
+          <div className="settle-split" aria-label={`확정 정산 ${money(total)} 중 받을 수 있음 ${money(left)}, 지급 처리 중 ${money(used)}${held > 0 ? `, 보류 ${money(held)}` : ''}`}>
+            <div className="settle-split-bar" aria-hidden="true">
+              <i className="is-left" style={{ flexGrow: left }} />
+              <i className="is-used" style={{ flexGrow: used }} />
+              {held > 0 && <i className="is-held" style={{ flexGrow: held }} />}
+            </div>
+            <ul className="settle-split-legend">
+              <li><i className="is-left" />받을 수 있음 <b><Money value={left} /></b></li>
+              <li><i className="is-used" />{MOCK ? '지급 요청함' : '지급 처리 중'} <b><Money value={used} /></b></li>
+              {held > 0 && <li><i className="is-held" />권리 확인 중 보류 <b><Money value={held} /></b></li>}
+            </ul>
+          </div>
+        ) : (
+          <p className="settle-hero-sub">아직 확정된 정산이 없어요.</p>
+        )}
+        <dl className="settle-facts">
+          <div><dt>다음 정산</dt><dd>{nextSettlement().when} · {nextSettlement().period} 반영 예정</dd></div>
+          {left > 0 && paymentRegistered && (
+            <div><dt>지금 모두 받으면</dt><dd>수수료 {payoutFee(left) ? money(payoutFee(left)) : '무료'} · 실제 받는 금액 <b>{money(Math.max(0, left - payoutFee(left)))}</b></dd></div>
+          )}
+        </dl>
+        {minimum > 1 && left < minimum && (
+          <div className="settle-min" role="note">
+            <div className="settle-min-bar" aria-hidden="true"><i style={{ width: `${Math.min(100, Math.round((left / minimum) * 100))}%` }} /></div>
+            <p>{money(minimum - left)} 더 쌓이면 받을 수 있어요 (최소 {money(minimum)}). 모자란 금액은 다음 정산으로 넘어가요.</p>
+          </div>
+        )}
         {/* 계좌 줄 전체를 누를 수 있게 — 오른쪽 작은 '등록·변경' 글자(44×38px)만 눌렸다 */}
         <button type="button" className="settle-hero-account is-button" onClick={() => setShowPaymentSetup(true)}
           aria-label={paymentRegistered && payment ? `받을 계좌 변경 — ${payment.bank} ${payment.last4}` : '받을 계좌 등록'}>
@@ -301,18 +341,27 @@ export function Settlement() {
           )}
           {orderedStatements.length ? (
             <div className="aq-catalog-cards aq-stagger">
-              {orderedStatements.map(s => (
-                <button type="button" key={s.id} className="ui-row aq-statement-card" onClick={() => setDetail({ kind: 'statement', id: s.id })}>
-                  <span className="aq-statement-icon" aria-hidden="true"><Glyph name="krw" size={17} /></span>
-                  <div className="min-0">
-                    <span className="ui-row-title">{s.period} · {s.platform}</span>
-                    <span className="ui-row-meta"><span>{s.note || (MOCK ? '체험용으로 추가한 정산' : '플랫폼 정산')}</span><span>{niceDate(s.created)}</span></span>
-                  </div>
-                  <div className="aq-statement-end">
-                    <strong><Money value={s.amount} /></strong>
-                    <Glyph name="chevron-right" size={16} />
-                  </div>
-                </button>
+              {/* 달별로 묶어 합계를 먼저 보이고, 그 아래 플랫폼별 금액 — 같은 달 줄이 흩어져 있어 한 달에 얼마인지 더해 봐야 했다 */}
+              {statementMonths.map(([period, rows]) => (
+                <section key={period} className="settle-month" aria-label={`${period} 정산`}>
+                  <header className="settle-month-head">
+                    <span>{monthTitle(period)}</span>
+                    <small>플랫폼 {rows.length}곳</small>
+                    <strong><Money value={rows.reduce((n, r) => n + r.amount, 0)} /></strong>
+                  </header>
+                  {rows.map(s => (
+                    <button type="button" key={s.id} className="ui-row aq-statement-card settle-month-row" onClick={() => setDetail({ kind: 'statement', id: s.id })}>
+                      <div className="min-0">
+                        <span className="ui-row-title">{s.platform}</span>
+                        <span className="ui-row-meta"><span>{s.note || (MOCK ? '체험용으로 추가한 정산' : '플랫폼 정산')}</span><span>{niceDate(s.created)} 반영</span></span>
+                      </div>
+                      <div className="aq-statement-end">
+                        <strong><Money value={s.amount} /></strong>
+                        <Glyph name="chevron-right" size={16} />
+                      </div>
+                    </button>
+                  ))}
+                </section>
               ))}
               {statementsNext && (
                 <button type="button" className="ui-btn is-white aq-report-more" onClick={loadMoreStatements} disabled={loadingMore}>
@@ -341,6 +390,12 @@ export function Settlement() {
                   <div className="min-0">
                     <span className="ui-row-title"><Money value={p.amount} /> · 지급 요청</span>
                     <span className="ui-row-meta"><span>{niceDate(p.created)}</span><span>{p.note || (MOCK ? '현재 작업 공간에만 기록됨' : '등록한 계좌로 지급')}</span></span>
+                    {payoutStep(p.status) >= 0 && (
+                      <ol className="settle-steps" aria-label={`지급 진행: ${PAYOUT_STEPS[Math.max(0, payoutStep(p.status))]}`}>
+                        {PAYOUT_STEPS.map((label, i) => <li key={label} className={i <= payoutStep(p.status) ? 'is-done' : ''}>{label}</li>)}
+                      </ol>
+                    )}
+                    {p.status === 'failed' && <span className="settle-fail">계좌 정보를 확인한 뒤 다시 요청해 주세요.</span>}
                   </div>
                   <div className="aq-statement-end">
                     <Badge tone={PAYOUT_STATUS[p.status]?.[1] ?? 'violet'}>{PAYOUT_STATUS[p.status]?.[0] ?? p.status}</Badge>

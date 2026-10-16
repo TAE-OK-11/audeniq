@@ -738,3 +738,36 @@ button.settle-hero-account.is-button .min-0{display:grid}
   .aq-side-status{margin-left:auto;font-size:11px}
   .aq-side-item .aq-side-badge+.aq-side-status{margin-left:6px}
 }
+
+/* ---------- 정산 화면 (Settlement.tsx) — 돈이 어디 있는지·다음 정산·수수료 미리 보기·달별 묶음·지급 단계 ---------- */
+.settle-split{margin-top:14px}
+.settle-split-bar{display:flex;gap:3px;height:10px;border-radius:var(--aq-r-pill);overflow:hidden;background:#fff}
+.settle-split-bar i{display:block;min-width:4px}
+.settle-split .is-left{background:var(--aq-blue-500)}
+.settle-split .is-used{background:var(--aq-blue-300)}
+.settle-split .is-held{background:var(--aq-amber-500)}
+.settle-split-legend{display:grid;gap:6px;margin:12px 0 0;padding:0;list-style:none;font-size:13px;color:var(--aq-text-3)}
+.settle-split-legend li{display:flex;align-items:center;gap:8px}
+.settle-split-legend li>i{flex:none;width:8px;height:8px;border-radius:50%}
+.settle-split-legend b{margin-left:auto;font-weight:700;color:var(--portal-ink);font-variant-numeric:tabular-nums}
+.settle-facts{display:grid;gap:8px;margin:16px 0 0;padding:14px 16px;border-radius:var(--aq-r-lg);background:#fff}
+.settle-facts>div{display:flex;justify-content:space-between;gap:12px;font-size:13px}
+.settle-facts dt{flex:none;color:var(--aq-text-4)}
+.settle-facts dd{margin:0;text-align:right;color:var(--aq-text-2)}
+.settle-facts b{color:var(--portal-ink)}
+.settle-min{margin-top:12px}
+.settle-min-bar{height:6px;border-radius:var(--aq-r-pill);background:#fff;overflow:hidden}
+.settle-min-bar i{display:block;height:100%;border-radius:inherit;background:var(--aq-blue-500)}
+.settle-min p{margin:8px 0 0;font-size:13px;color:var(--aq-text-3)}
+.settle-month{border-radius:var(--aq-r-xl);background:var(--aq-surface);padding:6px}
+.settle-month-head{display:flex;align-items:baseline;gap:8px;padding:12px 12px 8px}
+.settle-month-head span{font-size:15px;font-weight:700;color:var(--portal-ink)}
+.settle-month-head small{font-size:12px;color:var(--aq-text-4)}
+.settle-month-head strong{margin-left:auto;font-size:16px;font-weight:800;color:var(--portal-ink);font-variant-numeric:tabular-nums}
+.settle-month .settle-month-row{background:#fff;margin-top:6px}
+.settle-steps{display:flex;gap:4px;margin:8px 0 0;padding:0;list-style:none;font-size:11px;font-weight:700;color:var(--aq-text-4)}
+.settle-steps li{display:flex;align-items:center;gap:4px}
+.settle-steps li+li::before{content:"";width:12px;height:2px;border-radius:2px;background:var(--aq-gray-200)}
+.settle-steps li.is-done{color:var(--aq-blue-500)}
+.settle-steps li.is-done+li.is-done::before{background:var(--aq-blue-500)}
+.settle-fail{display:block;margin-top:6px;font-size:12px;font-weight:600;color:var(--aq-amber-700)}
