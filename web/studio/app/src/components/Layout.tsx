@@ -63,6 +63,14 @@ const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
   },
 ];
 
+/** 아래 탭 바(휴대폰) — 가장 자주 가는 네 곳 */
+const TAB_ITEMS: NavItem[] = [
+  { to: '/', label: '홈', icon: 'home' },
+  { to: '/releases', label: '발매', icon: 'disc' },
+  { to: '/reports', label: '리포트', icon: 'chart' },
+  { to: '/settlement', label: '정산', icon: 'won' },
+];
+
 const isActive = (pathname: string, to: string) =>
   to === '/' ? pathname === '/' : pathname === to || pathname.startsWith(to + '/');
 
@@ -142,7 +150,7 @@ export function Layout({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!menuOpen) return;
     const onClick = (e: MouseEvent) => {
-      if (!(e.target as HTMLElement).closest('.portal-header')) closeMenuRef.current();
+      if (!(e.target as HTMLElement).closest('.portal-header, .aq-tabbar')) closeMenuRef.current();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -346,6 +354,46 @@ export function Layout({ children }: { children: ReactNode }) {
           {children}
         </ViewEnter>
       </main>
+
+      {/* 시안: 데스크톱 왼쪽 고정 메뉴 — 넓은 화면에서는 메뉴를 숨기지 않고 늘 보여 준다 */}
+      <nav className="aq-sidebar" aria-label="전체 메뉴">
+        {NAV_GROUPS.map(g => (
+          <div key={g.group} className="aq-side-group">
+            <p className="aq-side-title">{g.group}</p>
+            {g.items.map(item => {
+              const active = isActive(loc.pathname, item.to);
+              return (
+                <Link key={item.to} to={item.to} className={`aq-side-item${active ? ' is-active' : ''}`} aria-current={active ? 'page' : undefined}
+                  onPointerEnter={() => prefetchRoute(item.to)}>
+                  <Glyph name={item.icon} size={18} />
+                  <span>{item.label}</span>
+                  {item.to === '/notifications' && unread > 0 && <span className="aq-side-badge">{unread > 99 ? '99+' : unread}</span>}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
+      </nav>
+
+      {/* 시안: 휴대폰 아래 탭 바 — 자주 가는 4곳은 한 번에, 나머지는 '전체'에서 */}
+      <nav className="aq-tabbar" aria-label="주요 화면">
+        {TAB_ITEMS.map(t => {
+          const active = isActive(loc.pathname, t.to);
+          return (
+            <Link key={t.to} to={t.to} className={`aq-tab-item${active ? ' is-active' : ''}`} aria-current={active ? 'page' : undefined}
+              onPointerDown={() => prefetchRoute(t.to)}>
+              <Glyph name={t.icon} size={22} />
+              <span>{t.label}</span>
+            </Link>
+          );
+        })}
+        <button type="button" className={`aq-tab-item${menuOpen ? ' is-active' : ''}`} aria-expanded={menuOpen} aria-controls="portalNav"
+          onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}>
+          <Glyph name="list" size={22} />
+          <span>전체</span>
+          {unread > 0 && <i className="aq-tab-dot" aria-label={`읽지 않은 알림 ${unread}건`} />}
+        </button>
+      </nav>
     </>
   );
 }
