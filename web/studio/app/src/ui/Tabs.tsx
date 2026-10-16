@@ -11,8 +11,10 @@ function TabCount({ n }: { n?: number | null }) {
 }
 
 /** 같은 화면 안에서 내용을 바꾸는 탭 */
-export function Tabs<T extends string>({ value, items, onChange, label, className }: {
+export function Tabs<T extends string>({ value, items, onChange, label, className, onIntent }: {
   value: T; items: readonly TabItem<T>[]; onChange: (v: T) => void; label: string; className?: string;
+  /** 누르기 직전(손가락이 닿거나 마우스가 올라갈 때) — 그 탭의 데이터를 미리 받아 두면 바꿀 때 빈 화면이 없다 */
+  onIntent?: (v: T) => void;
 }) {
   const { ref, live, pillStyle } = useSegPill(value);
   return (
@@ -23,6 +25,8 @@ export function Tabs<T extends string>({ value, items, onChange, label, classNam
           key={t.value} id={t.id} type="button" role="tab" className="ui-tab"
           aria-selected={t.value === value} aria-controls={t.controls}
           onClick={() => onChange(t.value)}
+          onPointerDown={onIntent && (() => onIntent(t.value))}
+          onPointerEnter={onIntent && (() => onIntent(t.value))}
         >
           {t.label}<TabCount n={t.count} />
         </button>

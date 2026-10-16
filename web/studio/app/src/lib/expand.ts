@@ -10,7 +10,8 @@ const EXPAND = [
 ].join(',');
 /** 누른 뒤 이 시간 안에 붙은 블록만 펼친다 (서버 응답 뒤 열리는 폼까지 포함) */
 const AFTER_INPUT_MS = 900;
-const EASE = 'cubic-bezier(.22,1,.36,1)';
+// 아이폰과 같은 곡선 — 첫 프레임에 툭 튀지 않고 길게 감속한다 (tokens.css --aq-enter)
+const EASE = 'cubic-bezier(.32,.72,0,1)';
 
 let lastInput = -Infinity;
 /** 마지막으로 사용자가 머문 스크롤 위치 — 닫기 처리 중에 다른 부품이 크기를 재면 그 순간 브라우저가 이미 스크롤을
