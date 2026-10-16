@@ -21,6 +21,7 @@ import { INQUIRY_CHANGED_EVENT } from '../lib/liveEvents';
 import { PLATFORM_NAMES } from '../lib/platformNames';
 import { KINDS, STATUS_LABEL, STATUS_TONE, kindSpec, type PlatformRequest, type RequestGroup } from '../lib/platformRequests';
 import { Glyph } from '../components/Glyph';
+import { HelpFaq } from '../components/HelpFaq';
 import { Badge, EmptyState, PageHeader, SkeletonList } from '../ui';
 import type { Tone } from '../ui/tone';
 
@@ -407,6 +408,8 @@ export function Inquiries() {
         sub="발매 보완 요청과 정산·계약 관련 문의를 확인해 보세요."
         actions={<button type="button" className="ui-btn is-primary" onClick={() => setShowForm(true)}><Glyph name="plus" size={14} />새 문의</button>}
       />
+
+      <HelpFaq />
 
       {requests === null && !tickets.length ? (
         <SkeletonList rows={3} />
