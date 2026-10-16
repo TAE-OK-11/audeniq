@@ -265,13 +265,16 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
               </header>
               <div className="aq-pay-body">
                 <div className="ui-field aq-pay-field">
-                  <label htmlFor="aqPayRecipient" className="sr-only">수령인 이름 또는 상호</label>
+                  {/* 이름표를 보이게 — 활동명이 미리 채워져 있으면 무슨 칸인지 알 수 없었고, 예금주와 다르면 지급이 실패한다 */}
+                  <label htmlFor="aqPayRecipient" className="aq-pay-label">수령인 이름 또는 상호</label>
                   <input
                     id="aqPayRecipient" maxLength={120} autoComplete="name"
                     value={draft.recipient}
                     onChange={e => setDraft(d => ({ ...d, recipient: e.target.value }))}
                     placeholder="수령인 이름 또는 상호"
+                    aria-describedby="aqPayRecipientHelp"
                   />
+                  <small id="aqPayRecipientHelp" className="ui-field-help">통장에 적힌 예금주 이름(사업자는 상호)과 같아야 정산금을 받을 수 있어요.</small>
                 </div>
                 <div className="aq-pay-type-list" role="radiogroup" aria-label="수령인 유형">
                   {PAY_TYPES.map(t => (
