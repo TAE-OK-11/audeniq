@@ -58,7 +58,7 @@
   --aq-text:var(--aq-gray-900);
   --aq-text-2:var(--aq-gray-700);
   --aq-text-3:var(--aq-gray-600);
-  --aq-text-4:#737E95;          /* 메타 정보 글자 — 흰 바탕 대비 4:1 이상 */
+  --aq-text-4:#646E84;          /* 메타 정보 글자 — 흰 바탕 5.1:1, 옅은 파랑 카드 4.7:1 (작은 글자 기준 4.5:1 이상) */
   --aq-text-disabled:var(--aq-gray-400);
 
   --aq-primary:var(--aq-blue-500);
