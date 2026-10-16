@@ -63,6 +63,14 @@ const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
   },
 ];
 
+/** 아래 탭 바(휴대폰) — 가장 자주 가는 네 곳 */
+const TAB_ITEMS: NavItem[] = [
+  { to: '/', label: '홈', icon: 'home' },
+  { to: '/releases', label: '발매', icon: 'disc' },
+  { to: '/reports', label: '리포트', icon: 'chart' },
+  { to: '/settlement', label: '정산', icon: 'won' },
+];
+
 const isActive = (pathname: string, to: string) =>
   to === '/' ? pathname === '/' : pathname === to || pathname.startsWith(to + '/');
 
@@ -81,14 +89,23 @@ export function Layout({ children }: { children: ReactNode }) {
   // 메뉴를 열 때만 발매 목록을 한 번 불러와 '보완·작성 중' 개수를 메뉴에 보여 준다
   const [relCounts, setRelCounts] = useState<{ needs: number; drafts: number } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  // 넓은 화면은 왼쪽 메뉴가 늘 보이므로, 화면을 옮길 때마다 '보완·작성 중' 개수를 새로 받는다
+  const [wide, setWide] = useState(() => !!window.matchMedia?.('(min-width: 1024px)').matches);
   useEffect(() => {
-    if (!menuOpen) return;
+    const mq = window.matchMedia?.('(min-width: 1024px)');
+    if (!mq) return;
+    const on = () => setWide(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  useEffect(() => {
+    if (!menuOpen && !wide) return;
     let alive = true;
     api.listReleases()
       .then(rs => { if (alive) setRelCounts({ needs: rs.filter(r => r.status === 'needs').length, drafts: rs.filter(r => r.status === 'draft').length }); })
       .catch(() => {});
     return () => { alive = false; };
-  }, [menuOpen]);
+  }, [menuOpen, wide, wide ? loc.pathname : '']);
   // 실시간으로 들어온 새 알림 — 화면을 보고 있으면 토스트로, 누르면 해당 화면으로
   useEffect(() => {
     const on = (e: Event) => {
@@ -142,7 +159,7 @@ export function Layout({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!menuOpen) return;
     const onClick = (e: MouseEvent) => {
-      if (!(e.target as HTMLElement).closest('.portal-header')) closeMenuRef.current();
+      if (!(e.target as HTMLElement).closest('.portal-header, .aq-tabbar')) closeMenuRef.current();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -346,6 +363,47 @@ export function Layout({ children }: { children: ReactNode }) {
           {children}
         </ViewEnter>
       </main>
+
+      {/* 데스크톱 왼쪽 고정 메뉴 — 넓은 화면에서는 메뉴를 숨기지 않고 늘 보여 준다 (숨긴 메뉴는 덜 발견되고 이동이 느리다) */}
+      <nav className="aq-sidebar" aria-label="전체 메뉴">
+        {NAV_GROUPS.map(g => (
+          <div key={g.group} className="aq-side-group">
+            <p className="aq-side-title">{g.group}</p>
+            {g.items.map(item => {
+              const active = isActive(loc.pathname, item.to);
+              return (
+                <Link key={item.to} to={item.to} className={`aq-side-item${active ? ' is-active' : ''}`} aria-current={active ? 'page' : undefined}
+                  onPointerEnter={() => prefetchRoute(item.to)}>
+                  <Glyph name={item.icon} size={18} />
+                  <span>{item.label}</span>
+                  {item.to === '/notifications' && unread > 0 && <span className="aq-side-badge">{unread > 99 ? '99+' : unread}</span>}
+                  {navStatus[item.to] && <Badge tone={navStatus[item.to]!.tone} className="aq-side-status">{navStatus[item.to]!.text}</Badge>}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
+      </nav>
+
+      {/* 휴대폰 아래 탭 바 — 자주 가는 4곳은 한 번에, 나머지는 '전체'에서 */}
+      <nav className="aq-tabbar" aria-label="주요 화면">
+        {TAB_ITEMS.map(t => {
+          const active = isActive(loc.pathname, t.to);
+          return (
+            <Link key={t.to} to={t.to} className={`aq-tab-item${active ? ' is-active' : ''}`} aria-current={active ? 'page' : undefined}
+              onPointerDown={() => prefetchRoute(t.to)}>
+              <Glyph name={t.icon} size={22} />
+              <span>{t.label}</span>
+            </Link>
+          );
+        })}
+        <button type="button" className={`aq-tab-item${menuOpen ? ' is-active' : ''}`} aria-expanded={menuOpen} aria-controls="portalNav"
+          onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}>
+          <Glyph name="list" size={22} />
+          <span>전체</span>
+          {unread > 0 && <i className="aq-tab-dot" aria-label={`읽지 않은 알림 ${unread}건`} />}
+        </button>
+      </nav>
     </>
   );
 }
