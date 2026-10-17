@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// CloudFormation 템플릿(JSON) 생성: node deploy/aws/template.mjs <studio|admin|landing>
+// CloudFormation 템플릿(JSON) 생성: node --experimental-strip-types deploy/aws/template.ts <studio|admin|landing>
 // 뷰어 함수 코드와 _headers의 보안 헤더를 그대로 넣기 위해 YAML 대신 스크립트로 만든다.
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { APPS, parseHeaders } from './apps.mjs';
+import { APPS, parseHeaders } from './apps.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '../..');

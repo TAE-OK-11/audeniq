@@ -8,7 +8,7 @@
  *   BACKEND_URL         백엔드 주소 (기본 https://api-origin.audeniq.com)
  *   EDGE_SERVICE_SECRET 백엔드 서비스 비밀 (wrangler secret put EDGE_SERVICE_SECRET)
  */
-import { proxyToBackend, requireHttps, secureResponse, serveAssets } from '../shared/transport.js';
+import { proxyToBackend, requireHttps, secureResponse, serveAssets } from '../shared/transport.ts';
 
 export async function proxy(request, env) {
   const out = await proxyToBackend(request, env, { site: 'admin' });

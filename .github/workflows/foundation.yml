@@ -154,7 +154,7 @@ jobs:
           cp wrangler.toml.example wrangler.toml
           npx --yes wrangler@4.137.0 deploy --dry-run --outdir /tmp/audeniq-edge-bundle
       - name: Shared HTTPS and compression tests
-        run: node --test web/shared/transport.test.mjs
+        run: node --experimental-strip-types --test web/shared/transport.test.ts
       - name: Studio Worker and D1 content tests
         working-directory: web/studio
         run: bun test test/

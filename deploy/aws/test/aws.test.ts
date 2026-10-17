@@ -1,10 +1,10 @@
-// node --test deploy/aws/test/aws.test.mjs
+// node --experimental-strip-types --test deploy/aws/test/aws.test.ts
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runInNewContext } from 'node:vm';
-import { APPS, cacheGroups, parseHeaders } from '../apps.mjs';
-import { apiFunctionCode, functionCode, template } from '../template.mjs';
-import { syncCommands } from '../publish.mjs';
+import { APPS, cacheGroups, parseHeaders } from '../apps.ts';
+import { apiFunctionCode, functionCode, template } from '../template.ts';
+import { syncCommands } from '../publish.ts';
 
 async function viewer(app) {
   const sandbox = {};
@@ -32,7 +32,7 @@ test('admin: 화면 경로는 index.html', async () => {
   assert.equal(run('/favicon.ico').uri, '/favicon.ico');
 });
 
-test('landing: worker.js 와 같은 라우팅', async () => {
+test('landing: worker.ts 와 같은 라우팅', async () => {
   const run = await viewer('landing');
   assert.equal(run('/').uri, '/index.html');
   assert.equal(run('/faq/').uri, '/faq/index.html');

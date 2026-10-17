@@ -4,12 +4,12 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { brotliDecompressSync } from 'node:zlib';
-import { backendOrigin, passThroughEncoding, readLimitedBody, serveAssets } from './transport.js';
-import { compressAssets } from './compress-assets.mjs';
-import studio from '../studio/worker.js';
-import admin from '../admin/worker.js';
-import landing from '../landing/src/worker.js';
-import survey from '../survey/src/worker.js';
+import { backendOrigin, passThroughEncoding, readLimitedBody, serveAssets } from './transport.ts';
+import { compressAssets } from './compress-assets.ts';
+import studio from '../studio/worker.ts';
+import admin from '../admin/worker.ts';
+import landing from '../landing/src/worker.ts';
+import survey from '../survey/src/worker.ts';
 
 test('HTTP is refused before API, database or asset access on every public Worker', async () => {
   for (const [worker, host] of [[studio, 'studio'], [admin, 'admin'], [landing, 'www'], [survey, 'survey']]) {

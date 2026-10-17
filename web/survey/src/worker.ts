@@ -1,6 +1,6 @@
 import currentQuestions from '../questions.json' with { type: 'json' };
 import legacyQuestions from '../questions-v4.json' with { type: 'json' };
-import { requireHttps, secureResponse } from '../../shared/transport.js';
+import { requireHttps, secureResponse } from '../../shared/transport.ts';
 const MAX_BYTES=32*1024;
 const IS_CONFIGURED_SITEKEY = key => typeof key === 'string' && key.length > 5 && !key.includes('REPLACE_WITH');
 const ready = env => Boolean(env.DB && env.TURNSTILE_SECRET_KEY && IS_CONFIGURED_SITEKEY(env.TURNSTILE_SITE_KEY));

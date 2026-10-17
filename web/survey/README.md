@@ -33,14 +33,14 @@ cp -a wrangler.jsonc wrangler.jsonc.before-motion
 cp -a /root/audeniq-survey "/root/audeniq-survey-backup-$(date +%Y%m%d-%H%M%S)"
 unzip -o /root/AUDENIQ-survey-V5-motion-Workers-D1.zip -d /root/audeniq-survey
 bun install
-bun scripts/restore-existing-config.mjs wrangler.jsonc.before-motion
+bun scripts/restore-existing-config.ts wrangler.jsonc.before-motion
 bun run check
 bun run deploy
 ```
 
-**주의:** 기존 `wrangler.jsonc`를 단순히 복원하면 구버전 `run_worker_first:true`까지 복원되어 최적화가 무효화됩니다. 대신 `restore-existing-config.mjs`를 사용해 기존 D1 ID와 공개 키만 새 설정에 이식해야 합니다. 기존 원격 DB에 **새 DB 생성 또는 기존 마이그레이션 재적용은 필요하지 않습니다.** Worker Secret은 클라우드 계정에 별도로 보관하므로 설정 JSON·ZIP에 입력하지 않습니다. 재배포 후 `/api/config` 응답이 `ready:true`인지 확인하세요.
+**주의:** 기존 `wrangler.jsonc`를 단순히 복원하면 구버전 `run_worker_first:true`까지 복원되어 최적화가 무효화됩니다. 대신 `restore-existing-config.ts`를 사용해 기존 D1 ID와 공개 키만 새 설정에 이식해야 합니다. 기존 원격 DB에 **새 DB 생성 또는 기존 마이그레이션 재적용은 필요하지 않습니다.** Worker Secret은 클라우드 계정에 별도로 보관하므로 설정 JSON·ZIP에 입력하지 않습니다. 재배포 후 `/api/config` 응답이 `ready:true`인지 확인하세요.
 
-처음 설치라면 `bun scripts/set-config.mjs '실제_D1_ID' '실제_Turnstile_공개_Site_Key'`를 먼저 실행하면 워커 설정과 **정적 HTML 공개 Site Key가 동시에 변경**됩니다. Turnstile Secret Key는 `bunx wrangler secret put TURNSTILE_SECRET_KEY`로 Cloudflare에 별도 등록해야 합니다.
+처음 설치라면 `bun scripts/set-config.ts '실제_D1_ID' '실제_Turnstile_공개_Site_Key'`를 먼저 실행하면 워커 설정과 **정적 HTML 공개 Site Key가 동시에 변경**됩니다. Turnstile Secret Key는 `bunx wrangler secret put TURNSTILE_SECRET_KEY`로 Cloudflare에 별도 등록해야 합니다.
 
 ## 배포 후 검증
 
@@ -62,7 +62,7 @@ bunx wrangler d1 execute audeniq-survey --remote --command "SELECT COUNT(*) AS t
 - 이전/다음 페이지, 제출 완료 화면에도 가벼운 전환 효과. 기존 선택 상태, D1 처리, Turnstile 구현은 변경하지 않음.
 - 줄임 모션 선호, 화면 비활성화, 인쇄, 키보드 포커스, JS 비활성 시 콘텐츠 표시 보장.
 - 애니메이션은 `app/src/motion.ts`(빌드 결과 `public/assets/*.js`)에서 **방문자의 브라우저**에서만 실행. Worker 코드/CPU와 D1 쿼리를 추가하지 않음.
-- 기존 운영 D1/Turnstile 유지: 기존 설정 백업 후 ZIP 적용, `bun scripts/restore-existing-config.mjs wrangler.jsonc.before-motion` → `bun run check` → `bun run deploy`. `bunx wrangler d1 create`나 migrations 재실행 불필요.
+- 기존 운영 D1/Turnstile 유지: 기존 설정 백업 후 ZIP 적용, `bun scripts/restore-existing-config.ts wrangler.jsonc.before-motion` → `bun run check` → `bun run deploy`. `bunx wrangler d1 create`나 migrations 재실행 불필요.
 
 
 ## V5.1: 홍보 페이지와 설문 헤더 일치

@@ -37,7 +37,7 @@
 | P1 | 성능·CLS | 모바일 메뉴 초기 상태를 head에서 확정해 CLS 0.388→0, 인라인 base64 로고 2개 제거(정적 SVG, 실행 중 교체 스크립트 삭제), CJK·베트남어는 Pretendard 미로드 |
 | P1 | IndexNow | 페이지별 해시를 매니페스트에 기록, `--since <ref>`로 추가·변경·삭제 URL만 제출. 기존 키 유지 |
 | P2 | 접근성 | 안내 페이지 대비 4.5:1 이상으로 보정 |
-| P2 | 회귀 검증 | 언어별 크롤러 관점 테스트(test/i18n.test.mjs) 추가 |
+| P2 | 회귀 검증 | 언어별 크롤러 관점 테스트(test/i18n.test.ts) 추가 |
 | 요청 | 설문 | 모든 언어의 설문 버튼을 https://survey.audeniq.com/ 으로 변경 |
 
 확정되지 않은 DSP·Merlin 계약, 가격·수수료, 리뷰·평점, 실적 수치는 어떤 언어에도 넣지 않았다. 각 번역은 한국어 원문에 없는 사실을 추가하지 않는다(원문 문장 단위 대응).
@@ -45,7 +45,7 @@
 ### 검증 (로컬, 2026-10-10)
 
 - `npm run check`: 25개 테스트 통과 — 24개 URL 200, 언어별 lang/dir/canonical/title/description 고유성, hreflang 상호 참조·sitemap 일치, 미번역 한글 0, 번역 누락·잔여 키 0, JSON-LD 1개·본문 일치·가격/평점 없음, 언어 메뉴 링크 200, 언어 URL 별칭 308·없는 하위 경로 404, Accept-Language 무시, robots 비차단, 설문 링크.
-- `deploy/aws/test/aws.test.mjs`(CloudFront 라우팅 동일성) 7개, `web/shared/transport.test.mjs` 6개 통과.
+- `deploy/aws/test/aws.test.ts`(CloudFront 라우팅 동일성) 7개, `web/shared/transport.test.ts` 6개 통과.
 - Chromium 렌더링: 14개 언어 홈 + 안내 페이지를 320·390·1440px에서 가로 넘침 0, 스크립트·자산 오류 0. 아랍어 RTL 미러링, JS 켜짐/꺼짐 모바일 메뉴 동작 확인.
 - Lighthouse 13(랩, 모바일 기본 스로틀링, 같은 머신에서 로컬 Worker 기준. 실사용 CWV 아님):
 

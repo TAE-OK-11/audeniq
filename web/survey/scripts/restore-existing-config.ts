@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 // Read the operator's own backed-up local config; never prints or exposes secrets.
 const backup = process.argv[2];
 if (!backup) {
-  console.error('사용법: bun scripts/restore-existing-config.mjs wrangler.jsonc.before-opt');
+  console.error('사용법: bun scripts/restore-existing-config.ts wrangler.jsonc.before-opt');
   process.exit(1);
 }
 const prior = JSON.parse(readFileSync(backup, 'utf8'));

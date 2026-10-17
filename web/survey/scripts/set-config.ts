@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 const [databaseId, siteKey] = process.argv.slice(2);
 const isUuid = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i;
 if (!isUuid.test(databaseId ?? '') || !siteKey || siteKey.includes('REPLACE') || siteKey.length < 6) {
-  console.error('사용법: bun scripts/set-config.mjs <D1_database_id> <Turnstile_공개_Site_Key>');
+  console.error('사용법: bun scripts/set-config.ts <D1_database_id> <Turnstile_공개_Site_Key>');
   console.error('주의: Turnstile 비밀 Secret Key는 절대 이 명령어에 넣지 마세요.');
   process.exit(1);
 }

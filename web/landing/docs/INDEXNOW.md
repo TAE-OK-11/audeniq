@@ -7,7 +7,7 @@ AUDENIQ의 공식 공개 사이트 `https://audeniq.com`은 Cloudflare Crawler H
 - 키 원본: `web/landing/content/indexnow-key.txt`
 - 공개 키: `https://audeniq.com/3cbb8c797ee29db8d62ab89f9dfc17b8.txt`
 - 공개 페이지 목록: `web/landing/content/generated-manifest.json` (현재 24개, 페이지별 해시 포함)
-- 제출 스크립트: `web/landing/scripts/submit-indexnow.mjs`
+- 제출 스크립트: `web/landing/scripts/submit-indexnow.ts`
 - 호출 엔드포인트: `https://api.indexnow.org/indexnow` (한 엔드포인트만 호출하면 참여 검색엔진에 공유)
 - 자동 배포 **없음**: 커밋, 빌드, 테스트로는 제출되지 않습니다.
 

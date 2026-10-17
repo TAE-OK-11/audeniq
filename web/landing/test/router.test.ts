@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { resolveAssetPath, studioRedirect } from "../src/worker.js";
+import worker, { resolveAssetPath, studioRedirect } from "../src/worker.ts";
 
 test("audeniq.com serves the landing site", () => {
   assert.equal(resolveAssetPath("audeniq.com", "/"), "/index.html");

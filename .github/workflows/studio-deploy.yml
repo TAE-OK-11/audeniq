@@ -47,7 +47,7 @@ jobs:
         working-directory: web/studio
         run: bun test test/
       - name: AWS (CloudFront) config tests
-        run: node --test deploy/aws/test/aws.test.mjs
+        run: node --experimental-strip-types --test deploy/aws/test/aws.test.ts
       - name: Deploy audeniq-studio
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         working-directory: web/studio

@@ -25,7 +25,7 @@ export const APPS = {
   landing: {
     aliases: ['audeniq.com', 'www.audeniq.com'],
     dir: 'web/landing/public',
-    // 랜딩은 _headers 대신 web/landing/src/worker.js 의 withSecurityHeaders 와 같은 값
+    // 랜딩은 _headers 대신 web/landing/src/worker.ts 의 withSecurityHeaders 와 같은 값
     headersText: [
       '/*',
       '  X-Content-Type-Options: nosniff',
@@ -37,7 +37,7 @@ export const APPS = {
     ].join('\n'),
     function: 'landing.js',
     viewerResponse: true,
-    routes: 'web/landing/src/public-routes.js',
+    routes: 'web/landing/src/public-routes.ts',
     api: [],
   },
 };
