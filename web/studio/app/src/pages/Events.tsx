@@ -6,6 +6,7 @@ import { Modal } from '../components/Modal';
 import { TextBody } from '../components/TextBody';
 import { Glyph } from '../components/Glyph';
 import { Badge } from '../ui';
+import { todayStr } from '../lib/date';
 
 interface AudenEvent {
   id: string;
@@ -26,6 +27,12 @@ const STATUS_LABEL: Record<AudenEvent['status'], string> = {
 };
 
 // 예시 이벤트 — Worker(D1)가 없는 로컬 체험 모드에서만 보인다. 실제 글은 /api/events (진행 상태는 서버가 날짜로 계산)
+function seedStatus(e: AudenEvent): AudenEvent['status'] {
+  const today = todayStr();
+  if (today < e.date) return 'upcoming';
+  return today <= (e.endDate ?? e.date) ? 'ongoing' : 'ended';
+}
+
 const EVENT_SEED: AudenEvent[] = [
   {
     id: 'ev1',
@@ -41,6 +48,7 @@ const EVENT_SEED: AudenEvent[] = [
     id: 'ev2',
     title: '신규 아티스트 온보딩 워크숍',
     date: '2026-09-20',
+    endDate: '2026-09-27',
     place: '온라인',
     status: 'ongoing',
     summary: '발매 위자드부터 정산까지, 스튜디오 사용법을 알려드려요.',
@@ -68,7 +76,8 @@ export function Events() {
       status: e.status === 'ongoing' ? 'ongoing' : e.status === 'upcoming' ? 'upcoming' : 'ended', summary: e.summary, body: e.body,
       link: e.link_url ?? undefined,
     }),
-    EVENT_SEED,
+    // 예시도 서버처럼 날짜로 진행 상태를 정한다 — 고정값이면 지난 워크숍이 '진행 중'으로 남았다
+    EVENT_SEED.map(e => ({ ...e, status: seedStatus(e) })),
   ), []);
   const EVENTS = data ?? [];
   const featured = EVENTS.find(e => e.status === 'ongoing')
@@ -82,7 +91,7 @@ export function Events() {
         <div>
           <p className="eyebrow">계정·지원</p>
           <h1>이벤트</h1>
-          <p>진행 중인 이벤트와 지난 소식을 확인해 보세요.</p>
+          <p>진행 중인 이벤트와 지난 소식이에요.</p>
         </div>
       </div>
 

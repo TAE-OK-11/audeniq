@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useToast } from '../components/Toast';
-import { CountUp } from '../ui';
+import { ChipGroup, CountUp } from '../ui';
 import { money, num } from '../lib/format';
 import { todayStr } from '../lib/date';
 import { useGrowOnView, type CSSVarStyle } from '../hooks/useAnimations';
@@ -35,10 +35,10 @@ function rangeFor(key: RangeKey, from: string, to: string): ReportRange {
 }
 
 const PERIODS = [
-  { value: 'all', label: '전체 기간' },
+  { value: 'all', label: '모든 달 합계' },
   { value: 'month', label: '최근 달' },
   { value: 'prev', label: '그 전 달' },
-];
+] as const;
 
 /** '2026-09' → '9월' (해가 바뀌는 1월은 연도까지) */
 const monthShort = (k: string) => (/^\d{4}-\d{2}$/.test(k) ? (k.endsWith('-01') ? `${k.slice(2, 4)}년 1월` : `${+k.slice(5)}월`) : k);
@@ -220,9 +220,8 @@ export function Reports() {
         <div>
           <p className="eyebrow">내 작업실</p>
           <h1 id="reportsTitle">음악 리포트</h1>
-          <p>플랫폼별 실적을 기간과 곡별로 확인해 보세요.</p>
+          <p>플랫폼별 재생과 수익을 기간·곡마다 나눠 봐요.</p>
         </div>
-        <button type="button" className="ui-btn is-soft" onClick={exportCsv} disabled={exporting}><Glyph name="download" size={15} className="aq-glyph-lead" />{exporting ? '내보내는 중…' : 'CSV 내보내기'}</button>
       </div>
 
       <div className="report-tools">
@@ -233,10 +232,6 @@ export function Reports() {
           <MonthField id="reportFrom" aria-label="시작 월" value={customFrom} max={customTo || undefined} onChange={setCustomFrom} />
           <MonthField id="reportTo" aria-label="끝 월" value={customTo} min={customFrom || undefined} max={kstMonth()} onChange={setCustomTo} />
         </>)}
-        <select id="reportPeriod" className="ui-select" aria-label="리포트 기간" value={period} onChange={e => setPeriod(e.target.value)}>
-          {/* '최근 12개월' 옆의 '선택 기간 전체'가 무엇을 고르는 칸인지 몰랐다 — 고른 기간 안에서 어느 달을 볼지 말로 적는다 */}
-          {PERIODS.map(p => <option key={p.value} value={p.value}>{p.value === 'all' ? '모든 달 합계' : p.value === 'month' ? '최근 달만' : '그 전 달만'}</option>)}
-        </select>
         <select id="reportRelease" className="ui-select" aria-label="발매별 필터" value={release} onChange={e => setRelease(e.target.value)}>
           <option value="all">전체 발매</option>
           {releases.map(r => <option key={r} value={r}>{r}</option>)}
@@ -250,6 +245,8 @@ export function Reports() {
       {pending ? <ReportSkeleton title={`${periodLabel} 수익`} /> : (
       <div className="aq-report">
         <section className="aq-report-hero" aria-labelledby="reportHeroHeading">
+          {/* 고른 기간 안에서 어느 달을 볼지는 숫자 바로 위 칩으로 — 선택 상자 세 개가 숫자보다 먼저 보였다 */}
+          <ChipGroup size="sm" className="aq-report-period" label="리포트 기간" value={period as typeof PERIODS[number]['value']} options={PERIODS} onChange={setPeriod} />
           <h2 id="reportHeroHeading">{periodLabel} 수익</h2>
           <strong className="aq-report-amount"><Money value={totalRevenue} animate /></strong>
           {insight?.revenueChange != null && (
@@ -324,7 +321,13 @@ export function Reports() {
         </section>
 
         <section className="aq-rp-card" aria-label="상세 내역">
-          <h3>상세 내역 {filtered.length > 0 && <span className="aq-report-count">{filtered.length}</span>}</h3>
+          {/* 내보내기는 상세 내역을 받는 일이라 그 카드에 — 화면 맨 위 첫 버튼일 만큼 자주 쓰지 않는다 */}
+          <div className="aq-rp-head">
+            <h3>상세 내역 {filtered.length > 0 && <span className="aq-report-count">{filtered.length}</span>}</h3>
+            {filtered.length > 0 && (
+              <button type="button" className="ui-btn is-soft is-sm" onClick={exportCsv} disabled={exporting}><Glyph name="download" size={14} className="aq-glyph-lead" />{exporting ? '내보내는 중…' : 'CSV 내보내기'}</button>
+            )}
+          </div>
           {filtered.length ? (
             <>
               <ul className="aq-report-rows aq-report-details">

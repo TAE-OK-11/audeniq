@@ -24,7 +24,7 @@ import { fixCountWord, fixPath, isDocumentFix, resolveCorrection, splitCorrectio
 import { checkAudioFile, formatDuration, specLabel } from '../lib/audioSpec';
 import { AGREEMENTS, SIGNER_ROLES, compactSignature, createApplication } from '../lib/application';
 import {
-  artistIssue, artistWarning, coverIssue, isrcValid, minReleaseDate, mmssToSeconds, normalizeIsrc,
+  artistIssue, artistWarning, COVER_MAX, COVER_MIN, coverIssue, isrcValid, LEAD_DAYS, minReleaseDate, mmssToSeconds, normalizeIsrc,
   profileLinkIssue, PROFILE_LINKS, releaseTypeIssue, rightsLineIssue, titleIssue, titleWarning, upcValid,
 } from '../lib/dsp';
 import { uid } from '../lib/store';
@@ -64,15 +64,18 @@ function shiftDate(d: string, days: number): string {
 }
 
 const STEPS = [
-  { short: '발매 정보', kicker: '01 / 06 · 발매 정보', title: '어떤 음악을\n발매할까요?', sub: '발매 정보와 아티스트명을 입력해 주세요.' },
-  { short: '트랙 등록', kicker: '02 / 06 · 트랙 등록', title: '발매할 곡을\n등록해 주세요.', sub: '곡별 음원 파일과 크레딧을 입력해 주세요.' },
-  { short: '커버아트', kicker: '03 / 06 · 커버아트', title: '커버아트를\n등록해 주세요.', sub: '정사각형 커버아트를 등록해 주세요.' },
-  { short: '배급 설정', kicker: '04 / 06 · 배급 설정', title: '언제, 어디에\n발매할까요?', sub: '발매일과 배급할 플랫폼을 선택해 주세요.' },
+  { short: '발매 정보', kicker: '01 / 06 · 발매 정보', title: '어떤 음악을\n발매할까요?', sub: '별표(*) 칸만 채우면 다음 단계로 넘어갈 수 있어요.' },
+  { short: '트랙 등록', kicker: '02 / 06 · 트랙 등록', title: '발매할 곡을\n등록해 주세요.', sub: '곡마다 음원 파일과 크레딧을 넣어요.' },
+  { short: '커버아트', kicker: '03 / 06 · 커버아트', title: '커버아트를\n등록해 주세요.', sub: `${COVER_MIN}×${COVER_MIN}px 이상 정사각형 이미지가 필요해요.` },
+  { short: '배급 설정', kicker: '04 / 06 · 배급 설정', title: '언제, 어디에\n발매할까요?', sub: `보통 접수일로부터 ${LEAD_DAYS.normal}일 뒤부터 발매할 수 있어요.` },
   { short: '권리 확인', kicker: '05 / 06 · 권리 확인', title: '음악의 권리를\n확인해 주세요.', sub: '권리자 정보와 필요한 증빙을 준비해 주세요.' },
-  { short: '최종 확인', kicker: '06 / 06 · 최종 확인', title: '발매 정보를\n마지막으로 확인해 주세요.', sub: '입력한 정보와 빠진 항목을 확인해 주세요.' },
+  { short: '최종 확인', kicker: '06 / 06 · 최종 확인', title: '발매 정보를\n마지막으로 확인해 주세요.', sub: '빠진 항목이 있으면 여기서 알려 드려요.' },
 ];
 
 /** 1~5는 '한·두·세·네·다섯 가지만', 그 이상은 'N가지를' */
+
+/** 1단계에서 접어 두는 선택 칸 */
+const MORE_INFO_FIELDS = ['f-label', 'f-notes'];
 
 const RIGHTS_CHECKS: [string, string][] = [
   ['rightsMaster', '음원 마스터를 배급할 권한이 있어요.'],
@@ -387,7 +390,7 @@ function GuardianConsentModal({ guardianName, onClose, onComplete }: {
       </div>
       <div className="aq-modal-foot aq-guardian-foot aq-sticky-foot">
         <p className="aq-guardian-missing" aria-live="polite">{missing}</p>
-        <button type="button" className="ui-btn is-soft" onClick={onClose}>취소</button>
+        <button type="button" className="ui-btn is-soft" onClick={onClose}>닫기</button>
         <button type="button" className="ui-btn is-primary" disabled={!!missing} onClick={() => onComplete(certName, certMethod)}>동의 완료</button>
       </div>
     </Modal>
@@ -1044,9 +1047,6 @@ function FinalReviewBanner({ form }: { form: WizardForm }) {
         </div>
       </div>
       {warnings.map(w => <p key={w} className="aq-option-note">{w}</p>)}
-      <p className="ui-field-help" style={{ marginTop: 13 }}>
-        접수하기를 누르면 입력 내용을 바탕으로 신청서와 필요한 서류 목록이 생성돼요. 최종 승인 및 배급일은 검토 후 결정돼요.
-      </p>
     </div>
   );
 }
@@ -1404,6 +1404,8 @@ export function Upload() {
   const [hasApplication, setHasApplication] = useState(false);
   const [origDate, setOrigDate] = useState('');
   const [expandedTracks, setExpandedTracks] = useState<Set<string>>(new Set());
+  // 레이블 표기·앨범 소개는 선택 항목이라 접어 둔다 — 첫 단계에 칸이 여덟 개라 무엇이 꼭 필요한지 흐렸다
+  const [moreInfo, setMoreInfo] = useState(false);
   // 트랙 단계: 곡이 여럿이면 하나만 펼친다 (null = 다 접음)
   const [openTrack, setOpenTrack] = useState<string | null | undefined>(undefined);
   const [save, setSave] = useState<SaveState>({ kind: 'idle' });
@@ -2075,6 +2077,7 @@ export function Upload() {
     }
     const tm = c.field && /^(?:tr|trackFile)-(\d+)/.exec(c.field);
     if (tm && form.tracks[+tm[1]]) setOpenTrack(form.tracks[+tm[1]].id);
+    if (c.field && MORE_INFO_FIELDS.includes(c.field)) setMoreInfo(true);
     if (c.step !== step) goStep(c.step);
     setFocusField(c.field ? { id: c.field, n: Date.now() } : null);
   };
@@ -2099,6 +2102,7 @@ export function Upload() {
   const signerName = signer.touched ? signer.name : (form.ownership || profile.name || '');
   const resubmit = !!editId && origStatus !== 'draft' && hasApplication;
   const s = STEPS[step];
+  const showMoreInfo = moreInfo || !!form.label.trim() || !!form.notes.trim() || fixes.some(f => !!f.field && MORE_INFO_FIELDS.includes(f.field));
   // 곡 입력이 다 됐는지 — 접힌 곡 요약의 '입력 완료/필요' 표시
   const trackComplete = (t: Track) => !!(t.title.trim() && t.composers.trim() && (t.instrumental || t.lyricists.trim()) && t.audioName && (MOCK || t.assetId));
   // 처음엔 아직 덜 채운 첫 곡(없으면 첫 곡)을 펼친다
@@ -2116,6 +2120,7 @@ export function Upload() {
   // 기본은 ‘모두 배급’ 스위치만. 끄면 아래에 플랫폼별 선택이 열린다 (일부만 고른 발매는 처음부터 열림)
   const [pickPlatforms, setPickPlatforms] = useState(false);
   const showPlatforms = pickPlatforms || !allPlatforms;
+  const unavailableDsps = dsps?.filter(d => !d.available && !form.platforms.includes(d.slug)) ?? [];
 
   // 플랫폼 이름 50여 개를 다 늘어놓으면 확인 화면이 휴대폰에서 3,000px 넘게 길어졌다 — 몇 곳만 보이고 개수로 줄인다
   const platformSummary = (() => {
@@ -2126,20 +2131,22 @@ export function Upload() {
     const names = base.map(dspLabel);
     return `${names.slice(0, 5).join(', ')}${names.length > 5 ? ` 외 ${names.length - 5}곳` : ''}${cid}`;
   })();
-  const reviewSections: [string, React.ReactNode, number][] = [
-    ['발매 정보', `${form.title || '제목 없음'} · ${form.artist || '아티스트 없음'} · ${kindLabel(form.type)}`, 0],
+  // 네 번째 값: 빠진 항목 — 다른 줄과 같은 회색이면 '등록되지 않음'이 눈에 띄지 않았다. 주황 글자 + '채우기'
+  const reviewSections: [string, React.ReactNode, number, boolean][] = [
+    ['발매 정보', `${form.title || '제목 없음'} · ${form.artist || '아티스트 없음'} · ${kindLabel(form.type)}`, 0, !form.title.trim() || !form.artist.trim()],
     ['트랙', form.tracks.length > 1
-      ? <ol className="aq-review-tracks">{form.tracks.map(t => <li key={t.id}>{t.title || '곡명 없음'}</li>)}</ol>
-      : form.tracks[0]?.title || '곡명 없음', 1],
+      // 어느 곡이 덜 채워졌는지 곡마다 — 목록 전체가 주황이면 몇 번 곡을 고쳐야 할지 몰랐다
+      ? <ol className="aq-review-tracks">{form.tracks.map(t => <li key={t.id}>{t.title || '곡명 없음'}{!trackComplete(t) && <small className="aq-review-need"> · 입력 필요</small>}</li>)}</ol>
+      : <>{form.tracks[0]?.title || '곡명 없음'}{form.tracks[0] && !trackComplete(form.tracks[0]) && <small className="aq-review-need"> · 입력 필요</small>}</>, 1, !form.tracks.length || !form.tracks.every(trackComplete)],
     ['커버아트', form.coverData
       ? <span className="aq-review-cover"><img src={form.coverData} alt="" width={56} height={56} />{form.coverName}</span>
-      : form.coverName || '등록되지 않음', 2],
-    ['발매일', form.releaseDate ? `${formatKoreanDate(form.releaseDate)}${form.releaseTime ? ` · 한국 시간 ${form.releaseTime} 동시 발매` : ' · 나라별 자정'}` : '지정하지 않음', 3],
-    ['사전 공개', form.preorderStart ? `${formatKoreanDate(form.preorderStart)}부터 (예약 판매·미리듣기)` : '없음', 3],
-    ['배급 지역', territorySummary(form.territories, '선택하지 않음'), 3],
-    ['배급 플랫폼', platformSummary, 3],
-    ['권리자', form.ownership || '미입력', 4],
-    ['권리 확인', rightsOk(form) ? '필수 확인 완료' : '필수 확인 항목 누락', 4],
+      : form.coverName || '등록되지 않음', 2, !form.coverData && !form.coverName],
+    ['발매일', form.releaseDate ? `${formatKoreanDate(form.releaseDate)}${form.releaseTime ? ` · 한국 시간 ${form.releaseTime} 동시 발매` : ' · 나라별 자정'}` : '지정하지 않음', 3, !form.releaseDate],
+    ['사전 공개', form.preorderStart ? `${formatKoreanDate(form.preorderStart)}부터 (예약 판매·미리듣기)` : '없음', 3, false],
+    ['배급 지역', territorySummary(form.territories, '선택하지 않음'), 3, !form.territories.length],
+    ['배급 플랫폼', platformSummary, 3, !form.platforms.length],
+    ['권리자', form.ownership || '미입력', 4, !form.ownership.trim()],
+    ['권리 확인', rightsOk(form) ? '필수 확인 완료' : '필수 확인 항목 누락', 4, !rightsOk(form)],
   ];
 
   // 상단 바 오른쪽 칸에 들어가도록 짧게 (긴 문구는 title 속성으로)
@@ -2335,19 +2342,27 @@ export function Upload() {
                   />
                 )}
               </div>
-              <div className="ui-field">
-                <label htmlFor="f-label">레이블 / 발매사 표기</label>
+              {showMoreInfo && (
+              <div className="ui-field aq-reveal">
+                <label htmlFor="f-label">레이블 / 발매사 표기 <span className="aq-optional">선택</span></label>
                 <input id="f-label" value={form.label} onChange={e => set('label', e.target.value)} maxLength={120} placeholder="권리 계약에 맞는 표기" />
               </div>
+              )}
             </div>
-            <div className="ui-field">
-              <label htmlFor="f-notes">앨범 소개</label>
+            {showMoreInfo ? (
+            <div className="ui-field aq-reveal">
+              <label htmlFor="f-notes">앨범 소개 <span className="aq-optional">선택</span></label>
               <textarea
                 id="f-notes" value={form.notes} onChange={e => set('notes', e.target.value)}
                 rows={3} maxLength={1500} placeholder="발매 소개와 전달 메모"
               />
               <p className="ui-field-help aq-counter">{form.notes.length} / 1500</p>
             </div>
+            ) : (
+              <button type="button" className="ui-btn is-text aq-more-info" aria-expanded={false} onClick={() => setMoreInfo(true)}>
+                레이블 표기·앨범 소개 더 입력하기<Glyph name="chevron-down" size={14} />
+              </button>
+            )}
             <h2 className="subhead">플랫폼 아티스트 프로필</h2>
             <div className="aq-choice-row" role="radiogroup" aria-label="플랫폼 아티스트 프로필">
               {([[true, '처음 발매해요', '플랫폼에 새 아티스트 페이지가 만들어져요.'], [false, '이미 발매한 적이 있어요', '기존 아티스트 페이지에 이어서 올라가요.']] as const).map(([v, t, sub]) => (
@@ -2456,7 +2471,7 @@ export function Upload() {
                 )}
                 <span className="aq-dropzone-text">
                   <strong>{form.coverName || '이미지를 끌어다 놓거나 눌러서 선택'}</strong>
-                  <small>{form.coverName ? '다른 이미지로 바꾸려면 다시 선택해 주세요.' : 'JPG · PNG, 정사각형 3000×3000 이상 권장 (최대 20MB)'}</small>
+                  <small>{form.coverName ? '다른 이미지로 바꾸려면 다시 선택해 주세요.' : `JPG · PNG, 정사각형 ${COVER_MIN}~${COVER_MAX}px (최대 20MB)`}</small>
                 </span>
               </label>
               {uploads.cover && uploads.cover.state !== 'done' && <UploadStatus upload={uploads.cover} idle="" />}
@@ -2550,8 +2565,11 @@ export function Upload() {
             <h2 className="subhead">배급 플랫폼</h2>
             <div className="distribution-default">
               <div>
-                <strong>{allPlatforms ? '주요 음악 플랫폼에 모두 배급해요.' : `${form.platforms.length}개 플랫폼에 배급해요.`}</strong>
-                <p className="ui-field-help">{dspError || (!dsps ? '서버에서 플랫폼 상태를 확인하는 중이에요.' : showPlatforms ? '현재 배급 가능한 플랫폼만 선택할 수 있어요.' : '특정 플랫폼만 고르려면 스위치를 꺼 주세요.')}</p>
+                {/* 줄 제목은 스위치를 켰을 때의 뜻 — '5개 플랫폼에 배급해요' 옆 스위치가 꺼져 있어 무엇을 끈 건지 헷갈렸다 */}
+                <strong>주요 음악 플랫폼에 모두 배급</strong>
+                <p className="ui-field-help">{dspError || (!dsps ? '서버에서 플랫폼 상태를 확인하는 중이에요.'
+                  : showPlatforms ? `지금은 ${form.platforms.filter(p => !isContentId(p)).length}곳을 골랐어요. 켜면 배급할 수 있는 ${basePlatforms.length}곳 모두에 배급해요.`
+                  : `배급할 수 있는 ${basePlatforms.length}곳 모두에 배급해요. 특정 플랫폼만 고르려면 스위치를 꺼 주세요.`)}</p>
               </div>
               <label className="aq-switch">
                 <input
@@ -2586,7 +2604,8 @@ export function Upload() {
             )}
             {showPlatforms && (
             <div id="aqPlatforms" className="aq-dsp-groups aq-reveal">
-              {DSP_GROUPS.map(([region, match]) => [region, dsps?.filter(match) ?? []] as const).filter(([, list]) => list.length > 0).map(([region, list]) => (
+              {/* 지금 고를 수 없는 플랫폼(40여 곳)은 고를 수 있는 곳과 같은 크기로 섞어 두지 않고 맨 아래 접힌 목록으로 — 휴대폰에서 이 단계가 4,000px 가까이 길어졌다 */}
+              {DSP_GROUPS.map(([region, match]) => [region, dsps?.filter(d => match(d) && (d.available || form.platforms.includes(d.slug))) ?? []] as const).filter(([, list]) => list.length > 0).map(([region, list]) => (
                 <div key={region}>
                   <p className="aq-dsp-region">{region}</p>
                   <div className="aq-dsp-grid" role="group" aria-label={`${region} 플랫폼`}>
@@ -2606,6 +2625,13 @@ export function Upload() {
                   </div>
                 </div>
               ))}
+              {unavailableDsps.length > 0 && (
+                <details className="aq-dsp-unavailable">
+                  <summary>지금은 배급할 수 없는 플랫폼 {unavailableDsps.length}곳<Glyph name="chevron-down" size={14} /></summary>
+                  <p>{unavailableDsps.map(d => d.name).join(', ')}</p>
+                  <small>배급이 열리면 여기서 고를 수 있게 바뀌어요.</small>
+                </details>
+              )}
             </div>
             )}
             {!dsps && <p className="ui-field-help" role="status">{dspError || '플랫폼 목록을 서버에서 불러오는 중이에요.'}</p>}
@@ -2704,13 +2730,13 @@ export function Upload() {
         {step === 5 && (
           <section className="step-section">
             <div className="aq-catalog-cards aq-stagger">
-              {reviewSections.map(([h, t, target]) => (
-                <div key={h} className="aq-review-card">
+              {reviewSections.map(([h, t, target, missing]) => (
+                <div key={h} className={`aq-review-card${missing ? ' is-missing' : ''}`}>
                   <div className="aq-review-body">
                     <strong>{h}</strong>
                     <div className="break aq-review-value">{t}</div>
                   </div>
-                  <button type="button" className="ui-btn is-white is-xs aq-review-edit" onClick={() => goStep(target)} aria-label={`${h} 수정`}>수정</button>
+                  <button type="button" className="ui-btn is-white is-xs aq-review-edit" onClick={() => goStep(target)} aria-label={`${h} ${missing ? '채우기' : '수정'}`}>{missing ? '채우기' : '수정'}</button>
                 </div>
               ))}
             </div>

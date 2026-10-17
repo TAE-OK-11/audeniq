@@ -258,7 +258,7 @@ export function Settlement() {
         <div>
           <p className="eyebrow">내 작업실</p>
           <h1>정산·지급</h1>
-          <p>확정된 정산 금액과 지급 요청 내역을 확인해 보세요. <Link to="/terms/settlement" className="aq-inline-link">정산 약관 보기</Link></p>
+          <p>확정된 정산과 지급 요청 기록이에요. <Link to="/terms/settlement" className="aq-inline-link">정산 약관 보기</Link></p>
         </div>
       </div>
 
@@ -268,6 +268,8 @@ export function Settlement() {
         {/* 확정 정산액이 지금 어디에 있는지 — 받을 수 있음 / 지급 처리 중 / 보류를 한 막대로 */}
         {total > 0 ? (
           <div className="settle-split" aria-label={`확정 정산 ${money(total)} 중 받을 수 있음 ${money(left)}, 지급 처리 중 ${money(used)}${held > 0 ? `, 보류 ${money(held)}` : ''}`}>
+            {/* 막대가 무엇을 나눈 것인지 글자로 — '받을 수 있음'과 '지급 요청함'이 비율처럼 읽혔다 */}
+            <p className="settle-split-cap" aria-hidden="true">확정 정산 <b><Money value={total} /></b> 중</p>
             <div className="settle-split-bar" aria-hidden="true">
               <i className="is-left" style={{ flexGrow: left }} />
               <i className="is-used" style={{ flexGrow: used }} />
@@ -278,6 +280,9 @@ export function Settlement() {
               <li><i className="is-used" />{MOCK ? '지급 요청함' : '지급 처리 중'} <b><Money value={used} /></b></li>
               {held > 0 && <li><i className="is-held" />권리 확인 중 보류 <b><Money value={held} /></b></li>}
             </ul>
+            {held > 0 && (
+              <p className="settle-held-note">보류 금액은 권리 확인이 끝나면 받을 수 있는 금액으로 옮겨져요. 요청받은 서류가 있으면 <Link to="/rights" className="aq-inline-link">권리·보완 서류</Link>에서 내 주세요.</p>
+            )}
           </div>
         ) : (
           <p className="settle-hero-sub">아직 확정된 정산이 없어요.</p>
@@ -319,7 +324,7 @@ export function Settlement() {
         </button>
         <div className="settle-hero-actions">
           {MOCK && <button type="button" className="ui-btn is-soft is-lg" onClick={() => setShowStatement(true)}>예시 정산 추가</button>}
-          <button type="button" className="ui-btn is-primary is-lg" onClick={openPayoutModal}>수익 받기</button>
+          <button type="button" className="ui-btn is-primary is-lg" onClick={openPayoutModal}>{paymentRegistered ? '수익 받기' : '계좌 등록하기'}</button>
         </div>
       </section>
       <SplitsReceived />
@@ -407,7 +412,7 @@ export function Settlement() {
           ) : (
             <div className="ui-empty">
               <h2>지급 요청 기록이 없어요.</h2>
-              <p>지급 요청 내용을 저장하면 이곳에 표시돼요.</p>
+              <p>‘수익 받기’로 지급을 요청하면 여기에 쌓여요.</p>
             </div>
           )}
         </div>

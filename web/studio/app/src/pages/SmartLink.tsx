@@ -8,6 +8,7 @@ import { MOCK } from '../lib/mode';
 import { PLATFORM_NAMES } from '../lib/platformNames';
 import { BrandMark } from '../components/BrandMark';
 import { Glyph } from '../components/Glyph';
+import { gradientFor } from '../lib/catalog';
 
 interface Page {
   title: string; artist: string | null; release_date: string | null; released: boolean; cover: boolean;
@@ -78,7 +79,8 @@ export function SmartLink() {
       {cover && <div className="aq-smartlink-bg" style={{ backgroundImage: `url("${cover}")` }} aria-hidden="true" />}
       <div className="aq-smartlink-card">
         {cover ? <img className="aq-smartlink-cover" src={cover} alt={`${page.title} 커버`} onError={() => setCoverOk(false)} />
-          : <div className="aq-smartlink-cover is-empty" aria-hidden="true" />}
+          // 커버가 없어도 빈 회색 사각형 대신 스튜디오와 같은 발매별 그라데이션 커버 — 팬이 처음 보는 화면이 비어 보였다
+          : <div className="aq-smartlink-cover is-empty" aria-hidden="true" style={{ background: gradientFor(slug) }}><Glyph name="music" className="aq-cover-glyph" /></div>}
         <h1>{page.title}</h1>
         {page.artist && <p className="aq-smartlink-artist">{page.artist}</p>}
         {!page.released && page.release_date && <p className="aq-smartlink-soon">{page.release_date} 발매 예정</p>}

@@ -50,7 +50,7 @@ export function SplitInvite() {
 
   const pct = inv ? `${(inv.share_bps / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}%` : '';
   return (
-    <div className="aq-terms-page">
+    <main className="aq-terms-page">
       <header className="aq-sign-top">
         <Link to="/" aria-label="AUDENIQ"><img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" /></Link>
         <span>수익 분배 요청</span>
@@ -100,6 +100,6 @@ export function SplitInvite() {
           </>
         )}
       </article>
-    </div>
+    </main>
   );
 }

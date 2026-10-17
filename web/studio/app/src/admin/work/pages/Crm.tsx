@@ -120,7 +120,7 @@ function NewRelationship({ onSaved }: { onSaved: (d: RelationshipDetail) => void
         <div className="ui-field"><label htmlFor="relNext">다음 연락</label><DateTimeField id="relNext" className="ui-input" value={next} onChange={setNext} /></div>
       </div>
       <div className="adm-form-actions">
-        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>닫기</button>
         <button type="submit" className="ui-btn is-primary" disabled={!ready || busy}>{busy ? '등록 중…' : '등록'}</button>
       </div>
     </form>
@@ -240,7 +240,7 @@ function ContactForm({ relId, init, onSaved }: { relId: string; init: RelContact
       </div>
       <label className="adm-w-check"><input type="checkbox" checked={v.is_primary} onChange={e => setV({ ...v, is_primary: e.target.checked })} />주 연락처</label>
       <div className="adm-form-actions">
-        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>닫기</button>
         <button type="submit" className="ui-btn is-primary" disabled={!v.name.trim() || busy}>{busy ? '저장 중…' : '저장'}</button>
       </div>
     </form>

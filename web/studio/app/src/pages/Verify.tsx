@@ -29,7 +29,7 @@ export function Verify() {
   useEffect(() => { if (code) void check(code); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="aq-terms-page">
+    <main className="aq-terms-page">
       <header className="aq-sign-top">
         <Link to="/" aria-label="AUDENIQ"><img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" /></Link>
         <span>출력물 확인</span>
@@ -57,6 +57,6 @@ export function Verify() {
           </div>
         )}
       </article>
-    </div>
+    </main>
   );
 }

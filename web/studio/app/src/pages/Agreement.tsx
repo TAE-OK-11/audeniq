@@ -72,7 +72,7 @@ export function Agreement() {
             const on = signed ? !!checked(it.text) : false;
             return (
               <li key={it.text} className={on ? 'is-on' : ''}>
-                <span className="aq-paper-check" aria-label={on ? '확인함' : '확인 전'}>{on ? <CheckIcon size={12} /> : null}</span>
+                <span className="aq-paper-check" role="img" aria-label={on ? '확인함' : '확인 전'}>{on ? <CheckIcon size={12} /> : null}</span>
                 <span><b className="aq-paper-req">{it.required ? '필수' : '해당 시'}</b> {it.text}</span>
               </li>
             );

@@ -119,7 +119,7 @@ function ReviewForm({ doc, status, onDone }: { doc: StaffDocument; status: 'APPR
       </div>
       {needsGrants && <GrantRows rows={grants} onChange={setGrants} />}
       <div className="adm-form-actions">
-        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>닫기</button>
         <button type="submit" className={`ui-btn ${status === 'NEEDS' ? 'is-warn' : 'is-primary'}`} disabled={busy || (status === 'NEEDS' && !note.trim()) || !grantsOk}>
           {busy ? '저장 중…' : status === 'NEEDS' ? '보완 요청' : '승인'}
         </button>

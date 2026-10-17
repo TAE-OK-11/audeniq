@@ -49,7 +49,7 @@ function Resolve({ item, ignore, onDone }: { item: ExceptionItem; ignore: boolea
           placeholder={ignore ? '예: 테스트 패키지라 전송하지 않아요.' : '예: 메타데이터를 고친 뒤 재검사해서 통과했어요.'} />
       </div>
       <div className="adm-form-actions">
-        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>닫기</button>
         <button type="submit" className="ui-btn is-primary" disabled={busy || (ignore && !note.trim())}>{busy ? '처리 중…' : ignore ? '무시' : '해결'}</button>
       </div>
     </form>
@@ -115,7 +115,7 @@ function Report({ onDone }: { onDone: () => void }) {
         ) : <EntityPicker onPick={setEntity} kinds={['release', 'dsp', 'settlement_report', 'payout', 'document', 'org', 'artist', 'label', 'inquiry']} />}
       </div>
       <div className="adm-form-actions">
-        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>닫기</button>
         <button type="submit" className="ui-btn is-primary" disabled={busy || !title.trim()}>{busy ? '등록 중…' : '등록'}</button>
       </div>
     </form>

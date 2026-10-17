@@ -14,6 +14,17 @@
 .aq-rp-card{padding:6px 6px 8px;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
 .aq-rp-card h3{display:flex;align-items:center;gap:6px;margin:0;padding:14px 14px 6px;font-size:var(--aq-fs-md);font-weight:700;letter-spacing:0;color:var(--aq-text-3)}
 .aq-rp-card h4{margin:10px 0 0;padding:8px 14px 2px;font-size:var(--aq-fs-xs);font-weight:700;color:var(--aq-text-4)}
+.aq-report-hero .aq-report-period{margin:0 0 18px}
+/* 발매 1단계 — 접어 둔 선택 칸 열기 */
+.step-section .aq-more-info{margin:4px 0 8px;padding-left:0;--btn-fg:var(--aq-text-3)}
+.aq-dsp-unavailable{margin:16px 0 0;border-radius:var(--aq-r-xl);background:var(--aq-surface)}
+.aq-dsp-unavailable summary{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:48px;padding:12px 16px;font-size:14px;font-weight:600;color:var(--aq-text-3);cursor:pointer;list-style:none}
+.aq-dsp-unavailable summary::-webkit-details-marker{display:none}
+.aq-dsp-unavailable[open] summary svg{transform:rotate(180deg)}
+.aq-dsp-unavailable p{margin:0;padding:0 16px;font-size:13px;line-height:1.7;color:var(--aq-text-3)}
+.aq-dsp-unavailable small{display:block;padding:6px 16px 14px;font-size:12px;color:var(--aq-text-4)}
+.aq-rp-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-right:14px}
+.aq-rp-head .ui-btn{margin-top:8px}
 .aq-report-count{font-size:var(--aq-fs-xs);font-weight:700;color:var(--aq-blue-500)}
 .aq-report-rows{display:grid;margin:0;padding:0;list-style:none}
 .aq-report-rows li{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:56px;padding:10px 14px;border-radius:var(--aq-r-lg)}
@@ -136,6 +147,8 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 
 /* 계약서 진행 순서 — 영문식 01·02·03 대신 다른 화면과 같은 ‘n단계’ 이름표 + 흰 칸 */
 #view-contracts .studio-doc-path{gap:8px;padding:10px}
+#view-contracts .aq-doc-path-wrap{margin:32px 0 0}
+#view-contracts .aq-doc-path-wrap h2{margin:0 0 10px;font-size:var(--aq-fs-md,16px);font-weight:700;color:var(--aq-text-2)}
 #view-contracts .studio-doc-path>div{padding:14px 16px;border-radius:var(--aq-r-lg);background:#fff}
 #view-contracts .studio-path-n{display:inline-block;margin-bottom:10px;padding:3px 8px;border-radius:6px;background:var(--aq-blue-50);color:var(--aq-blue-700);font-size:11px;font-weight:700;letter-spacing:0}
 #view-contracts .studio-doc-path strong{font-size:14px;letter-spacing:-.02em}
@@ -384,6 +397,11 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
    html에만 건다: body까지 막으면 body가 따로 스크롤 상자가 돼 고정 머리글(과 그 안의 메뉴)이
    스크롤해 둔 만큼 화면 위로 밀려 올라가 메뉴가 안 보인다. */
 @media (max-width:760px){html.aq-menu-open{overflow:hidden}}
+/* 태블릿 폭(761~1023px)의 떠 있는 메뉴 — 뒤 화면을 살짝 어둡게 해 메뉴에 눈이 가고, 바깥을 누르면 닫힌다는 걸 보여 준다 */
+@media (min-width:761px) and (max-width:1023px){
+  html.aq-menu-open body::after{content:"";position:fixed;inset:0;z-index:60;background:rgba(23,27,41,.18);animation:aq-fade-in var(--aq-motion-base) var(--aq-enter) both}
+}
+@media (prefers-reduced-motion:reduce){html.aq-menu-open body::after{animation:none}}
 
 /* 발매 목록 보완 줄 — 휴대폰에서는 요청 내용을 한 줄 다 쓰고, 버튼은 그 아래에 나란히 */
 @media (max-width:560px){
@@ -395,6 +413,15 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 /* 홈 새 발매 띠 — 설명 줄을 뺐으니 높이도 한 줄 + 버튼에 맞춘다 */
 #view-home .aq-home-hero{min-height:0}
 @media (min-width:761px){#view-home .aq-home-hero{padding:24px 28px}}
+/* 먼저 할 일 — 보완처럼 기한이 걸린 일이 있으면 새 발매 대신 주황 면으로 맨 위에 */
+#view-home .aq-home-hero.is-urgent{background:var(--aq-amber-50)}
+/* 큰 카드를 먼저 할 일에 내주면 새 발매는 제목 옆 버튼으로 — 휴대폰에서도 보인다 (live.css가 홈 머리 버튼을 숨김) */
+#view-home>.ui-page-head>.ui-btn.aq-home-new{display:inline-flex}
+#view-home .aq-home-hero.is-urgent .eyebrow{color:var(--aq-amber-600)}
+@media(hover:hover){#view-home a.aq-home-hero.is-urgent:hover{background:var(--aq-amber-100)}}
+/* 바로가기 아래 상태 한 줄 — 설명 대신 지금 상태를 보여 줄 때 */
+#view-home .service-item p.aq-grid-status{color:var(--aq-text-2);font-weight:600}
+#view-home .service-item p.aq-grid-status.is-warn{color:var(--aq-amber-600)}
 
 /* 메뉴 아래 약관 링크 — 좁은 판에서 글자가 두 줄로 쪼개지지 않고 줄 단위로 넘어간다 */
 #portalNav .aq-nav-foot{flex-wrap:wrap;row-gap:6px}
@@ -415,7 +442,6 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 /* 음악 리포트 — 휴대폰에서 고르기 칸 셋을 한 줄에 우겨 넣어 글자가 잘리던 것: 기간 둘은 한 줄, 발매는 다음 줄 전체 */
 @media (max-width:760px){
   #view-reports .report-tools{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
-  #view-reports .report-tools>#reportRelease{grid-column:1/-1}
   #view-reports .report-tools>*{width:100%}
 }
 .aq-set-card .aq-set-help{margin:0;padding:2px 14px 8px}
@@ -576,6 +602,11 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .auth-agree>.aq-help-error{margin:0;padding:0 4px}
 /* 계정 찾기 안내 — 옅은 카드 위 흰 면 (같은 색 면이라 안 보이던 것) */
 .auth-card .auth-done p{background:#fff}
+.aq-pw-rule{display:flex;align-items:center;gap:4px;color:var(--aq-text-4)}
+.aq-pw-rule.is-ok{color:var(--aq-green-600)}
+.aq-email-suggest{color:var(--aq-text-3)}
+.aq-email-suggest b{color:var(--aq-text);font-weight:700}
+.aq-email-suggest .aq-inline-link{margin-left:4px;padding:0;border:0;background:none;font:inherit;cursor:pointer}
 
 /* ==========================================================================
    공통 요소 2차
@@ -649,6 +680,9 @@ button.aq-inline-link{display:inline;padding:0;border:0;background:none;font:inh
 
 /* 발매 신청 마지막 확인 — 값 칸(글·목록·커버 미리보기), 곡 목록, 커버 썸네일 */
 #view-new .aq-review-value{font-size:14px;line-height:1.6;color:var(--aq-text-2)}
+#view-new .aq-review-card.is-missing .aq-review-value{color:var(--aq-amber-600);font-weight:600}
+#view-new .aq-review-card.is-missing .aq-review-tracks{color:var(--aq-text-2);font-weight:400}
+#view-new .aq-review-need{font-size:12px;font-weight:600;color:var(--aq-amber-600)}
 #view-new .aq-review-tracks{margin:0;padding-left:1.3em}
 #view-new .aq-review-cover{display:flex;align-items:center;gap:12px}
 #view-new .aq-review-cover img{flex:none;width:56px;height:56px;border-radius:var(--aq-r-md);object-fit:cover;background:#fff}
@@ -691,6 +725,9 @@ button.settle-hero-account.is-button .min-0{display:grid}
 
 /* 문의 — 자주 묻는 질문 (components/HelpFaq.tsx) */
 .aq-faq{margin:0 0 28px}
+/* 문의 — 내 문의가 있으면 목록이 위, 자주 묻는 질문은 그 아래 */
+.aq-inq-mine{margin:0 0 32px}
+.aq-inq-mine h2{margin:0 0 10px;font-size:var(--aq-fs-md,16px);font-weight:700;color:var(--aq-text-2)}
 .aq-faq h2{margin:0 0 10px;font-size:var(--aq-fs-md,16px);font-weight:700;color:var(--aq-text-2)}
 .aq-faq-list{display:grid;gap:8px}
 .aq-faq-item{border-radius:var(--aq-r-xl);background:var(--aq-surface)}
@@ -713,6 +750,7 @@ button.settle-hero-account.is-button .min-0{display:grid}
   .aq-tab-item.is-active{color:var(--aq-blue-500)}
   .aq-tab-item:active{transform:scale(.94)}
   .aq-tab-dot{position:absolute;top:6px;left:calc(50% + 8px);width:7px;height:7px;border-radius:50%;background:var(--aq-red-500)}
+  .aq-tab-dot.is-warn{background:var(--aq-amber-500)}
   body:not(.wizard-mode) #main{padding-bottom:calc(72px + env(safe-area-inset-bottom))}
   body:not(.wizard-mode) .portal-header .menu-toggle{display:none!important}
   body.wizard-mode .aq-tabbar{display:none}
@@ -722,6 +760,7 @@ button.settle-hero-account.is-button .min-0{display:grid}
 }
 @media (min-width:1024px){
   .aq-sidebar{display:block;position:fixed;top:var(--aq-header-h,69px);left:0;bottom:0;width:232px;z-index:40;overflow-y:auto;padding:20px 12px 32px;background:#fff;box-shadow:1px 0 0 var(--aq-gray-100)}
+  .aq-side-cta{display:flex;width:100%;justify-content:flex-start;gap:8px;margin:0 0 20px;padding:0 12px}
   .aq-side-group{margin-bottom:18px}
   .aq-side-title{margin:0 0 6px;padding:0 12px;font-size:12px;font-weight:700;color:var(--aq-text-4)}
   .aq-side-item{display:flex;align-items:center;gap:10px;min-height:42px;padding:0 12px;border-radius:var(--aq-r-md);font-size:15px;font-weight:600;color:var(--aq-text-2);text-decoration:none;transition:background-color var(--aq-dur-fast) var(--aq-ease)}
@@ -741,6 +780,9 @@ button.settle-hero-account.is-button .min-0{display:grid}
 
 /* ---------- 정산 화면 (Settlement.tsx) — 돈이 어디 있는지·다음 정산·수수료 미리 보기·달별 묶음·지급 단계 ---------- */
 .settle-split{margin-top:14px}
+.settle-split-cap{margin:0 0 8px;font-size:13px;color:var(--aq-text-3)}
+.settle-split-cap b{font-weight:700;color:var(--aq-text-2);font-variant-numeric:tabular-nums}
+.settle-held-note{margin:10px 0 0;font-size:13px;line-height:1.6;color:var(--aq-text-3)}
 .settle-split-bar{display:flex;gap:3px;height:10px;border-radius:var(--aq-r-pill);overflow:hidden;background:#fff}
 .settle-split-bar i{display:block;min-width:4px}
 .settle-split .is-left{background:var(--aq-blue-500)}

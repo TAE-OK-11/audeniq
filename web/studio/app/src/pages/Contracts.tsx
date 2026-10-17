@@ -49,26 +49,7 @@ export function Contracts() {
         <div>
           <p className="eyebrow">계약·권리</p>
           <h1>계약서</h1>
-          <p>발매마다 배급 신청서와 배급 계약서를 한곳에서 확인하고 서명하세요.</p>
-        </div>
-      </div>
-
-
-      <div className="studio-doc-path">
-        <div>
-          <span className="studio-path-n">1단계</span>
-          <strong>배급 신청서 서명</strong>
-          <small>발매를 접수할 때</small>
-        </div>
-        <div>
-          <span className="studio-path-n">2단계</span>
-          <strong>담당자 검토</strong>
-          <small>수수료·배급 조건 확정</small>
-        </div>
-        <div>
-          <span className="studio-path-n">3단계</span>
-          <strong>배급 계약서 서명</strong>
-          <small>권리 확인 체크 후 배급 시작</small>
+          <p>발매마다 배급 신청서와 계약서를 확인하고 서명해요.</p>
         </div>
       </div>
 
@@ -86,6 +67,28 @@ export function Contracts() {
           />
         )}
       </div>
+
+      {/* 진행 순서는 처음 한 번 읽으면 되는 설명 — 서명할 계약서보다 위에 있어 매번 지나쳐야 했다 */}
+      <section className="aq-doc-path-wrap" aria-labelledby="docPathTitle">
+        <h2 id="docPathTitle">계약은 이렇게 진행돼요</h2>
+        <div className="studio-doc-path">
+          <div>
+            <span className="studio-path-n">1단계</span>
+            <strong>배급 신청서 서명</strong>
+            <small>발매를 접수할 때</small>
+          </div>
+          <div>
+            <span className="studio-path-n">2단계</span>
+            <strong>담당자 검토</strong>
+            <small>수수료·배급 조건 확정</small>
+          </div>
+          <div>
+            <span className="studio-path-n">3단계</span>
+            <strong>배급 계약서 서명</strong>
+            <small>권리 확인 체크 후 배급 시작</small>
+          </div>
+        </div>
+      </section>
 
       <OrgContractEnd />
 
