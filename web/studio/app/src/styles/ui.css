@@ -554,9 +554,10 @@ summary::-webkit-details-marker{display:none}
 #view-release .aq-detail-hero{margin-bottom:12px;align-items:start}
 #view-release .spaced-actions{margin:-18px 0 8px!important}
 /* 발매 상태 알약 — 처음 쓰던 상태 칩 모양 그대로 (옅은 바탕 + 상태 색 글자, 11px) */
-.ui-badge.aq-status{padding:7px 11px;font-size:var(--aq-fs-2xs);font-weight:var(--aq-fw-bold);line-height:1.2;letter-spacing:normal;background:#EDEFF4;color:var(--aq-tone-gray-fg)}
+/* 발매 상태도 다른 배지와 같은 크기 — 혼자 11px·더 큰 여백이라 홈·목록에서 다른 배지와 키가 달랐다 */
+.ui-badge.aq-status{background:#EDEFF4;color:var(--aq-tone-gray-fg)}
 .ui-badge.aq-status.is-draft,.ui-badge.aq-status.is-closed,.ui-badge.aq-status.is-cancelled{background:#EDEFF4;color:var(--aq-tone-gray-fg)}
-.ui-badge.aq-status.is-ready{background:#e7eefc;color:#3955a8}
+.ui-badge.aq-status.is-ready{background:var(--aq-tone-blue-bg);color:var(--aq-tone-blue-fg)}
 .ui-badge.aq-status.is-review{background:#F0EDFF;color:var(--aq-violet-600)}
 .ui-badge.aq-status.is-needs{background:#FFF3E6;color:var(--aq-amber-600)}
 .ui-badge.aq-status.is-live{background:#E8F6F0;color:var(--aq-green-600)}
