@@ -1,7 +1,7 @@
 // SEO uses one primary hostname. Change this and the absolute URLs in the
 // landing HTML / sitemap / robots together if AUDENIQ chooses another domain.
-import { requireHttps, secureResponse } from '../../shared/transport.js';
-import { PAGE_PATHS, FILE_PATHS } from './public-routes.js';
+import { requireHttps, secureResponse } from '../../shared/transport.ts';
+import { PAGE_PATHS, FILE_PATHS } from './public-routes.ts';
 export const PRIMARY_HOST = "audeniq.com";
 const PRIMARY_ORIGIN = `https://${PRIMARY_HOST}`;
 // AUDENIQ STUDIO is a separate React app on its own Worker (web/studio).

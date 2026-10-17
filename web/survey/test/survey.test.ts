@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {validateSubmission,default as worker} from '../src/worker.js';
+import {validateSubmission,default as worker} from '../src/worker.ts';
 import questions from '../questions.json' with {type:'json'};
 import legacyQuestions from '../questions-v4.json' with {type:'json'};
 import {STEPS} from '../app/src/survey.ts';

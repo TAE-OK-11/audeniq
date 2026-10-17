@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker from '../worker.js';
-import adminWorker from '../../admin/worker.js';
+import worker from '../worker.ts';
+import adminWorker from '../../admin/worker.ts';
 
 // 공지·이벤트·서버 점검·인증 보조는 백엔드가 한다 (crates/core/tests/site_content.rs).
 // Worker는 화면 서빙과 /api 전달만 — 여기서는 전달 규칙을 확인한다.

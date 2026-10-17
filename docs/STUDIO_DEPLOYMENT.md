@@ -12,7 +12,7 @@ Desktop (1280px) and mobile (390px) browser comparisons against the restored pro
 
 Studio is a React + TypeScript app (`web/studio/app`). The old HTML prototype and the Rust/WASM shell (`crates/studio`, `studio-pack`, `audeniq-dev-web`) were removed; every screen is React. Two Workers can serve it:
 
-- `web/studio/worker.js` (what studio.audeniq.com runs today): static React build, notices/events/maintenance from D1, `/api/*` proxied to the rented-server API through the named tunnel with the service secret.
+- `web/studio/worker.ts` (what studio.audeniq.com runs today): static React build, notices/events/maintenance from D1, `/api/*` proxied to the rented-server API through the named tunnel with the service secret.
 - `crates/edge` (Rust Workers): the same build, the same notices/events/maintenance API from D1 (`/api/status`, maintenance blocking and the `MAINTENANCE_MODE` emergency switch included), `/api/*` through Workers VPC `PRIVATE_API`.
 
 The rented server runs Rust API, worker, PostgreSQL and cloudflared. Backend ports are not published by production Compose. Browser authentication is a Rust API session; the edge adds a separate service secret. Browser files go directly to R2.
@@ -23,7 +23,7 @@ The user-facing Studio is the React app in `web/studio/app`. It has two builds:
 
 | Build | Command | Output | Data |
 |---|---|---|---|
-| Server-connected (committed, served by `web/studio/worker.js`) | `bun run build` | `web/studio/public` | real API through the Worker |
+| Server-connected (committed, served by `web/studio/worker.ts`) | `bun run build` | `web/studio/public` | real API through the Worker |
 | Server-connected for the Rust edge | `bun run build:edge` | `web/studio/edge-dist` | real API through `crates/edge` |
 | Demo (local only) | `bun run dev` / `bun run build:demo` | `web/studio/demo-dist` (ignored) | browser storage mock |
 
@@ -38,7 +38,7 @@ Request path: browser → `crates/edge` Worker (same origin, serves the app at `
 
 Studio features that used to live in browser storage now have server APIs (docs/API.md "Portal"): artist profile, payout account (AES-256-GCM sealed with `PAYOUT_ACCOUNT_KEY`), inquiries with staff replies, notifications raised by pipeline triggers, agreement signing and rights proofs, the signed release application, settlement (ledger read-only + payout requests) and reports. In the server-connected build the stores start empty, are filled after login, keep nothing in localStorage and refresh notifications every minute and on focus. Account identity verification and foreign tax residency (계정 정보 → 본인 확인) are stored by the API (`/api/me/account`, `/api/me/identity`, `/api/me/tax`); verification uses the same provider integration as rights signing and is refused until `IDENTITY_PROVIDER` is configured (`test` only outside production). Password reset by email + registered phone + SMS code is available in the API (`/api/auth/password-reset/*`, phone registration `/api/me/phone/*`) but needs an SMS sender contract (`SMS_PROVIDER`; until then it answers `SMS_PROVIDER_NOT_CONFIGURED`), and the Studio screens still point to support. A real provider (PASS/카카오 etc.) is not contracted yet: in the connected build a drawn signature on an approved, read-confirmed agreement completes the contract.
 
-Notices and events live in D1 (`audeniq-content`, binding `CONTENT_DB`), not in the private API. Both Workers serve the same API from it: the static Studio Worker (`web/studio/worker.js`, what studio.audeniq.com runs today) and the Rust edge (`crates/edge`). The pages always read `/api/notices` and `/api/events`, also in the demo build; the built-in sample posts only appear when no Worker answers (plain `vite` dev).
+Notices and events live in D1 (`audeniq-content`, binding `CONTENT_DB`), not in the private API. Both Workers serve the same API from it: the static Studio Worker (`web/studio/worker.ts`, what studio.audeniq.com runs today) and the Rust edge (`crates/edge`). The pages always read `/api/notices` and `/api/events`, also in the demo build; the built-in sample posts only appear when no Worker answers (plain `vite` dev).
 
 - Public: `GET /api/notices[/{id}]`, `GET /api/events[/{id}]`: published (`published_at` ≤ now), not removed.
 - Admin (active ADMIN session, mutations require CSRF): `GET|POST /api/content/{notices|events}`, `PUT|DELETE /api/content/{notices|events}/{id}`. Workers check `/api/staff/content-access` before touching D1. The admin list includes scheduled and removed rows; `DELETE` only sets `deleted_at`, and saving a removed row publishes it again.

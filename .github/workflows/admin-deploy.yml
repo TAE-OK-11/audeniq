@@ -9,16 +9,16 @@ on:
       - web/admin/**
       - web/shared/**
       - web/studio/app/build/retain-assets.ts
-      - web/studio/worker.js
-      - web/studio/test/worker.test.mjs
+      - web/studio/worker.ts
+      - web/studio/test/worker.test.ts
       - .github/workflows/admin-deploy.yml
   pull_request:
     paths:
       - web/admin/**
       - web/shared/**
       - web/studio/app/build/retain-assets.ts
-      - web/studio/worker.js
-      - web/studio/test/worker.test.mjs
+      - web/studio/worker.ts
+      - web/studio/test/worker.test.ts
       - .github/workflows/admin-deploy.yml
   workflow_dispatch:
 permissions:
@@ -44,7 +44,7 @@ jobs:
           bun run test
           bun run build
       - name: Shared content Worker tests
-        run: bun test web/studio/test/worker.test.mjs
+        run: bun test web/studio/test/worker.test.ts
       - name: Deploy to Cloudflare Workers
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         working-directory: web/admin

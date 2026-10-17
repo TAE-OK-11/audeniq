@@ -1,4 +1,4 @@
-// API 호출 계층 — 관리자 Worker(worker.js)가 같은 출처의 /api/*를 백엔드로 전달한다.
+// API 호출 계층 — 관리자 Worker(worker.ts)가 같은 출처의 /api/*를 백엔드로 전달한다.
 // 브라우저는 세션 쿠키(HttpOnly)와 CSRF 토큰만 다루고, 서비스 비밀값은 Worker만 가진다.
 // (스튜디오 web/studio/app/src/api/http.ts와 같은 규칙)
 import { ApiError, messageForCode } from './errors';

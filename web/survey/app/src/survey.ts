@@ -1,6 +1,6 @@
 // AUDENIQ 현재 계획에 맞춘 수요 조사. 저장 키와 표시 번호는 별개예요.
 export const SURVEY_VERSION = 5;
-// 선택지 값은 배열 순서(0, 1, 2, …)이고, 서버 검증(questions.json, src/worker.js)과 같은 값을 쓴다.
+// 선택지 값은 배열 순서(0, 1, 2, …)이고, 서버 검증(questions.json, src/worker.ts)과 같은 값을 쓴다.
 export type QuestionKind = 'single' | 'multi' | 'text';
 
 export interface Question {

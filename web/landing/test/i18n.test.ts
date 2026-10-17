@@ -5,9 +5,9 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import worker from '../src/worker.js';
-import { PAGE_PATHS } from '../src/public-routes.js';
-import { strayHangul, translateHtml } from '../scripts/i18n.mjs';
+import worker from '../src/worker.ts';
+import { PAGE_PATHS } from '../src/public-routes.ts';
+import { strayHangul, translateHtml } from '../scripts/i18n.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = path => readFileSync(join(root, path), 'utf8');

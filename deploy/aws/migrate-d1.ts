@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Cloudflare D1(audeniq-content: 공지·이벤트·점검) → Postgres(content 스키마, 마이그레이션 0086) 옮기기
 //
-//   CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... node deploy/aws/migrate-d1.mjs > d1-import.sql
+//   CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... node --experimental-strip-types deploy/aws/migrate-d1.ts > d1-import.sql
 //   psql "$OWNER_DATABASE_URL" -v ON_ERROR_STOP=1 -f d1-import.sql
 //
 // 같은 id가 이미 있으면 건너뛴다(ON CONFLICT DO NOTHING) — 여러 번 실행해도 된다.
