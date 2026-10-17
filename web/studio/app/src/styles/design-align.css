@@ -141,6 +141,8 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 
 /* 계약서 진행 순서 — 영문식 01·02·03 대신 다른 화면과 같은 ‘n단계’ 이름표 + 흰 칸 */
 #view-contracts .studio-doc-path{gap:8px;padding:10px}
+#view-contracts .aq-doc-path-wrap{margin:32px 0 0}
+#view-contracts .aq-doc-path-wrap h2{margin:0 0 10px;font-size:var(--aq-fs-md,16px);font-weight:700;color:var(--aq-text-2)}
 #view-contracts .studio-doc-path>div{padding:14px 16px;border-radius:var(--aq-r-lg);background:#fff}
 #view-contracts .studio-path-n{display:inline-block;margin-bottom:10px;padding:3px 8px;border-radius:6px;background:var(--aq-blue-50);color:var(--aq-blue-700);font-size:11px;font-weight:700;letter-spacing:0}
 #view-contracts .studio-doc-path strong{font-size:14px;letter-spacing:-.02em}
@@ -704,6 +706,9 @@ button.settle-hero-account.is-button .min-0{display:grid}
 
 /* 문의 — 자주 묻는 질문 (components/HelpFaq.tsx) */
 .aq-faq{margin:0 0 28px}
+/* 문의 — 내 문의가 있으면 목록이 위, 자주 묻는 질문은 그 아래 */
+.aq-inq-mine{margin:0 0 32px}
+.aq-inq-mine h2{margin:0 0 10px;font-size:var(--aq-fs-md,16px);font-weight:700;color:var(--aq-text-2)}
 .aq-faq h2{margin:0 0 10px;font-size:var(--aq-fs-md,16px);font-weight:700;color:var(--aq-text-2)}
 .aq-faq-list{display:grid;gap:8px}
 .aq-faq-item{border-radius:var(--aq-r-xl);background:var(--aq-surface)}

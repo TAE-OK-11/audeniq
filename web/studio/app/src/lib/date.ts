@@ -53,7 +53,9 @@ export function relativeTime(v: unknown, now: Date = new Date()): string {
   if (diff < 3600) return `${Math.floor(diff / 60)}분 전`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`;
   if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}일 전`;
-  return todayStr(d);
+  // 일주일이 지나면 '9월 23일'처럼 — '1분 전' 옆에 '2026-09-23'이 섞이면 읽는 방식이 두 가지가 된다. 해가 다르면 연도까지
+  const md = `${d.getMonth() + 1}월 ${d.getDate()}일`;
+  return d.getFullYear() === now.getFullYear() ? md : `${d.getFullYear()}년 ${md}`;
 }
 
 /** ISO 시각(UTC) → 한국 날짜 'YYYY-MM-DD' (공지 게시일 표기용) */

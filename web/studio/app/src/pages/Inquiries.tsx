@@ -400,20 +400,25 @@ export function Inquiries() {
     return true;
   };
 
+  const listLoading = requests === null && !tickets.length;
+
   return (
     <div id="view-inquiries" className="view">
       <PageHeader
         eyebrow="계정·지원"
         title="문의"
-        sub="발매 보완 요청과 정산·계약 관련 문의를 확인해 보세요."
+        sub="발매·정산·계약 문의와 플랫폼 요청을 남기고 답변을 받아요."
         actions={<button type="button" className="ui-btn is-primary" onClick={() => setShowForm(true)}><Glyph name="plus" size={14} />새 문의</button>}
       />
 
-      <HelpFaq />
+      {/* 내 문의가 있으면 답변 상태가 먼저 — 자주 묻는 질문 다섯 줄 아래에 묻혀 있었다. 없으면 질문부터 보여 스스로 답을 찾게 */}
+      {!listLoading && !rows.length && <HelpFaq />}
 
-      {requests === null && !tickets.length ? (
+      {listLoading ? (
         <SkeletonList rows={3} />
       ) : rows.length ? (
+        <section className="aq-inq-mine" aria-labelledby="inqMineTitle">
+        <h2 id="inqMineTitle">내 문의</h2>
         <div className="aq-catalog-cards aq-stagger">
           {rows.map(t => (
             <button key={t.type + t.id} type="button" className="ui-row aq-ticket-card" onClick={() => setOpenId(t.id)}>
@@ -426,12 +431,15 @@ export function Inquiries() {
             </button>
           ))}
         </div>
+        </section>
       ) : (
         <EmptyState
           icon={<Glyph name="inquiry" size={22} />} title="작성한 문의가 없어요" as="h2"
           actions={<button type="button" className="ui-btn is-primary" onClick={() => setShowForm(true)}>문의 작성하기</button>}
         >발매·정산·권리 관련 문의와 아티스트 페이지·Content ID 요청을 보내고 진행 상황을 볼 수 있어요.</EmptyState>
       )}
+
+      {rows.length > 0 && <HelpFaq />}
 
       {showForm && (
         <Modal title="새 문의" onClose={() => setShowForm(false)} dismissible={false}>
