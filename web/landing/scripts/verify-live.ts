@@ -2,13 +2,15 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import type { Locale, LocaleRegistry, SiteManifest } from './content-types.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const manifest = JSON.parse(readFileSync(join(root,'content/generated-manifest.json'),'utf8'));
+const manifest: SiteManifest = JSON.parse(readFileSync(join(root,'content/generated-manifest.json'),'utf8'));
 const origin = 'https://audeniq.com';
-const locales = JSON.parse(readFileSync(join(root,'content/locales.json'),'utf8')).locales.filter(locale=>locale.status==='published');
-const localeOf = path => locales.filter(item=>item.prefix!=='/').find(item=>path.startsWith(item.prefix)) || locales.find(item=>item.prefix==='/');
-const get = async path => {
+const locales = (JSON.parse(readFileSync(join(root,'content/locales.json'),'utf8')) as LocaleRegistry).locales.filter(locale=>locale.status==='published');
+// build-seo.ts refuses to build unless the default language is published at "/".
+const localeOf = (path: string): Locale => locales.filter(item=>item.prefix!=='/').find(item=>path.startsWith(item.prefix)) || locales.find(item=>item.prefix==='/')!;
+const get = async (path: string): Promise<{ response: Response; text: string }> => {
   const response = await fetch(origin+path,{redirect:'manual',signal:AbortSignal.timeout(15000)});
   return {response,text:await response.text()};
 };
