@@ -1,5 +1,16 @@
+import type { TransportEnv } from './worker-types.ts';
+
+/** Workers가 요청에 붙이는 정보 (request.cf) 중 여기서 읽는 것 */
+interface CfProperties { clientAcceptEncoding?: string }
+/** Workers 요청 — 로컬·테스트의 일반 Request에는 cf가 없다 */
+export type WorkerRequest = Request & { cf?: CfProperties };
+/** Workers 전용 응답 옵션: encodeBody 'manual'이면 이미 압축된 본문을 그대로 보낸다 */
+type WorkerResponseInit = ResponseInit & { encodeBody?: 'automatic' | 'manual' };
+/** 스트림 본문 요청 (fetch 표준의 duplex — lib.dom에는 아직 없다) */
+type StreamingRequestInit = RequestInit & { duplex?: 'half' };
+
 // Public network policy. Private Compose services continue to use HTTP.
-export function requireHttps(request) {
+export function requireHttps(request: Request): Response | null {
   const url = new URL(request.url);
   if (url.protocol === 'https:' || (url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))) return null;
   return Response.json({ error: { code: 'HTTPS_REQUIRED' } }, {
@@ -7,7 +18,7 @@ export function requireHttps(request) {
   });
 }
 
-export function backendOrigin(env) {
+export function backendOrigin(env: Pick<TransportEnv, 'BACKEND_URL'>): string {
   const url = new URL(env.BACKEND_URL || 'https://api-origin.audeniq.com');
   if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') {
     throw new TypeError('BACKEND_URL must be an HTTPS origin');
@@ -15,8 +26,8 @@ export function backendOrigin(env) {
   return url.origin;
 }
 
-export function encodingQuality(accept, encoding) {
-  const values = new Map();
+export function encodingQuality(accept: string | null | undefined, encoding: string): number {
+  const values = new Map<string, number>();
   for (const part of String(accept ?? '').toLowerCase().split(',')) {
     const [name, ...parameters] = part.trim().split(';').map(s => s.trim());
     let q = 1;
@@ -33,7 +44,7 @@ export function encodingQuality(accept, encoding) {
 
 // Workers Fetch supports br/gzip. The CDN's compression rule negotiates zstd
 // with visitors; forwarding unsupported zstd to Fetch can break the body.
-export function passThroughEncoding(accept) {
+export function passThroughEncoding(accept: string | null | undefined): string {
   return ['br', 'gzip'].filter(name => encodingQuality(accept, name) > 0)
     .map(name => {
       const q = encodingQuality(accept, name);
@@ -41,29 +52,30 @@ export function passThroughEncoding(accept) {
     }).join(', ') || 'identity';
 }
 
-export function clientEncoding(request) {
+export function clientEncoding(request: WorkerRequest): string | null {
   return request.cf?.clientAcceptEncoding ?? request.headers.get('accept-encoding');
 }
 
-export function secureResponse(response) {
+export function secureResponse(response: Response): Response {
   const headers = new Headers(response.headers);
   headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-  return new Response(response.body, {
+  const init: WorkerResponseInit = {
     status: response.status, statusText: response.statusText, headers,
     ...(headers.has('content-encoding') ? { encodeBody: 'manual' } : {}),
-  });
+  };
+  return new Response(response.body, init);
 }
 
-const ASSET_TYPES = {
+const ASSET_TYPES: Partial<Record<string, string>> = {
   js: 'application/javascript; charset=utf-8', css: 'text/css; charset=utf-8',
   html: 'text/html; charset=utf-8', json: 'application/json; charset=utf-8',
   svg: 'image/svg+xml', wasm: 'application/wasm',
 };
 
-export async function serveAssets(request, env) {
+export async function serveAssets(request: WorkerRequest, env: Pick<TransportEnv, 'ASSETS'>): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname === '/' ? '/index.html' : url.pathname;
-  const type = ASSET_TYPES[path.split('.').pop()];
+  const type = ASSET_TYPES[path.split('.').pop()!];
   const accept = clientEncoding(request);
   if (type && ['GET', 'HEAD'].includes(request.method) && !request.headers.has('range')
       && encodingQuality(accept, 'br') > 0 && encodingQuality(accept, 'br') >= encodingQuality(accept, 'gzip')) {
@@ -79,7 +91,8 @@ export async function serveAssets(request, env) {
         headers.set('Vary', vary ? `${vary}, Accept-Encoding` : 'Accept-Encoding');
       }
       if (path.endsWith('.html')) headers.set('Cache-Control', 'no-cache');
-      return new Response(br.body, { status: br.status, headers, encodeBody: 'manual' });
+      const init: WorkerResponseInit = { status: br.status, headers, encodeBody: 'manual' };
+      return new Response(br.body, init);
     }
   }
   const response = await env.ASSETS.fetch(request);
@@ -94,12 +107,12 @@ export async function serveAssets(request, env) {
   return response;
 }
 
-export async function readLimitedBody(request, maxBytes) {
+export async function readLimitedBody(request: Request, maxBytes: number): Promise<Uint8Array> {
   const declared = request.headers.get('content-length');
   if (declared && Number(declared) > maxBytes) throw new RangeError('body too large');
   const reader = request.body?.getReader();
   if (!reader) return new Uint8Array();
-  const parts = [];
+  const parts: Uint8Array[] = [];
   let size = 0;
   try {
     while (true) {
@@ -127,7 +140,7 @@ const FORWARD_HEADERS = ['cookie', 'origin', 'content-type', 'accept', 'x-csrf-t
 const PARTNER_HOOK = /^\/api\/partner-hooks\//;
 const PARTNER_DROP = new Set(['x-forwarded-for', 'x-real-ip', 'host', 'connection', 'accept-encoding']);
 
-export function backendHeaders(request, env, pathname, site) {
+export function backendHeaders(request: WorkerRequest, env: Required<Pick<TransportEnv, 'EDGE_SERVICE_SECRET'>>, pathname: string, site: string): Headers {
   const src = request.headers;
   const headers = new Headers();
   for (const name of FORWARD_HEADERS) {
@@ -149,32 +162,35 @@ export function backendHeaders(request, env, pathname, site) {
   return headers;
 }
 
-const proxyError = (status, code) => Response.json({ error: { code } }, {
+const proxyError = (status: number, code: string): Response => Response.json({ error: { code } }, {
   status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
 });
 
 /** 요청을 백엔드(터널 → api)로 넘긴다. path를 주면 그 경로로 (설문: /api/x → /api/survey/x) */
-export async function proxyToBackend(request, env, { site, path }) {
+export async function proxyToBackend(request: WorkerRequest, env: Pick<TransportEnv, 'BACKEND_URL' | 'EDGE_SERVICE_SECRET'>, { site, path }: { site: string; path?: string }): Promise<Response> {
   if (!env.EDGE_SERVICE_SECRET) return proxyError(503, 'BACKEND_UNAVAILABLE');
   const url = new URL(request.url);
   const target = path ?? url.pathname;
   const read = request.method === 'GET' || request.method === 'HEAD';
-  let res;
+  let res: Response;
   try {
-    res = await fetch(new Request(backendOrigin(env) + target + url.search, {
+    const init: StreamingRequestInit = {
       method: request.method,
-      headers: backendHeaders(request, env, target, site),
+      // 위에서 EDGE_SERVICE_SECRET이 있음을 확인했다
+      headers: backendHeaders(request, env as Required<Pick<TransportEnv, 'EDGE_SERVICE_SECRET'>>, target, site),
       // 본문은 읽지 않고 스트림으로 넘긴다 (Worker 메모리·CPU 절약)
       body: read ? null : request.body,
       redirect: 'manual',
       duplex: 'half',
-    }));
+    };
+    res = await fetch(new Request(backendOrigin(env) + target + url.search, init));
   } catch {
     return proxyError(502, 'BACKEND_UNAVAILABLE');
   }
   // 본문을 건드리지 않고 헤더만 — 압축된 응답이 다시 풀리거나 재압축되지 않는다
-  const out = new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers,
-    ...(res.headers.has('content-encoding') ? { encodeBody: 'manual' } : {}) });
+  const init: WorkerResponseInit = { status: res.status, statusText: res.statusText, headers: res.headers,
+    ...(res.headers.has('content-encoding') ? { encodeBody: 'manual' } : {}) };
+  const out = new Response(res.body, init);
   if (!out.headers.has('Cache-Control')) out.headers.set('Cache-Control', 'no-store');
   return out;
 }
