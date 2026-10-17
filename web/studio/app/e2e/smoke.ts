@@ -70,9 +70,10 @@ async function main() {
     await page.screenshot({ path: `${OUT}/studio.png` });
 
     await step('logout returns to login', page, async () => {
-      await page.click('#menuToggle');
-      await page.click('.aq-logout');
-      await page.getByRole('button', { name: '로그아웃' }).last().click();
+      // 넓은 화면은 왼쪽 고정 메뉴라 햄버거 메뉴가 없다 — 어느 폭에서나 있는 내 정보 화면에서 로그아웃
+      await page.goto(`${BASE}/profile`);
+      await page.getByRole('button', { name: '로그아웃' }).first().click();
+      await page.getByRole('dialog').getByRole('button', { name: '로그아웃' }).click();
       await page.waitForURL(u => u.pathname.startsWith('/login'), { timeout: 10_000 });
     });
 
