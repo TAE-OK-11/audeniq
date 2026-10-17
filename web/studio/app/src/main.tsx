@@ -7,6 +7,7 @@ import { initPressFeedback } from './lib/press';
 import { initRowNav } from './lib/rowNav';
 import { initExpand } from './lib/expand';
 import { initTopCover } from './lib/topCover';
+import { initEnterNext } from './lib/enterNext';
 import { MOCK } from './api/client';
 
 const root = document.getElementById('root');
@@ -40,6 +41,8 @@ initRowNav();
 initExpand();
 // 키보드가 떠 있는 동안 상태 표시줄 칸으로 뒤 내용이 비치지 않게 (iOS 26)
 initTopCover();
+// 폼 밖 입력 화면(발매 신청 등): 키보드의 '다음'으로 다음 칸, 마지막 칸은 '완료'로 키보드 내리기
+initEnterNext();
 
 prefetchInitialRoute();
 
