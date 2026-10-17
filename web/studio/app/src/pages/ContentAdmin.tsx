@@ -1,6 +1,6 @@
 // 공지·이벤트 관리 — D1(CONTENT_DB)에 글을 쓰고 고치고 내린다.
 // /admin의 관리자 로그인 세션으로 작성하고 즉시 게시한다.
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from '../lib/router';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
@@ -332,10 +332,14 @@ export function ContentAdmin() {
   useEffect(() => { document.title = '콘텐츠 관리 | AUDENIQ STUDIO'; }, []);
 
 
+  // 탭을 빠르게 바꾸면 앞 탭의 늦은 응답이 지금 탭 목록을 덮어써, 공지가 점검 탭에 보이고 그 종류로 저장될 수 있었다
+  const kindRef = useRef(kind);
+  kindRef.current = kind;
   const load = useCallback(async () => {
     setLoadError('');
     try {
       const r = await contentAdmin.list(kind);
+      if (kindRef.current !== kind) return;
       setRows(r.items);
       setNow(r.now);
     } catch (e) {

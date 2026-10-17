@@ -1,7 +1,7 @@
 // 브라우저 알림 — 스튜디오(아티스트)와 관리자(스태프)가 같이 쓴다.
 // 화면을 보고 있으면 앱 안 토스트로, 다른 탭·창에 있으면 운영체제 알림으로 알린다.
 // 사용자가 켠 경우에만(권한 허용 + 설정 켬) 보낸다. 내용은 짧게, 누르면 해당 화면이 열린다.
-import { toHref } from './router';
+import { navigateOutside, toHref } from './router';
 
 const KEY = 'aq.browserAlerts';
 
@@ -34,8 +34,8 @@ export function disableAlerts() {
 export function goTo(link: string) {
   const target = toHref(link);
   if (window.location.pathname + window.location.search === target) return;
-  window.history.pushState({}, '', target);
-  window.dispatchEvent(new PopStateEvent('popstate'));
+  // popstate를 흉내 내면 '뒤로 가기'로 처리돼 다른 화면의 스크롤 위치로 뛰었다 — 라우터의 navigate로 보낸다
+  navigateOutside(link);
 }
 
 /** 다른 탭·창에 있을 때만 운영체제 알림. 보내면 true (화면을 보고 있으면 false → 호출한 쪽이 토스트로) */

@@ -34,9 +34,18 @@ export function topBy(rows: ReportRow[], key: 'platform' | 'track'): string {
   return best;
 }
 
-/** 최신 월 요약 — 홈 카드용 */
+/** 'YYYY-MM'의 바로 앞 달 (형식이 아니면 빈 값) */
+export function prevMonth(p: string): string {
+  const m = /^(\d{4})-(\d{2})/.exec(p);
+  if (!m) return '';
+  const y = +m[1], mo = +m[2];
+  return mo === 1 ? `${y - 1}-12` : `${y}-${String(mo - 1).padStart(2, '0')}`;
+}
+
+/** 최신 월 요약 — 홈 카드용 (비교는 달력상 바로 앞 달과) */
 export function latestSummary(rows: ReportRow[] = REPORT_ROWS) {
-  const [cur, prev] = periods(rows);
+  const [cur = ''] = periods(rows);
+  const prev = prevMonth(cur);
   const curRows = rows.filter(r => r.period === cur);
   const prevRows = rows.filter(r => r.period === prev);
   const revenue = sum(curRows, 'revenue');

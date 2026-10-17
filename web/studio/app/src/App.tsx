@@ -1,7 +1,7 @@
 import { claimChunkReload } from './lib/chunkRecovery';
 import { loginRedirect } from './lib/loginRedirect';
 import { Suspense, lazy, type ComponentType, type ReactNode } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from './lib/router';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from './lib/router';
 import { AuthProvider, useAuth } from './api/auth';
 import { Layout } from './components/Layout';
 import { ToastProvider } from './components/Toast';
@@ -19,7 +19,7 @@ import './styles/ui.css';
 import './styles/desktop.css';
 import './styles/wizard-motion.css';
 import './styles/design-align.css';
-import { SelectHost } from './components/Picker';
+import { SelectHost } from './components/PickerSurface';
 import { PrintStampHost } from './lib/printStamp';
 
 // 배포 직후 옛 청크가 사라져 동적 import가 실패하면 한 번만 새로고침해 새 버전을 받는다
@@ -99,6 +99,12 @@ function GuestOnly({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+/** 다른 발매로 바로 옮겨 가면(알림 클릭 등) 앞 발매 내용·탭이 남지 않게 새로 그린다 */
+function ReleaseDetailRoute() {
+  const { id = '' } = useParams();
+  return <ReleaseDetail key={id} />;
+}
+
 /** ?edit= 값이 바뀌면 위자드 상태를 새로 시작 (새 발매 ↔ 수정 전환 시 이전 입력이 남는 문제 방지) */
 function UploadRoute() {
   const loc = useLocation();
@@ -124,7 +130,7 @@ function PortalRoutes() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/releases" element={<Releases />} />
             <Route path="/releases/bulk" element={<Navigate to="/releases" replace />} />
-            <Route path="/releases/:id" element={<ReleaseDetail />} />
+            <Route path="/releases/:id" element={<ReleaseDetailRoute />} />
             <Route path="/releases/:id/application" element={<Application />} />
             <Route path="/upload" element={<UploadRoute />} />
             <Route path="/reports" element={<Reports />} />

@@ -39,6 +39,11 @@ const RouterContext = createContext<RouterCtx | null>(null);
 const ParamsContext = createContext<Record<string, string>>({});
 
 let keySeq = 0;
+/** 라우터 밖에서 이동할 때 보내는 이벤트 — navigateOutside() */
+const NAVIGATE_EVENT = 'aq:navigate';
+export function navigateOutside(to: string): void {
+  window.dispatchEvent(new CustomEvent(NAVIGATE_EVENT, { detail: to }));
+}
 const nextKey = () => (++keySeq).toString(36) + Date.now().toString(36).slice(-4);
 
 // 앱이 올라가는 경로 접두사 (기본 '/'). 라우터 내부 경로는 항상 이 접두사를 뺀 값이다.
@@ -85,6 +90,9 @@ function readLocation(action?: Location['action']): Location {
 export function BrowserRouter({ children }: { children: ReactNode }) {
   const [location, setLocation] = useState<Location>(() => {
     migrateHashUrl();
+    // 첫 기록에도 고유 키를 — 키 없는 기록이 모두 'default'를 같이 써서 스크롤 위치가 서로 섞였다
+    const st = window.history.state as { usr?: unknown; key?: string } | null;
+    if (!st?.key) window.history.replaceState({ ...(st ?? {}), usr: st?.usr ?? null, key: nextKey() }, '');
     return readLocation();
   });
 
@@ -92,6 +100,7 @@ export function BrowserRouter({ children }: { children: ReactNode }) {
   keyRef.current = location.key;
   useEffect(() => {
     try { window.history.scrollRestoration = 'manual'; } catch { /* 지원하지 않는 브라우저 */ }
+
     // 뒤로/앞으로 가기 — 떠나는 화면의 위치를 기억해 둔다 (수동 복원이라 아직 스크롤이 그대로다)
     const sync = () => {
       scrollPositions.set(keyRef.current, window.scrollY);
@@ -115,6 +124,13 @@ export function BrowserRouter({ children }: { children: ReactNode }) {
     const next = readLocation(replace ? 'REPLACE' : 'PUSH');
     startTransition(() => setLocation(next));
   }, []);
+
+  // 라우터 밖(운영체제 알림 클릭 등)에서의 이동도 같은 navigate로 — 새 기록·스크롤 맨 위
+  useEffect(() => {
+    const onNav = (e: Event) => navigate((e as CustomEvent<string>).detail);
+    window.addEventListener(NAVIGATE_EVENT, onNav);
+    return () => window.removeEventListener(NAVIGATE_EVENT, onNav);
+  }, [navigate]);
 
   const value = useMemo(() => ({ location, navigate }), [location, navigate]);
   return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>;
