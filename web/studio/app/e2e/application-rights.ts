@@ -48,6 +48,8 @@ try {
       assert.equal(isrc.shadow, 'none'); assert.notEqual(isrc.idle, isrc.background); assert.equal(isrc.transition, ownerStyle.transition);
       await page.locator('.aq-wiz-steps').getByRole('button', { name: '권리 확인', exact: true }).click();
     }
+    // 특별한 경우 목록은 '있어요'를 고른 뒤에 열린다
+    await page.getByRole('radiogroup', { name: '특별한 경우가 있나요?' }).getByRole('radio', { name: '있어요' }).click();
     await page.getByRole('checkbox', { name: '샘플링·타인 음원 사용', exact: true }).check();
     await page.waitForFunction(() => {
       const selected = document.querySelector('.aq-option.is-on');
@@ -63,7 +65,7 @@ try {
     assert.match(await page.locator('.aq-document-snapshot').innerText(), /원본 권리자/);
     await page.getByRole('button', { name: '서명 링크 만들기', exact: true }).click();
     assert.match(await page.locator('.aq-sign-link code').innerText(), /\/sign\//);
-    await page.getByRole('button', { name: '완료', exact: true }).click();
+    await page.getByRole('button', { name: '확인', exact: true }).click();
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
     assert.ok(overflow <= 1, `width ${width} overflow ${overflow}`);
     await page.screenshot({ path: `test-results/rights-document-${width}.png`, fullPage: true });

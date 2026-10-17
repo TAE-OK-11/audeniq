@@ -67,8 +67,10 @@ export function TermCard({ releaseId }: { releaseId: string }) {
       const data = await req<unknown>(`${base()}/handover`);
       const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
       const a = document.createElement('a');
-      a.href = url; a.download = `handover-${releaseId}.json`; a.click();
-      URL.revokeObjectURL(url);
+      a.href = url; a.download = `handover-${releaseId}.json`;
+      // 바로 해제하면 Safari에서 내려받기가 끊긴다 — downloadFile과 같이 붙였다 떼고 잠시 뒤 해제
+      document.body.appendChild(a); a.click(); a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) { toast(errorMessage(e), 'error'); }
   };
   const cancel = async () => {

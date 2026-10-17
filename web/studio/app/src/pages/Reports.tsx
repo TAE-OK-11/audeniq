@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useToast } from '../components/Toast';
 import { ChipGroup, CountUp } from '../ui';
 import { money, num } from '../lib/format';
 import { todayStr } from '../lib/date';
 import { useGrowOnView, type CSSVarStyle } from '../hooks/useAnimations';
-import { periodLabel as monthLabel, periods, type ReportRow } from '../data/reports';
+import { periodLabel as monthLabel, periods, prevMonth, type ReportRow } from '../data/reports';
 import { useReportRows } from '../hooks/useReportRows';
 import { Glyph } from '../components/Glyph';
 import { Money } from '../components/Money';
@@ -99,7 +99,13 @@ export function Reports() {
   const [showAll, setShowAll] = useState(false);
 
   const { rows: MOCK_ROWS, loading, pending } = useReportRows(range); // 체험 모드는 예시 행, 실서버는 플랫폼 리포트
-  const [thisMonth = '', lastMonth = ''] = periods(MOCK_ROWS);
+  // 지난달은 달력상 바로 앞 달 — 데이터가 있는 달 두 개를 고르면 빈 달을 건너뛰어 두 달 전과 '지난달'로 비교했다
+  const [thisMonth = ''] = periods(MOCK_ROWS);
+  const lastMonth = prevMonth(thisMonth);
+  // 고른 발매가 바뀐 기간에 없으면 '전체 발매'로 — 목록에는 '전체 발매'가 보이는데 숨은 필터로 0원이 나왔다
+  useEffect(() => {
+    if (release !== 'all' && !loading && !MOCK_ROWS.some(r => r.release === release)) setRelease('all');
+  }, [MOCK_ROWS, release, loading]);
 
   const filtered = useMemo(() => MOCK_ROWS.filter(r => {
     if (period === 'month' && r.period !== thisMonth) return false;

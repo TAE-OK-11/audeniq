@@ -40,12 +40,15 @@ function ConfirmBody({ opts, onAnswer }: { opts: ConfirmOptions; onAnswer: (v: b
 }
 
 export function ConfirmProvider({ children }: { children: ReactNode }) {
-  const [opts, setOpts] = useState<ConfirmOptions | null>(null);
+  // 요청마다 번호 — 앞 창이 닫히는 애니메이션(최대 0.6초) 중에 이어서 연 확인 창이, 앞 창이 다 닫히는 순간
+  // 같이 '취소'로 닫혀 버렸다. 창을 번호로 새로 그리고, 닫힘은 자기 요청에만 답한다
+  const [opts, setOpts] = useState<(ConfirmOptions & { seq: number }) | null>(null);
   const resolver = useRef<((v: boolean) => void) | null>(null);
+  const seq = useRef(0);
 
   const confirm = useCallback<ConfirmFn>(o => {
     resolver.current?.(false);
-    setOpts(o);
+    setOpts({ ...o, seq: ++seq.current });
     return new Promise<boolean>(resolve => { resolver.current = resolve; });
   }, []);
 
@@ -59,9 +62,14 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       {children}
       {opts && (
         <Modal
+          key={opts.seq}
           title={opts.title}
           modalClass="aq-confirm-mode"
-          onClose={() => { onAnswer(false); setOpts(null); }}
+          onClose={() => {
+            if (opts.seq !== seq.current) return;
+            onAnswer(false);
+            setOpts(cur => (cur?.seq === opts.seq ? null : cur));
+          }}
         >
           <ConfirmBody opts={opts} onAnswer={onAnswer} />
         </Modal>

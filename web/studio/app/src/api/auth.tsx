@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { MOCK, api, setCurrentOrg, type User, type Org } from './client';
+import { ApiError, MOCK, api, setCurrentOrg, type User, type Org } from './client';
 import { readJSON, writeJSON } from '../lib/storage';
 
 /** 마지막으로 고른 작업 공간 (다른 팀에 초대받아 들어간 경우) */
@@ -51,7 +51,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    api.me()
+    // 로그인 안 됨(401)만 로그인 화면으로 — 잠깐의 서버·네트워크 오류로 멀쩡한 세션이 로그아웃처럼 보였다.
+    // 그 밖의 오류는 잠시 쉬었다 두 번 더 확인한다 (그래도 안 되면 로그인 화면, 서버 오류 창은 SystemStatus가 띄운다)
+    const meWithRetry = async (): Promise<User> => {
+      for (let i = 0; ; i++) {
+        try { return await api.me(); } catch (e) {
+          if (cancelled || i >= 2 || (e instanceof ApiError && (e.status === 401 || e.status === 403))) throw e;
+          await new Promise(r => setTimeout(r, 800 * 2 ** i));
+        }
+      }
+    };
+    meWithRetry()
       .then(async u => {
         if (cancelled) return;
         setUser(u);
