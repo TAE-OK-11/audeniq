@@ -1,6 +1,6 @@
 // 스크롤 등장 모션 — 처음 화면 아래에 있던 카드·섹션만 한 번 떠오른다 (위쪽 콘텐츠는 지연 없이 바로 표시).
-// 화면에 들어오기 120px 전부터 미리 시작하고(빠르게 내려도 빈 바탕이 먼저 보이지 않게) 0.28초로 짧게,
-// 한꺼번에 들어오는 카드도 앞 3개까지만 0.025초 간격으로 차례로 나온다.
+// 화면에 들어오기 120px 전부터 미리 시작하고(빠르게 내려도 빈 바탕이 먼저 보이지 않게) 0.32초 동안 4px만 조용히,
+// 한꺼번에 들어오는 카드는 차례 없이 함께 나온다.
 import { useEffect } from 'react';
 
 const TARGETS = [
@@ -8,7 +8,7 @@ const TARGETS = [
   '.aq-doc-list', '.studio-doc-path', '.aq-profile-card', '.aq-event-hero',
   '.aq-notice-featured-list', '.settle-hero', '.aq-detail-hero', '.split > *',
 ].join(',');
-const EASE = 'cubic-bezier(.16,1,.3,1)'; // --aq-enter
+const EASE = 'cubic-bezier(.32,.72,0,1)'; // --aq-enter
 
 export function useScrollReveal(key: string) {
   useEffect(() => {
@@ -18,15 +18,14 @@ export function useScrollReveal(key: string) {
     if (!root) return;
     const seen = new WeakSet<Element>();
     const io = new IntersectionObserver(entries => {
-      let order = 0;
       for (const e of entries) {
         if (!e.isIntersecting) continue;
         io.unobserve(e.target);
         const el = e.target as HTMLElement;
         el.classList.remove('aq-reveal-wait');
         el.animate(
-          [{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }],
-          { duration: 280, delay: Math.min(order++, 2) * 25, easing: EASE, fill: 'backwards' },
+          [{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }],
+          { duration: 320, easing: EASE, fill: 'backwards' },
         );
       }
     }, { rootMargin: '0px 0px 120px 0px', threshold: 0.01 });
