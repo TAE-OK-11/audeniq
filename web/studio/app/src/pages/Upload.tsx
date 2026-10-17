@@ -24,7 +24,7 @@ import { fixCountWord, fixPath, isDocumentFix, resolveCorrection, splitCorrectio
 import { checkAudioFile, formatDuration, specLabel } from '../lib/audioSpec';
 import { AGREEMENTS, SIGNER_ROLES, compactSignature, createApplication } from '../lib/application';
 import {
-  artistIssue, artistWarning, COVER_MIN, coverIssue, isrcValid, LEAD_DAYS, minReleaseDate, mmssToSeconds, normalizeIsrc,
+  artistIssue, artistWarning, COVER_MAX, COVER_MIN, coverIssue, isrcValid, LEAD_DAYS, minReleaseDate, mmssToSeconds, normalizeIsrc,
   profileLinkIssue, PROFILE_LINKS, releaseTypeIssue, rightsLineIssue, titleIssue, titleWarning, upcValid,
 } from '../lib/dsp';
 import { uid } from '../lib/store';
@@ -1047,9 +1047,6 @@ function FinalReviewBanner({ form }: { form: WizardForm }) {
         </div>
       </div>
       {warnings.map(w => <p key={w} className="aq-option-note">{w}</p>)}
-      <p className="ui-field-help" style={{ marginTop: 13 }}>
-        접수하기를 누르면 입력 내용을 바탕으로 신청서와 필요한 서류 목록이 생성돼요. 최종 승인 및 배급일은 검토 후 결정돼요.
-      </p>
     </div>
   );
 }
@@ -2123,6 +2120,7 @@ export function Upload() {
   // 기본은 ‘모두 배급’ 스위치만. 끄면 아래에 플랫폼별 선택이 열린다 (일부만 고른 발매는 처음부터 열림)
   const [pickPlatforms, setPickPlatforms] = useState(false);
   const showPlatforms = pickPlatforms || !allPlatforms;
+  const unavailableDsps = dsps?.filter(d => !d.available && !form.platforms.includes(d.slug)) ?? [];
 
   // 플랫폼 이름 50여 개를 다 늘어놓으면 확인 화면이 휴대폰에서 3,000px 넘게 길어졌다 — 몇 곳만 보이고 개수로 줄인다
   const platformSummary = (() => {
@@ -2133,20 +2131,22 @@ export function Upload() {
     const names = base.map(dspLabel);
     return `${names.slice(0, 5).join(', ')}${names.length > 5 ? ` 외 ${names.length - 5}곳` : ''}${cid}`;
   })();
-  const reviewSections: [string, React.ReactNode, number][] = [
-    ['발매 정보', `${form.title || '제목 없음'} · ${form.artist || '아티스트 없음'} · ${kindLabel(form.type)}`, 0],
+  // 네 번째 값: 빠진 항목 — 다른 줄과 같은 회색이면 '등록되지 않음'이 눈에 띄지 않았다. 주황 글자 + '채우기'
+  const reviewSections: [string, React.ReactNode, number, boolean][] = [
+    ['발매 정보', `${form.title || '제목 없음'} · ${form.artist || '아티스트 없음'} · ${kindLabel(form.type)}`, 0, !form.title.trim() || !form.artist.trim()],
     ['트랙', form.tracks.length > 1
-      ? <ol className="aq-review-tracks">{form.tracks.map(t => <li key={t.id}>{t.title || '곡명 없음'}</li>)}</ol>
-      : form.tracks[0]?.title || '곡명 없음', 1],
+      // 어느 곡이 덜 채워졌는지 곡마다 — 목록 전체가 주황이면 몇 번 곡을 고쳐야 할지 몰랐다
+      ? <ol className="aq-review-tracks">{form.tracks.map(t => <li key={t.id}>{t.title || '곡명 없음'}{!trackComplete(t) && <small className="aq-review-need"> · 입력 필요</small>}</li>)}</ol>
+      : <>{form.tracks[0]?.title || '곡명 없음'}{form.tracks[0] && !trackComplete(form.tracks[0]) && <small className="aq-review-need"> · 입력 필요</small>}</>, 1, !form.tracks.length || !form.tracks.every(trackComplete)],
     ['커버아트', form.coverData
       ? <span className="aq-review-cover"><img src={form.coverData} alt="" width={56} height={56} />{form.coverName}</span>
-      : form.coverName || '등록되지 않음', 2],
-    ['발매일', form.releaseDate ? `${formatKoreanDate(form.releaseDate)}${form.releaseTime ? ` · 한국 시간 ${form.releaseTime} 동시 발매` : ' · 나라별 자정'}` : '지정하지 않음', 3],
-    ['사전 공개', form.preorderStart ? `${formatKoreanDate(form.preorderStart)}부터 (예약 판매·미리듣기)` : '없음', 3],
-    ['배급 지역', territorySummary(form.territories, '선택하지 않음'), 3],
-    ['배급 플랫폼', platformSummary, 3],
-    ['권리자', form.ownership || '미입력', 4],
-    ['권리 확인', rightsOk(form) ? '필수 확인 완료' : '필수 확인 항목 누락', 4],
+      : form.coverName || '등록되지 않음', 2, !form.coverData && !form.coverName],
+    ['발매일', form.releaseDate ? `${formatKoreanDate(form.releaseDate)}${form.releaseTime ? ` · 한국 시간 ${form.releaseTime} 동시 발매` : ' · 나라별 자정'}` : '지정하지 않음', 3, !form.releaseDate],
+    ['사전 공개', form.preorderStart ? `${formatKoreanDate(form.preorderStart)}부터 (예약 판매·미리듣기)` : '없음', 3, false],
+    ['배급 지역', territorySummary(form.territories, '선택하지 않음'), 3, !form.territories.length],
+    ['배급 플랫폼', platformSummary, 3, !form.platforms.length],
+    ['권리자', form.ownership || '미입력', 4, !form.ownership.trim()],
+    ['권리 확인', rightsOk(form) ? '필수 확인 완료' : '필수 확인 항목 누락', 4, !rightsOk(form)],
   ];
 
   // 상단 바 오른쪽 칸에 들어가도록 짧게 (긴 문구는 title 속성으로)
@@ -2471,7 +2471,7 @@ export function Upload() {
                 )}
                 <span className="aq-dropzone-text">
                   <strong>{form.coverName || '이미지를 끌어다 놓거나 눌러서 선택'}</strong>
-                  <small>{form.coverName ? '다른 이미지로 바꾸려면 다시 선택해 주세요.' : 'JPG · PNG, 정사각형 3000×3000 이상 권장 (최대 20MB)'}</small>
+                  <small>{form.coverName ? '다른 이미지로 바꾸려면 다시 선택해 주세요.' : `JPG · PNG, 정사각형 ${COVER_MIN}~${COVER_MAX}px (최대 20MB)`}</small>
                 </span>
               </label>
               {uploads.cover && uploads.cover.state !== 'done' && <UploadStatus upload={uploads.cover} idle="" />}
@@ -2565,8 +2565,11 @@ export function Upload() {
             <h2 className="subhead">배급 플랫폼</h2>
             <div className="distribution-default">
               <div>
-                <strong>{allPlatforms ? '주요 음악 플랫폼에 모두 배급해요.' : `${form.platforms.length}개 플랫폼에 배급해요.`}</strong>
-                <p className="ui-field-help">{dspError || (!dsps ? '서버에서 플랫폼 상태를 확인하는 중이에요.' : showPlatforms ? '현재 배급 가능한 플랫폼만 선택할 수 있어요.' : '특정 플랫폼만 고르려면 스위치를 꺼 주세요.')}</p>
+                {/* 줄 제목은 스위치를 켰을 때의 뜻 — '5개 플랫폼에 배급해요' 옆 스위치가 꺼져 있어 무엇을 끈 건지 헷갈렸다 */}
+                <strong>주요 음악 플랫폼에 모두 배급</strong>
+                <p className="ui-field-help">{dspError || (!dsps ? '서버에서 플랫폼 상태를 확인하는 중이에요.'
+                  : showPlatforms ? `지금은 ${form.platforms.filter(p => !isContentId(p)).length}곳을 골랐어요. 켜면 배급할 수 있는 ${basePlatforms.length}곳 모두에 배급해요.`
+                  : `배급할 수 있는 ${basePlatforms.length}곳 모두에 배급해요. 특정 플랫폼만 고르려면 스위치를 꺼 주세요.`)}</p>
               </div>
               <label className="aq-switch">
                 <input
@@ -2601,7 +2604,8 @@ export function Upload() {
             )}
             {showPlatforms && (
             <div id="aqPlatforms" className="aq-dsp-groups aq-reveal">
-              {DSP_GROUPS.map(([region, match]) => [region, dsps?.filter(match) ?? []] as const).filter(([, list]) => list.length > 0).map(([region, list]) => (
+              {/* 지금 고를 수 없는 플랫폼(40여 곳)은 고를 수 있는 곳과 같은 크기로 섞어 두지 않고 맨 아래 접힌 목록으로 — 휴대폰에서 이 단계가 4,000px 가까이 길어졌다 */}
+              {DSP_GROUPS.map(([region, match]) => [region, dsps?.filter(d => match(d) && (d.available || form.platforms.includes(d.slug))) ?? []] as const).filter(([, list]) => list.length > 0).map(([region, list]) => (
                 <div key={region}>
                   <p className="aq-dsp-region">{region}</p>
                   <div className="aq-dsp-grid" role="group" aria-label={`${region} 플랫폼`}>
@@ -2621,6 +2625,13 @@ export function Upload() {
                   </div>
                 </div>
               ))}
+              {unavailableDsps.length > 0 && (
+                <details className="aq-dsp-unavailable">
+                  <summary>지금은 배급할 수 없는 플랫폼 {unavailableDsps.length}곳<Glyph name="chevron-down" size={14} /></summary>
+                  <p>{unavailableDsps.map(d => d.name).join(', ')}</p>
+                  <small>배급이 열리면 여기서 고를 수 있게 바뀌어요.</small>
+                </details>
+              )}
             </div>
             )}
             {!dsps && <p className="ui-field-help" role="status">{dspError || '플랫폼 목록을 서버에서 불러오는 중이에요.'}</p>}
@@ -2719,13 +2730,13 @@ export function Upload() {
         {step === 5 && (
           <section className="step-section">
             <div className="aq-catalog-cards aq-stagger">
-              {reviewSections.map(([h, t, target]) => (
-                <div key={h} className="aq-review-card">
+              {reviewSections.map(([h, t, target, missing]) => (
+                <div key={h} className={`aq-review-card${missing ? ' is-missing' : ''}`}>
                   <div className="aq-review-body">
                     <strong>{h}</strong>
                     <div className="break aq-review-value">{t}</div>
                   </div>
-                  <button type="button" className="ui-btn is-white is-xs aq-review-edit" onClick={() => goStep(target)} aria-label={`${h} 수정`}>수정</button>
+                  <button type="button" className="ui-btn is-white is-xs aq-review-edit" onClick={() => goStep(target)} aria-label={`${h} ${missing ? '채우기' : '수정'}`}>{missing ? '채우기' : '수정'}</button>
                 </div>
               ))}
             </div>
