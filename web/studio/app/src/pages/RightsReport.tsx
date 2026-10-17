@@ -55,7 +55,7 @@ export function RightsReport() {
   }
 
   return (
-    <div className="aq-terms-page">
+    <main className="aq-terms-page">
       <header className="aq-sign-top">
         <Link to="/" aria-label="AUDENIQ"><img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" /></Link>
         <span>권리침해 신고</span>
@@ -107,6 +107,6 @@ export function RightsReport() {
           </form>
         )}
       </article>
-    </div>
+    </main>
   );
 }

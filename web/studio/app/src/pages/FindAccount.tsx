@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from '../lib/router';
 import { AuthLayout } from '../components/AuthLayout';
+import { SUPPORT_EMAIL } from '../lib/support';
 import { Segmented } from '../components/Segmented';
 
 // 계정 복구 API와 메일 발송이 연결되기 전에는 입력을 수집하거나 발송을 약속하지 않는다.
@@ -15,7 +16,7 @@ export function FindAccount() {
       />
       <div className="auth-done" role="tabpanel">
         <p>{tab === 'id' ? '가입한 이메일이 기억나지 않으면' : '비밀번호를 재설정해야 한다면'} 고객지원에 문의해 주세요. 자동 복구와 메일 발송은 아직 제공되지 않아요.</p>
-        <a href="mailto:audeniq.official@gmail.com" className="ui-btn is-primary auth-submit">고객지원에 이메일 보내기</a>
+        <a href={`mailto:${SUPPORT_EMAIL}`} className="ui-btn is-primary auth-submit">고객지원에 이메일 보내기</a>
       </div>
 
       <div className="auth-links">
