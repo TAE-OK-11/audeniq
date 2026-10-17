@@ -5,17 +5,22 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import worker from '../src/worker.ts';
 import { PAGE_PATHS } from '../src/public-routes.ts';
+import type { TransportEnv } from '../../shared/worker-types.ts';
+import type { PagesFile } from '../scripts/content-types.ts';
+
+/** The JSON-LD fields these checks read */
+interface GraphNode { '@id'?: string; mainEntity?: { name: string; acceptedAnswer: { text: string } }[] }
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const read = path=>readFileSync(join(root,path),'utf8');
-const types = {html:'text/html',css:'text/css',xml:'application/xml',txt:'text/plain',json:'application/json'};
-const env = {ASSETS:{fetch:async request=>{
+const read = (path: string): string=>readFileSync(join(root,path),'utf8');
+const types: Record<string, string> = {html:'text/html',css:'text/css',xml:'application/xml',txt:'text/plain',json:'application/json'};
+const env: TransportEnv = {ASSETS:{fetch:async (request: Request)=>{
   const path = new URL(request.url).pathname;
   const file = join(root,'public',path);
-  return existsSync(file) ? new Response(readFileSync(file),{headers:{'Content-Type':types[path.split('.').pop()]||'application/octet-stream'}}) : new Response('Not found',{status:404});
+  return existsSync(file) ? new Response(readFileSync(file),{headers:{'Content-Type':types[path.split('.').pop()!]||'application/octet-stream'}}) : new Response('Not found',{status:404});
 }}};
-const get = (path,host='audeniq.com')=>worker.fetch(new Request(`https://${host}${path}`),env);
-const decode = text=>text.replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>');
+const get = (path: string,host='audeniq.com')=>worker.fetch(new Request(`https://${host}${path}`),env);
+const decode = (text: string): string=>text.replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>');
 
 test('every published page is crawlable with matching visible FAQs and schema',async()=>{
   assert.ok(PAGE_PATHS.length>=6);
@@ -23,14 +28,17 @@ test('every published page is crawlable with matching visible FAQs and schema',a
   for (const path of PAGE_PATHS) {
     const response = await get(path);
     assert.equal(response.status,200,path);
-    assert.match(response.headers.get('Content-Type'),/text\/html/);
+    assert.match(response.headers.get('Content-Type')||'',/text\/html/);
     assert.equal(response.headers.get('X-Robots-Tag'),null);
     const html = await response.text();
     assert.equal((html.match(/<h1(?:\s|>)/g)||[]).length,1,path);
     assert.ok(html.includes(`rel="canonical" href="https://audeniq.com${path}"`),path);
-    const title = html.match(/<title>([^<]+)<\/title>/)[1];
+    const title = html.match(/<title>([^<]+)<\/title>/)?.[1];
+    assert.ok(title,path);
     assert.ok(!titles.has(title)); titles.add(title);
-    const graph = JSON.parse(html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)[1])['@graph'];
+    const schema = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)?.[1];
+    assert.ok(schema,path);
+    const graph: GraphNode[] = JSON.parse(schema)['@graph'];
     assert.equal(graph[0]['@id'],'https://audeniq.com/#organization');
     const body = decode(html.split('</head>')[1]);
     for (const question of graph.find(node=>node.mainEntity)?.mainEntity||[]) {
@@ -42,7 +50,7 @@ test('every published page is crawlable with matching visible FAQs and schema',a
     assert.doesNotMatch(JSON.stringify(graph),/"(?:price|offers|aggregateRating|review)"\s*:/i,path);
     const preview = await get(path,'audeniq-web.example.workers.dev');
     assert.equal(preview.status,200);
-    assert.match(preview.headers.get('X-Robots-Tag'),/noindex/);
+    assert.match(preview.headers.get('X-Robots-Tag')||'',/noindex/);
     for (const match of html.matchAll(/(?:href|src)="(\/(?!\/)[^"]*)"/g)) {
       const target = match[1].split(/[?#]/)[0];
       const linked = await get(target);
@@ -76,7 +84,7 @@ test('discovery resources contain exactly the published public pages',async()=>{
     assert.equal((await get(`/${name}`)).status,200);
   }
   const full = read('public/llms-full.txt');
-  const data = JSON.parse(read('content/pages.json'));
+  const data: PagesFile = JSON.parse(read('content/pages.json'));
   for (const page of data.pages) assert.ok(full.includes(page.answer));
   const feed = read('public/feed.xml');
   assert.equal((feed.match(/<item>/g)||[]).length,5);
@@ -92,6 +100,7 @@ test('robots allows every crawler, including AI training bots',()=>{
   // One `*` group: GPTBot, ClaudeBot, Google-Extended, CCBot … fall under it and are allowed.
   assert.deepEqual(robots.match(/^User-agent: .+$/gm),['User-agent: *']);
   const all = groups.find(group=>group.split('\n').includes('User-agent: *'));
+  assert.ok(all);
   assert.match(all,/Allow: \/\n/);
   assert.doesNotMatch(robots,/Disallow: \/\s*$/m);
   for (const path of ['/studio','/admin','/api','/login','/health']) assert.ok(all.includes(`Disallow: ${path}\n`)||all.endsWith(`Disallow: ${path}`));

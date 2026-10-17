@@ -1,6 +1,7 @@
 // SEO uses one primary hostname. Change this and the absolute URLs in the
 // landing HTML / sitemap / robots together if AUDENIQ chooses another domain.
 import { requireHttps, secureResponse } from '../../shared/transport.ts';
+import type { TransportEnv } from '../../shared/worker-types.ts';
 import { PAGE_PATHS, FILE_PATHS } from './public-routes.ts';
 export const PRIMARY_HOST = "audeniq.com";
 const PRIMARY_ORIGIN = `https://${PRIMARY_HOST}`;
@@ -11,7 +12,7 @@ export const STUDIO_ORIGIN = "https://studio.audeniq.com";
  * Old STUDIO entry points on this Worker (studio.* host routed here, /studio preview
  * paths, ?site=studio) now go to the React STUDIO. Returns the destination or null.
  */
-export function studioRedirect(hostname, pathname, searchParams = new URLSearchParams()) {
+export function studioRedirect(hostname: string, pathname: string, searchParams: URLSearchParams = new URLSearchParams()): string | null {
   const host = String(hostname || "").toLowerCase().replace(/\.$/, "");
   const path = pathname || "/";
   if (host === "studio" || host.startsWith("studio.")) return STUDIO_ORIGIN + path;
@@ -22,14 +23,14 @@ export function studioRedirect(hostname, pathname, searchParams = new URLSearchP
 }
 
 /** Only published documents are routed to HTML; unknown paths remain real 404s. */
-export function resolveAssetPath(_hostname, pathname) {
+export function resolveAssetPath(_hostname: string, pathname: string): string | null {
   const path = pathname || "/";
   if (path.startsWith('/assets/') || FILE_PATHS.includes(path)) return path;
   if (PAGE_PATHS.includes(path)) return `${path}index.html`;
   return null;
 }
 
-export function canonicalPagePath(path) {
+export function canonicalPagePath(path: string): string {
   if (path === '/index.html') return '/';
   for (const page of PAGE_PATHS.filter(page => page !== '/')) {
     if (path === page.slice(0,-1) || path === `${page}index.html`) return page;
@@ -37,11 +38,13 @@ export function canonicalPagePath(path) {
   return path;
 }
 
-export function isPublicCanonicalHost(hostname) {
+export function isPublicCanonicalHost(hostname: string): boolean {
   return String(hostname || "").toLowerCase().replace(/\.$/, "") === PRIMARY_HOST;
 }
 
-function withSecurityHeaders(response, { isStudio = false, isCanonical = false } = {}) {
+interface SiteFlags { isStudio?: boolean; isCanonical?: boolean }
+
+function withSecurityHeaders(response: Response, { isStudio = false, isCanonical = false }: SiteFlags = {}): Response {
   const headers = new Headers(response.headers);
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
@@ -58,12 +61,12 @@ function withSecurityHeaders(response, { isStudio = false, isCanonical = false }
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
-function plainText(body, contentType = "text/plain; charset=utf-8", status = 200) {
+function plainText(body: string, contentType = "text/plain; charset=utf-8", status = 200): Response {
   return new Response(body, { status, headers: { "Content-Type": contentType } });
 }
 
 const landingWorker = {
-  async fetch(request, env) {
+  async fetch(request: Request, env: TransportEnv): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
     const host = url.hostname.toLowerCase().replace(/\.$/, "");
@@ -113,7 +116,7 @@ const landingWorker = {
 };
 
 export default {
-  async fetch(request, env) {
+  async fetch(request: Request, env: TransportEnv): Promise<Response> {
     const refused = requireHttps(request);
     if (refused) return refused;
     return secureResponse(await landingWorker.fetch(request, env));
