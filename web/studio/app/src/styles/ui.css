@@ -112,6 +112,8 @@
 /* 쓰는 중인 칸의 이름표도 파랗게 — 어느 칸에 입력하고 있는지 한눈에 (선택 창·달력이 열린 동안도) */
 .ui-field>label{transition:color var(--aq-motion-short) var(--aq-ease)}
 .ui-field:has(> :is(input,select,textarea):focus,> .aq-date-input[aria-expanded=true])>label{color:var(--aq-primary)}
+/* 고칠 칸이면 이름표는 파랑이 아니라 칸과 같은 빨강 — 빨간 칸 위에 파란 이름표가 섞여 보였다 */
+.ui-field:has(> :is(input,select,textarea)[aria-invalid=true],> .aq-password > input[aria-invalid=true],> .aq-invalid)>label{color:var(--aq-red-600)}
 /* 아직 고르지 않은 필수 선택칸('장르를 선택해 주세요')은 안내 글자 색 — 고른 값처럼 진하게 보였다 */
 :is(#root,#modal) select:required:invalid{color:var(--aq-field-placeholder)}
 :is(.ui-input,.ui-select,.ui-textarea,.ui-field :where(input,select,textarea)):disabled{color:var(--aq-text-disabled);cursor:not-allowed}
