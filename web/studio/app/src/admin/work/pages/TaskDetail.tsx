@@ -44,7 +44,7 @@ function ReviewForm({ task, approve, onDone }: { task: WorkTask; approve: boolea
         <textarea id="rvNote" data-autofocus className="ui-textarea" rows={4} maxLength={2000} value={note} onChange={e => setNote(e.target.value)} placeholder={approve ? '예: 조건 확인했어요.' : '예: 수수료 비교표에 지난 분기 조건도 넣어 주세요.'} />
       </div>
       <div className="adm-form-actions">
-        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>닫기</button>
         <button type="submit" className={`ui-btn ${approve ? 'is-primary' : 'is-warn'}`} disabled={busy || (!approve && !note.trim())}>{busy ? '처리 중…' : approve ? '승인하고 완료' : '보완 요청'}</button>
       </div>
     </form>

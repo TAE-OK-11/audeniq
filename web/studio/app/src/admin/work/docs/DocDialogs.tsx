@@ -88,7 +88,7 @@ export function ShareDialog({ docId, people, onClose, onSaved }: { docId: string
           <label className="adm-check ui-on-soft"><input type="checkbox" checked={children} onChange={e => setChildren(e.target.checked)} />하위 문서에도 같게</label>
           <p className="small muted">만든 사람과 관리자는 항상 볼 수 있어요. 볼 수 없는 직원에게는 문서가 목록·검색·링크 어디에도 나타나지 않아요.</p>
           <div className="adm-form-actions">
-            <button type="button" className="ui-btn is-soft" onClick={onClose}>취소</button>
+            <button type="button" className="ui-btn is-soft" onClick={onClose}>닫기</button>
             <button type="submit" className="ui-btn is-primary" disabled={busy}>{busy ? '저장 중…' : '저장'}</button>
           </div>
         </form>
@@ -136,7 +136,7 @@ export function ReasonDialog({ title, label, onClose, onSubmit }: { title: strin
       <form className="adm-form" onSubmit={e => { e.preventDefault(); if (v.trim()) onSubmit(v.trim()); }}>
         <label className="ui-field"><span>{label}</span><textarea className="ui-textarea" autoFocus rows={3} maxLength={1000} value={v} onChange={e => setV(e.target.value)} /></label>
         <div className="adm-form-actions">
-          <button type="button" className="ui-btn is-soft" onClick={onClose}>취소</button>
+          <button type="button" className="ui-btn is-soft" onClick={onClose}>닫기</button>
           <button type="submit" className="ui-btn is-primary" disabled={!v.trim()}>보내기</button>
         </div>
       </form>
@@ -163,7 +163,7 @@ export function TemplateDialog({ docId, defaultName, onClose }: { docId: string;
         <label className="ui-field"><span>설명</span><input className="ui-input" maxLength={300} value={description} onChange={e => setDescription(e.target.value)} /></label>
         <p className="small muted">파일·이미지가 들어간 문서는 템플릿이 될 수 없어요.</p>
         <div className="adm-form-actions">
-          <button type="button" className="ui-btn is-soft" onClick={onClose}>취소</button>
+          <button type="button" className="ui-btn is-soft" onClick={onClose}>닫기</button>
           <button type="submit" className="ui-btn is-primary" disabled={busy || !name.trim()}>저장</button>
         </div>
       </form>

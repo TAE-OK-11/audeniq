@@ -111,7 +111,7 @@ export function CommentsPanel({ docId, people, canWrite, anchor, onClearAnchor, 
       )}
       {canWrite && (
         <form className="adm-w-note-form" onSubmit={e => { e.preventDefault(); void send(); }}>
-          {replyTo && <p className="adm-doc-replying">답글: {replyTo.body.slice(0, 40)} <button type="button" className="ui-btn is-text is-muted" onClick={() => setReplyTo(null)}>취소</button></p>}
+          {replyTo && <p className="adm-doc-replying">답글: {replyTo.body.slice(0, 40)} <button type="button" className="ui-btn is-text is-muted" onClick={() => setReplyTo(null)}>답글 취소</button></p>}
           {!replyTo && anchor && <p className="adm-doc-replying">위치: “{anchor.quote}” <button type="button" className="ui-btn is-text is-muted" onClick={onClearAnchor}>빼기</button></p>}
           <label htmlFor={`doc-comment-${docId}`} className="sr-only">댓글</label>
           <MentionArea id={`doc-comment-${docId}`} value={body} onChange={setBody} people={people} onSubmit={() => void send()} rows={2}

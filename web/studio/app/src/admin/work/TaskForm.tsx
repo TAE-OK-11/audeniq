@@ -138,7 +138,7 @@ export function TaskForm({ task, initial, onSaved }: { task?: WorkTask; initial?
         <input id="tTags" className="ui-input" value={tags} onChange={e => setTags(e.target.value)} placeholder="쉼표로 구분 (예: 월말, 긴급)" />
       </div>
       <div className="adm-form-actions">
-        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>닫기</button>
         <button type="submit" className="ui-btn is-primary" disabled={busy || !title.trim()}>{busy ? '저장 중…' : task ? '저장' : '업무 만들기'}</button>
       </div>
     </form>
