@@ -351,6 +351,10 @@ a.ui-hero:hover{background:var(--aq-surface-hover)}
 .ui-row.is-success{background:var(--aq-row-success)}
 .ui-row.is-danger{background:var(--aq-row-danger)}
 .ui-row.is-read .ui-row-title{font-weight:600}
+/* 읽은 알림은 한 단계 가라앉힌다 — 안 읽은 알림과 파란 점 하나로만 달라 무엇이 새 소식인지 한눈에 보이지 않았다 */
+.aq-notice-card.is-read .aq-notice-copy strong{font-weight:500;color:var(--aq-text-2)}
+.aq-notice-card.is-read .aq-notice-detail{color:var(--aq-text-4)}
+.aq-notice-card.is-read .aq-notice-symbol{background:var(--aq-gray-100);color:var(--aq-text-4)}
 .ui-row.is-muted .ui-row-title{color:var(--aq-text-4)}
 .ui-row-body{display:block;min-width:0}
 button.ui-row-title{width:100%;padding:0;border:0;background:none;font-family:inherit;text-align:left;cursor:pointer}

@@ -246,6 +246,9 @@ function clearFieldError() {
 function showFieldError(el: HTMLElement, msg: string) {
   clearFieldError();
   const host = el.closest<HTMLElement>('.ui-field, .aq-option-detail, .aq-pick, .ui-check') ?? el;
+  // 같은 칸에 더 구체적인 안내가 이미 빨갛게 떠 있으면(예: '원본 파일이 아니에요') 그것만 둔다 —
+  // '파일을 선택해 주세요'가 아래에 또 붙어 빨간 줄이 두 개가 됐다. 칸은 그대로 흔들고 커서를 둔다
+  if (host.querySelector('.aq-help-error:not(#' + FIELD_ERROR_ID + ')')) return;
   const note = document.createElement('p');
   note.id = FIELD_ERROR_ID;
   note.className = 'ui-field-help aq-help-error aq-field-error';
