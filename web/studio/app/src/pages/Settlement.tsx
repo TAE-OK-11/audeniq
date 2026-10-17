@@ -234,7 +234,8 @@ export function Settlement() {
         await refreshFinance();
         setShowPayout(false);
         setTab('payouts');
-        toast('지급을 요청했어요. 담당자 확인 후 등록한 계좌로 보내 드려요.');
+        // 얼마를 어디로 — '박승원 님에게 50,000원을 보냈어요'처럼 금액과 계좌를 문장에 (수수료를 뺀 실제 받는 금액)
+        toast(`${money(amt - payoutFee(amt))} 지급을 요청했어요. 확인이 끝나면 ${payment ? `${payment.bank} ${payment.last4} 계좌로` : '등록한 계좌로'} 보내 드려요.`);
       } catch (err) {
         toast(errorMessage(err, '지급을 요청하지 못했어요. 잠시 후 다시 시도해 주세요.'), 'error');
       } finally {
@@ -471,7 +472,7 @@ export function Settlement() {
                   <input
                     // type=number는 마우스 휠·방향키로 금액이 몰래 바뀌고 쉼표 표시가 안 돼 숫자 전용 텍스트로 받는다
                     id="pAmount" inputMode="numeric" type="text" autoComplete="off" enterKeyHint="done"
-                    required placeholder="금액을 입력해 주세요"
+                    required placeholder={`예: ${left.toLocaleString('ko-KR')}`}
                     value={amount ? Number(amount).toLocaleString('ko-KR') : ''}
                     onChange={e => setAmount(e.target.value.replace(/\D/g, '').replace(/^0+/, '').slice(0, 15))}
                   />
@@ -486,9 +487,9 @@ export function Settlement() {
               <div className="studio-receive-account">
                 <BankLogo name={payment?.bank || ''} />
                 <div>
-                  <strong>{payment?.bank || '은행 미등록'}</strong>
+                  <strong>{payment?.bank || '은행 등록 전'}</strong>
                   <p className="small muted">
-                    {payment?.recipient || '수령인 미등록'} · {payment?.last4 ? `•••• ${payment.last4}` : '계좌 미등록'}
+                    {payment?.recipient || '받는 분 등록 전'} · {payment?.last4 ? `•••• ${payment.last4}` : '계좌 등록 전'}
                   </p>
                 </div>
                 <span className="studio-account-check" aria-label="선택된 수령 계좌"><CheckIcon size={12} /></span>

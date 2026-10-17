@@ -80,7 +80,7 @@ export function Login() {
           <label htmlFor="loginEmail">이메일</label>
           <input
             id="loginEmail" {...EMAIL_INPUT} required autoComplete="username" autoFocus={AUTO_FOCUS && !email}
-            placeholder="이메일을 입력해 주세요" aria-invalid={!!fieldErr.email} aria-describedby={fieldErr.email ? 'loginEmailErr' : undefined}
+            placeholder="name@example.com" aria-invalid={!!fieldErr.email} aria-describedby={fieldErr.email ? 'loginEmailErr' : undefined}
             value={email} onChange={e => { setEmail(e.target.value); setEmailDone(false); if (fieldErr.email) setFieldErr(f => ({ ...f, email: undefined })); }}
             onBlur={() => setEmailDone(true)} onKeyDown={nextOnEnter('loginPassword')}
           />
@@ -91,7 +91,7 @@ export function Login() {
           <label htmlFor="loginPassword">비밀번호</label>
           <PasswordInput
             id="loginPassword" required autoComplete="current-password" autoFocus={AUTO_FOCUS && !!email}
-            placeholder="비밀번호를 입력해 주세요" enterKeyHint="go"
+            enterKeyHint="go"
             aria-invalid={!!fieldErr.password} aria-describedby={fieldErr.password ? 'loginPasswordErr' : undefined}
             value={password} onChange={e => { setPassword(e.target.value); if (fieldErr.password) setFieldErr(f => ({ ...f, password: undefined })); }}
             show={showPw} onToggle={() => setShowPw(v => !v)}
