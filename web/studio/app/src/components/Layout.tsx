@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, savedScroll, useLocation, useNavigate } from '../lib/router';
 import { useAuth } from '../api/auth';
 import { useProfile } from '../store/profile';
@@ -13,6 +13,7 @@ import { useToast } from './Toast';
 import { LIVE_NOTICE_EVENT } from '../lib/liveEvents';
 import { prefetchCommonRoutes, prefetchRoute } from '../routes';
 import { useScrollReveal } from '../hooks/useScrollReveal';
+import { useAsync } from '../hooks/useAsync';
 import { Glyph, type GlyphName } from './Glyph';
 
 // 라우트 변경 시 view 진입 애니메이션만 재시작 (children remount 없음 → useEffect/API 재실행 방지)
@@ -86,16 +87,14 @@ export function Layout({ children }: { children: ReactNode }) {
   const unread = useUnreadCount();
   const payment = usePayment();
   const docs = useDocs();
-  // 메뉴·왼쪽 메뉴의 '보완·작성 중' 개수와 아래 탭 바 '발매'의 보완 점 — 화면을 옮길 때마다(메뉴를 열 때도) 새로 받는다
-  const [relCounts, setRelCounts] = useState<{ needs: number; drafts: number } | null>(null);
+  // 메뉴·왼쪽 메뉴의 '보완·작성 중' 개수와 아래 탭 바 '발매'의 보완 점 — 화면을 옮길 때마다(메뉴를 열 때도) 새로 받는다.
+  // 화면들과 같은 발매 목록 캐시('releases')를 쓴다 — 받아 둔 목록으로 바로 세고, 화면이 같은 목록을 동시에 받으면 요청이 하나로 합쳐진다
   const [menuOpen, setMenuOpen] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    api.listReleases()
-      .then(rs => { if (alive) setRelCounts({ needs: rs.filter(r => r.status === 'needs').length, drafts: rs.filter(r => r.status === 'draft').length }); })
-      .catch(() => {});
-    return () => { alive = false; };
-  }, [menuOpen, loc.pathname]);
+  const { data: rels } = useAsync(() => api.listReleases(), [menuOpen, loc.pathname], { key: 'releases' });
+  const relCounts = useMemo(() => (rels ? {
+    needs: rels.filter(r => r.status === 'needs').length,
+    drafts: rels.filter(r => r.status === 'draft').length,
+  } : null), [rels]);
   // 실시간으로 들어온 새 알림 — 화면을 보고 있으면 토스트로, 누르면 해당 화면으로
   useEffect(() => {
     const on = (e: Event) => {

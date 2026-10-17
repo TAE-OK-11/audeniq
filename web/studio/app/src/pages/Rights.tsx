@@ -35,7 +35,7 @@ const REQUIRED_DOCS: [string, string, string][] = [
 export function Rights() {
   const toast = useToast();
   const docs = useDocs();
-  const { data: releases = [] } = useAsync(() => api.listReleases(), []);
+  const { data: releases = [] } = useAsync(() => api.listReleases(), [], { key: 'releases' });
   const [formOpen, setFormOpen] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [signing, setSigning] = useState(false);

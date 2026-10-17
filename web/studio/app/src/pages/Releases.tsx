@@ -1,6 +1,7 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from '../lib/router';
 import { api, type Release, type Track } from '../api/client';
+import { prefetchRelease } from '../api/prefetch';
 import { fixPath, isDocumentFix, resolveCorrection, splitCorrections } from '../lib/corrections';
 import { STATUS_LABEL, statusTone } from '../lib/format';
 import { useAsync } from '../hooks/useAsync';
@@ -66,7 +67,7 @@ export function Releases() {
     setParams(next, { replace: true });
   };
 
-  const { data: listData, loading: listLoading, error: listError, reload } = useAsync(() => api.listReleases(), []);
+  const { data: listData, loading: listLoading, error: listError, reload } = useAsync(() => api.listReleases(), [], { key: 'releases' });
   const list = useMemo(() => listData ?? [], [listData]);
   // 트랙은 '전체 트랙' 탭을 처음 열 때만 발매별 상세를 불러온다 (목록만 볼 때 N건 추가 요청 방지).
   // 탭에 손가락이 닿는 순간(누르기 직전) 미리 받기 시작해, 바꿨을 때 빈 화면이 거의 보이지 않게 한다
@@ -83,7 +84,7 @@ export function Releases() {
       }
     }
     return out;
-  }, [tracksWanted, listData]);
+  }, [tracksWanted, listData], { key: tracksWanted && listData ? 'release-tracks' : undefined });
   const tracks = useMemo(() => trackData ?? [], [trackData]);
   const trackCount = useMemo(() => list.reduce((n, r) => n + (r.track_count || 0), 0), [list]);
   const loading = listLoading || (tab === 'tracks' && (tracksLoading || (!trackData && !tracksError)));
@@ -183,6 +184,7 @@ export function Releases() {
                 // 카드 전체가 상세로 가는 링크 — article에는 link 역할을 줄 수 없어 div로(모양은 같음)
                 <div
                   key={r.id} className="ui-row aq-release-card"
+                  onPointerDown={() => prefetchRelease(r.id)}
                   onClick={() => openRelease(r.id)} onKeyDown={onCardKey(r.id)}
                   tabIndex={0} role="link" aria-label={`${r.title || '제목 없는 발매'} 상세 보기`}
                 >
@@ -255,6 +257,7 @@ export function Releases() {
               {filteredTracks.map(t => (
                 <div
                   key={t.releaseId + t.id} className="track-row ui-row aq-track-row"
+                  onPointerDown={() => prefetchRelease(t.releaseId)}
                   onClick={() => openRelease(t.releaseId)} onKeyDown={onCardKey(t.releaseId)}
                   tabIndex={0} role="link" aria-label={`${t.title || '제목 없는 곡'} 상세 보기`}
                 >

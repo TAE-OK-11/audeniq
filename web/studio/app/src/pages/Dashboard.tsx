@@ -11,6 +11,7 @@ import { useBalance } from '../store/settlement';
 import { useAsync } from '../hooks/useAsync';
 import { SkeletonBlock, SkeletonRows } from '../components/Skeleton';
 import { useSmoothHeight } from '../hooks/useSmoothHeight';
+import { prefetchRelease } from '../api/prefetch';
 import { Badge, CountUp } from '../ui';
 import { Money } from '../components/Money';
 import { ReleaseCover } from '../components/ReleaseCover';
@@ -103,7 +104,7 @@ export function Dashboard() {
   const { left: payable } = useBalance();
   // 할 일은 앞의 몇 개만 — 나머지는 '더 보기'로 (한 화면에 일곱 줄씩 쌓이면 무엇부터 할지 흐려진다)
   const [allTasks, setAllTasks] = useState(false);
-  const { data: releases = [], loading, error, reload } = useAsync(() => api.listReleases(), []);
+  const { data: releases = [], loading, error, reload } = useAsync(() => api.listReleases(), [], { key: 'releases' });
   const topRef = useRef<HTMLDivElement>(null);
   useSmoothHeight(topRef, loading);
   const { rows: reportRows } = useReportRows();
@@ -279,7 +280,7 @@ export function Dashboard() {
             ) : releases.length ? (
               <div className="ui-list aq-stagger">
                 {releases.slice(0, 4).map(r => (
-                  <Link key={r.id} to={`/releases/${r.id}`} className="release-row ui-row studio-album-row aq-row-link">
+                  <Link key={r.id} to={`/releases/${r.id}`} className="release-row ui-row studio-album-row aq-row-link" onPointerDown={() => prefetchRelease(r.id)}>
                     <ReleaseCover id={r.id} src={r.coverData} />
                     <div className="min-0">
                       <span className="ui-row-title">{r.title || '제목 없는 발매'}</span>
