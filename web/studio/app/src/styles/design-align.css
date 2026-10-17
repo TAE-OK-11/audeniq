@@ -213,7 +213,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 #view-release .aq-fix-list li{padding:12px 2px;background:none;border-radius:0}
 #view-release .aq-fix-step{padding:0;background:none;color:var(--aq-amber-700);font-size:12px}
 #view-release .aq-fix-list li.is-here .aq-fix-step{background:none;color:var(--aq-blue-500)}
-@media(max-width:560px){#view-release .aq-fix-list .ui-btn{justify-self:start;min-height:36px}}
+@media(max-width:560px){#view-release .aq-fix-list .ui-btn{justify-self:start}}
 #view-release .aq-cover-meta{padding:0 2px;background:none}
 #view-release .aq-cover-meta div{padding:8px 0}
 .row-actions>.ui-btn.aq-danger-text:first-child{margin-left:-10px}
@@ -810,7 +810,6 @@ button.settle-hero-account.is-button .min-0{display:grid}
 .settle-entry-amount.is-minus{color:var(--portal-ink)}
 .settle-entry-amount .aq-money.is-minus{color:inherit}
 .aq-statement-icon.is-minus{background:var(--aq-gray-100);color:var(--aq-text-3)}
-@media (max-width:600px){.settle-entry.aq-statement-card{grid-template-columns:40px minmax(0,1fr) auto;gap:12px}.settle-entry .aq-statement-icon{width:40px;height:40px;flex-basis:40px}}
 .settle-steps{display:flex;gap:4px;margin:8px 0 0;padding:0;list-style:none;font-size:11px;font-weight:700;color:var(--aq-text-4)}
 .settle-steps li{display:flex;align-items:center;gap:4px}
 .settle-steps li+li::before{content:"";width:12px;height:2px;border-radius:2px;background:var(--aq-gray-200)}
@@ -879,3 +878,7 @@ button.settle-hero-account.is-button .min-0{display:grid}
 @media (prefers-reduced-motion:reduce){
   :is(.aq-option,.aq-sign-provider,.aq-dsp,.aq-pick,.aq-cert-method,.aq-chip,.aq-file-btn,.aq-tab-item):is(:active,.is-pressed),.aq-pay-type:is(:active,.is-pressed) span{transform:none!important}
 }
+
+/* ---------- 디자인 통일 ----------
+   빈 화면·오류 안내의 제목은 h1이어도 화면 제목(28~36px)이 아니라 안내 제목 크기 — 404와 같게 */
+.ui-empty h1{font-size:var(--aq-fs-title-lg);line-height:1.35;letter-spacing:-.04em}
