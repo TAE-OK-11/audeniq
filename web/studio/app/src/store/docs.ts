@@ -60,7 +60,8 @@ const AGREEMENT_BOXES: AgreementTermsRecord['confirmations'] = [
 const AGREEMENT_TERMS: AgreementTermsRecord = {
   form: 'AUD-DIST 2.0', terms_version: 'AUD-TERMS 2026.10', exclusivity: 'NON_EXCLUSIVE', fee_bps: 800, user_bps: 9200, confirmations: AGREEMENT_BOXES,
 };
-const AGREEMENT_CONTENT = [
+// 체험용 예시 문서 — 함수 안에 두어 실서버 번들에서는 통째로 빠진다(최상위 .map()은 지울 수 없는 코드로 남았다)
+const agreementContent = () => [
   'AUDENIQ 음원 배급 계약서', '',
   '서식 AUD-DIST 2.0 · 적용 약관 AUDENIQ 음원 배급 서비스 이용약관 (AUD-TERMS 2026.10)',
   '신청서 번호 AUD-20260920-ABCDEF', '',
@@ -82,12 +83,12 @@ const AGREEMENT_CONTENT = [
   ...AGREEMENT_BOXES.map(b => `□ (필수) ${b.text}`),
 ].join('\n');
 
-const INITIAL_DOCS: DocRecord[] = [
+const initialDocs = (): DocRecord[] => [
   {
     id: 'doc1', kind: 'agreements',
     title: '첫 번째 싱글 · AUDENIQ 음원 배급 계약서',
     releaseId: 'r1', releaseTitle: '첫 번째 싱글', version: '2.0', created: '2026-09-20',
-    content: AGREEMENT_CONTENT, agreementTerms: AGREEMENT_TERMS, fileName: '', checked: true, checkedAt: '2026-09-20 14:32',
+    content: agreementContent(), agreementTerms: AGREEMENT_TERMS, fileName: '', checked: true, checkedAt: '2026-09-20 14:32',
     consentHistory: [{ time: '2026-09-20 14:32', action: '내용 확인', version: '1.0' }],
     reviewHistory: [{ status: '검토 완료', time: '2026-09-21 10:05', detail: 'AUDENIQ 담당자 검토 완료' }],
     reviewStatus: 'approved', reviewNote: '', signerName: '', localSignatureData: '', localSignatureAt: '',
@@ -160,7 +161,7 @@ function normalizeDoc(raw: unknown): DocRecord | null {
 }
 
 // 실서버 모드: 서버에서 불러오고 브라우저에는 남기지 않는다 (계정 간 섞임 방지)
-const store = createStore<DocRecord[]>(MOCK ? INITIAL_DOCS : [], {
+const store = createStore<DocRecord[]>(MOCK ? initialDocs() : [], {
   persist: MOCK ? 'docs' : undefined,
   // File 객체는 직렬화할 수 없으므로 저장하지 않는다 (원본은 현재 세션에서만 열람)
   serialize: list => list.map(({ fileBlob: _omit, ...rest }) => rest),
