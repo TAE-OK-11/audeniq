@@ -627,7 +627,7 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 .aq-release-fix{grid-column:1/-1;display:flex;align-items:center;gap:12px;background:var(--aq-e-amber-soft);border-radius:var(--aq-r-md);padding:10px 10px 10px 14px;font-size:12px;line-height:1.5;color:var(--aq-amber-700)}
 .aq-release-fix>span{flex:1;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .aq-release-fix b{color:var(--aq-e-amber);margin-right:6px}
-.aq-release-fix-btn{flex:none;display:inline-flex;align-items:center;gap:2px;height:var(--aq-h-xs);border:0;background:#fff;color:var(--aq-e-amber);font:inherit;font-size:13px;font-weight:700;padding:0 12px;border-radius:var(--aq-r-sm);white-space:nowrap;cursor:pointer;transition:background-color .2s ease}
+.aq-release-fix-btn{flex:none;display:inline-flex;align-items:center;gap:2px;height:var(--aq-h-xs);border:0;background:#fff;color:var(--aq-e-amber);font:inherit;font-size:13px;font-weight:700;padding:0 12px;border-radius:var(--aq-r-ctl-xs);white-space:nowrap;cursor:pointer;transition:background-color .2s ease}
 .aq-release-fix-btn:hover{background:var(--aq-gray-25)}
 
 /* ── 데스크톱: 수익 받기 흐름 폭 (계정 정보는 설정 목록 한 줄 흐름) ─── */
@@ -1036,7 +1036,7 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 
 /* ---------- 홈 상단 정리: 날짜·인사·제목 한 덩어리, 새 발매 카드 하나 ---------- */
 #view-home .aq-home-title{margin:0 0 20px}
-#view-home .aq-home-title h1{margin:0;font-size:30px;line-height:1.3;letter-spacing:-.05em;overflow-wrap:anywhere}
+#view-home .aq-home-title h1{margin:0;font-size:var(--aq-fs-h1);line-height:1.3;letter-spacing:-.05em;overflow-wrap:anywhere}
 #view-home .aq-home-title h1 .aq-home-suffix{color:var(--aq-e-ink)}
 #view-home .aq-home-title p:not(.aq-home-date){margin:8px 0 0;font-size:14px;color:var(--aq-text-4)}
 .aq-home-date{margin:0 0 8px;font-size:13px;font-weight:700;color:var(--aq-e-blue);letter-spacing:-.01em}
@@ -1590,7 +1590,7 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-bundle-docs li.is-done .aq-bundle-no{background:var(--aq-e-blue);color:#fff}
 .aq-bundle-docs li.is-current .aq-bundle-no{background:var(--aq-e-blue-soft);color:var(--aq-e-blue)}
 .aq-bundle-docs .ui-btn.is-white{white-space:nowrap}
-:is(#root) .aq-bundle-sign{min-height:var(--aq-h-sm)!important;padding:0 14px!important;font-size:13px!important;border-radius:var(--aq-r-sm)!important;white-space:nowrap}
+:is(#root) .aq-bundle-sign{min-height:var(--aq-h-sm)!important;padding:0 14px!important;font-size:13px!important;border-radius:var(--aq-r-ctl-sm)!important;white-space:nowrap}
 .aq-bundle-sub,.ui-card>h3.aq-bundle-sub{margin:18px 0 8px;font-size:14px;font-weight:800;color:var(--aq-e-ink)}
 
 /* 배급 계약서 최종본 (/contracts/:id) — 신청서와 같은 서류 스타일에 계약서 조항만 더한다 */
@@ -1713,7 +1713,7 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-fix-list li.is-here .aq-fix-step{background:var(--aq-blue-50);color:var(--aq-blue-700)}
 .aq-fix-list p{grid-area:text;margin:0;font-size:14px;line-height:1.6;color:var(--aq-text-2)}
 .aq-fix-list p strong{display:block;margin-bottom:2px;font-size:15px;font-weight:var(--aq-fw-bold);color:var(--aq-text)}
-.aq-fix-list .ui-btn{grid-area:btn;display:inline-flex;align-items:center;justify-content:center;gap:4px;width:auto;min-height:40px;padding:0 18px;border:0;border-radius:12px;background:var(--aq-blue-50);color:var(--aq-blue-700);font:inherit;font-size:var(--aq-fs-sm);font-weight:var(--aq-fw-bold);white-space:nowrap;cursor:pointer;transition:background-color .15s ease,transform .12s ease}
+.aq-fix-list .ui-btn{grid-area:btn;display:inline-flex;align-items:center;justify-content:center;gap:4px;width:auto;min-height:var(--aq-h-sm);padding:0 18px;border:0;border-radius:var(--aq-r-ctl-sm);background:var(--aq-blue-50);color:var(--aq-blue-700);font:inherit;font-size:var(--aq-fs-sm);font-weight:var(--aq-fw-bold);white-space:nowrap;cursor:pointer;transition:background-color .15s ease,transform .12s ease}
 .aq-fix-list .ui-btn:hover{background:var(--aq-blue-100)}
 .aq-fix-list .ui-btn:active{transform:scale(.97)}
 .aq-fix-list .ui-btn.is-primary{background:var(--aq-blue-500);color:#fff}
