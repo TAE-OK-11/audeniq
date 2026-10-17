@@ -224,7 +224,7 @@ body.wizard-mode .portal-header{display:none!important}
  .portal-nav button{font-size:14px;min-height:46px;padding:10px 12px}
  .portal-nav .nav-group{padding:11px 11px 4px}
  .portal-layout{width:calc(100% - 40px);padding:31px 0 62px}
- #view-home>.ui-page-head>.ui-btn{display:none}
+ #view-home .aq-home-top>.ui-page-head>.ui-btn{display:none}
  .dashboard-grid{gap:10px;margin:11px 0 34px}
  .dashboard-grid .service-item{min-height:148px;padding:19px 17px;border-radius:var(--aq-r-2xl)}
  .dashboard-grid .service-item .ui-icon{width:38px}

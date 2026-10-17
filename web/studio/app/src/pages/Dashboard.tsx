@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from '../lib/router';
 import { fixPath, resolveCorrection, splitCorrections } from '../lib/corrections';
 import { api } from '../api/client';
@@ -10,6 +10,7 @@ import { useDocs } from '../store/docs';
 import { useBalance } from '../store/settlement';
 import { useAsync } from '../hooks/useAsync';
 import { SkeletonBlock, SkeletonRows } from '../components/Skeleton';
+import { useSmoothHeight } from '../hooks/useSmoothHeight';
 import { Badge, CountUp } from '../ui';
 import { Money } from '../components/Money';
 import { ReleaseCover } from '../components/ReleaseCover';
@@ -103,6 +104,8 @@ export function Dashboard() {
   // 할 일은 앞의 몇 개만 — 나머지는 '더 보기'로 (한 화면에 일곱 줄씩 쌓이면 무엇부터 할지 흐려진다)
   const [allTasks, setAllTasks] = useState(false);
   const { data: releases = [], loading, error, reload } = useAsync(() => api.listReleases(), []);
+  const topRef = useRef<HTMLDivElement>(null);
+  useSmoothHeight(topRef, loading);
   const { rows: reportRows } = useReportRows();
   const report = latestSummary(reportRows);
 
@@ -155,6 +158,9 @@ export function Dashboard() {
 
   return (
     <div id="view-home" className="view">
+      {/* 머리와 큰 카드는 불러오기가 끝나면 높이가 바뀐다(급한 일이 있을 때만 '새 발매' 버튼, 자리표시보다 큰 카드) —
+          한 번에 아래 내용을 밀지 않고 부드럽게 자란다 */}
+      <div ref={topRef} className="aq-home-top">
       <div className="ui-page-head aq-home-title">
         <div>
           <p className="aq-home-date">{todayLabel()}</p>
@@ -167,7 +173,7 @@ export function Dashboard() {
       </div>
 
       {loading ? (
-        <SkeletonBlock height={160} />
+        <SkeletonBlock height={160} className="aq-home-skel" />
       ) : urgent ? (
         <Link className="ui-hero aq-home-hero ui-tone-warn is-urgent" to={urgent.to} onPointerEnter={() => prefetchRoute(urgent.to)}>
           <div>
@@ -197,6 +203,7 @@ export function Dashboard() {
         </span>
       </Link>
       )}
+      </div>
 
       {/* 자주 가는 화면 바로가기는 새 발매 바로 아래 — 할 일·발매 목록 아래로 내리면 누르러 한참 내려가야 했다 */}
       <div className="dashboard-grid aq-stagger" aria-label="주요 업무">
