@@ -1470,7 +1470,7 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-sign-page{min-height:100dvh;background:#fff;max-width:720px;margin:0 auto;padding:20px 16px 64px;box-sizing:border-box}
 .aq-sign-top{display:flex;align-items:center;gap:10px;padding:6px 2px 18px}
 .aq-sign-top img{height:22px;width:auto}
-.aq-sign-top span{font-size:12px;font-weight:800;letter-spacing:.02em;color:var(--aq-e-blue);background:var(--aq-e-blue-soft);padding:5px 9px;border-radius:var(--aq-r-sm)}
+.aq-sign-top span{font-size:12px;font-weight:800;letter-spacing:.02em;color:var(--aq-blue-700);background:var(--aq-e-blue-soft);padding:5px 9px;border-radius:var(--aq-r-sm)}
 .aq-sign-card{background:var(--aq-blue-50);border-radius:var(--aq-r-2xl);padding:22px 20px;margin:0 0 14px;animation:aq-fade-up .4s var(--aq-e-ease) both}
 .aq-sign-card h1{margin:4px 0 8px;font-size:23px;line-height:1.35;letter-spacing:-.04em}
 .aq-sign-card h2{display:flex;align-items:center;gap:9px;margin:0 0 14px;font-size:18px;font-weight:800;letter-spacing:-.03em}

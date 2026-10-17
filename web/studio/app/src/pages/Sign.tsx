@@ -12,6 +12,7 @@ import { todayStr } from '../lib/date';
 import { SIGNING_CONSENTS, SIGNING_PRIVACY_NOTICE, type SigningConsentKey } from '../lib/rightsDocument';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
+import { SUPPORT_EMAIL } from '../lib/support';
 import { DateField } from '../components/Picker';
 
 const EVENT_LABEL: Record<string, string> = {
@@ -108,13 +109,15 @@ export function Sign() {
 
   if (loadError || !view) {
     return (
-      <div className="aq-sign-page">
+      <main className="aq-sign-page">
         {brand}
         <section className="aq-sign-card aq-sign-closed" aria-busy={!loadError}>
-          {loadError ? <><h1>서명 링크를 열 수 없어요</h1><p>{loadError} 링크가 바뀌었거나 기간이 지났을 수 있어요. 서명을 요청한 분께 새 링크를 받아 주세요.</p></>
+          {/* 막다른 화면이 되지 않게 다음에 할 일을 버튼으로 — 요청한 분이 누군지 모를 때는 고객지원으로 */}
+          {loadError ? <><h1>서명 링크를 열 수 없어요</h1><p>{loadError} 링크가 바뀌었거나 기간이 지났을 수 있어요. 서명을 요청한 분께 새 링크를 받아 주세요.</p>
+            <a href={`mailto:${SUPPORT_EMAIL}`} className="ui-btn is-soft">고객지원에 문의하기</a></>
             : <p className="muted">문서를 불러오고 있어요…</p>}
         </section>
-      </div>
+      </main>
     );
   }
 
@@ -133,17 +136,18 @@ export function Sign() {
       : v.status === 'CANCELLED' ? ['요청이 취소됐어요', '서명을 요청한 분이 이 요청을 취소했어요. 이 링크로는 서명할 수 없어요.']
         : ['서명 링크 기간이 지났어요', '보안을 위해 서명 링크는 정해진 기간에만 쓸 수 있어요. 요청한 분께 새 링크를 받아 주세요.'];
     return (
-      <div className="aq-sign-page">
+      <main className="aq-sign-page">
         {brand}
         <section className="aq-sign-card aq-sign-closed"><h1>{msg[0]}</h1><p>{msg[1]}</p>
-          {back && <button type="button" className="ui-btn is-soft" onClick={() => nav(back)}>돌아가기</button>}
+          {back ? <button type="button" className="ui-btn is-soft" onClick={() => nav(back)}>돌아가기</button>
+            : <a href={`mailto:${SUPPORT_EMAIL}`} className="ui-btn is-soft">고객지원에 문의하기</a>}
         </section>
-      </div>
+      </main>
     );
   }
 
   return (
-    <div className="aq-sign-page">
+    <main className="aq-sign-page">
       {brand}
       <section className="aq-sign-card aq-sign-intro">
         <p className="eyebrow">{v.form}</p>
@@ -282,7 +286,7 @@ export function Sign() {
           )}
         </section>
       )}
-    </div>
+    </main>
   );
 }
 

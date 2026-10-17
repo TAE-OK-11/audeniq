@@ -171,7 +171,7 @@
   .aq-wiz-rail .aq-wiz-steps button { padding: 11px 10px; border-radius: var(--aq-r-lg); }
   .aq-wiz-rail .aq-wiz-step-no { width: 28px; height: 28px; border-radius: 9px; background: #fff; }
   .aq-wiz-rail .aq-wiz-steps li.is-done button:hover { background: rgba(255, 255, 255, .8); }
-  .aq-wiz-rail .aq-wiz-steps li.is-current button { background: var(--aq-blue-100); }
+  .aq-wiz-rail .aq-wiz-steps li.is-current button { background: var(--aq-blue-100); color: var(--aq-blue-700); }  /* 옅은 파랑 면 위 파란 글자 4.5:1 이상 */
   .aq-wiz-rail .aq-wiz-steps li.is-done .aq-wiz-step-no { background: var(--aq-blue-150); }
   .aq-wiz-rail .aq-wiz-steps li.is-current .aq-wiz-step-no { background: var(--aq-blue-500); color: #fff; }
   .aq-wiz-rail .aq-wiz-step-fix { padding: 4px 8px; border-radius: 999px; font-size: 11px; }

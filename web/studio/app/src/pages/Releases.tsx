@@ -180,7 +180,8 @@ export function Releases() {
           {filtered.length ? (
             <div className="aq-catalog-cards aq-stagger">
               {filtered.map(r => (
-                <article
+                // 카드 전체가 상세로 가는 링크 — article에는 link 역할을 줄 수 없어 div로(모양은 같음)
+                <div
                   key={r.id} className="ui-row aq-release-card"
                   onClick={() => openRelease(r.id)} onKeyDown={onCardKey(r.id)}
                   tabIndex={0} role="link" aria-label={`${r.title || '제목 없는 발매'} 상세 보기`}
@@ -225,7 +226,7 @@ export function Releases() {
                       </div>
                     );
                   })()}
-                </article>
+                </div>
               ))}
             </div>
           ) : (

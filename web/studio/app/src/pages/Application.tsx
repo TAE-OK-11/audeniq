@@ -217,7 +217,7 @@ export function Application() {
           {issued && <ol className="aq-paper-agree">
             {AGREEMENTS.map(a => (
               <li key={a.id} className={app.agreements.includes(a.id) ? 'is-on' : ''}>
-                <span className="aq-paper-check" aria-label={app.agreements.includes(a.id) ? '동의함' : '동의하지 않음'}>
+                <span className="aq-paper-check" role="img" aria-label={app.agreements.includes(a.id) ? '동의함' : '동의하지 않음'}>
                   {app.agreements.includes(a.id) ? <CheckIcon size={12} /> : null}
                 </span>
                 {a.text}
