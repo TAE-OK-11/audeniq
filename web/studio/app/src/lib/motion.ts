@@ -27,13 +27,13 @@ function afterScroll(cb: () => void) {
   const limit = window.setTimeout(finish, 900);
 }
 
-/** 칸을 짧게 좌우로 흔든다 — 처음엔 크게, 점점 작게 잦아든다 */
+/** 칸을 짧게 좌우로 흔든다 — 작게, 점점 잦아든다 */
 export function shake(el: Element | null) {
   if (!el || reduced() || typeof (el as HTMLElement).animate !== 'function') return;
   (el as HTMLElement).animate(
     [
-      { transform: 'translateX(0)' }, { transform: 'translateX(-5px)' }, { transform: 'translateX(4px)' },
-      { transform: 'translateX(-3px)' }, { transform: 'translateX(2px)' }, { transform: 'translateX(0)' },
+      { transform: 'translateX(0)' }, { transform: 'translateX(-3px)' }, { transform: 'translateX(2px)' },
+      { transform: 'translateX(-1px)' }, { transform: 'translateX(0)' },
     ],
     { duration: 380, easing: 'cubic-bezier(.36,.07,.19,.97)' },
   );

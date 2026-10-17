@@ -476,13 +476,8 @@ button.ui-avatar:hover{transform:scale(1.06);background:var(--aq-blue-200)}
   .ui-skel-rows>span,.ui-empty,.ui-tab-panel{animation:none}
 }
 
-/* 타임라인 차례로 나타나기 */
-.ui-timeline>li{animation:aq-fade-up .4s var(--aq-ease) both}
-.ui-timeline>li:nth-child(2){animation-delay:.04s}
-.ui-timeline>li:nth-child(3){animation-delay:.08s}
-.ui-timeline>li:nth-child(4){animation-delay:.12s}
-.ui-timeline>li:nth-child(5){animation-delay:.16s}
-.ui-timeline>li:nth-child(n+6){animation-delay:.2s}
+/* 타임라인 — 한 번에 살짝 나타나기 */
+.ui-timeline>li{animation:aq-fade-up var(--aq-motion-long) var(--aq-ease) both}
 @media (prefers-reduced-motion:reduce){.ui-timeline>li{animation:none}}
 /* 폰: 줄 오른쪽에 배지가 3개 이상이면 세로로 쌓지 않고 제목 아래 한 줄로 */
 @media (max-width:560px){
