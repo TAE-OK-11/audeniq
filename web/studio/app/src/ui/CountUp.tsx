@@ -22,9 +22,14 @@ export function CountUp({ value, format = String, duration = 600 }: {
       el.textContent = formatRef.current(value);
       return;
     }
-    const t0 = performance.now();
+    // React가 방금 최종값을 글자로 넣었다 — 첫 프레임 전에 지금 보이던 값으로 되돌려 최종값이 한 번 번쩍이지 않게
+    el.textContent = formatRef.current(start);
+    // 시작 시각은 첫 프레임의 시각으로 — rAF가 넘기는 시각은 이 효과보다 앞설 수 있어, performance.now()로 잡으면
+    // 진행률이 음수가 되어 숫자가 반대쪽으로 튀었다(48,735 → 52,165 → 27,118)
+    let t0 = -1;
     let raf = 0;
     const tick = (now: number) => {
+      if (t0 < 0) t0 = now;
       const p = Math.min(1, (now - t0) / duration);
       // 빠르게 출발해 끝에서 부드럽게 멈춘다 (ease-out quart) — 숫자를 금방 읽을 수 있게
       const v = Math.round(start + (value - start) * (1 - Math.pow(1 - p, 4)));
