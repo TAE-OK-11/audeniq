@@ -14,7 +14,7 @@
 .aq-rp-card{padding:6px 6px 8px;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
 .aq-rp-card h3{display:flex;align-items:center;gap:6px;margin:0;padding:14px 14px 6px;font-size:var(--aq-fs-md);font-weight:700;letter-spacing:0;color:var(--aq-text-3)}
 .aq-rp-card h4{margin:10px 0 0;padding:8px 14px 2px;font-size:var(--aq-fs-xs);font-weight:700;color:var(--aq-text-4)}
-.aq-report-hero .aq-report-period{margin:0 0 18px}
+.aq-report-hero .aq-report-period{margin:0 0 18px;max-width:420px} /* 넓은 화면에서 카드 끝까지 늘어나지 않게 */
 /* 발매 1단계 — 접어 둔 선택 칸 열기 */
 .step-section .aq-more-info{margin:4px 0 8px;padding-left:0;--btn-fg:var(--aq-text-3)}
 .aq-dsp-unavailable{margin:16px 0 0;border-radius:var(--aq-r-xl);background:var(--aq-surface)}
