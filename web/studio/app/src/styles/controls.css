@@ -31,7 +31,7 @@
 :where(input[type=checkbox],input[type=radio]):focus-visible{outline:3px solid var(--aqc-focus);outline-offset:2px}
 :where(input[type=checkbox],input[type=radio]):disabled{opacity:.45;cursor:not-allowed}
 @media (prefers-reduced-motion:no-preference){
-  :where(input[type=checkbox]):checked{animation:aqc-check-pop .26s cubic-bezier(.34,1.56,.64,1)}
+  :where(input[type=checkbox]):checked{animation:aqc-check-pop .22s var(--aq-enter)}
   @keyframes aqc-check-pop{0%{background-size:4px 4px}100%{background-size:14px 14px}}
 }
 
