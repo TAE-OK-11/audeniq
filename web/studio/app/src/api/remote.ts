@@ -576,7 +576,9 @@ export const remoteApi = {
     const me = await req<{ user_id: string; party_id: string; email: string }>('/api/me', { quiet401: true });
     partyId = me.party_id;
     setSessionUser(me.user_id);
-    if (!hasCsrf()) await bootstrapCsrf();
+    // 토큰은 기다리지 않고 받기 시작만 한다 — 작업 공간·화면 데이터(GET)는 토큰이 필요 없어 한 번 오가는 만큼 빨리 뜬다.
+    // 바꾸는 요청은 req가 이 토큰을 기다렸다가 붙인다
+    if (!hasCsrf()) bootstrapCsrf().catch(() => {});
     return { id: me.user_id, email: me.email };
   },
   async listOrgs(): Promise<Org[]> {

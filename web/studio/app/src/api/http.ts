@@ -71,6 +71,8 @@ export function req<T>(path: string, opts: ReqOptions = {}): Promise<T> {
 
 async function send<T>(path: string, opts: ReqOptions): Promise<T> {
   const method = opts.method ?? 'GET';
+  // 토큰을 받고 있는 중이면 바꾸는 요청은 그 토큰을 기다렸다가 붙인다 (bootstrapCsrf는 기다리지 않고 시작한다)
+  if (method !== 'GET' && csrfPending && path !== CSRF_PATH) await csrfPending.catch(() => {});
   const headers: Record<string, string> = { Accept: 'application/json' };
   let body: string | undefined;
   if (method !== 'GET') {
@@ -144,10 +146,16 @@ async function refreshSession(sentWith: string): Promise<boolean> {
   return csrfToken !== '' && csrfToken !== sentWith;
 }
 
+const CSRF_PATH = '/api/auth/csrf';
+/** 받고 있는 CSRF 토큰 — 여러 곳에서 동시에 불러도 한 번만 받는다 */
+let csrfPending: Promise<void> | null = null;
+
 /** 새로고침 후 세션 쿠키로 CSRF 토큰을 다시 받는다 */
-export async function bootstrapCsrf(): Promise<void> {
-  const r = await req<{ csrf_token: string }>('/api/auth/csrf', { method: 'POST', quiet401: true });
-  csrfToken = r.csrf_token;
+export function bootstrapCsrf(): Promise<void> {
+  csrfPending ??= req<{ csrf_token: string }>(CSRF_PATH, { method: 'POST', quiet401: true })
+    .then(r => { csrfToken = r.csrf_token; })
+    .finally(() => { csrfPending = null; });
+  return csrfPending;
 }
 
 /** 커서 페이지 목록을 끝까지 모은다 (최대 pages 페이지) */
