@@ -50,7 +50,7 @@ export function SplitsCard({ releaseId, embedded = false }: { releaseId: string;
   if (!sheet.editable && !anyShare) return null;
 
   const edit = (track: string, fn: (r: Row[]) => Row[]) => { setRows(m => ({ ...m, [track]: fn(m[track] ?? []) })); setDirty(true); };
-  // 저장 검사는 서버와 같게 거절한 분 비율도 합에 넣는다 (지우면 그 비율을 다른 분께 줄 수 있다)
+  // 저장 검사는 서버와 같게 거절한 분 비율도 합에 넣는다 (지우면 그 비율을 다른 분에게 줄 수 있다)
   const ownerBps = (track: string) => 10000 - (rows[track] ?? []).reduce((a, r) => a + (toBps(r.pct) || 0), 0);
 
   const save = async () => {
@@ -139,7 +139,7 @@ export function SplitsCard({ releaseId, embedded = false }: { releaseId: string;
             <div className="aq-splits-foot">
               <span className={mine < 0 ? 'aq-splits-over' : 'muted small'}>
                 나 {pctLabel(Math.max(t.shares.length && !dirty ? t.owner_bps : mine, 0))}{mine < 0 ? ' · 합계가 100%를 넘어요' : ''}
-                {sheet.editable && list.some(r => r.status === 'DECLINED') && ' · 거절한 분을 삭제하면 그 비율을 다른 분께 줄 수 있어요'}
+                {sheet.editable && list.some(r => r.status === 'DECLINED') && ' · 거절한 분을 삭제하면 그 비율을 다른 분에게 줄 수 있어요'}
               </span>
               {sheet.editable && list.length < 10 && (
                 <button type="button" className="ui-btn is-soft is-sm"

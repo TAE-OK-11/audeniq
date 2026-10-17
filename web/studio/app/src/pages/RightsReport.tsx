@@ -64,7 +64,7 @@ export function RightsReport() {
         <h1>권리침해 신고</h1>
         {receipt ? (
           <div className="ui-callout is-success" role="status">
-            <p><b>신고가 접수됐어요. 접수 번호는 {receipt}예요.</b></p>
+            <p><b>신고를 받았어요. 접수 번호는 {receipt}예요.</b></p>
             <p>담당자가 내용을 확인한 뒤 적어 주신 연락처로 연락드려요. 침해가 확인되면 해당 음원의 배급을 중단하고, 배급한 아티스트에게 소명 기회를 줘요.</p>
           </div>
         ) : (
@@ -102,7 +102,7 @@ export function RightsReport() {
               <span>적은 내용이 사실이며, 신고하는 음원의 이용이 권리자에게 허락받지 않은 것이라고 믿을 만한 이유가 있어요. 사실과 다른 신고로 다른 사람에게 손해를 끼치면 책임질 수 있음을 알고 있어요.</span>
             </label>
             {error && <div className="ui-callout is-danger" role="alert">{error}</div>}
-            <button type="submit" className={`ui-btn is-primary is-lg${busy ? ' is-busy' : ''}`} disabled={busy}>신고 접수</button>
+            <button type="submit" className={`ui-btn is-primary is-lg${busy ? ' is-busy' : ''}`} disabled={busy}>신고하기</button>
             <p className="ui-field-help">연락처는 암호화해 보관하고 이 신고의 처리에만 써요. 배급한 아티스트에게는 신고 내용만 전달되고 연락처는 보이지 않아요.</p>
           </form>
         )}

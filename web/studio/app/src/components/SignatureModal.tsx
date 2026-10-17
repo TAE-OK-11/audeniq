@@ -196,7 +196,7 @@ export function SignatureModal({
     // 2단계: 전자서명 진행으로
     setCertStep('select');
     setPhase('cert');
-    toast('서명이 저장됐어요. 전자서명을 진행해 주세요.');
+    toast('서명을 저장했어요. 이어서 전자서명을 해 주세요.');
   };
 
   // --- 민간인증서 플로우 ---
@@ -256,8 +256,8 @@ export function SignatureModal({
     onSaved?.();
     pushNotice({
       id: uid('n'), kind: '서류', time: at, link: '/contracts',
-      title: `${stripSampleSuffix(doc.releaseTitle || doc.title)} 계약서 서명이 완료됐어요.`,
-      detail: '직접 서명과 본인 인증이 완료됐어요. 계약서 사본은 계약서 메뉴에서 언제든 확인할 수 있어요.',
+      title: `${stripSampleSuffix(doc.releaseTitle || doc.title)} 계약서에 서명했어요.`,
+      detail: '직접 서명과 본인 인증을 마쳤어요. 계약서 사본은 계약서 메뉴에서 언제든 볼 수 있어요.',
     });
     // 3단계: 계약서 완성
     setPhase('complete');
@@ -375,9 +375,9 @@ export function SignatureModal({
         return (
           <div className="aq-cert-done">
             <div className="aq-cert-done-icon"><CheckIcon size={28} /></div>
-            <strong>본인 인증이 완료됐어요</strong>
+            <strong>본인 인증을 마쳤어요</strong>
             <p>{certProvider} · {certName} · {phone}</p>
-            <p className="ui-field-help">계약서 서명 기록에 본인 인증 내역이 저장됐어요.</p>
+            <p className="ui-field-help">계약서 서명 기록에 본인 인증 내역을 저장했어요.</p>
           </div>
         );
     }
@@ -450,7 +450,7 @@ export function SignatureModal({
         <div className="aq-sign-docinfo">
           <small>{readOnly ? '서명 절차를 확인할 문서' : '서명할 문서'} · v{doc.version || '1.0'}</small>
           <strong>{title}</strong>
-          <div className="ui-field-help">{readOnly ? '검토 진행 중' : '검토 완료'} · {doc.releaseTitle || '공통 문서'}</div>
+          <div className="ui-field-help">{readOnly ? '검토하고 있어요' : '검토를 마쳤어요'} · {doc.releaseTitle || '공통 문서'}</div>
         </div>
 
         {phase === 'sign' && readOnly ? (
@@ -515,7 +515,7 @@ export function SignatureModal({
                 {boxes.map(b => (
                   <label key={b.id} className="ui-check is-plain">
                     <input type="checkbox" checked={!!ticked[b.id]} onChange={e => setTicked(t => ({ ...t, [b.id]: e.target.checked }))} />
-                    <span><b>{b.required ? '(필수)' : '(해당 시)'}</b> {b.text}</span>
+                    <span><b>{b.required ? '(필수)' : '(있을 때만)'}</b> {b.text}</span>
                   </label>
                 ))}
               </fieldset>
@@ -537,7 +537,7 @@ export function SignatureModal({
             <div className="aq-complete-hero">
               <span className="aq-complete-check" aria-hidden="true"><CheckIcon size={28} /></span>
               <h3>{MOCK ? '계약서 서명이 완성됐어요' : '계약이 체결됐어요'}</h3>
-              <p>{MOCK ? '직접 서명과 전자서명(본인 인증)이 모두 완료됐어요.' : '직접 서명으로 계약이 체결됐어요. 이제 플랫폼으로 배급이 시작돼요.'}</p>
+              <p>{MOCK ? '직접 서명과 전자서명(본인 인증)을 모두 마쳤어요.' : '직접 서명으로 계약이 체결됐어요. 이제 플랫폼으로 배급이 시작돼요.'}</p>
             </div>
             <div className="aq-complete-summary">
               <div><small>서명자</small><strong>{name || certName || doc.signerName || '-'}</strong></div>

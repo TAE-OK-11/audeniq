@@ -235,7 +235,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const tabDot: Record<string, string | undefined> = {
     '/releases': relCounts?.needs ? `보완할 발매 ${relCounts.needs}건` : undefined,
   };
-  const menuTodo = [toSign && `서명할 계약서 ${toSign}건`, docFix && `보완할 서류 ${docFix}건`, !isPaymentRegistered(payment) && '정산 계좌 미등록'].filter(Boolean).join(', ');
+  const menuTodo = [toSign && `서명할 계약서 ${toSign}건`, docFix && `보완할 서류 ${docFix}건`, !isPaymentRegistered(payment) && '정산 계좌 등록 전'].filter(Boolean).join(', ');
   const initial = (profile.name || user?.email || 'A').slice(0, 1).toUpperCase();
   const navVisible = menuOpen || menuClosing;
 

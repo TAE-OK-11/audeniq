@@ -225,7 +225,7 @@ const DOC_STATUS: Record<string, DocRecord['reviewStatus']> = {
 };
 
 function toDoc(d: ServerDocument): DocRecord {
-  const history: DocRecord['reviewHistory'] = [{ status: '문서 생성', time: stamp(d.created_at), detail: d.kind === 'AGREEMENT' ? '신청 내용이 계약서로 정리됐어요.' : '제출이 필요한 서류예요.' }];
+  const history: DocRecord['reviewHistory'] = [{ status: '문서 생성', time: stamp(d.created_at), detail: d.kind === 'AGREEMENT' ? '신청 내용을 계약서로 정리했어요.' : '제출이 필요한 서류예요.' }];
   if (d.status === 'APPROVED' || d.status === 'SIGNED') history.push({ status: '검토 완료', time: stamp(d.updated_at), detail: 'AUDENIQ 검토가 끝났어요.' });
   return {
     id: d.id, kind: d.kind === 'AGREEMENT' ? 'agreements' : 'rights', title: d.title, releaseId: d.release_id ?? undefined,

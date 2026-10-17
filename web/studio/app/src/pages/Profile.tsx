@@ -129,7 +129,7 @@ function TaxEditor({ current, onSaved }: { current: TaxResidency | null; onSaved
     <form className="aq-set-editor aq-tax" onSubmit={submit} noValidate>
       <p className="aq-tax-lead">정산금을 지급할 때 적용할 세율을 확인하는 데 쓰여요.</p>
       <div className="aq-choice-row aq-tax-choice" role="radiogroup" aria-label="해외 납세 의무">
-        {([[false, '대한민국에만 있어요', '국내 거주자로 정산해요.'], [true, '다른 나라에도 있어요', '해당 국가 납세 정보가 필요해요.']] as const).map(([v, title, sub]) => (
+        {([[false, '대한민국에만 있어요', '국내 거주자로 정산해요.'], [true, '다른 나라에도 있어요', '그 나라의 납세 정보가 필요해요.']] as const).map(([v, title, sub]) => (
           <label key={title} className={`aq-choice${t.foreign === v ? ' is-on' : ''}`}>
             <input type="radio" name="taxForeign" checked={t.foreign === v} onChange={() => set({ foreign: v })} />
             <strong>{title}</strong>
@@ -147,7 +147,7 @@ function TaxEditor({ current, onSaved }: { current: TaxResidency | null; onSaved
           </div>
           <div className="ui-field">
             <label htmlFor="taxTin">납세자번호(TIN) <span className="aq-optional">선택</span></label>
-            <input id="taxTin" maxLength={30} autoComplete="off" placeholder={savedTin ? `•••• ${savedTin} (바꿀 때만 입력)` : t.country === 'US' ? 'SSN 또는 ITIN' : '해당 국가 납세자번호'} value={t.tin} onChange={e => set({ tin: e.target.value })} />
+            <input id="taxTin" maxLength={30} autoComplete="off" placeholder={savedTin ? `•••• ${savedTin} (바꿀 때만 입력)` : t.country === 'US' ? 'SSN 또는 ITIN' : '그 나라의 납세자번호'} value={t.tin} onChange={e => set({ tin: e.target.value })} />
           </div>
           {t.country === 'US' && (
             <label className="ui-check aq-tax-us">
@@ -158,7 +158,7 @@ function TaxEditor({ current, onSaved }: { current: TaxResidency | null; onSaved
         </div>
       )}
       {error && <p className="ui-field-help aq-help-error" role="alert">{error}</p>}
-      <button type="submit" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={busy}>저장</button>
+      <button type="submit" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={busy}>저장하기</button>
     </form>
   );
 }
@@ -241,7 +241,7 @@ export function Profile() {
         <span className="ui-avatar is-xl aq-profile-avatar" aria-hidden="true">{(profile.name || 'A').slice(0, 1)}</span>
         <span className="min-0">
           <strong>{profile.name || '활동명을 입력해 주세요'}</strong>
-          <small>{profile.email || '연락 이메일 미입력'} · {country}</small>
+          <small>{profile.email || '연락 이메일 입력 전'} · {country}</small>
         </span>
         <Glyph name="chevron-right" size={18} className="aq-set-chev" />
       </button>
