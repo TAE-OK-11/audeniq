@@ -118,7 +118,7 @@ export function ReleaseDetail() {
   const [tab, setTab] = useState('overview');
   const [deleting, setDeleting] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
-  const { data: rel, error, loading, reload } = useAsync(() => api.getRelease(id), [id]);
+  const { data: rel, error, loading, reload } = useAsync(() => api.getRelease(id), [id], { key: `release:${id}` });
   // 배급 탭을 열 때만 플랫폼별 진행을 불러온다 (준비 전이면 빈 목록)
   const delivery = useAsync<DeliveryItem[]>(
     () => (tab === 'delivery' ? api.getDelivery(id).catch(() => []) : Promise.resolve([])),

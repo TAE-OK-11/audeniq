@@ -34,7 +34,7 @@ export function Application() {
   const done = params.get('done') === '1';
   const nav = useNavigate();
   const profile = useProfile();
-  const { data: rel, loading, error, reload } = useAsync(() => api.getRelease(id), [id]);
+  const { data: rel, loading, error, reload } = useAsync(() => api.getRelease(id), [id], { key: `release:${id}` });
   const allDocs = useDocs();
   const issued = rel?.draft?.application;
   // 서명 기능 전에 접수된 발매는 발매 기록으로 신청서를 만든다 (계약서 서명이 있으면 그 서명을 표시)

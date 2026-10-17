@@ -5,6 +5,7 @@
 import type { AssetChecks, DeliveryItem, DspAvailability, Invitation, OrgMember, WithdrawQuota, Org, PreflightIssue, Release, ReleaseDetail, ReleasePayload, SaveResult, UploadKind, UploadResult, User, TakedownState } from './types';
 import { ApiError } from './errors';
 import { setOrgId } from './http';
+import { clearAsyncCache } from '../lib/asyncCache';
 import { mockApi } from './mock';
 import { remoteApi } from './remote';
 
@@ -20,6 +21,8 @@ export const PASSWORD_MIN = MOCK ? 8 : 12;
 
 /** AuthProvider가 선택한 조직을 알려준다 (조직 범위 API 경로에 사용) */
 export function setCurrentOrg(id: string) {
+  // 로그인·로그아웃·작업 공간 바꾸기가 모두 여기를 지난다 — 앞 계정·작업 공간의 화면 데이터를 버린다
+  clearAsyncCache();
   setOrgId(id);
 }
 
@@ -78,3 +81,14 @@ export const api = {
     return { assetId: `mock-${kind.toLowerCase()}-${Date.now().toString(36)}` };
   },
 };
+
+// 체험 모드는 요청 계층(req)을 지나지 않는다 — 발매를 바꾸는 호출이 끝나면 화면 데이터 캐시를 직접 비운다
+// (실서버는 req가 GET이 아닌 요청마다 비운다)
+if (MOCK) {
+  const writes = ['saveDraft', 'submitRelease', 'deleteRelease', 'withdrawRelease', 'requestTakedown', 'cancelTakedown'] as const;
+  const target = api as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>;
+  for (const k of writes) {
+    const f = target[k];
+    target[k] = (...a: unknown[]) => f(...a).finally(clearAsyncCache);
+  }
+}

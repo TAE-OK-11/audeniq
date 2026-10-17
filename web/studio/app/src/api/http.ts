@@ -1,6 +1,7 @@
 // 실제 API 호출 계층 — Cloudflare Worker(엣지)를 거쳐 Workers VPC → 메인 서버로 전달된다.
 // 브라우저는 세션 쿠키(HttpOnly)와 CSRF 토큰만 다루고, 서비스 비밀값은 엣지만 가진다.
 import { ApiError, messageForCode } from './errors';
+import { clearAsyncCache } from '../lib/asyncCache';
 
 export const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 
@@ -47,11 +48,28 @@ interface ReqOptions {
   signal?: AbortSignal;
 }
 
+/** 지금 받고 있는 GET — 같은 주소를 여러 곳에서 동시에 부르면(화면과 머리글이 같은 목록을 부르는 등) 한 번만 보낸다 */
+const inflight = new Map<string, Promise<unknown>>();
+
 /**
  * JSON 요청. 상태 변경 요청은 CSRF 토큰을 붙이고, 본문이 없으면 `{}`를 보낸다
  * (백엔드는 변경 요청에 JSON 본문을 요구한다).
+ * 같은 GET이 이미 가고 있으면 그 응답을 함께 기다린다. 바꾸는 요청이 끝나면 화면 데이터 캐시를 비운다(lib/asyncCache).
  */
-export async function req<T>(path: string, opts: ReqOptions = {}): Promise<T> {
+export function req<T>(path: string, opts: ReqOptions = {}): Promise<T> {
+  const method = opts.method ?? 'GET';
+  if (method !== 'GET') return send<T>(path, opts).finally(clearAsyncCache);
+  if (opts.signal) return send<T>(path, opts);
+  // 401·서버 오류를 어떻게 알릴지가 다른 요청은 따로 보낸다
+  const k = `${path}|${opts.quiet401 ? 1 : 0}${opts.quietServer ? 1 : 0}${opts.timeoutMs ?? ''}`;
+  const hit = inflight.get(k);
+  if (hit) return hit as Promise<T>;
+  const p = send<T>(path, opts).finally(() => inflight.delete(k));
+  inflight.set(k, p);
+  return p;
+}
+
+async function send<T>(path: string, opts: ReqOptions): Promise<T> {
   const method = opts.method ?? 'GET';
   const headers: Record<string, string> = { Accept: 'application/json' };
   let body: string | undefined;
