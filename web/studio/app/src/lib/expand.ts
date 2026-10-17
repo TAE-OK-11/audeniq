@@ -34,6 +34,26 @@ function movable(el: HTMLElement, h: number) {
 /** 높이가 클수록 조금 더 길게, 그래도 0.38초를 넘지 않게 */
 const durationFor = (h: number, base: number) => Math.round(Math.min(380, base + h * 0.18));
 
+/** 세로로 쌓는 목록(flex 세로·grid)의 줄 사이 간격 — 앞에 형제가 있는 블록만 이 간격을 차지한다 */
+function gapBefore(el: HTMLElement) {
+  const p = el.parentElement;
+  if (!p || !el.previousElementSibling) return 0;
+  const pcs = getComputedStyle(p);
+  const stacked = pcs.display.includes('grid') || (pcs.display.includes('flex') && pcs.flexDirection.startsWith('column'));
+  return stacked ? parseFloat(pcs.rowGap) || 0 : 0;
+}
+
+/** 목록 줄이면 줄 사이 간격도 함께 자라게(줄게) — 간격만 한 번에 생기거나 사라지며 아래 내용이 몇 px 툭 튀었다.
+ *  grid 줄 높이는 0 밑으로 줄지 않아 블록 자신의 음수 여백은 듣지 않으므로, 앞 형제의 아래 여백을 간격만큼 당겨 둔다 */
+function animateGap(el: HTMLElement, opening: boolean, timing: KeyframeAnimationOptions) {
+  const gap = gapBefore(el);
+  const prev = el.previousElementSibling as HTMLElement | null;
+  if (!gap || !prev) return;
+  const mb = getComputedStyle(prev).marginBottom;
+  const shut = `calc(${mb} - ${gap}px)`;
+  prev.animate([{ marginBottom: opening ? shut : mb }, { marginBottom: opening ? mb : shut }], timing);
+}
+
 /** box-sizing: border-box라 높이에 안쪽 여백이 들어 있다 — 여백·바깥 여백도 0에서 함께 자라게(줄게) 한다 */
 function frames(cs: CSSStyleDeclaration, h: number) {
   const closed = { height: '0px', paddingTop: '0px', paddingBottom: '0px', marginTop: '0px', marginBottom: '0px' };
@@ -53,6 +73,7 @@ function expand(el: HTMLElement) {
     { opacity: 0, offset: 0.25 },
     { ...open, opacity: 1 },
   ], { duration: durationFor(h, 220), easing: EASE });
+  animateGap(el, true, { duration: durationFor(h, 220), easing: EASE });
   const done = () => { el.style.overflow = prevOverflow; };
   anim.onfinish = done;
   anim.oncancel = done;
@@ -79,6 +100,7 @@ function collapse(removed: HTMLElement, parent: Node, next: Node | null) {
     { opacity: 0, offset: 0.6 },
     { ...closed, opacity: 0 },
   ], { duration: durationFor(h, 200), easing: 'cubic-bezier(.4,0,.2,1)' });
+  animateGap(ghost, false, { duration: durationFor(h, 200), easing: 'cubic-bezier(.4,0,.2,1)' });
   anim.onfinish = () => ghost.remove();
   anim.oncancel = () => ghost.remove();
 }
