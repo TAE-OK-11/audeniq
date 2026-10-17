@@ -377,7 +377,7 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
 @media(prefers-reduced-motion:reduce){.aq-pay-flow .aq-bank .aq-bank-logo,.aq-pay-flow .aq-pay-type span{transform:none!important}}
 
 /* 트랙 카드 안은 카드 배경과 구분되도록 흰 칸 */
-.track-editor,.aq-option-detail,.cover-track-item{--aq-field-bg:#fff;--aq-field-hover-bg:var(--aq-field-hover-on-soft);--aq-field-focus-bg:var(--aq-field)}
+.track-editor,.aq-option-detail,.cover-track-item{--aq-field-bg:#fff;--aq-field-hover-bg:var(--aq-field-hover-on-soft);--aq-field-focus-bg:var(--aq-blue-100)}
 
 /* ==========================================================================
    카드·입력 칸 윤곽선 없는 스타일 통일 — 메인 화면 카드처럼 배경색 면으로만 구분
@@ -386,7 +386,7 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
 .dist-mock{background:var(--aq-blue-50)!important}
 .cover-track-item{background:#fff!important;border-radius:var(--aq-r-lg)!important}
 /* 흰 카드 안의 입력칸은 회색 면 (흰 칸이면 카드에 묻힌다) */
-.cover-track-item{--aq-field-bg:var(--aq-field);--aq-field-hover-bg:var(--aq-field-hover);--aq-field-focus-bg:var(--aq-gray-150)}
+.cover-track-item{--aq-field-bg:var(--aq-field);--aq-field-hover-bg:var(--aq-field-hover);--aq-field-focus-bg:var(--aq-blue-150)}
 .track-detail-toggle{background:#fff!important;transition:background-color .2s!important}
 .track-detail-toggle:hover{background:var(--aq-blue-100)!important}
 

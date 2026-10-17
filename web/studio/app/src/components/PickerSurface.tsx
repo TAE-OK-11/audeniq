@@ -102,8 +102,13 @@ export function Surface({ anchor, title, onClose, className, children, labelledB
         role="dialog" aria-modal={sheet || undefined} aria-label={labelledBy ? undefined : title || '선택'} aria-labelledby={labelledBy}
         style={sheet || !pos ? (sheet ? undefined : { visibility: 'hidden' }) : { left: pos.left, top: pos.top, width: pos.width, maxHeight: pos.maxHeight, transformOrigin: `${pos.ox}px ${pos.above ? '100%' : '0'}` }}
       >
-        {sheet && <span className="aq-picker-grip" aria-hidden="true" />}
-        {sheet && title && <p className="aq-picker-title">{title}</p>}
+        {/* 시트의 손잡이·제목은 위에 붙어 있다 — 고른 항목으로 목록을 굴려도 무엇을 고르는 중인지 보이게 */}
+        {sheet && (
+          <div className="aq-picker-head">
+            <span className="aq-picker-grip" aria-hidden="true" />
+            {title && <p className="aq-picker-title">{title}</p>}
+          </div>
+        )}
         {children}
       </div>
     </div>,
@@ -199,9 +204,12 @@ function SelectSheet({ el, viaTouch, onClose }: { el: HTMLSelectElement; viaTouc
   });
 
   const title = fieldTitle(el);
+  // 고를 것이 많으면(장르 29개 등) 휴대폰에서는 아래 시트로 — 칸 옆 작은 창은 긴 목록을 한참 스크롤해야 하고
+  // 화면 위쪽을 덮었다. 짧은 목록은 지금처럼 칸 옆 작은 창(빠르다)
+  const long = opts.length > 8;
   let lastGroup: string | undefined;
   return (
-    <Surface anchor={anchor} title={title} onClose={() => close()} className="is-select" pop>
+    <Surface anchor={anchor} title={title} onClose={() => close()} className="is-select" pop={!long}>
       <div className="aq-picker-list" role="listbox" aria-label={title || '선택'} ref={listRef}>
         {opts.length === 0 && <p className="aq-picker-empty">고를 수 있는 항목이 없어요.</p>}
         {opts.map((o, i) => {
