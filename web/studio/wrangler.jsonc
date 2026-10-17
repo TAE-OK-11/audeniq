@@ -9,6 +9,6 @@
   },
   "compatibility_date": "2026-09-21",
   "compatibility_flags": ["brotli_content_encoding"],
-  "main": "./worker.js",
+  "main": "./worker.ts",
   "name": "audeniq-studio"
 }

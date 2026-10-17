@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-// CloudFormation 템플릿(JSON) 생성: node deploy/aws/template.mjs <studio|admin|landing>
+// CloudFormation 템플릿(JSON) 생성: node --experimental-strip-types deploy/aws/template.ts <studio|admin|landing>
 // 뷰어 함수 코드와 _headers의 보안 헤더를 그대로 넣기 위해 YAML 대신 스크립트로 만든다.
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { APPS, parseHeaders } from './apps.mjs';
+import { APPS, isAppName, parseHeaders } from './apps.ts';
+import type { AppName } from './apps.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '../..');
@@ -17,35 +18,173 @@ const ALL_VIEWER_EXCEPT_HOST = 'b689b0a8-53d0-40ab-baf2-68738e2966ac';
 // HSTS·nosniff·Referrer-Policy 등 (API 응답용)
 const SECURITY_HEADERS = '67f7725c-6f97-4210-82d7-5512b31e9d03';
 
-export async function functionCode(name) {
+// CloudFormation 조각 (여기서 쓰는 만큼만)
+export interface Ref { Ref: string }
+export interface GetAtt { 'Fn::GetAtt': [resource: string, attribute: string] }
+export interface Sub { 'Fn::Sub': string }
+
+/** web/landing/src/public-routes.ts 가 내보내는 것 */
+interface PublicRoutes {
+  PAGE_PATHS: readonly string[];
+  FILE_PATHS: readonly string[];
+}
+
+export interface Parameter {
+  Type: 'String';
+  Description?: string;
+  Default?: string;
+  AllowedValues?: string[];
+  AllowedPattern?: string;
+  MinLength?: number;
+  NoEcho?: boolean;
+}
+
+export interface Parameters {
+  AcmCertificateArn: Parameter;
+  PriceClass: Parameter;
+  ApiOriginDomain?: Parameter;
+  ServiceSecret?: Parameter;
+}
+
+export interface S3Origin {
+  Id: 's3';
+  DomainName: GetAtt;
+  S3OriginConfig: { OriginAccessIdentity: string };
+  OriginAccessControlId: GetAtt;
+}
+
+export interface ApiOrigin {
+  Id: 'api';
+  DomainName: Ref;
+  CustomOriginConfig: { OriginProtocolPolicy: string; OriginSSLProtocols: string[]; HTTPSPort: number; OriginReadTimeout: number };
+  /** HeaderValue가 없으면(site 없는 앱) JSON에서 빠진다 */
+  OriginCustomHeaders: { HeaderName: string; HeaderValue?: string | Ref }[];
+}
+
+export type Origin = S3Origin | ApiOrigin;
+
+export interface FunctionAssociation {
+  EventType: 'viewer-request' | 'viewer-response';
+  FunctionARN: GetAtt;
+}
+
+interface BehaviorBase {
+  TargetOriginId: Origin['Id'];
+  ViewerProtocolPolicy: string;
+  AllowedMethods: string[];
+  CachedMethods: string[];
+  CachePolicyId: string;
+  ResponseHeadersPolicyId: string | Ref;
+  Compress: boolean;
+  FunctionAssociations: FunctionAssociation[];
+}
+
+export type DefaultCacheBehavior = BehaviorBase;
+
+export interface CacheBehavior extends BehaviorBase {
+  PathPattern: string;
+  OriginRequestPolicyId: string;
+}
+
+export interface CustomErrorResponse {
+  ErrorCode: number;
+  ResponseCode: number;
+  ResponsePagePath: string;
+  ErrorCachingMinTTL: number;
+}
+
+export interface DistributionConfig {
+  Enabled: boolean;
+  Comment: string;
+  Aliases: string[];
+  HttpVersion: string;
+  IPV6Enabled: boolean;
+  PriceClass: Ref;
+  ViewerCertificate: { AcmCertificateArn: Ref; SslSupportMethod: string; MinimumProtocolVersion: string };
+  Origins: Origin[];
+  DefaultCacheBehavior: DefaultCacheBehavior;
+  CacheBehaviors: CacheBehavior[];
+  CustomErrorResponses?: CustomErrorResponse[];
+}
+
+export interface SecurityHeadersConfig {
+  StrictTransportSecurity: { AccessControlMaxAgeSec: number; IncludeSubdomains: boolean; Override: boolean };
+  ContentSecurityPolicy?: { ContentSecurityPolicy: string; Override: boolean };
+  ContentTypeOptions?: { Override: boolean };
+  FrameOptions?: { FrameOption: string; Override: boolean };
+  ReferrerPolicy?: { ReferrerPolicy: string; Override: boolean };
+}
+
+export interface CustomHeader {
+  Header: string;
+  Value: string;
+  Override: boolean;
+}
+
+export interface ResponseHeadersPolicy {
+  SecurityHeadersConfig: SecurityHeadersConfig;
+  CustomHeadersConfig?: { Items: CustomHeader[] };
+}
+
+interface Resource<T extends string, P> {
+  Type: T;
+  DeletionPolicy?: 'Retain';
+  UpdateReplacePolicy?: 'Retain';
+  Properties: P;
+}
+
+interface CloudFrontFunctionProperties {
+  Name: Sub;
+  AutoPublish: boolean;
+  FunctionConfig: { Comment: string; Runtime: string };
+  FunctionCode: string;
+}
+
+export interface Template {
+  AWSTemplateFormatVersion: string;
+  Description: string;
+  Parameters: Parameters;
+  Resources: {
+    Bucket: Resource<'AWS::S3::Bucket', Record<string, unknown>>;
+    OriginAccessControl: Resource<'AWS::CloudFront::OriginAccessControl', { OriginAccessControlConfig: Record<string, unknown> }>;
+    BucketPolicy: Resource<'AWS::S3::BucketPolicy', { Bucket: Ref; PolicyDocument: Record<string, unknown> }>;
+    ViewerFunction: Resource<'AWS::CloudFront::Function', CloudFrontFunctionProperties>;
+    ApiFunction?: Resource<'AWS::CloudFront::Function', CloudFrontFunctionProperties>;
+    ResponseHeaders: Resource<'AWS::CloudFront::ResponseHeadersPolicy', { ResponseHeadersPolicyConfig: ResponseHeadersPolicy & { Name: Sub } }>;
+    Distribution: Resource<'AWS::CloudFront::Distribution', { DistributionConfig: DistributionConfig }>;
+  };
+  Outputs: Record<string, { Value: Ref | GetAtt; Description?: string }>;
+}
+
+export async function functionCode(name: AppName): Promise<string> {
   const app = APPS[name];
   let code = readFileSync(resolve(HERE, 'functions', app.function), 'utf8');
   if (app.routes) {
-    const { PAGE_PATHS, FILE_PATHS } = await import(pathToFileURL(resolve(ROOT, app.routes)).href);
+    const { PAGE_PATHS, FILE_PATHS }: PublicRoutes = await import(pathToFileURL(resolve(ROOT, app.routes)).href);
     code = code.replace('/*ROUTES*/', `var PAGE_PATHS = ${JSON.stringify(PAGE_PATHS)};\nvar FILE_PATHS = ${JSON.stringify(FILE_PATHS)};`);
   }
   if (Buffer.byteLength(code) > 10 * 1024) throw new Error(`${app.function}: CloudFront Function은 10KB까지`);
   return code;
 }
 
-export function apiFunctionCode(name) {
+export function apiFunctionCode(name: AppName): string {
   const prefix = APPS[name].apiPrefix ?? '';
   return readFileSync(resolve(HERE, 'functions', 'api.js'), 'utf8')
     .replace("var REWRITE_PREFIX = '';", `var REWRITE_PREFIX = ${JSON.stringify(prefix)};`);
 }
 
-export function headersText(name) {
+export function headersText(name: AppName): string {
   const app = APPS[name];
-  return app.headersText ?? readFileSync(resolve(ROOT, app.headers), 'utf8');
+  return app.headersText !== undefined ? app.headersText : readFileSync(resolve(ROOT, app.headers), 'utf8');
 }
 
 /** _headers 의 "/*" 블록 → CloudFront 응답 헤더 정책 (+ Workers secureResponse 의 HSTS) */
-export function responseHeadersPolicy(text) {
+export function responseHeadersPolicy(text: string): ResponseHeadersPolicy {
   const all = parseHeaders(text).find(rule => rule.path === '/*')?.headers ?? [];
-  const security = {
+  const security: SecurityHeadersConfig = {
     StrictTransportSecurity: { AccessControlMaxAgeSec: 31536000, IncludeSubdomains: true, Override: true },
   };
-  const custom = [];
+  const custom: CustomHeader[] = [];
   for (const [name, value] of all) {
     switch (name.toLowerCase()) {
       case 'content-security-policy':
@@ -69,12 +208,12 @@ export function responseHeadersPolicy(text) {
   };
 }
 
-export async function template(name) {
+export async function template(name: string | undefined): Promise<Template> {
+  if (!isAppName(name)) throw new Error(`알 수 없는 앱: ${name} (${Object.keys(APPS).join(', ')})`);
   const app = APPS[name];
-  if (!app) throw new Error(`알 수 없는 앱: ${name} (${Object.keys(APPS).join(', ')})`);
   const hasApi = app.api.length > 0;
 
-  const parameters = {
+  const parameters: Parameters = {
     AcmCertificateArn: {
       Type: 'String', AllowedPattern: '^arn:aws:acm:us-east-1:[0-9]{12}:certificate/.+$',
       Description: `${app.aliases.join(', ')} 를 덮는 us-east-1 ACM 인증서 ARN`,
@@ -92,7 +231,7 @@ export async function template(name) {
     };
   }
 
-  const origins = [{
+  const origins: Origin[] = [{
     Id: 's3',
     DomainName: { 'Fn::GetAtt': ['Bucket', 'RegionalDomainName'] },
     S3OriginConfig: { OriginAccessIdentity: '' },
@@ -111,10 +250,10 @@ export async function template(name) {
     });
   }
 
-  const functions = [{ EventType: 'viewer-request', FunctionARN: { 'Fn::GetAtt': ['ViewerFunction', 'FunctionARN'] } }];
+  const functions: FunctionAssociation[] = [{ EventType: 'viewer-request', FunctionARN: { 'Fn::GetAtt': ['ViewerFunction', 'FunctionARN'] } }];
   if (app.viewerResponse) functions.push({ EventType: 'viewer-response', FunctionARN: { 'Fn::GetAtt': ['ViewerFunction', 'FunctionARN'] } });
 
-  const distribution = {
+  const distribution: DistributionConfig = {
     Enabled: true,
     Comment: `AUDENIQ ${name} UI`,
     Aliases: app.aliases,

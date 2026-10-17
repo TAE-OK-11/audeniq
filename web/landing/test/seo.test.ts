@@ -3,13 +3,14 @@ import assert from "node:assert/strict";
 import { readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import worker from "../src/worker.js";
+import worker from "../src/worker.ts";
+import type { TransportEnv } from "../../shared/worker-types.ts";
 
 const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const read = (path) => readFileSync(join(projectRoot, path), "utf8");
-const env = {
+const read = (path: string): string => readFileSync(join(projectRoot, path), "utf8");
+const env: TransportEnv = {
   ASSETS: {
-    async fetch(request) {
+    async fetch(request: Request) {
       const path = new URL(request.url).pathname;
       const filename = join(projectRoot, "public", path);
       try {
@@ -22,7 +23,7 @@ const env = {
     }
   }
 };
-async function fetchPath(host, path = "/") {
+async function fetchPath(host: string, path = "/"): Promise<Response> {
   return worker.fetch(new Request(`https://${host}${path}`), env);
 }
 
@@ -34,7 +35,7 @@ test("public homepage is indexable only on the primary domain", async () => {
   assert.match(html, /<meta name="robots" content="index, follow, max-image-preview:large">/);
   assert.match(html, /<link rel="canonical" href="https:\/\/audeniq\.com\/">/);
   const preview = await fetchPath("audeniq-web.example.workers.dev");
-  assert.match(preview.headers.get("X-Robots-Tag"), /noindex/);
+  assert.match(preview.headers.get("X-Robots-Tag") || "", /noindex/);
 });
 
 test("studio requests leave the landing Worker for the React STUDIO", async () => {
@@ -55,7 +56,7 @@ test("robots and sitemap are public only on the canonical domain", async () => {
   assert.match(await robots.text(), /Sitemap: https:\/\/audeniq\.com\/sitemap\.xml/);
   const sitemap = await fetchPath("audeniq.com", "/sitemap.xml");
   assert.equal(sitemap.status, 200);
-  assert.match(sitemap.headers.get("Content-Type"), /xml/);
+  assert.match(sitemap.headers.get("Content-Type") || "", /xml/);
   assert.match(await sitemap.text(), /<loc>https:\/\/audeniq\.com\/<\/loc>/);
   assert.match(await (await fetchPath("audeniq-web.example.workers.dev", "/robots.txt")).text(), /Disallow: \/\s*$/);
   assert.equal((await fetchPath("audeniq-web.example.workers.dev", "/sitemap.xml")).status, 404);
@@ -70,7 +71,7 @@ test("duplicate home URLs redirect and non-existent landing pages yield real 404
   assert.equal(index.headers.get("Location"), "https://audeniq.com/");
   const missing = await fetchPath("audeniq.com", "/this-page-does-not-exist");
   assert.equal(missing.status, 404);
-  assert.match(missing.headers.get("X-Robots-Tag"), /noindex/);
+  assert.match(missing.headers.get("X-Robots-Tag") || "", /noindex/);
 });
 
 test("social preview is a real 1200x630 PNG and shared assets return their own content", async () => {
@@ -80,7 +81,7 @@ test("social preview is a real 1200x630 PNG and shared assets return their own c
   assert.equal(bytes.readUInt32BE(20), 630);
   const og = await fetchPath("audeniq.com", "/assets/social-preview.png");
   assert.equal(og.status, 200);
-  assert.match(og.headers.get("Content-Type"), /image\/png/);
+  assert.match(og.headers.get("Content-Type") || "", /image\/png/);
   assert.ok(statSync(join(projectRoot, "public/favicon.ico")).size > 0);
 });
 

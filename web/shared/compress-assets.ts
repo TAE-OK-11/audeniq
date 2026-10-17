@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { brotliCompressSync, constants } from 'node:zlib';
 
 const TEXT = new Set(['.js', '.css', '.html', '.json', '.svg', '.wasm']);
-export function compressAssets(directory) {
+export interface CompressStats { files: number; rawBytes: number; compressedBytes: number }
+export function compressAssets(directory: string): CompressStats {
   let rawBytes = 0, compressedBytes = 0, files = 0;
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const path = resolve(directory, entry.name);

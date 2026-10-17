@@ -356,7 +356,8 @@ jobs:
     steps:
       - checkout
       - skip-unless-changed:
-          paths: '^(web/studio/|web/shared/|deploy/aws/)'
+          # Worker·배포 스크립트 타입 검사(루트 tsconfig.json)를 여기서 하므로 그 파일들이 바뀌어도 돈다
+          paths: '^(web/studio/|web/shared/|deploy/aws/|web/admin/worker\.ts|web/(landing|survey)/(src|scripts|test)/|tsconfig\.json)'
       - setup-bun:
           version_file: web/studio/.bun-version
       - run:
@@ -367,12 +368,16 @@ jobs:
             bun run test
             bun run build
       - run:
+          name: Type check Workers and deploy scripts
+          working_directory: web/studio/app
+          command: ./node_modules/.bin/tsc -p ../../../tsconfig.json
+      - run:
           name: Worker tests
           working_directory: web/studio
           command: bun test test/
       - run:
           name: AWS (CloudFront) config tests
-          command: node --test deploy/aws/test/aws.test.mjs
+          command: node --experimental-strip-types --test deploy/aws/test/aws.test.ts
       - when:
           condition:
             equal: [main, << pipeline.git.branch >>]
@@ -390,7 +395,7 @@ jobs:
     steps:
       - checkout
       - skip-unless-changed:
-          paths: '^(web/admin/|web/shared/|web/studio/app/build/retain-assets\.ts|web/studio/worker\.js|web/studio/test/worker\.test\.mjs)'
+          paths: '^(web/admin/|web/shared/|web/studio/app/build/retain-assets\.ts|web/studio/worker\.ts|web/studio/test/worker\.test\.ts)'
       - setup-bun:
           version_file: web/admin/.bun-version
       - run:
@@ -402,7 +407,7 @@ jobs:
             bun run build
       - run:
           name: Shared content Worker tests
-          command: bun test web/studio/test/worker.test.mjs
+          command: bun test web/studio/test/worker.test.ts
       - when:
           condition:
             equal: [main, << pipeline.git.branch >>]
@@ -427,7 +432,7 @@ jobs:
           command: npm run check
       - run:
           name: AWS (CloudFront) config tests
-          command: node --test deploy/aws/test/aws.test.mjs
+          command: node --experimental-strip-types --test deploy/aws/test/aws.test.ts
       - when:
           condition:
             equal: [main, << pipeline.git.branch >>]

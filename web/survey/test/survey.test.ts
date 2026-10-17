@@ -1,18 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {validateSubmission,default as worker} from '../src/worker.js';
+import {validateSubmission,default as worker} from '../src/worker.ts';
+import type {Question,SubmissionPayload} from '../src/worker.ts';
+import type {D1Database,ScheduledController} from '../../shared/worker-types.ts';
 import questions from '../questions.json' with {type:'json'};
 import legacyQuestions from '../questions-v4.json' with {type:'json'};
 import {STEPS} from '../app/src/survey.ts';
 import {applyChoice,emptyState,payload,validateAll} from '../app/src/logic.ts';
 const html=fs.readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
-const read=p=>fs.readFileSync(new URL(p,import.meta.url),'utf8');
+const read=(p:string)=>fs.readFileSync(new URL(p,import.meta.url),'utf8');
 const client=read('../app/src/App.tsx')+read('../app/src/logic.ts');
 const ui=new Map(STEPS.flatMap(s=>s.questions).map(q=>[q.key,q]));
-function valid(){
- const answers={};
- for(const [key,q] of Object.entries(questions)){
+/** 잘못된 버전도 넣어 보는 테스트용 제출 본문 */
+type Fixture=Omit<SubmissionPayload,'survey_version'>&{survey_version?:number};
+function valid():Fixture{
+ const answers:Fixture['answers']={};
+ for(const [key,q] of Object.entries<Question>(questions)){
   answers[key]=q.type==='text'?'':q.type==='multi'?(q.required?['0']:[]):(q.required?'0':'');
   if(q.options.includes('기타'))answers[`${key}_other`]='';
  }
@@ -32,15 +36,15 @@ test('all 25 questions in the React UI match the server questions exactly',()=>{
   if(q.type!=='text')assert.ok(q.options.length>=4);
  }
  assert.ok(ui.has('q14'));
- assert.equal(ui.get('beta').options.length,4);
+ assert.equal(ui.get('beta')?.options?.length,4);
  assert.match(client,/AUDENIQ_Logo_Light.svg/);
  assert.equal(questions.q11.max,5);
- assert.match(ui.get('q8').hint,/DSP에서 실제 발매되는 시점과는 별개/);
+ assert.match(ui.get('q8')?.hint??'',/DSP에서 실제 발매되는 시점과는 별개/);
  assert.match(client,/noDistributorExperience/);
 });
 test('what the React form sends passes server validation',()=>{
  let st=emptyState();
- const pick=(k,v,on=true)=>{st=applyChoice(st,k,v,on).state;};
+ const pick=(k:string,v:string,on=true)=>{st=applyChoice(st,k,v,on).state;};
  for(const [k,q] of ui) if(q.required&&q.kind!=='text'&&q.options&&k!=='beta') pick(k,k==='q23'?'2':'0');
  pick('q2','3'); // no release: q3 becomes '6', experience questions are cleared
  st={...st,surveyConsent:true};
@@ -52,10 +56,10 @@ test('what the React form sends passes server validation',()=>{
  assert.equal(payload(st,'ccb1d9d3-65de-4a58-96d7-4fe041109895','t').answers.q4_provider,'');
 });
 test('complete anonymous survey with experience passes',()=>{
- const v=validateSubmission(valid());assert.ok(v);assert.equal(v.contact,null);assert.equal(JSON.parse(v.answers).q1[0],'0');
+ const v=validateSubmission(valid());assert.ok(v);assert.equal(v?.contact,null);assert.equal(JSON.parse(v.answers).q1[0],'0');
 });
 test('max selections, invalid values and mutually exclusive options are rejected',()=>{
- for(const [key,newValue] of [['q1',[]],['q7',['0','1','2','3']],['q11',['0','1','2','3','4','5']],['q15',['0','13']],['q15',[]],['q3','900'],['q4',['0','9']],['q6',['0','18']]]) {
+ for(const [key,newValue] of [['q1',[]],['q7',['0','1','2','3']],['q11',['0','1','2','3','4','5']],['q15',['0','13']],['q15',[]],['q3','900'],['q4',['0','9']],['q6',['0','18']]] satisfies [string,string|string[]][]) {
   const p=valid();p.answers[key]=newValue;assert.equal(validateSubmission(p),null,`${key} should be invalid`);
  }
 });
@@ -86,7 +90,7 @@ test('other fields and free-text lengths are validated',()=>{
 });
 test('optional beta contact requires separate consent and opted-out users cannot give contact',()=>{
  const p=valid();p.beta='0';p.contact='@audeniq.official';assert.equal(validateSubmission(p),null);
- p.beta_contact_consent=true;assert.equal(validateSubmission(p).contact,'@audeniq.official');
+ p.beta_contact_consent=true;assert.equal(validateSubmission(p)?.contact,'@audeniq.official');
  p.beta='3';assert.equal(validateSubmission(p),null);
  p.beta='1';p.contact='not-an-email';assert.equal(validateSubmission(p),null);
  p.contact='sample@example.com';assert.ok(validateSubmission(p));
@@ -109,10 +113,10 @@ test('unknown URL uses the static 404 page, with security headers',async()=>{
 });
 test('D1 insert is idempotent and records survey version 5',async()=>{
  const originalFetch=globalThis.fetch;
- const saved=[];
- let storedVersion;
- const db={prepare(sql){return {bind(...params){return {async first(){return saved.includes(params[0]?.id??params[0])?{id:params[0]}:null;},async run(){storedVersion=params[1];saved.push(params[0]);return {success:true};}};}}}};
- globalThis.fetch=async(url)=> {assert.match(String(url),/turnstile\/v0\/siteverify/);return Response.json({success:true,hostname:'survey.audeniq.com',action:'audeniq_survey'});};
+ const saved:unknown[]=[];
+ let storedVersion:unknown;
+ const db={prepare(sql:string){return {bind(...params:unknown[]){return {async first(){return saved.includes((params[0] as {id?:unknown})?.id??params[0])?{id:params[0]}:null;},async run(){storedVersion=params[1];saved.push(params[0]);return {success:true};}};}}}} as unknown as D1Database;
+ globalThis.fetch=async(url:string|URL|Request)=> {assert.match(String(url),/turnstile\/v0\/siteverify/);return Response.json({success:true,hostname:'survey.audeniq.com',action:'audeniq_survey'});};
  try{
   const env={DB:db,TURNSTILE_SECRET_KEY:'testsecret',TURNSTILE_SITE_KEY:'testsitekey'};
   const request=()=>new Request('https://survey.audeniq.com/api/responses',{method:'POST',headers:{Origin:'https://survey.audeniq.com','Content-Type':'application/json'},body:JSON.stringify(valid())});
@@ -122,7 +126,7 @@ test('D1 insert is idempotent and records survey version 5',async()=>{
 });
 
 test('public API cannot enumerate private D1 data or reveal secret and DB ID', async()=>{
- const db={prepare(){throw new Error('Public request must not access D1');}};
+ const db={prepare(){throw new Error('Public request must not access D1');}} as unknown as D1Database;
  const env={DB:db,TURNSTILE_SECRET_KEY:'keep-this-private',TURNSTILE_SITE_KEY:'public-site-key'};
  let r=await worker.fetch(new Request('https://survey.audeniq.com/api/config'),env);
  assert.equal(r.status,200);
@@ -136,9 +140,9 @@ test('public API cannot enumerate private D1 data or reveal secret and DB ID', a
 });
 
 test('invalid body, CSRF origin and oversized submissions never touch D1',async()=>{
- const env={DB:{prepare(){throw new Error('D1 should not be called');}},TURNSTILE_SECRET_KEY:'private',TURNSTILE_SITE_KEY:'public-site-key'};
+ const env={DB:{prepare(){throw new Error('D1 should not be called');}} as unknown as D1Database,TURNSTILE_SECRET_KEY:'private',TURNSTILE_SITE_KEY:'public-site-key'};
  const origin='https://survey.audeniq.com';
- const post=(headers,body)=>worker.fetch(new Request(origin+'/api/responses',{method:'POST',headers,body}),env);
+ const post=(headers:Record<string,string>,body:string)=>worker.fetch(new Request(origin+'/api/responses',{method:'POST',headers,body}),env);
  let r=await post({'Content-Type':'application/json'},JSON.stringify(valid()));assert.equal(r.status,403);
  r=await post({'Origin':'https://wrong.example','Content-Type':'application/json'},JSON.stringify(valid()));assert.equal(r.status,403);
  r=await post({'Origin':origin,'Content-Type':'text/plain'},JSON.stringify(valid()));assert.equal(r.status,400);
@@ -150,7 +154,7 @@ test('invalid body, CSRF origin and oversized submissions never touch D1',async(
 test('Turnstile server validation failure blocks D1 insert',async()=>{
  const oldFetch=globalThis.fetch;
  let inserted=false;
- const env={DB:{prepare(sql){return{bind(){return{async first(){return null;},async run(){inserted=true;return {success:true};}};}};}},TURNSTILE_SECRET_KEY:'private',TURNSTILE_SITE_KEY:'public-site-key'};
+ const env={DB:{prepare(sql:string){return{bind(){return{async first(){return null;},async run(){inserted=true;return {success:true};}};}};}} as unknown as D1Database,TURNSTILE_SECRET_KEY:'private',TURNSTILE_SITE_KEY:'public-site-key'};
  globalThis.fetch=async()=>Response.json({success:true,hostname:'evil.example',action:'audeniq_survey'});
  try{
   const r=await worker.fetch(new Request('https://survey.audeniq.com/api/responses',{method:'POST',headers:{Origin:'https://survey.audeniq.com','Content-Type':'application/json'},body:JSON.stringify(valid())}),env);
@@ -160,7 +164,7 @@ test('Turnstile server validation failure blocks D1 insert',async()=>{
 
 test('retention runs only in scheduled Worker handler, never from browser route',async()=>{
  let deletion='';
- await worker.scheduled(null,{DB:{prepare(sql){deletion=sql;return{async run(){return{success:true};}};}}});
+ await worker.scheduled(null as unknown as ScheduledController,{DB:{prepare(sql:string){deletion=sql;return{async run(){return{success:true};}};}} as unknown as D1Database});
  assert.match(deletion,/DELETE FROM survey_responses/);
  assert.match(deletion,/-12 months/);
 });
@@ -190,8 +194,8 @@ test('old open tabs validate against version 4 and keep their original option me
  }
  p.answers.q4_provider='';p.answers.q14='';
  p.answers.q1=['10'];p.answers.q1_other='기타 활동';
- assert.equal(validateSubmission(p).version,4);
- p.survey_version=4;assert.equal(validateSubmission(p).version,4);
+ assert.equal(validateSubmission(p)?.version,4);
+ p.survey_version=4;assert.equal(validateSubmission(p)?.version,4);
  p.survey_version=5;assert.equal(validateSubmission(p),null,'new version cannot reinterpret an old payload');
  p.survey_version=6;assert.equal(validateSubmission(p),null);
 });
@@ -199,7 +203,7 @@ test('new optional demand questions enforce caps and exclusive no-purchase choic
  let st=emptyState();
  for(const [key,q] of ui)if(q.required&&q.kind!=='text'&&q.options&&key!=='beta')st=applyChoice(st,key,key==='q23'?'2':'0',true).state;
  st={...st,surveyConsent:true};
- for(const key of ['q19','q20','q21','q22'])assert.equal(ui.get(key).required,false);
+ for(const key of ['q19','q20','q21','q22'])assert.equal(ui.get(key)?.required,false);
  st=applyChoice(st,'q21','0',true).state;
  st=applyChoice(st,'q21','6',true).state;
  assert.deepEqual(st.choices.q21,['6']);
@@ -207,8 +211,8 @@ test('new optional demand questions enforce caps and exclusive no-purchase choic
  assert.deepEqual(st.choices.q21,['1']);
  for(const key of ['q19','q20','q22'])st=applyChoice(st,key,'0',true).state;
  const body=payload(st,'ccb1d9d3-65de-4a58-96d7-4fe041109895','test');
- assert.equal(body.survey_version,5);assert.equal(validateSubmission(body).version,5);
- for(const [key,selection] of [['q21',['0','6']],['q21',['0','1','2','3']],['q22',['0','1','2','3']]]){
+ assert.equal(body.survey_version,5);assert.equal(validateSubmission(body)?.version,5);
+ for(const [key,selection] of [['q21',['0','6']],['q21',['0','1','2','3']],['q22',['0','1','2','3']]] satisfies [string,string[]][]){
   const p=valid();p.answers[key]=selection;assert.equal(validateSubmission(p),null);
  }
 });
@@ -226,7 +230,7 @@ test('publishing provider is required only with experience and fee disclosure re
   st={...st,texts:{q24:'기존 퍼블리셔',q25:''}};
   assert.equal(validateAll(st),'');assert.ok(validateSubmission(body()));
   st={...st,texts:{q24:'기존 퍼블리셔',q25:'국내 10%·해외 15%'}};
-  assert.equal(JSON.parse(validateSubmission(body()).answers).q25,'국내 10%·해외 15%');
+  assert.equal(JSON.parse(validateSubmission(body())?.answers??'').q25,'국내 10%·해외 15%');
  }
  st=applyChoice(st,'q23','2',true).state;
  assert.deepEqual(st.texts,{q24:'',q25:''});assert.ok(validateSubmission(body()));
@@ -234,3 +238,4 @@ test('publishing provider is required only with experience and fee disclosure re
  injected.answers.q24='';injected.answers.q25='10%';assert.equal(validateSubmission(injected),null);
  for(const key of ['q24','q25']){const p=valid();p.answers.q23='0';p.answers.q24='업체명';p.answers[key]='x'.repeat(161);assert.equal(validateSubmission(p),null);}
 });
+test('non-string submission_id is rejected instead of crashing',()=>{const p=valid();assert.equal(validateSubmission({...p,submission_id:[p.submission_id]}),null);});

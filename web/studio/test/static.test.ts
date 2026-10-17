@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync,existsSync} from 'node:fs';
 const root=new URL('../',import.meta.url);
-const read=p=>readFileSync(new URL(p,root),'utf8');
+const read=(p:string):string=>readFileSync(new URL(p,root),'utf8');
 const cfg=JSON.parse(read('wrangler.jsonc'));
 test('studio Worker serves the React build; content lives in the backend',()=>{
  assert.equal(cfg.name,'audeniq-studio');
- assert.equal(cfg.main,'./worker.js');
+ assert.equal(cfg.main,'./worker.ts');
  assert.equal(cfg.assets.directory,'./public');
  // /login 같은 화면 경로는 index.html, /api/*는 항상 Worker가 처리
  assert.equal(cfg.assets.not_found_handling,'single-page-application');

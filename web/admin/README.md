@@ -9,7 +9,7 @@ AUDENIQ 디자인 시스템(`docs/DESIGN_SYSTEM.md`)을 스튜디오와 같이 �
 `src/styles/admin.css`(`adm-` 접두사)에 있습니다. 스튜디오 디자인을 바꾸면 이 파일들도 같이 맞춰 주세요.
 
 ## 구조
-- `worker.js` — 정적 에셋 + `/api/auth/{login,logout,csrf}`, `/api/me`, `/api/staff/*`만 백엔드로 전달.
+- `worker.ts` — 정적 에셋 + `/api/auth/{login,logout,csrf}`, `/api/me`, `/api/staff/*`만 백엔드로 전달.
   상태 변경 요청은 관리자 주소에서 온 것만 받고, 백엔드에는 `BACKEND_APP_ORIGIN`(스튜디오 APP_ORIGIN)으로 전달합니다.
 - `/api/content/*` — 스튜디오와 같은 D1 공지·이벤트·점검 데이터를 사용하며, 백엔드의 ADMIN 세션·CSRF 검증 후 읽거나 변경합니다. `/admin/content`에서 코드나 별도 토큰 없이 바로 게시할 수 있습니다.
 - `src/api/staff.ts` — 스태프 API, `src/api/mock.ts` — 체험 데이터(`VITE_MOCK=true`일 때만)

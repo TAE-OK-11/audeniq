@@ -19,7 +19,7 @@
 
 `content/locales.json`이 언어 목록입니다. 한국어 `index.html`이 디자인의 단일 원본이고, 각 언어 파일의 `home`은 **한국어 문장 → 번역** 표입니다. 빌드는 같은 마크업에 번역을 넣고 언어별 html lang·dir(아랍어 RTL)·canonical·hreflang·x-default(/en/)·sitemap 대체 URL·og:locale·JSON-LD·푸터 언어 메뉴를 생성합니다. 브라우저 언어로 자동 이동하지 않습니다.
 
-- 한국어 문장을 바꾸면 빌드가 각 언어의 누락 번역을 목록으로 보여 주며 실패합니다. 같은 커밋에서 번역을 갱신하세요. `node scripts/build-seo.mjs --print-keys`는 번역할 한국어 문장 목록을 출력합니다.
+- 한국어 문장을 바꾸면 빌드가 각 언어의 누락 번역을 목록으로 보여 주며 실패합니다. 같은 커밋에서 번역을 갱신하세요. `node --experimental-strip-types scripts/build-seo.ts --print-keys`는 번역할 한국어 문장 목록을 출력합니다.
 - 언어 추가: `content/i18n/<code>.json`(updated·meta·home, 필요하면 ui·pages)을 만들고 `locales.json`에 항목을 추가합니다. 검토 중이면 `"status": "draft"`로 두면 URL·sitemap·hreflang·언어 메뉴에서 빠집니다.
 - 일본어·중국어·베트남어는 시스템 글꼴을 쓰고 Pretendard를 불러오지 않습니다(`content/locale.css`).
 - 키워드·검색 의도는 [docs/KEYWORDS.md](docs/KEYWORDS.md)를 참고하세요.
@@ -40,7 +40,7 @@ npm run check
 
 공식 안내 페이지는 홈페이지의 글꼴·색상·헤더·푸터·카드·FAQ 스타일을 공유합니다. `content/guide.css`는 안내 페이지의 반응형 배치만 추가하며, 빌드에서 홈페이지 스타일과 합쳐 `assets/guide.css`와 공개 복사본을 생성합니다. 현재 공식 SVG 로고를 JavaScript 없이 바로 표시하고 모바일 메뉴는 기본 HTML details로 동작합니다. RSS는 화면에 표시하지 않고 발견용 메타와 파일로 유지합니다.
 
-테스트는 HTTP 상태·canonical·메타정보·한 개의 H1·본문/FAQ 스키마 일치·내부 링크·404·STUDIO 리디렉션·미리보기 noindex·봇 정책·공개 콘텐츠의 금액/요율 제외와, 언어별 lang/dir·hreflang 상호 참조·sitemap 일치·미번역 한글·번역 누락·언어 메뉴를 확인합니다(`test/i18n.test.mjs`).
+테스트는 HTTP 상태·canonical·메타정보·한 개의 H1·본문/FAQ 스키마 일치·내부 링크·404·STUDIO 리디렉션·미리보기 noindex·봇 정책·공개 콘텐츠의 금액/요율 제외와, 언어별 lang/dir·hreflang 상호 참조·sitemap 일치·미번역 한글·번역 누락·언어 메뉴를 확인합니다(`test/i18n.test.ts`).
 
 ## SEO·AEO·GEO·LLMO·Naver NEO
 
@@ -56,7 +56,7 @@ npm run check
 
 ## IndexNow 직접 제출
 
-기존의 공개 키 파일과 `scripts/submit-indexnow.mjs`를 사용하는 직접 제출을 지원합니다. GitHub **Actions → IndexNow — submit AUDENIQ public URLs → Run workflow**에서 배포 검증 후 IndexNow API에 공개 URL을 제출할 수 있습니다. `since`에 직전 배포 커밋을 넣으면 추가·변경·삭제된 URL만 제출합니다(`npm run indexnow -- --since <ref>`). 배포 자체는 이 워크플로에서 수행하지 않습니다. 상세 절차와 결과 확인은 [docs/INDEXNOW.md](docs/INDEXNOW.md)를 참고하세요.
+기존의 공개 키 파일과 `scripts/submit-indexnow.ts`를 사용하는 직접 제출을 지원합니다. GitHub **Actions → IndexNow — submit AUDENIQ public URLs → Run workflow**에서 배포 검증 후 IndexNow API에 공개 URL을 제출할 수 있습니다. `since`에 직전 배포 커밋을 넣으면 추가·변경·삭제된 URL만 제출합니다(`npm run indexnow -- --since <ref>`). 배포 자체는 이 워크플로에서 수행하지 않습니다. 상세 절차와 결과 확인은 [docs/INDEXNOW.md](docs/INDEXNOW.md)를 참고하세요.
 
 ## 라우팅과 향후 수동 배포
 

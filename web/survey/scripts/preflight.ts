@@ -1,7 +1,17 @@
 import { readFileSync } from 'node:fs';
+/** wrangler.jsonc 중 이 스크립트가 읽고 쓰는 부분 */
+interface D1Binding { binding: string; database_name?: string; database_id?: string; migrations_dir?: string }
+interface WranglerConfig {
+  name?: string;
+  workers_dev?: boolean;
+  routes?: { pattern: string; custom_domain?: boolean }[];
+  assets?: { run_worker_first?: boolean | string[]; html_handling?: string; not_found_handling?: string };
+  vars?: { TURNSTILE_SITE_KEY?: string };
+  d1_databases?: D1Binding[];
+}
 
 // Wrangler config is JSONC; this generated file is plain JSON so native parse is safe.
-const config = JSON.parse(readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8'));
+const config: WranglerConfig = JSON.parse(readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8'));
 const database = config.d1_databases?.find(item => item.binding === 'DB');
 const errors = [];
 if (config.name !== 'audeniq-survey') errors.push('Worker 이름을 audeniq-survey로 유지해 주세요.');

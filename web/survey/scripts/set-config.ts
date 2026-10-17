@@ -1,13 +1,23 @@
 import { readFileSync, writeFileSync } from 'node:fs';
+/** wrangler.jsonc 중 이 스크립트가 읽고 쓰는 부분 */
+interface D1Binding { binding: string; database_name?: string; database_id?: string; migrations_dir?: string }
+interface WranglerConfig {
+  name?: string;
+  workers_dev?: boolean;
+  routes?: { pattern: string; custom_domain?: boolean }[];
+  assets?: { run_worker_first?: boolean | string[]; html_handling?: string; not_found_handling?: string };
+  vars?: { TURNSTILE_SITE_KEY?: string };
+  d1_databases?: D1Binding[];
+}
 const [databaseId, siteKey] = process.argv.slice(2);
 const isUuid = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i;
 if (!isUuid.test(databaseId ?? '') || !siteKey || siteKey.includes('REPLACE') || siteKey.length < 6) {
-  console.error('사용법: bun scripts/set-config.mjs <D1_database_id> <Turnstile_공개_Site_Key>');
+  console.error('사용법: bun scripts/set-config.ts <D1_database_id> <Turnstile_공개_Site_Key>');
   console.error('주의: Turnstile 비밀 Secret Key는 절대 이 명령어에 넣지 마세요.');
   process.exit(1);
 }
 const path = new URL('../wrangler.jsonc', import.meta.url);
-const cfg = JSON.parse(readFileSync(path, 'utf8'));
+const cfg: WranglerConfig = JSON.parse(readFileSync(path, 'utf8'));
 const db = cfg.d1_databases?.find(item => item.binding === 'DB');
 if (!db) throw new Error('D1 바인딩 DB를 찾지 못했습니다.');
 db.database_id = databaseId;

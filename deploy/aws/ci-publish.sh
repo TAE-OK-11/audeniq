@@ -27,4 +27,4 @@ if [ -z "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${CIRCLE_OIDC_TOKEN_V2:-}" ]; then
   export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 fi
 
-node "$(cd "$(dirname "$0")" && pwd)/publish.mjs" "$app"
+node --experimental-strip-types "$(cd "$(dirname "$0")" && pwd)/publish.ts" "$app"

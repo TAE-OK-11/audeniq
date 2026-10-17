@@ -9,7 +9,7 @@ app=${1:?사용법: deploy-stack.sh <studio|admin|landing>}
 here=$(cd "$(dirname "$0")" && pwd)
 template=$(mktemp --suffix=.json)
 trap 'rm -f "$template"' EXIT
-node "$here/template.mjs" "$app" > "$template"
+node --experimental-strip-types "$here/template.ts" "$app" > "$template"
 
 params=()
 [ -n "${AWS_UI_CERT_ARN:-}" ] && params+=("AcmCertificateArn=$AWS_UI_CERT_ARN")
