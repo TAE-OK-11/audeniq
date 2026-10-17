@@ -79,7 +79,7 @@ export function NewCardForm({ view, onCreated }: { view: BoardView; onCreated: (
       </div>
       <p className="small muted">검토 열에는 검토자를 정한 뒤 카드를 옮겨 주세요.</p>
       <div className="adm-form-actions">
-        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>닫기</button>
         <button type="submit" className="ui-btn is-primary" disabled={busy || !title.trim()}>{busy ? '만드는 중…' : '카드 만들기'}</button>
       </div>
     </form>
@@ -308,7 +308,7 @@ export function BoardCreateForm({ onCreated }: { onCreated: (v: BoardView) => vo
       )}
       <p className="small muted">기본 열(Inbox · To Do · In Progress · Review · Waiting · Blocked · Done)이 함께 만들어져요.</p>
       <div className="adm-form-actions">
-        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>닫기</button>
         <button type="submit" className="ui-btn is-primary" disabled={busy || !name.trim()}>{busy ? '만드는 중…' : '보드 만들기'}</button>
       </div>
     </form>

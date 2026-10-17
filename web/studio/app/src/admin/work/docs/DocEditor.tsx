@@ -142,7 +142,7 @@ function LinkDialog({ initial, card, onClose, onSubmit }: { initial: string; car
         )}
         <div className="adm-form-actions">
           {!card && initial && <button type="button" className="ui-btn is-soft" onClick={() => onSubmit({ url: '', title: '', description: '' })}>링크 없애기</button>}
-          <button type="button" className="ui-btn is-soft" onClick={onClose}>취소</button>
+          <button type="button" className="ui-btn is-soft" onClick={onClose}>닫기</button>
           <button type="submit" className="ui-btn is-primary" disabled={!ok}>넣기</button>
         </div>
       </form>

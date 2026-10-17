@@ -105,7 +105,7 @@ function PolicyForm({ init, data, onSaved }: { init: SlaPolicy | null; data: Sla
         <SwitchRow title="정책 사용" hint="끄면 이 대상에는 기한을 계산하지 않아요." checked={v.enabled} onChange={x => set('enabled', x)} />
       </div>
       <div className="adm-form-actions">
-        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>닫기</button>
         <button type="submit" className="ui-btn is-primary" disabled={busy}>{busy ? '저장 중…' : '저장'}</button>
       </div>
     </form>
@@ -151,7 +151,7 @@ function CalendarForm({ cal, onSaved }: { cal: WorkCalendar; onSaved: (d: SlaOve
         </div>
       </div>
       <div className="adm-form-actions">
-        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>닫기</button>
         <button type="submit" className="ui-btn is-primary" disabled={busy || !days.length || !name.trim()}>{busy ? '저장 중…' : '저장'}</button>
       </div>
     </form>
