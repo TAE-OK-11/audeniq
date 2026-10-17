@@ -366,9 +366,11 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 #portalNav.is-closing>*{animation:none}
 #portalNav .aq-nav-card button,#portalNav .aq-nav-me button{animation:none!important}
 @media (max-width:760px){
-  /* 휴대폰은 화면 전체를 덮으므로 크기 변화 없이 살짝 내려오며 나타난다 */
-  .portal-header #portalNav{transform-origin:50% 0;animation-name:aq-menu-in-full!important}
+  /* 휴대폰은 화면 전체를 덮으므로 크기 변화 없이 살짝 내려오며 나타난다.
+     판(흰 바탕)이 먼저 짧게 차오르고 내용은 조금 뒤에 — 함께 서서히 나타나면 메뉴 글자가 뒤 화면 글자 위에 반투명하게 겹쳐 보였다 */
+  .portal-header #portalNav{transform-origin:50% 0;animation-name:aq-menu-in-full!important;animation-duration:var(--aq-motion-short)!important}
   .portal-header #portalNav.is-closing{animation-name:aq-menu-out-full!important}
+  #portalNav>.aq-nav-me,#portalNav>.aq-nav-card,#portalNav>.aq-nav-foot{animation-delay:.14s}
 }
 @keyframes aq-menu-in-full{from{opacity:0;transform:translate3d(0,-12px,0)}to{opacity:1;transform:none}}
 @keyframes aq-menu-out-full{to{opacity:0;transform:translate3d(0,-8px,0)}}
@@ -378,7 +380,8 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
    섹션마다 차례로 올라오던 연출은 번잡해 보여 없앴다. 목록(.aq-stagger)은 자체 모션이 있어 여기서 다시 움직이지 않는다. 발매 신청 위자드는 자체 단계 모션을 쓴다.
    backwards라 끝난 뒤에는 transform이 남지 않는다(안쪽 sticky·fixed 요소 영향 없음). */
 @keyframes aq-view-fade{from{opacity:0}}
-@keyframes aq-section-in{from{opacity:0;transform:translate3d(0,4px,0)}}
+/* 섹션은 움직임만 — 투명도는 화면 전체(.view-enter) 한 번만. 둘 다 서서히 나타나면 투명도가 곱해져 첫 순간 화면이 하얗게 비어 보였다 */
+@keyframes aq-section-in{from{transform:translate3d(0,4px,0)}}
 .view-enter{animation:aq-view-fade var(--aq-motion-short) ease-out backwards}
 /* 화면 이동은 하루에도 수십 번 보는 움직임이라 짧게(--aq-motion-base) */
 .view-enter>.view:not(#view-new)>:not(.aq-stagger):nth-child(-n+10){animation:aq-section-in var(--aq-motion-base) var(--aq-enter) backwards}
