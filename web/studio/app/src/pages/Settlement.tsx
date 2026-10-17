@@ -300,29 +300,19 @@ export function Settlement() {
             <p>{money(minimum - left)} 더 쌓이면 받을 수 있어요 (최소 {money(minimum)}). 모자란 금액은 다음 정산으로 넘어가요.</p>
           </div>
         )}
-        {/* 계좌 줄 전체를 누를 수 있게 — 오른쪽 작은 '등록·변경' 글자(44×38px)만 눌렸다 */}
-        <button type="button" className="settle-hero-account is-button" onClick={() => setShowPaymentSetup(true)}
-          aria-label={paymentRegistered && payment ? `받을 계좌 변경 — ${payment.bank} ${payment.last4}` : '받을 계좌 등록'}>
-          {paymentRegistered && payment ? (
-            <>
-              <BankLogo name={payment.bank} />
-              <span className="min-0">
-                <strong>{payment.bank}</strong>
-                <span>•••• {payment.last4} · {payment.recipient}</span>
-              </span>
-              <span className="settle-hero-link" aria-hidden="true">변경</span>
-            </>
-          ) : (
-            <>
-              <span className="aq-payment-badge is-empty" aria-hidden="true"><Glyph name="won" size={18} /></span>
-              <span className="min-0">
-                <strong>받을 계좌 없음</strong>
-                <span>수익을 받을 계좌를 등록해 주세요.</span>
-              </span>
-              <span className="settle-hero-link" aria-hidden="true">등록</span>
-            </>
-          )}
-        </button>
+        {/* 계좌 줄 전체를 누를 수 있게 — 오른쪽 작은 '등록·변경' 글자(44×38px)만 눌렸다.
+            계좌가 없을 때는 이 줄을 빼고 아래 '계좌 등록하기' 버튼 하나만 — 같은 일을 하는 자리가 두 개였다 */}
+        {paymentRegistered && payment && (
+          <button type="button" className="settle-hero-account is-button" onClick={() => setShowPaymentSetup(true)}
+            aria-label={`받을 계좌 변경 — ${payment.bank} ${payment.last4}`}>
+            <BankLogo name={payment.bank} />
+            <span className="min-0">
+              <strong>{payment.bank}</strong>
+              <span>•••• {payment.last4} · {payment.recipient}</span>
+            </span>
+            <span className="settle-hero-link" aria-hidden="true">변경</span>
+          </button>
+        )}
         <div className="settle-hero-actions">
           {MOCK && <button type="button" className="ui-btn is-soft is-lg" onClick={() => setShowStatement(true)}>예시 정산 추가</button>}
           <button type="button" className="ui-btn is-primary is-lg" onClick={openPayoutModal}>{paymentRegistered ? '수익 받기' : '계좌 등록하기'}</button>

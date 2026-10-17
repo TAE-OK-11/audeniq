@@ -162,7 +162,7 @@ export function Dashboard() {
           <p>{greeting()} 오늘 확인할 작업을 모아 두었어요.</p>
         </div>
         {urgent && (
-          <Link className="ui-btn is-soft aq-home-new" to="/upload" onPointerEnter={() => prefetchRoute('/upload')}><Glyph name="plus" size={14} />새 발매</Link>
+          <Link className="ui-btn is-soft is-sm aq-home-new" to="/upload" onPointerEnter={() => prefetchRoute('/upload')}><Glyph name="plus" size={14} />새 발매</Link>
         )}
       </div>
 
