@@ -2,6 +2,7 @@
 import { createStore } from '../lib/store';
 import { MOCK } from '../lib/mode';
 
+/** 정산금 한 줄 — 운영팀이 넣은 적립(+)·차감(−). period·platform은 원천이 밝혀진 줄에만 있고 대부분 빈 값 */
 export interface Statement { id: string; period: string; platform: string; amount: number; note: string; created: string }
 /** recorded = 체험 모드 기록, requested·processing·sent·failed·cancelled = 실서버 지급 요청 상태.
  *  fee·net: 신청 때 고정된 수수료·실수령액, cancellable: 송금 실행 전이라 취소할 수 있음 (실서버) */
@@ -17,8 +18,8 @@ export function payoutFee(amount: number): number {
 }
 
 const INITIAL_STATEMENTS: Statement[] = [
-  { id: 'st1', period: '2026-08', platform: 'Spotify', amount: 24406, note: '', created: '2026-09-10' },
-  { id: 'st2', period: '2026-07', platform: 'Apple Music', amount: 18920, note: '', created: '2026-08-12' },
+  { id: 'st1', period: '', platform: '', amount: 24406, note: '8월 정산금', created: '2026-09-10' },
+  { id: 'st2', period: '', platform: '', amount: 18920, note: '7월 정산금', created: '2026-08-12' },
 ];
 
 const INITIAL_PAYOUTS: Payout[] = [
