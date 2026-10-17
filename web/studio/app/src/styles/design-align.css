@@ -17,6 +17,12 @@
 .aq-report-hero .aq-report-period{margin:0 0 18px}
 /* 발매 1단계 — 접어 둔 선택 칸 열기 */
 .step-section .aq-more-info{margin:4px 0 8px;padding-left:0;--btn-fg:var(--aq-text-3)}
+.aq-dsp-unavailable{margin:16px 0 0;border-radius:var(--aq-r-xl);background:var(--aq-surface)}
+.aq-dsp-unavailable summary{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:48px;padding:12px 16px;font-size:14px;font-weight:600;color:var(--aq-text-3);cursor:pointer;list-style:none}
+.aq-dsp-unavailable summary::-webkit-details-marker{display:none}
+.aq-dsp-unavailable[open] summary svg{transform:rotate(180deg)}
+.aq-dsp-unavailable p{margin:0;padding:0 16px;font-size:13px;line-height:1.7;color:var(--aq-text-3)}
+.aq-dsp-unavailable small{display:block;padding:6px 16px 14px;font-size:12px;color:var(--aq-text-4)}
 .aq-rp-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-right:14px}
 .aq-rp-head .ui-btn{margin-top:8px}
 .aq-report-count{font-size:var(--aq-fs-xs);font-weight:700;color:var(--aq-blue-500)}
@@ -664,6 +670,9 @@ button.aq-inline-link{display:inline;padding:0;border:0;background:none;font:inh
 
 /* 발매 신청 마지막 확인 — 값 칸(글·목록·커버 미리보기), 곡 목록, 커버 썸네일 */
 #view-new .aq-review-value{font-size:14px;line-height:1.6;color:var(--aq-text-2)}
+#view-new .aq-review-card.is-missing .aq-review-value{color:var(--aq-amber-600);font-weight:600}
+#view-new .aq-review-card.is-missing .aq-review-tracks{color:var(--aq-text-2);font-weight:400}
+#view-new .aq-review-need{font-size:12px;font-weight:600;color:var(--aq-amber-600)}
 #view-new .aq-review-tracks{margin:0;padding-left:1.3em}
 #view-new .aq-review-cover{display:flex;align-items:center;gap:12px}
 #view-new .aq-review-cover img{flex:none;width:56px;height:56px;border-radius:var(--aq-r-md);object-fit:cover;background:#fff}

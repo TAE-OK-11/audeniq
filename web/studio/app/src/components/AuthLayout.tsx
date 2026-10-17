@@ -8,7 +8,8 @@ import { revealField } from '../lib/motion';
  *  카드 머리는 발매 상세 '관리' 카드처럼 아이콘 칸 + 제목 + 설명. */
 export function AuthLayout({ title, sub, icon = 'user', children }: { title: string; sub: string; icon?: GlyphName; children: ReactNode }) {
   return (
-    <div className="auth-page">
+    // 로그인·가입 화면에도 본문 영역(main)을 — 화면 읽기 프로그램이 바로 건너갈 곳이 없었다
+    <main className="auth-page">
       <div className="aq-auth-glow" aria-hidden="true" />
       <Link to="/login" className="aq-auth-brand" aria-label="AUDENIQ STUDIO">
         <img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" />
@@ -31,7 +32,7 @@ export function AuthLayout({ title, sub, icon = 'user', children }: { title: str
         <span aria-hidden="true">·</span>
         <Link to="/terms">이용약관</Link>
       </p>
-    </div>
+    </main>
   );
 }
 

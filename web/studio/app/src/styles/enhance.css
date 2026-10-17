@@ -101,7 +101,7 @@ img{max-width:100%}
 .aq-report-delta.is-down{color:var(--aq-tone-red-fg)!important;background:var(--aq-tone-red-bg)!important}
 .aq-mini-trend{display:flex;align-items:flex-end;gap:10px;height:112px;padding-top:8px}
 .aq-mini-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end;min-width:0}
-.aq-mini-col small{font-size:11px;color:var(--aq-text-disabled);font-weight:700}
+.aq-mini-col small{font-size:11px;color:var(--aq-text-4);font-weight:700}
 .aq-mini-bar{display:block;width:100%;max-width:34px;height:var(--h);border-radius:9px 9px 5px 5px;background:var(--aq-blue-200);transform:scaleY(0);transform-origin:bottom}
 .aq-mini-bar.is-current{background:linear-gradient(180deg,#6d8cff,#3B63F3)}
 .aq-mini-bar.grow{animation:aq-grow-y .7s var(--aq-e-ease) both;animation-delay:var(--d,0s)}
@@ -708,7 +708,7 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 .aq-choice small{font-size:13px;line-height:1.5;color:var(--aq-text-3)}
 .aq-choice.is-on{background:var(--aq-primary-soft)}
 .aq-choice.is-on:hover{background:var(--aq-primary-soft)}
-.aq-choice.is-on strong{color:var(--aq-primary)}
+.aq-choice.is-on strong{color:var(--aq-blue-700)}
 .aq-choice:has(input:focus-visible){outline:var(--aq-focus);outline-offset:2px}
 @media(max-width:560px){.aq-choice-row{grid-template-columns:1fr}}
 
@@ -1121,11 +1121,12 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 .aq-dsp-groups{display:grid;gap:14px}
 .aq-dsp-region{margin:0 0 8px;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--aq-text-4)}
 .aq-dsp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:8px}
-.aq-dsp{display:flex;align-items:center;gap:11px;min-height:60px;padding:10px 12px;border:0;border-radius:var(--aq-r-lg);background:var(--aq-gray-50);color:var(--aq-text-4);font:inherit;text-align:left;cursor:pointer;transition:background-color .18s ease,color .18s ease,transform .18s ease}
+.aq-dsp{display:flex;align-items:center;gap:11px;min-height:60px;padding:10px 12px;border:0;border-radius:var(--aq-r-lg);background:var(--aq-gray-50);color:var(--aq-text-2);font:inherit;text-align:left;cursor:pointer;transition:background-color .18s ease,color .18s ease,transform .18s ease}
 .aq-dsp:hover{background:var(--aq-gray-100)}
 .aq-dsp:active{transform:scale(.985)}
 .aq-dsp:focus-visible{outline:3px solid var(--aq-blue-450);outline-offset:2px}
-.aq-dsp-mark{flex:none;width:34px;height:34px;border-radius:var(--aq-r-sm);display:grid;place-items:center;color:#fff;font-size:14px;font-weight:800;filter:grayscale(1);opacity:.45;transition:filter .18s ease,opacity .18s ease}
+.aq-dsp-mark{flex:none;width:34px;height:34px;border-radius:var(--aq-r-sm);display:grid;place-items:center;color:#fff;font-size:14px;font-weight:800;transition:filter .18s ease,opacity .18s ease}
+/* 고르지 않은 플랫폼도 로고 색은 그대로 — 회색·흐림은 '고를 수 없음'(is-unavailable)에만. 고르지 않은 것까지 회색이라 막힌 칸처럼 보였다 */
 .aq-dsp-name{flex:1;min-width:0;font-size:14px;font-weight:700;letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .aq-dsp-check{flex:none;width:18px;height:18px;display:grid;place-items:center;color:transparent;transition:color .18s ease}
 .aq-dsp.is-on{background:var(--aq-blue-100);color:var(--aq-text)}
@@ -1406,7 +1407,7 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-stage-kicker{display:block;font-size:12px;font-weight:700;color:var(--aq-text-4);letter-spacing:-.01em}
 .aq-stage-now{display:block;margin-top:3px;font-size:var(--aq-fs-lg);font-weight:700;letter-spacing:-.035em;color:var(--stage-ink)}
 .aq-stage-count{flex:none;font-size:18px;font-weight:800;letter-spacing:-.04em;color:var(--aq-e-ink);font-variant-numeric:tabular-nums;line-height:1.1}
-.aq-stage-count small{margin-left:3px;font-size:13px;font-weight:700;color:var(--aq-text-disabled);letter-spacing:0}
+.aq-stage-count small{margin-left:3px;font-size:13px;font-weight:700;color:var(--aq-text-4);letter-spacing:0}
 .aq-stage-note{margin:6px 0 0;font-size:13px;line-height:1.55;color:var(--aq-text-3)}
 .aq-stage-track{list-style:none;margin:16px 0 0;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
 .aq-stage-track li{display:flex;flex-direction:column;gap:9px;min-width:0}
