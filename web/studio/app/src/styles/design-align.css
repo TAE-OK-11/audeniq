@@ -602,6 +602,11 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .auth-agree>.aq-help-error{margin:0;padding:0 4px}
 /* 계정 찾기 안내 — 옅은 카드 위 흰 면 (같은 색 면이라 안 보이던 것) */
 .auth-card .auth-done p{background:#fff}
+.aq-pw-rule{display:flex;align-items:center;gap:4px;color:var(--aq-text-4)}
+.aq-pw-rule.is-ok{color:var(--aq-green-600)}
+.aq-email-suggest{color:var(--aq-text-3)}
+.aq-email-suggest b{color:var(--aq-text);font-weight:700}
+.aq-email-suggest .aq-inline-link{margin-left:4px;padding:0;border:0;background:none;font:inherit;cursor:pointer}
 
 /* ==========================================================================
    공통 요소 2차
