@@ -380,7 +380,8 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 @keyframes aq-view-fade{from{opacity:0}}
 @keyframes aq-section-in{from{opacity:0;transform:translate3d(0,4px,0)}}
 .view-enter{animation:aq-view-fade var(--aq-motion-short) ease-out backwards}
-.view-enter>.view:not(#view-new)>:not(.aq-stagger):nth-child(-n+10){animation:aq-section-in var(--aq-motion-long) var(--aq-enter) backwards}
+/* 화면 이동은 하루에도 수십 번 보는 움직임이라 짧게(--aq-motion-base) */
+.view-enter>.view:not(#view-new)>:not(.aq-stagger):nth-child(-n+10){animation:aq-section-in var(--aq-motion-base) var(--aq-enter) backwards}
 @media (prefers-reduced-motion:reduce){.view-enter,.view-enter>.view>*{animation:none!important}}
 
 /* 휴대폰 전체 메뉴가 열려 있는 동안 뒤 화면이 같이 스크롤되지 않게.

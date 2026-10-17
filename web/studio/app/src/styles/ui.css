@@ -735,7 +735,8 @@ summary::-webkit-details-marker{display:none}
 /* ---------- 선택 시트 · 달력 (components/Picker.tsx) — 어느 기기에서나 같은 모양 ---------- */
 @keyframes aq-picker-fade{from{opacity:0}}
 @keyframes aq-picker-up{from{transform:translateY(100%)}}
-@keyframes aq-picker-pop{from{opacity:0;transform:translateY(-4px) scale(.98)}}
+/* 작은 창은 칸 쪽에서 자라난다 — 칸 아래면 위에서, 칸 위(.is-above)면 아래에서 (transform-origin은 PickerSurface가 칸 가운데로) */
+@keyframes aq-picker-pop{from{opacity:0;transform:translateY(var(--aq-pop-y,-4px)) scale(.98)}}
 .aq-picker{position:fixed;inset:0;z-index:1200}
 .aq-picker.is-sheet{display:flex;align-items:flex-end;background:rgba(17,24,39,.42);animation:aq-picker-fade var(--aq-motion-base) ease-out both}
 .aq-picker-box{background:#fff;color:var(--aq-text);overscroll-behavior:contain}
@@ -972,7 +973,8 @@ legend{padding:0}
    작은 창은 살짝 줄어들며 사라진다. 들어올 때보다 조금 빠르게, 가속하며 나간다 */
 @keyframes aq-picker-scrim-out{to{background-color:transparent}}
 @keyframes aq-picker-down{to{transform:translateY(100%)}}
-@keyframes aq-picker-pop-out{to{opacity:0;transform:translateY(-4px) scale(.97)}}
+@keyframes aq-picker-pop-out{to{opacity:0;transform:translateY(var(--aq-pop-y,-4px)) scale(.97)}}
+.aq-picker-box.is-above{--aq-pop-y:4px}
 .aq-picker.is-leaving{pointer-events:none;z-index:1199}
 .aq-picker.is-leaving.is-sheet{animation:aq-picker-scrim-out .22s ease forwards}
 .aq-picker.is-leaving.is-sheet .aq-picker-box{animation:aq-picker-down .22s cubic-bezier(.4,0,1,1) forwards}

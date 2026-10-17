@@ -59,9 +59,10 @@ img{max-width:100%}
 .portal-nav .aq-logout:hover{background:var(--aq-red-50)!important;color:var(--aq-red-600)!important}
 
 /* ---------- 스태거 진입 ---------- */
-/* 목록 줄: 줄마다 차례로 올라오지 않고 목록 전체가 한 번에 4px 살짝 떠오른다 (차례 연출은 번잡해 보였다) */
+/* 목록 줄: 줄마다 차례로 올라오지 않고 목록 전체가 한 번에 4px 살짝 떠오른다 (차례 연출은 번잡해 보였다).
+   화면을 옮길 때마다 보는 움직임이라 짧게(--aq-motion-base) — 자주 보는 움직임일수록 짧고 작게 */
 @keyframes aq-row-in{from{opacity:0;transform:translate3d(0,4px,0)}}
-.aq-stagger>*{animation:aq-row-in var(--aq-motion-long) var(--aq-enter) both}
+.aq-stagger>*{animation:aq-row-in var(--aq-motion-base) var(--aq-enter) both}
 
 /* ---------- 카드 호버 ---------- */
 .aq-track-card{transition:transform .25s var(--aq-e-ease),box-shadow .25s var(--aq-e-ease),background-color .2s ease!important}
@@ -82,7 +83,7 @@ img{max-width:100%}
 .aq-row-link{color:inherit;border-radius:var(--aq-r-md);transition:background-color .2s}
 .aq-row-link:focus-visible{outline:2px solid var(--aq-e-blue);outline-offset:2px}
 .aq-all-done{display:flex;flex-direction:column;align-items:center;gap:8px}
-.aq-all-done span{display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:var(--aq-e-green-soft);color:var(--aq-e-green);font-weight:800;animation:aq-soft-pop .35s var(--aq-e-ease) both}
+.aq-all-done span{display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:var(--aq-e-green-soft);color:var(--aq-e-green);font-weight:800;animation:aq-soft-pop var(--aq-motion-long) var(--aq-enter) both}
 
 /* ---------- 홈 히어로 ---------- */
 .aq-hero-cta>.aq-cta-arrow{display:grid;place-items:center;flex:none;transition:transform .25s var(--aq-e-ease)}
@@ -148,12 +149,12 @@ img{max-width:100%}
 .aq-toast.is-error .aq-toast-icon{background:var(--aq-red-500)}
 
 /* ---------- 폼 ---------- */
-.aq-invalid{animation:aq-shake .4s ease}
-.aq-shake{animation:aq-shake .4s ease}
+.aq-invalid{animation:aq-shake var(--aq-motion-long) ease-out}
+.aq-shake{animation:aq-shake var(--aq-motion-long) ease-out}
 .aq-help-error{color:var(--aq-e-red)!important;animation:aq-fade-up .25s ease both}
 .aq-help-warn{color:var(--aq-e-amber)!important;animation:aq-fade-up .25s ease both}
 .aq-counter{text-align:right;font-variant-numeric:tabular-nums}
-.aq-reveal{animation:aq-fade-up .35s var(--aq-e-ease) both}
+.aq-reveal{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) both}
 .aq-form-actions{display:flex;gap:10px}
 .aq-form-actions .ui-btn{flex:1}
 .aq-form-actions .ui-btn.is-soft{flex:0 0 auto}
@@ -180,13 +181,13 @@ img{max-width:100%}
 .auth-page{position:relative;overflow:hidden}
 .aq-auth-glow{position:absolute;inset:-20% -10% auto;height:520px;background:radial-gradient(420px 260px at 20% 30%,#e8eeff,transparent 70%),radial-gradient(360px 240px at 80% 10%,#f1ecff,transparent 70%);pointer-events:none;z-index:0;animation:aq-fade-in 1s ease both}
 .auth-page>*:not(.aq-auth-glow){position:relative;z-index:1}
-.auth-card{animation:aq-fade-up .55s var(--aq-e-ease) both}
+.auth-card{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) both}
 .aq-auth-brand{display:inline-flex;align-items:center;gap:8px;margin-bottom:26px}
 .aq-auth-brand img{width:118px;height:auto}
 .aq-auth-brand span{font-size:10px;font-weight:800;letter-spacing:.2em;color:var(--aq-e-blue);padding:4px 8px;border-radius:var(--aq-r-xs);background:var(--aq-e-blue-soft)}
 .auth-foot{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
-.aq-done-icon{display:grid;place-items:center;width:44px;height:44px;margin:0 auto 12px;border-radius:50%;background:var(--aq-e-blue-soft);color:var(--aq-e-blue);font-weight:800;animation:aq-soft-pop .35s var(--aq-e-ease) both}
-.auth-done{text-align:center;animation:aq-fade-up .35s ease both}
+.aq-done-icon{display:grid;place-items:center;width:44px;height:44px;margin:0 auto 12px;border-radius:50%;background:var(--aq-e-blue-soft);color:var(--aq-e-blue);font-weight:800;animation:aq-soft-pop var(--aq-motion-long) var(--aq-enter) both}
+.auth-done{text-align:center;animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) both}
 
 /* ---------- 위자드 ---------- */
 .wizard-topbar{position:relative}
@@ -196,7 +197,7 @@ img{max-width:100%}
 .aq-seg-link{cursor:pointer}
 .aq-seg-link:hover{filter:brightness(1.12)}
 .aq-loading-notice{display:flex;align-items:center}
-.track-editor{animation:aq-fade-up .4s var(--aq-e-ease) both}
+.track-editor{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) both}
 .track-detail-body{animation:aq-fade-up .3s var(--aq-e-ease) both}
 .toggle-arrow{transition:transform .25s var(--aq-e-ease)!important}
 
@@ -208,15 +209,15 @@ img{max-width:100%}
 .aq-dropzone:focus-within{outline:3px solid var(--aq-blue-450);outline-offset:3px}
 .aq-dropzone-icon{flex-shrink:0;display:grid;place-items:center;width:62px;height:62px;border-radius:var(--aq-r-lg);background:var(--aq-blue-100);color:var(--aq-e-blue);transition:transform .3s var(--aq-e-spring)}
 .aq-dropzone:hover .aq-dropzone-icon{transform:translateY(-2px)}
-.aq-dropzone-thumb{flex-shrink:0;width:62px;height:62px;border-radius:var(--aq-r-md);object-fit:cover;box-shadow:0 8px 18px -10px rgba(27,51,104,.5);animation:aq-soft-pop .35s var(--aq-e-ease) both}
+.aq-dropzone-thumb{flex-shrink:0;width:62px;height:62px;border-radius:var(--aq-r-md);object-fit:cover;box-shadow:0 8px 18px -10px rgba(27,51,104,.5);animation:aq-soft-pop var(--aq-motion-long) var(--aq-enter) both}
 .aq-dropzone-text{display:grid;gap:3px;min-width:0}
 .aq-dropzone-text strong{font-size:14px;color:var(--aq-e-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .aq-dropzone-text small{font-size:12px;color:var(--aq-text-4)}
-.dist-mock img{animation:aq-soft-pop .35s var(--aq-e-ease) both}
+.dist-mock img{animation:aq-soft-pop var(--aq-motion-long) var(--aq-enter) both}
 
 /* ---------- 발매 상세 ---------- */
-.aq-detail-hero{animation:aq-fade-up .45s var(--aq-e-ease) both}
-.aq-detail-cover{animation:aq-soft-pop .35s var(--aq-e-ease) both}
+.aq-detail-hero{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) both}
+.aq-detail-cover{animation:aq-soft-pop var(--aq-motion-long) var(--aq-enter) both}
 .aq-explicit{display:inline-grid;place-items:center;width:17px;height:17px;margin-left:6px;border-radius:4px;background:#5c667a;color:#fff;font-size:10px;font-style:normal;font-weight:800;vertical-align:1px}
 .aq-linked-docs{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:6px}
 .aq-linked-docs a{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 13px;border-radius:var(--aq-r-md);background:#fff;font-size:13px;font-weight:600;color:var(--aq-e-ink);transition:background-color .2s,transform .2s var(--aq-e-ease)}
@@ -229,7 +230,7 @@ img{max-width:100%}
 .empty-note .ui-btn.is-white{margin-top:6px}
 
 /* ---------- 프로필 ---------- */
-.aq-payment-card{margin-top:14px;animation:aq-fade-up .45s var(--aq-e-ease) .08s both}
+.aq-payment-card{margin-top:14px;animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) .08s both}
 .aq-payment-card .ui-section-head{margin-bottom:12px}
 .aq-reset-line{margin-top:22px;font-size:12px;color:var(--aq-text-4);text-align:center}
 .aq-profile-avatar{transition:transform .3s var(--aq-e-spring)}
@@ -248,10 +249,10 @@ img{max-width:100%}
 .aq-countup{font-variant-numeric:tabular-nums}
 
 /* ---------- 알림 ---------- */
-.aq-unread{animation:aq-soft-pop .35s var(--aq-e-ease) both}
+.aq-unread{animation:aq-soft-pop var(--aq-motion-long) var(--aq-enter) both}
 
 /* ---------- 정산 ---------- */
-.settle-hero{animation:aq-fade-up .45s var(--aq-e-ease) both}
+.settle-hero{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) both}
 
 /* ---------- 모션 줄이기 ---------- */
 @media(prefers-reduced-motion:reduce){
@@ -280,13 +281,13 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
 @keyframes aq-ring-draw{from{stroke-dashoffset:252}to{stroke-dashoffset:0}}
 @keyframes aq-tick-draw{from{stroke-dashoffset:60}to{stroke-dashoffset:0}}
 .aq-pay-success{justify-content:flex-start!important;padding-top:clamp(8px,6vh,56px);min-height:0!important}
-.aq-success-mark{width:84px;height:84px;margin-bottom:22px;animation:aq-pop .5s var(--aq-e-spring) both}
-.aq-success-ring{fill:var(--aq-blue-100);stroke:var(--aq-blue-500);stroke-width:4;stroke-dasharray:252;stroke-dashoffset:0;animation:aq-ring-draw .7s var(--aq-e-ease) both;transform:rotate(-90deg);transform-origin:center}
-.aq-success-tick{fill:none;stroke:var(--aq-blue-500);stroke-width:6;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:60;animation:aq-tick-draw .45s var(--aq-e-ease) .45s both}
+.aq-success-mark{width:84px;height:84px;margin-bottom:22px;animation:aq-pop var(--aq-motion-long) var(--aq-enter) both}
+.aq-success-ring{fill:var(--aq-blue-100);stroke:var(--aq-blue-500);stroke-width:4;stroke-dasharray:252;stroke-dashoffset:0;animation:aq-ring-draw .5s var(--aq-enter) both;transform:rotate(-90deg);transform-origin:center}
+.aq-success-tick{fill:none;stroke:var(--aq-blue-500);stroke-width:6;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:60;animation:aq-tick-draw .3s var(--aq-enter) .3s both}
 .aq-pay-success .eyebrow{margin-bottom:12px}
 .aq-pay-success h1{font-size:clamp(26px,6.4vw,38px)!important;line-height:1.3!important;letter-spacing:-.05em}
 .aq-pay-success-sub{margin-top:12px;color:var(--aq-text-3);font-size:14px;line-height:1.65}
-.aq-pay-receipt{width:min(440px,100%);margin:26px 0 14px;border:0;border-radius:var(--aq-r-xl);background:var(--aq-blue-50);text-align:left;overflow:hidden;animation:aq-fade-up .5s var(--aq-e-ease) .25s both}
+.aq-pay-receipt{width:min(440px,100%);margin:26px 0 14px;border:0;border-radius:var(--aq-r-xl);background:var(--aq-blue-50);text-align:left;overflow:hidden;animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) .25s both}
 .aq-pay-receipt-head{display:flex;align-items:center;gap:13px;padding:18px 18px 6px}
 .aq-pay-receipt-head>.aq-bank-logo{width:44px;height:44px;flex:0 0 44px;border-radius:var(--aq-r-md);background:#fff}
 .aq-pay-receipt-head strong{display:block;font-size:15px;color:var(--aq-text)}
@@ -361,19 +362,17 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
   /* 기관 카드: 목록 전체가 한 번에 살짝 떠오른다(탭을 바꿀 때도) */
   .aq-pay-flow .aq-bank-grid>.aq-bank{animation:aq-fade-up var(--aq-motion-long) var(--aq-e-ease) .04s both}
   /* 동의 체크·전체 동의 */
-  .aq-agree-all input:checked,.aq-agree-list input:checked{animation:aq-check-pop .28s var(--aq-e-spring)}
+  .aq-agree-all input:checked,.aq-agree-list input:checked{animation:aq-check-pop var(--aq-motion-base) var(--aq-enter)}
   /* 오류 창은 살짝 흔들려 다시 확인할 곳을 알린다 */
   .aq-pay-error-dialog{animation:aq-fade-up .22s var(--aq-e-ease) both,aq-shake .38s ease .18s}
-  /* 등록 완료: 체크 → 제목 → 설명 → 영수증(줄마다) → 안내 → 확인 버튼 */
-  .aq-pay-success>h1{animation:aq-fade-up .45s var(--aq-e-ease) .35s both}
-  .aq-pay-success>.aq-pay-success-sub{animation:aq-fade-up .45s var(--aq-e-ease) .42s both}
-  .aq-pay-flow .aq-pay-receipt{animation:aq-fade-up .5s var(--aq-e-ease) .5s both}
-  .aq-pay-receipt dl>div{animation:aq-fade-in .4s ease both}
-  .aq-pay-receipt dl>div:nth-child(1){animation-delay:.68s}
-  .aq-pay-receipt dl>div:nth-child(2){animation-delay:.74s}
-  .aq-pay-receipt dl>div:nth-child(3){animation-delay:.8s}
-  .aq-pay-success>.aq-pay-success-note{animation:aq-fade-in .4s ease .85s both}
-  .aq-pay-actions.is-final .ui-btn{animation:aq-fade-up .45s var(--aq-e-ease) .9s both}
+  /* 등록 완료: 체크 → 제목·설명 → 영수증 → 안내·확인 버튼. 축하는 짧게 — 다음 할 일(확인 버튼)을 1초 넘게 기다리게 하지 않는다
+     (예전엔 버튼이 1.35초 뒤에 나타났다. 지금은 약 0.8초) */
+  .aq-pay-success>h1{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) .18s both}
+  .aq-pay-success>.aq-pay-success-sub{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) .22s both}
+  .aq-pay-flow .aq-pay-receipt{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) .3s both}
+  .aq-pay-receipt dl>div{animation:none}
+  .aq-pay-success>.aq-pay-success-note{animation:aq-fade-in var(--aq-motion-long) ease .42s both}
+  .aq-pay-actions.is-final .ui-btn{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) .45s both}
 }
 @media(prefers-reduced-motion:reduce){.aq-pay-flow .aq-bank .aq-bank-logo,.aq-pay-flow .aq-pay-type span{transform:none!important}}
 
@@ -461,7 +460,7 @@ body:has(.aq-payout-setup-mode) .aq-toast-stack{bottom:calc(104px + env(safe-are
 .aq-sign-clear:hover{background:#fff}
 #aqDrawPane .ui-field{margin-bottom:18px}
 .aq-sign-check{padding-top:4px!important}
-.aq-sign-wait{display:flex;flex-direction:column;align-items:center;text-align:center;padding:22px 6px 8px;animation:aq-fade-up .45s var(--aq-e-ease) both}
+.aq-sign-wait{display:flex;flex-direction:column;align-items:center;text-align:center;padding:22px 6px 8px;animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) both}
 .aq-sign-wait-icon{display:grid;place-items:center;width:58px;height:58px;border-radius:50%;background:var(--aq-violet-50);color:var(--aq-violet-600);margin-bottom:16px}
 .aq-sign-wait strong{font-size:18px;letter-spacing:-.03em;color:var(--aq-e-ink)}
 .aq-sign-wait>p{margin-top:8px;font-size:13px;line-height:1.7;color:var(--aq-text-3);max-width:360px}
@@ -538,7 +537,7 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 .aq-guardian-steps>li{display:grid;grid-template-columns:28px minmax(0,1fr);gap:12px;align-items:start;padding:16px;border-radius:var(--aq-r-lg);background:var(--aq-gray-75);transition:background-color .25s}
 .aq-guardian-steps>li.is-done{background:var(--aq-blue-50)}
 .aq-guardian-no{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--aq-gray-150);color:var(--aq-text-3);font-size:12px;font-weight:800;margin-top:1px;transition:background-color .25s,color .25s}
-.aq-guardian-steps>li.is-done .aq-guardian-no{background:var(--aq-e-blue);color:#fff;animation:aq-soft-pop .35s var(--aq-e-ease) both}
+.aq-guardian-steps>li.is-done .aq-guardian-no{background:var(--aq-e-blue);color:#fff;animation:aq-soft-pop var(--aq-motion-long) var(--aq-enter) both}
 .aq-guardian-label{display:block;font-size:14px;font-weight:700;color:var(--aq-e-ink)}
 .aq-guardian-steps .aq-pad{background:#fff}
 .aq-guardian-agree{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
@@ -733,7 +732,7 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 @keyframes aq-doc-pop{from{transform:scale(.85);opacity:0}to{transform:none;opacity:1}}
 @keyframes aq-doc-draw{to{stroke-dashoffset:0}}
 .aq-doc-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 16px}
-.aq-paper{background:#fff;border-radius:var(--aq-r-sm);padding:56px 60px 40px;color:var(--aq-text);box-shadow:0 1px 2px rgba(20,33,68,.06),0 30px 70px -38px rgba(27,51,104,.38);animation:aq-paper-in .6s var(--aq-e-ease) .05s both}
+.aq-paper{background:#fff;border-radius:var(--aq-r-sm);padding:56px 60px 40px;color:var(--aq-text);box-shadow:0 1px 2px rgba(20,33,68,.06),0 30px 70px -38px rgba(27,51,104,.38);animation:aq-paper-in var(--aq-motion-long) var(--aq-enter) .05s both}
 @keyframes aq-paper-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 .aq-paper-head{text-align:center;padding-bottom:26px;margin-bottom:28px;border-bottom:2px solid var(--aq-gray-900)}
 .aq-paper-brand{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;text-align:left;margin-bottom:34px}
@@ -773,7 +772,7 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 .aq-paper-signer>span:first-child{color:var(--aq-text-2);letter-spacing:.3em}
 .aq-paper-signer strong{font-size:18px;letter-spacing:.14em}
 .aq-paper-sig{position:relative;min-width:150px;height:64px;display:grid;place-items:center;border-bottom:1px solid var(--aq-gray-900)}
-.aq-paper-sig img{max-width:180px;max-height:70px;object-fit:contain;animation:aq-sig-in .9s ease .5s both}
+.aq-paper-sig img{max-width:180px;max-height:70px;object-fit:contain;animation:aq-sig-in .5s var(--aq-enter) .2s both}
 .aq-paper-sig em{font-style:normal;color:var(--aq-text-4);font-size:12px}
 @keyframes aq-sig-in{from{opacity:0;clip-path:inset(0 100% 0 0)}to{opacity:1;clip-path:inset(0 0 0 0)}}
 .aq-paper-to{color:var(--aq-text);margin-top:34px!important;font-size:18px!important;font-weight:800;letter-spacing:.3em;text-align:left}
@@ -931,7 +930,7 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 }
 
 /* ---------- 오류·점검 화면 — 앱 안 오류 카드(.empty-page)와 같은 가운데 정렬 연파랑 카드 ---------- */
-.aq-errscreen{display:flex;flex-direction:column;align-items:center;text-align:center;background:var(--aq-blue-50);border-radius:var(--aq-r-2xl);padding:40px 22px 30px;margin:8px 0 32px;animation:aq-fade-up .4s var(--aq-e-ease) both}
+.aq-errscreen{display:flex;flex-direction:column;align-items:center;text-align:center;background:var(--aq-blue-50);border-radius:var(--aq-r-2xl);padding:40px 22px 30px;margin:8px 0 32px;animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) both}
 .aq-errscreen-icon{display:grid;place-items:center;width:60px;height:60px;border-radius:50%;background:#fff;color:var(--aq-e-blue);margin:0 0 18px;box-shadow:0 0 0 8px rgba(59,99,243,.06)}
 .aq-errscreen.is-server .aq-errscreen-icon,.aq-errscreen.is-crash .aq-errscreen-icon{color:var(--aq-e-red);box-shadow:0 0 0 8px rgba(194,59,59,.06)}
 .aq-errscreen.is-maintenance .aq-errscreen-icon,.aq-errscreen.is-device .aq-errscreen-icon{color:var(--aq-e-amber);box-shadow:0 0 0 8px rgba(167,101,37,.07)}
@@ -1306,7 +1305,7 @@ body:has(#modal .aq-sticky-foot) .aq-toast-stack,body:has(.aq-form-actions.is-pi
 .aq-pick-mark{display:grid;place-items:center;flex:none;width:22px;height:22px;border-radius:var(--aq-r-xs);background:#fff;box-shadow:inset 0 0 0 2px var(--aq-gray-200);color:#fff;transition:background-color .18s ease,box-shadow .18s ease}
 .aq-pick-mark.is-radio{border-radius:50%}
 .aq-pick.is-on .aq-pick-mark{background:var(--aq-e-blue);box-shadow:none}
-.aq-pick.is-on .aq-pick-mark svg{animation:aq-soft-pop .35s var(--aq-e-ease) both}
+.aq-pick.is-on .aq-pick-mark svg{animation:aq-soft-pop var(--aq-motion-long) var(--aq-enter) both}
 /* 확인 동의 줄 — 사유 목록 아래 같은 모양으로 붙인다 */
 .aq-ack{margin-top:14px}
 :is(#root,#modal) .aq-ack .aq-ack-input{position:absolute!important;opacity:0!important;width:1px!important;height:1px!important;margin:0!important;pointer-events:none}
@@ -1393,7 +1392,7 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
    ========================================================================== */
 
 /* 진행 단계: 지금 단계 이름·안내를 머리에, 아래는 4칸 막대 */
-.aq-stage{--stage-c:var(--aq-e-blue);--stage-ink:var(--aq-e-blue);--stage-soft:var(--aq-blue-200);margin:16px 0 24px;padding:18px 20px 18px;background:var(--aq-blue-50);border-radius:var(--aq-r-xl);animation:aq-fade-up .4s var(--aq-e-ease) both}
+.aq-stage{--stage-c:var(--aq-e-blue);--stage-ink:var(--aq-e-blue);--stage-soft:var(--aq-blue-200);margin:16px 0 24px;padding:18px 20px 18px;background:var(--aq-blue-50);border-radius:var(--aq-r-xl);animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) both}
 .aq-stage.is-warn{--stage-c:#e0892f;--stage-ink:var(--aq-amber-600);--stage-soft:var(--aq-amber-100)}
 .aq-stage.is-error{--stage-c:#d92d3b;--stage-ink:var(--aq-red-600);--stage-soft:var(--aq-red-100)}
 .aq-stage-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
@@ -1427,7 +1426,7 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-cover-stage{position:relative;isolation:isolate;overflow:hidden;max-width:420px;padding:18px;border-radius:var(--aq-r-xl);background:var(--aq-gray-150)}
 .aq-cover-glow{position:absolute;z-index:-1;left:-20%;top:-20%;width:140%!important;max-width:none!important;height:140%;object-fit:cover;filter:blur(40px) saturate(1.5);opacity:.7;pointer-events:none}
 .aq-cover-stage::after{content:"";position:absolute;inset:0;z-index:-1;background:rgba(255,255,255,.18)}
-.aq-detail-cover-large{display:block;width:100%;aspect-ratio:1;object-fit:cover;margin:0;border-radius:var(--aq-r-md);box-shadow:0 24px 40px -24px rgba(17,28,61,.6);animation:aq-fade-up .45s var(--aq-e-ease) both}
+.aq-detail-cover-large{display:block;width:100%;aspect-ratio:1;object-fit:cover;margin:0;border-radius:var(--aq-r-md);box-shadow:0 24px 40px -24px rgba(17,28,61,.6);animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) both}
 .aq-cover-stage.is-empty{padding:0}
 .aq-cover-stage.is-empty::after{content:none}
 .aq-detail-cover-empty{display:grid;place-items:center;align-content:center;gap:8px;aspect-ratio:auto;min-height:120px;color:var(--aq-text-4);font-size:13px;font-weight:700}
@@ -1464,7 +1463,7 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-sign-top{display:flex;align-items:center;gap:10px;padding:6px 2px 18px}
 .aq-sign-top img{height:22px;width:auto}
 .aq-sign-top span{font-size:12px;font-weight:800;letter-spacing:.02em;color:var(--aq-blue-700);background:var(--aq-e-blue-soft);padding:5px 9px;border-radius:var(--aq-r-sm)}
-.aq-sign-card{background:var(--aq-blue-50);border-radius:var(--aq-r-2xl);padding:22px 20px;margin:0 0 14px;animation:aq-fade-up .4s var(--aq-e-ease) both}
+.aq-sign-card{background:var(--aq-blue-50);border-radius:var(--aq-r-2xl);padding:22px 20px;margin:0 0 14px;animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) both}
 .aq-sign-card h1{margin:4px 0 8px;font-size:23px;line-height:1.35;letter-spacing:-.04em}
 .aq-sign-card h2{display:flex;align-items:center;gap:9px;margin:0 0 14px;font-size:18px;font-weight:800;letter-spacing:-.03em}
 .aq-sign-no{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--aq-e-blue);color:#fff;font-size:12px;font-weight:800;flex:none}
@@ -1502,7 +1501,7 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-sign-done{text-align:center;background:var(--aq-e-green-soft)}
 .aq-sign-done h2{justify-content:center;color:var(--aq-e-green);margin:10px 0 6px}
 .aq-sign-done p{margin:0;font-size:14px;line-height:1.65;color:var(--aq-green-700)}
-.aq-sign-done-mark{display:inline-grid;place-items:center;width:46px;height:46px;border-radius:50%;background:var(--aq-e-green);color:#fff;animation:aq-soft-pop .35s var(--aq-e-ease) both}
+.aq-sign-done-mark{display:inline-grid;place-items:center;width:46px;height:46px;border-radius:50%;background:var(--aq-e-green);color:#fff;animation:aq-soft-pop var(--aq-motion-long) var(--aq-enter) both}
 .aq-sign-closed{text-align:center;padding:36px 22px}
 .aq-sign-closed p{color:var(--aq-text-3);line-height:1.65}
 .aq-sign-log{list-style:none;margin:14px 0 8px;padding:0;display:grid;gap:6px}
