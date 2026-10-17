@@ -270,6 +270,7 @@ export function Releases() {
             <div className="ui-empty">
               <h2>{trackQuery ? '검색 결과가 없어요.' : '표시할 트랙이 없어요.'}</h2>
               <p>{trackQuery ? '다른 검색어로 찾아보세요.' : '새로운 발매를 등록하면 곡별 정보를 볼 수 있어요.'}</p>
+              {trackQuery && <button type="button" className="ui-btn is-soft" onClick={() => setTrackQuery('')}>검색어 지우기</button>}
             </div>
           )}
         </div>

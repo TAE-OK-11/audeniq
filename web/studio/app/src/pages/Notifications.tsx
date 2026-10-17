@@ -157,7 +157,8 @@ export function Notifications() {
       ) : (
         <div className="ui-empty">
           <h2>{filter === 'unread' ? '읽지 않은 알림이 없어요.' : '새 알림이 없어요.'}</h2>
-          <p>발매·정산·서류 변경 사항을 여기에서 확인할 수 있어요.</p>
+          <p>{filter === 'unread' ? '새 알림이 오면 여기에 먼저 보여요.' : '발매·정산·서류에 변화가 생기면 여기에 알려 드려요.'}</p>
+          {filter === 'unread' && <button type="button" className="ui-btn is-soft" onClick={() => setFilter('all')}>전체 알림 보기</button>}
         </div>
       )}
 

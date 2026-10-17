@@ -759,6 +759,9 @@ button.settle-hero-account.is-button .min-0{display:grid}
 
 /* ---------- 정산 화면 (Settlement.tsx) — 돈이 어디 있는지·다음 정산·수수료 미리 보기·달별 묶음·지급 단계 ---------- */
 .settle-split{margin-top:14px}
+.settle-split-cap{margin:0 0 8px;font-size:13px;color:var(--aq-text-3)}
+.settle-split-cap b{font-weight:700;color:var(--aq-text-2);font-variant-numeric:tabular-nums}
+.settle-held-note{margin:10px 0 0;font-size:13px;line-height:1.6;color:var(--aq-text-3)}
 .settle-split-bar{display:flex;gap:3px;height:10px;border-radius:var(--aq-r-pill);overflow:hidden;background:#fff}
 .settle-split-bar i{display:block;min-width:4px}
 .settle-split .is-left{background:var(--aq-blue-500)}
