@@ -163,11 +163,11 @@
   --aq-dur-fast:var(--aq-motion-short);
   --aq-dur:.2s;            /* 호버 색 바뀜 */
   --aq-dur-slow:var(--aq-motion-long);
-  /* 누름 — 누를 때는 거의 즉시, 뗄 때는 튀지 않고 부드럽게 돌아온다. 크기: 버튼·칩은 더, 큰 줄·카드는 덜 줄어든다 */
-  --aq-press-in:.06s;
-  --aq-press-out:.28s;
-  --aq-press-spring:var(--aq-enter);
-  --aq-press-btn:.97;
+  /* 누름 — 누를 때는 즉시, 뗄 때는 짧고 가볍게 톡 돌아온다(길게 늘어지면 무겁게 느껴졌다). 크기: 버튼·칩은 더, 큰 줄·카드는 덜 줄어든다 */
+  --aq-press-in:.04s;
+  --aq-press-out:.16s;
+  --aq-press-spring:cubic-bezier(.2,.7,.3,1);  /* 빠르게 돌아와 바로 멈춘다 — 튀지도, 꼬리를 끌지도 않는다 */
+  --aq-press-btn:.98;
   --aq-press-row:.99;
 
   /* ---------- 앱 상단 ---------- */
