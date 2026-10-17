@@ -734,11 +734,11 @@ export const remoteApi = {
       issued = { upload_session_id: saved.session, asset_id: saved.assetId, expected_key: saved.key, expires_at: saved.expiresAt, multipart: { part_size: 0, part_count: 0 } };
     } else {
       try {
-        issued = await req(orgPath('/uploads'), { method: 'POST', body: { kind, size_bytes: file.size, content_type: contentType, resumable } });
+        issued = await req(orgPath('/uploads'), { method: 'POST', body: { kind, size_bytes: file.size, content_type: contentType, resumable }, signal });
       } catch (e) {
         // 저장소가 조각 업로드를 지원하지 않으면 한 번에 올린다
         if (!(resumable && e instanceof ApiError && e.code === 'UPLOAD_MULTIPART_UNSUPPORTED')) throw e;
-        issued = await req(orgPath('/uploads'), { method: 'POST', body: { kind, size_bytes: file.size, content_type: contentType } });
+        issued = await req(orgPath('/uploads'), { method: 'POST', body: { kind, size_bytes: file.size, content_type: contentType }, signal });
       }
     }
     if (issued.multipart) {
