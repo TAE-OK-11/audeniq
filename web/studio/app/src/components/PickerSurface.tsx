@@ -47,7 +47,7 @@ export function Surface({ anchor, title, onClose, className, children, labelledB
       window.setTimeout(() => ghost.remove(), 600);
     });
   }, []);
-  const [pos, setPos] = useState<{ left: number; top: number; width: number; maxHeight: number } | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; width: number; maxHeight: number; above: boolean; ox: number } | null>(null);
 
   useLayoutEffect(() => {
     if (sheet || !anchor) return;
@@ -64,7 +64,9 @@ export function Surface({ anchor, title, onClose, className, children, labelledB
     const placeBelow = below >= natural || (above < natural && below >= above);
     const maxHeight = Math.max(160, Math.min(natural, placeBelow ? below : above));
     const top = placeBelow ? anchor.bottom + 6 : anchor.top - 6 - Math.min(natural, maxHeight);
-    setPos({ left, top, width, maxHeight });
+    // 누른 칸 쪽에서 자라나게 — 칸 위에 열리면 아래에서 위로, 가로는 칸 가운데 기준 (ui.css aq-picker-pop)
+    const ox = Math.round(Math.min(Math.max(anchor.left + anchor.width / 2 - left, 16), width - 16));
+    setPos({ left, top, width, maxHeight, above: !placeBelow, ox });
   }, [anchor, sheet, className]);
 
   // 휴대폰 선택 시트: 아래 주소창 뒤·화면 위 바깥 띠를 페이지 안 덮개로 메운다 (iOS 26 이후, Modal과 같은 방식)
@@ -96,9 +98,9 @@ export function Surface({ anchor, title, onClose, className, children, labelledB
     <div ref={rootRef} className={`aq-picker${sheet ? ' is-sheet' : ' is-pop'}`} onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div
         ref={boxRef}
-        className={`aq-picker-box${className ? ` ${className}` : ''}`}
+        className={`aq-picker-box${pos?.above ? ' is-above' : ''}${className ? ` ${className}` : ''}`}
         role="dialog" aria-modal={sheet || undefined} aria-label={labelledBy ? undefined : title || '선택'} aria-labelledby={labelledBy}
-        style={sheet || !pos ? (sheet ? undefined : { visibility: 'hidden' }) : { left: pos.left, top: pos.top, width: pos.width, maxHeight: pos.maxHeight }}
+        style={sheet || !pos ? (sheet ? undefined : { visibility: 'hidden' }) : { left: pos.left, top: pos.top, width: pos.width, maxHeight: pos.maxHeight, transformOrigin: `${pos.ox}px ${pos.above ? '100%' : '0'}` }}
       >
         {sheet && <span className="aq-picker-grip" aria-hidden="true" />}
         {sheet && title && <p className="aq-picker-title">{title}</p>}
