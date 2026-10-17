@@ -1043,7 +1043,7 @@ function FinalReviewBanner({ form }: { form: WizardForm }) {
         </div>
         <div className="aq-review-item">
           <span>커버아트</span>
-          <strong>{form.coverName || '미등록'}</strong>
+          <strong>{form.coverName || '등록 전'}</strong>
         </div>
       </div>
       {warnings.map(w => <p key={w} className="aq-option-note">{w}</p>)}
@@ -2337,7 +2337,7 @@ export function Upload() {
                   <input
                     type="text" id="f-genre-custom" value={form.genreCustom}
                     onChange={e => set('genreCustom', e.target.value)}
-                    maxLength={90} placeholder="장르를 입력해 주세요" aria-label="직접 입력할 장르"
+                    maxLength={90} placeholder="예: 시티팝" aria-label="직접 입력할 장르"
                     className="aq-reveal" style={{ marginTop: 10 }}
                   />
                 )}
