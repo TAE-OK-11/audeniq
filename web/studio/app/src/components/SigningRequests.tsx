@@ -84,7 +84,7 @@ export function SigningRequests({ releases, tick, onOpenDoc }: {
             <div className="aq-signreq-actions">
               {r.status === 'SIGNED' && r.document_id && <button type="button" className="ui-btn is-white is-sm" onClick={() => onOpenDoc(r.document_id!)}>문서 보기</button>}
               {(r.status === 'PENDING' || r.status === 'EXPIRED') && <button type="button" className="ui-btn is-white is-sm" onClick={() => { setRelink(r); setIssued(null); setChannel('LINK'); }}>새 링크</button>}
-              {(r.status === 'PENDING' || r.status === 'VERIFIED') && <button type="button" className="ui-btn is-white is-sm" onClick={() => void cancel(r)}>취소</button>}
+              {(r.status === 'PENDING' || r.status === 'VERIFIED') && <button type="button" className="ui-btn is-white is-sm" onClick={() => void cancel(r)}>요청 취소</button>}
             </div>
           </li>
         ))}

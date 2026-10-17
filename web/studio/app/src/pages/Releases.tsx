@@ -124,7 +124,7 @@ export function Releases() {
         <div>
           <p className="eyebrow">내 작업실</p>
           <h1 id="catalogTitle">발매·곡 관리</h1>
-          <p>발매한 음악과 심사 진행 상황을 한눈에 확인해 보세요.</p>
+          <p>발매마다 심사가 어디까지 왔는지 보여 드려요.</p>
         </div>
         <button type="button" className="ui-btn is-primary" onClick={() => nav('/upload')}><Glyph name="plus" size={14} />새 발매</button>
       </div>
@@ -180,7 +180,8 @@ export function Releases() {
           {filtered.length ? (
             <div className="aq-catalog-cards aq-stagger">
               {filtered.map(r => (
-                <article
+                // 카드 전체가 상세로 가는 링크 — article에는 link 역할을 줄 수 없어 div로(모양은 같음)
+                <div
                   key={r.id} className="ui-row aq-release-card"
                   onClick={() => openRelease(r.id)} onKeyDown={onCardKey(r.id)}
                   tabIndex={0} role="link" aria-label={`${r.title || '제목 없는 발매'} 상세 보기`}
@@ -225,7 +226,7 @@ export function Releases() {
                       </div>
                     );
                   })()}
-                </article>
+                </div>
               ))}
             </div>
           ) : (
@@ -270,6 +271,7 @@ export function Releases() {
             <div className="ui-empty">
               <h2>{trackQuery ? '검색 결과가 없어요.' : '표시할 트랙이 없어요.'}</h2>
               <p>{trackQuery ? '다른 검색어로 찾아보세요.' : '새로운 발매를 등록하면 곡별 정보를 볼 수 있어요.'}</p>
+              {trackQuery && <button type="button" className="ui-btn is-soft" onClick={() => setTrackQuery('')}>검색어 지우기</button>}
             </div>
           )}
         </div>

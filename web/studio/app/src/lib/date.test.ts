@@ -25,6 +25,7 @@ describe('date utils', () => {
     const now = new Date(2026, 8, 26, 12, 0);
     expect(relativeTime('2026-09-26 11:58', now)).toBe('2분 전');
     expect(relativeTime('2026-09-24 12:00', now)).toBe('2일 전');
-    expect(relativeTime('2026-08-01', now)).toBe('2026-08-01');
+    expect(relativeTime('2026-08-01', now)).toBe('8월 1일');
+    expect(relativeTime('2025-12-31', now)).toBe('2025년 12월 31일');
   });
 });

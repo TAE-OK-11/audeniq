@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link, useNavigate } from '../lib/router';
 import { fixPath, resolveCorrection, splitCorrections } from '../lib/corrections';
 import { api } from '../api/client';
@@ -7,8 +7,9 @@ import { useProfile } from '../store/profile';
 import { isPaymentRegistered, usePayment } from '../store/payment';
 import { useAccount } from '../store/account';
 import { useDocs } from '../store/docs';
+import { useBalance } from '../store/settlement';
 import { useAsync } from '../hooks/useAsync';
-import { SkeletonRows } from '../components/Skeleton';
+import { SkeletonBlock, SkeletonRows } from '../components/Skeleton';
 import { Badge, CountUp } from '../ui';
 import { Money } from '../components/Money';
 import { ReleaseCover } from '../components/ReleaseCover';
@@ -21,21 +22,23 @@ import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
 import { josa } from '../lib/josa';
 
-const GRID_ITEMS = [
+type GridKey = 'releases' | 'reports' | 'settlement' | 'contracts';
+
+const GRID_ITEMS: { key: GridKey; to: string; title: string; desc: string; icon: ReactNode }[] = [
   {
-    to: '/releases', title: '발매·곡 관리', desc: '발매 목록과 곡별 정보',
+    key: 'releases', to: '/releases', title: '발매·곡 관리', desc: '발매 목록과 곡별 정보',
     icon: <Glyph name="release" size={22} />,
   },
   {
-    to: '/reports', title: '음악 리포트', desc: '플랫폼별 재생과 수익 내역',
+    key: 'reports', to: '/reports', title: '음악 리포트', desc: '플랫폼별 재생과 수익 내역',
     icon: <Glyph name="chart" size={22} />,
   },
   {
-    to: '/settlement', title: '정산·지급', desc: '정산 내역과 지급 요청',
+    key: 'settlement', to: '/settlement', title: '정산·지급', desc: '정산 내역과 지급 요청',
     icon: <Glyph name="won" size={22} />,
   },
   {
-    to: '/contracts', title: '계약서·권리', desc: '계약 상태와 증빙 서류',
+    key: 'contracts', to: '/contracts', title: '계약서·권리', desc: '계약 상태와 증빙 서류',
     icon: <Glyph name="doc" size={22} />,
   },
 ];
@@ -96,6 +99,7 @@ export function Dashboard() {
   const docs = useDocs();
   const payment = usePayment();
   const account = useAccount();
+  const { left: payable } = useBalance();
   // 할 일은 앞의 몇 개만 — 나머지는 '더 보기'로 (한 화면에 일곱 줄씩 쌓이면 무엇부터 할지 흐려진다)
   const [allTasks, setAllTasks] = useState(false);
   const { data: releases = [], loading, error, reload } = useAsync(() => api.listReleases(), []);
@@ -103,6 +107,7 @@ export function Dashboard() {
   const report = latestSummary(reportRows);
 
   const needs = releases.filter(r => r.status === 'needs').length;
+  const reviewing = releases.filter(r => r.status === 'review').length;
   const drafts = releases.filter(r => r.status === 'draft').length;
   const toSign = docs.filter(d => d.kind === 'agreements' && d.reviewStatus === 'approved' && !d.localSignatureAt).length;
   const docFix = docs.filter(d => d.kind === 'rights' && d.reviewStatus === 'needs').length;
@@ -132,6 +137,22 @@ export function Dashboard() {
   // 정산·재생이 아직 하나도 없으면 빈 차트 대신 짧은 안내만
   const reportEmpty = report.revenue <= 0 && report.plays <= 0 && report.trend.every(d => !d.revenue);
 
+  // 보완처럼 기한이 걸린 일이 있으면 맨 위 큰 카드를 그 일로 — '새 발매'보다 먼저 할 일이다 (한 화면에 판단 하나)
+  const urgent = loading ? undefined : tasks.find(t => t.tone === 'warn');
+  const restTasks = urgent ? tasks.filter(t => t !== urgent) : tasks;
+
+  // 바로가기는 메뉴와 같은 이름만 두지 않고 지금 상태를 한 줄로 — 들어가기 전에 무엇이 있는지 보인다
+  const gridStatus: Partial<Record<GridKey, { text: string; tone?: 'warn' }>> = {};
+  if (!loading) {
+    if (needs) gridStatus.releases = { text: `보완 필요 ${needs}건`, tone: 'warn' };
+    else if (reviewing) gridStatus.releases = { text: `검토 중 ${reviewing}건` };
+    else if (releases.length) gridStatus.releases = { text: `발매 ${releases.length}건` };
+  }
+  if (!reportEmpty && report.revenue > 0) gridStatus.reports = { text: `${Number(report.period.slice(5))}월 수익 ${money(report.revenue)}` };
+  if (payable > 0) gridStatus.settlement = { text: `받을 수 있는 금액 ${money(payable)}` };
+  if (docFix) gridStatus.contracts = { text: `보완 서류 ${docFix}건`, tone: 'warn' };
+  else if (toSign) gridStatus.contracts = { text: `서명할 계약서 ${toSign}건` };
+
   return (
     <div id="view-home" className="view">
       <div className="ui-page-head aq-home-title">
@@ -140,8 +161,28 @@ export function Dashboard() {
           <h1>{profileName ? <>{profileName}<span className="aq-home-suffix">님의 작업실</span></> : '내 작업실'}</h1>
           <p>{greeting()} 오늘 확인할 작업을 모아 두었어요.</p>
         </div>
+        {urgent && (
+          <Link className="ui-btn is-soft aq-home-new" to="/upload" onPointerEnter={() => prefetchRoute('/upload')}><Glyph name="plus" size={14} />새 발매</Link>
+        )}
       </div>
 
+      {loading ? (
+        <SkeletonBlock height={160} />
+      ) : urgent ? (
+        <Link className="ui-hero aq-home-hero ui-tone-warn is-urgent" to={urgent.to} onPointerEnter={() => prefetchRoute(urgent.to)}>
+          <div>
+            <p className="eyebrow">먼저 할 일</p>
+            <h2>{urgent.name}</h2>
+            <p>{urgent.sub}</p>
+          </div>
+          <span className="ui-btn is-primary aq-hero-cta">
+            {urgent.btn}하기
+            <span className="aq-cta-arrow" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4" /></svg>
+            </span>
+          </span>
+        </Link>
+      ) : (
       <Link className="ui-hero aq-home-hero" to="/upload" onPointerEnter={() => prefetchRoute('/upload')}>
         <div>
           <p className="eyebrow">새 발매</p>
@@ -155,18 +196,22 @@ export function Dashboard() {
           </span>
         </span>
       </Link>
+      )}
 
       {/* 자주 가는 화면 바로가기는 새 발매 바로 아래 — 할 일·발매 목록 아래로 내리면 누르러 한참 내려가야 했다 */}
       <div className="dashboard-grid aq-stagger" aria-label="주요 업무">
-        {GRID_ITEMS.map(item => (
+        {GRID_ITEMS.map(item => {
+          const st = gridStatus[item.key];
+          return (
           <Link key={item.to} className="service-item" to={item.to} onPointerEnter={() => prefetchRoute(item.to)} onFocus={() => prefetchRoute(item.to)}>
             <span className="ui-icon">{item.icon}</span>
             <div>
               <h3>{item.title}</h3>
-              <p>{item.desc}</p>
+              <p className={st ? `aq-grid-status${st.tone ? ` is-${st.tone}` : ''}` : undefined}>{st?.text ?? item.desc}</p>
             </div>
           </Link>
-        ))}
+          );
+        })}
       </div>
 
       <div className="dashboard-columns">
@@ -174,15 +219,15 @@ export function Dashboard() {
         <section className="ui-card" aria-labelledby="workTitle">
           <div className="ui-section-head">
             <h2 id="workTitle">확인할 작업</h2>
-            {tasks.length > 0 && <span className="ui-count is-soft">{tasks.length}</span>}
+            {restTasks.length > 0 && <span className="ui-count is-soft">{restTasks.length}</span>}
           </div>
           <div id="homeTasks">
             {loading ? (
               <SkeletonRows count={2} />
-            ) : tasks.length ? (
+            ) : restTasks.length ? (
               <>
               <ul className="aq-task-list aq-stagger">
-                {(allTasks ? tasks : tasks.slice(0, TASK_PREVIEW)).map(t => (
+                {(allTasks ? restTasks : restTasks.slice(0, TASK_PREVIEW)).map(t => (
                   <li key={t.name}>
                     <button type="button" className={`aq-task is-${t.tone}`} onClick={() => navigate(t.to)}>
                       <span className="ui-icon" aria-hidden="true">{TASK_ICONS[t.icon]}</span>
@@ -195,9 +240,9 @@ export function Dashboard() {
                   </li>
                 ))}
               </ul>
-              {tasks.length > TASK_PREVIEW && (
+              {restTasks.length > TASK_PREVIEW && (
                 <button type="button" className="aq-task-more" aria-expanded={allTasks} onClick={() => setAllTasks(v => !v)}>
-                  {allTasks ? '접기' : `${tasks.length - TASK_PREVIEW}건 더 보기`}
+                  {allTasks ? '접기' : `${restTasks.length - TASK_PREVIEW}건 더 보기`}
                   <Glyph name="chevron-down" size={14} className={allTasks ? 'is-flip' : ''} />
                 </button>
               )}
@@ -205,7 +250,7 @@ export function Dashboard() {
             ) : (
               <div className="empty-note aq-all-done">
                 <span className="aq-check-badge"><CheckIcon size={12} /></span>
-                지금 확인할 작업이 없어요.
+                {urgent ? '그 밖에 확인할 작업은 없어요.' : '지금 확인할 작업이 없어요.'}
               </div>
             )}
           </div>

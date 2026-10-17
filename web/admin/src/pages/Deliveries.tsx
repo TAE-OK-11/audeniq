@@ -46,7 +46,7 @@ function HoldForm({ item, onDone }: { item: DeliveryItem; onDone: () => void }) 
         <input id="holdNote" data-autofocus className="ui-input" maxLength={1000} value={note} onChange={e => setNote(e.target.value)} placeholder="예: 권리 확인 중" />
       </div>
       <div className="adm-form-actions">
-        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>닫기</button>
         <button type="submit" className="ui-btn is-warn" disabled={busy || !note.trim()}>{busy ? '처리 중…' : '배급 멈추기'}</button>
       </div>
     </form>
@@ -82,7 +82,7 @@ function ResumeForm({ item, notes, onDone }: { item: DeliveryItem; notes: string
       <p className="small muted">{item.title} · {name} 배급을 다시 시작해요. 서명이 끝났고 플랫폼이 연동돼 있으면 바로 전송돼요.</p>
       {notes.length > 0 && <p className="small" style={{ marginTop: 10 }}>확인할 점: {notes.join(' · ')}</p>}
       <div className="adm-form-actions">
-        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>닫기</button>
         <button type="submit" className="ui-btn is-primary" disabled={busy}>{busy ? '처리 중…' : '배급 다시 시작'}</button>
       </div>
     </form>

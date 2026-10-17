@@ -354,6 +354,8 @@ export function ReleaseDetail() {
           </div>
           <h2 id="aqFixCardHead" className="aq-fix-title">
             {docsOnly ? '담당자가 요청한 서류를 제출해 주세요'
+              // 배지는 고칠 칸 + 요청 서류를 함께 센다 — 제목도 둘 다 말해야 '3건'과 '두 가지'가 어긋나지 않는다
+              : fixes.length && proofs.length ? `${fixCountWord(fixes.length)} 고치고 서류 ${proofs.length}건을 내면 바로 다시 검토해요`
               : fixes.length ? `${fixCountWord(fixes.length)} 고치면 바로 다시 검토해요`
                 : requested.length ? '요청한 서류를 냈어요. 신청서를 다시 접수해 주세요'
                 : reviewNote ? '검토팀 의견을 확인하고 신청서를 고쳐 주세요' : '알림과 권리 서류에서 요청 내용을 확인해 주세요'}
@@ -465,9 +467,12 @@ export function ReleaseDetail() {
                   <button type="button" className="ui-btn is-white is-sm" onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}>트랙 등록하기 <Glyph name="chevron-right" size={13} /></button>
                 </div>
               )}
-              <div className="ui-callout" style={{ marginTop: 22 }}>
-                음원 원본의 재첨부가 필요한 경우가 있어요. 제출 전 파일을 다시 확인해 주세요.
-              </div>
+              {/* 제출 전 안내 — 접수가 끝난 발매(검토 중·발매 완료)에서는 할 수 있는 일이 없는 문장이었다 */}
+              {(isDraft || needsFix) && (
+                <div className="ui-callout" style={{ marginTop: 22 }}>
+                  음원 원본의 재첨부가 필요한 경우가 있어요. 제출 전 파일을 다시 확인해 주세요.
+                </div>
+              )}
             </div>
           </div>
         )}

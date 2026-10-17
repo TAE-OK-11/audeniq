@@ -10,7 +10,7 @@ export function Terms({ doc = 'service' }: { doc?: LegalKey }) {
   const d = LEGAL_DOCS[doc];
   const chapters = useMemo(() => parseTerms(d.text).blocks.filter(b => b.kind === 'chapter'), [d.text]);
   return (
-    <div className="aq-terms-page">
+    <main className="aq-terms-page">
       <header className="aq-sign-top">
         <Link to="/" aria-label="AUDENIQ"><img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" /></Link>
         <span>{doc === 'privacy' ? '개인정보' : '약관'}</span>
@@ -39,7 +39,7 @@ export function Terms({ doc = 'service' }: { doc?: LegalKey }) {
       <div className="aq-terms-back">
         <button type="button" className="ui-btn is-soft is-sm" onClick={() => (window.history.length > 1 ? window.history.back() : nav('/'))}>돌아가기</button>
       </div>
-    </div>
+    </main>
   );
 }
 

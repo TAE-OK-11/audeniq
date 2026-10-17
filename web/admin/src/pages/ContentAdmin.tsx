@@ -187,7 +187,7 @@ function Editor({ kind, draft, saving, onChange, onSave, onCancel, onDelete }: {
       <div className="aq-cadmin-actions">
         {draft.id && !draft.deleted && <button type="button" className="ui-btn is-neutral aq-cadmin-danger" onClick={onDelete} disabled={saving}>내리기</button>}
         <span className="aq-cadmin-spacer" />
-        <button type="button" className="ui-btn is-soft" onClick={onCancel} disabled={saving}>취소</button>
+        <button type="button" className="ui-btn is-soft" onClick={onCancel} disabled={saving}>닫기</button>
         <button type="submit" className="ui-btn is-primary" disabled={saving}>
           {saving ? '저장하는 중' : draft.deleted ? '다시 게시' : scheduled ? '예약 저장' : draft.id ? '저장' : '게시하기'}
         </button>
@@ -307,7 +307,7 @@ function EmergencyPanel({ rows, now, onChanged }: {
             </div>
           </div>
           <div className="aq-cadmin-emergency-actions">
-            <button type="button" className="ui-btn is-soft" disabled={busy} onClick={() => setOpen(false)}>취소</button>
+            <button type="button" className="ui-btn is-soft" disabled={busy} onClick={() => setOpen(false)}>닫기</button>
             <button type="button" className="ui-btn is-primary aq-cadmin-danger-fill" disabled={busy} onClick={() => void start()}>
               {busy ? '시작하는 중' : '지금 시작'}
             </button>

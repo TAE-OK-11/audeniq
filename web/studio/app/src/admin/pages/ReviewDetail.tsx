@@ -87,7 +87,7 @@ function ApproveForm({ sheet, application, onDone }: { sheet: ReleaseSheet; appl
         <textarea id="aMemo" data-autofocus className="ui-textarea" rows={3} maxLength={MAX_REASON} value={memo} placeholder="남길 내용이 있으면 적어 주세요. 비워 두면 ‘담당자 승인’으로 기록돼요." onChange={e => setMemo(e.target.value)} />
       </div>
       <div className="adm-form-actions">
-        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>닫기</button>
         <button type="submit" className="ui-btn is-primary" disabled={busy}>{busy ? '저장 중…' : '승인하기'}</button>
       </div>
     </form>
@@ -133,7 +133,7 @@ function RejectForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: stri
         <span><b>{sheet.release.title}</b> 발매를 거절하면 되돌릴 수 없어요. 아티스트는 새로 접수해야 해요.</span>
       </label>
       <div className="adm-form-actions">
-        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>닫기</button>
         <button type="submit" className="ui-btn is-danger-solid" disabled={busy || !reason || !sure}>{busy ? '저장 중…' : '거절 확정'}</button>
       </div>
     </form>
@@ -281,7 +281,7 @@ function CorrectionForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: 
         <textarea id="cSummary" className="ui-textarea" rows={2} maxLength={MAX_REASON} value={summary} placeholder="비워 두면 ‘표시된 항목을 고친 뒤 다시 접수해 주세요.’로 보내요." onChange={e => setSummary(e.target.value)} />
       </div>
       <div className="adm-form-actions">
-        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>닫기</button>
         <button type="submit" className="ui-btn is-primary" disabled={busy || !ready.length || incomplete}>{busy ? '보내는 중…' : `보완 요청 보내기 (${ready.length}건)`}</button>
       </div>
     </form>
@@ -321,7 +321,7 @@ function ProofForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: () => void 
         <textarea id="pBody" className="ui-textarea" rows={5} maxLength={20000} value={body} placeholder="어떤 서류가 왜 필요한지, 어떤 형식으로 내면 되는지 적어 주세요." onChange={e => setBody(e.target.value)} />
       </div>
       <div className="adm-form-actions">
-        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>닫기</button>
         <button type="submit" className="ui-btn is-primary" disabled={busy || !title.trim()}>{busy ? '보내는 중…' : '증빙 요청 보내기'}</button>
       </div>
     </form>
@@ -391,7 +391,7 @@ function ReissueForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: () => voi
         <textarea id="rReason" data-autofocus className="ui-textarea" rows={3} maxLength={2000} required value={reason} onChange={e => setReason(e.target.value)} placeholder="예: 정식 ISRC 발급 범위 등록 완료" />
       </div>
       <div className="adm-form-actions">
-        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>닫기</button>
         <button type="submit" className="ui-btn is-primary" disabled={busy || !reason.trim()}>{busy ? '처리 중…' : '재발급 요청'}</button>
       </div>
     </form>

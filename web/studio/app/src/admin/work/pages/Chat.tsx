@@ -58,7 +58,7 @@ function ChannelForm({ init, onSaved }: { init: Channel | null; onSaved: (c: Cha
         <input id="chTopic" className="ui-input" maxLength={200} value={topic} onChange={e => setTopic(e.target.value)} placeholder="이 채널에서 무엇을 이야기하나요?" />
       </div>
       <div className="adm-form-actions">
-        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>닫기</button>
         <button type="submit" className="ui-btn is-primary" disabled={!name.trim() || busy}>{busy ? '저장 중…' : init ? '저장' : '만들기'}</button>
       </div>
     </form>
