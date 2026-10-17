@@ -97,8 +97,15 @@ export function Application() {
             <svg viewBox="0 0 24 24" width="22" height="22"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </span>
           <div className="min-0">
-            <strong>배급 신청을 접수했어요.</strong>
-            <span>서명한 신청서를 발급했어요. 담당자 검토가 끝나면 알림으로 알려 드릴게요.</span>
+            {/* 무엇을 했는지는 이 발매 이름으로, 다음에 무엇이 오는지는 단계로 — 신청 직후 가장 궁금한 건 '이제 뭐가 남았지'다 */}
+            <strong>‘{rel.title || '제목 없는 발매'}’ 발매를 신청했어요</strong>
+            <span>서명한 신청서를 발급했어요. 남은 단계는 이래요.</span>
+            <ol className="aq-doc-next" aria-label="다음 단계">
+              <li className="is-done"><i aria-hidden="true"><CheckIcon size={10} /></i>신청서 서명 — 방금 마쳤어요</li>
+              <li><i aria-hidden="true">2</i>담당자 검토 — 끝나면 알림으로 알려 드려요</li>
+              <li><i aria-hidden="true">3</i>계약서 서명 — 계약서 메뉴에서 해요</li>
+              <li><i aria-hidden="true">4</i>{rel.release_date ? `${formatKoreanDate(rel.release_date)}에 플랫폼에 나가요` : '정한 발매일에 플랫폼에 나가요'}</li>
+            </ol>
           </div>
         </div>
       )}

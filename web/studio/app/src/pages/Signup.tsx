@@ -102,7 +102,7 @@ export function Signup() {
           <label htmlFor="suEmail">이메일</label>
           <input
             id="suEmail" {...EMAIL_INPUT} required autoComplete="email"
-            placeholder="이메일을 입력해 주세요" aria-invalid={!!fe.email} aria-describedby={fe.email ? 'suEmailErr' : undefined}
+            placeholder="name@example.com" aria-invalid={!!fe.email} aria-describedby={fe.email ? 'suEmailErr' : undefined}
             value={email} onChange={e => { setEmail(e.target.value); setEmailDone(false); clear('email'); }}
             onBlur={() => setEmailDone(true)} onKeyDown={nextOnEnter('suPassword')}
           />
@@ -113,7 +113,7 @@ export function Signup() {
           <label htmlFor="suPassword">비밀번호</label>
           <PasswordInput
             id="suPassword" required autoComplete="new-password" minLength={PASSWORD_MIN}
-            placeholder={`${PASSWORD_MIN}자 이상 입력해 주세요`} aria-describedby={fe.password ? 'suPasswordErr' : 'suPwRule suPwHelp'}
+            aria-describedby={fe.password ? 'suPasswordErr' : 'suPwRule suPwHelp'}
             aria-invalid={!!fe.password} enterKeyHint="next"
             value={password} onChange={e => { setPassword(e.target.value); clear('password'); }} onKeyDown={nextOnEnter('suConfirm')}
             show={showPw} onToggle={() => setShowPw(v => !v)}
@@ -136,7 +136,7 @@ export function Signup() {
           <label htmlFor="suConfirm">비밀번호 확인</label>
           <input
             id="suConfirm" type={showPw ? 'text' : 'password'} required autoComplete="new-password"
-            placeholder="비밀번호를 다시 입력해 주세요" aria-invalid={mismatch || !!fe.confirm} enterKeyHint="done"
+            placeholder="한 번 더 입력해 주세요" aria-invalid={mismatch || !!fe.confirm} enterKeyHint="done"
             aria-describedby={fe.confirm || mismatch ? 'suConfirmErr' : matched ? 'suConfirmOk' : undefined}
             value={confirm} onChange={e => { setConfirm(e.target.value); setConfirmDone(false); clear('confirm'); }}
             onBlur={() => setConfirmDone(true)}

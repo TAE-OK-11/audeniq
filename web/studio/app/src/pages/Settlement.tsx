@@ -234,7 +234,8 @@ export function Settlement() {
         await refreshFinance();
         setShowPayout(false);
         setTab('payouts');
-        toast('지급을 요청했어요. 담당자 확인 후 등록한 계좌로 보내 드려요.');
+        // 얼마를 어디로 — '박승원 님에게 50,000원을 보냈어요'처럼 금액과 계좌를 문장에 (수수료를 뺀 실제 받는 금액)
+        toast(`${money(amt - payoutFee(amt))} 지급을 요청했어요. 확인이 끝나면 ${payment ? `${payment.bank} ${payment.last4} 계좌로` : '등록한 계좌로'} 보내 드려요.`);
       } catch (err) {
         toast(errorMessage(err, '지급을 요청하지 못했어요. 잠시 후 다시 시도해 주세요.'), 'error');
       } finally {
@@ -299,29 +300,19 @@ export function Settlement() {
             <p>{money(minimum - left)} 더 쌓이면 받을 수 있어요 (최소 {money(minimum)}). 모자란 금액은 다음 정산으로 넘어가요.</p>
           </div>
         )}
-        {/* 계좌 줄 전체를 누를 수 있게 — 오른쪽 작은 '등록·변경' 글자(44×38px)만 눌렸다 */}
-        <button type="button" className="settle-hero-account is-button" onClick={() => setShowPaymentSetup(true)}
-          aria-label={paymentRegistered && payment ? `받을 계좌 변경 — ${payment.bank} ${payment.last4}` : '받을 계좌 등록'}>
-          {paymentRegistered && payment ? (
-            <>
-              <BankLogo name={payment.bank} />
-              <span className="min-0">
-                <strong>{payment.bank}</strong>
-                <span>•••• {payment.last4} · {payment.recipient}</span>
-              </span>
-              <span className="settle-hero-link" aria-hidden="true">변경</span>
-            </>
-          ) : (
-            <>
-              <span className="aq-payment-badge is-empty" aria-hidden="true"><Glyph name="won" size={18} /></span>
-              <span className="min-0">
-                <strong>받을 계좌 없음</strong>
-                <span>수익을 받을 계좌를 등록해 주세요.</span>
-              </span>
-              <span className="settle-hero-link" aria-hidden="true">등록</span>
-            </>
-          )}
-        </button>
+        {/* 계좌 줄 전체를 누를 수 있게 — 오른쪽 작은 '등록·변경' 글자(44×38px)만 눌렸다.
+            계좌가 없을 때는 이 줄을 빼고 아래 '계좌 등록하기' 버튼 하나만 — 같은 일을 하는 자리가 두 개였다 */}
+        {paymentRegistered && payment && (
+          <button type="button" className="settle-hero-account is-button" onClick={() => setShowPaymentSetup(true)}
+            aria-label={`받을 계좌 변경 — ${payment.bank} ${payment.last4}`}>
+            <BankLogo name={payment.bank} />
+            <span className="min-0">
+              <strong>{payment.bank}</strong>
+              <span>•••• {payment.last4} · {payment.recipient}</span>
+            </span>
+            <span className="settle-hero-link" aria-hidden="true">변경</span>
+          </button>
+        )}
         <div className="settle-hero-actions">
           {MOCK && <button type="button" className="ui-btn is-soft is-lg" onClick={() => setShowStatement(true)}>예시 정산 추가</button>}
           <button type="button" className="ui-btn is-primary is-lg" onClick={openPayoutModal}>{paymentRegistered ? '수익 받기' : '계좌 등록하기'}</button>
@@ -471,7 +462,7 @@ export function Settlement() {
                   <input
                     // type=number는 마우스 휠·방향키로 금액이 몰래 바뀌고 쉼표 표시가 안 돼 숫자 전용 텍스트로 받는다
                     id="pAmount" inputMode="numeric" type="text" autoComplete="off" enterKeyHint="done"
-                    required placeholder="금액을 입력해 주세요"
+                    required placeholder={`예: ${left.toLocaleString('ko-KR')}`}
                     value={amount ? Number(amount).toLocaleString('ko-KR') : ''}
                     onChange={e => setAmount(e.target.value.replace(/\D/g, '').replace(/^0+/, '').slice(0, 15))}
                   />
@@ -486,9 +477,9 @@ export function Settlement() {
               <div className="studio-receive-account">
                 <BankLogo name={payment?.bank || ''} />
                 <div>
-                  <strong>{payment?.bank || '은행 미등록'}</strong>
+                  <strong>{payment?.bank || '은행 등록 전'}</strong>
                   <p className="small muted">
-                    {payment?.recipient || '수령인 미등록'} · {payment?.last4 ? `•••• ${payment.last4}` : '계좌 미등록'}
+                    {payment?.recipient || '받는 분 등록 전'} · {payment?.last4 ? `•••• ${payment.last4}` : '계좌 등록 전'}
                   </p>
                 </div>
                 <span className="studio-account-check" aria-label="선택된 수령 계좌"><CheckIcon size={12} /></span>

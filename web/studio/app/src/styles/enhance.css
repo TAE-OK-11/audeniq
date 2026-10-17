@@ -734,6 +734,12 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 .aq-doc-done-mark path{stroke-dasharray:24;stroke-dashoffset:24;animation:aq-doc-draw .3s ease-out .12s forwards}
 .aq-doc-done strong{display:block;font-size:15px;font-weight:800;color:#155c40}
 .aq-doc-done .min-0 span{display:block;font-size:13px;line-height:1.55;color:var(--aq-green-600);margin-top:2px}
+.aq-doc-done:has(.aq-doc-next){align-items:flex-start}
+.aq-doc-next{display:grid;gap:6px;margin:12px 0 0;padding:0;list-style:none;font-size:13px;font-weight:600;color:var(--aq-text-2)}
+.aq-doc-next li{display:flex;align-items:center;gap:8px}
+.aq-doc-next li>i{flex:none;width:18px;height:18px;border-radius:6px;display:grid;place-items:center;background:#fff;font-size:11px;font-weight:800;font-style:normal;color:var(--aq-text-3)}
+.aq-doc-next li.is-done{color:var(--aq-green-600)}
+.aq-doc-next li.is-done>i{background:var(--aq-green-600);color:#fff}
 @keyframes aq-doc-pop{from{transform:scale(.4);opacity:0}to{transform:none;opacity:1}}
 @keyframes aq-doc-draw{to{stroke-dashoffset:0}}
 .aq-doc-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 16px}
