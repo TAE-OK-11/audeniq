@@ -61,7 +61,7 @@ export function Login() {
   }
 
   return (
-    <AuthLayout icon="lock" title="다시 만나서 반가워요." sub="아티스트 포털에 로그인하세요.">
+    <AuthLayout icon="lock" title="다시 만나서 반가워요." sub="아티스트 포털에 로그인해 주세요.">
       {error && <div className="ui-callout is-danger aq-shake" role="alert" key={error}>{error}</div>}
       <form onSubmit={submit} noValidate>
         <div className="ui-field">

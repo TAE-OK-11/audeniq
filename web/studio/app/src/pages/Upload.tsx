@@ -387,7 +387,7 @@ function GuardianConsentModal({ guardianName, onClose, onComplete }: {
       </div>
       <div className="aq-modal-foot aq-guardian-foot aq-sticky-foot">
         <p className="aq-guardian-missing" aria-live="polite">{missing}</p>
-        <button type="button" className="ui-btn is-soft" onClick={onClose}>취소</button>
+        <button type="button" className="ui-btn is-soft" onClick={onClose}>닫기</button>
         <button type="button" className="ui-btn is-primary" disabled={!!missing} onClick={() => onComplete(certName, certMethod)}>동의 완료</button>
       </div>
     </Modal>

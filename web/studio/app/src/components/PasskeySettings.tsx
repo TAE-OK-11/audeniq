@@ -100,7 +100,7 @@ export function PasskeySettings() {
             />
           </div>
           <div className="aq-row-actions">
-            <button type="button" className="ui-btn is-soft" onClick={() => setAdding(false)} disabled={busy}>취소</button>
+            <button type="button" className="ui-btn is-soft" onClick={() => setAdding(false)} disabled={busy}>닫기</button>
             <button type="submit" className={`ui-btn is-primary${busy ? ' is-busy' : ''}`} disabled={busy} aria-busy={busy}>
               {busy ? '기기에서 확인하는 중' : '기기에 패스키 만들기'}
             </button>
