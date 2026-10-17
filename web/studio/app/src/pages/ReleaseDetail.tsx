@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from '../lib/router';
 import { api, type DeliveryItem } from '../api/client';
 import { useToast } from '../components/Toast';
@@ -116,6 +116,28 @@ export function ReleaseDetail() {
   // 계약서·서류 상태는 담당자 처리로 바뀐다 — 발매를 열 때 새로 받는다
   useEffect(() => { if (!MOCK) void refreshDocs(); }, [id]);
   const [tab, setTab] = useState('overview');
+  // 탭은 머리글 바로 아래에 붙는다 — 큰 머리(표지·버튼·진행 단계) 아래에 있어 내려 읽다 보면 화면 밖으로 사라졌고,
+  // 바꾸려면 맨 위까지 올라가야 했다. 바꿀 때는 새 내용의 첫 줄이 탭 바로 아래에 오게(맨 위로 튀지 않게) 자리를 맞춘다
+  const tabsAnchor = useRef<HTMLDivElement>(null);
+  const tabsBox = useRef<HTMLDivElement>(null);
+  const [stickTop, setStickTop] = useState(0);
+  const [keepY, setKeepY] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const measure = () => setStickTop(Math.round(document.querySelector('.portal-header')?.getBoundingClientRect().bottom ?? 0));
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
+  const changeTab = (next: string) => {
+    const anchor = tabsAnchor.current;
+    // 탭이 붙어 있는 중(그 아래를 읽던 중)이면 바꾼 뒤에도 탭이 같은 자리에 붙어 있게
+    const stuckAt = anchor ? anchor.getBoundingClientRect().top + window.scrollY - stickTop : null;
+    setKeepY(stuckAt !== null && window.scrollY > stuckAt ? stuckAt : null);
+    setTab(next);
+  };
+  useLayoutEffect(() => {
+    if (keepY !== null) window.scrollTo(0, keepY);
+  }, [tab, keepY]);
   const [deleting, setDeleting] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
   const { data: rel, error, loading, reload } = useAsync(() => api.getRelease(id), [id], { key: `release:${id}` });
@@ -395,9 +417,14 @@ export function ReleaseDetail() {
         </section>
       )}
 
-      <Tabs label="발매 상세 메뉴" value={tab} items={DETAIL_TABS} onChange={setTab} className="is-fill" />
+      <div ref={tabsAnchor} aria-hidden="true" />
+      <div ref={tabsBox} className="aq-detail-tabs" style={{ top: stickTop }}>
+        <Tabs label="발매 상세 메뉴" value={tab} items={DETAIL_TABS} onChange={changeTab} className="is-fill" />
+      </div>
 
-      <div id="releaseDetailBody" className="ui-tab-panel" key={tab}>
+      {/* 탭을 붙인 채로 바꾸면 짧은 탭도 그 자리를 지킬 만큼 높이를 둔다 */}
+      <div id="releaseDetailBody" className="ui-tab-panel" key={tab}
+        style={keepY !== null ? { minHeight: `calc(100dvh - ${stickTop + (tabsBox.current?.offsetHeight ?? 0)}px)` } : undefined}>
         {tab === 'overview' && (
           <div className="aq-detail-stack">
             <div className="split">
