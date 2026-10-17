@@ -74,7 +74,7 @@
   --aq-surface-2-hover:var(--aq-gray-100);
   --aq-field:var(--aq-gray-100);         /* 입력칸 면 — AUDENIQ 회색 (선 없이 면으로) */
   --aq-field-hover:#EBEFF5;
-  --aq-field-focus-bg:var(--aq-gray-150); /* 포커스 — 윤곽선·그림자 없이 회색이 한 단계 진해진다 */
+  --aq-field-focus-bg:var(--aq-blue-150); /* 포커스 — 윤곽선·그림자 없이 면이 옅은 파랑으로 (회색 한 단계는 쓰는 중인 칸이 구분되지 않았다) */
   --aq-field-placeholder:var(--aq-gray-400);
   --aq-field-hover-on-soft:var(--aq-gray-25);
   --aq-field-line:#E4EAF4;

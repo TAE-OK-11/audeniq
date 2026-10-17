@@ -395,7 +395,7 @@ export function ReleaseDetail() {
         </section>
       )}
 
-      <Tabs label="발매 상세 메뉴" value={tab} items={DETAIL_TABS} onChange={setTab} />
+      <Tabs label="발매 상세 메뉴" value={tab} items={DETAIL_TABS} onChange={setTab} className="is-fill" />
 
       <div id="releaseDetailBody" className="ui-tab-panel" key={tab}>
         {tab === 'overview' && (
