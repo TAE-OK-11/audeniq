@@ -5,7 +5,32 @@
 //   site     백엔드에 x-audeniq-site 로 알리는 화면 이름 (crate::sites)
 //   apiPrefix 백엔드 경로가 다를 때 /api 를 바꿀 접두사
 // 설문(survey.audeniq.com)은 베타 전까지 D1 Worker 그대로라 여기 없다.
-export const APPS = {
+interface AppBase {
+  aliases: string[];
+  dir: string;
+  /** deploy/aws/functions 안의 뷰어 요청 함수 파일 */
+  function: string;
+  api: string[];
+  /** api 가 있으면 필요 (없으면 x-audeniq-site 헤더 값이 빠진다) */
+  site?: string;
+  apiPrefix?: string;
+  /** 같은 함수를 viewer-response 에도 건다 */
+  viewerResponse?: boolean;
+  /** PAGE_PATHS·FILE_PATHS 를 내보내는 모듈 (저장소 루트 기준) — 함수의 ROUTES 자리표시에 넣는다 */
+  routes?: string;
+  /** 404 오류 응답 페이지 경로 */
+  notFoundPage?: string;
+}
+
+/** 보안 헤더 원본: `_headers` 파일 경로나 그 내용 중 하나 */
+export type App = AppBase & (
+  | { headers: string; headersText?: undefined }
+  | { headersText: string; headers?: undefined }
+);
+
+export type AppName = 'studio' | 'admin' | 'landing';
+
+export const APPS: Record<AppName, App> = {
   studio: {
     aliases: ['studio.audeniq.com'],
     dir: 'web/studio/public',
@@ -42,17 +67,31 @@ export const APPS = {
   },
 };
 
-export const stackName = app => `audeniq-${app}-ui`;
+export const isAppName = (name: string | undefined): name is AppName =>
+  name !== undefined && Object.hasOwn(APPS, name);
+
+export const stackName = (app: string): string => `audeniq-${app}-ui`;
+
+export interface HeaderRule {
+  path: string;
+  headers: [name: string, value: string][];
+}
+
+export interface CacheGroup {
+  include: string;
+  cacheControl: string;
+}
 
 /** Cloudflare `_headers` → [{ path, headers: [[name, value]] }] */
-export function parseHeaders(text) {
-  const rules = [];
+export function parseHeaders(text: string): HeaderRule[] {
+  const rules: HeaderRule[] = [];
   for (const line of text.split('\n')) {
     if (!line.trim() || line.trim().startsWith('#')) continue;
     if (!/^\s/.test(line)) { rules.push({ path: line.trim(), headers: [] }); continue; }
     const at = line.indexOf(':');
-    if (at < 0 || !rules.length) throw new Error(`_headers: 해석할 수 없는 줄: ${line}`);
-    rules.at(-1).headers.push([line.slice(0, at).trim(), line.slice(at + 1).trim()]);
+    const rule = rules.at(-1);
+    if (at < 0 || !rule) throw new Error(`_headers: 해석할 수 없는 줄: ${line}`);
+    rule.headers.push([line.slice(0, at).trim(), line.slice(at + 1).trim()]);
   }
   return rules;
 }
@@ -61,8 +100,8 @@ export function parseHeaders(text) {
  * _headers의 Cache-Control 규칙 → S3 업로드 그룹 (aws s3 sync --include 패턴, 먼저 올릴 것부터).
  * "/"·"/index.html" 같은 HTML 진입점은 맨 마지막에 올려, 새 HTML이 아직 없는 에셋을 가리키지 않게 한다.
  */
-export function cacheGroups(rules) {
-  const groups = [];
+export function cacheGroups(rules: HeaderRule[]): CacheGroup[] {
+  const groups: CacheGroup[] = [];
   for (const { path, headers } of rules) {
     const value = headers.find(([name]) => name.toLowerCase() === 'cache-control')?.[1];
     if (!value || path === '/*') continue;
