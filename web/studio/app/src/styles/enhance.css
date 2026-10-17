@@ -1549,6 +1549,8 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-terms li{margin:2px 0}
 .aq-terms-back{text-align:center;margin-top:18px}
 .aq-inline-link{color:var(--aq-e-blue);font-weight:700;text-decoration:underline;text-underline-offset:3px}
+/* 문장 끝 링크가 줄 끝에서 쪼개져 '보기'만 다음 줄로 떨어지지 않게 — 한 덩어리로 넘어가고, 한 줄보다 길면 그 안에서 줄바꿈 */
+a.aq-inline-link{display:inline-block;max-width:100%}
 @media print{.aq-terms-toc,.aq-terms-back,.aq-sign-top span{display:none!important}.aq-terms{background:#fff;padding:0}}
 
 /* 배급 계약서 서명: 권리·배급 권한 확인 체크 */
