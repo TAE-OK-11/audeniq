@@ -78,7 +78,7 @@ export function Events() {
     }),
     // 예시도 서버처럼 날짜로 진행 상태를 정한다 — 고정값이면 지난 워크숍이 '진행 중'으로 남았다
     EVENT_SEED.map(e => ({ ...e, status: seedStatus(e) })),
-  ), []);
+  ), [], { key: 'events' });
   const EVENTS = data ?? [];
   const featured = EVENTS.find(e => e.status === 'ongoing')
     ?? EVENTS.find(e => e.status === 'upcoming')

@@ -1,6 +1,7 @@
 // 실제 API 호출 계층 — Cloudflare Worker(엣지)를 거쳐 Workers VPC → 메인 서버로 전달된다.
 // 브라우저는 세션 쿠키(HttpOnly)와 CSRF 토큰만 다루고, 서비스 비밀값은 엣지만 가진다.
 import { ApiError, messageForCode } from './errors';
+import { clearAsyncCache } from '../lib/asyncCache';
 
 export const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 
@@ -47,12 +48,31 @@ interface ReqOptions {
   signal?: AbortSignal;
 }
 
+/** 지금 받고 있는 GET — 같은 주소를 여러 곳에서 동시에 부르면(화면과 머리글이 같은 목록을 부르는 등) 한 번만 보낸다 */
+const inflight = new Map<string, Promise<unknown>>();
+
 /**
  * JSON 요청. 상태 변경 요청은 CSRF 토큰을 붙이고, 본문이 없으면 `{}`를 보낸다
  * (백엔드는 변경 요청에 JSON 본문을 요구한다).
+ * 같은 GET이 이미 가고 있으면 그 응답을 함께 기다린다. 바꾸는 요청이 끝나면 화면 데이터 캐시를 비운다(lib/asyncCache).
  */
-export async function req<T>(path: string, opts: ReqOptions = {}): Promise<T> {
+export function req<T>(path: string, opts: ReqOptions = {}): Promise<T> {
   const method = opts.method ?? 'GET';
+  if (method !== 'GET') return send<T>(path, opts).finally(clearAsyncCache);
+  if (opts.signal) return send<T>(path, opts);
+  // 401·서버 오류를 어떻게 알릴지가 다른 요청은 따로 보낸다
+  const k = `${path}|${opts.quiet401 ? 1 : 0}${opts.quietServer ? 1 : 0}${opts.timeoutMs ?? ''}`;
+  const hit = inflight.get(k);
+  if (hit) return hit as Promise<T>;
+  const p = send<T>(path, opts).finally(() => inflight.delete(k));
+  inflight.set(k, p);
+  return p;
+}
+
+async function send<T>(path: string, opts: ReqOptions): Promise<T> {
+  const method = opts.method ?? 'GET';
+  // 토큰을 받고 있는 중이면 바꾸는 요청은 그 토큰을 기다렸다가 붙인다 (bootstrapCsrf는 기다리지 않고 시작한다)
+  if (method !== 'GET' && csrfPending && path !== CSRF_PATH) await csrfPending.catch(() => {});
   const headers: Record<string, string> = { Accept: 'application/json' };
   let body: string | undefined;
   if (method !== 'GET') {
@@ -126,10 +146,16 @@ async function refreshSession(sentWith: string): Promise<boolean> {
   return csrfToken !== '' && csrfToken !== sentWith;
 }
 
+const CSRF_PATH = '/api/auth/csrf';
+/** 받고 있는 CSRF 토큰 — 여러 곳에서 동시에 불러도 한 번만 받는다 */
+let csrfPending: Promise<void> | null = null;
+
 /** 새로고침 후 세션 쿠키로 CSRF 토큰을 다시 받는다 */
-export async function bootstrapCsrf(): Promise<void> {
-  const r = await req<{ csrf_token: string }>('/api/auth/csrf', { method: 'POST', quiet401: true });
-  csrfToken = r.csrf_token;
+export function bootstrapCsrf(): Promise<void> {
+  csrfPending ??= req<{ csrf_token: string }>(CSRF_PATH, { method: 'POST', quiet401: true })
+    .then(r => { csrfToken = r.csrf_token; })
+    .finally(() => { csrfPending = null; });
+  return csrfPending;
 }
 
 /** 커서 페이지 목록을 끝까지 모은다 (최대 pages 페이지) */

@@ -60,7 +60,7 @@ function useNotices() {
     fetchNotices,
     (n): Notice => ({ id: n.id, title: n.title, body: n.body, pinned: !!n.pinned, date: toKstDate(n.published_at) }),
     NOTICES,
-  ), []);
+  ), [], { key: 'notices' });
   const ordered = useMemo(() => (state.data ?? []).slice().sort((a, b) => b.date.localeCompare(a.date)), [state.data]);
   return { ...state, ordered };
 }

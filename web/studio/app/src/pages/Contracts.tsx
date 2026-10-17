@@ -25,7 +25,7 @@ export function Contracts() {
   // 발매마다 신청서 + 계약서를 한 묶음으로 — 서명할 것, 검토·보완 중, 체결 완료 순, 같은 묶음 안에서는 최신순
   const ORDER: Record<BundleStage, number> = { 'to-sign': 0, needs: 1, review: 2, waiting: 3, signed: 4 };
   // 내 발매 목록에 있는 발매의 계약서만 — 삭제한 발매 등 목록에 없는 발매의 계약서는 보이지 않게
-  const { data: releases } = useAsync(() => api.listReleases(), []);
+  const { data: releases } = useAsync(() => api.listReleases(), [], { key: 'releases' });
   const mine = releases ? new Set(releases.map(r => r.id)) : null;
   const agreements = docs
     .filter(c => c.kind === 'agreements' && (!mine || !c.releaseId || mine.has(c.releaseId)))

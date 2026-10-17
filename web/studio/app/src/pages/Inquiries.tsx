@@ -292,7 +292,7 @@ export function Inquiries() {
   const confirm = useConfirm();
   const tickets = ticketsStore.use();
   const [params, setParams] = useSearchParams();
-  const { data: releases = [] } = useAsync(() => api.listReleases(), []);
+  const { data: releases = [] } = useAsync(() => api.listReleases(), [], { key: 'releases' });
   const artist = useMemo(() => releases.find(r => r.artist)?.artist ?? '', [releases]);
 
   // 플랫폼 요청 (아티스트 페이지·Content ID)
