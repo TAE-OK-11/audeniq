@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useToast } from '../components/Toast';
-import { ChipGroup, CountUp } from '../ui';
+import { CountUp } from '../ui';
+import { Segmented } from '../components/Segmented';
 import { money, num } from '../lib/format';
 import { todayStr } from '../lib/date';
 import { useGrowOnView, type CSSVarStyle } from '../hooks/useAnimations';
@@ -251,8 +252,9 @@ export function Reports() {
       {pending ? <ReportSkeleton title={`${periodLabel} 수익`} /> : (
       <div className="aq-report">
         <section className="aq-report-hero" aria-labelledby="reportHeroHeading">
-          {/* 고른 기간 안에서 어느 달을 볼지는 숫자 바로 위 칩으로 — 선택 상자 세 개가 숫자보다 먼저 보였다 */}
-          <ChipGroup size="sm" className="aq-report-period" label="리포트 기간" value={period as typeof PERIODS[number]['value']} options={PERIODS} onChange={setPeriod} />
+          {/* 고른 기간 안에서 어느 달을 볼지는 숫자 바로 위에서 — 다른 화면과 같은 세그먼트(회색 바탕 + 흰 알약)로.
+              각진 칩은 AUDENIQ의 다른 전환 버튼과 모양이 달랐다 */}
+          <Segmented className="aq-report-period" label="리포트 기간" value={period as typeof PERIODS[number]['value']} options={PERIODS} onChange={setPeriod} />
           <h2 id="reportHeroHeading">{periodLabel} 수익</h2>
           <strong className="aq-report-amount"><Money value={totalRevenue} animate /></strong>
           {insight?.revenueChange != null && (

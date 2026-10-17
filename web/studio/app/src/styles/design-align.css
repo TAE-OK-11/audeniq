@@ -14,7 +14,7 @@
 .aq-rp-card{padding:6px 6px 8px;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
 .aq-rp-card h3{display:flex;align-items:center;gap:6px;margin:0;padding:14px 14px 6px;font-size:var(--aq-fs-md);font-weight:700;letter-spacing:0;color:var(--aq-text-3)}
 .aq-rp-card h4{margin:10px 0 0;padding:8px 14px 2px;font-size:var(--aq-fs-xs);font-weight:700;color:var(--aq-text-4)}
-.aq-report-hero .aq-report-period{margin:0 0 18px}
+.aq-report-hero .aq-report-period{margin:0 0 18px;max-width:420px} /* 넓은 화면에서 카드 끝까지 늘어나지 않게 */
 /* 발매 1단계 — 접어 둔 선택 칸 열기 */
 .step-section .aq-more-info{margin:4px 0 8px;padding-left:0;--btn-fg:var(--aq-text-3)}
 .aq-dsp-unavailable{margin:16px 0 0;border-radius:var(--aq-r-xl);background:var(--aq-surface)}
@@ -213,7 +213,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 #view-release .aq-fix-list li{padding:12px 2px;background:none;border-radius:0}
 #view-release .aq-fix-step{padding:0;background:none;color:var(--aq-amber-700);font-size:12px}
 #view-release .aq-fix-list li.is-here .aq-fix-step{background:none;color:var(--aq-blue-500)}
-@media(max-width:560px){#view-release .aq-fix-list .ui-btn{justify-self:start;min-height:36px}}
+@media(max-width:560px){#view-release .aq-fix-list .ui-btn{justify-self:start}}
 #view-release .aq-cover-meta{padding:0 2px;background:none}
 #view-release .aq-cover-meta div{padding:8px 0}
 .row-actions>.ui-btn.aq-danger-text:first-child{margin-left:-10px}
@@ -662,10 +662,13 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
    바탕색으로 막대를 칠한다. 화면 아래에 붙은 파란 버튼(정산 계좌 등록의 '계좌 확인' 등) 쪽 색이 잡혀 막대가 파랗게 칠해졌다.
    화면 밖으로 대부분 빠진 흰 띠(index.html)를 맨 위에 두어 막대를 흰색으로 맞춘다. ::after는 사파리가 읽지 않아 실제 요소로 둔다.
    아이폰 사파리·휴대폰 폭에서만 켠다 (다른 브라우저에서는 화면 아래 4px 흰 줄이 보일 수 있다) */
-.aq-tint-bottom{display:none}
+.aq-tint-bottom,.aq-tint-top{display:none}
 @supports (-webkit-touch-callout:none) and (font:-apple-system-body){
   @media (max-width:767px){
     .aq-tint-bottom{display:block;position:fixed;left:0;right:0;bottom:-8px;min-height:12px;background:#fff;z-index:2147483000;pointer-events:none}
+    /* 위쪽도 같다 — 위 끝에 닿은 고정 요소가 없으면 사파리가 상태 표시줄 아래로 지나가는 내용을 흐리게 비춰 보였다
+       (발매 신청 머리처럼 sticky인 곳). 흰 띠를 두어 상태 표시줄 칸을 불투명한 흰색으로 */
+    .aq-tint-top{display:block;position:fixed;left:0;right:0;top:-8px;min-height:12px;background:#fff;z-index:2147483000;pointer-events:none}
   }
 }
 
@@ -810,7 +813,6 @@ button.settle-hero-account.is-button .min-0{display:grid}
 .settle-entry-amount.is-minus{color:var(--portal-ink)}
 .settle-entry-amount .aq-money.is-minus{color:inherit}
 .aq-statement-icon.is-minus{background:var(--aq-gray-100);color:var(--aq-text-3)}
-@media (max-width:600px){.settle-entry.aq-statement-card{grid-template-columns:40px minmax(0,1fr) auto;gap:12px}.settle-entry .aq-statement-icon{width:40px;height:40px;flex-basis:40px}}
 .settle-steps{display:flex;gap:4px;margin:8px 0 0;padding:0;list-style:none;font-size:11px;font-weight:700;color:var(--aq-text-4)}
 .settle-steps li{display:flex;align-items:center;gap:4px}
 .settle-steps li+li::before{content:"";width:12px;height:2px;border-radius:2px;background:var(--aq-gray-200)}
@@ -879,3 +881,10 @@ button.settle-hero-account.is-button .min-0{display:grid}
 @media (prefers-reduced-motion:reduce){
   :is(.aq-option,.aq-sign-provider,.aq-dsp,.aq-pick,.aq-cert-method,.aq-chip,.aq-file-btn,.aq-tab-item):is(:active,.is-pressed),.aq-pay-type:is(:active,.is-pressed) span{transform:none!important}
 }
+
+/* ---------- 디자인 통일 ----------
+   빈 화면·오류 안내의 제목은 h1이어도 화면 제목(28~36px)이 아니라 안내 제목 크기 — 404와 같게 */
+.ui-empty h1{font-size:var(--aq-fs-title-lg);line-height:1.35;letter-spacing:-.04em}
+
+/* 화면 머리는 불투명한 흰색 — 스크롤하면 반투명 + 흐림(유리 효과)으로 아래 내용이 비쳐 보였다 */
+.portal-header,.portal-header.is-scrolled{background:#fff!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
