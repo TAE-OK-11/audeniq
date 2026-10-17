@@ -5,7 +5,7 @@ import { PASSWORD_MIN } from '../api/client';
 import { authErrorMessage, messageForCode } from '../api/errors';
 import { SocialSignIn } from '../components/SocialSignIn';
 import { takeOAuthResult } from '../api/oauth';
-import { AUTO_FOCUS, AuthLayout, EMAIL_INPUT, EmailSuggest, FieldError, PasswordInput, focusFirst, isEmail } from '../components/AuthLayout';
+import { AUTO_FOCUS, AuthLayout, EMAIL_INPUT, EmailSuggest, FieldError, PasswordInput, focusFirst, isEmail, nextOnEnter } from '../components/AuthLayout';
 import { ApiError } from '../api/errors';
 import { CheckIcon } from '../components/Check';
 import { patchProfile } from '../store/profile';
@@ -94,7 +94,7 @@ export function Signup() {
           <input
             id="suName" type="text" required autoComplete="nickname" autoFocus={AUTO_FOCUS} maxLength={120} enterKeyHint="next"
             placeholder="플랫폼에 보일 아티스트 이름" aria-invalid={!!fe.name} aria-describedby={fe.name ? 'suNameErr' : undefined}
-            value={name} onChange={e => { setName(e.target.value); clear('name'); }}
+            value={name} onChange={e => { setName(e.target.value); clear('name'); }} onKeyDown={nextOnEnter('suEmail')}
           />
           <FieldError id="suNameErr">{fe.name}</FieldError>
         </div>
@@ -104,7 +104,7 @@ export function Signup() {
             id="suEmail" {...EMAIL_INPUT} required autoComplete="email"
             placeholder="이메일을 입력해 주세요" aria-invalid={!!fe.email} aria-describedby={fe.email ? 'suEmailErr' : undefined}
             value={email} onChange={e => { setEmail(e.target.value); setEmailDone(false); clear('email'); }}
-            onBlur={() => setEmailDone(true)}
+            onBlur={() => setEmailDone(true)} onKeyDown={nextOnEnter('suPassword')}
           />
           <FieldError id="suEmailErr">{fe.email}</FieldError>
           {emailDone && !fe.email && <EmailSuggest value={email} onApply={setEmail} />}
@@ -115,7 +115,7 @@ export function Signup() {
             id="suPassword" required autoComplete="new-password" minLength={PASSWORD_MIN}
             placeholder={`${PASSWORD_MIN}자 이상 입력해 주세요`} aria-describedby={fe.password ? 'suPasswordErr' : 'suPwRule suPwHelp'}
             aria-invalid={!!fe.password} enterKeyHint="next"
-            value={password} onChange={e => { setPassword(e.target.value); clear('password'); }}
+            value={password} onChange={e => { setPassword(e.target.value); clear('password'); }} onKeyDown={nextOnEnter('suConfirm')}
             show={showPw} onToggle={() => setShowPw(v => !v)}
           />
           <FieldError id="suPasswordErr">{fe.password}</FieldError>
@@ -166,7 +166,9 @@ export function Signup() {
         signup onError={setError}
         canSignup={() => {
           if (agreeTerms) return true;
-          setError('이용약관에 동의한 뒤 Google·Apple로 계속할 수 있어요.');
+          // 맨 위 빨간 상자 대신 동의할 칸으로 옮겨 그 아래에 알려 준다
+          setFe(f => ({ ...f, terms: '이용약관에 동의한 뒤 Google·Apple로 계속할 수 있어요.' }));
+          focusFirst(['suTerms']);
           return false;
         }}
       />

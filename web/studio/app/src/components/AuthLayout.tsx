@@ -88,6 +88,16 @@ export function FieldError({ id, children }: { id: string; children?: ReactNode 
   return <p className="ui-field-help aq-help-error" id={id} role="alert">{children}</p>;
 }
 
+/** 키보드의 '다음'(enterKeyHint=next) — Enter가 폼을 제출해 빈 칸 오류가 한꺼번에 뜨던 것을 다음 칸으로 옮기게.
+ *  한글 조합 중의 Enter(글자 확정)는 건드리지 않는다 */
+export function nextOnEnter(nextId: string) {
+  return (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter' || e.nativeEvent.isComposing || e.keyCode === 229) return;
+    e.preventDefault();
+    document.getElementById(nextId)?.focus();
+  };
+}
+
 /** 검사에서 걸린 첫 칸으로 부드럽게 옮겨 커서를 두고 한 번 흔든다 */
 export function focusFirst(ids: (string | false | undefined)[]) {
   const id = ids.find(Boolean);
