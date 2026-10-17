@@ -232,13 +232,18 @@ export function SelectHost() {
   useEffect(() => {
     let n = 0;
     let start: { x: number; y: number; el: HTMLSelectElement } | null = null;
-    const show = (el: HTMLSelectElement, viaTouch: boolean) => setOpen({ el, viaTouch, n: ++n });
+    let shown: HTMLSelectElement | null = null;
+    let focusTimer = 0;
+    let ownFocus = false; // 마우스로 열며 우리가 준 포커스는 그대로 둔다
+    const show = (el: HTMLSelectElement, viaTouch: boolean) => { shown = el; setOpen({ el, viaTouch, n: ++n }); };
 
     const onMouseDown = (e: MouseEvent) => {
       const el = eligible(e.target);
       if (!el || e.button !== 0) return;
       e.preventDefault();
+      ownFocus = true;
       el.focus({ preventScroll: true });
+      ownFocus = false;
       show(el, false);
     };
     const onTouchStart = (e: TouchEvent) => {
@@ -266,11 +271,27 @@ export function SelectHost() {
         show(el, false);
       }
     };
+    // 아이폰은 키보드의 '이전/다음'(또는 다른 경로)으로 select에 포커스가 가면 막을 수 없는 기본 휠을 바로 띄운다.
+    // 그러면 기본 휠과 우리 시트가 겹쳐 떴다 — 손가락 기기에서는 포커스가 들어오는 즉시 내보내(기본 휠 닫힘) 우리 시트만
+    const coarse = window.matchMedia?.('(pointer: coarse)');
+    const onFocusIn = (e: FocusEvent) => {
+      const el = eligible(e.target);
+      if (!el || ownFocus || !coarse?.matches) return;
+      el.blur();
+      // 포커스로 칸까지 스크롤되고 키보드가 내려가는 중에 열면 그 스크롤·크기 변화로 시트가 바로 닫힌다 — 멈춘 뒤에 연다
+      window.clearTimeout(focusTimer);
+      focusTimer = window.setTimeout(() => {
+        if (document.contains(el) && (shown !== el || !document.querySelector('.aq-picker-box.is-select'))) show(el, true);
+      }, 350);
+    };
+    document.addEventListener('focusin', onFocusIn, true);
     document.addEventListener('mousedown', onMouseDown, true);
     document.addEventListener('touchstart', onTouchStart, { capture: true, passive: true });
     document.addEventListener('touchend', onTouchEnd, { capture: true, passive: false });
     document.addEventListener('keydown', onKeyDown, true);
     return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener('focusin', onFocusIn, true);
       document.removeEventListener('mousedown', onMouseDown, true);
       document.removeEventListener('touchstart', onTouchStart, true);
       document.removeEventListener('touchend', onTouchEnd, true);
