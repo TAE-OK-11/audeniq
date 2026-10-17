@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import worker, { resolveAssetPath, studioRedirect } from "../src/worker.ts";
+import type { TransportEnv } from "../../shared/worker-types.ts";
 
 test("audeniq.com serves the landing site", () => {
   assert.equal(resolveAssetPath("audeniq.com", "/"), "/index.html");
@@ -23,7 +24,7 @@ test("old STUDIO entry points go to the React STUDIO", () => {
 });
 
 test("the Worker redirects STUDIO requests with 308", async () => {
-  const env = { ASSETS: { fetch: async () => new Response("landing") } };
+  const env: TransportEnv = { ASSETS: { fetch: async () => new Response("landing") } };
   const r = await worker.fetch(new Request("https://audeniq.com/studio/notices?page=2"), env);
   assert.equal(r.status, 308);
   assert.equal(r.headers.get("location"), "https://studio.audeniq.com/notices?page=2");
@@ -33,8 +34,8 @@ test("the Worker redirects STUDIO requests with 308", async () => {
 
 test("www redirects preserve paths and queries under the fixed apex authority", async () => {
   for (const path of ["/about?x=1", "//evil.example/login?x=1", "///evil.example/login", "/%2f%2fevil.example/login"]) {
-    const response = await worker.fetch(new Request(`https://www.audeniq.com${path}`), {});
-    const destination = new URL(response.headers.get("location"));
+    const response = await worker.fetch(new Request(`https://www.audeniq.com${path}`), {} as TransportEnv); // www redirects never reach ASSETS
+    const destination = new URL(response.headers.get("location") || "");
     assert.equal(response.status, 308);
     assert.equal(destination.origin, "https://audeniq.com");
     assert.equal(destination.pathname, path.startsWith('/about?') ? '/about/' : new URL(`https://www.audeniq.com${path}`).pathname);

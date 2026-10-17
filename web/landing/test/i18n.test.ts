@@ -8,29 +8,36 @@ import { dirname, join } from 'node:path';
 import worker from '../src/worker.ts';
 import { PAGE_PATHS } from '../src/public-routes.ts';
 import { strayHangul, translateHtml } from '../scripts/i18n.ts';
+import type { TransportEnv } from '../../shared/worker-types.ts';
+import type { TranslationMap } from '../scripts/i18n.ts';
+import type { Locale, LocaleFile, LocaleRegistry } from '../scripts/content-types.ts';
+
+/** The JSON-LD fields these checks read */
+interface GraphNode { '@type'?: string | string[]; '@id'?: string; name?: string; alternateName?: string; url?: string; inLanguage?: string; mainEntity?: { name: string; acceptedAnswer: { text: string } }[] }
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const read = path => readFileSync(join(root, path), 'utf8');
+const read = (path: string): string => readFileSync(join(root, path), 'utf8');
 const origin = 'https://audeniq.com';
-const env = {ASSETS:{fetch:async request=>{
+const env: TransportEnv = {ASSETS:{fetch:async (request: Request)=>{
   const file = join(root, 'public', new URL(request.url).pathname);
   return existsSync(file) ? new Response(readFileSync(file), {headers:{'Content-Type':'text/html; charset=utf-8'}}) : new Response('Not found', {status:404});
 }}};
-const get = path => worker.fetch(new Request(origin + path), env);
-const registry = JSON.parse(read('content/locales.json'));
+const get = (path: string): Promise<Response> => worker.fetch(new Request(origin + path), env);
+const registry: LocaleRegistry = JSON.parse(read('content/locales.json'));
 const published = registry.locales.filter(locale => locale.status === 'published');
-const decode = text => text.replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>');
-const attr = (tag, name) => tag.match(new RegExp(`\\s${name}="([^"]*)"`))?.[1];
-const keyOf = path => {
-  const locale = published.filter(item => item.prefix !== '/').find(item => path.startsWith(item.prefix)) || published.find(item => item.prefix === '/');
+const decode = (text: string): string => text.replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>');
+const attr = (tag: string, name: string): string | undefined => tag.match(new RegExp(`\\s${name}="([^"]*)"`))?.[1];
+const keyOf = (path: string): { locale: Locale; key: string } => {
+  // build-seo.ts refuses to build unless the default language is published at "/".
+  const locale = published.filter(item => item.prefix !== '/').find(item => path.startsWith(item.prefix)) || published.find(item => item.prefix === '/')!;
   return { locale, key: '/' + path.slice(locale.prefix.length) };
 };
-const pages = new Map();
+const pages = new Map<string, { status: number; robots: string | null; html: string }>();
 for (const path of PAGE_PATHS) {
   const response = await get(path);
   pages.set(path, { status: response.status, robots: response.headers.get('X-Robots-Tag'), html: await response.text() });
 }
-const alternates = html => Object.fromEntries([...html.matchAll(/<link rel="alternate" hreflang="([^"]+)" href="([^"]+)">/g)].map(match => [match[1], match[2]]));
+const alternates = (html: string): Record<string, string> => Object.fromEntries([...html.matchAll(/<link rel="alternate" hreflang="([^"]+)" href="([^"]+)">/g)].map(match => [match[1], match[2]]));
 
 test('every published language has a crawlable homepage and only published languages are routed', () => {
   for (const locale of published) assert.ok(PAGE_PATHS.includes(locale.prefix), locale.code);
@@ -47,14 +54,17 @@ test('html lang, direction, canonical, title and description are correct per lan
     assert.equal(page.status, 200, path);
     assert.equal(page.robots, null, path);
     const html = page.html;
-    const htmlTag = html.match(/<html[^>]*>/)[0];
+    const htmlTag = html.match(/<html[^>]*>/)?.[0];
+    assert.ok(htmlTag, path);
     assert.equal(attr(htmlTag, 'lang'), locale.lang, path);
     assert.equal(attr(htmlTag, 'dir') || 'ltr', locale.dir, path);
     assert.equal((html.match(/<link rel="canonical"/g) || []).length, 1, path);
     assert.ok(html.includes(`<link rel="canonical" href="${origin}${path}">`), `self canonical ${path}`);
     assert.match(html, /<meta name="robots" content="index, follow/, path);
-    const title = decode(html.match(/<title>([^<]+)<\/title>/)[1]);
-    const description = decode(html.match(/<meta name="description" content="([^"]+)">/)[1]);
+    const rawTitle = html.match(/<title>([^<]+)<\/title>/)?.[1], rawDescription = html.match(/<meta name="description" content="([^"]+)">/)?.[1];
+    assert.ok(rawTitle && rawDescription, path);
+    const title = decode(rawTitle);
+    const description = decode(rawDescription);
     assert.ok(title.length >= 15 && title.length <= 90, `title length ${path}: ${title}`);
     assert.ok(description.length >= 50, `description ${path}`);
     assert.ok(!titles.has(title), `duplicate title ${title}`); titles.add(title);
@@ -77,7 +87,8 @@ test('hreflang annotations are complete, reciprocal and match the sitemap', () =
       const target = href.slice(origin.length);
       assert.ok(PAGE_PATHS.includes(target), `hreflang target is published: ${href}`);
       if (hreflang === 'x-default') continue;
-      assert.deepEqual(alternates(pages.get(target).html), links, `reciprocal hreflang ${path} ↔ ${target}`);
+      // `pages` holds every PAGE_PATHS entry and target was just checked to be one.
+      assert.deepEqual(alternates(pages.get(target)!.html), links, `reciprocal hreflang ${path} ↔ ${target}`);
       assert.equal(keyOf(target).locale.hreflang, hreflang, `hreflang code ${href}`);
     }
     const entry = sitemap.match(new RegExp(`<url><loc>${origin}${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}</loc>[\\s\\S]*?</url>`))?.[0];
@@ -95,7 +106,8 @@ test('translations are complete: no Korean left outside the brand and language n
   }
   const source = read('index.html').split('</head>')[1].replace(/<!-- LANGUAGE_LINKS_START -->[\s\S]*?<!-- LANGUAGE_LINKS_END -->/, '');
   for (const locale of published.filter(item => item.code !== registry.default)) {
-    const file = JSON.parse(read(`content/i18n/${locale.code}.json`));
+    // Published languages always carry homepage translations (build-seo.ts fails otherwise).
+    const file: LocaleFile & { home: TranslationMap } = JSON.parse(read(`content/i18n/${locale.code}.json`));
     const { missing, unused } = translateHtml(source, file.home);
     assert.deepEqual(missing, [], `${locale.code} missing`);
     assert.deepEqual(unused, [], `${locale.code} has stale translations`);
@@ -104,13 +116,14 @@ test('translations are complete: no Korean left outside the brand and language n
 });
 
 test('structured data matches each language page and stays factual', () => {
-  const koFaq = (pages.get('/').html.match(/<details><summary>/g) || []).length;
+  const koFaq = (pages.get('/')!.html.match(/<details><summary>/g) || []).length;
   for (const [path, page] of pages) {
     const { locale, key } = keyOf(path);
     const blocks = [...page.html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
     assert.equal(blocks.length, 1, `one JSON-LD block ${path}`);
-    const graph = JSON.parse(blocks[0][1])['@graph'];
+    const graph: GraphNode[] = JSON.parse(blocks[0][1])['@graph'];
     const org = graph.find(node => node['@type'] === 'Organization');
+    assert.ok(org, `Organization ${path}`);
     assert.equal(org['@id'], `${origin}/#organization`);
     assert.equal(org.name, 'AUDENIQ');
     assert.equal(org.alternateName, '어데닉');
@@ -123,7 +136,7 @@ test('structured data matches each language page and stays factual', () => {
       assert.ok(body.includes(question.name), `visible question ${path}: ${question.name}`);
       assert.ok(body.includes(question.acceptedAnswer.text), `visible answer ${path}`);
     }
-    if (key === '/') assert.equal(webpage.mainEntity.length, koFaq, `FAQ parity ${path}`);
+    if (key === '/') assert.equal(webpage.mainEntity?.length, koFaq, `FAQ parity ${path}`);
     const json = JSON.stringify(graph);
     assert.doesNotMatch(json, /"(?:price|offers|aggregateRating|review|award)"\s*:/i, path);
     const visible = body.replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, '').replace(/<style\b[^>]*>[\s\S]*?<\/style>/g, '').replace(/<[^>]*>/g, '');
