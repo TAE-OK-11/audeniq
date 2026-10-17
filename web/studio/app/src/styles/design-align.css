@@ -860,3 +860,18 @@ button.settle-hero-account.is-button .min-0{display:grid}
 
 /* ---- UI 다듬기: 리포트 막대 — 달이 몇 개뿐이어도 막대가 화면 폭만큼 굵어지지 않게 ---- */
 .report-chart.has-values .report-bar{width:100%;max-width:72px;align-self:center}
+
+/* ---------- 누름 피드백 — 남은 요소도 같은 기준으로 (ui.css '누름 피드백') ----------
+   선택지·칩·탭 바·서비스 카드가 저마다 다른 크기(.94~.985)와 속도로 눌리고, 빠른 탭에서는 눌린 모습이 안 보였다.
+   모두 --aq-press-* 토큰과 .is-pressed(lib/press.ts)로 맞춰 누르면 바로 줄고, 떼면 살짝 튀며 돌아온다 */
+.aq-option,.aq-sign-provider{transition:background-color var(--aq-motion-short) var(--aq-ease),color var(--aq-motion-short) var(--aq-ease),border-color var(--aq-motion-short) var(--aq-ease),transform var(--aq-press-out) var(--aq-press-spring)!important}
+:is(.aq-dsp,.aq-pick,.aq-cert-method,.aq-pay-flow .aq-pay-type span){transition:background-color var(--aq-dur) var(--aq-ease),color var(--aq-dur) var(--aq-ease),box-shadow var(--aq-dur) var(--aq-ease),transform var(--aq-press-out) var(--aq-press-spring)}
+:is(.aq-chip,.aq-file-btn,.aq-tab-item){transition:background-color var(--aq-dur) var(--aq-ease),color var(--aq-dur) var(--aq-ease),transform var(--aq-press-out) var(--aq-press-spring)}
+:is(.aq-option,.aq-sign-provider,.aq-dsp,.aq-pick,.aq-cert-method):not(:disabled):is(:active,.is-pressed){transform:scale(var(--aq-press-row));transition-duration:var(--aq-press-in)!important}
+.aq-pay-flow .aq-pay-type:is(:active,.is-pressed) span{transform:scale(var(--aq-press-row));transition-duration:var(--aq-press-in)}
+:is(.aq-chip,.aq-file-btn:not([aria-disabled=true]),.aq-tab-item):not(:disabled):is(:active,.is-pressed){transform:scale(var(--aq-press-btn));transition-duration:var(--aq-press-in)}
+/* 고를 수 없는 건 눌리지도 않는다 — 예전 :active 규칙이 비활성 칸까지 줄였다 */
+:is(.aq-dsp,.aq-chip,.aq-cert-method,.aq-sign-provider):disabled,.aq-file-btn[aria-disabled=true]{transform:none!important}
+@media (prefers-reduced-motion:reduce){
+  :is(.aq-option,.aq-sign-provider,.aq-dsp,.aq-pick,.aq-cert-method,.aq-chip,.aq-file-btn,.aq-tab-item):is(:active,.is-pressed),.aq-pay-type:is(:active,.is-pressed) span{transform:none!important}
+}

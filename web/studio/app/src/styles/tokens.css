@@ -192,7 +192,7 @@
   --studio-shadow:0 16px 45px -32px rgba(27,51,104,.24);
   --aq-blue:var(--aq-primary); --aq-ink:var(--aq-text); --aq-muted:var(--aq-text-3); --aq-soft:#F2F6FF;
   --aq-gray:var(--aq-surface-2); --aq-radius:var(--aq-r-2xl);
-  --aq-motion-ease:var(--aq-ease); --aq-motion-fast:210ms; --aq-motion-page:510ms;
+  --aq-motion-ease:var(--aq-ease); --aq-motion-fast:var(--aq-dur);  /* 예전 이름 — 페이지 전환(--aq-motion-page)은 위 .4s 한 곳에서만 */
   --aq-final-blue:var(--aq-primary); --aq-final-ink:var(--aq-text); --aq-final-weak:var(--aq-text-3);
   --aq-final-soft:var(--aq-surface); --aq-final-soft-2:var(--aq-surface-2); --aq-final-ease:var(--aq-ease);
   --aq-e-ease:var(--aq-ease); --aq-e-spring:var(--aq-spring);
