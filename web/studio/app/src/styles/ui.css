@@ -932,13 +932,13 @@ legend{padding:0}
 
 /* ---------- 누름 피드백 ----------
    누르는 순간(.is-pressed — lib/press.ts, 또는 :active) 바로 줄어들고 면이 한 단계 진해지며,
-   손을 떼면 살짝 튀며 돌아온다. 짧게 톡 눌러도 최소 110ms는 눌린 모습이 보인다.
+   손을 떼면 짧고 가볍게 돌아온다(면 색도 같은 속도로). 짧게 톡 눌러도 최소 70ms는 눌린 모습이 보인다.
    크기·속도는 토큰(--aq-press-*) 하나로 모든 버튼·칩·줄이 같게. */
-.ui-btn{transition:background-color var(--aq-dur) var(--aq-ease),color var(--aq-dur) var(--aq-ease),opacity var(--aq-dur),transform var(--aq-press-out) var(--aq-press-spring)}
+.ui-btn{transition:background-color var(--aq-press-out) var(--aq-press-spring),color var(--aq-press-out) var(--aq-press-spring),opacity var(--aq-dur),transform var(--aq-press-out) var(--aq-press-spring)}
 .ui-btn:not(:disabled):is(:active,.is-pressed){transform:scale(var(--aq-press-btn));background:var(--btn-bg-hover);color:var(--btn-fg-hover);transition-duration:var(--aq-press-in)}
 :is(.ui-chip,.ui-seg>button,.ui-tab,.menu-toggle,.aq-header-bell,.header-profile){transition:background-color var(--aq-dur) var(--aq-ease),color var(--aq-dur) var(--aq-ease),transform var(--aq-press-out) var(--aq-press-spring)}
 :is(.ui-chip,.ui-seg>button,.ui-tab,.menu-toggle,.aq-header-bell,.header-profile):not(:disabled):is(:active,.is-pressed){transform:scale(var(--aq-press-btn));transition-duration:var(--aq-press-in)}
-:is(:is(a,button,[role=link],[role=button]).ui-row,:is(a,button).ui-stat,.aq-set-row,.aq-set-profile,.service-item,#portalNav .aq-nav-card button,#portalNav .aq-nav-me-row,#portalNav .aq-nav-cta,.aq-task,.aq-event-card,.aq-notice-card,.aq-ticket-card,.ui-choice,.aq-choice,.adm-row-link){transition:background-color var(--aq-dur) var(--aq-ease),transform var(--aq-press-out) var(--aq-press-spring),filter var(--aq-press-out) var(--aq-ease)}
+:is(:is(a,button,[role=link],[role=button]).ui-row,:is(a,button).ui-stat,.aq-set-row,.aq-set-profile,.service-item,#portalNav .aq-nav-card button,#portalNav .aq-nav-me-row,#portalNav .aq-nav-cta,.aq-task,.aq-event-card,.aq-notice-card,.aq-ticket-card,.ui-choice,.aq-choice,.adm-row-link){transition:background-color var(--aq-press-out) var(--aq-press-spring),transform var(--aq-press-out) var(--aq-press-spring),filter var(--aq-press-out) var(--aq-press-spring)}
 :is(:is(a,button,[role=link],[role=button]).ui-row,:is(a,button).ui-stat,.aq-set-row,.aq-set-profile,.service-item,#portalNav .aq-nav-card button,#portalNav .aq-nav-me-row,#portalNav .aq-nav-cta,.aq-task,.aq-event-card,.aq-notice-card,.aq-ticket-card,.ui-choice,.aq-choice,.adm-row-link):not(:disabled):is(:active,.is-pressed){transform:scale(var(--aq-press-row));filter:brightness(.97);transition-duration:var(--aq-press-in)}
 @media (prefers-reduced-motion:reduce){
   :is(.ui-btn,.ui-chip,.ui-seg>button,.ui-tab,.ui-row,.ui-stat,.aq-set-row,.aq-set-profile,.service-item,.ui-choice,.aq-choice,#portalNav button):is(:active,.is-pressed){transform:none!important}
