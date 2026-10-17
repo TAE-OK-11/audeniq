@@ -840,3 +840,23 @@ button.settle-hero-account.is-button .min-0{display:grid}
 .aq-task.is-warn .aq-task-go{color:var(--aq-amber-600)}
 .aq-task-more{display:flex;align-items:center;justify-content:center;gap:4px;width:100%;min-height:44px;margin-top:6px;border:0;border-radius:var(--aq-r-lg);background:none;font:inherit;font-size:14px;font-weight:600;color:var(--aq-text-3);cursor:pointer}
 .aq-task-more .is-flip{transform:rotate(180deg)}
+
+/* ---- UI 다듬기: 홈 ---- */
+/* 넓은 화면은 왼쪽 메뉴 맨 위에 '새 발매'가 있으니 제목 옆 버튼은 숨긴다(같은 버튼 두 개) */
+@media (min-width:1024px){#view-home>.ui-page-head>.ui-btn.aq-home-new{display:none}}
+/* '확인할 작업'·'내 발매' 두 카드 높이를 억지로 맞추지 않는다 — 짧은 쪽 아래가 크게 비었다 */
+@media (min-width:901px){#view-home .dashboard-columns{align-items:start}}
+/* 휴대폰 바로가기: 아이콘 위·글자 아래의 큰 칸(약 150px) → 아이콘 왼쪽·글자 오른쪽의 낮은 칸.
+   네 칸이 화면 한 장을 차지해 '확인할 작업'이 첫 화면 밖으로 밀렸다 */
+@media (max-width:760px){
+  #view-home .dashboard-grid{gap:8px;margin:8px 0 24px}
+  #view-home .dashboard-grid .service-item{min-height:0;flex-direction:row;align-items:center;justify-content:flex-start;gap:10px;padding:14px 12px;border-radius:var(--aq-r-xl)}
+  #view-home .dashboard-grid .service-item>div{min-width:0}
+  #view-home .dashboard-grid .service-item .ui-icon{flex:none;width:36px;height:36px}
+  #view-home .dashboard-grid .service-item .ui-icon svg{width:19px;height:19px}
+  #view-home .dashboard-grid .service-item h3{margin:0 0 2px;font-size:14px;line-height:1.3}
+  #view-home .dashboard-grid .service-item p{white-space:normal;font-size:12px;line-height:1.35}
+}
+
+/* ---- UI 다듬기: 리포트 막대 — 달이 몇 개뿐이어도 막대가 화면 폭만큼 굵어지지 않게 ---- */
+.report-chart.has-values .report-bar{width:100%;max-width:72px;align-self:center}
