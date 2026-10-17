@@ -319,7 +319,7 @@ export function Settlement() {
         </button>
         <div className="settle-hero-actions">
           {MOCK && <button type="button" className="ui-btn is-soft is-lg" onClick={() => setShowStatement(true)}>예시 정산 추가</button>}
-          <button type="button" className="ui-btn is-primary is-lg" onClick={openPayoutModal}>수익 받기</button>
+          <button type="button" className="ui-btn is-primary is-lg" onClick={openPayoutModal}>{paymentRegistered ? '수익 받기' : '계좌 등록하기'}</button>
         </div>
       </section>
       <SplitsReceived />

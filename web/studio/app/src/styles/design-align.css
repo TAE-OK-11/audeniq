@@ -14,6 +14,11 @@
 .aq-rp-card{padding:6px 6px 8px;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
 .aq-rp-card h3{display:flex;align-items:center;gap:6px;margin:0;padding:14px 14px 6px;font-size:var(--aq-fs-md);font-weight:700;letter-spacing:0;color:var(--aq-text-3)}
 .aq-rp-card h4{margin:10px 0 0;padding:8px 14px 2px;font-size:var(--aq-fs-xs);font-weight:700;color:var(--aq-text-4)}
+.aq-report-hero .aq-report-period{margin:0 0 18px}
+/* 발매 1단계 — 접어 둔 선택 칸 열기 */
+.step-section .aq-more-info{margin:4px 0 8px;padding-left:0;--btn-fg:var(--aq-text-3)}
+.aq-rp-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-right:14px}
+.aq-rp-head .ui-btn{margin-top:8px}
 .aq-report-count{font-size:var(--aq-fs-xs);font-weight:700;color:var(--aq-blue-500)}
 .aq-report-rows{display:grid;margin:0;padding:0;list-style:none}
 .aq-report-rows li{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:56px;padding:10px 14px;border-radius:var(--aq-r-lg)}
@@ -424,7 +429,6 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 /* 음악 리포트 — 휴대폰에서 고르기 칸 셋을 한 줄에 우겨 넣어 글자가 잘리던 것: 기간 둘은 한 줄, 발매는 다음 줄 전체 */
 @media (max-width:760px){
   #view-reports .report-tools{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
-  #view-reports .report-tools>#reportRelease{grid-column:1/-1}
   #view-reports .report-tools>*{width:100%}
 }
 .aq-set-card .aq-set-help{margin:0;padding:2px 14px 8px}

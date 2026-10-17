@@ -24,7 +24,7 @@ import { fixCountWord, fixPath, isDocumentFix, resolveCorrection, splitCorrectio
 import { checkAudioFile, formatDuration, specLabel } from '../lib/audioSpec';
 import { AGREEMENTS, SIGNER_ROLES, compactSignature, createApplication } from '../lib/application';
 import {
-  artistIssue, artistWarning, coverIssue, isrcValid, minReleaseDate, mmssToSeconds, normalizeIsrc,
+  artistIssue, artistWarning, COVER_MIN, coverIssue, isrcValid, LEAD_DAYS, minReleaseDate, mmssToSeconds, normalizeIsrc,
   profileLinkIssue, PROFILE_LINKS, releaseTypeIssue, rightsLineIssue, titleIssue, titleWarning, upcValid,
 } from '../lib/dsp';
 import { uid } from '../lib/store';
@@ -64,15 +64,18 @@ function shiftDate(d: string, days: number): string {
 }
 
 const STEPS = [
-  { short: '발매 정보', kicker: '01 / 06 · 발매 정보', title: '어떤 음악을\n발매할까요?', sub: '발매 정보와 아티스트명을 입력해 주세요.' },
-  { short: '트랙 등록', kicker: '02 / 06 · 트랙 등록', title: '발매할 곡을\n등록해 주세요.', sub: '곡별 음원 파일과 크레딧을 입력해 주세요.' },
-  { short: '커버아트', kicker: '03 / 06 · 커버아트', title: '커버아트를\n등록해 주세요.', sub: '정사각형 커버아트를 등록해 주세요.' },
-  { short: '배급 설정', kicker: '04 / 06 · 배급 설정', title: '언제, 어디에\n발매할까요?', sub: '발매일과 배급할 플랫폼을 선택해 주세요.' },
+  { short: '발매 정보', kicker: '01 / 06 · 발매 정보', title: '어떤 음악을\n발매할까요?', sub: '별표(*) 칸만 채우면 다음 단계로 넘어갈 수 있어요.' },
+  { short: '트랙 등록', kicker: '02 / 06 · 트랙 등록', title: '발매할 곡을\n등록해 주세요.', sub: '곡마다 음원 파일과 크레딧을 넣어요.' },
+  { short: '커버아트', kicker: '03 / 06 · 커버아트', title: '커버아트를\n등록해 주세요.', sub: `${COVER_MIN}×${COVER_MIN}px 이상 정사각형 이미지가 필요해요.` },
+  { short: '배급 설정', kicker: '04 / 06 · 배급 설정', title: '언제, 어디에\n발매할까요?', sub: `보통 접수일로부터 ${LEAD_DAYS.normal}일 뒤부터 발매할 수 있어요.` },
   { short: '권리 확인', kicker: '05 / 06 · 권리 확인', title: '음악의 권리를\n확인해 주세요.', sub: '권리자 정보와 필요한 증빙을 준비해 주세요.' },
-  { short: '최종 확인', kicker: '06 / 06 · 최종 확인', title: '발매 정보를\n마지막으로 확인해 주세요.', sub: '입력한 정보와 빠진 항목을 확인해 주세요.' },
+  { short: '최종 확인', kicker: '06 / 06 · 최종 확인', title: '발매 정보를\n마지막으로 확인해 주세요.', sub: '빠진 항목이 있으면 여기서 알려 드려요.' },
 ];
 
 /** 1~5는 '한·두·세·네·다섯 가지만', 그 이상은 'N가지를' */
+
+/** 1단계에서 접어 두는 선택 칸 */
+const MORE_INFO_FIELDS = ['f-label', 'f-notes'];
 
 const RIGHTS_CHECKS: [string, string][] = [
   ['rightsMaster', '음원 마스터를 배급할 권한이 있어요.'],
@@ -1404,6 +1407,8 @@ export function Upload() {
   const [hasApplication, setHasApplication] = useState(false);
   const [origDate, setOrigDate] = useState('');
   const [expandedTracks, setExpandedTracks] = useState<Set<string>>(new Set());
+  // 레이블 표기·앨범 소개는 선택 항목이라 접어 둔다 — 첫 단계에 칸이 여덟 개라 무엇이 꼭 필요한지 흐렸다
+  const [moreInfo, setMoreInfo] = useState(false);
   // 트랙 단계: 곡이 여럿이면 하나만 펼친다 (null = 다 접음)
   const [openTrack, setOpenTrack] = useState<string | null | undefined>(undefined);
   const [save, setSave] = useState<SaveState>({ kind: 'idle' });
@@ -2075,6 +2080,7 @@ export function Upload() {
     }
     const tm = c.field && /^(?:tr|trackFile)-(\d+)/.exec(c.field);
     if (tm && form.tracks[+tm[1]]) setOpenTrack(form.tracks[+tm[1]].id);
+    if (c.field && MORE_INFO_FIELDS.includes(c.field)) setMoreInfo(true);
     if (c.step !== step) goStep(c.step);
     setFocusField(c.field ? { id: c.field, n: Date.now() } : null);
   };
@@ -2099,6 +2105,7 @@ export function Upload() {
   const signerName = signer.touched ? signer.name : (form.ownership || profile.name || '');
   const resubmit = !!editId && origStatus !== 'draft' && hasApplication;
   const s = STEPS[step];
+  const showMoreInfo = moreInfo || !!form.label.trim() || !!form.notes.trim() || fixes.some(f => !!f.field && MORE_INFO_FIELDS.includes(f.field));
   // 곡 입력이 다 됐는지 — 접힌 곡 요약의 '입력 완료/필요' 표시
   const trackComplete = (t: Track) => !!(t.title.trim() && t.composers.trim() && (t.instrumental || t.lyricists.trim()) && t.audioName && (MOCK || t.assetId));
   // 처음엔 아직 덜 채운 첫 곡(없으면 첫 곡)을 펼친다
@@ -2335,19 +2342,27 @@ export function Upload() {
                   />
                 )}
               </div>
-              <div className="ui-field">
-                <label htmlFor="f-label">레이블 / 발매사 표기</label>
+              {showMoreInfo && (
+              <div className="ui-field aq-reveal">
+                <label htmlFor="f-label">레이블 / 발매사 표기 <span className="aq-optional">선택</span></label>
                 <input id="f-label" value={form.label} onChange={e => set('label', e.target.value)} maxLength={120} placeholder="권리 계약에 맞는 표기" />
               </div>
+              )}
             </div>
-            <div className="ui-field">
-              <label htmlFor="f-notes">앨범 소개</label>
+            {showMoreInfo ? (
+            <div className="ui-field aq-reveal">
+              <label htmlFor="f-notes">앨범 소개 <span className="aq-optional">선택</span></label>
               <textarea
                 id="f-notes" value={form.notes} onChange={e => set('notes', e.target.value)}
                 rows={3} maxLength={1500} placeholder="발매 소개와 전달 메모"
               />
               <p className="ui-field-help aq-counter">{form.notes.length} / 1500</p>
             </div>
+            ) : (
+              <button type="button" className="ui-btn is-text aq-more-info" aria-expanded={false} onClick={() => setMoreInfo(true)}>
+                레이블 표기·앨범 소개 더 입력하기<Glyph name="chevron-down" size={14} />
+              </button>
+            )}
             <h2 className="subhead">플랫폼 아티스트 프로필</h2>
             <div className="aq-choice-row" role="radiogroup" aria-label="플랫폼 아티스트 프로필">
               {([[true, '처음 발매해요', '플랫폼에 새 아티스트 페이지가 만들어져요.'], [false, '이미 발매한 적이 있어요', '기존 아티스트 페이지에 이어서 올라가요.']] as const).map(([v, t, sub]) => (
