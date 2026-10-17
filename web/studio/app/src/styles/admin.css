@@ -699,20 +699,20 @@
 @keyframes adm-glow{0%{box-shadow:0 0 0 0 rgba(59,99,243,.35)}100%{box-shadow:0 0 0 10px rgba(59,99,243,0)}}
 @media (prefers-reduced-motion:no-preference){
   /* 카드·목록이 한 번에 살짝 */
-  :is(.adm-checks,.adm-tracks,.adm-dsp-list,.adm-dspreq-grid,.adm-dsp-grid)>*,.adm-brief.is-compact ul>li,.adm-fixes>*{animation:adm-rise .42s var(--adm-ease) both}
+  :is(.adm-checks,.adm-tracks,.adm-dsp-list,.adm-dspreq-grid,.adm-dsp-grid)>*,.adm-brief.is-compact ul>li,.adm-fixes>*{animation:adm-rise var(--aq-motion-long) var(--adm-ease) both}
   /* 머리·큰 카드 */
-  .adm-hero,.adm-release-hero,.adm-brief.is-compact,.adm-decide{animation:adm-rise .46s var(--adm-ease) .04s both}
-  .adm-hero-num{animation:adm-scale-in .55s var(--adm-ease) .12s both}
+  .adm-hero,.adm-release-hero,.adm-brief.is-compact,.adm-decide{animation:adm-rise var(--aq-motion-long) var(--adm-ease) .04s both}
+  .adm-hero-num{animation:adm-scale-in var(--aq-motion-long) var(--adm-ease) .12s both}
   /* 펼치기: 안쪽 내용이 위에서 살짝 내려오며 */
   :is(.adm-body,#modal) details[open]>:not(summary){animation:adm-reveal .28s var(--adm-ease) both}
   /* 아래 결정 바는 올라오며 등장 */
-  @media (max-width:1180px){.adm-decide-bar{animation:adm-bar-up .45s var(--adm-ease) .15s both}}
+  @media (max-width:1180px){.adm-decide-bar{animation:adm-bar-up var(--aq-motion-long) var(--adm-ease) .15s both}}
   /* 하위 탭 밑줄이 그어지며 */
   /* 칩·개수는 살짝 튀게 */
-  .adm-jump button span.is-bad{animation:adm-scale-in .4s var(--adm-ease) both}
+  .adm-jump button span.is-bad{animation:adm-scale-in var(--aq-motion-long) var(--adm-ease) both}
   /* 2인 승인·확인 필요 표시는 한 번 퍼지는 빛 */
-  .adm-check-mark{animation:adm-scale-in .4s var(--adm-ease) both,adm-glow 1.2s ease-out .4s 1}
-  .adm-check.is-sensitive .adm-check-mark{animation:adm-scale-in .4s var(--adm-ease) both}
+  .adm-check-mark{animation:adm-scale-in var(--aq-motion-long) var(--adm-ease) both,adm-glow 1.2s ease-out .4s 1}
+  .adm-check.is-sensitive .adm-check-mark{animation:adm-scale-in var(--aq-motion-long) var(--adm-ease) both}
   /* 담당 상태 점: 내 담당이면 은은하게 숨쉬기 */
   .adm-claim.is-mine .adm-claim-who i{animation:adm-breathe 2.4s ease-in-out infinite}
   @keyframes adm-breathe{0%,100%{box-shadow:0 0 0 3px rgba(74,222,128,.18)}50%{box-shadow:0 0 0 6px rgba(74,222,128,.08)}}
