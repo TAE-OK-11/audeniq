@@ -8,8 +8,10 @@
  * 설정: BACKEND_URL(기본 https://api-origin.audeniq.com), EDGE_SERVICE_SECRET(secret)
  */
 import { proxyToBackend, requireHttps, secureResponse, serveAssets } from '../shared/transport.ts';
+import type { WorkerRequest } from '../shared/transport.ts';
+import type { ExecutionContext, TransportEnv } from '../shared/worker-types.ts';
 
-async function proxy(request, env) {
+async function proxy(request: WorkerRequest, env: TransportEnv): Promise<Response> {
   const out = await proxyToBackend(request, env, { site: 'studio' });
   out.headers.set('Access-Control-Allow-Origin', 'https://studio.audeniq.com');
   out.headers.set('Access-Control-Allow-Credentials', 'true');
@@ -17,7 +19,7 @@ async function proxy(request, env) {
 }
 
 const studioWorker = {
-  async fetch(request, env) {
+  async fetch(request: WorkerRequest, env: TransportEnv, _ctx?: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname.startsWith('/api/') || url.pathname === '/ready') return proxy(request, env);
     // 그 외는 정적 에셋 (없는 화면 경로는 index.html로 SPA 폴백)
@@ -39,7 +41,7 @@ const studioWorker = {
 };
 
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request: WorkerRequest, env: TransportEnv, ctx?: ExecutionContext): Promise<Response> {
     const refused = requireHttps(request);
     if (refused) return refused;
     return secureResponse(await studioWorker.fetch(request, env, ctx));

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync,existsSync} from 'node:fs';
 const root=new URL('../',import.meta.url);
-const read=p=>readFileSync(new URL(p,root),'utf8');
+const read=(p:string):string=>readFileSync(new URL(p,root),'utf8');
 const cfg=JSON.parse(read('wrangler.jsonc'));
 test('studio Worker serves the React build; content lives in the backend',()=>{
  assert.equal(cfg.name,'audeniq-studio');
