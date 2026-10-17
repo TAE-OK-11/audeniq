@@ -356,7 +356,8 @@ jobs:
     steps:
       - checkout
       - skip-unless-changed:
-          paths: '^(web/studio/|web/shared/|deploy/aws/)'
+          # Worker·배포 스크립트 타입 검사(루트 tsconfig.json)를 여기서 하므로 그 파일들이 바뀌어도 돈다
+          paths: '^(web/studio/|web/shared/|deploy/aws/|web/admin/worker\.ts|web/(landing|survey)/(src|scripts|test)/|tsconfig\.json)'
       - setup-bun:
           version_file: web/studio/.bun-version
       - run:
@@ -366,6 +367,10 @@ jobs:
             bun install --frozen-lockfile
             bun run test
             bun run build
+      - run:
+          name: Type check Workers and deploy scripts
+          working_directory: web/studio/app
+          command: bunx tsc -p ../../../tsconfig.json
       - run:
           name: Worker tests
           working_directory: web/studio
