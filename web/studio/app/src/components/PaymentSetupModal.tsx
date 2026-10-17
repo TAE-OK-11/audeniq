@@ -231,7 +231,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
 
   const done = () => {
     onClose();
-    toast('수익 정산 정보가 등록됐어요.');
+    toast('수익 정산 정보를 등록했어요.');
   };
 
   const allAgreed = agrees.every(Boolean);

@@ -113,7 +113,7 @@ export function Sign() {
         {brand}
         <section className="aq-sign-card aq-sign-closed" aria-busy={!loadError}>
           {/* 막다른 화면이 되지 않게 다음에 할 일을 버튼으로 — 요청한 분이 누군지 모를 때는 고객지원으로 */}
-          {loadError ? <><h1>서명 링크를 열 수 없어요</h1><p>{loadError} 링크가 바뀌었거나 기간이 지났을 수 있어요. 서명을 요청한 분께 새 링크를 받아 주세요.</p>
+          {loadError ? <><h1>서명 링크를 열 수 없어요</h1><p>{loadError} 링크가 바뀌었거나 기간이 지났을 수 있어요. 서명을 요청한 분에게 새 링크를 받아 주세요.</p>
             <a href={`mailto:${SUPPORT_EMAIL}`} className="ui-btn is-soft">고객지원에 문의하기</a></>
             : <p className="muted">문서를 불러오고 있어요…</p>}
         </section>
@@ -132,9 +132,9 @@ export function Sign() {
   const demoProvider = v.identity_provider.name === 'test' || v.identity_provider.name === 'demo';
 
   if (closed) {
-    const msg = v.status === 'DECLINED' ? ['서명을 거절했어요', '요청한 분께 거절 사실이 전달돼요. 내용을 고쳐 다시 요청하면 새 링크로 받게 돼요.']
+    const msg = v.status === 'DECLINED' ? ['서명을 거절했어요', '요청한 분에게 거절 사실이 전달돼요. 내용을 고쳐 다시 요청하면 새 링크로 받게 돼요.']
       : v.status === 'CANCELLED' ? ['요청이 취소됐어요', '서명을 요청한 분이 이 요청을 취소했어요. 이 링크로는 서명할 수 없어요.']
-        : ['서명 링크 기간이 지났어요', '보안을 위해 서명 링크는 정해진 기간에만 쓸 수 있어요. 요청한 분께 새 링크를 받아 주세요.'];
+        : ['서명 링크 기간이 지났어요', '보안을 위해 서명 링크는 정해진 기간에만 쓸 수 있어요. 요청한 분에게 새 링크를 받아 주세요.'];
     return (
       <main className="aq-sign-page">
         {brand}
@@ -153,7 +153,7 @@ export function Sign() {
         <p className="eyebrow">{v.form}</p>
         <h1>{v.title}</h1>
         <p className="aq-sign-lead">
-          {v.requested_by || v.artist || '발매 신청인'}님이 <b>{v.signer_name}</b>님께 서명을 요청했어요.
+          {v.requested_by || v.artist || '발매 신청인'}님이 <b>{v.signer_name}</b>님에게 서명을 요청했어요.
           {v.status !== 'SIGNED' && <> 본인확인을 마친 뒤 문서를 읽고 직접 서명해 주세요.</>}
         </p>
         <dl className="aq-sign-facts">
@@ -190,7 +190,7 @@ export function Sign() {
           ) : !v.identity_provider.ready ? (
             <div className="ui-callout is-warn">
               본인확인 서비스(휴대폰·간편인증)를 연결하고 있어요. 연결되기 전에는 법적 효력이 있는 전자 서명을 할 수 없어요.
-              급하면 서면 허락서에 서명해 요청한 분께 전달해 주세요.
+              급하면 서면 허락서에 서명해 요청한 분에게 전달해 주세요.
             </div>
           ) : demoProvider ? (
             <>

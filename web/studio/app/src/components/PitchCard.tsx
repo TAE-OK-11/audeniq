@@ -17,7 +17,7 @@ interface State {
 }
 
 const STATUS: Record<string, string> = {
-  SUBMITTED: '접수됐어요. 담당자가 확인하고 있어요.',
+  SUBMITTED: '신청을 받았어요. 담당자가 확인하고 있어요.',
   IN_REVIEW: '담당자가 검토하고 있어요.',
   PITCHED: '플랫폼 에디터에게 전달했어요. 선정 여부는 플랫폼이 정해요.',
   SELECTED: '플레이리스트에 선정됐어요!',
