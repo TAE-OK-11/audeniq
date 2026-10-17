@@ -2,40 +2,46 @@ import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync } from 'nod
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { translateHtml, translatableKeys, strayHangul } from './i18n.mjs';
+import { translateHtml, translatableKeys, strayHangul } from './i18n.ts';
+import type { Faq, GuidePage, GuideUi, Locale, LocaleFile, LocaleMeta, LocaleRegistry, PagesFile, ResolvedGuidePage, SiteManifest } from './content-types.ts';
+
+/** A schema.org JSON-LD node */
+type JsonLd = Record<string, unknown>;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const read = path => readFileSync(join(root, path), 'utf8');
-const write = (path, text) => {
+const read = (path: string): string => readFileSync(join(root, path), 'utf8');
+const write = (path: string, text: string): void => {
   mkdirSync(dirname(join(root, path)), { recursive: true });
   writeFileSync(join(root, path), text);
 };
-const esc = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
-const clean = text => text.replace(/<span[^>]*>[\s\S]*?<\/span>/g, '').replace(/<br[^>]*>/g, ' ').replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+const entities: Record<string, string> = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};
+const esc = (value: string | undefined): string => String(value).replace(/[&<>"']/g, char => entities[char]);
+const clean = (text: string): string => text.replace(/<span[^>]*>[\s\S]*?<\/span>/g, '').replace(/<br[^>]*>/g, ' ').replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
 const origin = 'https://audeniq.com';
 const org = `${origin}/#organization`;
 const site = `${origin}/#website`;
-const data = JSON.parse(read('content/pages.json'));
+const data: PagesFile = JSON.parse(read('content/pages.json'));
 
 // ---- Languages -------------------------------------------------------------
-const registry = JSON.parse(read('content/locales.json'));
+const registry: LocaleRegistry = JSON.parse(read('content/locales.json'));
 const printKeys = process.argv.includes('--print-keys');
 const locales = registry.locales.filter(locale => locale.status === 'published' && (!printKeys || locale.code === registry.default));
-const byCode = Object.fromEntries(locales.map(locale => [locale.code, locale]));
+const byCode: Record<string, Locale> = Object.fromEntries(locales.map(locale => [locale.code, locale]));
 if (!byCode[registry.default] || byCode[registry.default].prefix !== '/') throw new Error('The Korean root must stay published at /');
 for (const locale of locales) {
   if (!/^\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?$/.test(locale.prefix)) throw new Error(`Invalid prefix ${locale.prefix}`);
   if (!['ltr','rtl'].includes(locale.dir)) throw new Error(`Invalid dir ${locale.code}`);
 }
-const i18n = Object.fromEntries(locales.map(locale => [locale.code, JSON.parse(read(`content/i18n/${locale.code}.json`))]));
-const ko = i18n[registry.default];
-const isDefault = locale => locale.code === registry.default;
-const localeUrl = (locale, key) => origin + locale.prefix + key.slice(1);
-const localePath = (locale, key) => locale.prefix + key.slice(1);
-const updatedOf = locale => isDefault(locale) ? data.updated : i18n[locale.code].updated;
+const i18n: Record<string, LocaleFile> = Object.fromEntries(locales.map(locale => [locale.code, JSON.parse(read(`content/i18n/${locale.code}.json`))]));
+// The Korean source file always carries the guide UI strings, including the Korean-only RSS title.
+const ko = i18n[registry.default] as LocaleFile & { ui: GuideUi & { rssTitle: string } };
+const isDefault = (locale: Locale): boolean => locale.code === registry.default;
+const localeUrl = (locale: Locale, key: string): string => origin + locale.prefix + key.slice(1);
+const localePath = (locale: Locale, key: string): string => locale.prefix + key.slice(1);
+const updatedOf = (locale: Locale): string => isDefault(locale) ? data.updated : i18n[locale.code].updated;
 for (const locale of locales.filter(locale => !isDefault(locale))) {
   const file = i18n[locale.code];
-  for (const field of ['title','description','ogDescription','ogImageAlt','orgDescription','websiteDescription','languageLabel','languageNav']) {
+  for (const field of ['title','description','ogDescription','ogImageAlt','orgDescription','websiteDescription','languageLabel','languageNav'] as const) {
     if (!file.meta?.[field]) throw new Error(`content/i18n/${locale.code}.json: meta.${field} missing`);
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(file.updated || '')) throw new Error(`content/i18n/${locale.code}.json: updated date missing`);
@@ -44,38 +50,38 @@ for (const locale of locales.filter(locale => !isDefault(locale))) {
   }
 }
 // Guide pages per language (Korean from pages.json, others optional in their i18n file).
-const guidesOf = locale => isDefault(locale) ? data.pages : (i18n[locale.code].pages || []);
+const guidesOf = (locale: Locale): GuidePage[] => isDefault(locale) ? data.pages : (i18n[locale.code].pages || []);
 const pageKeys = ['/', ...data.pages.map(page => page.path)];
-const hasPage = (locale, key) => key === '/' || guidesOf(locale).some(page => page.path === key);
-const versions = key => locales.filter(locale => hasPage(locale, key));
-const xDefault = key => {
+const hasPage = (locale: Locale, key: string): boolean => key === '/' || guidesOf(locale).some(page => page.path === key);
+const versions = (key: string): Locale[] => locales.filter(locale => hasPage(locale, key));
+const xDefault = (key: string): string => {
   const preferred = byCode[registry.xDefault];
   return localeUrl(preferred && hasPage(preferred, key) ? preferred : byCode[registry.default], key);
 };
-const hreflangLinks = key => [...versions(key).map(locale => `<link rel="alternate" hreflang="${locale.hreflang}" href="${localeUrl(locale, key)}">`),
+const hreflangLinks = (key: string): string => [...versions(key).map(locale => `<link rel="alternate" hreflang="${locale.hreflang}" href="${localeUrl(locale, key)}">`),
   `<link rel="alternate" hreflang="x-default" href="${xDefault(key)}">`].join('\n');
-const ogAlternates = (locale, key) => versions(key).filter(other => other !== locale)
+const ogAlternates = (locale: Locale, key: string): string => versions(key).filter(other => other !== locale)
   .map(other => `<meta property="og:locale:alternate" content="${other.ogLocale}">`).join('');
-const languageNav = (locale, key) => {
+const languageNav = (locale: Locale, key: string): string => {
   const meta = isDefault(locale) ? ko.meta : i18n[locale.code].meta;
   return `<nav class="footer-languages" aria-label="${esc(meta.languageNav)}"><span>${esc(meta.languageLabel)}</span>${versions(key).map(other =>
     `<a href="${localePath(other, key)}" hreflang="${other.hreflang}" lang="${other.lang}"${other === locale ? ' aria-current="page"' : ''}>${esc(other.name)}</a>`).join('')}</nav>`;
 };
 
 // ---- Structured data ---------------------------------------------------------
-const organization = locale => ({
+const organization = (locale: Locale): JsonLd => ({
   '@type':'Organization', '@id':org, name:'AUDENIQ', alternateName:'어데닉', url:`${origin}/`,
   description:(isDefault(locale) ? ko : i18n[locale.code]).meta.orgDescription,
   email:'audeniq.official@gmail.com',
   logo:{'@type':'ImageObject',url:`${origin}/assets/AUDENIQ_Logo_Light.svg`},
   sameAs:['https://www.instagram.com/audeniq.official','https://www.threads.com/@audeniq.official','https://x.com/audeniq']
 });
-const website = locale => ({'@type':'WebSite','@id':site,url:`${origin}/`,name:'AUDENIQ',alternateName:'어데닉',
+const website = (locale: Locale): JsonLd => ({'@type':'WebSite','@id':site,url:`${origin}/`,name:'AUDENIQ',alternateName:'어데닉',
   inLanguage:locales.map(item => item.lang),
   description:(isDefault(locale) ? ko : i18n[locale.code]).meta.websiteDescription, publisher:{'@id':org}});
-const questions = faqs => faqs.map(faq => ({'@type':'Question',name:faq.q,acceptedAnswer:{'@type':'Answer',text:faq.a}}));
-const schemaScript = graph => `<script type="application/ld+json">${JSON.stringify({'@context':'https://schema.org','@graph':graph}).replace(/</g,'\\u003c')}</script>`;
-const faqOf = html => {
+const questions = (faqs: Faq[]): JsonLd[] => faqs.map(faq => ({'@type':'Question',name:faq.q,acceptedAnswer:{'@type':'Answer',text:faq.a}}));
+const schemaScript = (graph: JsonLd[]): string => `<script type="application/ld+json">${JSON.stringify({'@context':'https://schema.org','@graph':graph}).replace(/</g,'\\u003c')}</script>`;
+const faqOf = (html: string): Faq[] => {
   const section = html.match(/<section[^>]*id="faq"[\s\S]*?<\/section>/)?.[0];
   if (!section) throw new Error('Homepage FAQ section missing');
   return [...section.matchAll(/<details><summary>([\s\S]*?)<\/summary><p>([\s\S]*?)<\/p><\/details>/g)].map(match => ({q:clean(match[1]), a:clean(match[2])}));
@@ -101,34 +107,36 @@ const localeStyle = `<style>${read('content/locale.css').replace(/\/\*[\s\S]*?\*
 const fontLinks = /\s*<link rel="preconnect" href="https:\/\/cdn\.jsdelivr\.net" crossorigin>\s*<link rel="stylesheet" href="https:\/\/cdn\.jsdelivr\.net\/gh\/orioncactus\/pretendard[^"]+">/;
 if (!fontLinks.test(source)) throw new Error('Homepage font links changed; review fonts for system-font languages');
 
-const metaReplace = (html, pattern, value, label) => {
+const metaReplace = (html: string, pattern: RegExp, value: string, label: string): string => {
   if (!pattern.test(html)) throw new Error(`Homepage head is missing ${label}`);
   return html.replace(pattern, value);
 };
-const homes = {};
-const report = [];
+const homes: Record<string, { html: string; faq: Faq[]; title: string }> = {};
+const report: string[] = [];
 for (const locale of locales) {
   const key = '/';
   const url = localeUrl(locale, key);
   let html = source;
-  let title, description;
+  let title: string, description: string;
   if (isDefault(locale)) {
-    title = clean(html.match(/<title>([\s\S]*?)<\/title>/)[1]);
-    description = html.match(/<meta name="description" content="([^"]*)">/)[1];
+    title = clean(html.match(/<title>([\s\S]*?)<\/title>/)![1]);
+    description = html.match(/<meta name="description" content="([^"]*)">/)![1];
   } else {
     const file = i18n[locale.code];
-    ({ title, description } = file.meta);
+    // The validation loop above requires these meta fields for every non-default language.
+    const meta = file.meta as LocaleMeta & Required<Pick<LocaleMeta, 'title' | 'description' | 'ogDescription' | 'ogImageAlt'>>;
+    ({ title, description } = meta);
     html = html.replace('<html lang="ko">', `<html lang="${locale.lang}"${locale.dir === 'rtl' ? ' dir="rtl"' : ''}>`);
     html = metaReplace(html, /<title>[\s\S]*?<\/title>/, `<title>${esc(title)}</title>`, 'title');
     html = metaReplace(html, /<meta name="description" content="[^"]*">/, `<meta name="description" content="${esc(description)}">`, 'description');
     html = metaReplace(html, /<link rel="canonical" href="[^"]*">/, `<link rel="canonical" href="${url}">`, 'canonical');
     html = metaReplace(html, /<meta property="og:locale" content="[^"]*">/, `<meta property="og:locale" content="${locale.ogLocale}">`, 'og:locale');
     html = metaReplace(html, /<meta property="og:title" content="[^"]*">/, `<meta property="og:title" content="${esc(title)}">`, 'og:title');
-    html = metaReplace(html, /<meta property="og:description" content="[^"]*">/, `<meta property="og:description" content="${esc(file.meta.ogDescription)}">`, 'og:description');
+    html = metaReplace(html, /<meta property="og:description" content="[^"]*">/, `<meta property="og:description" content="${esc(meta.ogDescription)}">`, 'og:description');
     html = metaReplace(html, /<meta property="og:url" content="[^"]*">/, `<meta property="og:url" content="${url}">`, 'og:url');
-    html = metaReplace(html, /<meta property="og:image:alt" content="[^"]*">/, `<meta property="og:image:alt" content="${esc(file.meta.ogImageAlt)}">`, 'og:image:alt');
+    html = metaReplace(html, /<meta property="og:image:alt" content="[^"]*">/, `<meta property="og:image:alt" content="${esc(meta.ogImageAlt)}">`, 'og:image:alt');
     html = metaReplace(html, /<meta name="twitter:title" content="[^"]*">/, `<meta name="twitter:title" content="${esc(title)}">`, 'twitter:title');
-    html = metaReplace(html, /<meta name="twitter:description" content="[^"]*">/, `<meta name="twitter:description" content="${esc(file.meta.ogDescription)}">`, 'twitter:description');
+    html = metaReplace(html, /<meta name="twitter:description" content="[^"]*">/, `<meta name="twitter:description" content="${esc(meta.ogDescription)}">`, 'twitter:description');
     // Pretendard carries Korean-style Hanja and no Vietnamese tone marks: these
     // languages use their platform fonts and skip the extra stylesheet.
     if (locale.fonts === 'system') html = html.replace(fontLinks, '');
@@ -142,7 +150,7 @@ for (const locale of locales) {
   }
   const faq = isDefault(locale) ? koFaq : faqOf(html);
   if (faq.length !== koFaq.length) throw new Error(`${locale.code}: FAQ count differs from Korean`);
-  const graph = [organization(locale), website(locale), {
+  const graph: JsonLd[] = [organization(locale), website(locale), {
     '@type':['WebPage','FAQPage'],'@id':`${url}#webpage`,url,name:title,description,
     inLanguage:locale.lang,dateModified:updatedOf(locale),isPartOf:{'@id':site},about:{'@id':org},mainEntity:questions(faq)
   }];
@@ -167,8 +175,8 @@ const css = homepageStyles + '\n' + read('content/guide.css');
 write('assets/guide.css',css);
 write('public/assets/guide.css',css);
 // Guides use the current logo immediately, including without JavaScript.
-const currentLogo = html=>html.replace(/src="data:image\/svg\+xml;base64,[^"]+"/g,'src="/assets/AUDENIQ_Logo_Light.svg"').replace(/width="1600" height="520"/g,'width="1060" height="182"');
-const guideRecords = [];
+const currentLogo = (html: string): string=>html.replace(/src="data:image\/svg\+xml;base64,[^"]+"/g,'src="/assets/AUDENIQ_Logo_Light.svg"').replace(/width="1600" height="520"/g,'width="1060" height="182"');
+const guideRecords: { locale: Locale; page: ResolvedGuidePage }[] = [];
 for (const locale of locales) {
   const ui = isDefault(locale) ? ko.ui : i18n[locale.code].ui;
   const pages = guidesOf(locale).map(page => ({...page, faq: page.faqFromHome ? homes[locale.code].faq : page.faq}));
@@ -186,12 +194,12 @@ for (const locale of locales) {
     const title = `${page.title} | AUDENIQ`;
     const label = ui.guides?.[page.path];
     if (!label) throw new Error(`Missing guide label ${locale.code} ${page.path}`);
-    const webpage = {
+    const webpage: JsonLd = {
       '@type': page.kind === 'about' ? 'AboutPage' : page.faq.length ? ['WebPage','FAQPage'] : 'WebPage',
       '@id':`${url}#webpage`,url,name:title,description:page.description,inLanguage:locale.lang,dateModified:updated,
       isPartOf:{'@id':site},about:{'@id':org},...(page.faq.length ? {mainEntity:questions(page.faq)} : {})
     };
-    const graph = [organization(locale),website(locale),webpage,{'@type':'BreadcrumbList','@id':`${url}#breadcrumb`,itemListElement:[
+    const graph: JsonLd[] = [organization(locale),website(locale),webpage,{'@type':'BreadcrumbList','@id':`${url}#breadcrumb`,itemListElement:[
       {'@type':'ListItem',position:1,name:'AUDENIQ',item:origin+homePath},
       {'@type':'ListItem',position:2,name:page.title,item:url}]}];
     webpage.breadcrumb = {'@id':`${url}#breadcrumb`};
@@ -242,7 +250,7 @@ for (const entry of readdirSync(join(root, 'public'), { withFileTypes: true })) 
     rmSync(join(root, 'public', entry.name), { recursive: true });
   }
 }
-const publicPages = [];
+const publicPages: { locale: Locale; key: string; path: string }[] = [];
 for (const locale of locales) for (const key of pageKeys) if (hasPage(locale, key)) publicPages.push({ locale, key, path: localePath(locale, key) });
 const publicPaths = publicPages.map(page => page.path);
 const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n${publicPages.map(({locale,key})=>
@@ -287,7 +295,7 @@ ${locales.map(locale=>`- ${locale.name} (${locale.hreflang}): ${localeUrl(locale
 - 배급과 퍼블리싱은 별도로 선택하고 계약하는 방향입니다.
 - STUDIO와 관리자 화면은 공개 안내 자료가 아닙니다.
 `;
-const fullPage = (locale, page, faq) => `# ${page.title}\n\n공식 URL / URL: ${localeUrl(locale, page.path)}\n업데이트 / Updated: ${updatedOf(locale)}\n\n## ${page.question}\n${page.answer}\n\n${page.facts.map(([key,value])=>`- ${key}: ${value}`).join('\n')}\n\n${page.sections.map(section=>`## ${section.heading}\n${section.paragraphs.join('\n\n')}`).join('\n\n')}\n\n${faq.map(item=>`## ${item.q}\n${item.a}`).join('\n\n')}`;
+const fullPage = (locale: Locale, page: GuidePage, faq: Faq[]): string => `# ${page.title}\n\n공식 URL / URL: ${localeUrl(locale, page.path)}\n업데이트 / Updated: ${updatedOf(locale)}\n\n## ${page.question}\n${page.answer}\n\n${page.facts.map(([key,value])=>`- ${key}: ${value}`).join('\n')}\n\n${page.sections.map(section=>`## ${section.heading}\n${section.paragraphs.join('\n\n')}`).join('\n\n')}\n\n${faq.map(item=>`## ${item.q}\n${item.a}`).join('\n\n')}`;
 const fullLocales = locales.filter(locale => guidesOf(locale).length);
 const full = llms + '\n' + fullLocales.flatMap(locale => guidesOf(locale).map(page => fullPage(locale, page, page.faqFromHome ? homes[locale.code].faq : page.faq))).join('\n\n') + '\n';
 const rss = `<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>${esc(ko.ui.rssTitle)}</title><link>${origin}/</link><description>출시 준비 중인 AUDENIQ의 배급·퍼블리싱과 레이블 서비스 공식 안내</description><language>ko-KR</language><lastBuildDate>${new Date(`${data.updated}T00:00:00Z`).toUTCString()}</lastBuildDate><atom:link href="${origin}/feed.xml" rel="self" type="application/rss+xml"/>${data.pages.map(page=>`<item><title>${esc(page.title)}</title><link>${origin}${page.path}</link><guid isPermaLink="true">${origin}${page.path}</guid><description>${esc(page.answer)}</description><pubDate>${new Date(`${data.updated}T00:00:00Z`).toUTCString()}</pubDate></item>`).join('')}</channel></rss>\n`;
@@ -298,15 +306,15 @@ const key = read('content/indexnow-key.txt').trim();
 if (!/^[a-f0-9]{32}$/.test(key)) throw new Error('Invalid public IndexNow ownership key');
 write(`public/${key}.txt`,`${key}\n`);
 const assetPaths = ['/favicon.ico','/robots.txt','/sitemap.xml','/llms.txt','/llms-full.txt','/feed.xml','/site-version.json',`/${key}.txt`];
-write('src/public-routes.js',`// Generated by scripts/build-seo.mjs.\nexport const PAGE_PATHS = ${JSON.stringify(publicPaths)};\nexport const FILE_PATHS = ${JSON.stringify(assetPaths)};\n`);
-const pageFile = path => `public${path}index.html`;
+write('src/public-routes.ts',`// Generated by scripts/build-seo.ts.\nexport const PAGE_PATHS = ${JSON.stringify(publicPaths)};\nexport const FILE_PATHS = ${JSON.stringify(assetPaths)};\n`);
+const pageFile = (path: string): string => `public${path}index.html`;
 const pageHashes = Object.fromEntries(publicPaths.map(path => [path, createHash('sha256').update(read(pageFile(path))).digest('hex').slice(0, 16)]));
-const generatedFiles = [...publicPaths.map(pageFile),'public/assets/guide.css',...['sitemap.xml','robots.txt','llms.txt','llms-full.txt','feed.xml',`${key}.txt`].map(name=>`public/${name}`),'src/worker.js','src/public-routes.js'];
+const generatedFiles = [...publicPaths.map(pageFile),'public/assets/guide.css',...['sitemap.xml','robots.txt','llms.txt','llms-full.txt','feed.xml',`${key}.txt`].map(name=>`public/${name}`),'src/worker.ts','src/public-routes.ts'];
 const hashState = createHash('sha256');
 for (const path of generatedFiles) hashState.update(path).update('\0').update(read(path)).update('\0');
 const hash = hashState.digest('hex');
 const updated = [data.updated, ...locales.filter(locale => !isDefault(locale)).map(updatedOf)].sort().at(-1);
-const manifest = `${JSON.stringify({updated,hash,pages:publicPaths,pageHashes},null,2)}\n`;
+const manifest = `${JSON.stringify({updated,hash,pages:publicPaths,pageHashes} satisfies Partial<SiteManifest>,null,2)}\n`;
 write('public/site-version.json',manifest);
 write('content/generated-manifest.json',manifest);
 for (const line of report) console.warn(`warning: ${line}`);

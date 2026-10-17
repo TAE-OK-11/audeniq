@@ -4,20 +4,26 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { brotliDecompressSync } from 'node:zlib';
-import { backendOrigin, passThroughEncoding, readLimitedBody, serveAssets } from './transport.js';
-import { compressAssets } from './compress-assets.mjs';
-import studio from '../studio/worker.js';
-import admin from '../admin/worker.js';
-import landing from '../landing/src/worker.js';
-import survey from '../survey/src/worker.js';
+import { backendOrigin, passThroughEncoding, readLimitedBody, serveAssets } from './transport.ts';
+import { compressAssets } from './compress-assets.ts';
+import studio from '../studio/worker.ts';
+import admin from '../admin/worker.ts';
+import landing from '../landing/src/worker.ts';
+import survey from '../survey/src/worker.ts';
+
+/** 공개 Worker의 fetch — env 모양은 Worker마다 달라서 여기서는 묻지 않는다 */
+interface PublicWorker { fetch(request: Request, env: never): Promise<Response> }
+interface ErrorBody { error: { code: string } }
 
 test('HTTP is refused before API, database or asset access on every public Worker', async () => {
-  for (const [worker, host] of [[studio, 'studio'], [admin, 'admin'], [landing, 'www'], [survey, 'survey']]) {
+  const workers: [PublicWorker, string][] = [[studio, 'studio'], [admin, 'admin'], [landing, 'www'], [survey, 'survey']];
+  for (const [worker, host] of workers) {
     for (const path of ['/', '/api/me', '/assets/app.js']) {
-      const response = await worker.fetch(new Request(`http://${host}.audeniq.com${path}`), {});
+      // HTTPS 거절은 env를 읽기 전이라 빈 env로 충분하다
+      const response = await worker.fetch(new Request(`http://${host}.audeniq.com${path}`), {} as never);
       assert.equal(response.status, 403);
       assert.equal(response.headers.get('location'), null);
-      assert.equal((await response.json()).error.code, 'HTTPS_REQUIRED');
+      assert.equal((await response.json() as ErrorBody).error.code, 'HTTPS_REQUIRED');
     }
   }
 });
@@ -41,7 +47,8 @@ test('compression honours q=0, priorities, wildcards and invalid weights', () =>
 test('oversized streamed JSON stops reading and cancels the source by byte count', async () => {
   let cancelled = false;
   const body = new ReadableStream({ pull(controller) { controller.enqueue(new Uint8Array(10)); }, cancel() { cancelled = true; } });
-  const req = new Request('https://studio.audeniq.com/api/me', { method: 'POST', body, duplex: 'half' });
+  const init: RequestInit & { duplex: 'half' } = { method: 'POST', body, duplex: 'half' };
+  const req = new Request('https://studio.audeniq.com/api/me', init);
   await assert.rejects(readLimitedBody(req, 15), RangeError);
   assert.equal(cancelled, true);
   const small = new Request('https://studio.audeniq.com/api/me', { method: 'POST', body: '한글' });
@@ -58,7 +65,7 @@ test('build-time Brotli is served unchanged with the original media type and var
     assert.ok(stats.compressedBytes < stats.rawBytes / 10);
     const bytes = readFileSync(join(dir, 'app.js.br'));
     let calls = 0;
-    const env = { ASSETS: { async fetch(request) {
+    const env = { ASSETS: { async fetch(request: Request) {
       calls++;
       assert.equal(new URL(request.url).pathname, '/assets/app.js.br');
       return new Response(bytes, { headers: { 'Content-Type': 'application/octet-stream', ETag: '"br-variant"' } });
@@ -74,8 +81,8 @@ test('build-time Brotli is served unchanged with the original media type and var
 });
 
 test('missing Brotli sidecars fall back to the original asset without a false encoding', async () => {
-  const seen = [];
-  const env = { ASSETS: { async fetch(request) {
+  const seen: string[] = [];
+  const env = { ASSETS: { async fetch(request: Request) {
     seen.push(new URL(request.url).pathname);
     return seen.length === 1 ? new Response('<html>shell</html>', { headers: { 'Content-Type': 'text/html' } }) : new Response('original');
   } } };

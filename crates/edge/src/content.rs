@@ -14,7 +14,7 @@
 //!   <CONTENT_ADMIN_TOKEN>` for emergency scripts. The admin list includes
 //!   scheduled and removed rows. Deletes are soft (`deleted_at`); saving a
 //!   removed row publishes it again.
-//!   Same contract as the static Studio Worker (web/studio/worker.js).
+//!   Same contract as the static Studio Worker (web/studio/worker.ts).
 use std::cell::RefCell;
 
 use serde::{Deserialize, Serialize};

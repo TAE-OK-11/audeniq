@@ -1,17 +1,26 @@
 import currentQuestions from '../questions.json' with { type: 'json' };
 import legacyQuestions from '../questions-v4.json' with { type: 'json' };
-import { requireHttps, secureResponse } from '../../shared/transport.js';
+import { requireHttps, secureResponse } from '../../shared/transport.ts';
+import type { D1Database, Fetcher, ScheduledController } from '../../shared/worker-types.ts';
+/** questions.json 한 문항 — type은 'single' | 'multi' | 'text' */
+export interface Question {title:string;type:string;required:boolean;max:number|null;options:string[]}
+export interface Env {DB?:D1Database;TURNSTILE_SECRET_KEY?:string;TURNSTILE_SITE_KEY?:string;ASSETS?:Fetcher}
+type ReadyEnv=Env&{DB:D1Database;TURNSTILE_SECRET_KEY:string;TURNSTILE_SITE_KEY:string};
+/** validateSubmission을 통과한 제출 본문의 모양 */
+export interface SubmissionPayload {survey_version?:4|5;submission_id:string;answers:Record<string,string|string[]>;beta:string;contact:string;beta_contact_consent:boolean;survey_consent:boolean;turnstile_token:string}
+export interface Submission {version:4|5;id:string;answers:string;beta:string;contact:string|null;betaConsent:number}
+interface TurnstileResult {success?:boolean;hostname?:string;action?:string}
 const MAX_BYTES=32*1024;
-const IS_CONFIGURED_SITEKEY = key => typeof key === 'string' && key.length > 5 && !key.includes('REPLACE_WITH');
-const ready = env => Boolean(env.DB && env.TURNSTILE_SECRET_KEY && IS_CONFIGURED_SITEKEY(env.TURNSTILE_SITE_KEY));
+const IS_CONFIGURED_SITEKEY = (key:unknown):key is string => typeof key === 'string' && key.length > 5 && !key.includes('REPLACE_WITH');
+const ready = (env:Env):env is ReadyEnv => Boolean(env.DB && env.TURNSTILE_SECRET_KEY && IS_CONFIGURED_SITEKEY(env.TURNSTILE_SITE_KEY));
 const API_HEADERS={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Robots-Tag':'noindex, nofollow','Referrer-Policy':'no-referrer'};
-const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:API_HEADERS});
-const err=(message='입력 내용을 다시 확인해 주세요.',status=400)=>json({ok:false,error:message},status);
+const json=(value:unknown,status=200):Response=>new Response(JSON.stringify(value),{status,headers:API_HEADERS});
+const err=(message:string='입력 내용을 다시 확인해 주세요.',status=400)=>json({ok:false,error:message},status);
 // Stop reading immediately on oversized bodies (Content-Length may be absent or inaccurate).
-async function readLimitedBody(request) {
+async function readLimitedBody(request:Request):Promise<string> {
  const reader=request.body?.getReader();
  if (!reader) return '';
- const parts=[]; let size=0;
+ const parts:Uint8Array[]=[]; let size=0;
  while (true) {
   const {done,value}=await reader.read();
   if (done) break;
@@ -24,9 +33,11 @@ async function readLimitedBody(request) {
  return new TextDecoder('utf-8',{fatal:true}).decode(bytes);
 }
 const ALLOWED_TOP=new Set(['survey_version','submission_id','answers','beta','contact','beta_contact_consent','survey_consent','turnstile_token']);
-const isPlainObject=v=>!!v && typeof v==='object' && !Array.isArray(v) && Object.getPrototypeOf(v)===Object.prototype;
-const boundedString=(v,n)=>typeof v==='string' && v.length<=n;
-const optionalOther=(obj,key,chosen,options)=>{
+const isPlainObject=(v:unknown):v is Record<string,unknown>=>!!v && typeof v==='object' && !Array.isArray(v) && Object.getPrototypeOf(v)===Object.prototype;
+const boundedString=(v:unknown,n:number):v is string=>typeof v==='string' && v.length<=n;
+/** list.includes(v) — v가 목록 값 중 하나임을 타입에도 알린다 */
+const oneOf=<T>(list:readonly T[],v:unknown):v is T=>(list as readonly unknown[]).includes(v);
+const optionalOther=(obj:Record<string,unknown>,key:string,chosen:unknown,options:string[]):boolean=>{
  const value=obj[`${key}_other`];
  if (!boundedString(value,160)) return false;
  const other=options.indexOf('기타');
@@ -34,20 +45,21 @@ const optionalOther=(obj,key,chosen,options)=>{
  const hasOther=Array.isArray(chosen)?chosen.includes(String(other)):chosen===String(other);
  return hasOther ? value.trim().length>0 : value.trim().length===0;
 };
-export function validateSubmission(p){
+export function validateSubmission(p:unknown):Submission|null{
  if(!isPlainObject(p)||Object.keys(p).some(k=>!ALLOWED_TOP.has(k)))return null;
  const version=p.survey_version ?? 4;
- if(![4,5].includes(version))return null;
- const questions=version===5?currentQuestions:legacyQuestions;
+ if(!oneOf([4,5] as const,version))return null;
+ const questions:Record<string,Question>=version===5?currentQuestions:legacyQuestions;
  const KEYS=Object.keys(questions);
- if(!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(p.submission_id||''))return null;
+ // 배열 등 문자열이 아닌 값은 정규식(문자열로 바꿔 검사)을 통과해 아래 toLowerCase에서 500이 났다 → 400
+ if(typeof p.submission_id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(p.submission_id))return null;
  if(!isPlainObject(p.answers))return null;
  const allowedAnswerKeys=new Set([...KEYS,'q4_provider','q14',...KEYS.filter(k=>questions[k].options.includes('기타')).map(k=>`${k}_other`)]);
  if(Object.keys(p.answers).some(k=>!allowedAnswerKeys.has(k)))return null;
- const noExperience=['2','3','4'].includes(p.answers.q2) || (Array.isArray(p.answers.q4) && p.answers.q4.includes('9'));
+ const noExperience=oneOf(['2','3','4'],p.answers.q2) || (Array.isArray(p.answers.q4) && p.answers.q4.includes('9'));
  for(const key of KEYS){
   const q=questions[key];const selection=p.answers[key];
-  const skipped=(noExperience && ['q5','q6','q12'].includes(key)) || (['q24','q25'].includes(key) && !['0','1'].includes(p.answers.q23));
+  const skipped=(noExperience && ['q5','q6','q12'].includes(key)) || (['q24','q25'].includes(key) && !oneOf(['0','1'],p.answers.q23));
   if(skipped && !(q.type==='multi'?Array.isArray(selection)&&selection.length===0:selection===''))return null;
   if(q.type==='text'){
    if(!boundedString(selection,160)||(q.required && !skipped && !selection.trim()))return null;
@@ -65,10 +77,10 @@ export function validateSubmission(p){
   if(q.options.includes('기타') && !optionalOther(p.answers,key,selection,q.options))return null;
  }
  if(!boundedString(p.answers.q4_provider,160)||!boundedString(p.answers.q14,2000))return null;
- if(p.answers.q4.includes('9') && p.answers.q4_provider.trim())return null;
- if(['2','3','4'].includes(p.answers.q2) && p.answers.q3!=='6')return null;
- if(['0','1'].includes(p.answers.q2) && p.answers.q3==='6')return null;
- if(!['','0','1','2','3'].includes(p.beta))return null;
+ if((p.answers.q4 as string[]).includes('9') && p.answers.q4_provider.trim())return null;
+ if(oneOf(['2','3','4'],p.answers.q2) && p.answers.q3!=='6')return null;
+ if(oneOf(['0','1'],p.answers.q2) && p.answers.q3==='6')return null;
+ if(!oneOf(['','0','1','2','3'],p.beta))return null;
  if(!boundedString(p.contact,160))return null;
  const contact=p.contact.trim();
  if(contact && (p.beta==='3'||p.beta===''))return null;
@@ -78,15 +90,15 @@ export function validateSubmission(p){
  if(!boundedString(p.turnstile_token,2048)||!p.turnstile_token)return null;
  return {version,id:p.submission_id.toLowerCase(),answers:JSON.stringify(p.answers),beta:p.beta,contact:contact||null,betaConsent:Number(p.beta_contact_consent)};
 }
-async function verifyTurnstile(token,secret,hostname){
+async function verifyTurnstile(token:string,secret:string,hostname:string):Promise<boolean>{
  const body=new FormData();body.set('secret',secret);body.set('response',token);
  const resp=await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify',{method:'POST',body,signal:AbortSignal.timeout(8000)});
  if(!resp.ok)return false;
- const result=await resp.json();
+ const result:TurnstileResult=await resp.json();
  return result.success===true && result.hostname===hostname && result.action==='audeniq_survey';
 }
 const surveyWorker = {
- async fetch(request,env){
+ async fetch(request:Request,env:Env):Promise<Response>{
   const url=new URL(request.url);const path=url.pathname;
   if(path.startsWith('/api/')){
    // Only a public site key is returned; never expose env.DB or Worker secrets.
@@ -97,14 +109,14 @@ const surveyWorker = {
    if(!/^application\/json(?:\s*;|$)/i.test(request.headers.get('Content-Type')||''))return err('JSON 형식으로 제출해 주세요.');
    if(Number(request.headers.get('Content-Length')||0)>MAX_BYTES)return err('제출할 수 있는 크기를 초과했어요.',413);
    if(!ready(env))return err('설문 접수를 준비하고 있어요. 설정을 확인해 주세요.',503);
-   let payload;
+   let payload:unknown;
    try {payload=JSON.parse(await readLimitedBody(request));}
    catch(error){return error instanceof RangeError ? err('제출할 수 있는 크기를 초과했어요.',413) : err('입력 형식을 확인해 주세요.');}
    const item=validateSubmission(payload);if(!item)return err();
    try{
     const existing=await env.DB.prepare('SELECT id FROM survey_responses WHERE id = ?1').bind(item.id).first();
     if(existing)return json({ok:true,receipt:item.id,duplicate:true});
-    const valid=await verifyTurnstile(payload.turnstile_token,env.TURNSTILE_SECRET_KEY,url.hostname);
+    const valid=await verifyTurnstile((payload as SubmissionPayload).turnstile_token,env.TURNSTILE_SECRET_KEY,url.hostname);
     if(!valid)return err('보안 확인이 만료됐어요. 다시 확인해 주세요.',403);
     const write=await env.DB.prepare('INSERT OR IGNORE INTO survey_responses (id,survey_version,answers_json,beta_preference,contact,beta_contact_consent,survey_consent) VALUES (?1,?2,?3,?4,?5,?6,1)').bind(item.id,item.version,item.answers,item.beta,item.contact,item.betaConsent).run();
     if (!write?.success) throw new Error('D1 write failed');
@@ -114,14 +126,14 @@ const surveyWorker = {
   if(path==='/health' && request.method==='GET')return json({ok:true,service:'AUDENIQ Survey'});
   return env.ASSETS ? env.ASSETS.fetch(request) : err('페이지를 찾을 수 없어요.',404);
  },
- async scheduled(_controller,env){
+ async scheduled(_controller:ScheduledController,env:Env):Promise<void>{
   if(!env.DB)return;
   await env.DB.prepare("DELETE FROM survey_responses WHERE datetime(created_at) < datetime('now','-12 months')").run();
  }
 };
 
 export default {
- async fetch(request,env){
+ async fetch(request:Request,env:Env):Promise<Response>{
   const refused=requireHttps(request);
   if(refused)return refused;
   return secureResponse(await surveyWorker.fetch(request,env));

@@ -1,17 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker from '../worker.js';
-import adminWorker from '../../admin/worker.js';
+import worker from '../worker.ts';
+import adminWorker from '../../admin/worker.ts';
 
 // 공지·이벤트·서버 점검·인증 보조는 백엔드가 한다 (crates/core/tests/site_content.rs).
 // Worker는 화면 서빙과 /api 전달만 — 여기서는 전달 규칙을 확인한다.
 const SECRET = 's'.repeat(40);
 const env = () => ({ EDGE_SERVICE_SECRET: SECRET, ASSETS: { fetch: async () => new Response('asset') } });
 
-async function withBackend(answer, fn) {
-  const seen = [];
+async function withBackend(answer: (req: Request) => Response, fn: (seen: Request[]) => Promise<void>): Promise<void> {
+  const seen: Request[] = [];
   const original = globalThis.fetch;
-  globalThis.fetch = async req => { seen.push(req); return answer(req); };
+  // proxyToBackend는 항상 Request 하나로 fetch한다
+  globalThis.fetch = async req => { seen.push(req as Request); return answer(req as Request); };
   try { await fn(seen); } finally { globalThis.fetch = original; }
 }
 
@@ -97,7 +98,7 @@ test('admin /api/* goes to the backend as the admin site; the backend picks the 
 
 test('other paths go to assets; screen paths fall back to index.html when assets answer 404', async () => {
   assert.equal(await (await worker.fetch(new Request('https://studio.audeniq.com/notices/abc'), env())).text(), 'asset');
-  const assets = { fetch: async req => {
+  const assets = { fetch: async (req: Request) => {
     const p = new URL(req.url).pathname;
     return p === '/' ? new Response('<html>', { headers: { 'Content-Security-Policy': "default-src 'self'" } }) : new Response('nf', { status: 404 });
   } };

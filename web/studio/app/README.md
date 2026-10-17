@@ -16,7 +16,7 @@ bun install
 bun run dev      # http://localhost:5173/
 bun run check    # 타입 검사
 bun run test     # 단위 테스트
-bun run build       # 서버 연결 빌드 → ../public (studio.audeniq.com, web/studio/worker.js가 서빙)
+bun run build       # 서버 연결 빌드 → ../public (studio.audeniq.com, web/studio/worker.ts가 서빙)
 bun run build:edge  # 같은 빌드 → ../edge-dist (Rust 엣지 Worker용)
 bun run build:demo  # 체험(목) 빌드 → ../demo-dist (로컬 확인용, 커밋하지 않음)
 bun run e2e         # 실서버 API에 붙인 브라우저 스모크 테스트 (e2e/smoke.ts)

@@ -1,0 +1,29 @@
+{
+  // Worker·배포 스크립트·테스트용 타입 검사 (화면 앱은 각 폴더의 tsconfig).
+  // 실행은 빌드 없이 그대로: Worker는 wrangler, 스크립트·테스트는 `node --experimental-strip-types`·bun.
+  // 그래서 타입만 지우면 되는 문법(erasableSyntaxOnly)과 확장자를 쓴 import만 쓴다.
+  // 검사: web/studio/app에서 `./node_modules/.bin/tsc -p ../../../tsconfig.json`
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "noEmit": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "typeRoots": ["web/studio/app/node_modules/@types"]
+  },
+  "include": [
+    "web/shared",
+    "web/studio/worker.ts", "web/studio/test",
+    "web/admin/worker.ts",
+    "web/landing/src", "web/landing/scripts", "web/landing/test",
+    "web/survey/src", "web/survey/scripts", "web/survey/test",
+    "deploy/aws/*.ts", "deploy/aws/test"
+  ]
+}

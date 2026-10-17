@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 빌드된 화면을 S3에 올리고 CloudFront 캐시를 비운다: node deploy/aws/publish.mjs <studio|admin|landing>
+// 빌드된 화면을 S3에 올리고 CloudFront 캐시를 비운다: node --experimental-strip-types deploy/aws/publish.ts <studio|admin|landing>
 // 먼저 deploy-stack.sh 로 스택(audeniq-<app>-ui)이 있어야 한다. AWS 자격증명·리전은 환경변수(AWS_REGION 등)로.
 //
 // - Cache-Control은 앱의 _headers 규칙 그대로 S3 메타데이터로 넣는다 (나머지는 no-cache)
@@ -9,14 +9,15 @@ import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { APPS, cacheGroups, parseHeaders, stackName } from './apps.mjs';
-import { headersText } from './template.mjs';
+import { APPS, cacheGroups, isAppName, parseHeaders, stackName } from './apps.ts';
+import type { AppName } from './apps.ts';
+import { headersText } from './template.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const SKIP = ['_headers', '_redirects', '*.br', '.DS_Store'];
 
 /** aws s3 sync 호출 목록 (순서대로 실행) */
-export function syncCommands(name, bucket) {
+export function syncCommands(name: AppName, bucket: string): string[][] {
   const app = APPS[name];
   const source = resolve(ROOT, app.dir);
   const target = `s3://${bucket}`;
@@ -30,19 +31,26 @@ export function syncCommands(name, bucket) {
   return commands;
 }
 
-function aws(args, options = {}) {
+function aws(args: string[], options: { quiet?: boolean } = {}): string {
   return execFileSync('aws', args, { encoding: 'utf8', stdio: options.quiet ? ['ignore', 'pipe', 'inherit'] : 'inherit' });
 }
 
-function stackOutputs(name) {
+/** aws cloudformation describe-stacks 의 Outputs 한 줄 */
+interface StackOutput {
+  OutputKey: string;
+  OutputValue: string;
+}
+
+function stackOutputs(name: AppName): Record<string, string> {
   const raw = aws(['cloudformation', 'describe-stacks', '--stack-name', stackName(name),
     '--query', 'Stacks[0].Outputs', '--output', 'json'], { quiet: true });
-  return Object.fromEntries(JSON.parse(raw).map(o => [o.OutputKey, o.OutputValue]));
+  const outputs: StackOutput[] = JSON.parse(raw);
+  return Object.fromEntries(outputs.map(o => [o.OutputKey, o.OutputValue]));
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const name = process.argv[2];
-  if (!APPS[name]) throw new Error(`사용법: publish.mjs <${Object.keys(APPS).join('|')}>`);
+  if (!isAppName(name)) throw new Error(`사용법: publish.ts <${Object.keys(APPS).join('|')}>`);
   const dir = resolve(ROOT, APPS[name].dir);
   if (!existsSync(resolve(dir, 'index.html'))) throw new Error(`${APPS[name].dir}/index.html 이 없습니다. 먼저 빌드하세요.`);
   const { BucketName, DistributionId } = stackOutputs(name);
