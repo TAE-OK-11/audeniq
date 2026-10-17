@@ -524,7 +524,8 @@ body:has(.aq-payout-setup-mode) .aq-toast-stack{bottom:calc(104px + env(safe-are
 .aq-task-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .aq-task{width:100%;display:flex;align-items:center;gap:13px;padding:14px 14px 14px 14px;border:0;border-radius:var(--aq-r-lg);background:#fff;text-align:left;color:var(--aq-e-ink);cursor:pointer;transition:background-color .2s,transform .2s var(--aq-e-ease)}
 .aq-task:active{transform:scale(.985)}
-@media(hover:hover) and (pointer:fine){.aq-task:hover{transform:translateX(3px)}.aq-task:hover .aq-task-go i{transform:translateX(3px)}}
+/* 줄 전체는 누를 때만 움직인다(누름 피드백) — 호버로도 밀면 누르는 순간 옆으로 튄다. 화살표만 살짝 */
+@media(hover:hover) and (pointer:fine){.aq-task:hover .aq-task-go i{transform:translateX(3px)}}
 .aq-task.is-warn{background:var(--aq-amber-50)}
 .aq-task-text{flex:1;min-width:0;display:grid;gap:2px}
 .aq-task-text strong{font-size:15px;font-weight:700;letter-spacing:-.02em;line-height:1.4}
@@ -1200,8 +1201,8 @@ svg.aq-glyph{flex:none;fill:none!important;stroke:currentColor!important;stroke-
    원래 모습으로 부드럽게 돌아온다. (:hover 규칙은 빌드의 hover-guard가 마우스 환경으로만 제한)
    ========================================================================== */
 @media (hover:none),(pointer:coarse){
-  /* 누를 때는 빠르게(80ms), 뗄 때는 각 요소의 기본 전환 시간으로 복귀 */
-  :is(.service-item,.aq-event-card,.aq-task,.aq-action-card,.aq-bank,.aq-chip,.aq-dsp,.aq-row-link,.aq-header-bell,.menu-toggle,.aq-pay-type span,.aq-cert-method,.aq-sign-provider,.portal-nav button):active{transition-duration:.08s!important}
+  /* 누를 때는 빠르게(--aq-press-in), 뗄 때는 각 요소의 기본 전환 시간으로 복귀 */
+  :is(.service-item,.aq-event-card,.aq-task,.aq-action-card,.aq-bank,.aq-chip,.aq-dsp,.aq-row-link,.aq-header-bell,.menu-toggle,.aq-pay-type span,.aq-cert-method,.aq-sign-provider,.portal-nav button):is(:active,.is-pressed){transition-duration:var(--aq-press-in)!important}
   .aq-row-link:active{background-color:var(--aq-blue-100)!important}
   .aq-pay-type:active span{background:var(--aq-gray-100)!important}
   /* 길게 눌렀을 때 뜨는 시스템 메뉴·텍스트 선택이 버튼 조작을 방해하지 않게 */
