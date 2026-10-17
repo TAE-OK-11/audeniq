@@ -108,14 +108,14 @@ export function RightsDocumentModal({ kind, context, onClose, onRequested }: {
     </>}
 
     {phase === 'sent' && link && <>
-      <p className="aq-rd-intro">{signer.trim()}님께 아래 링크를 보내 주세요. 링크를 연 사람은 본인확인을 해야 서명할 수 있어요.</p>
+      <p className="aq-rd-intro">{signer.trim()}님에게 아래 링크를 보내 주세요. 링크를 연 사람은 본인확인을 해야 서명할 수 있어요.</p>
       <div className="aq-sign-link">
         <code>{url}</code>
         <button type="button" className="ui-btn is-white is-sm" onClick={() => void copy()}>{copied ? '복사했어요' : '복사'}</button>
       </div>
       <div className="doc-actions">
         {typeof navigator.share === 'function' && <button type="button" className="ui-btn is-soft" onClick={() => void share()}>공유하기</button>}
-        <button type="button" className="ui-btn is-primary" onClick={onClose}>완료</button>
+        <button type="button" className="ui-btn is-primary" onClick={onClose}>확인</button>
       </div>
       <p className="small muted">링크는 {new Date(link.expires_at).toLocaleString('ko-KR', { dateStyle: 'long', timeStyle: 'short' })}까지 쓸 수 있고, 지금 화면을 닫으면 다시 볼 수 없어요. 잃어버리면 권리·보완 서류의 서명 요청에서 새 링크를 만들 수 있어요.</p>
     </>}

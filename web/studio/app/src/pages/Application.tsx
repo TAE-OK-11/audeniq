@@ -97,8 +97,8 @@ export function Application() {
             <svg viewBox="0 0 24 24" width="22" height="22"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </span>
           <div className="min-0">
-            <strong>배급 신청이 접수됐어요.</strong>
-            <span>서명한 신청서가 발급됐어요. 담당자 검토가 끝나면 알림으로 알려 드릴게요.</span>
+            <strong>배급 신청을 접수했어요.</strong>
+            <span>서명한 신청서를 발급했어요. 담당자 검토가 끝나면 알림으로 알려 드릴게요.</span>
           </div>
         </div>
       )}

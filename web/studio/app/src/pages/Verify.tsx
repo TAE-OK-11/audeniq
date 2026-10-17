@@ -40,7 +40,7 @@ export function Verify() {
         <form onSubmit={e => { e.preventDefault(); void check(); }} className="aq-verify-form">
           <label htmlFor="verifyCode" className="sr-only">원본 검증코드</label>
           <input id="verifyCode" value={code} onChange={e => setCode(e.target.value)} placeholder="XXXXX-XXXXX-XXXXX-XXXXX" autoComplete="off" spellCheck={false} maxLength={40} />
-          <button className={`ui-btn is-primary${busy ? ' is-busy' : ''}`} type="submit" disabled={busy}>확인</button>
+          <button className={`ui-btn is-primary${busy ? ' is-busy' : ''}`} type="submit" disabled={busy}>진위 확인하기</button>
         </form>
         {error && <div className="ui-callout is-danger" role="alert">{error}</div>}
         {result && !result.valid && <div className="ui-callout is-danger" role="status">등록되지 않은 코드예요. 글자를 다시 확인해 주세요. 코드가 맞는데도 나오지 않으면 AUDENIQ에서 출력한 원본이 아니에요.</div>}

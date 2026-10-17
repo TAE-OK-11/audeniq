@@ -21,14 +21,14 @@ interface Stage { status: string; time: string; detail: string }
 
 function buildStages(c: DocRecord): Stage[] {
   const stages: Stage[] = [
-    { status: '문서 생성', time: c.created, detail: '제출 정보가 문서로 정리됐어요.' },
+    { status: '문서 생성', time: c.created, detail: '제출한 정보를 문서로 정리했어요.' },
     ...c.reviewHistory.slice().sort((a, b) => String(a.time || '').localeCompare(String(b.time || '')))
       .map(h => ({ status: h.status, time: h.time, detail: h.detail })),
   ];
   if (c.fileName) stages.push({ status: '원본 첨부', time: c.uploadedAt || c.created, detail: c.fileName });
   if (c.checkedAt) stages.push({ status: '내용 확인', time: c.checkedAt, detail: `v${c.version || '1.0'} · 내용 확인 기록` });
   if (c.reviewStatus === 'approved' && !stages.some(x => x.status === '검토 완료')) {
-    stages.push({ status: '검토 완료', time: c.approvedAt || '', detail: '검토 결과가 반영됐어요.' });
+    stages.push({ status: '검토 완료', time: c.approvedAt || '', detail: '검토 결과를 반영했어요.' });
   }
   return stages;
 }
@@ -171,7 +171,7 @@ export function DocumentModal({
     updateDoc(doc.id, {
       ...base,
       reviewStatus: 'prepared',
-      reviewHistory: [...history, { status: '검토 요청 대기', time: at, detail: '접수 전송 준비가 완료됐어요.' }],
+      reviewHistory: [...history, { status: '검토 요청 대기', time: at, detail: '접수할 준비를 마쳤어요.' }],
     });
     onClose();
     toast('서류를 제출 대기 상태로 보관했어요.');
@@ -307,7 +307,7 @@ export function DocumentModal({
 
       <div className="doc-actions aq-sticky-foot aq-dm-foot">
         {toSign ? (
-          <button type="button" id="aqSignIntent" className="ui-btn is-primary" onClick={onOpenSignature}>서명 진행하기</button>
+          <button type="button" id="aqSignIntent" className="ui-btn is-primary" onClick={onOpenSignature}>서명하기</button>
         ) : (
           <>
             {canSubmit && <button id="aqDocSubmit" type="button" className="ui-btn is-primary" onClick={submitReview} disabled={sending}>{sending ? '제출하는 중' : '검토 요청'}</button>}
@@ -317,7 +317,7 @@ export function DocumentModal({
               </button>
             )}
             {!doc.checkedAt
-              ? <button id="aqDocConfirm" type="button" className={`ui-btn ${canSubmit || doc.kind === 'agreements' ? 'is-soft' : 'is-primary'}`} onClick={confirmSave}>확인 및 저장</button>
+              ? <button id="aqDocConfirm" type="button" className={`ui-btn ${canSubmit || doc.kind === 'agreements' ? 'is-soft' : 'is-primary'}`} onClick={confirmSave}>확인하고 저장하기</button>
               : !canSubmit && doc.kind !== 'agreements' && <button type="button" className="ui-btn is-primary" onClick={onClose}>닫기</button>}
           </>
         )}

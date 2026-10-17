@@ -696,7 +696,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
             type="button" className="ui-btn is-soft" style={{ width: '100%' }}
             onClick={() => setShowGuardianModal(true)}
           >
-            {o.guardianConsentDone ? '법정대리인 동의 완료 · 다시 진행' : '법정대리인 동의 진행하기'}
+            {o.guardianConsentDone ? '법정대리인 동의를 마쳤어요 · 다시 받기' : '법정대리인 동의 받기'}
           </button>
           <p className="ui-field-help">
             {o.guardianConsentDone
@@ -799,7 +799,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
         <p className="aq-option-intro">참여자의 크레딧과 이용 허락을 확인해요.</p>
         <DocAttach
           kind="performer" releaseId={releaseId} onElectronic={onElectronic} onOpenDoc={onOpenDoc}
-          id="aqFeaturedConsent" label="참여자 동의서 (보유 시)"
+          id="aqFeaturedConsent" label="참여자 동의서 (있으면)"
           fileName={o.featuredConsentFile} assetId={o.featuredConsentAssetId} busy={uploads.featuredConsentFile?.state === 'uploading'}
           onSelect={file => onDocument('featuredConsentFile', 'featuredConsentAssetId', file)}
           help="피처링 참여자의 동의서나 계약서를 첨부해 주세요."
@@ -841,7 +841,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
           <input id="aqPreviousDistributor" maxLength={160} value={o.previousDistributor ?? ''} onChange={e => setOpt('previousDistributor', e.target.value)} placeholder="기존 배급을 맡은 곳" />
         </div>
         <div className="ui-field">
-          <label htmlFor="aqPreviousUrl">기존 발매 링크 (보유 시)</label>
+          <label htmlFor="aqPreviousUrl">기존 발매 링크 <span className="aq-optional">선택</span></label>
           <input id="aqPreviousUrl" type="url" maxLength={500} value={o.previousUrl ?? ''} onChange={e => setOpt('previousUrl', e.target.value)} placeholder="https://…" />
         </div>
         <KoreanDateField
@@ -863,7 +863,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
             : o.rereleaseAudio === 'changed' ? '새 녹음·리믹스처럼 음악 내용이 달라지면 새로운 ISRC가 필요해요. 기존 코드는 비교용으로 보관하고 새 음원에 적용하지 않아요.'
               : '단순 음량 조정과 음악 내용 변경은 코드 처리 방식이 달라요. 변경 내용을 아래에 적고 문의 메뉴에서 확인해 주세요. 확인 전에는 임시 저장해 둘 수 있어요.'}
         </div>}
-        <div className="ui-field"><label htmlFor="aqPreviousUpc">기존 음반 코드 UPC (보유 시)</label>
+        <div className="ui-field"><label htmlFor="aqPreviousUpc">기존 음반 코드 UPC <span className="aq-optional">선택</span></label>
           <input id="aqPreviousUpc" inputMode="numeric" maxLength={14} value={o.previousUpc ?? ''} onChange={e => setOpt('previousUpc', e.target.value)} placeholder="기존 앨범·싱글의 UPC" />
           {o.rereleaseKind === 'transfer' && o.rereleaseAudio === 'same' && o.previousUpc && <button type="button" className="ui-btn is-white is-sm" onClick={() => set('upc', o.previousUpc ?? '')}>동일한 음반의 UPC를 배급 설정에 적용</button>}
           <p className="ui-field-help">트랙 구성이나 버전이 다른 음반은 새 UPC를 사용해요. 기존 UPC는 이전 유통사에서 확인할 수 있어요.</p>
@@ -967,7 +967,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
             <input type="checkbox" checked={!!o.contentIdOriginalRecordingAck} onChange={e => setOpt('contentIdOriginalRecordingAck', e.target.checked)} />
             <span>직접 제작한 고유한 녹음이며, 비독점 루프·무료 이용 음원·공공저작물 등을 포함하지 않아요.</span>
           </label>
-          <p className="hint">해당하지 않으면 Content ID를 꺼 주세요. 커버·샘플·리믹스는 권리와 참조 제외 구간을 추가 확인합니다.</p>
+          <p className="hint">직접 만든 녹음이 아니면 Content ID를 꺼 주세요. 커버·샘플·리믹스는 권리와 참조 제외 구간을 한 번 더 확인해요.</p>
           <button type="button" className="ui-btn is-soft is-sm" onClick={() => set('platforms', form.platforms.filter(p => !isContentId(p)))}>Content ID 사용 안 함</button>
         </div>
       )}
@@ -1161,7 +1161,7 @@ const TrackEditor = memo(function TrackEditor({
               <input id={`tr-${i}-version`} value={t.version} onChange={e => setTrack(t.id, 'version', e.target.value)} placeholder="예: Acoustic Version" maxLength={200} />
             </div>
             <div className="ui-field">
-              <label htmlFor={`tr-${i}-isrc`}>ISRC (보유 시)</label>
+              <label htmlFor={`tr-${i}-isrc`}>ISRC <span className="aq-optional">선택</span></label>
               <input id={`tr-${i}-isrc`} value={t.isrc} onChange={e => setTrack(t.id, 'isrc', e.target.value)} placeholder="예: KR-ABC-26-00001" maxLength={200} />
             </div>
             <div className="ui-field">
@@ -1298,18 +1298,18 @@ function ensureReleaseDocuments(f: WizardForm, releaseId: string) {
     'AUDENIQ 디지털 음원 배급 신청·계약서',
     '',
     '1. 신청인 및 발매 정보',
-    `아티스트: ${f.artist.trim() || '미입력'}`,
+    `아티스트: ${f.artist.trim() || '입력 전'}`,
     `발매명: ${title}`,
     `발매 유형: ${kindLabel(f.type)}`,
-    `장르: ${genreVal || '미입력'}`,
+    `장르: ${genreVal || '입력 전'}`,
     `발매 희망일: ${f.releaseDate || '미정'}${f.releaseTime ? ` (한국 시간 ${f.releaseTime} 동시 발매)` : ''}`,
-    `레이블 표기: ${f.label.trim() || '미입력'}`,
+    `레이블 표기: ${f.label.trim() || '입력 전'}`,
     `수록곡: ${f.tracks.map((t, i) => `${i + 1}. ${t.title.trim() || '제목 없음'} (${t.duration || '길이 확인 전'})`).join(' / ')}`,
     '',
     '2. 권리자 및 배급 범위',
-    `마스터 권리자: ${f.ownership.trim() || '미입력'}`,
-    `℗ 표기: ${f.phonogram.trim() || '미입력'}`,
-    `© 표기: ${f.copyright.trim() || '미입력'}`,
+    `마스터 권리자: ${f.ownership.trim() || '입력 전'}`,
+    `℗ 표기: ${f.phonogram.trim() || '입력 전'}`,
+    `© 표기: ${f.copyright.trim() || '입력 전'}`,
     `배급 지역: ${territorySummary(f.territories)}`,
     `배급 플랫폼: ${f.platforms.map(dspLabel).join(', ')}`,
     `추가 확인 항목: ${selectedOptions(f.options).map(([, t]) => t).join(', ') || '일반 발매'}`,
@@ -1808,7 +1808,7 @@ export function Upload() {
       if (!dsps) return fail(dspError || '플랫폼 배급 가능 상태를 확인하는 중이에요.', '#aqPlatforms');
       if (!form.platforms.length) return fail('배급할 플랫폼을 하나 이상 선택해 주세요.', '#aqPlatforms');
       if (['coverLicenseFile', 'sampleLicenseFile', 'featuredConsentFile', 'sharedContractFile'].some(k => uploads[k]?.state === 'uploading')) return fail('첨부서류 업로드가 끝나면 계속할 수 있어요.', '#aqSpecialOptions');
-      if (form.platforms.some(p => !dsps.some(d => d.slug === p && d.available))) return fail('현재 배급할 수 없는 플랫폼이 선택되어 있어요. 해당 선택을 해제해 주세요.', '#aqPlatforms');
+      if (form.platforms.some(p => !dsps.some(d => d.slug === p && d.available))) return fail('지금은 배급할 수 없는 플랫폼을 골랐어요. 그 플랫폼을 빼 주세요.', '#aqPlatforms');
       if (form.upc.trim() && !upcValid(form.upc.trim())) return fail('UPC/EAN 번호가 올바르지 않아요. 숫자 12~13자리와 마지막 확인 숫자를 확인해 주세요.', '#f-upc');
       if (form.upc.trim() && !/^0?\d{12}$/.test(form.upc.trim())) return fail('UPC는 12자리(UPC-A)만 받을 수 있어요. 13자리 EAN은 0으로 시작하는 번호만 쓸 수 있어요.', '#f-upc');
       const o = form.options;
@@ -1841,7 +1841,7 @@ export function Upload() {
       }
       if (o.cover) {
         const valid = o.coverTracks.filter(c => form.tracks.some(t => t.id === c.trackId));
-        if (!valid.length) return fail('커버곡에 해당하는 트랙을 하나 이상 선택해 주세요.', null);
+        if (!valid.length) return fail('커버곡인 트랙을 하나 이상 선택해 주세요.', null);
         for (const c of valid) {
           const idx = form.tracks.findIndex(t => t.id === c.trackId);
           if (!c.originalTitle.trim()) return fail(`트랙 ${idx + 1}의 원곡 제목을 입력해 주세요.`, `#cover-orig-title-${idx}`);
@@ -1918,10 +1918,10 @@ export function Upload() {
       if (MOCK) ensureReleaseDocuments(form, r.id);
       pushNotice({
         id: uid('n'), kind: '발매', time: stampNow(), link: `/releases/${r.id}`,
-        title: editId && origStatus !== 'draft' ? `${r.title} 수정 내용이 접수됐어요.` : `${r.title} 발매 신청이 접수됐어요.`,
+        title: editId && origStatus !== 'draft' ? `${r.title} 수정 내용을 보냈어요.` : `${r.title} 발매를 신청했어요.`,
         detail: '담당자 검토가 시작됐어요. 계약서와 권리 서류 메뉴에서 준비된 문서를 확인해 주세요.',
       });
-      toast(editId && origStatus !== 'draft' ? '발매 정보가 수정됐어요.' : '발매 신청이 접수됐어요.', 'success');
+      toast(editId && origStatus !== 'draft' ? '수정 내용을 보냈어요.' : '발매를 신청했어요.', 'success');
       // 서명한 신청서를 정식 서류로 바로 보여 준다 (보완 재접수는 발매 상세로)
       nav(resubmit ? `/releases/${r.id}` : `/releases/${r.id}/application?done=1`, { replace: true });
     } catch (e) {
@@ -2004,7 +2004,7 @@ export function Upload() {
         ]);
         setForm(f => (f.coverName === file.name ? { ...f, coverAssetId: assetId, coverThumbAssetId: thumbId, coverPreviewAssetId: previewId } : f));
         dirtyRef.current = true;
-        toast('커버 이미지가 등록됐어요.');
+        toast('커버 이미지를 올렸어요.');
       }
     } catch {
       toast('커버 이미지를 불러오지 못했어요.');
@@ -2048,7 +2048,7 @@ export function Upload() {
       if (!assetId) return;
       setForm(f => ({ ...f, tracks: f.tracks.map(t => (t.id === id && t.audioName === file.name ? { ...t, assetId } : t)) }));
       dirtyRef.current = true;
-      toast('음원 파일이 등록됐어요.');
+      toast('음원 파일을 올렸어요.');
     });
     // 파일 머리에서 길이를 읽었으면 끝, 아니면 브라우저로 길이 추출 (못 읽어도 파일 등록은 진행)
     if (headerDuration) return;
@@ -2145,7 +2145,7 @@ export function Upload() {
     ['사전 공개', form.preorderStart ? `${formatKoreanDate(form.preorderStart)}부터 (예약 판매·미리듣기)` : '없음', 3, false],
     ['배급 지역', territorySummary(form.territories, '선택하지 않음'), 3, !form.territories.length],
     ['배급 플랫폼', platformSummary, 3, !form.platforms.length],
-    ['권리자', form.ownership || '미입력', 4, !form.ownership.trim()],
+    ['권리자', form.ownership || '입력 전', 4, !form.ownership.trim()],
     ['권리 확인', rightsOk(form) ? '필수 확인 완료' : '필수 확인 항목 누락', 4, !rightsOk(form)],
   ];
 
@@ -2155,7 +2155,7 @@ export function Upload() {
     : save.kind === 'saved' ? `저장됨 ${save.at}`
     : save.kind === 'error' ? '저장 실패' : '';
   const saveTitle = !canAutoSave ? '수정 내용은 마지막 단계에서 ‘수정 완료’를 눌러야 반영돼요.'
-    : save.kind === 'saved' ? `${save.at}에 자동 저장됐어요.`
+    : save.kind === 'saved' ? `${save.at}에 자동으로 저장했어요.`
     : save.kind === 'error' ? (save.message || '자동 저장에 실패했어요. 네트워크를 확인해 주세요.') : '';
 
   return (
@@ -2204,7 +2204,7 @@ export function Upload() {
             : <span className="aq-wiz-summary-cover" aria-hidden="true"><Glyph name="music" size={18} /></span>}
           <div className="min-0">
             <strong>{form.title.trim() || '제목 없는 발매'}</strong>
-            <span>{form.artist.trim() || '아티스트 미입력'} · {kindLabel(form.type)}</span>
+            <span>{form.artist.trim() || '아티스트 없음'} · {kindLabel(form.type)}</span>
             <span>{form.tracks.filter(t => t.title.trim()).length}곡{form.releaseDate ? ` · ${formatKoreanDate(form.releaseDate)}` : ''}</span>
           </div>
         </div>
@@ -2617,7 +2617,7 @@ export function Upload() {
                           onClick={() => set('platforms', on ? form.platforms.filter(p => p !== key) : [...form.platforms, key])}
                         >
                           <BrandMark id={key} label={label} color={DSP_COLOR[key] ?? '#3B63F3'} size={28} className="aq-dsp-mark" />
-                          <span className="aq-dsp-name">{label}{!available && <small>현재 배급 불가</small>}</span>
+                          <span className="aq-dsp-name">{label}{!available && <small>지금은 배급할 수 없어요</small>}</span>
                           <span className="aq-dsp-check" aria-hidden="true"><CheckIcon size={16} /></span>
                         </button>
                       );

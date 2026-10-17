@@ -25,7 +25,7 @@ const SWIPE_PX = 64;
 /** 문구로 톤 추정 — 기존 호출부(toast('...'))를 바꾸지 않아도 성공/오류 색이 붙도록 */
 function guessTone(msg: string): ToastTone {
   if (/실패|못했|없어요|확인해 주세요|입력해 주세요|선택해 주세요|할 수 없|초과|오류/.test(msg)) return 'error';
-  if (/했어요|됐어요|완료|저장/.test(msg)) return 'success';
+  if (/했어요|됐어요|올렸어요|보냈어요|받았어요|마쳤어요|완료|저장/.test(msg)) return 'success';
   return 'info';
 }
 

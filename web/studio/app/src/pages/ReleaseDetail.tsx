@@ -88,7 +88,7 @@ const PIPELINE = [
 // 진행 카드 머리에 쓰는 지금 단계 안내
 const STAGE_NOTE: Record<string, string> = {
   draft: '신청서를 끝까지 작성한 뒤 접수해 주세요.',
-  ready: '접수됐어요. 곧 담당자가 검토를 시작해요.',
+  ready: '신청을 받았어요. 곧 담당자가 검토를 시작해요.',
   review: '담당자가 신청서를 검토하고 있어요. 결과는 알림으로 알려 드려요.',
   needs: '아래 요청을 고쳐 다시 접수하면 검토가 이어져요.',
   rejected: '검토 결과 이 발매는 배급할 수 없어요.',
@@ -292,8 +292,8 @@ export function ReleaseDetail() {
             {settledLive && <Badge tone={statusTone(rel.status)} className={`aq-status is-${rel.status}`}>{STATUS_LABEL[rel.status] || rel.status}</Badge>}
           </div>
           <h1>{rel.title || '제목 없는 발매'}</h1>
-          <p className="aq-detail-artist">{rel.artist || '아티스트 미입력'}</p>
-          {/* 비어 있는 값은 아래 '발매 정보'에서 미입력으로 보여 주므로 여기서는 있는 것만 */}
+          <p className="aq-detail-artist">{rel.artist || '아티스트 없음'}</p>
+          {/* 비어 있는 값은 아래 '발매 정보'에서 '입력 전'으로 보여 주므로 여기서는 있는 것만 */}
           {(rel.tracks.length > 0 || genre || rel.release_date) && (
             <div className="aq-detail-facts">
               {rel.tracks.length > 0 && <span>{rel.tracks.length}곡</span>}
@@ -400,13 +400,13 @@ export function ReleaseDetail() {
               <div className="aq-relinfo-card">
                 <h2 className="subhead">발매 정보</h2>
                 <dl className="ui-kv is-2">
-                  <div><dt>아티스트</dt><dd>{rel.artist || <Empty>미입력</Empty>}</dd></div>
-                  <div><dt>발매 유형</dt><dd>{kindLabel(d?.type) || <Empty>미입력</Empty>}</dd></div>
-                  <div><dt>주요 언어</dt><dd>{languageLabel(d?.language) || <Empty>미입력</Empty>}</dd></div>
+                  <div><dt>아티스트</dt><dd>{rel.artist || <Empty>입력 전</Empty>}</dd></div>
+                  <div><dt>발매 유형</dt><dd>{kindLabel(d?.type) || <Empty>입력 전</Empty>}</dd></div>
+                  <div><dt>주요 언어</dt><dd>{languageLabel(d?.language) || <Empty>입력 전</Empty>}</dd></div>
                   <div><dt>{dateLabel}</dt><dd>{rel.release_date || <Empty>미정</Empty>}</dd></div>
                   <div><dt>UPC / EAN</dt><dd>{d?.upc || <Empty>등록 전</Empty>}</dd></div>
-                  <div><dt>장르</dt><dd>{genre || <Empty>미입력</Empty>}</dd></div>
-                  <div><dt>레이블</dt><dd>{d?.label || <Empty>미입력</Empty>}</dd></div>
+                  <div><dt>장르</dt><dd>{genre || <Empty>입력 전</Empty>}</dd></div>
+                  <div><dt>레이블</dt><dd>{d?.label || <Empty>입력 전</Empty>}</dd></div>
                 </dl>
                 <h2 className="subhead">앨범 소개</h2>
                 <p className="muted small break">{d?.notes || '등록된 소개가 없어요.'}</p>
@@ -448,7 +448,7 @@ export function ReleaseDetail() {
                         </span>
                         {/* 크레딧 · 길이 / 식별자 · 파일 — 잘리지 않게 두 줄로 나눈다 */}
                         <span className="ui-row-meta aq-track-credit">
-                          작곡 {t.composers || '미입력'} · 작사 {t.lyricists || '없음'}
+                          작곡 {t.composers || '없음'} · 작사 {t.lyricists || '없음'}
                           {t.duration_ms ? ` · ${durationLabel(t.duration_ms)}` : ''}
                         </span>
                         <span className="aq-track-facts">
@@ -496,7 +496,7 @@ export function ReleaseDetail() {
             </section>
             {!!delivery.data?.length && (
               <section className="aq-relinfo-card">
-                <h2 className="subhead">플랫폼별 진행</h2>
+                <h2 className="subhead">플랫폼별 진행 상황</h2>
                 <ul className="aq-linked-docs">
                   {delivery.data.map(item => (
                     <li key={item.dsp}>
@@ -520,9 +520,9 @@ export function ReleaseDetail() {
                   : <Badge tone="amber">권리 확인 보완 필요</Badge>}
               </div>
               <dl className="ui-kv is-2">
-                <div><dt>마스터 권리자</dt><dd>{d?.ownership || <Empty>미입력</Empty>}</dd></div>
-                <div><dt>℗ 표기</dt><dd>{d?.phonogram || <Empty>미입력</Empty>}</dd></div>
-                <div><dt>© 표기</dt><dd>{d?.copyright || <Empty>미입력</Empty>}</dd></div>
+                <div><dt>마스터 권리자</dt><dd>{d?.ownership || <Empty>입력 전</Empty>}</dd></div>
+                <div><dt>℗ 표기</dt><dd>{d?.phonogram || <Empty>입력 전</Empty>}</dd></div>
+                <div><dt>© 표기</dt><dd>{d?.copyright || <Empty>입력 전</Empty>}</dd></div>
               </dl>
             </section>
             <section className="aq-relinfo-card">
