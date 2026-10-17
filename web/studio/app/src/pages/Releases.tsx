@@ -189,8 +189,8 @@ export function Releases() {
                   <ReleaseCover id={r.id} src={r.coverData} />
                   <div className="min-0">
                     <span className="ui-row-title">{r.title || '제목 없는 발매'}</span>
-                    <span className="ui-row-meta">{r.artist || '아티스트 미입력'} · {r.track_count}곡</span>
-                    <span className="ui-row-meta">{r.release_date ?? '발매일 미정'}</span>
+                    <span className="ui-row-meta">{r.artist || '아티스트 없음'} · {r.track_count}곡</span>
+                    <span className="ui-row-meta">{r.release_date ?? '발매일 아직 없음'}</span>
                   </div>
                   <div className="aq-release-end">
                     <Badge tone={statusTone(r.status)} className={`aq-status is-${r.status}`}>{STATUS_LABEL[r.status] || r.status}</Badge>
@@ -261,7 +261,7 @@ export function Releases() {
                   <ReleaseCover id={t.releaseId} src={t.coverData} />
                   <div className="min-0">
                     <span className="ui-row-title">{t.title || '제목 없는 곡'}{t.explicit && <em className="aq-explicit" title="Explicit">E</em>}</span>
-                    <span className="ui-row-meta">{t.releaseTitle} · {t.artist || '아티스트 미입력'}{t.isrc ? ` · ISRC ${t.isrc}` : ''}</span>
+                    <span className="ui-row-meta">{t.releaseTitle} · {t.artist || '아티스트 없음'}{t.isrc ? ` · ISRC ${t.isrc}` : ''}</span>
                   </div>
                   <span className="chevron" aria-hidden="true"><Glyph name="chevron-right" size={18} /></span>
                 </div>

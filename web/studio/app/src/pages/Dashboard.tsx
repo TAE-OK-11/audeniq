@@ -275,7 +275,7 @@ export function Dashboard() {
                     <ReleaseCover id={r.id} src={r.coverData} />
                     <div className="min-0">
                       <span className="ui-row-title">{r.title || '제목 없는 발매'}</span>
-                      <span className="ui-row-meta">{r.artist || '아티스트 미입력'} · {r.track_count}곡 · {r.release_date || '발매일 미정'}</span>
+                      <span className="ui-row-meta">{r.artist || '아티스트 없음'} · {r.track_count}곡 · {r.release_date || '발매일 아직 없음'}</span>
                     </div>
                     <div className="ui-row-end">
                       <Badge tone={statusTone(r.status)} className={`aq-status is-${r.status}`}>{STATUS_LABEL[r.status] || r.status}</Badge>

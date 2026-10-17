@@ -62,7 +62,7 @@ export function SplitInvite() {
           <div className="ui-callout is-success" role="status">
             {done === 'ACCEPTED'
               ? <>수락했어요. ‘{inv.track_title}’ 수익 중 {pct}가 정산될 때마다 내 잔액에 쌓여요. <Link to="/settlement">정산·지급 보기</Link></>
-              : <>거절했어요. 그 몫은 신청한 분께 돌아가요.</>}
+              : <>거절했어요. 그 몫은 신청한 분에게 돌아가요.</>}
           </div>
         ) : (
           <>

@@ -88,7 +88,7 @@ function StatementForm({ onSave }: { onSave: (s: { period: string; platform: str
         <input id="stNote" maxLength={200} value={note} onChange={e => setNote(e.target.value)} placeholder="정산서 번호 등" />
       </div>
       <div className="aq-sticky-foot">
-        <button className="ui-btn is-primary studio-submit-wide" type="submit">정산 내역 기록</button>
+        <button className="ui-btn is-primary studio-submit-wide" type="submit">정산 내역 기록하기</button>
       </div>
     </form>
   );

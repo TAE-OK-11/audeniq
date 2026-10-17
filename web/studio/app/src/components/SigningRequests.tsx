@@ -49,7 +49,7 @@ export function SigningRequests({ releases, tick, onOpenDoc }: {
   const releaseTitle = (id: string) => releases.find(r => r.id === id)?.title ?? '';
 
   const cancel = async (r: SigningRequest) => {
-    if (!(await confirm({ title: '서명 요청을 취소할까요?', message: `${r.signer_name}님께 보낸 링크로는 더 이상 서명할 수 없어요.`, confirmLabel: '요청 취소', danger: true }))) return;
+    if (!(await confirm({ title: '서명 요청을 취소할까요?', message: `${r.signer_name}님에게 보낸 링크로는 더 이상 서명할 수 없어요.`, confirmLabel: '요청 취소', danger: true }))) return;
     try { await signingApi.cancel(r.id); toast('서명 요청을 취소했어요.'); void load(); }
     catch (e) { toast(errorMessage(e), 'error'); }
   };
@@ -93,7 +93,7 @@ export function SigningRequests({ releases, tick, onOpenDoc }: {
       {relink && (
         <Modal title="새 서명 링크" onClose={() => setRelink(null)}>
           {issued ? <>
-            <p>{relink.signer_name}님께 새 링크를 보내 주세요. 이전 링크는 더 이상 쓸 수 없어요.</p>
+            <p>{relink.signer_name}님에게 새 링크를 보내 주세요. 이전 링크는 더 이상 쓸 수 없어요.</p>
             <div className="aq-sign-link"><code>{signingUrl(issued.token)}</code></div>
             <div className="doc-actions">
               <CopyButton text={signingUrl(issued.token)} label="링크 복사" className="ui-btn is-soft" />
