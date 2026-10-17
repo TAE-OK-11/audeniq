@@ -154,7 +154,7 @@ export function Settlement() {
 
   const openPayoutModal = () => {
     if (!isPaymentRegistered(payment)) {
-      toast('수익을 받을 정보를 먼저 등록해 주세요.');
+      // 버튼 이름이 이미 '계좌 등록하기'라 '먼저 등록해 주세요' 알림은 같은 말을 되풀이하며 등록 화면의 선택지를 가렸다
       setShowPaymentSetup(true);
       return;
     }

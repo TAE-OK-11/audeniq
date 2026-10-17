@@ -564,6 +564,9 @@ summary::-webkit-details-marker{display:none}
 
 /* release detail: tabs never touch the hero; back link sits closer to the header on phones */
 #view-release .aq-detail-hero{margin-bottom:12px;align-items:start}
+/* 발매 상세 탭 — 머리글 바로 아래에 붙는다(top은 ReleaseDetail이 머리글 높이로) */
+#view-release .aq-detail-tabs{position:sticky;z-index:20;margin:0 -2px;padding:0 2px;background:#fff;box-shadow:0 0 0 100vmax #fff;clip-path:inset(0 -100vmax)}
+#view-release .aq-detail-tabs>.ui-tabs{margin-bottom:22px}
 /* 불러오는 동안의 큰 카드 자리 — 실제 카드와 같은 위치·높이(휴대폰 170px, 넓은 화면 194px)라 다 불러와도 화면이 움직이지 않는다 */
 #view-release .aq-detail-skel{height:194px!important;margin:4px 0 12px;border-radius:var(--aq-r-3xl)}
 @media (max-width:760px){#view-release .aq-detail-skel{height:170px!important;border-radius:var(--aq-r-2xl)}}
