@@ -397,6 +397,11 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
    html에만 건다: body까지 막으면 body가 따로 스크롤 상자가 돼 고정 머리글(과 그 안의 메뉴)이
    스크롤해 둔 만큼 화면 위로 밀려 올라가 메뉴가 안 보인다. */
 @media (max-width:760px){html.aq-menu-open{overflow:hidden}}
+/* 태블릿 폭(761~1023px)의 떠 있는 메뉴 — 뒤 화면을 살짝 어둡게 해 메뉴에 눈이 가고, 바깥을 누르면 닫힌다는 걸 보여 준다 */
+@media (min-width:761px) and (max-width:1023px){
+  html.aq-menu-open body::after{content:"";position:fixed;inset:0;z-index:60;background:rgba(23,27,41,.18);animation:aq-fade-in var(--aq-motion-base) var(--aq-enter) both}
+}
+@media (prefers-reduced-motion:reduce){html.aq-menu-open body::after{animation:none}}
 
 /* 발매 목록 보완 줄 — 휴대폰에서는 요청 내용을 한 줄 다 쓰고, 버튼은 그 아래에 나란히 */
 @media (max-width:560px){
@@ -740,6 +745,7 @@ button.settle-hero-account.is-button .min-0{display:grid}
   .aq-tab-item.is-active{color:var(--aq-blue-500)}
   .aq-tab-item:active{transform:scale(.94)}
   .aq-tab-dot{position:absolute;top:6px;left:calc(50% + 8px);width:7px;height:7px;border-radius:50%;background:var(--aq-red-500)}
+  .aq-tab-dot.is-warn{background:var(--aq-amber-500)}
   body:not(.wizard-mode) #main{padding-bottom:calc(72px + env(safe-area-inset-bottom))}
   body:not(.wizard-mode) .portal-header .menu-toggle{display:none!important}
   body.wizard-mode .aq-tabbar{display:none}
@@ -749,6 +755,7 @@ button.settle-hero-account.is-button .min-0{display:grid}
 }
 @media (min-width:1024px){
   .aq-sidebar{display:block;position:fixed;top:var(--aq-header-h,69px);left:0;bottom:0;width:232px;z-index:40;overflow-y:auto;padding:20px 12px 32px;background:#fff;box-shadow:1px 0 0 var(--aq-gray-100)}
+  .aq-side-cta{display:flex;width:100%;justify-content:flex-start;gap:8px;margin:0 0 20px;padding:0 12px}
   .aq-side-group{margin-bottom:18px}
   .aq-side-title{margin:0 0 6px;padding:0 12px;font-size:12px;font-weight:700;color:var(--aq-text-4)}
   .aq-side-item{display:flex;align-items:center;gap:10px;min-height:42px;padding:0 12px;border-radius:var(--aq-r-md);font-size:15px;font-weight:600;color:var(--aq-text-2);text-decoration:none;transition:background-color var(--aq-dur-fast) var(--aq-ease)}

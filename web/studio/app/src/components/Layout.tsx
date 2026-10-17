@@ -86,26 +86,16 @@ export function Layout({ children }: { children: ReactNode }) {
   const unread = useUnreadCount();
   const payment = usePayment();
   const docs = useDocs();
-  // 메뉴를 열 때만 발매 목록을 한 번 불러와 '보완·작성 중' 개수를 메뉴에 보여 준다
+  // 메뉴·왼쪽 메뉴의 '보완·작성 중' 개수와 아래 탭 바 '발매'의 보완 점 — 화면을 옮길 때마다(메뉴를 열 때도) 새로 받는다
   const [relCounts, setRelCounts] = useState<{ needs: number; drafts: number } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  // 넓은 화면은 왼쪽 메뉴가 늘 보이므로, 화면을 옮길 때마다 '보완·작성 중' 개수를 새로 받는다
-  const [wide, setWide] = useState(() => !!window.matchMedia?.('(min-width: 1024px)').matches);
   useEffect(() => {
-    const mq = window.matchMedia?.('(min-width: 1024px)');
-    if (!mq) return;
-    const on = () => setWide(mq.matches);
-    mq.addEventListener('change', on);
-    return () => mq.removeEventListener('change', on);
-  }, []);
-  useEffect(() => {
-    if (!menuOpen && !wide) return;
     let alive = true;
     api.listReleases()
       .then(rs => { if (alive) setRelCounts({ needs: rs.filter(r => r.status === 'needs').length, drafts: rs.filter(r => r.status === 'draft').length }); })
       .catch(() => {});
     return () => { alive = false; };
-  }, [menuOpen, wide, wide ? loc.pathname : '']);
+  }, [menuOpen, loc.pathname]);
   // 실시간으로 들어온 새 알림 — 화면을 보고 있으면 토스트로, 누르면 해당 화면으로
   useEffect(() => {
     const on = (e: Event) => {
@@ -240,6 +230,12 @@ export function Layout({ children }: { children: ReactNode }) {
     '/contracts': toSign ? { tone: 'blue', text: `서명 ${toSign}` } : undefined,
     '/rights': docFix ? { tone: 'amber', text: `보완 ${docFix}` } : docNeeded ? { tone: 'blue', text: `제출 ${docNeeded}` } : undefined,
   };
+  // 탭 바 점 — '발매'는 보완할 발매, '전체'는 탭 바에 없는 메뉴 안의 할 일(서명·보완 서류·계좌).
+  // 읽지 않은 알림은 머리의 종 숫자로 이미 보이므로 '전체'에 점을 또 찍지 않는다
+  const tabDot: Record<string, string | undefined> = {
+    '/releases': relCounts?.needs ? `보완할 발매 ${relCounts.needs}건` : undefined,
+  };
+  const menuTodo = [toSign && `서명할 계약서 ${toSign}건`, docFix && `보완할 서류 ${docFix}건`, !isPaymentRegistered(payment) && '정산 계좌 미등록'].filter(Boolean).join(', ');
   const initial = (profile.name || user?.email || 'A').slice(0, 1).toUpperCase();
   const navVisible = menuOpen || menuClosing;
 
@@ -304,7 +300,7 @@ export function Layout({ children }: { children: ReactNode }) {
               <Glyph name="chevron-right" size={18} className="aq-nav-me-chev" />
             </button>
             {!isPaymentRegistered(payment) && (
-              <button type="button" className="aq-nav-me-alert" onClick={() => go('/profile')}>
+              <button type="button" className="aq-nav-me-alert" onClick={() => go('/profile?open=payout')}>
                 <Glyph name="won" size={15} />
                 <i>수익을 받을 정산 계좌를 등록해 주세요</i>
                 <Glyph name="chevron-right" size={14} />
@@ -366,6 +362,10 @@ export function Layout({ children }: { children: ReactNode }) {
 
       {/* 데스크톱 왼쪽 고정 메뉴 — 넓은 화면에서는 메뉴를 숨기지 않고 늘 보여 준다 (숨긴 메뉴는 덜 발견되고 이동이 느리다) */}
       <nav className="aq-sidebar" aria-label="전체 메뉴">
+        {/* 가장 자주 하는 일은 메뉴 맨 위에 — 휴대폰 전체 메뉴의 '새 발매 등록하기'와 같은 자리 */}
+        <Link to="/upload" className="ui-btn is-soft aq-side-cta" onPointerEnter={() => prefetchRoute('/upload')}>
+          <Glyph name="plus" size={16} />새 발매
+        </Link>
         {NAV_GROUPS.map(g => (
           <div key={g.group} className="aq-side-group">
             <p className="aq-side-title">{g.group}</p>
@@ -394,6 +394,8 @@ export function Layout({ children }: { children: ReactNode }) {
               onPointerDown={() => prefetchRoute(t.to)}>
               <Glyph name={t.icon} size={22} />
               <span>{t.label}</span>
+              {tabDot[t.to] && <i className="aq-tab-dot is-warn" aria-hidden="true" />}
+              {tabDot[t.to] && <span className="sr-only">, {tabDot[t.to]}</span>}
             </Link>
           );
         })}
@@ -401,7 +403,8 @@ export function Layout({ children }: { children: ReactNode }) {
           onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}>
           <Glyph name="list" size={22} />
           <span>전체</span>
-          {unread > 0 && <i className="aq-tab-dot" aria-label={`읽지 않은 알림 ${unread}건`} />}
+          {menuTodo && <i className="aq-tab-dot" aria-hidden="true" />}
+          {menuTodo && <span className="sr-only">, {menuTodo}</span>}
         </button>
       </nav>
     </>
