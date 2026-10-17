@@ -227,8 +227,9 @@ export function Dashboard() {
             ) : restTasks.length ? (
               <>
               <ul className="aq-task-list aq-stagger">
-                {(allTasks ? restTasks : restTasks.slice(0, TASK_PREVIEW)).map(t => (
-                  <li key={t.name}>
+                {(allTasks ? restTasks : restTasks.slice(0, TASK_PREVIEW)).map((t, i) => (
+                  // '더 보기'로 붙는 줄은 높이가 자라며 펼쳐지고 접을 때 줄어든다 — 아래 '내 발매'가 툭 밀리지 않게 (lib/expand.ts)
+                  <li key={t.name} data-expand={i >= TASK_PREVIEW || undefined}>
                     <button type="button" className={`aq-task is-${t.tone}`} onClick={() => navigate(t.to)}>
                       <span className="ui-icon" aria-hidden="true">{TASK_ICONS[t.icon]}</span>
                       <span className="aq-task-text">
