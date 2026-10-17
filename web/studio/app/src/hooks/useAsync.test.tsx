@@ -3,7 +3,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useAsync } from './useAsync';
-import { clearAsyncCache } from '../lib/asyncCache';
+import { FRESH_MS, clearAsyncCache } from '../lib/asyncCache';
 import { req, setCsrf, setOrgId } from '../api/http';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -34,10 +34,21 @@ describe('useAsync 캐시', () => {
     expect(first[0]).toBe('loading:-');
     expect(first.at(-1)).toBe('ready:v1');
 
-    const second: string[] = [];
-    (await mount(<Probe fn={fn} k="list" out={second} />))();
-    expect(second[0]).toBe('ready:v1');
-    expect(second.at(-1)).toBe('ready:v2');
+    // 방금 받은 데이터면 다시 받지 않는다
+    const soon: string[] = [];
+    (await mount(<Probe fn={fn} k="list" out={soon} />))();
+    expect(soon[0]).toBe('ready:v1');
+    expect(soon.at(-1)).toBe('ready:v1');
+    expect(n).toBe(1);
+
+    // 시간이 지나 다시 들어오면 받아 둔 데이터를 먼저 보여 주고 새로 받는다
+    const now = Date.now();
+    vi.spyOn(Date, 'now').mockReturnValue(now + FRESH_MS + 1);
+    const later: string[] = [];
+    (await mount(<Probe fn={fn} k="list" out={later} />))();
+    expect(later[0]).toBe('ready:v1');
+    expect(later.at(-1)).toBe('ready:v2');
+    vi.restoreAllMocks();
   });
 
   it('작업 공간이 바뀌면 앞 작업 공간의 데이터를 보여 주지 않는다', async () => {
