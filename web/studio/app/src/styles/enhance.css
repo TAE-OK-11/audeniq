@@ -13,18 +13,18 @@ img{max-width:100%}
 .aq-doc-copy,.min-0{overflow-wrap:anywhere}
 
 /* ---------- 공통 키프레임 ---------- */
-@keyframes aq-fade-up{from{opacity:0;transform:translate3d(0,10px,0)}to{opacity:1;transform:none}}
+@keyframes aq-fade-up{from{opacity:0;transform:translate3d(0,6px,0)}to{opacity:1;transform:none}}
 @keyframes aq-fade-in{from{opacity:0}to{opacity:1}}
-@keyframes aq-soft-pop{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
-@keyframes aq-pop{0%{transform:scale(.6);opacity:0}70%{transform:scale(1.08);opacity:1}100%{transform:scale(1)}}
+@keyframes aq-soft-pop{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
+@keyframes aq-pop{from{transform:scale(.9);opacity:0}to{transform:none;opacity:1}}
 @keyframes aq-shimmer{0%{background-position:150% 0}100%{background-position:-50% 0}}
-@keyframes aq-shake{0%,100%{transform:none}20%{transform:translateX(-6px)}40%{transform:translateX(5px)}60%{transform:translateX(-3px)}80%{transform:translateX(2px)}}
+@keyframes aq-shake{0%,100%{transform:none}25%{transform:translateX(-3px)}50%{transform:translateX(2px)}75%{transform:translateX(-1px)}}
 @keyframes aq-spin{to{transform:rotate(360deg)}}
 @keyframes aq-grow-y{from{transform:scaleY(0)}to{transform:scaleY(1)}}
 @keyframes aq-grow-x{from{transform:scaleX(0)}to{transform:scaleX(1)}}
 @keyframes aq-boot-bar{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}
-@keyframes aq-badge-pop{0%{transform:scale(0)}60%{transform:scale(1.25)}100%{transform:scale(1)}}
-@keyframes aq-modal-out{to{opacity:0;transform:translate3d(0,10px,0) scale(.98)}}
+@keyframes aq-badge-pop{from{transform:scale(.7);opacity:0}to{transform:none;opacity:1}}
+@keyframes aq-modal-out{to{opacity:0;transform:translate3d(0,6px,0) scale(.985)}}
 @keyframes aq-overlay-out{to{background-color:transparent}}
 @keyframes aq-nav-out{to{opacity:0;transform:translateY(-6px) scale(.985)}}
 
@@ -44,7 +44,6 @@ img{max-width:100%}
 .portal-header.is-scrolled{background:rgba(255,255,255,.88)!important;-webkit-backdrop-filter:saturate(1.6) blur(14px);backdrop-filter:saturate(1.6) blur(14px)}
 .aq-header-bell{position:relative;width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:var(--aq-r-md);background:transparent;color:var(--aq-text-2);transition:background .2s,color .2s}
 .aq-header-bell:hover{background:var(--aq-gray-50);color:var(--aq-e-blue)}
-.aq-header-bell:active svg{transform:rotate(-12deg)}
 .aq-header-bell svg{transition:transform .25s var(--aq-e-spring)}
 .aq-badge{position:absolute;top:3px;left:21px;min-width:16px;height:16px;padding:0 4px;border-radius:var(--aq-r-sm);line-height:16px!important;background:var(--aq-red-500);color:#fff;font-size:10px;font-weight:800;line-height:17px;text-align:center;border:2px solid #fff;box-sizing:content-box;animation:aq-soft-pop .3s var(--aq-e-ease) both}
 @media(max-width:370px){.aq-header-bell{width:36px}}
@@ -60,23 +59,18 @@ img{max-width:100%}
 .portal-nav .aq-logout:hover{background:var(--aq-red-50)!important;color:var(--aq-red-600)!important}
 
 /* ---------- 스태거 진입 ---------- */
-/* 목록 줄: 0.28초씩 0.025초 간격, 앞 6줄까지만 차례로 (나머지는 6번째와 함께) */
-@keyframes aq-row-in{from{opacity:0;transform:translate3d(0,6px,0)}}
-.aq-stagger>*{animation:aq-row-in .28s var(--aq-enter) both}
-.aq-stagger>*:nth-child(2){animation-delay:.025s}
-.aq-stagger>*:nth-child(3){animation-delay:.05s}
-.aq-stagger>*:nth-child(4){animation-delay:.075s}
-.aq-stagger>*:nth-child(5){animation-delay:.1s}
-.aq-stagger>*:nth-child(n+6){animation-delay:.125s}
+/* 목록 줄: 줄마다 차례로 올라오지 않고 목록 전체가 한 번에 4px 살짝 떠오른다 (차례 연출은 번잡해 보였다) */
+@keyframes aq-row-in{from{opacity:0;transform:translate3d(0,4px,0)}}
+.aq-stagger>*{animation:aq-row-in var(--aq-motion-long) var(--aq-enter) both}
 
 /* ---------- 카드 호버 ---------- */
 .aq-track-card{transition:transform .25s var(--aq-e-ease),box-shadow .25s var(--aq-e-ease),background-color .2s ease!important}
 @media(hover:hover) and (pointer:fine){
 
-  .aq-release-card:hover .aq-cover,.aq-track-row:hover .aq-cover{transform:rotate(-3deg) scale(1.04)}
+  .aq-release-card:hover .aq-cover,.aq-track-row:hover .aq-cover{transform:scale(1.02)}
   .aq-track-row:hover .chevron{transform:translateX(3px);color:var(--aq-e-blue)}
 }
-.aq-cover{transition:transform .35s var(--aq-e-spring)}
+.aq-cover{transition:transform var(--aq-motion-long) var(--aq-enter)}
 .chevron{transition:transform .2s var(--aq-e-ease),color .2s}
 .dashboard-grid .service-item{transition:transform .28s var(--aq-e-ease),box-shadow .28s var(--aq-e-ease),background-color .2s!important}
 
@@ -213,7 +207,7 @@ img{max-width:100%}
 .aq-dropzone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
 .aq-dropzone:focus-within{outline:3px solid var(--aq-blue-450);outline-offset:3px}
 .aq-dropzone-icon{flex-shrink:0;display:grid;place-items:center;width:62px;height:62px;border-radius:var(--aq-r-lg);background:var(--aq-blue-100);color:var(--aq-e-blue);transition:transform .3s var(--aq-e-spring)}
-.aq-dropzone:hover .aq-dropzone-icon{transform:translateY(-3px) rotate(-4deg)}
+.aq-dropzone:hover .aq-dropzone-icon{transform:translateY(-2px)}
 .aq-dropzone-thumb{flex-shrink:0;width:62px;height:62px;border-radius:var(--aq-r-md);object-fit:cover;box-shadow:0 8px 18px -10px rgba(27,51,104,.5);animation:aq-soft-pop .35s var(--aq-e-ease) both}
 .aq-dropzone-text{display:grid;gap:3px;min-width:0}
 .aq-dropzone-text strong{font-size:14px;color:var(--aq-e-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -239,7 +233,7 @@ img{max-width:100%}
 .aq-payment-card .ui-section-head{margin-bottom:12px}
 .aq-reset-line{margin-top:22px;font-size:12px;color:var(--aq-text-4);text-align:center}
 .aq-profile-avatar{transition:transform .3s var(--aq-e-spring)}
-.aq-profile-card:hover .aq-profile-avatar{transform:rotate(-6deg) scale(1.04)}
+.aq-profile-card:hover .aq-profile-avatar{transform:scale(1.02)}
 
 /* ---------- 문의 ---------- */
 .aq-ticket-body{background:var(--aq-gray-75);border-radius:var(--aq-r-md);padding:16px 18px;margin-top:12px}
@@ -346,7 +340,7 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
 @media(prefers-reduced-motion:reduce){.aq-success-ring,.aq-success-tick,.aq-pay-receipt,.aq-success-mark{animation:none!important;stroke-dashoffset:0!important}}
 
 /* ── 수익 받기 흐름 움직임: 상태가 바뀌는 곳마다 짧게 반응해 지금 무슨 일이 일어났는지 보이게 ── */
-@keyframes aq-check-pop{0%{transform:scale(.7)}60%{transform:scale(1.15)}100%{transform:scale(1)}}
+@keyframes aq-check-pop{from{transform:scale(.85)}to{transform:none}}
 /* 진행 막대는 단계가 바뀔 때 부드럽게 차오른다 */
 .aq-pay-flow .aq-pay-progress span{transition:width .5s var(--aq-e-ease)}
 /* 입력 칸·검색·버튼의 상태 변화(포커스, 사용 가능해짐)도 끊기지 않게 */
@@ -357,20 +351,15 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
 .aq-pay-flow .aq-pay-type:active span{transform:scale(.985)}
 .aq-pay-flow .aq-bank .aq-bank-logo{transition:transform .2s var(--aq-e-ease)}
 .aq-pay-flow .aq-bank:hover .aq-bank-logo{transform:translateY(-2px)}
-.aq-pay-flow .aq-bank.selected .aq-bank-logo{transform:scale(1.08)}
+.aq-pay-flow .aq-bank.selected .aq-bank-logo{transform:scale(1.04)}
 @media(prefers-reduced-motion:no-preference){
-  /* 단계 내용: 제목 → 본문 순으로 살짝 떠오른다 */
-  .aq-pay-head>*{animation:aq-fade-up .42s var(--aq-e-ease) both}
-  .aq-pay-head>:nth-child(2){animation-delay:.04s}
-  .aq-pay-head>:nth-child(3){animation-delay:.08s}
-  .aq-pay-body>*{animation:aq-fade-up .45s var(--aq-e-ease) .1s both}
-  .aq-pay-body>:nth-child(2){animation-delay:.14s}
-  .aq-pay-body>:nth-child(3){animation-delay:.18s}
-  .aq-pay-body>:nth-child(n+4){animation-delay:.22s}
+  /* 단계 내용: 제목과 본문이 한 덩어리로 살짝 떠오른다 (본문만 아주 조금 늦게) */
+  .aq-pay-head>*{animation:aq-fade-up var(--aq-motion-long) var(--aq-e-ease) both}
+  .aq-pay-body>*{animation:aq-fade-up var(--aq-motion-long) var(--aq-e-ease) .04s both}
   /* 고정 탭은 떠오르면 겹쳐 보이고, 기관 목록은 카드마다 따로 움직이므로 제외 */
   .aq-pay-body>.aq-bank-sticky,.aq-pay-body>#aqBankGroups{animation:none}
-  /* 기관 카드: 순서대로 떠오른다(탭을 바꿀 때도) */
-  .aq-pay-flow .aq-bank-grid>.aq-bank{animation:aq-fade-up .36s var(--aq-e-ease) both;animation-delay:calc(.12s + var(--i,0) * 16ms)}
+  /* 기관 카드: 목록 전체가 한 번에 살짝 떠오른다(탭을 바꿀 때도) */
+  .aq-pay-flow .aq-bank-grid>.aq-bank{animation:aq-fade-up var(--aq-motion-long) var(--aq-e-ease) .04s both}
   /* 동의 체크·전체 동의 */
   .aq-agree-all input:checked,.aq-agree-list input:checked{animation:aq-check-pop .28s var(--aq-e-spring)}
   /* 오류 창은 살짝 흔들려 다시 확인할 곳을 알린다 */
@@ -741,11 +730,11 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 .aq-doc-next li>i{flex:none;width:18px;height:18px;border-radius:6px;display:grid;place-items:center;background:#fff;font-size:11px;font-weight:800;font-style:normal;color:var(--aq-text-3)}
 .aq-doc-next li.is-done{color:var(--aq-green-600)}
 .aq-doc-next li.is-done>i{background:var(--aq-green-600);color:#fff}
-@keyframes aq-doc-pop{from{transform:scale(.4);opacity:0}to{transform:none;opacity:1}}
+@keyframes aq-doc-pop{from{transform:scale(.85);opacity:0}to{transform:none;opacity:1}}
 @keyframes aq-doc-draw{to{stroke-dashoffset:0}}
 .aq-doc-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 16px}
 .aq-paper{background:#fff;border-radius:var(--aq-r-sm);padding:56px 60px 40px;color:var(--aq-text);box-shadow:0 1px 2px rgba(20,33,68,.06),0 30px 70px -38px rgba(27,51,104,.38);animation:aq-paper-in .6s var(--aq-e-ease) .05s both}
-@keyframes aq-paper-in{from{opacity:0;transform:translateY(22px) scale(.99)}to{opacity:1;transform:none}}
+@keyframes aq-paper-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 .aq-paper-head{text-align:center;padding-bottom:26px;margin-bottom:28px;border-bottom:2px solid var(--aq-gray-900)}
 .aq-paper-brand{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;text-align:left;margin-bottom:34px}
 .aq-paper-brand img{height:22px;width:auto;margin-top:4px}
@@ -1168,10 +1157,7 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 /* ---------- 펼쳐질 때 부드럽게 ---------- */
 @keyframes aq-reveal{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
 .aq-reveal{animation:aq-reveal var(--aq-motion-long) var(--aq-enter) both;transform-origin:top}
-.aq-reveal .aq-dsp{animation:aq-reveal .32s var(--aq-e-ease,cubic-bezier(.22,1,.36,1)) both}
-.aq-reveal .aq-dsp:nth-child(2){animation-delay:.03s}.aq-reveal .aq-dsp:nth-child(3){animation-delay:.06s}.aq-reveal .aq-dsp:nth-child(4){animation-delay:.09s}
-.aq-reveal .aq-dsp:nth-child(5){animation-delay:.12s}.aq-reveal .aq-dsp:nth-child(6){animation-delay:.15s}.aq-reveal .aq-dsp:nth-child(7){animation-delay:.18s}
-@media(prefers-reduced-motion:reduce){.aq-reveal,.aq-reveal .aq-dsp{animation:none}}
+@media(prefers-reduced-motion:reduce){.aq-reveal{animation:none}}
 
 
 /* ==========================================================================
@@ -1629,7 +1615,7 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 /* 아이콘 칸 색 — 할 일 종류·서류 상태에 맞춘 색조 */
 .aq-task.is-warn .ui-icon{--tone-bg:var(--aq-amber-100);--tone-fg:#C26A1E}
 .dashboard-grid .service-item .ui-icon{transition:transform .35s var(--aq-spring),background-color var(--aq-dur)}
-.dashboard-grid .service-item:hover .ui-icon{transform:translateY(-2px) rotate(-6deg);--tone-bg:var(--aq-blue-200)}
+.dashboard-grid .service-item:hover .ui-icon{transform:translateY(-2px);--tone-bg:var(--aq-blue-200)}
 
 /* ---------- 앱 상단 — 스튜디오·관리자 같은 높이·로고 크기, 제품 표시는 로고 옆 ---------- */
 .portal-header .nav-shell,.adm-header-shell{min-height:var(--aq-header-h)}
