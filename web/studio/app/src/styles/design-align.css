@@ -666,10 +666,11 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 @supports (-webkit-touch-callout:none) and (font:-apple-system-body){
   @media (max-width:767px){
     .aq-tint-bottom{display:block;position:fixed;left:0;right:0;bottom:-8px;min-height:12px;background:#fff;z-index:2147483000;pointer-events:none}
-    /* 위쪽도 같다 — 위 끝에 닿은 고정 요소가 없으면 사파리가 상태 표시줄 아래로 지나가는 내용을 흐리게 비춰 보였다
-       (발매 신청 머리처럼 sticky인 곳). 흰 띠를 두어 상태 표시줄 칸을 불투명한 흰색으로 */
-    .aq-tint-top{display:block;position:fixed;left:0;right:0;top:-8px;min-height:12px;background:#fff;z-index:2147483000;pointer-events:none}
   }
+  /* 위쪽 — 사파리가 상태 표시줄 칸 아래로 지나가는 내용을 흐리게 비춰 보였다(발매 신청 머리처럼 sticky인 곳).
+     상태 표시줄 칸(안전 영역) 높이만큼 불투명한 흰 띠로 덮어 뒤 내용이 아예 보이지 않게 한다. 화면 머리들은 이미
+     그만큼 위 여백을 두므로 가려지는 내용은 없다. 창(모달)의 어두운 바탕보다는 아래에 둔다 */
+  .aq-tint-top{display:block;position:fixed;left:0;right:0;top:0;height:max(env(safe-area-inset-top,0px),4px);background:#fff;z-index:85;pointer-events:none}
 }
 
 /* 발매 신청 — 칸 바로 아래 안내(Upload.tsx showFieldError), Content ID 따로 켜기,
