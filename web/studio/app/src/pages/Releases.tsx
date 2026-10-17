@@ -138,6 +138,7 @@ export function Releases() {
         ]}
         onChange={v => setParam('tab', v, 'releases')}
         onIntent={v => { if (v === 'tracks') setTracksWanted(true); }}
+        className="is-fill"
       />
 
       {loading ? (
