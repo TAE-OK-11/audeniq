@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from '../lib/router';
 import { useAuth } from '../api/auth';
 import { authErrorMessage } from '../api/errors';
-import { AUTO_FOCUS, AuthLayout, EMAIL_INPUT, EmailSuggest, FieldError, PasswordInput, focusFirst, isEmail } from '../components/AuthLayout';
+import { AUTO_FOCUS, AuthLayout, EMAIL_INPUT, EmailSuggest, FieldError, PasswordInput, focusFirst, isEmail, nextOnEnter } from '../components/AuthLayout';
 import { passkeySupported } from '../api/passkey';
 import { MOCK } from '../api/client';
 import { ApiError, messageForCode } from '../api/errors';
@@ -82,7 +82,7 @@ export function Login() {
             id="loginEmail" {...EMAIL_INPUT} required autoComplete="username" autoFocus={AUTO_FOCUS && !email}
             placeholder="이메일을 입력해 주세요" aria-invalid={!!fieldErr.email} aria-describedby={fieldErr.email ? 'loginEmailErr' : undefined}
             value={email} onChange={e => { setEmail(e.target.value); setEmailDone(false); if (fieldErr.email) setFieldErr(f => ({ ...f, email: undefined })); }}
-            onBlur={() => setEmailDone(true)}
+            onBlur={() => setEmailDone(true)} onKeyDown={nextOnEnter('loginPassword')}
           />
           <FieldError id="loginEmailErr">{fieldErr.email}</FieldError>
           {emailDone && !fieldErr.email && <EmailSuggest value={email} onApply={setEmail} />}
