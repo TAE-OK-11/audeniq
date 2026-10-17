@@ -47,6 +47,41 @@ export const EMAIL_INPUT = {
 
 export const isEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
 
+// 자주 쓰는 메일 도메인 — 'gamil.com'·'naver.co'처럼 한두 글자 틀린 주소를 칸 아래에서 바로잡게 한다
+const MAIL_DOMAINS = ['gmail.com', 'naver.com', 'daum.net', 'hanmail.net', 'kakao.com', 'nate.com', 'icloud.com', 'outlook.com', 'hotmail.com', 'yahoo.com'];
+
+function editDistance(a: string, b: string): number {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)] as number[]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+  }
+  return d[a.length][b.length];
+}
+
+/** 'kim@gamil.com' → 'kim@gmail.com'. 맞는 도메인이거나 비슷한 게 없으면 '' */
+export function emailSuggestion(v: string): string {
+  const m = /^([^\s@]+)@([^\s@]+)$/.exec(v.trim().toLowerCase());
+  if (!m) return '';
+  const [, user, domain] = m;
+  if (MAIL_DOMAINS.includes(domain)) return '';
+  let best = '', bestD = 3;
+  for (const d of MAIL_DOMAINS) { const n = editDistance(domain, d); if (n < bestD) { best = d; bestD = n; } }
+  return best && bestD <= (domain.length > 6 ? 2 : 1) ? `${user}@${best}` : '';
+}
+
+/** 이메일 칸 아래 '혹시 …인가요?' — 누르면 그 주소로 바꾼다 */
+export function EmailSuggest({ value, onApply }: { value: string; onApply: (v: string) => void }) {
+  const hint = emailSuggestion(value);
+  if (!hint) return null;
+  return (
+    <p className="ui-field-help aq-email-suggest" role="status">
+      혹시 <b>{hint}</b>인가요? <button type="button" className="aq-inline-link" onClick={() => onApply(hint)}>바꾸기</button>
+    </p>
+  );
+}
+
 /** 칸 아래 빨간 안내 — 칸의 aria-describedby로 이어 화면 읽기 프로그램도 읽는다 */
 export function FieldError({ id, children }: { id: string; children?: ReactNode }) {
   if (!children) return null;
