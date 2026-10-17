@@ -6,6 +6,7 @@ import { prefetchInitialRoute } from './routes';
 import { initPressFeedback } from './lib/press';
 import { initRowNav } from './lib/rowNav';
 import { initExpand } from './lib/expand';
+import { initTopCover } from './lib/topCover';
 import { MOCK } from './api/client';
 
 const root = document.getElementById('root');
@@ -37,6 +38,8 @@ initPressFeedback();
 initRowNav();
 // 누르면 나타나는 입력 폼·패널은 높이가 자라며 펼쳐지게
 initExpand();
+// 키보드가 떠 있는 동안 상태 표시줄 칸으로 뒤 내용이 비치지 않게 (iOS 26)
+initTopCover();
 
 prefetchInitialRoute();
 
