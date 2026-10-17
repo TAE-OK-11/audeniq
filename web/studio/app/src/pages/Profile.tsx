@@ -248,7 +248,8 @@ export function Profile() {
 
       <section className="aq-set-card" aria-labelledby="setIdentity">
         <h2 id="setIdentity">본인 확인</h2>
-        <SetRow id="accountRowName" label="실명" value={account.realName} empty="본인인증 후 등록돼요" onClick={() => setAccountEdit('verify')} />
+        {/* 실명은 인증하면 채워지는 칸 — 인증 전에는 '본인인증' 한 줄만 (같은 창을 여는 줄이 두 개였다) */}
+        {account.realName && <SetRow id="accountRowName" label="실명" value={account.realName} onClick={() => setAccountEdit('verify')} />}
         <SetRow
           id="accountRowVerify" label="본인인증"
           value={account.verified ? `${verifyLabel(account.verified.method)} 인증 완료` : undefined}

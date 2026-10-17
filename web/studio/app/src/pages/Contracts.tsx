@@ -53,25 +53,6 @@ export function Contracts() {
         </div>
       </div>
 
-
-      <div className="studio-doc-path">
-        <div>
-          <span className="studio-path-n">1단계</span>
-          <strong>배급 신청서 서명</strong>
-          <small>발매를 접수할 때</small>
-        </div>
-        <div>
-          <span className="studio-path-n">2단계</span>
-          <strong>담당자 검토</strong>
-          <small>수수료·배급 조건 확정</small>
-        </div>
-        <div>
-          <span className="studio-path-n">3단계</span>
-          <strong>배급 계약서 서명</strong>
-          <small>권리 확인 체크 후 배급 시작</small>
-        </div>
-      </div>
-
       <div id="contractList">
         {agreements.length ? (
           <div className="aq-bundle-list aq-stagger">
@@ -86,6 +67,28 @@ export function Contracts() {
           />
         )}
       </div>
+
+      {/* 진행 순서는 처음 한 번 읽으면 되는 설명 — 서명할 계약서보다 위에 있어 매번 지나쳐야 했다 */}
+      <section className="aq-doc-path-wrap" aria-labelledby="docPathTitle">
+        <h2 id="docPathTitle">계약은 이렇게 진행돼요</h2>
+        <div className="studio-doc-path">
+          <div>
+            <span className="studio-path-n">1단계</span>
+            <strong>배급 신청서 서명</strong>
+            <small>발매를 접수할 때</small>
+          </div>
+          <div>
+            <span className="studio-path-n">2단계</span>
+            <strong>담당자 검토</strong>
+            <small>수수료·배급 조건 확정</small>
+          </div>
+          <div>
+            <span className="studio-path-n">3단계</span>
+            <strong>배급 계약서 서명</strong>
+            <small>권리 확인 체크 후 배급 시작</small>
+          </div>
+        </div>
+      </section>
 
       <OrgContractEnd />
 
