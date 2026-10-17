@@ -27,68 +27,58 @@ const PAYOUT_STATUS: Record<Payout['status'], [string, Tone]> = {
 const PAYOUT_STEPS = ['요청 접수', '처리 중', '입금 완료'] as const;
 const payoutStep = (st: Payout['status']) => (st === 'requested' ? 0 : st === 'processing' ? 1 : st === 'sent' ? 2 : -1);
 
-/** 다음 정산 반영 예상 — 보통 매월 중순에 전월 정산이 반영된다 (정산 약관 제5조: 매월 1회). 날짜를 약속하지 않고 '중순'으로만 */
-function nextSettlement(today = new Date()): { when: string; period: string } {
-  const y = today.getFullYear(), m = today.getMonth(); // 0-based
-  const target = today.getDate() < 15 ? new Date(y, m, 1) : new Date(y, m + 1, 1);
-  const prev = new Date(target.getFullYear(), target.getMonth() - 1, 1);
-  return { when: `${target.getMonth() + 1}월 중순`, period: `${prev.getMonth() + 1}월분` };
-}
 import { money, niceDate } from '../lib/format';
-import { monthKey, todayStr } from '../lib/date';
+import { todayStr } from '../lib/date';
 import { uid } from '../lib/store';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
 import { Money } from '../components/Money';
 import { Segmented } from '../components/Segmented';
 import { Badge, type Tone } from '../ui';
-import { MonthField } from '../components/Picker';
 
-const PLATFORMS = ['Spotify', 'Apple Music', 'YouTube Music', '멜론', '지니', 'FLO', '벅스', 'Amazon Music', 'TIDAL', 'Deezer', '기타'];
+/** 정산은 플랫폼별·월별로 나뉘어 들어오지 않는다 — 운영팀이 정산금(크레딧)을 넣으면 잔액에 쌓이고, 아티스트가 원할 때 지급을 요청한다.
+ *  그래서 내역은 통장처럼 날짜별 적립·차감 줄로 보여 준다 */
+const entryTitle = (s: Statement) => s.note || (s.amount < 0 ? '정산금 차감' : '정산금 적립');
+const entryKind = (s: Statement) => (s.amount < 0 ? '차감' : '적립');
+/** 'YYYY-MM-DD' → '9월 29일' (올해가 아니면 연도까지) */
+function dayLabel(d: string, now = new Date()): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d);
+  if (!m) return d || '날짜 없음';
+  const md = `${+m[2]}월 ${+m[3]}일`;
+  return +m[1] === now.getFullYear() ? md : `${m[1]}년 ${md}`;
+}
+/** +50,000원 / −50,000원 — 들어온 돈과 빠진 돈을 부호로 */
+function SignedMoney({ value }: { value: number }) {
+  return <span className={`settle-entry-amount${value < 0 ? ' is-minus' : ' is-plus'}`}>{value < 0 ? '−' : '+'}<Money value={Math.abs(value)} /></span>;
+}
 
-/** 정산 내역 직접 기록 폼 */
-function StatementForm({ onSave }: { onSave: (s: { period: string; platform: string; amount: number; note: string }) => void }) {
+/** 체험 모드: 운영팀이 정산금을 넣는 상황을 흉내 낸다 */
+function StatementForm({ onSave }: { onSave: (s: { amount: number; note: string }) => void }) {
   const close = useModalClose();
   const toast = useToast();
-  const [period, setPeriod] = useState(monthKey(-1));
-  const [platform, setPlatform] = useState(PLATFORMS[0]);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    const amt = Number(amount.replace(/,/g, ''));
-    if (!/^\d{4}-\d{2}$/.test(period)) { toast('정산 기간을 선택해 주세요.'); return; }
-    if (!Number.isInteger(amt) || amt <= 0) { toast('정산 금액을 1원 이상 입력해 주세요.'); return; }
-    onSave({ period, platform, amount: amt, note: note.trim() });
+    const amt = Number(amount);
+    if (!Number.isInteger(amt) || amt <= 0) { toast('금액을 1원 이상 입력해 주세요.'); return; }
+    onSave({ amount: amt, note: note.trim() });
     close();
   };
   return (
     <form onSubmit={submit}>
-      <p className="small muted">받은 정산서의 기간·플랫폼·금액을 기록하면 요청 가능 잔액에 반영돼요.</p>
-      <div className="form-grid">
-        <div className="ui-field">
-          <label htmlFor="stPeriod">정산 기간</label>
-          <MonthField id="stPeriod" required max={monthKey(0)} value={period} onChange={setPeriod} />
-        </div>
-        <div className="ui-field">
-          <label htmlFor="stPlatform">플랫폼</label>
-          <select id="stPlatform" value={platform} onChange={e => setPlatform(e.target.value)}>
-            {PLATFORMS.map(p => <option key={p}>{p}</option>)}
-          </select>
-        </div>
+      <p className="small muted">실제로는 운영팀이 정산금을 넣어 드려요. 체험에서는 직접 넣어 지급 요청까지 해 볼 수 있어요.</p>
+      <div className="ui-field">
+        <label htmlFor="stAmount">금액 (원)</label>
+        <input id="stAmount" inputMode="numeric" required placeholder="예: 50,000"
+          value={amount ? Number(amount).toLocaleString('ko-KR') : ''} onChange={e => setAmount(e.target.value.replace(/\D/g, '').replace(/^0+/, '').slice(0, 15))} />
       </div>
       <div className="ui-field">
-        <label htmlFor="stAmount">정산 금액 (원)</label>
-        <input id="stAmount" inputMode="numeric" required placeholder="예: 24406"
-          value={amount} onChange={e => setAmount(e.target.value.replace(/[^\d]/g, ''))} />
-        {amount && <p className="ui-field-help">{money(Number(amount))}</p>}
-      </div>
-      <div className="ui-field">
-        <label htmlFor="stNote">메모<span className="aq-optional">선택</span></label>
-        <input id="stNote" maxLength={200} value={note} onChange={e => setNote(e.target.value)} placeholder="정산서 번호 등" />
+        <label htmlFor="stNote">내용<span className="aq-optional">선택</span></label>
+        <input id="stNote" maxLength={200} value={note} onChange={e => setNote(e.target.value)} placeholder="예: 9월 정산금" />
       </div>
       <div className="aq-sticky-foot">
-        <button className="ui-btn is-primary studio-submit-wide" type="submit">정산 내역 기록하기</button>
+        <button className="ui-btn is-primary studio-submit-wide" type="submit">정산금 넣기</button>
       </div>
     </form>
   );
@@ -188,7 +178,7 @@ export function Settlement() {
       toast('지급 요청 합계보다 정산액이 적어져서 삭제할 수 없어요. 요청 기록을 먼저 정리해 주세요.');
       return;
     }
-    if (!(await confirm({ title: '정산 내역을 삭제할까요?', message: `${s.period} · ${s.platform} · ${money(s.amount)}`, confirmLabel: '삭제', danger: true }))) return;
+    if (!(await confirm({ title: '정산 내역을 삭제할까요?', message: `${niceDate(s.created)} · ${entryTitle(s)} · ${money(s.amount)}`, confirmLabel: '삭제', danger: true }))) return;
     statementsStore.set(ss => ss.filter(x => x.id !== id));
     toast('정산 내역을 삭제했어요.');
   };
@@ -249,9 +239,10 @@ export function Settlement() {
     toast('지급 요청 내역을 저장했어요.');
   };
 
-  const orderedStatements = statements.slice().sort((a, b) => b.period.localeCompare(a.period));
-  const statementMonths = [...orderedStatements.reduce((m, s) => m.set(s.period, [...(m.get(s.period) ?? []), s]), new Map<string, Statement[]>())];
-  const monthTitle = (p: string) => (/^\d{4}-\d{2}/.test(p) ? `${p.slice(0, 4)}년 ${+p.slice(5, 7)}월 수익` : p);
+  // 최근 것부터 — 같은 날은 들어온 순서 그대로(서버는 이미 최신순)
+  const day = (s: Statement) => s.created.slice(0, 10);
+  const orderedStatements = statements.slice().sort((a, b) => day(b).localeCompare(day(a)));
+  const statementDays = [...orderedStatements.reduce((m, s) => m.set(day(s), [...(m.get(day(s)) ?? []), s]), new Map<string, Statement[]>())];
 
   return (
     <div id="view-settlement" className="view">
@@ -259,18 +250,18 @@ export function Settlement() {
         <div>
           <p className="eyebrow">내 작업실</p>
           <h1>정산·지급</h1>
-          <p>확정된 정산과 지급 요청 기록이에요. <Link to="/terms/settlement" className="aq-inline-link">정산 약관 보기</Link></p>
+          <p>쌓인 정산금은 원할 때 지급을 요청해 받을 수 있어요. <Link to="/terms/settlement" className="aq-inline-link">정산 약관 보기</Link></p>
         </div>
       </div>
 
       <section className="ui-card settle-hero" aria-labelledby="settleHeroHeading">
         <h2 id="settleHeroHeading">받을 수 있는 금액</h2>
         <strong className="settle-hero-amount"><Money value={left} animate /></strong>
-        {/* 확정 정산액이 지금 어디에 있는지 — 받을 수 있음 / 지급 처리 중 / 보류를 한 막대로 */}
+        {/* 쌓인 정산금이 지금 어디에 있는지 — 받을 수 있음 / 지급 처리 중 / 보류를 한 막대로 */}
         {total > 0 ? (
-          <div className="settle-split" aria-label={`확정 정산 ${money(total)} 중 받을 수 있음 ${money(left)}, 지급 처리 중 ${money(used)}${held > 0 ? `, 보류 ${money(held)}` : ''}`}>
+          <div className="settle-split" aria-label={`쌓인 정산금 ${money(total)} 중 받을 수 있음 ${money(left)}, 지급 처리 중 ${money(used)}${held > 0 ? `, 보류 ${money(held)}` : ''}`}>
             {/* 막대가 무엇을 나눈 것인지 글자로 — '받을 수 있음'과 '지급 요청함'이 비율처럼 읽혔다 */}
-            <p className="settle-split-cap" aria-hidden="true">확정 정산 <b><Money value={total} /></b> 중</p>
+            <p className="settle-split-cap" aria-hidden="true">쌓인 정산금 <b><Money value={total} /></b> 중</p>
             <div className="settle-split-bar" aria-hidden="true">
               <i className="is-left" style={{ flexGrow: left }} />
               <i className="is-used" style={{ flexGrow: used }} />
@@ -286,18 +277,18 @@ export function Settlement() {
             )}
           </div>
         ) : (
-          <p className="settle-hero-sub">아직 확정된 정산이 없어요.</p>
+          <p className="settle-hero-sub">아직 쌓인 정산금이 없어요. 들어오면 바로 받을 수 있어요.</p>
         )}
-        <dl className="settle-facts">
-          <div><dt>다음 정산</dt><dd>{nextSettlement().when} · {nextSettlement().period} 반영 예정</dd></div>
-          {left > 0 && paymentRegistered && (
+        {/* 정산금은 정해진 날에 들어오지 않고 운영팀이 넣는 대로 쌓인다 — '다음 정산 ○월 중순' 같은 약속은 하지 않는다 */}
+        {left > 0 && paymentRegistered && (
+          <dl className="settle-facts">
             <div><dt>지금 모두 받으면</dt><dd>수수료 {payoutFee(left) ? money(payoutFee(left)) : '무료'} · 실제 받는 금액 <b>{money(Math.max(0, left - payoutFee(left)))}</b></dd></div>
-          )}
-        </dl>
+          </dl>
+        )}
         {minimum > 1 && left < minimum && (
           <div className="settle-min" role="note">
             <div className="settle-min-bar" aria-hidden="true"><i style={{ width: `${Math.min(100, Math.round((left / minimum) * 100))}%` }} /></div>
-            <p>{money(minimum - left)} 더 쌓이면 받을 수 있어요 (최소 {money(minimum)}). 모자란 금액은 다음 정산으로 넘어가요.</p>
+            <p>{money(minimum - left)} 더 쌓이면 받을 수 있어요 (최소 {money(minimum)}).</p>
           </div>
         )}
         {/* 계좌 줄 전체를 누를 수 있게 — 오른쪽 작은 '등록·변경' 글자(44×38px)만 눌렸다.
@@ -314,7 +305,7 @@ export function Settlement() {
           </button>
         )}
         <div className="settle-hero-actions">
-          {MOCK && <button type="button" className="ui-btn is-soft is-lg" onClick={() => setShowStatement(true)}>예시 정산 추가</button>}
+          {MOCK && <button type="button" className="ui-btn is-soft is-lg" onClick={() => setShowStatement(true)}>정산금 넣기</button>}
           <button type="button" className="ui-btn is-primary is-lg" onClick={openPayoutModal}>{paymentRegistered ? '수익 받기' : '계좌 등록하기'}</button>
         </div>
       </section>
@@ -322,7 +313,7 @@ export function Settlement() {
 
       <Segmented
         tabs className="aq-seg-tabs" label="정산 내역 구분" value={tab} onChange={setTab}
-        options={[{ value: 'statements', label: '정산 내역' }, { value: 'payouts', label: '지급 요청 기록' }] as const}
+        options={[{ value: 'statements', label: '적립 내역' }, { value: 'payouts', label: '지급 요청 기록' }] as const}
       />
 
       {tab === 'statements' ? (
@@ -337,42 +328,36 @@ export function Settlement() {
           )}
           {orderedStatements.length ? (
             <div className="aq-catalog-cards aq-stagger">
-              {/* 달별로 묶어 합계를 먼저 보이고, 그 아래 플랫폼별 금액 — 같은 달 줄이 흩어져 있어 한 달에 얼마인지 더해 봐야 했다 */}
-              {statementMonths.map(([period, rows]) => (
-                <section key={period} className="settle-month" aria-label={`${period} 정산`}>
-                  <header className="settle-month-head">
-                    <span>{monthTitle(period)}</span>
-                    <small>플랫폼 {rows.length}곳</small>
-                    <strong><Money value={rows.reduce((n, r) => n + r.amount, 0)} /></strong>
-                  </header>
+              {/* 통장처럼 날짜별로 — 들어온 정산금은 +, 운영팀이 거둬 간 금액은 − */}
+              {statementDays.map(([d, rows]) => (
+                <section key={d} className="settle-day" aria-label={dayLabel(d)}>
+                  <h3 className="settle-day-head">{dayLabel(d)}</h3>
                   {rows.map(s => (
-                    <button type="button" key={s.id} className="ui-row aq-statement-card settle-month-row" onClick={() => setDetail({ kind: 'statement', id: s.id })}>
+                    <button type="button" key={s.id} className="ui-row aq-statement-card settle-entry" onClick={() => setDetail({ kind: 'statement', id: s.id })}>
+                      <span className={`aq-statement-icon${s.amount < 0 ? ' is-minus' : ''}`} aria-hidden="true"><Glyph name={s.amount < 0 ? 'minus' : 'plus'} size={17} /></span>
                       <div className="min-0">
-                        <span className="ui-row-title">{s.platform}</span>
-                        <span className="ui-row-meta"><span>{s.note || (MOCK ? '체험용으로 추가한 정산' : '플랫폼 정산')}</span><span>{niceDate(s.created)} 반영</span></span>
+                        <span className="ui-row-title">{entryTitle(s)}</span>
+                        <span className="ui-row-meta">{[entryKind(s), s.platform, s.period && `${s.period}분`].filter(Boolean).map(t => <span key={t}>{t}</span>)}</span>
                       </div>
-                      <div className="aq-statement-end">
-                        <strong><Money value={s.amount} /></strong>
-                        <Glyph name="chevron-right" size={16} />
-                      </div>
+                      <div className="aq-statement-end"><SignedMoney value={s.amount} /></div>
                     </button>
                   ))}
                 </section>
               ))}
               {statementsNext && (
                 <button type="button" className="ui-btn is-white aq-report-more" onClick={loadMoreStatements} disabled={loadingMore}>
-                  {loadingMore ? '불러오는 중…' : '이전 정산 내역 더 보기'}
+                  {loadingMore ? '불러오는 중…' : '이전 내역 더 보기'}
                   <Glyph name="chevron-down" size={15} />
                 </button>
               )}
             </div>
           ) : (
             <div className="ui-empty">
-              <h2>정산 내역이 없어요.</h2>
+              <h2>아직 들어온 정산금이 없어요.</h2>
               {MOCK ? (<>
-                <p>정산서를 받은 뒤 금액과 기간을 직접 기록할 수 있어요.</p>
-                <button type="button" className="ui-btn is-primary" onClick={() => setShowStatement(true)}>정산 내역 기록하기</button>
-              </>) : <p>플랫폼 정산이 확정되면 이곳에 표시돼요. 보통 매월 중순에 전월 정산이 반영돼요.</p>}
+                <p>체험용 정산금을 넣어 지급 요청까지 해 볼 수 있어요.</p>
+                <button type="button" className="ui-btn is-primary" onClick={() => setShowStatement(true)}>체험용 정산금 넣기</button>
+              </>) : <p>운영팀이 정산금을 넣으면 여기에 쌓이고, 바로 지급을 요청할 수 있어요.</p>}
             </div>
           )}
         </div>
@@ -410,17 +395,17 @@ export function Settlement() {
       )}
 
       {detailStatement && (
-        <Modal title={`${detailStatement.period} · ${detailStatement.platform}`} onClose={() => setDetail(null)}>
+        <Modal title={entryTitle(detailStatement)} onClose={() => setDetail(null)}>
           <dl className="ui-kv aq-statement-detail">
-            <div><dt>정산 금액</dt><dd><Money value={detailStatement.amount} /></dd></div>
-            <div><dt>정산 기간</dt><dd>{detailStatement.period}</dd></div>
-            <div><dt>플랫폼</dt><dd>{detailStatement.platform}</dd></div>
-            <div><dt>기록일</dt><dd>{niceDate(detailStatement.created)}</dd></div>
-            {detailStatement.note && <div><dt>메모</dt><dd>{detailStatement.note}</dd></div>}
+            <div><dt>금액</dt><dd><SignedMoney value={detailStatement.amount} /></dd></div>
+            <div><dt>구분</dt><dd>{detailStatement.amount < 0 ? '차감 — 잔액에서 빠졌어요' : '적립 — 잔액에 더해졌어요'}</dd></div>
+            <div><dt>날짜</dt><dd>{niceDate(detailStatement.created)}</dd></div>
+            {detailStatement.platform && <div><dt>플랫폼</dt><dd>{detailStatement.platform}</dd></div>}
+            {detailStatement.period && <div><dt>정산 기간</dt><dd>{detailStatement.period}</dd></div>}
           </dl>
           {MOCK && (
             <div className="row-actions aq-statement-detail-actions">
-              <button type="button" className="ui-btn is-text aq-danger-text" onClick={async () => { const id = detailStatement.id; setDetail(null); await deleteStatement(id); }}>정산 내역 삭제</button>
+              <button type="button" className="ui-btn is-text aq-danger-text" onClick={async () => { const id = detailStatement.id; setDetail(null); await deleteStatement(id); }}>이 내역 삭제</button>
             </div>
           )}
         </Modal>
@@ -507,12 +492,12 @@ export function Settlement() {
       )}
 
       {showStatement && (
-        <Modal title="정산 내역 기록" onClose={() => setShowStatement(false)}>
+        <Modal title="체험용 정산금 넣기" onClose={() => setShowStatement(false)}>
           <StatementForm
             onSave={st => {
-              statementsStore.set(ss => [...ss, { id: uid('st'), ...st, created: todayStr() }]);
+              statementsStore.set(ss => [...ss, { id: uid('st'), period: '', platform: '', ...st, created: todayStr() }]);
               setTab('statements');
-              toast('정산 내역을 기록했어요.');
+              toast(`정산금 ${money(st.amount)}을 넣었어요.`);
             }}
           />
         </Modal>
