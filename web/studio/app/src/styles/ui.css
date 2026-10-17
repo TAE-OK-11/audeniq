@@ -547,6 +547,9 @@ summary::-webkit-details-marker{display:none}
 
 /* release detail: tabs never touch the hero; back link sits closer to the header on phones */
 #view-release .aq-detail-hero{margin-bottom:12px;align-items:start}
+/* 불러오는 동안의 큰 카드 자리 — 실제 카드와 같은 위치·높이(휴대폰 170px, 넓은 화면 194px)라 다 불러와도 화면이 움직이지 않는다 */
+#view-release .aq-detail-skel{height:194px!important;margin:4px 0 12px;border-radius:var(--aq-r-3xl)}
+@media (max-width:760px){#view-release .aq-detail-skel{height:170px!important;border-radius:var(--aq-r-2xl)}}
 #view-release .spaced-actions{margin:-18px 0 8px!important}
 /* 발매 상태 알약 — 처음 쓰던 상태 칩 모양 그대로 (옅은 바탕 + 상태 색 글자, 11px) */
 /* 발매 상태도 다른 배지와 같은 크기 — 혼자 11px·더 큰 여백이라 홈·목록에서 다른 배지와 키가 달랐다 */

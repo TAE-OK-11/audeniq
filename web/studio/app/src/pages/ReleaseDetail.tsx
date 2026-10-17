@@ -134,10 +134,14 @@ export function ReleaseDetail() {
   const [coverOk, coverFailed] = useImageOk(coverSrc);
 
   if (loading && !rel) {
+    // 불러오는 동안에도 실제 화면과 같은 뼈대 — '발매 목록' 링크는 데이터와 상관없으니 그대로 두고, 큰 카드 자리도 같은 높이로.
+    // 예전엔 링크 없이 큰 회색 칸부터 그려, 다 불러오면 화면 전체가 40px쯤 한 번에 움직였다
     return (
-      <div className="view" aria-busy="true">
-        <SkeletonBlock height={190} />
-        <div style={{ height: 24 }} />
+      <div id="view-release" className="view" aria-busy="true">
+        <div className="spaced-actions">
+          <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={() => nav('/releases')}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />발매 목록</button>
+        </div>
+        <SkeletonBlock height={160} className="aq-detail-skel" />
         <SkeletonRows count={3} />
       </div>
     );

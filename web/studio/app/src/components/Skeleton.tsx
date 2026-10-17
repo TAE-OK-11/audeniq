@@ -16,8 +16,8 @@ export function SkeletonRows({ count = 3, avatar = true }: { count?: number; ava
   );
 }
 
-export function SkeletonBlock({ height = 180 }: { height?: number }) {
-  return <div className="aq-skel aq-skel-block" style={{ height }} aria-busy="true" aria-label="불러오는 중" />;
+export function SkeletonBlock({ height = 180, className = '' }: { height?: number; className?: string }) {
+  return <div className={`aq-skel aq-skel-block${className ? ` ${className}` : ''}`} style={{ height }} aria-busy="true" aria-label="불러오는 중" />;
 }
 
 export function PageSkeleton() {
