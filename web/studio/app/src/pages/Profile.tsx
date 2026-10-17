@@ -48,6 +48,8 @@ function SetRow({ id, label, value, empty, onClick, danger }: {
   );
 }
 
+const COUNTRY_OPTIONS: [string, string][] = [['KR', '대한민국'], ['US', '미국'], ['JP', '일본'], ['OTHER', '기타']];
+
 /** 한 항목만 고치는 창 */
 function FieldEditor({ field, profile, onSaved }: { field: Field; profile: ProfileInfo; onSaved: (next: ProfileInfo) => Promise<boolean> }) {
   const close = useModalClose();
@@ -57,15 +59,42 @@ function FieldEditor({ field, profile, onSaved }: { field: Field; profile: Profi
   const id = FIELD_ID[field];
   const changed = value.trim() !== String(profile[field] ?? '').trim();
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const v = field === 'country' ? value : value.trim();
-    if (field === 'name' && !v) { setError('활동명을 입력해 주세요.'); return; }
-    if (field === 'email' && v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) { setError('이메일 형식을 확인해 주세요.'); return; }
+  const save = async (v: string) => {
     setSaving(true);
     const ok = await onSaved({ ...profile, [field]: v });
     setSaving(false);
     if (ok) close();
+  };
+
+  // 활동 국가는 고를 것이 넷뿐 — 창 안에 선택칸을 또 두지 않고 목록을 바로 보여, 누르면 곧바로 저장한다
+  // (예전: 줄 누르기 → 선택칸 누르기 → 고르기 → 저장, 네 번)
+  if (field === 'country') {
+    const current = value || 'KR';
+    return (
+      <div className="aq-set-editor aq-country-list" role="radiogroup" aria-label={FIELD_TITLE.country}>
+        {COUNTRY_OPTIONS.map(([code, label]) => {
+          const on = code === current;
+          return (
+            <button
+              key={code} type="button" role="radio" aria-checked={on} disabled={saving}
+              className={`aq-picker-opt${on ? ' is-on' : ''}`}
+              onClick={() => { setValue(code); if (code === String(profile.country || 'KR')) close(); else void save(code); }}
+            >
+              <span>{label}</span>
+              {on && <Glyph name="check" size={18} />}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const v = value.trim();
+    if (field === 'name' && !v) { setError('활동명을 입력해 주세요.'); return; }
+    if (field === 'email' && v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) { setError('이메일 형식을 확인해 주세요.'); return; }
+    await save(v);
   };
 
   return (
@@ -77,13 +106,6 @@ function FieldEditor({ field, profile, onSaved }: { field: Field; profile: Profi
             <textarea id={id} rows={5} maxLength={1500} autoFocus placeholder="아티스트를 소개해 주세요." value={value} onChange={e => setValue(e.target.value)} />
             <p className="ui-field-help aq-counter">{value.length} / 1500</p>
           </>
-        ) : field === 'country' ? (
-          <select id={id} value={value || 'KR'} onChange={e => setValue(e.target.value)}>
-            <option value="KR">대한민국</option>
-            <option value="US">미국</option>
-            <option value="JP">일본</option>
-            <option value="OTHER">기타</option>
-          </select>
         ) : (
           <input
             id={id} autoFocus
