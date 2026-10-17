@@ -8,7 +8,7 @@ const PRESSABLE = [
   '.ui-row', '.service-item',
 ].join(',');
 /** 눌린 모습을 보여 주는 최소 시간 — 빠른 탭에서도 눌렸다는 걸 느낄 수 있게 */
-const MIN_MS = 110;
+const MIN_MS = 70;
 /** 이만큼 움직이면 누름이 아니라 스크롤로 본다 */
 const MOVE_PX = 10;
 
