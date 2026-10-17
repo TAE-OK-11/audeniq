@@ -395,6 +395,15 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 /* 홈 새 발매 띠 — 설명 줄을 뺐으니 높이도 한 줄 + 버튼에 맞춘다 */
 #view-home .aq-home-hero{min-height:0}
 @media (min-width:761px){#view-home .aq-home-hero{padding:24px 28px}}
+/* 먼저 할 일 — 보완처럼 기한이 걸린 일이 있으면 새 발매 대신 주황 면으로 맨 위에 */
+#view-home .aq-home-hero.is-urgent{background:var(--aq-amber-50)}
+/* 큰 카드를 먼저 할 일에 내주면 새 발매는 제목 옆 버튼으로 — 휴대폰에서도 보인다 (live.css가 홈 머리 버튼을 숨김) */
+#view-home>.ui-page-head>.ui-btn.aq-home-new{display:inline-flex}
+#view-home .aq-home-hero.is-urgent .eyebrow{color:var(--aq-amber-600)}
+@media(hover:hover){#view-home a.aq-home-hero.is-urgent:hover{background:var(--aq-amber-100)}}
+/* 바로가기 아래 상태 한 줄 — 설명 대신 지금 상태를 보여 줄 때 */
+#view-home .service-item p.aq-grid-status{color:var(--aq-text-2);font-weight:600}
+#view-home .service-item p.aq-grid-status.is-warn{color:var(--aq-amber-600)}
 
 /* 메뉴 아래 약관 링크 — 좁은 판에서 글자가 두 줄로 쪼개지지 않고 줄 단위로 넘어간다 */
 #portalNav .aq-nav-foot{flex-wrap:wrap;row-gap:6px}

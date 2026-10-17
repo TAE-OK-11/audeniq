@@ -109,7 +109,7 @@ export function Notifications() {
         <div>
           <p className="eyebrow">계정·지원</p>
           <h1>알림</h1>
-          <p>발매·정산·서류 변경 사항을 확인해 보세요.</p>
+          <p>발매·정산·서류에 생긴 변화를 알려 드려요.</p>
         </div>
       </div>
 

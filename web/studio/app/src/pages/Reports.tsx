@@ -220,7 +220,7 @@ export function Reports() {
         <div>
           <p className="eyebrow">내 작업실</p>
           <h1 id="reportsTitle">음악 리포트</h1>
-          <p>플랫폼별 실적을 기간과 곡별로 확인해 보세요.</p>
+          <p>플랫폼별 재생과 수익을 기간·곡마다 나눠 봐요.</p>
         </div>
         <button type="button" className="ui-btn is-soft" onClick={exportCsv} disabled={exporting}><Glyph name="download" size={15} className="aq-glyph-lead" />{exporting ? '내보내는 중…' : 'CSV 내보내기'}</button>
       </div>
