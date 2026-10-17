@@ -90,7 +90,7 @@ export async function req<T>(path: string, opts: ReqOptions = {}): Promise<T> {
     // 다른 탭에서 다시 로그인하면 세션(과 CSRF 토큰)이 바뀌어 이 탭의 쓰기가 모두 403이 된다.
     // 토큰을 새로 받아 한 번만 다시 보낸다. 다른 계정으로 바뀌었으면 데이터가 섞이지 않게 새로 연다.
     if (res.status === 403 && method !== 'GET' && !opts.csrfRetried && path !== '/api/auth/csrf') {
-      const refreshed = await refreshSession();
+      const refreshed = await refreshSession(headers['X-CSRF-Token'] ?? '');
       if (refreshed) return req<T>(path, { ...opts, csrfRetried: true });
     }
     if (res.status === 401 && !opts.quiet401) {
@@ -109,8 +109,10 @@ export async function req<T>(path: string, opts: ReqOptions = {}): Promise<T> {
 }
 
 /** 세션이 바뀌었는지 확인하고 CSRF 토큰을 새로 받는다. 다시 보내도 되면 true */
-async function refreshSession(): Promise<boolean> {
-  const before = csrfToken;
+async function refreshSession(sentWith: string): Promise<boolean> {
+  // 다른 요청이 이미 새 토큰을 받아 왔으면 그걸로 다시 보낸다 — 서버 토큰은 세션마다 같아서
+  // 새로 받아도 '바뀌지 않음'으로 보여 두 번째 403이 그대로 오류가 됐다
+  if (csrfToken && csrfToken !== sentWith) return true;
   try {
     const me = await req<{ user_id: string }>('/api/me', { quiet401: true, quietServer: true });
     if (sessionUser && me.user_id !== sessionUser) {
@@ -121,7 +123,7 @@ async function refreshSession(): Promise<boolean> {
   } catch {
     return false;
   }
-  return csrfToken !== '' && csrfToken !== before;
+  return csrfToken !== '' && csrfToken !== sentWith;
 }
 
 /** 새로고침 후 세션 쿠키로 CSRF 토큰을 다시 받는다 */
@@ -175,7 +177,11 @@ export function putToGrant(grant: UploadGrant, file: Blob, onProgress?: (ratio: 
         : reject(new ApiError('파일을 저장소에 올리지 못했어요. 잠시 후 다시 시도해 주세요.', xhr.status, 'UPLOAD_PUT_FAILED')));
     xhr.onerror = () => reject(new ApiError('파일 업로드 중 연결이 끊겼어요. 네트워크를 확인해 주세요.', 0, 'NETWORK'));
     xhr.onabort = () => reject(new ApiError('업로드를 취소했어요.', 0, 'ABORTED'));
-    signal?.addEventListener('abort', () => xhr.abort());
+    // 이미 취소된 뒤면 보내지 않는다 — 'abort' 이벤트는 다시 오지 않아 파일 전체를 올리고 있었다
+    if (signal?.aborted) { reject(new ApiError('업로드를 취소했어요.', 0, 'ABORTED')); return; }
+    const stop = () => xhr.abort();
+    signal?.addEventListener('abort', stop, { once: true });
+    xhr.onloadend = () => signal?.removeEventListener('abort', stop);
     xhr.send(file);
   });
 }

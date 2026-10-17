@@ -18,6 +18,7 @@ export function Verify() {
     if (!value.trim() || busy) return;
     setBusy(true);
     setError('');
+    setResult(null); // 앞서 확인한 다른 코드의 '원본이에요' 결과가 새 코드의 오류와 함께 남지 않게
     try {
       setResult(await req<Result>(`/api/print-stamps/verify?code=${encodeURIComponent(value.trim())}`, { quiet401: true }));
     } catch (e) {

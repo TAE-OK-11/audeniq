@@ -1906,7 +1906,9 @@ export function Upload() {
     setSubmitError('');
     try {
       await saveChain.current.catch(() => {});
-      const payload = toPayload(form, step);
+      // 기다리는 동안 자동 저장이 서버 트랙 id를 받아 왔을 수 있다 — 클로저의 form이 아니라 최신 상태로 보낸다(트랙 중복 방지)
+      const f = formRef.current;
+      const payload = toPayload(f, step);
       const application = resubmit ? undefined : await createApplication({
         payload, signature: await compactSignature(signRef.current?.toDataURL() ?? ''), signerName, signerRole: signer.role,
         agreements: AGREEMENTS.map(a => a.id),
@@ -1915,7 +1917,7 @@ export function Upload() {
       draftIdRef.current = r.id;
       dirtyRef.current = false;
       // 실서버는 계약서를 서버가 만든다 (알림·서류는 pushNotice가 새로 받게 한다)
-      if (MOCK) ensureReleaseDocuments(form, r.id);
+      if (MOCK) ensureReleaseDocuments(f, r.id);
       pushNotice({
         id: uid('n'), kind: '발매', time: stampNow(), link: `/releases/${r.id}`,
         title: editId && origStatus !== 'draft' ? `${r.title} 수정 내용을 보냈어요.` : `${r.title} 발매를 신청했어요.`,
