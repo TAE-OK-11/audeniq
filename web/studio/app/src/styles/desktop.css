@@ -27,11 +27,11 @@
   /* 왼쪽 칸을 화면에 고정할 때의 위치(상단 메뉴바 아래) */
   .view { --pc-sticky-top: 96px; }
 
-  /* ── 내 음악: 발매는 커버가 큰 카드 격자, 트랙은 2칸 ───────────────── */
+  /* ── 내 음악: 발매는 커버가 큰 카드 격자(1280px에서 4칸), 트랙은 2칸 ───────────────── */
   #view-catalog .toolbar { display: grid; grid-template-columns: minmax(0, 1fr) 240px; }
   #view-catalog .toolbar select { min-width: 0; }
   #view-catalog .aq-catalog-cards:has(.aq-release-card) {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; align-items: start;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; align-items: start;
   }
   #view-catalog .aq-release-card {
     position: relative; display: flex !important; flex-direction: column; align-items: stretch;
@@ -56,11 +56,13 @@
   #view-contracts .aq-bundle-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
   #view-contracts .aq-bundle-list > * { margin: 0 !important; }
 
-  /* ── 알림·이벤트·문의: 카드 목록을 2칸 ──────────────────────────────── */
-  :is(#view-notifications, #view-events, #view-inquiries) .aq-catalog-cards {
+  /* ── 이벤트·문의: 카드 목록을 2칸 ──────────────────────────────────── */
+  :is(#view-events, #view-inquiries) .aq-catalog-cards {
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: stretch;
   }
-  :is(#view-notifications, #view-events, #view-inquiries) .aq-catalog-cards > * { margin: 0 !important; height: 100%; }
+  :is(#view-events, #view-inquiries) .aq-catalog-cards > * { margin: 0 !important; height: 100%; }
+  /* 알림은 시간순으로 읽는 목록 — 2칸이면 눈이 지그재그로 움직여 순서가 흐려진다. 한 줄로, 읽기 좋은 폭까지만 */
+  #view-notifications > :not(.ui-page-head) { max-width: 760px; }
 
   /* ── 공지사항: 왼쪽 소개·고정 공지(고정), 오른쪽 전체 목록 ─────────────── */
   #view-notices.aq-npage {
@@ -106,7 +108,8 @@
     column-gap: clamp(24px, 3vw, 40px); align-items: start;
   }
   .aq-settings > * { grid-column: 2; }
-  .aq-settings > .ui-page-head { grid-column: 1 / -1; }
+  /* 휴대폰은 바로 아래 프로필 줄과 붙여 8px — 넓은 화면은 카드가 오므로 다른 화면과 같은 간격 */
+  .aq-settings > .ui-page-head { grid-column: 1 / -1; margin-bottom: 28px; }
   .aq-settings > .aq-set-profile {
     grid-column: 1; grid-row: 2 / span 20; position: sticky; top: var(--pc-sticky-top);
     grid-template-columns: 1fr; justify-items: center; gap: 16px; margin: 0; padding: 32px 24px 28px;
