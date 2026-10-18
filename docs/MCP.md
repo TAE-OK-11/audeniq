@@ -12,7 +12,7 @@ directory, not verified with a real ChatGPT or Claude client.**
 ## Architecture
 
 ```
-AI client ──HTTPS──▶ Cloudflare edge Worker (crates/edge) ──service secret──▶ audeniq-api
+AI client ──HTTPS──▶ audeniq-studio Worker (web/studio) ──tunnel + service secret──▶ audeniq-api
   POST /api/mcp                 forwards Authorization + MCP headers           crate::mcp::protocol  (JSON-RPC)
   /api/oauth/*                  only for these paths; no Origin needed         crate::mcp::oauth     (authorization server)
   /.well-known/oauth-*          for server-to-server calls                     crate::mcp::tools     (tool handlers)
@@ -217,6 +217,42 @@ HTTPS is terminated by Cloudflare as for the Studio; the API stays private.
 Migration `0131_mcp_oauth.sql` adds `identity.mcp_clients`, `mcp_grants`,
 `mcp_codes`, `mcp_tokens`; `deploy/grants.sql` grants the API role access.
 
+## Deployment (CircleCI)
+
+The deployed front door is the `audeniq-studio` Worker (`web/studio/worker.ts`
++ `web/shared/transport.ts`), not `crates/edge`. It forwards
+`/.well-known/oauth-*` (GET) to the API, and forwards `Authorization`,
+`MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` only for `POST /api/mcp`
+and `/api/oauth/{token,register,revoke}`; every other `/api` call stays
+cookie-only. The API itself enforces Origin, so the Worker needs no Origin
+exception. `crates/edge` got the same rules for parity.
+
+`.circleci/config.yml`:
+
+- `backend-test` (every branch where Rust/migrations/CI changed): rustfmt,
+  clippy `-D warnings`, MCP unit tests, `tests/mcp.rs` and `password_reset`
+  against PostgreSQL 18, edge routing tests. No native engines or ffmpeg
+  needed. On `main` the image builds require it.
+- `studio` runs the Worker tests (`web/studio/test/`, includes the MCP
+  forwarding rules) and deploys the Worker on `main`.
+- `backend-image` → `approve-deploy` → `deploy`: `deploy.sh` runs
+  `audeniq-migrate` (applies 0131) and `grants.sql` before switching api/worker.
+
+Turning it on in production (after the deploy above):
+
+1. On the server, in `production.env`: `AUDENIQ_MCP_ENABLED=true`
+   (optionally `AUDENIQ_MCP_CIMD_HOSTS`, `AUDENIQ_MCP_DYNAMIC_REGISTRATION`).
+2. Re-run the deploy (or `docker compose up -d api` in the deploy folder) so
+   the API reads it.
+3. Check: `curl https://studio.audeniq.com/.well-known/oauth-authorization-server`
+   returns JSON with `"issuer": "https://studio.audeniq.com"`, and
+   `curl -X POST https://studio.audeniq.com/api/mcp -H 'content-type: application/json'
+   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'` lists 13 tools.
+4. Add `https://studio.audeniq.com/api/mcp` as a connector in ChatGPT
+   (developer mode) or Claude and connect with a test account.
+
+To turn it off, set `AUDENIQ_MCP_ENABLED=false` and restart the API.
+
 ## Local development and tests
 
 ```sh
@@ -226,6 +262,7 @@ export PAYOUT_ACCOUNT_KEY=000000000000000000000000000000000000000000000000000000
 cargo test -p audeniq-core --lib mcp            # protocol/OAuth/schema unit tests
 cargo test -p audeniq-core --test mcp           # end-to-end against PostgreSQL
 cargo test -p audeniq-edge --lib                # edge routing rules
+(cd web/studio && bun test test/)               # deployed Worker forwarding rules
 ```
 
 `tests/mcp.rs` covers: discovery metadata; both protocol eras, header/body
@@ -291,7 +328,7 @@ an assistant recommend AUDENIQ; listing and discovery are separate tasks.
 - Studio UI for listing/revoking AI connections is not built; the API exists.
 - No progress notifications or SSE (all tools finish within the deadline).
 - Minors: submission is refused (`MINORITY_REVIEW_REQUIRED`), as in the Studio.
-- Not run here: real ChatGPT/Claude clients, the deployed edge Worker, and the
+- Not run here: real ChatGPT/Claude clients, the deployed Worker, and the
   native QC/photo binaries (unit/integration tests that need them fail in an
   environment without them, unchanged from before this change).
 
