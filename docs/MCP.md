@@ -12,7 +12,7 @@ directory, not verified with a real ChatGPT or Claude client.**
 ## Architecture
 
 ```
-AI client ──HTTPS──▶ Cloudflare edge Worker (crates/edge) ──service secret──▶ audeniq-api
+AI client ──HTTPS──▶ audeniq-studio Worker (web/studio) ──tunnel + service secret──▶ audeniq-api
   POST /api/mcp                 forwards Authorization + MCP headers           crate::mcp::protocol  (JSON-RPC)
   /api/oauth/*                  only for these paths; no Origin needed         crate::mcp::oauth     (authorization server)
   /.well-known/oauth-*          for server-to-server calls                     crate::mcp::tools     (tool handlers)
@@ -104,10 +104,12 @@ permissions. `releases:submit` is never pre-selected. Approval redirects with
 | `releases:read` | Always granted: read releases, requirements, checks, status |
 | `releases:write` | Create/edit drafts, tracks and credits (only in editable states) |
 | `releases:submit` | Opt-in: submit a previewed, artist-confirmed application |
+| `settlement:read` | Opt-in: balance, statement, royalty reports, payout requests (bank and last 4 digits only, no holder name or number) |
+| `payouts:request` | Opt-in, owners only: small payouts to the account registered in Studio, within `AUDENIQ_MCP_PAYOUT_LIMIT_KRW` (default 300,000원 per 24 h); cancel unsent payouts |
 
 Insufficient scope → HTTP 403 with `WWW-Authenticate: Bearer error="insufficient_scope", scope="…"`.
-No scope reaches payouts, payout accounts, contracts/signatures, withdrawals,
-takedowns, members or account settings.
+No scope reaches payout account changes, larger payouts, contracts/signatures,
+withdrawals, takedowns, members or account settings.
 
 ## Tools
 
@@ -134,6 +136,33 @@ and `{code, message}` (stable API codes, human messages from
 | `preview_submission` | read | same + declarations | Full application preview; when ready and the grant has `releases:submit`, a `confirmation_token` (15 min) |
 | `submit_release` | submit | `submission::create_consent`, `submission::submit` | Submits exactly the previewed content |
 | `get_submission_status` | read | `submission::submission_status`, `catalog::get` | Pipeline status explained, checks, corrections, staff notes, agreement and follow-up |
+| `get_release_corrections` | read | `corrections::status` | Delivered release: current genre/credits with approved corrections, latest request and AUDENIQ's review decision/note |
+| `request_release_correction` | write | `corrections::request` | Genre and non-artist credit corrections of a delivered release; staff review, then sent to every platform |
+| `cancel_release_correction` | write | `corrections::cancel` | Withdraw a pending correction |
+| `get_settlement_summary` | settlement | `portal::finance_summary`, `portal::get_payout_account` | Payable, pending, held, available, fee policy, account (bank/last 4), assistant payout room |
+| `list_settlement_statements` | settlement | `portal::statements` | Ledger lines, paged |
+| `get_royalty_reports` | settlement | `portal::reports` | Streams/revenue by month, platform and release |
+| `list_payouts` | settlement | `portal::list_payouts` | Payout requests (holder name removed) |
+| `preview_payout` | payout | `portal::quote_payout` + checks | Fee, net, balance, limit; `confirmation_token` (10 min) only when allowed |
+| `request_payout` | payout | `portal::request_payout_capped` | The previewed payout; marked destructive for client confirmation |
+| `cancel_payout` | payout | `portal::cancel_payout` | Cancel before it goes to the bank |
+
+### Payout confirmation and limit
+
+`preview_payout` refuses (with `blocked_by`) when the caller is not the owner,
+no account is registered, the balance is short, or the amount exceeds what is
+left of the assistant limit in the last 24 hours (`PAYOUT_USE_STUDIO`, with the
+Studio settlement link). Otherwise it returns a token bound to the grant, the
+workspace, the amount and the payout account's version. `request_payout`
+requires that token and `artist_confirmed: true`, refuses if the account
+changed since the preview, and calls the Studio's payout function with
+idempotency key `mcp:<nonce>` and a cap: inside the same transaction and
+organisation lock as the payout itself, assistant payouts (keys starting with
+`mcp:`, not cancelled) in the last 24 hours plus this one must stay within the
+limit, so concurrent previews cannot add up past it. Retrying with the same
+token returns the same request. Staff still review every payout before money
+moves (existing flow). Set `AUDENIQ_MCP_PAYOUT_LIMIT_KRW=0` to switch assistant
+payouts off (the consent screen then no longer offers the scope).
 
 Draft fields map onto the Studio's draft keys (`artist`, `language`, `genre`,
 `label`, `release_date`, `release_time`, `preorder_start`, `territories`,
@@ -210,12 +239,49 @@ sign. `get_submission_status` says so in `follow_up`.
 | `AUDENIQ_MCP_ENABLED` | `false` | Everything above answers 404 when off |
 | `AUDENIQ_MCP_CIMD_HOSTS` | `chatgpt.com,claude.ai` | Hosts whose client metadata documents may be fetched |
 | `AUDENIQ_MCP_DYNAMIC_REGISTRATION` | `true` | RFC 7591 endpoint |
+| `AUDENIQ_MCP_PAYOUT_LIMIT_KRW` | `300000` | Assistant payout limit per request and per 24 h; `0` = off |
 
 Issuer and resource derive from `APP_ORIGIN` (the Studio origin the edge
 enforces): issuer `https://<studio host>`, MCP URL `https://<studio host>/api/mcp`.
 HTTPS is terminated by Cloudflare as for the Studio; the API stays private.
 Migration `0131_mcp_oauth.sql` adds `identity.mcp_clients`, `mcp_grants`,
 `mcp_codes`, `mcp_tokens`; `deploy/grants.sql` grants the API role access.
+
+## Deployment (CircleCI)
+
+The deployed front door is the `audeniq-studio` Worker (`web/studio/worker.ts`
++ `web/shared/transport.ts`), not `crates/edge`. It forwards
+`/.well-known/oauth-*` (GET) to the API, and forwards `Authorization`,
+`MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` only for `POST /api/mcp`
+and `/api/oauth/{token,register,revoke}`; every other `/api` call stays
+cookie-only. The API itself enforces Origin, so the Worker needs no Origin
+exception. `crates/edge` got the same rules for parity.
+
+`.circleci/config.yml`:
+
+- `backend-test` (every branch where Rust/migrations/CI changed): rustfmt,
+  clippy `-D warnings`, MCP unit tests, `tests/mcp.rs` and `password_reset`
+  against PostgreSQL 18, edge routing tests. No native engines or ffmpeg
+  needed. On `main` the image builds require it.
+- `studio` runs the Worker tests (`web/studio/test/`, includes the MCP
+  forwarding rules) and deploys the Worker on `main`.
+- `backend-image` → `approve-deploy` → `deploy`: `deploy.sh` runs
+  `audeniq-migrate` (applies 0131) and `grants.sql` before switching api/worker.
+
+Turning it on in production (after the deploy above):
+
+1. On the server, in `production.env`: `AUDENIQ_MCP_ENABLED=true`
+   (optionally `AUDENIQ_MCP_CIMD_HOSTS`, `AUDENIQ_MCP_DYNAMIC_REGISTRATION`).
+2. Re-run the deploy (or `docker compose up -d api` in the deploy folder) so
+   the API reads it.
+3. Check: `curl https://studio.audeniq.com/.well-known/oauth-authorization-server`
+   returns JSON with `"issuer": "https://studio.audeniq.com"`, and
+   `curl -X POST https://studio.audeniq.com/api/mcp -H 'content-type: application/json'
+   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'` lists 13 tools.
+4. Add `https://studio.audeniq.com/api/mcp` as a connector in ChatGPT
+   (developer mode) or Claude and connect with a test account.
+
+To turn it off, set `AUDENIQ_MCP_ENABLED=false` and restart the API.
 
 ## Local development and tests
 
@@ -226,6 +292,7 @@ export PAYOUT_ACCOUNT_KEY=000000000000000000000000000000000000000000000000000000
 cargo test -p audeniq-core --lib mcp            # protocol/OAuth/schema unit tests
 cargo test -p audeniq-core --test mcp           # end-to-end against PostgreSQL
 cargo test -p audeniq-edge --lib                # edge routing rules
+(cd web/studio && bun test test/)               # deployed Worker forwarding rules
 ```
 
 `tests/mcp.rs` covers: discovery metadata; both protocol eras, header/body
@@ -286,12 +353,17 @@ an assistant recommend AUDENIQ; listing and discovery are separate tasks.
 - Files (audio, artwork, rights proofs) are uploaded in AUDENIQ Studio; tools
   return the Studio link. Special-content options (cover licences, sample
   clearances, AI tool details, express review) are entered in the Studio.
-- Signing the application/agreement, withdrawal, takedown, payouts, members,
-  account settings: not exposed by design.
+- Signing the application/agreement, withdrawal, takedown, payout account
+  changes, payouts above the limit, members, account settings: not exposed by
+  design.
+- Correction requests are tested at the MCP layer for the refusal paths
+  (not yet delivered, no pending request, other tenants); the
+  request→approve→platform update flow itself is covered by the existing
+  `execution` tests, not re-run through MCP.
 - Studio UI for listing/revoking AI connections is not built; the API exists.
 - No progress notifications or SSE (all tools finish within the deadline).
 - Minors: submission is refused (`MINORITY_REVIEW_REQUIRED`), as in the Studio.
-- Not run here: real ChatGPT/Claude clients, the deployed edge Worker, and the
+- Not run here: real ChatGPT/Claude clients, the deployed Worker, and the
   native QC/photo binaries (unit/integration tests that need them fail in an
   environment without them, unchanged from before this change).
 

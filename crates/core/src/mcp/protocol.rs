@@ -34,7 +34,8 @@ const INSTRUCTIONS: &str = "AUDENIQ is a music distribution service. Use these t
 - Audio, cover art and rights proof files are uploaded in AUDENIQ Studio, not through chat; when a tool reports a missing file, give the artist the Studio link it returns.\n\
 - Before submit_release, call preview_submission, show the artist the complete preview and get their explicit confirmation of the exact content and of each declaration. Never submit on your own initiative, and never state a declaration (rights, age, cover, samples, AI) the artist did not make themselves.\n\
 - Submission starts AUDENIQ's review; it is not delivery to platforms. Report the status get_submission_status returns and do not promise approval, dates or placement.\n\
-- Payouts, contracts, signatures and account settings are not available here; direct the artist to AUDENIQ Studio for those.";
+- Releases already on platforms can only get genre and credit corrections (request_release_correction), which AUDENIQ reviews; titles, artist names, audio, identifiers and dates need a new release.
+- Payouts: only small payouts within the assistant limit, to the account already registered in Studio, and only after preview_payout and the artist's explicit confirmation of amount, fee, net amount and account. Never suggest or request a payout on your own initiative. Larger payouts, payout account changes, contracts, signatures and account settings are done in AUDENIQ Studio.";
 
 fn server_info() -> Value {
     json!({"name": "audeniq", "title": "AUDENIQ", "version": env!("CARGO_PKG_VERSION")})
