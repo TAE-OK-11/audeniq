@@ -85,7 +85,7 @@ export function Contracts() {
           <div>
             <span className="studio-path-n">3단계</span>
             <strong>배급 계약서 서명</strong>
-            <small>권리 확인 체크 후 배급 시작</small>
+            <small>권리를 확인하고 서명하면 배급 시작</small>
           </div>
         </div>
       </section>
