@@ -187,7 +187,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
     if (!owner) {
       setPayError({
         title: '예금주를 입력해 주세요.',
-        detail: '실제 계좌의 예금주명과 동일하게 입력해 주세요.',
+        detail: '통장에 적힌 예금주 이름과 똑같이 입력해 주세요.',
       });
       return;
     }
@@ -231,7 +231,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
 
   const done = () => {
     onClose();
-    toast('수익 정산 정보를 등록했어요.');
+    toast('정산 계좌를 등록했어요.');
   };
 
   const allAgreed = agrees.every(Boolean);
@@ -243,7 +243,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
     : step === 1 ? '금융기관을 선택해 주세요'
     : step === 2 ? '계좌 확인'
     : saving ? '등록하는 중'
-    : '동의하고 등록';
+    : '동의하고 등록하기';
 
   return (
     <Modal title="수익 정산 정보 등록" onClose={onClose} modalClass="aq-payout-setup-mode">
@@ -260,7 +260,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
             <>
               <header className="aq-pay-head">
                 <p className="eyebrow">수령인 정보</p>
-                <h1>수익을 받을<br />정보를 알려주세요.</h1>
+                <h1>수익을 받을<br />정보를 알려 주세요.</h1>
                 <p className="aq-pay-lead">계약과 정산 서류에 표시할 수령인 정보를 입력해 주세요.</p>
               </header>
               <div className="aq-pay-body">
@@ -442,8 +442,8 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
                 </div>
                 <dl>
                   <div><dt>예금주</dt><dd>{draft.recipient}</dd></div>
-                  <div><dt>수령 유형</dt><dd>{TYPE_LABEL[draft.type]}</dd></div>
-                  <div><dt>등록 일시</dt><dd>{registeredAt}</dd></div>
+                  <div><dt>수령인 유형</dt><dd>{TYPE_LABEL[draft.type]}</dd></div>
+                  <div><dt>등록한 시각</dt><dd>{registeredAt}</dd></div>
                 </dl>
               </div>
               <p className="aq-pay-success-note">계좌는 정산·지급이나 계정 정보에서 언제든 바꿀 수 있어요.</p>
