@@ -139,6 +139,12 @@ and `{code, message}` (stable API codes, human messages from
 | `get_release_corrections` | read | `corrections::status` | Delivered release: current genre/credits with approved corrections, latest request and AUDENIQ's review decision/note |
 | `request_release_correction` | write | `corrections::request` | Genre and non-artist credit corrections of a delivered release; staff review, then sent to every platform |
 | `cancel_release_correction` | write | `corrections::cancel` | Withdraw a pending correction |
+| `get_playlist_pitch` / `submit_playlist_pitch` / `withdraw_playlist_pitch` | read / write / write | `pitching::status/submit/withdraw` | Focus-track pitch to platform editors (submitted releases, ≥7 days before release), AUDENIQ forwards it |
+| `get_smart_link` / `save_smart_link` | read / write | `smart_links::status/save` | Public landing page URL, platform links and checks, 30-day views/clicks, fan release-alert sign-ups |
+| `list_release_codes` | read | `codes::list` | UPC and ISRCs of every submitted release |
+| `list_notifications` | read | `portal::list_notifications` | Latest notifications, unread count |
+| `list_documents` | read | `portal::list_documents` | Agreements/rights documents: status, review note, next step, Studio link (no legal text, signature or record) |
+| `list_inquiries` / `get_inquiry` / `create_inquiry` / `reply_inquiry` | read / read / write / write | `portal` inquiries | Support conversation with AUDENIQ |
 | `get_settlement_summary` | settlement | `portal::finance_summary`, `portal::get_payout_account` | Payable, pending, held, available, fee policy, account (bank/last 4), assistant payout room |
 | `list_settlement_statements` | settlement | `portal::statements` | Ledger lines, paged |
 | `get_royalty_reports` | settlement | `portal::reports` | Streams/revenue by month, platform and release |
