@@ -435,8 +435,8 @@ button.ui-avatar:hover{transform:scale(1.06);background:var(--aq-blue-200)}
 .ui-empty .ui-icon{margin-bottom:14px}
 .ui-empty h2,.ui-empty h3{margin:0;font-size:var(--aq-fs-title);font-weight:var(--aq-fw-bold);letter-spacing:var(--aq-tracking-heading);color:var(--aq-text)}
 .ui-empty p{max-width:360px;margin:6px 0 0;font-size:var(--aq-fs-md);line-height:1.7;color:var(--aq-text-3)}
-.ui-empty .ui-actions,.ui-empty>.ui-btn{margin-top:18px}
-.ui-empty .ui-actions{justify-content:center}
+.ui-empty .ui-actions,.ui-empty .row-actions,.ui-empty>.ui-btn{margin-top:18px}
+.ui-empty .ui-actions,.ui-empty .row-actions{justify-content:center}
 .ui-empty.is-compact{min-height:0;padding:28px 20px}
 
 /* ---------- 타임라인 (Timeline) — 처리 이력·변경 기록 ----------

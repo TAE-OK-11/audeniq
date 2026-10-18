@@ -77,7 +77,8 @@ export function ContractBundle({ releaseId, releaseTitle, agreement, hasApplicat
               ? stage === 'review' ? '담당자 검토가 끝나면 서명할 수 있어요'
                 : stage === 'needs' ? (agreement.reviewNote || '신청 내용을 보완해 다시 접수해 주세요')
                   : docState(agreement)
-              : '신청서를 접수하면 준비돼요'}</span>
+              // 이미 접수했는데 '접수하면 준비돼요'라고 하면 아직 안 낸 것처럼 읽힌다
+              : hasApplication ? '담당자 검토가 끝나면 준비돼요' : '신청서를 접수하면 준비돼요'}</span>
           </div>
           {canOpen && (
             <button type="button" className={stage === 'to-sign' ? 'ui-btn is-primary aq-bundle-sign' : 'ui-btn is-soft is-sm'} onClick={() => (stage === 'signed' ? nav(`/contracts/${encodeURIComponent(agreement!.id)}`) : onOpenAgreement(agreement!.id))}>
