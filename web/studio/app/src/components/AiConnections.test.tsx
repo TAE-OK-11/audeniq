@@ -161,6 +161,63 @@ describe('AiConnections', () => {
     expect(http.side).toHaveBeenCalledWith('/api/auth/ai-settings', { method: 'PUT', body: { studio_approval: true } });
   });
 
+  it('keeps a just-made token on screen when the list refresh fails', async () => {
+    const token = { id: 'g5', token: 'c'.repeat(64), expires_at: null, no_expiry: true, scopes: [], mcp_url: 'https://studio.audeniq.com/api/mcp' };
+    let calls = 0;
+    http.req.mockImplementation((url: string) => {
+      if (url.endsWith('/tokens')) return Promise.resolve(token);
+      calls += 1;
+      return calls === 1 ? Promise.resolve({ items: [] }) : Promise.reject(new Error('network'));
+    });
+    await render();
+    await act(async () => { buttons('연결 토큰 만들기')[0].click(); });
+    const input = el.querySelector<HTMLInputElement>('#aqTokenLabel')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '에이전트');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => { el.querySelector('form')!.requestSubmit(); });
+    expect(el.textContent).toContain('c'.repeat(64));
+    expect(el.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('hides connection tokens when MCP is off and the payout permission when the limit is 0', async () => {
+    http.req.mockResolvedValue({ items: [] });
+    http.side.mockImplementation((url: string) => Promise.resolve(url.includes('/ai-settings')
+      ? { studio_approval: false, mcp_enabled: false, payout_scope: false } : { items: [] }));
+    await render();
+    expect(buttons('연결 토큰 만들기')).toHaveLength(0);
+    act(() => root.unmount());
+    root = createRoot(el);
+    http.side.mockImplementation((url: string) => Promise.resolve(url.includes('/ai-settings')
+      ? { studio_approval: false, mcp_enabled: true, payout_scope: false } : { items: [] }));
+    await render();
+    await act(async () => { buttons('연결 토큰 만들기')[0].click(); });
+    expect(el.textContent).not.toContain('소액 지급 신청');
+    // The period chips are one radio group: only the chosen one is a tab stop, arrows move it.
+    const chips = [...el.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
+    expect(chips.map(c => c.tabIndex)).toEqual([-1, 0, -1, -1]);
+    expect(chips[1].getAttribute('aria-pressed')).toBeNull();
+    await act(async () => { chips[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); });
+    expect(el.querySelector('[role="radio"][aria-checked="true"]')!.textContent).toBe('90일');
+  });
+
+  it('drops an AI submission the server already settled', async () => {
+    const { ApiError } = await import('../api/errors');
+    const pending = [{ id: 'p2', org_id: 'o1', org_name: 'Personal workspace', release_id: 'r2', title: 'Old', client_name: 'Claude',
+      declarations: { rights_confirmed: true }, created_at: '2026-10-18T00:00:00Z', expires_at: '2026-10-25T00:00:00Z' }];
+    http.req.mockResolvedValue({ items: [] });
+    http.side.mockImplementation((url: string) => {
+      if (url.endsWith('/approve')) return Promise.reject(new ApiError('내용이 바뀌었어요', 422, 'AI_SUBMISSION_STALE'));
+      if (url.includes('/ai-settings')) return Promise.resolve({ studio_approval: true });
+      return Promise.resolve({ items: pending });
+    });
+    await render();
+    await act(async () => { buttons('승인')[0].click(); });
+    await act(async () => { buttons('승인하고 신청하기')[0].click(); });
+    expect(el.textContent).not.toContain('승인을 기다리는 AI 신청');
+  });
+
   it('shows a load error', async () => {
     http.req.mockRejectedValue(new Error('boom'));
     await render();

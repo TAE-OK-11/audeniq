@@ -189,9 +189,13 @@ pub struct SettingsInput {
 
 pub async fn get_settings(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
-    Ok(Json(
-        json!({"studio_approval": studio_approval(&s.pool, a.user).await?}),
-    ))
+    // What the Studio may offer: connection tokens only while MCP is on, the
+    // payout permission only while the assistant payout limit is above 0.
+    Ok(Json(json!({
+        "studio_approval": studio_approval(&s.pool, a.user).await?,
+        "mcp_enabled": s.mcp.enabled,
+        "payout_scope": s.mcp.payout_limit_krw > 0,
+    })))
 }
 
 pub async fn put_settings(
