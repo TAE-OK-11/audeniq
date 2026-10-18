@@ -2471,8 +2471,14 @@ mod tests {
             if d.scope == SCOPE_WRITE || d.scope == SCOPE_SUBMIT {
                 assert!(!d.read_only, "{}", d.name);
             }
-            // Moving money is the one action clients must treat as destructive.
-            assert_eq!(d.destructive, d.name == "request_payout", "{}", d.name);
+            // Moving money and submitting a release (declarations recorded
+            // as the artist's) are what clients must confirm with the user.
+            assert_eq!(
+                d.destructive,
+                matches!(d.name, "request_payout" | "submit_release"),
+                "{}",
+                d.name
+            );
         }
     }
     #[test]
