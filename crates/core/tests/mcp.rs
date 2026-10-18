@@ -2484,6 +2484,58 @@ async fn connection_tokens_are_made_in_the_studio(pool: PgPool) {
     assert_eq!(mine["label"], "My agent");
     assert!(mine["expires_at"].is_string());
 
+    // No end date, every permission: works until revoked.
+    let (s, v) = call(&app, "POST", "/api/auth/ai-connections/tokens",
+        json!({"label": "Forever", "org_id": org, "scopes": ["releases:write", "releases:submit", "settlement:read", "payouts:request"], "days": 30, "no_expiry": true}), Some(&u)).await;
+    assert_eq!(
+        s,
+        StatusCode::BAD_REQUEST,
+        "days and no_expiry together: {v}"
+    );
+    let (s, v) = call(&app, "POST", "/api/auth/ai-connections/tokens",
+        json!({"label": "Forever", "org_id": org, "scopes": ["releases:write", "releases:submit", "settlement:read", "payouts:request"], "no_expiry": true}), Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["expires_at"], Value::Null);
+    assert_eq!(v["no_expiry"], true);
+    assert_eq!(v["scopes"].as_array().unwrap().len(), 5);
+    let forever = v["token"].as_str().unwrap().to_string();
+    let (err, acct) = tool(&app, &forever, "get_account_context", json!({})).await;
+    assert!(!err, "{acct}");
+    assert_eq!(acct["can_request_payouts"], true);
+    let (_, list) = call(&app, "GET", "/api/auth/ai-connections", json!({}), Some(&u)).await;
+    let f = list["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["label"] == "Forever")
+        .unwrap()
+        .clone();
+    assert_eq!(f["no_expiry"], true);
+    assert_eq!(f["expires_at"], Value::Null);
+    // Logging out everywhere ends it like any other connection.
+    let (s, _) = call(&app, "POST", "/api/auth/logout-all", json!({}), Some(&u)).await;
+    assert_eq!(s, StatusCode::OK);
+    let (s, _, _) = rpc(
+        &app,
+        Some(&forever),
+        "tools/call",
+        json!({"name":"get_account_context","arguments":{}}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+    let u = user(&app).await;
+    let (s, v) = call(
+        &app,
+        "POST",
+        "/api/auth/ai-connections/tokens",
+        json!({"label": "My agent", "org_id": u.org, "scopes": [], "days": 7}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let token = v["token"].as_str().unwrap().to_string();
+    let id = v["id"].as_str().unwrap().to_string();
+
     // Revoking it in the Studio stops it at once.
     let (s, _) = call(
         &app,

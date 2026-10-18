@@ -905,7 +905,7 @@ summary::-webkit-details-marker{display:none}
   .aq-paper-grid{min-width:0!important;width:100%;border-collapse:separate;border-spacing:0}
   .aq-paper-grid thead{display:none}
   .aq-paper-grid,.aq-paper-grid tbody{display:block}
-  .aq-paper-grid tr{display:grid;grid-template-columns:28px minmax(0,1fr);gap:2px 8px;padding:12px 0;border-top:1px solid var(--aq-gray-150)}
+  .aq-paper-grid tr{display:grid;grid-template-columns:28px minmax(0,1fr);gap:2px 8px;padding:12px 0;border-top:1px solid var(--aq-line)}
   .aq-paper-grid tr:first-child{border-top:1px solid var(--aq-gray-300)}
   .aq-paper-grid td{display:block;border:0!important;padding:0!important;text-align:left!important;font-size:var(--aq-fs-sm)}
   .aq-paper-grid td.aq-paper-no{grid-row:span 5;color:var(--aq-text-4);font-weight:700;padding-top:1px!important}
@@ -937,6 +937,26 @@ summary::-webkit-details-marker{display:none}
 .aq-passkey-list small{color:var(--aq-text-2)}
 .aq-passkeys .aq-row-actions{display:flex;justify-content:flex-end;gap:8px}
 .aq-passkey-btn{margin-top:8px}
+.aq-token-empty{display:grid;gap:4px;padding:16px;border-radius:var(--aq-r-lg);background:var(--aq-surface-2,var(--aq-surface));text-align:center}
+.aq-token-empty small{color:var(--aq-text-3,var(--aq-text-2))}
+.aq-token-section{display:grid;gap:10px;padding-top:16px;border-top:1px solid var(--aq-line)}
+.aq-token-section h3{margin:0}
+.aq-token-form{display:grid;gap:18px}
+.aq-token-form .ui-field{margin:0}
+.aq-token-group{display:grid;gap:8px}
+.aq-token-group-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.aq-token-group-head .ui-field-label{margin:0}
+.aq-token-all{display:inline-flex;align-items:center;gap:6px;font-size:14px;font-weight:600;color:var(--aq-primary-text,var(--aq-primary));cursor:pointer}
+.aq-token-group .ui-check strong{display:block;color:var(--aq-text);font-weight:700}
+.aq-token-group .ui-chips{padding-bottom:0}
+.aq-token-form .ui-callout p{margin:0}
+.aq-token-form .ui-callout p+p{margin-top:6px}
+.aq-token-made{display:grid;gap:10px}
+.aq-token-made p{margin:0}
+.aq-token-value{display:grid;grid-template-columns:1fr auto;align-items:center;gap:6px 8px}
+.aq-token-value .ui-field-label{grid-column:1/-1;font-size:13px}
+.aq-token-value>code{min-width:0;padding:10px 12px;border-radius:var(--aq-r-md,10px);background:var(--aq-surface,#fff);font-size:13px;word-break:break-all;user-select:all}
+.aq-token-note{font-size:13px}
 
 /* Google·Apple 로그인 (각 사 버튼 가이드: 흰 바탕 G 로고 / 검은 바탕 Apple 로고) */
 .aq-social{display:grid;gap:8px;margin-top:16px}
