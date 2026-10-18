@@ -99,7 +99,7 @@ const initialDocs = (): DocRecord[] => [
     releaseId: 'r2', releaseTitle: '여름 EP', version: '1.0', created: '2026-09-22',
     content: '', fileName: '', checked: false, checkedAt: '',
     consentHistory: [],
-    reviewHistory: [{ status: '접수 요청', time: '2026-09-22 09:10', detail: '신청서가 작성됐어요. 담당자 검토 접수는 전송 후 시작됩니다.' }],
+    reviewHistory: [{ status: '접수 요청', time: '2026-09-22 09:10', detail: '신청서를 만들었어요. 접수하면 담당자 검토가 시작돼요.' }],
     reviewStatus: 'review', reviewNote: '', signerName: '', localSignatureData: '', localSignatureAt: '',
   },
   {

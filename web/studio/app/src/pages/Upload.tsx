@@ -1836,7 +1836,7 @@ export function Upload() {
           if (!o.guardian2Relation) return fail('두 번째 법정대리인과의 관계를 선택해 주세요.', '#aqGuardian2Relation');
           if (!o.guardian2Contact.trim()) return fail('두 번째 법정대리인의 연락처를 입력해 주세요.', '#aqGuardian2Contact');
         }
-        if (!o.guardianConsentDone) return fail('법정대리인 동의를 진행해 주세요.', null);
+        if (!o.guardianConsentDone) return fail('법정대리인 동의를 받아 주세요.', null);
       }
       if (o.ai && !o.aiTool.trim()) return fail('AI를 어떻게 활용했는지 골라 주세요.', '#aqAiTool');
       if (form.platforms.some(p => p === 'youtube-cid' || p === 'D-27') && (!o.contentIdExclusiveRightsAck || !o.contentIdOriginalRecordingAck)) {
