@@ -56,7 +56,6 @@ async fn app_with(pool: PgPool, enabled: bool, bypass_dsp_gate: bool) -> (Router
         cimd_hosts: vec!["clients.example.test".into()],
         dynamic_registration: true,
         payout_limit_krw: 300_000,
-        public_daily_anonymous: 10,
         public_daily_user: 150,
     });
     (router(s), store)
@@ -817,6 +816,26 @@ async fn authorization_code_and_refresh_token_attacks_are_refused(pool: PgPool) 
     };
     let (s, next) = refresh(c.refresh.clone()).await;
     assert_eq!(s, StatusCode::OK);
+    // The same token again within seconds is the client racing itself
+    // (parallel calls, a retry): refused, but the first answer stays valid.
+    let (s, v) = refresh(c.refresh.clone()).await;
+    assert_eq!(
+        (s, v["error"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("invalid_grant"))
+    );
+    let (err, _) = tool(
+        &app,
+        next["access_token"].as_str().unwrap(),
+        "get_account_context",
+        json!({}),
+    )
+    .await;
+    assert!(!err, "a racing refresh does not disconnect the user");
+    // Later reuse is theft: the whole grant ends.
+    sqlx::query("UPDATE identity.mcp_tokens SET used_at=now()-interval '1 minute' WHERE used_at IS NOT NULL")
+        .execute(&pool)
+        .await
+        .unwrap();
     let (s, v) = refresh(c.refresh.clone()).await;
     assert_eq!(
         (s, v["error"].as_str()),
@@ -2020,29 +2039,61 @@ async fn promotion_codes_notifications_documents_and_support(pool: PgPool) {
 // agents, Studio connection tokens.
 // ---------------------------------------------------------------------------
 
-async fn device_poll(app: &Router, client_id: &str, device_code: &str) -> (StatusCode, Value) {
+/// HTTP Basic client authentication for `client_id:secret`.
+fn basic(credentials: &str) -> String {
+    use base64::Engine as _;
+    format!(
+        "Basic {}",
+        base64::engine::general_purpose::STANDARD.encode(credentials)
+    )
+}
+
+/// An operator-registered agent (the link-and-code flow is only for these):
+/// `client_id:secret`.
+async fn agent(pool: &PgPool) -> String {
+    let (id, secret) = audeniq_core::mcp::login::admin_add_client(
+        pool,
+        "ops@audeniq",
+        "Test <b>Assistant</b>",
+        false,
+        false,
+        &[],
+    )
+    .await
+    .unwrap();
+    format!("{id}:{secret}")
+}
+
+async fn device_poll(app: &Router, client: &str, device_code: &str) -> (StatusCode, Value) {
+    let auth = basic(client);
     let (s, _, body) = raw(
         app,
         "POST",
         "/api/oauth/token",
-        &[("content-type", "application/x-www-form-urlencoded")],
+        &[
+            ("content-type", "application/x-www-form-urlencoded"),
+            ("authorization", &auth),
+        ],
         form(&[
             ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
             ("device_code", device_code),
-            ("client_id", client_id),
         ]),
     )
     .await;
     (s, serde_json::from_str(&body).unwrap_or(Value::Null))
 }
 
-async fn device_start(app: &Router, client_id: &str, scope: &str) -> Value {
+async fn device_start(app: &Router, client: &str, scope: &str) -> Value {
+    let auth = basic(client);
     let (s, h, body) = raw(
         app,
         "POST",
         "/api/oauth/device_authorization",
-        &[("content-type", "application/x-www-form-urlencoded")],
-        form(&[("client_id", client_id), ("scope", scope)]),
+        &[
+            ("content-type", "application/x-www-form-urlencoded"),
+            ("authorization", &auth),
+        ],
+        form(&[("scope", scope)]),
     )
     .await;
     assert_eq!(s, StatusCode::OK, "{body}");
@@ -2060,7 +2111,20 @@ fn request_field(body: &str) -> String {
 async fn device_authorization_links_with_a_code(pool: PgPool) {
     let (app, _) = app(pool.clone()).await;
     let u = user(&app).await;
-    let client_id = register_client(&app).await;
+    let client_id = agent(&pool).await;
+    // Public clients (DCR, or anyone naming ChatGPT's CIMD URL) cannot start
+    // it: with no redirect to bind them, the link would be a phishing kit.
+    let dcr = register_client(&app).await;
+    let (s, _, body) = raw(
+        &app,
+        "POST",
+        "/api/oauth/device_authorization",
+        &[("content-type", "application/x-www-form-urlencoded")],
+        form(&[("client_id", &dcr)]),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED, "{body}");
+    assert!(body.contains("unauthorized_client"));
 
     let (_, _, meta) = raw(
         &app,
@@ -2102,7 +2166,7 @@ async fn device_authorization_links_with_a_code(pool: PgPool) {
     let (_, v) = device_poll(&app, &client_id, device_code).await;
     assert_eq!(v["error"], "slow_down");
     // Another client cannot use the code.
-    let other = register_client(&app).await;
+    let other = agent(&pool).await;
     let (_, v) = device_poll(&app, &other, device_code).await;
     assert_eq!(v["error"], "invalid_grant");
 
@@ -2614,10 +2678,7 @@ async fn public_tools_need_no_account_within_daily_limits(pool: PgPool) {
     );
     assert_eq!(r["items"][0]["url"], format!("{ORIGIN}/notices/n-holiday"));
     assert!(r["items"][0].get("body").is_none());
-    assert_eq!(
-        r["usage"],
-        json!({"signed_in": false, "limit": 10, "used_today": 1, "remaining_today": 9})
-    );
+    assert_eq!(r["usage"], json!({"signed_in": false}));
 
     let (_, _, v) = anon_tool(
         &app,
@@ -2651,30 +2712,16 @@ async fn public_tools_need_no_account_within_daily_limits(pool: PgPool) {
     let (s, _, _) = anon_tool(&app, ip, "list_releases", json!({})).await;
     assert_eq!(s, StatusCode::UNAUTHORIZED);
 
-    // 6 calls so far; the 11th of the day asks to sign in.
-    for _ in 0..4 {
-        let (s, _, _) = anon_tool(&app, ip, "get_release_requirements", json!({})).await;
-        assert_eq!(s, StatusCode::OK);
+    // Without an account nothing is counted: no daily cap.
+    for _ in 0..30 {
+        let (s, _, v) = anon_tool(&app, ip, "list_announcements", json!({})).await;
+        assert_eq!(s, StatusCode::OK, "{v}");
     }
-    let (s, h, v) = anon_tool(&app, ip, "list_announcements", json!({})).await;
-    assert_eq!(s, StatusCode::UNAUTHORIZED, "{v}");
-    assert!(
-        h["www-authenticate"]
-            .to_str()
-            .unwrap()
-            .contains("resource_metadata=")
-    );
-    assert_eq!(v["error"]["data"]["reason"], "DAILY_ANONYMOUS_LIMIT");
-    assert_eq!(v["error"]["data"]["limit"], 10);
-    assert!(
-        v["error"]["data"]["resets_at"]
-            .as_str()
-            .unwrap()
-            .ends_with("T15:00:00Z")
-    );
-    // Another address has its own allowance.
-    let (s, _, _) = anon_tool(&app, "198.51.100.7", "list_announcements", json!({})).await;
-    assert_eq!(s, StatusCode::OK);
+    let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM identity.mcp_daily_usage")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 0);
 
     // Signed in: the user's own daily count, then support.
     let u = user(&app).await;
@@ -2723,4 +2770,94 @@ async fn public_tools_need_no_account_within_daily_limits(pool: PgPool) {
     )
     .await;
     assert_eq!(s, StatusCode::UNAUTHORIZED);
+}
+
+#[sqlx::test]
+async fn token_endpoint_limits_only_failures_and_answers_in_oauth_shape(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let c = connect(&app, &u, &[]).await;
+    let ip = "192.0.2.44";
+    let post = |body: String| {
+        let app = app.clone();
+        async move {
+            let (s, h, b) = raw(
+                &app,
+                "POST",
+                "/api/oauth/token",
+                &[
+                    ("content-type", "application/x-www-form-urlencoded"),
+                    ("x-audeniq-client-ip", ip),
+                ],
+                body,
+            )
+            .await;
+            (
+                s,
+                h,
+                serde_json::from_str::<Value>(&b).unwrap_or(Value::Null),
+            )
+        }
+    };
+    // Many good refreshes from one address (an AI platform refreshing for
+    // all of its users) are never limited.
+    let mut rt = c.refresh.clone();
+    for _ in 0..40 {
+        let (s, _, v) = post(form(&[
+            ("grant_type", "refresh_token"),
+            ("refresh_token", &rt),
+            ("client_id", &c.client_id),
+        ]))
+        .await;
+        assert_eq!(s, StatusCode::OK, "{v}");
+        rt = v["refresh_token"].as_str().unwrap().to_string();
+    }
+    // Floods of bad tokens are: once the address has too many failures it
+    // gets OAuth's temporarily_unavailable with Retry-After (not our own
+    // error shape, which OAuth libraries treat as fatal).
+    sqlx::query("INSERT INTO identity.auth_limits(bucket_hash,attempts) VALUES($1,300) ON CONFLICT(bucket_hash) DO UPDATE SET attempts=300, window_start=now()")
+        .bind(audeniq_core::auth::bucket_hash(&format!("mcp-token-fail:src:{ip}")))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (s, h, v) = post(form(&[
+        ("grant_type", "refresh_token"),
+        ("refresh_token", &rt),
+        ("client_id", &c.client_id),
+    ]))
+    .await;
+    assert_eq!(s, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(v["error"], "temporarily_unavailable");
+    assert_eq!(h["retry-after"], "60");
+    // Other addresses are unaffected.
+    let (s, _, b) = raw(
+        &app,
+        "POST",
+        "/api/oauth/token",
+        &[
+            ("content-type", "application/x-www-form-urlencoded"),
+            ("x-audeniq-client-ip", "192.0.2.45"),
+        ],
+        form(&[
+            ("grant_type", "refresh_token"),
+            ("refresh_token", &rt),
+            ("client_id", &c.client_id),
+        ]),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{b}");
+}
+
+#[sqlx::test]
+async fn submit_release_is_marked_destructive(pool: PgPool) {
+    let (app, _) = app(pool).await;
+    let (_, _, v) = rpc(&app, None, "tools/list", json!({})).await;
+    let submit = v["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "submit_release")
+        .unwrap()
+        .clone();
+    assert_eq!(submit["annotations"]["destructiveHint"], true);
 }

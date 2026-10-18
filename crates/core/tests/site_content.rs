@@ -229,6 +229,22 @@ async fn content_maintenance_and_site_rules(pool: PgPool) {
     assert_eq!(v["maintenance"]["title"], "DB 작업");
     let (s, _) = call(&app, "GET", "/api/me", json!(null), Some(&artist)).await;
     assert_eq!(s, StatusCode::OK);
+    // AI clients get their own protocol's error shape, not a transport failure.
+    let (s, v) = raw(
+        &app,
+        "POST",
+        "/api/mcp",
+        &[],
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(v["jsonrpc"], "2.0");
+    assert_eq!(v["error"]["code"], -32000);
+    assert!(v["error"]["message"].as_str().unwrap().contains("DB 작업"));
+    let (s, v) = raw(&app, "POST", "/api/oauth/token", &[], json!(null)).await;
+    assert_eq!(s, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(v["error"], "temporarily_unavailable");
     let (s, _) = call(&app, "GET", "/api/notices", json!(null), None).await;
     assert_eq!(s, StatusCode::OK);
     let (s, _) = raw(

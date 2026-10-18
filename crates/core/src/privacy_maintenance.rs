@@ -29,6 +29,16 @@ pub async fn purge_transient(pool: &PgPool, operator: &str) -> Result<Value> {
         .execute(&mut *tx).await?.rows_affected();
     let limits=sqlx::query("WITH old AS (SELECT bucket_hash FROM identity.auth_limits WHERE window_start<now()-interval '1 day' ORDER BY window_start LIMIT 10000 FOR UPDATE SKIP LOCKED) DELETE FROM identity.auth_limits a USING old WHERE a.bucket_hash=old.bucket_hash")
         .execute(&mut *tx).await?.rows_affected();
+    // AI connections: spent codes, expired tokens and device codes, old daily counts.
+    let mut mcp = 0;
+    for q in [
+        "WITH old AS (SELECT code_hash FROM identity.mcp_codes WHERE expires_at<now()-interval '1 day' ORDER BY expires_at LIMIT 10000 FOR UPDATE SKIP LOCKED) DELETE FROM identity.mcp_codes c USING old WHERE c.code_hash=old.code_hash",
+        "WITH old AS (SELECT token_hash FROM identity.mcp_tokens WHERE expires_at<now()-interval '1 day' ORDER BY expires_at LIMIT 10000 FOR UPDATE SKIP LOCKED) DELETE FROM identity.mcp_tokens t USING old WHERE t.token_hash=old.token_hash",
+        "WITH old AS (SELECT device_code_hash FROM identity.mcp_device_codes WHERE expires_at<now()-interval '1 day' ORDER BY expires_at LIMIT 10000 FOR UPDATE SKIP LOCKED) DELETE FROM identity.mcp_device_codes d USING old WHERE d.device_code_hash=old.device_code_hash",
+        "DELETE FROM identity.mcp_daily_usage WHERE day < (now() AT TIME ZONE 'Asia/Seoul')::date - 1",
+    ] {
+        mcp += sqlx::query(q).execute(&mut *tx).await?.rows_affected();
+    }
     let logs=sqlx::query("WITH old AS (SELECT id FROM privacy.staff_access_logs WHERE retain_until<now() ORDER BY occurred_at LIMIT 10000 FOR UPDATE SKIP LOCKED) DELETE FROM privacy.staff_access_logs l USING old WHERE l.id=old.id")
         .execute(&mut *tx).await?.rows_affected();
     operations::audit(
@@ -38,7 +48,7 @@ pub async fn purge_transient(pool: &PgPool, operator: &str) -> Result<Value> {
         None,
         "privacy.transient.purged",
         &format!(
-            "OPERATOR:{} sessions={sessions} limits={limits} expired_logs={logs}",
+            "OPERATOR:{} sessions={sessions} limits={limits} expired_logs={logs} mcp={mcp}",
             operator.trim()
         ),
         Uuid::new_v4(),
@@ -46,7 +56,7 @@ pub async fn purge_transient(pool: &PgPool, operator: &str) -> Result<Value> {
     .await?;
     tx.commit().await?;
     Ok(
-        json!({"sessions":sessions,"auth_limits":limits,"expired_access_logs":logs,"batch_limit":10000}),
+        json!({"sessions":sessions,"auth_limits":limits,"expired_access_logs":logs,"mcp":mcp,"batch_limit":10000}),
     )
 }
 

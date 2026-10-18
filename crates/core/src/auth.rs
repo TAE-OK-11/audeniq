@@ -222,6 +222,17 @@ pub async fn rate(pool: &PgPool, key: &str, limit: i32) -> Result<()> {
         Ok(())
     }
 }
+/// Whether `key` already reached `limit` in the current window, without
+/// counting this request (for limits that only count failures).
+pub async fn over_limit(pool: &PgPool, key: &str, limit: i32) -> Result<bool> {
+    let n: Option<i32> = sqlx::query_scalar(
+        "SELECT attempts FROM identity.auth_limits WHERE bucket_hash=$1 AND window_start >= now()-interval '15 minutes'",
+    )
+    .bind(bucket_hash(key))
+    .fetch_optional(pool)
+    .await?;
+    Ok(n.is_some_and(|n| n >= limit))
+}
 /// Header carrying the end-user IP. Only the edge worker sets it (from
 /// Cloudflare's `CF-Connecting-IP`, which Cloudflare overwrites on every
 /// request); browser-supplied copies are not forwarded by the edge, and every
@@ -442,7 +453,7 @@ pub async fn login(
     input: Credentials,
 ) -> Result<(HeaderMap, Json<Value>)> {
     origin(h, &s.config)?;
-    let (user, hash) = check_password(s, h, input, "login").await?;
+    let (user, hash) = check_password(s, h, input, PasswordVia::Browser).await?;
     let mut tx = s.pool.begin().await?;
     current_password(&mut tx, user, &hash).await?;
     issue_session(s, tx, h, user, "PASSWORD", false).await
@@ -455,19 +466,41 @@ pub(crate) async fn check_password(
     s: &AppState,
     h: &HeaderMap,
     input: Credentials,
-    action: &str,
+    via: PasswordVia,
 ) -> Result<(Uuid, String)> {
     let email = credentials(&input)?;
-    rate_auth(
-        &s.pool,
-        h,
-        action,
-        &email,
-        LOGIN_PER_SOURCE,
-        Some(LOGIN_PER_SOURCE_ACCOUNT),
-        LOGIN_PER_ACCOUNT,
-    )
-    .await?;
+    match via {
+        PasswordVia::Browser => {
+            rate_auth(
+                &s.pool,
+                h,
+                "login",
+                &email,
+                LOGIN_PER_SOURCE,
+                Some(LOGIN_PER_SOURCE_ACCOUNT),
+                LOGIN_PER_ACCOUNT,
+            )
+            .await?
+        }
+        // An agent's server signs in many users from one address: limit it
+        // per agent, and per agent and account; the per-account budget is
+        // the same one the Studio login uses.
+        PasswordVia::Agent(client) => {
+            rate(
+                &s.pool,
+                &format!("mcp-password:client:{client}"),
+                AGENT_LOGIN_PER_CLIENT,
+            )
+            .await?;
+            rate(
+                &s.pool,
+                &format!("mcp-password:client-acct:{client}|{email}"),
+                LOGIN_PER_SOURCE_ACCOUNT,
+            )
+            .await?;
+            rate(&s.pool, &format!("login:acct:{email}"), LOGIN_PER_ACCOUNT).await?;
+        }
+    }
     let permit = s
         .password_slots
         .clone()
@@ -513,6 +546,15 @@ pub(crate) async fn check_password(
     }
     Ok((row.unwrap().get("id"), hash))
 }
+/// Where a password sign-in comes from (which rate limits apply).
+#[derive(Clone, Copy)]
+pub(crate) enum PasswordVia {
+    Browser,
+    /// An operator-registered AI agent (its client id).
+    Agent(Uuid),
+}
+/// Sign-ins per 15 minutes through one registered agent (all its users).
+const AGENT_LOGIN_PER_CLIENT: i32 = 3000;
 /// Serialize with password change and recheck the exact credential version
 /// before a session or token is issued.
 pub(crate) async fn current_password(c: &mut PgConnection, user: Uuid, hash: &str) -> Result<()> {
