@@ -189,14 +189,14 @@ export function SignatureModal({
       localSignatureAt: at,
       reviewHistory: [
         ...doc.reviewHistory,
-        { status: '직접 서명 입력 보관', time: at, detail: '서명 이미지 보관 · 본인 인증 및 법적 전자서명 대기' },
+        { status: '서명 받음', time: at, detail: '본인 인증을 기다리고 있어요' },
       ],
     });
     onSaved?.();
     // 2단계: 전자서명 진행으로
     setCertStep('select');
     setPhase('cert');
-    toast('서명을 저장했어요. 이어서 전자서명을 해 주세요.');
+    toast('서명을 저장했어요. 이제 본인 인증을 해 주세요.');
   };
 
   // --- 민간인증서 플로우 ---
@@ -250,7 +250,7 @@ export function SignatureModal({
       reviewHistory: [
         ...doc.reviewHistory,
         { status: `${certProvider} 본인 인증 완료`, time: at, detail: `휴대폰 본인 확인 · ${phone}` },
-        { status: '계약서 완성', time: at, detail: '직접 서명 + 전자서명(본인 인증) 완료' },
+        { status: '계약 체결', time: at, detail: '서명과 본인 인증을 마쳤어요' },
       ],
     });
     onSaved?.();
@@ -440,7 +440,7 @@ export function SignatureModal({
 
   // 실서버는 휴대폰 본인 인증(인증 기관) 연동 전이라 ‘직접 서명 → 계약 완료’ 2단계로 안내한다.
   // (체험 모드의 전자서명 화면은 흉내일 뿐 실제 인증이 아니므로 실서버에 보여 주지 않는다)
-  const phases = MOCK ? ['서명 진행', '전자서명 진행', '계약서 완성'] : ['서명 진행', '계약 완료'];
+  const phases = MOCK ? ['서명', '본인 인증', '체결'] : ['서명', '체결'];
   const phaseIndex = phase === 'sign' ? 0 : phase === 'cert' ? 1 : phases.length - 1;
 
   return (
@@ -459,7 +459,7 @@ export function SignatureModal({
               <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
             </span>
             <strong>계약서를 검토하고 있어요.</strong>
-            <p>AUDENIQ 담당자가 신청 내용을 확인한 뒤 서명할 수 있어요. 검토가 끝나면 알림으로 알려드릴게요.</p>
+            <p>AUDENIQ 담당자가 신청 내용을 확인한 뒤 서명할 수 있어요. 검토가 끝나면 알림으로 알려 드릴게요.</p>
             <ol className="aq-sign-wait-steps">
               <li className="is-done"><span><CheckIcon size={11} /></span>신청서 접수</li>
               <li className="is-current"><span>2</span>담당자 검토</li>
@@ -524,7 +524,7 @@ export function SignatureModal({
               <input type="checkbox" id="aqSignAck" checked={ack} onChange={e => setAck(e.target.checked)} />
               <span>
                 서명할 문서의 내용을 확인했어요.
-                <small>{MOCK ? '서명을 저장하면 다음 단계에서 본인 인증(전자서명)을 진행해요.' : '서명하면 바로 계약이 체결되고, 문제 없는 플랫폼으로 배급이 시작돼요.'}</small>
+                <small>{MOCK ? '서명한 다음 본인 인증을 하면 계약이 체결돼요.' : '서명하면 바로 계약이 체결되고, 준비된 플랫폼부터 배급을 시작해요.'}</small>
               </span>
             </label>
           </section>
@@ -536,13 +536,13 @@ export function SignatureModal({
           <section id="aqCompletePane">
             <div className="aq-complete-hero">
               <span className="aq-complete-check" aria-hidden="true"><CheckIcon size={28} /></span>
-              <h3>{MOCK ? '계약서 서명이 완성됐어요' : '계약이 체결됐어요'}</h3>
-              <p>{MOCK ? '직접 서명과 전자서명(본인 인증)을 모두 마쳤어요.' : '직접 서명으로 계약이 체결됐어요. 이제 플랫폼으로 배급이 시작돼요.'}</p>
+              <h3>{MOCK ? '서명을 마쳤어요' : '계약이 체결됐어요'}</h3>
+              <p>{MOCK ? '서명과 본인 인증을 모두 마쳤어요.' : '이제 플랫폼으로 배급을 시작해요.'}</p>
             </div>
             <div className="aq-complete-summary">
               <div><small>서명자</small><strong>{name || certName || doc.signerName || '-'}</strong></div>
               <div><small>인증 수단</small><strong>{certProvider || (MOCK ? '-' : '직접 서명')}</strong></div>
-              <div><small>완성 시각</small><strong>{localStamp(doc.localSignatureAt || stampNow())}</strong></div>
+              <div><small>서명한 시각</small><strong>{localStamp(doc.localSignatureAt || stampNow())}</strong></div>
             </div>
           </section>
         )}
@@ -555,7 +555,7 @@ export function SignatureModal({
         ) : phase === 'sign' ? (
           <>
             <button type="button" className={`ui-btn is-primary${signing ? ' is-busy' : ''}`} id="aqSignSave" onClick={save} disabled={signing}>
-              {MOCK ? '서명 저장 후 본인 인증' : signing ? '서명하는 중' : '서명하고 계약 체결'}
+              {MOCK ? '서명하고 본인 인증하기' : signing ? '서명하는 중' : '서명하고 계약하기'}
             </button>
             <button type="button" className="ui-btn is-text is-muted" id="aqSignReturn" onClick={onBack}>
               문서로 돌아가기

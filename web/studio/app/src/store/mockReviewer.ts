@@ -19,12 +19,12 @@ function tick() {
     updateDoc(d.id, {
       reviewStatus: 'approved',
       approvedAt: at,
-      reviewHistory: [...d.reviewHistory, { status: '검토 완료', time: at, detail: 'AUDENIQ 담당자 검토가 끝났어요. 서명을 진행해 주세요.' }],
+      reviewHistory: [...d.reviewHistory, { status: '검토 완료', time: at, detail: 'AUDENIQ 담당자 검토가 끝났어요. 이제 서명해 주세요.' }],
     });
     pushNotice({
       id: uid('n'), kind: '서류', time: at, link: '/contracts',
       title: `${stripSampleSuffix(d.releaseTitle || d.title)} 계약서 검토가 끝났어요.`,
-      detail: '계약서 메뉴에서 내용을 확인하고 서명을 진행해 주세요.',
+      detail: '계약서 메뉴에서 내용을 확인하고 서명해 주세요.',
     });
   }
 }

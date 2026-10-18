@@ -90,7 +90,7 @@ export function Agreement() {
           <span className="aq-doc-done-mark" aria-hidden="true"><Glyph name="pencil" size={18} /></span>
           <div className="min-0">
             <strong>{doc.reviewStatus === 'approved' ? '서명 전 계약서예요.' : '담당자 검토 중인 계약서예요.'}</strong>
-            <span>{doc.reviewStatus === 'approved' ? '내용을 확인하고 권리 확인 항목에 체크한 뒤 서명하면 계약이 체결돼요.' : '검토가 끝나면 계약 조건이 확정되고 서명할 수 있어요.'}</span>
+            <span>{doc.reviewStatus === 'approved' ? '내용을 읽고 권리 확인 항목에 체크한 뒤 서명하면 계약이 체결돼요.' : '검토가 끝나면 계약 조건이 확정되고 서명할 수 있어요.'}</span>
           </div>
           {doc.reviewStatus === 'approved' && <button type="button" className="ui-btn is-primary" onClick={() => nav(`/contracts?doc=${encodeURIComponent(doc.id)}`)}>확인하고 서명</button>}
         </div>
