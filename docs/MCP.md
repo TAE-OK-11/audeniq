@@ -302,6 +302,17 @@ requests about language, tone and format come first; otherwise:
   CSRF, only their own); approval re-checks that the release is unchanged
   (`AI_SUBMISSION_STALE` otherwise) and submits through the same path, in
   their name. Pending ones lapse after 7 days.
+- **Concurrency.** Parallel `upsert_track`/`set_track_credits` calls on one
+  release retry on the latest version (up to 8 times, jittered) instead of
+  failing; once the track write is saved, a lost draft re-sync no longer fails
+  the call (`draft_sync_pending: true`). A new track at a taken position
+  answers `TRACK_POSITION_TAKEN` with that track's id. Lyrics are checked
+  against protected names before anything is written.
+- **Retry ids** are recorded the moment the create commits, and a reservation
+  whose first call never finished is reclaimed after two minutes.
+- **Approvals** are claimed atomically (approve and reject at once: one
+  wins), released again when approving fails for a retryable reason, and the
+  consent package must carry the confirmed content hash.
 - **Client allowlist.** `AUDENIQ_MCP_CIMD_HOSTS` entries may be exact
   `https://` document URLs instead of hosts, pinning one client each.
 

@@ -175,7 +175,11 @@ fn is_mcp_client_call(method: &Method, path: &str) -> bool {
     *method == Method::Post
         && matches!(
             path,
-            "/api/mcp" | "/api/oauth/token" | "/api/oauth/register" | "/api/oauth/revoke"
+            "/api/mcp"
+                | "/api/oauth/token"
+                | "/api/oauth/register"
+                | "/api/oauth/revoke"
+                | "/api/oauth/device_authorization"
         )
 }
 
@@ -328,6 +332,10 @@ mod tests {
     fn mcp_routes_are_exact() {
         assert!(is_mcp_client_call(&Method::Post, "/api/mcp"));
         assert!(is_mcp_client_call(&Method::Post, "/api/oauth/token"));
+        assert!(is_mcp_client_call(
+            &Method::Post,
+            "/api/oauth/device_authorization"
+        ));
         assert!(!is_mcp_client_call(&Method::Get, "/api/mcp"));
         // The consent decision is a browser form post: it keeps the Origin rule.
         assert!(!is_mcp_client_call(&Method::Post, "/api/oauth/authorize"));
