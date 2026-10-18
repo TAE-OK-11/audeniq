@@ -112,6 +112,7 @@ export function Layout({ children }: { children: ReactNode }) {
     window.addEventListener(LIVE_NOTICE_EVENT, on);
     return () => window.removeEventListener(LIVE_NOTICE_EVENT, on);
   }, [toast]);
+  const onTabPage = TAB_ITEMS.some(t => isActive(loc.pathname, t.to));
   // 탭 제목 — 지금 화면 이름 + 읽지 않은 알림 수. 모든 화면이 'AUDENIQ STUDIO'면 탭·방문 기록에서 구분이 안 되고
   // 화면이 바뀐 것을 스크린리더가 알려 주지 못한다
   useEffect(() => {
@@ -399,8 +400,9 @@ export function Layout({ children }: { children: ReactNode }) {
       <nav className="aq-tabbar" aria-label="주요 화면">
         {TAB_ITEMS.map(t => {
           const active = isActive(loc.pathname, t.to);
+          // 전체 메뉴를 열면 켜진 탭은 '전체' 하나만 — 지금 화면 탭까지 켜져 있으면 어디에 있는지 헷갈린다
           return (
-            <Link key={t.to} to={t.to} className={`aq-tab-item${active ? ' is-active' : ''}`} aria-current={active ? 'page' : undefined}
+            <Link key={t.to} to={t.to} className={`aq-tab-item${active && !menuOpen ? ' is-active' : ''}`} aria-current={active ? 'page' : undefined}
               onPointerDown={() => prefetchRoute(t.to)}>
               <Glyph name={t.icon} size={22} />
               <span>{t.label}</span>
@@ -409,7 +411,8 @@ export function Layout({ children }: { children: ReactNode }) {
             </Link>
           );
         })}
-        <button type="button" className={`aq-tab-item${menuOpen ? ' is-active' : ''}`} aria-expanded={menuOpen} aria-controls="portalNav"
+        {/* 아래 탭에 없는 화면(계약서·알림 등)에 있을 때도 '전체'를 켠다 — 아무 탭도 안 켜져 있으면 길을 잃은 것처럼 보인다 */}
+        <button type="button" className={`aq-tab-item${menuOpen || !onTabPage ? ' is-active' : ''}`} aria-expanded={menuOpen} aria-controls="portalNav"
           onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}>
           <Glyph name="list" size={22} />
           <span>전체</span>
