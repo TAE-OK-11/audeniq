@@ -200,6 +200,16 @@ and `{code, message}` (stable API codes, human messages from
 | `preview_payout` | payout | `portal::quote_payout` + checks | Fee, net, balance, limit; `confirmation_token` (10 min) only when allowed |
 | `request_payout` | payout | `portal::request_payout_capped` | The previewed payout; marked destructive for client confirmation |
 | `cancel_payout` | payout | `portal::cancel_payout` | Cancel before it goes to the bank |
+| `get_upload_link` | read | `catalog::get` | Studio upload page for the release (`/upload?edit=`) and which audio/cover files are missing; opened while signed in to the Studio |
+| `list_artist_pages` / `set_artist_pages` | read / write | `artist_pages::list/set_pages` | Each artist's own page per platform (Spotify, Apple Music, Melon, …), so deliveries never land on a same-name stranger's page |
+| `list_platform_requests` / `create_platform_request` / `cancel_platform_request` | read / write / write | `platform_requests::list/create/cancel` | After-release fixes AUDENIQ does at a platform: wrong artist page, page merge/split, YouTube OAC, Content ID |
+| `get_release_splits` / `list_received_splits` | settlement | `splits::sheet/received` | Collaborator revenue splits of a release (masked e-mails) and shares received; changes stay in the Studio |
+
+**Prompts** (`prompts/list`, `prompts/get`; Claude shows them as slash
+commands): `prepare_release`, `check_release`, `submission_status`,
+`settlement_check`, `artist_pages`. Each only fills the artist's first
+message, in AUDENIQ's Korean voice; arguments are quoted as data. Every action
+still goes through the tools and their confirmations.
 
 ### Payout confirmation and limit
 

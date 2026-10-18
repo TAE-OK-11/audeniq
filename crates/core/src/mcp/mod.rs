@@ -21,6 +21,7 @@
 //! operator turns them on. See docs/MCP.md.
 pub mod login;
 pub mod oauth;
+pub mod prompts;
 pub mod protocol;
 pub mod public;
 pub mod tools;
