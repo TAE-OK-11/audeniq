@@ -56,6 +56,8 @@ async fn app_with(pool: PgPool, enabled: bool, bypass_dsp_gate: bool) -> (Router
         cimd_hosts: vec!["clients.example.test".into()],
         dynamic_registration: true,
         payout_limit_krw: 300_000,
+        public_daily_anonymous: 10,
+        public_daily_user: 150,
     });
     (router(s), store)
 }
@@ -355,14 +357,27 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
     let (s, _, v) = rpc(&app, None, "tools/list", json!({})).await;
     assert_eq!(s, StatusCode::OK);
     let tools = v["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 35);
+    assert_eq!(tools.len(), 38);
+    let public = [
+        "get_release_requirements",
+        "list_announcements",
+        "get_announcement",
+        "get_service_status",
+    ];
     for t in tools {
         assert_eq!(
             t["inputSchema"]["additionalProperties"], false,
             "{}",
             t["name"]
         );
-        assert_eq!(t["securitySchemes"][0]["type"], "oauth2");
+        let schemes = t["securitySchemes"].as_array().unwrap();
+        if public.contains(&t["name"].as_str().unwrap()) {
+            assert_eq!(schemes[0]["type"], "noauth");
+            assert_eq!(schemes[1]["type"], "oauth2");
+        } else {
+            assert_eq!(schemes.len(), 1);
+            assert_eq!(schemes[0]["type"], "oauth2");
+        }
     }
     let (s, _, _) = raw(
         &app,
@@ -2487,6 +2502,165 @@ async fn connection_tokens_are_made_in_the_studio(pool: PgPool) {
         "/api/oauth/device_authorization",
         &[("content-type", "application/x-www-form-urlencoded")],
         form(&[("client_id", "audeniq-connection-token")]),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+}
+
+// ---------------------------------------------------------------------------
+// Public tools: no account needed, daily limits per IP / per user.
+// ---------------------------------------------------------------------------
+
+async fn anon_tool(
+    app: &Router,
+    ip: &str,
+    name: &str,
+    args: Value,
+) -> (StatusCode, axum::http::HeaderMap, Value) {
+    let (s, h, body) = raw(
+        app,
+        "POST",
+        "/api/mcp",
+        &[
+            ("content-type", "application/json"),
+            ("accept", "application/json, text/event-stream"),
+            ("mcp-protocol-version", "2025-06-18"),
+            ("x-audeniq-client-ip", ip),
+        ],
+        json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":name,"arguments":args}}).to_string(),
+    )
+    .await;
+    (s, h, serde_json::from_str(&body).unwrap_or(Value::Null))
+}
+
+#[sqlx::test]
+async fn public_tools_need_no_account_within_daily_limits(pool: PgPool) {
+    use audeniq_core::mcp::public;
+    let (app, _) = app(pool.clone()).await;
+    sqlx::query("INSERT INTO content.notices(id,title,body,pinned,published_at) VALUES
+        ('n-holiday','추석 연휴 안내','연휴 동안\n\n검토가 늦어질 수 있어요.',true,now()-interval '1 day'),
+        ('n-later','예약 공지','아직',false,now()+interval '1 day')")
+        .execute(&pool).await.unwrap();
+    let ip = "203.0.113.5";
+
+    let (s, _, v) = anon_tool(&app, ip, "list_announcements", json!({})).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let r = &v["result"]["structuredContent"];
+    assert_eq!(v["result"]["isError"], false);
+    assert_eq!(r["total"], 1, "scheduled notices stay hidden");
+    assert_eq!(r["items"][0]["title"], "추석 연휴 안내");
+    assert_eq!(
+        r["items"][0]["excerpt"],
+        "연휴 동안 검토가 늦어질 수 있어요."
+    );
+    assert_eq!(r["items"][0]["url"], format!("{ORIGIN}/notices/n-holiday"));
+    assert!(r["items"][0].get("body").is_none());
+    assert_eq!(
+        r["usage"],
+        json!({"signed_in": false, "limit": 10, "used_today": 1, "remaining_today": 9})
+    );
+
+    let (_, _, v) = anon_tool(
+        &app,
+        ip,
+        "get_announcement",
+        json!({"kind":"notices","id":"n-holiday"}),
+    )
+    .await;
+    assert_eq!(
+        v["result"]["structuredContent"]["body"],
+        "연휴 동안\n\n검토가 늦어질 수 있어요."
+    );
+    let (_, _, v) = anon_tool(
+        &app,
+        ip,
+        "get_announcement",
+        json!({"kind":"notices","id":"n-later"}),
+    )
+    .await;
+    assert_eq!(
+        v["result"]["structuredContent"]["error"]["code"],
+        "NOT_FOUND"
+    );
+    let (_, _, v) = anon_tool(&app, ip, "get_service_status", json!({})).await;
+    assert_eq!(v["result"]["isError"], false, "{v}");
+    let (_, _, v) = anon_tool(&app, ip, "list_announcements", json!({"kind":"events"})).await;
+    assert_eq!(v["result"]["structuredContent"]["items"], json!([]));
+    let (_, _, v) = anon_tool(&app, ip, "get_release_requirements", json!({})).await;
+    assert_eq!(v["result"]["isError"], false);
+    // Other tools still need an account.
+    let (s, _, _) = anon_tool(&app, ip, "list_releases", json!({})).await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+
+    // 6 calls so far; the 11th of the day asks to sign in.
+    for _ in 0..4 {
+        let (s, _, _) = anon_tool(&app, ip, "get_release_requirements", json!({})).await;
+        assert_eq!(s, StatusCode::OK);
+    }
+    let (s, h, v) = anon_tool(&app, ip, "list_announcements", json!({})).await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED, "{v}");
+    assert!(
+        h["www-authenticate"]
+            .to_str()
+            .unwrap()
+            .contains("resource_metadata=")
+    );
+    assert_eq!(v["error"]["data"]["reason"], "DAILY_ANONYMOUS_LIMIT");
+    assert_eq!(v["error"]["data"]["limit"], 10);
+    assert!(
+        v["error"]["data"]["resets_at"]
+            .as_str()
+            .unwrap()
+            .ends_with("T15:00:00Z")
+    );
+    // Another address has its own allowance.
+    let (s, _, _) = anon_tool(&app, "198.51.100.7", "list_announcements", json!({})).await;
+    assert_eq!(s, StatusCode::OK);
+
+    // Signed in: the user's own daily count, then support.
+    let u = user(&app).await;
+    let c = connect(&app, &u, &["scope_write"]).await;
+    let (err, v) = tool(&app, &c.access, "list_announcements", json!({})).await;
+    assert!(!err, "{v}");
+    assert_eq!(v["usage"]["signed_in"], true);
+    assert_eq!(v["usage"]["limit"], 150);
+    public::admin_set_limit(&pool, "ops@audeniq", u.user, Some(2), Some("test"))
+        .await
+        .unwrap();
+    let (err, _) = tool(&app, &c.access, "get_service_status", json!({})).await;
+    assert!(!err);
+    let (err, v) = tool(&app, &c.access, "get_service_status", json!({})).await;
+    assert!(err);
+    assert_eq!(v["error"]["code"], "DAILY_LIMIT_REACHED");
+    assert_eq!(
+        v["error"]["details"]["support_url"],
+        format!("{ORIGIN}/inquiries")
+    );
+    // Account tools are not counted against it.
+    let (err, _) = tool(&app, &c.access, "get_account_context", json!({})).await;
+    assert!(!err);
+    // Support raises it.
+    public::admin_set_limit(&pool, "ops@audeniq", u.user, Some(500), None)
+        .await
+        .unwrap();
+    let (err, v) = tool(&app, &c.access, "get_service_status", json!({})).await;
+    assert!(!err, "{v}");
+    assert_eq!(v["usage"]["limit"], 500);
+    assert_eq!(
+        public::admin_list_limits(&pool).await.unwrap()["items"][0]["daily_limit"],
+        500
+    );
+    assert!(
+        public::admin_set_limit(&pool, "", u.user, Some(1), None)
+            .await
+            .is_err()
+    );
+    // A bad token on a public tool is 401 (the client refreshes), not anonymous use.
+    let (s, _, _) = rpc(
+        &app,
+        Some(&"0".repeat(64)),
+        "tools/call",
+        json!({"name":"get_service_status","arguments":{}}),
     )
     .await;
     assert_eq!(s, StatusCode::UNAUTHORIZED);

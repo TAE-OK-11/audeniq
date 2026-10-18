@@ -50,6 +50,21 @@ pub struct ToolDef {
     schema: fn() -> Value,
 }
 
+/// Public information anyone may read without connecting an account, under
+/// daily limits ([`super::public`]).
+const PUBLIC_TOOLS: [&str; 4] = [
+    "get_release_requirements",
+    "list_announcements",
+    "get_announcement",
+    "get_service_status",
+];
+
+impl ToolDef {
+    pub fn public(&self) -> bool {
+        PUBLIC_TOOLS.contains(&self.name)
+    }
+}
+
 fn defs() -> &'static [ToolDef] {
     static DEFS: OnceLock<Vec<ToolDef>> = OnceLock::new();
     DEFS.get_or_init(|| {
@@ -72,6 +87,31 @@ fn defs() -> &'static [ToolDef] {
                 name: "get_release_requirements",
                 title: "Release requirements",
                 description: "What an AUDENIQ distribution application needs: required metadata fields and formats, release types and track counts, accepted audio/artwork files and size limits, credit roles and the declarations made at submission.",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: empty_schema,
+            },
+            ToolDef {
+                name: "list_announcements",
+                title: "AUDENIQ notices and events",
+                description: "AUDENIQ's published notices (service news, policy changes, holiday schedules) or events, newest first, with a short excerpt and a link. Works without connecting an account (a few calls a day); call get_announcement for the full text.",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"properties":{
+                    "kind": {"type":"string","enum":["notices","events"],"default":"notices"},
+                    "limit": {"type":"integer","minimum":1,"maximum":50,"default":20}}}),
+            },
+            ToolDef {
+                name: "get_announcement",
+                title: "AUDENIQ notice or event",
+                description: "The full text of one published AUDENIQ notice or event (id from list_announcements). Works without connecting an account.",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["kind","id"],"properties":{
+                    "kind": {"type":"string","enum":["notices","events"]},
+                    "id": {"type":"string","pattern":"^[a-z0-9-]{1,64}$"}}}),
+            },
+            ToolDef {
+                name: "get_service_status",
+                title: "AUDENIQ service status",
+                description: "Whether AUDENIQ is under maintenance now or has maintenance scheduled, with times and the message to show. Works without connecting an account.",
                 scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
                 schema: empty_schema,
             },
@@ -442,7 +482,11 @@ pub fn list_json() -> Vec<Value> {
     defs()
         .iter()
         .map(|d| {
-            let security = json!([{"type":"oauth2","scopes":[d.scope]}]);
+            let security = if d.public() {
+                json!([{"type":"noauth"}, {"type":"oauth2","scopes":[d.scope]}])
+            } else {
+                json!([{"type":"oauth2","scopes":[d.scope]}])
+            };
             let mut meta = json!({
                 "securitySchemes": security,
                 "openai/toolInvocation/invoking": format!("{}…", d.title),
@@ -516,10 +560,10 @@ fn validator(def: &ToolDef) -> &'static jsonschema::Validator {
 
 /// A failed tool call: the stable code, a human explanation and, where it
 /// helps, what to do next. Internal details never reach the client.
-struct ToolError {
-    code: String,
-    message: String,
-    details: Option<Value>,
+pub(super) struct ToolError {
+    pub code: String,
+    pub message: String,
+    pub details: Option<Value>,
 }
 impl From<Error> for ToolError {
     fn from(e: Error) -> Self {
@@ -537,7 +581,7 @@ impl From<Error> for ToolError {
         }
     }
 }
-fn tool_error(code: &str, message: &str) -> ToolError {
+pub(super) fn tool_error(code: &str, message: &str) -> ToolError {
     ToolError {
         code: code.into(),
         message: message.into(),
@@ -612,10 +656,10 @@ fn mcp_message(code: &str) -> Option<&'static str> {
     })
 }
 
-fn ok_result(text: String, structured: Value) -> Value {
+pub(super) fn ok_result(text: String, structured: Value) -> Value {
     json!({"content": [{"type": "text", "text": text}], "structuredContent": structured, "isError": false})
 }
-fn err_result(e: ToolError) -> Value {
+pub(super) fn err_result(e: ToolError) -> Value {
     let mut err = json!({"code": e.code, "message": e.message});
     if let Some(d) = e.details {
         err["details"] = d;
@@ -628,19 +672,27 @@ fn err_result(e: ToolError) -> Value {
 }
 
 /// Runs a tool for an authenticated principal (scope already checked).
-pub async fn call(s: &AppState, p: &Principal, def: &ToolDef, args: Value) -> Value {
+/// The error result for arguments that do not match the tool's schema.
+pub(super) fn invalid_arguments(def: &ToolDef, args: &Value) -> Option<Value> {
     let errors: Vec<String> = validator(def)
-        .iter_errors(&args)
+        .iter_errors(args)
         .take(10)
         .map(|e| e.to_string().chars().take(300).collect())
         .collect();
-    if !errors.is_empty() {
-        let mut e = tool_error(
-            "INVALID_ARGUMENTS",
-            "The arguments do not match the tool's input schema.",
-        );
-        e.details = Some(json!({"problems": errors}));
-        return err_result(e);
+    if errors.is_empty() {
+        return None;
+    }
+    let mut e = tool_error(
+        "INVALID_ARGUMENTS",
+        "The arguments do not match the tool's input schema.",
+    );
+    e.details = Some(json!({"problems": errors}));
+    Some(err_result(e))
+}
+
+pub async fn call(s: &AppState, p: &Principal, def: &ToolDef, args: Value) -> Value {
+    if let Some(invalid) = invalid_arguments(def, &args) {
+        return invalid;
     }
     let started = std::time::Instant::now();
     let outcome = run(s, p, def, &args).await;
@@ -998,7 +1050,7 @@ async fn platforms(s: &AppState, a: &Actor, org: Uuid) -> std::result::Result<Va
     }))
 }
 
-fn requirements() -> Value {
+pub(super) fn requirements() -> Value {
     let types: Vec<Value> = ["SINGLE", "EP", "ALBUM"]
         .iter()
         .map(|t| {
