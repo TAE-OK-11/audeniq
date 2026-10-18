@@ -113,7 +113,7 @@ export function Application() {
       <div className="aq-doc-toolbar">
         <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={() => nav(`/releases/${rel.id}`)}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />발매 상세</button>
         <div className="row-actions">
-          <button type="button" className="ui-btn is-soft" onClick={() => nav('/')}>홈으로</button>
+          <button type="button" className="ui-btn is-soft" onClick={() => nav('/')}>홈으로 가기</button>
           <button type="button" className="ui-btn is-primary" onClick={() => void printWithStamp({ kind: 'APPLICATION', ref: id, root: document.querySelector('.aq-paper') })}>인쇄 · PDF 저장</button>
         </div>
       </div>

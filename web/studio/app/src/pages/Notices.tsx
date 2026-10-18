@@ -22,7 +22,7 @@ const NOTICES: Notice[] = [
     title: 'AUDENIQ STUDIO 정식 서비스 안내',
     date: '2026-09-26',
     pinned: true,
-    body: 'AUDENIQ STUDIO가 정식 서비스를 시작합니다.\n\n이제 발매 접수부터 정산 확인까지 모든 과정을 스튜디오에서 진행할 수 있어요.\n\n이용 중 궁금한 점은 문의 페이지에서 남겨주세요.',
+    body: 'AUDENIQ STUDIO가 정식 서비스를 시작했어요.\n\n이제 발매 접수부터 정산 확인까지 모든 과정을 스튜디오에서 진행할 수 있어요.\n\n궁금한 점은 문의에 남겨 주세요.',
   },
   {
     id: 'n2',
@@ -173,7 +173,7 @@ export function NoticeDetail() {
         <div className="ui-empty">
           <h2>공지를 찾을 수 없어요.</h2>
           <p>삭제됐거나 주소가 바뀌었을 수 있어요.</p>
-          <Link to="/notices" className="ui-btn is-soft">목록으로</Link>
+          <Link to="/notices" className="ui-btn is-soft">목록 보기</Link>
         </div>
       )}
       {notice && (
@@ -196,7 +196,7 @@ export function NoticeDetail() {
             )}
           </div>
           <div className="aq-narticle-foot">
-            <Link to="/notices" className="ui-btn is-primary">목록으로</Link>
+            <Link to="/notices" className="ui-btn is-primary">목록 보기</Link>
           </div>
         </article>
       )}
