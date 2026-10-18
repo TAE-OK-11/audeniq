@@ -111,8 +111,29 @@ fn unauthorized(s: &AppState, id: &Value) -> Response {
     r
 }
 
-/// A public tool: anyone, counted per IP per day without a token, per user
-/// with one. A token that is sent must be valid (the client refreshes it).
+/// A server-side failure as a JSON-RPC error: 503 (retry) only when the
+/// database is unreachable, otherwise 500 so clients do not retry a bug.
+fn server_error(id: &Value, e: Error) -> Response {
+    let code = error_code(&e);
+    let status = if code == "DATABASE_UNAVAILABLE" {
+        StatusCode::SERVICE_UNAVAILABLE
+    } else {
+        if code == "INTERNAL_ERROR" {
+            tracing::warn!(error = %e, "mcp request failed");
+        }
+        StatusCode::INTERNAL_SERVER_ERROR
+    };
+    rpc_error(
+        status,
+        id,
+        -32603,
+        crate::error::message(code).unwrap_or("Server error"),
+        None,
+    )
+}
+
+/// A public tool: anyone without a token; counted per user with one. A
+/// token that is sent must be valid (the client refreshes it).
 async fn public_call(
     s: &AppState,
     h: &HeaderMap,
@@ -121,15 +142,7 @@ async fn public_call(
     args: Value,
     complete: impl Fn(Value) -> Value,
 ) -> Response {
-    let server_error = |e: Error| {
-        rpc_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            id,
-            -32603,
-            crate::error::message(error_code(&e)).unwrap_or("Server error"),
-            None,
-        )
-    };
+    let server_error = |e: Error| server_error(id, e);
     let principal = if h.contains_key(header::AUTHORIZATION) {
         match oauth::principal(s, h).await {
             Ok(p) => Some(p),
@@ -139,35 +152,8 @@ async fn public_call(
     } else {
         None
     };
-    let caller = match &principal {
-        Some(p) => public::Caller::User(p),
-        None => public::Caller::Anonymous {
-            source: crate::auth::client_ip_key(h).unwrap_or_else(|| "unknown".into()),
-        },
-    };
-    match public::call(s, def, args, caller).await {
-        Ok(public::Outcome::Result(v)) => rpc_result(id, complete(v)),
-        Ok(public::Outcome::SignInRequired { limit, resets_at }) => {
-            let mut r = rpc_error(
-                StatusCode::UNAUTHORIZED,
-                id,
-                -32001,
-                &format!(
-                    "Without an account this is limited to {limit} calls a day. Connect your AUDENIQ account to continue."
-                ),
-                Some(
-                    json!({"reason": "DAILY_ANONYMOUS_LIMIT", "limit": limit, "resets_at": resets_at}),
-                ),
-            );
-            r.headers_mut().insert(
-                header::WWW_AUTHENTICATE,
-                challenge(
-                    s,
-                    ", error=\"invalid_token\", error_description=\"Daily limit without an account reached; connect your AUDENIQ account\"",
-                ),
-            );
-            r
-        }
+    match public::call(s, def, args, principal.as_ref()).await {
+        Ok(v) => rpc_result(id, complete(v)),
         Err(e) => server_error(e),
     }
 }
@@ -451,15 +437,7 @@ pub async fn post(State(s): State<AppState>, h: HeaderMap, body: Bytes) -> Respo
             let principal: Principal = match oauth::principal(&s, &h).await {
                 Ok(p) => p,
                 Err(BearerError::Invalid) => return unauthorized(&s, &id),
-                Err(BearerError::Api(e)) => {
-                    return rpc_error(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        &id,
-                        -32603,
-                        crate::error::message(error_code(&e)).unwrap_or("Server error"),
-                        None,
-                    );
-                }
+                Err(BearerError::Api(e)) => return server_error(&id, e),
             };
             if !principal.has(def.scope) {
                 return insufficient_scope(&s, &id, def.scope);

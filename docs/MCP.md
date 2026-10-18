@@ -107,7 +107,7 @@ Three more, by what the agent can do:
 
 | Agent | How it connects | Grant `method` |
 |---|---|---|
-| Can call OAuth endpoints but has no browser redirect | **Link + code** (RFC 8628): `POST /api/oauth/device_authorization` → the assistant shows `verification_uri_complete` and `user_code` in the chat → the artist opens it, signs in to the Studio, checks the code and approves → the client polls `/api/oauth/token` (`authorization_pending`, `slow_down` faster than every 5 s, `access_denied`, `expired_token`). | `DEVICE` |
+| Registered by an operator (client secret), no browser redirect | **Link + code** (RFC 8628; public DCR/CIMD clients get `unauthorized_client`, since without a redirect anyone could start it under ChatGPT's name and phish an approval): `POST /api/oauth/device_authorization` → the assistant shows `verification_uri_complete` and `user_code` in the chat → the artist opens it, signs in to the Studio, checks the code and approves → the client polls `/api/oauth/token` (`authorization_pending`, `slow_down` faster than every 5 s, `access_denied`, `expired_token`). | `DEVICE` |
 | Has a credential form that sends the e-mail and password to AUDENIQ without the model seeing them (an operator verified this) | **Password grant**: `grant_type=password&username=&password=[&scope=][&org_id=]` with the client secret an operator issued (`audeniq-admin mcp-client add NAME --password-grant`). Login rate limits (`mcp-password` buckets) and audit apply; `payouts:request` is refused; workspace defaults to the first editable one. Public, DCR and CIMD clients get `unauthorized_client`. | `PASSWORD` |
 | Anything else (only a fixed `Authorization` header) | **Connection token**: the artist makes one in the Studio (프로필 → 로그인 → 연결된 AI 앱 → 연결 토큰 만들기): name, permissions (read always, write on by default, submit/settlement/payout opt-in, or "모든 권한 허용"), 7/30/90 days or no end date (`no_expiry`: works until revoked; password change and log out everywhere still end it; the Studio warns before making one). Shown once; stored as SHA-256; listed and revocable like any connection. | `TOKEN` |
 
@@ -131,14 +131,17 @@ notices and events, as on `/api/notices` and `/api/events`) and
 
 | Caller | Daily limit (KST day) | Over the limit |
 |---|---|---|
-| No token | `AUDENIQ_MCP_PUBLIC_DAILY_ANONYMOUS` (default 10) per client IP (`x-audeniq-client-ip` from the edge) | HTTP 401 with the `WWW-Authenticate` challenge and `error.data.reason = DAILY_ANONYMOUS_LIMIT`, so the client starts account linking |
+| No token | None (not counted) | — |
 | Token | `AUDENIQ_MCP_PUBLIC_DAILY_USER` (default 150) per user, or the user's own limit | Tool error `DAILY_LIMIT_REACHED` with the support link; support raises it with `audeniq-admin --operator NAME mcp-limit set EMAIL N [--note TEXT]` (`clear EMAIL` = default, `list`) |
 
 Only the public tools count toward these limits; account tools keep their own
 per-connection rate limits. A sent token must be valid (401 otherwise, so the
 client refreshes); it is never silently treated as anonymous. Each result
-carries `usage` (`limit`, `used_today`, `remaining_today`, `signed_in`).
-Counts live in `identity.mcp_daily_usage` (keyed HMAC of the IP or user, like
+carries `usage` (`signed_in`, and for signed-in users `limit`, `used_today`,
+`remaining_today`). Calls without an account are not counted (AI platforms
+call from shared server addresses, so a per-IP cap would be shared by all of
+their users).
+Counts live in `identity.mcp_daily_usage` (keyed HMAC of the user, like
 the login limits) and are deleted after a day; per-user limits in
 `identity.mcp_usage_limits` (changes audited as `mcp.usage_limit_set`).
 
@@ -269,6 +272,30 @@ requests about language, tone and format come first; otherwise:
 
 ## Security controls
 
+- Token endpoint limits count **failures only** per client address
+  (`mcp-token-fail:src`, 300 per 15 min): an AI platform refreshes for all of
+  its users from a few addresses, so counting every request (or every request
+  of a public client) would lock them all out, and one attacker could do it on
+  purpose. Server-side failures there answer in OAuth's shape
+  (`temporarily_unavailable` + `Retry-After`, `server_error`).
+- A refresh token reused within 30 s is a client racing itself (parallel
+  calls, a retry after a lost response): refused without revoking. Later
+  reuse revokes the grant (`REFRESH_REUSED`).
+- Password grant: per agent (3,000 per 15 min), per agent and account (10),
+  and the Studio's own per-account budget (`login:acct`).
+- `GET /api/oauth/authorize` and `/api/oauth/revoke` are limited per address.
+  A Client ID Metadata Document that fails to fetch or validate is not fetched
+  again for 5 minutes; a usable cached copy keeps serving.
+- Tool calls stop after 60 s (`TOOL_TIMEOUT`, "check the current state before
+  retrying"), inside the edge's deadline. `submit_release` is marked
+  destructive so hosts ask before running it.
+- Maintenance: `/api/mcp` answers a JSON-RPC error (-32000 with the notice),
+  token/registration/revocation answer `temporarily_unavailable`, both with
+  `Retry-After`. Bearer lookups answer 503 only when the database is
+  unreachable (500 otherwise, so clients do not retry a bug).
+- `audeniq-admin privacy purge-transient` also deletes expired authorization
+  codes, tokens and device codes (after a day) and old daily usage counts.
+
 - Service-secret boundary unchanged: the edge adds `X-Audeniq-Service`. Only
   `POST /api/mcp|/api/oauth/{token,register,revoke}` skip the Origin rule, and
   only those calls get `Authorization`/MCP headers forwarded by the edge.
@@ -305,7 +332,6 @@ requests about language, tone and format come first; otherwise:
 | `AUDENIQ_MCP_ENABLED` | `false` | Everything above answers 404 when off |
 | `AUDENIQ_MCP_CIMD_HOSTS` | `chatgpt.com,claude.ai` | Hosts whose client metadata documents may be fetched |
 | `AUDENIQ_MCP_DYNAMIC_REGISTRATION` | `true` | RFC 7591 endpoint |
-| `AUDENIQ_MCP_PUBLIC_DAILY_ANONYMOUS` | `10` | Public tools per IP per day without an account |
 | `AUDENIQ_MCP_PUBLIC_DAILY_USER` | `150` | Public tools per signed-in user per day (per-user override: `mcp-limit`) |
 | `AUDENIQ_MCP_PAYOUT_LIMIT_KRW` | `300000` | Assistant payout limit per request and per 24 h; `0` = off |
 

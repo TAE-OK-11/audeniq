@@ -35,6 +35,8 @@ const CODE_SECONDS: i64 = 600;
 pub const ACCESS_SECONDS: i64 = 3600;
 const REFRESH_SECONDS: i64 = 30 * 24 * 3600;
 const GRANT_MAX_DAYS: i64 = 90;
+/// A refresh token reused this soon after its first use is a client retry.
+const REFRESH_REUSE_GRACE_SECONDS: i64 = 30;
 /// A consent screen must be answered within this window.
 const CONSENT_SECONDS: i64 = 600;
 /// CIMD documents are re-fetched after a day; a cached one serves up to a
@@ -103,6 +105,8 @@ pub struct Client {
     pub redirect_uris: Vec<String>,
     pub auth_method: String,
     secret_hash: Option<Vec<u8>>,
+    /// CIMD, DCR or ADMIN (operator-registered).
+    pub kind: String,
     /// An operator-registered agent that may send the artist's e-mail and
     /// password (`grant_type=password`); always a confidential client.
     pub password_grant: bool,
@@ -164,6 +168,7 @@ pub(super) fn row_client(r: &sqlx::postgres::PgRow) -> Client {
         redirect_uris: r.get("redirect_uris"),
         auth_method: r.get("token_endpoint_auth_method"),
         secret_hash: r.get("secret_hash"),
+        kind: r.get("kind"),
         password_grant: r.get("password_grant"),
     }
 }
@@ -196,13 +201,31 @@ pub async fn client(s: &AppState, client_id: &str) -> Result<Option<Client>> {
     {
         return Ok(Some(row_client(r)));
     }
-    match fetch_cimd(client_id).await {
+    let cached = || {
+        row.as_ref()
+            .filter(|r| r.get::<Option<bool>, _>("usable") == Some(true))
+            .map(row_client)
+    };
+    // A document that just failed is not fetched again for a few minutes
+    // (every authorize/token call of that client would otherwise wait on it).
+    if cimd_recently_failed(client_id) {
+        return Ok(cached());
+    }
+    let started = std::time::Instant::now();
+    let fetched = fetch_cimd(client_id).await;
+    tracing::info!(
+        ok = fetched.is_ok(),
+        elapsed_ms = started.elapsed().as_millis(),
+        "cimd_fetch"
+    );
+    match fetched {
         Ok(doc) => {
             let (name, uri, redirects) = match parse_cimd(client_id, &doc) {
                 Ok(v) => v,
                 Err(reason) => {
                     tracing::warn!(reason, "client metadata document rejected");
-                    return Ok(None);
+                    cimd_failed(client_id);
+                    return Ok(cached());
                 }
             };
             let r = sqlx::query(sqlx::AssertSqlSafe(format!(
@@ -224,9 +247,35 @@ pub async fn client(s: &AppState, client_id: &str) -> Result<Option<Client>> {
         }
         Err(e) => {
             tracing::warn!(error = %e, "client metadata document unavailable");
-            Ok(row
-                .filter(|r| r.get::<Option<bool>, _>("usable") == Some(true))
-                .map(|r| row_client(&r)))
+            cimd_failed(client_id);
+            Ok(cached())
+        }
+    }
+}
+
+/// Client ID Metadata Documents that failed recently (per process).
+fn cimd_failures()
+-> &'static std::sync::Mutex<std::collections::HashMap<String, std::time::Instant>> {
+    static F: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, std::time::Instant>>,
+    > = std::sync::OnceLock::new();
+    F.get_or_init(Default::default)
+}
+const CIMD_RETRY_AFTER: std::time::Duration = std::time::Duration::from_secs(300);
+fn cimd_recently_failed(client_id: &str) -> bool {
+    cimd_failures()
+        .lock()
+        .map(|m| {
+            m.get(client_id)
+                .is_some_and(|t| t.elapsed() < CIMD_RETRY_AFTER)
+        })
+        .unwrap_or(false)
+}
+fn cimd_failed(client_id: &str) {
+    if let Ok(mut m) = cimd_failures().lock() {
+        m.retain(|_, t| t.elapsed() < CIMD_RETRY_AFTER);
+        if m.len() < 1000 {
+            m.insert(client_id.to_string(), std::time::Instant::now());
         }
     }
 }
@@ -556,6 +605,13 @@ pub async fn authorize(State(s): State<AppState>, h: HeaderMap, RawQuery(q): Raw
     if enabled(&s).is_err() {
         return Error::NotFound.into_response();
     }
+    let source = auth::client_ip_key(&h).unwrap_or_else(|| "unknown".into());
+    if auth::rate(&s.pool, &format!("mcp-authorize:src:{source}"), 300)
+        .await
+        .is_err()
+    {
+        return page_error("요청이 너무 많아요. 잠시 뒤에 다시 해 주세요.");
+    }
     let Some(p) = single_params(q.as_deref().unwrap_or("")) else {
         return page_error("요청 형식이 올바르지 않아요 (같은 항목이 두 번 들어 있어요).");
     };
@@ -709,10 +765,14 @@ pub(super) async fn create_grant(
         return Err(Error::Forbidden);
     }
     if replace {
-        sqlx::query("UPDATE identity.mcp_grants SET revoked_at=now(), revoke_reason='REPLACED' WHERE client_pk=$1 AND user_id=$2 AND org_id=$3 AND revoked_at IS NULL")
-            .bind(client_pk).bind(user).bind(org).execute(&mut *c).await?;
-        sqlx::query("DELETE FROM identity.mcp_tokens WHERE grant_id IN (SELECT id FROM identity.mcp_grants WHERE client_pk=$1 AND user_id=$2 AND org_id=$3 AND revoke_reason='REPLACED')")
-            .bind(client_pk).bind(user).bind(org).execute(&mut *c).await?;
+        let replaced: Vec<Uuid> = sqlx::query_scalar("UPDATE identity.mcp_grants SET revoked_at=now(), revoke_reason='REPLACED' WHERE client_pk=$1 AND user_id=$2 AND org_id=$3 AND revoked_at IS NULL RETURNING id")
+            .bind(client_pk).bind(user).bind(org).fetch_all(&mut *c).await?;
+        if !replaced.is_empty() {
+            sqlx::query("DELETE FROM identity.mcp_tokens WHERE grant_id = ANY($1)")
+                .bind(&replaced)
+                .execute(&mut *c)
+                .await?;
+        }
     }
     let grant = Uuid::new_v4();
     sqlx::query("INSERT INTO identity.mcp_grants(id,client_pk,user_id,org_id,scopes,resource,method,label) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
@@ -882,7 +942,7 @@ pub(super) async fn authenticate_client(
     let c = match client(s, &client_id).await {
         Ok(Some(c)) => c,
         Ok(None) => return Err(invalid()),
-        Err(e) => return Err(Box::new(e.into_response())),
+        Err(e) => return Err(Box::new(token_api_error(e))),
     };
     if c.auth_method != method {
         return Err(invalid());
@@ -918,21 +978,28 @@ pub async fn token(State(s): State<AppState>, h: HeaderMap, body: Bytes) -> Resp
             "Malformed form body.",
         );
     };
+    // Only failed requests count: one AI platform's servers refresh tokens
+    // for all of its users from a few addresses, so counting every request
+    // (or every request of a public client) would lock all of them out.
+    // Codes and tokens are 256-bit random; the limit stops floods of bad ones.
     let source = auth::client_ip_key(&h).unwrap_or_else(|| "unknown".into());
-    if let Err(e) = auth::rate(&s.pool, &format!("mcp-token:src:{source}"), 600).await {
-        return e.into_response();
+    let failures = format!("mcp-token-fail:src:{source}");
+    match auth::over_limit(&s.pool, &failures, TOKEN_FAILURES_PER_SOURCE).await {
+        Ok(false) => {}
+        Ok(true) => return token_api_error(Error::RateLimited),
+        Err(e) => return token_api_error(e),
     }
+    let failed = || async {
+        let _ = auth::rate(&s.pool, &failures, i32::MAX).await;
+    };
     let c = match authenticate_client(&s, &h, &form).await {
         Ok(c) => c,
-        Err(r) => return *r,
+        Err(r) => {
+            failed().await;
+            return *r;
+        }
     };
     let grant_type = form.get("grant_type").map(String::as_str);
-    // Device-code polls are paced per code (slow_down), not per client.
-    if grant_type != Some(super::login::DEVICE_GRANT)
-        && let Err(e) = auth::rate(&s.pool, &format!("mcp-token:client:{}", c.pk), 300).await
-    {
-        return e.into_response();
-    }
     if !resource_ok(&s, form.get("resource").map(String::as_str)) {
         return oauth_error(
             StatusCode::BAD_REQUEST,
@@ -955,12 +1022,65 @@ pub async fn token(State(s): State<AppState>, h: HeaderMap, body: Bytes) -> Resp
             let mut r = Json(v).into_response();
             r.headers_mut()
                 .insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
+            r.headers_mut()
+                .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
             r
         }
-        Err(TokenError::Oauth(code, desc)) => oauth_error(StatusCode::BAD_REQUEST, code, desc),
-        Err(TokenError::Client(code, desc)) => oauth_error(StatusCode::UNAUTHORIZED, code, desc),
-        Err(TokenError::Api(e)) => e.into_response(),
+        Err(TokenError::Oauth(code, desc)) => {
+            if !matches!(code, "authorization_pending" | "slow_down") {
+                failed().await;
+            }
+            oauth_error(StatusCode::BAD_REQUEST, code, desc)
+        }
+        Err(TokenError::Client(code, desc)) => {
+            failed().await;
+            oauth_error(StatusCode::UNAUTHORIZED, code, desc)
+        }
+        Err(TokenError::Api(e)) => token_api_error(e),
     }
+}
+
+/// Failed token requests per client address per 15 minutes.
+const TOKEN_FAILURES_PER_SOURCE: i32 = 300;
+
+/// Server-side failures at the token endpoint in OAuth's shape (`error` is a
+/// string), so client libraries retry instead of dropping the connection.
+pub(super) fn token_api_error(e: Error) -> Response {
+    let (status, code, desc, retry) = match crate::mcp::protocol::error_code(&e) {
+        "RATE_LIMITED" => (
+            StatusCode::TOO_MANY_REQUESTS,
+            "temporarily_unavailable",
+            "Too many requests. Retry later.",
+            Some("60"),
+        ),
+        "DATABASE_UNAVAILABLE" | "INVARIANT_CONFLICT" => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "temporarily_unavailable",
+            "Temporarily unavailable. Retry shortly.",
+            Some("5"),
+        ),
+        "INTERNAL_ERROR" => {
+            tracing::warn!(error = %e, "mcp token endpoint failed");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "server_error",
+                "The server could not complete the request.",
+                None,
+            )
+        }
+        _ => (
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "The request was refused.",
+            None,
+        ),
+    };
+    let mut r = oauth_error(status, code, desc);
+    if let Some(v) = retry {
+        r.headers_mut()
+            .insert(header::RETRY_AFTER, HeaderValue::from_static(v));
+    }
+    r
 }
 
 pub(super) enum TokenError {
@@ -1114,16 +1234,24 @@ async fn refresh(
     }
     let mut tx = s.pool.begin().await?;
     let row = sqlx::query(
-        "SELECT t.grant_id, t.expires_at > now() AS live, t.used_at IS NOT NULL AS used, g.client_pk, g.user_id, g.org_id
+        "SELECT t.grant_id, t.expires_at > now() AS live, t.used_at IS NOT NULL AS used,
+                COALESCE(t.used_at > now() - make_interval(secs => $2), false) AS just_used, g.client_pk, g.user_id, g.org_id
            FROM identity.mcp_tokens t JOIN identity.mcp_grants g ON g.id=t.grant_id
           WHERE t.token_hash=$1 AND t.kind='REFRESH' FOR UPDATE OF t",
     )
     .bind(auth::hash_token(token))
+    .bind(REFRESH_REUSE_GRACE_SECONDS as f64)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(BAD_GRANT)?;
     let grant: Uuid = row.get("grant_id");
     if row.get::<Uuid, _>("client_pk") != client.pk {
+        return Err(BAD_GRANT);
+    }
+    // The same refresh token twice within seconds is a client racing itself
+    // (parallel calls, a retry after a lost response), not theft: refuse it
+    // but keep the tokens the first request got.
+    if row.get::<bool, _>("just_used") {
         return Err(BAD_GRANT);
     }
     if row.get::<bool, _>("used") {
@@ -1178,6 +1306,10 @@ pub async fn revoke(State(s): State<AppState>, h: HeaderMap, body: Bytes) -> Res
             "Malformed form body.",
         );
     };
+    let source = auth::client_ip_key(&h).unwrap_or_else(|| "unknown".into());
+    if let Err(e) = auth::rate(&s.pool, &format!("mcp-revoke:src:{source}"), 600).await {
+        return token_api_error(e);
+    }
     let c = match authenticate_client(&s, &h, &form).await {
         Ok(c) => c,
         Err(r) => return *r,
@@ -1640,7 +1772,6 @@ mod tests {
             cimd_hosts: vec!["chatgpt.com".into()],
             dynamic_registration: true,
             payout_limit_krw: 0,
-            public_daily_anonymous: 10,
             public_daily_user: 150,
         };
         assert!(cimd_allowed(&s, "https://chatgpt.com/oauth/client.json"));
