@@ -335,12 +335,21 @@ requests about language, tone and format come first; otherwise:
 - Tool calls stop after 60 s (`TOOL_TIMEOUT`, "check the current state before
   retrying"), inside the edge's deadline. `submit_release` is marked
   destructive so hosts ask before running it.
-- Maintenance: `/api/mcp` answers a JSON-RPC error (-32000 with the notice),
-  token/registration/revocation answer `temporarily_unavailable`, both with
-  `Retry-After`. Bearer lookups answer 503 only when the database is
+- Maintenance: `/api/mcp` answers a JSON-RPC error (-32000 with the notice,
+  echoing the request's `id`), token/registration/revocation answer
+  `temporarily_unavailable`, both with `Retry-After`. Discovery and the
+  read-only notice tools stay open so the assistant can explain the outage:
+  `initialize`, `ping`, `*/list`, `prompts/get`, `resources/read` and
+  `tools/call` for `get_service_status`, `list_announcements` and
+  `get_announcement`. Bearer lookups answer 503 only when the database is
   unreachable (500 otherwise, so clients do not retry a bug).
 - `audeniq-admin privacy purge-transient` also deletes expired authorization
-  codes, tokens and device codes (after a day) and old daily usage counts.
+  codes, tokens and device codes (after a day) and old daily usage counts,
+  and dynamically registered clients older than 30 days that never got a
+  grant (abandoned registrations).
+- Submitting again with the same `client_request_id` after the review has
+  already moved the release on (Studio approval, network retry) returns the
+  existing revision with `deduped: true` instead of `RELEASE_NOT_SUBMITTABLE`.
 
 - Service-secret boundary unchanged: the edge adds `X-Audeniq-Service`. Only
   `POST /api/mcp|/api/oauth/{token,register,revoke}` skip the Origin rule, and
@@ -407,6 +416,13 @@ exception. `crates/edge` got the same rules for parity.
   forwarding rules) and deploys the Worker on `main`.
 - `backend-image` → `approve-deploy` → `deploy`: `deploy.sh` runs
   `audeniq-migrate` (applies 0131) and `grants.sql` before switching api/worker.
+  `deploy` refuses unless the pipeline is for the newest `main` commit (an old
+  pipeline's approval cannot roll production back). A pipeline with no backend
+  change deploys the last `main` image (`:main` or `:main-$BACKEND_CPU_VARIANT`)
+  instead of finishing without doing anything.
+- `backend-test` caches dependency build output (`cargo-target-v1-…`, keyed on
+  `Cargo.lock` and the toolchain) so a push that only changes our crates does
+  not recompile dependencies.
 
 Turning it on in production (after the deploy above):
 
