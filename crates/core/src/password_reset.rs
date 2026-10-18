@@ -388,6 +388,7 @@ pub async fn complete_reset(s: &AppState, h: &HeaderMap, i: ResetComplete) -> Re
     .bind(user)
     .execute(&mut *tx)
     .await?;
+    crate::mcp::oauth::revoke_user_grants(&mut tx, user, "PASSWORD_RESET").await?;
     // 남은 다른 재설정 요청도 닫는다.
     sqlx::query(
         "UPDATE identity.sms_challenges SET consumed_at=now() WHERE user_id=$1 AND purpose='PASSWORD_RESET' AND consumed_at IS NULL",
