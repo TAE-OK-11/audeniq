@@ -213,6 +213,112 @@ fn defs() -> &'static [ToolDef] {
                 schema: release_id_schema,
             },
             ToolDef {
+                name: "get_playlist_pitch",
+                title: "Playlist pitch",
+                description: "The release's playlist pitch to platform editors: whether one can be sent (submitted releases, at least 7 days before the release date), the latest pitch and its outcome from AUDENIQ.",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: release_id_schema,
+            },
+            ToolDef {
+                name: "submit_playlist_pitch",
+                title: "Submit a playlist pitch",
+                description: "Pitch one focus track of a submitted release to platform editors (AUDENIQ forwards it). At least 7 days before the release date; one active pitch per release. Draft the texts with the artist and send only what they approved; describe the music truthfully, never invent achievements or numbers.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: false, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","track_id","description"],"properties":{
+                    "release_id": uuid_schema("The release"),
+                    "track_id": uuid_schema("Focus track of this release"),
+                    "description": {"type":"string","minLength":20,"maxLength":1000,"description":"What the track is: story, sound, context"},
+                    "genres": {"type":"string","maxLength":200},
+                    "moods": {"type":"string","maxLength":200},
+                    "instruments": {"type":"string","maxLength":200},
+                    "similar_artists": {"type":"string","maxLength":200},
+                    "marketing": {"type":"string","maxLength":1000,"description":"Promotion plans (videos, shows, campaigns)"}}}),
+            },
+            ToolDef {
+                name: "withdraw_playlist_pitch",
+                title: "Withdraw a playlist pitch",
+                description: "Withdraw the release's pitch while it is submitted or in review (a new one can then be sent).",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: release_id_schema,
+            },
+            ToolDef {
+                name: "get_smart_link",
+                title: "Smart link and fan alerts",
+                description: "The release's public smart link (landing page with every platform link): its URL, platform links (pasted or filled from the platforms' own ids) with their checks, views and clicks over the last 30 days, and how many fans signed up for a release alert.",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: release_id_schema,
+            },
+            ToolDef {
+                name: "save_smart_link",
+                title: "Save the smart link",
+                description: "Create or update the release's smart link: turn it on/off and set platform links (https links on that platform's own domain; links filled automatically from the platforms need not be given). The page is public.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || {
+                    let platforms: Vec<&str> = crate::smart_links::PLATFORMS.iter().map(|(p, _)| *p).collect();
+                    json!({"type":"object","additionalProperties":false,"required":["release_id"],"properties":{
+                        "release_id": uuid_schema("The release"),
+                        "enabled": {"type":"boolean","default":true},
+                        "links": {"type":"object","maxProperties":platforms.len(),"propertyNames":{"enum":platforms},
+                            "additionalProperties":{"type":"string","maxLength":500,"pattern":"^$|^https://"},
+                            "description":"Platform → link; an empty string removes it"}}})
+                },
+            },
+            ToolDef {
+                name: "list_release_codes",
+                title: "UPC and ISRC codes",
+                description: "Every submitted release with its UPC and each track's ISRC.",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: empty_schema,
+            },
+            ToolDef {
+                name: "list_notifications",
+                title: "Notifications",
+                description: "The latest AUDENIQ notifications for this workspace (review results, delivery, settlement, documents) and how many are unread.",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: empty_schema,
+            },
+            ToolDef {
+                name: "list_documents",
+                title: "Agreements and rights documents",
+                description: "The workspace's distribution agreements and rights documents with their status and AUDENIQ's review note, and the Studio link where each is read and signed (signing is only possible in Studio).",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: empty_schema,
+            },
+            ToolDef {
+                name: "list_inquiries",
+                title: "Support inquiries",
+                description: "The workspace's inquiries to AUDENIQ support with their status.",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: empty_schema,
+            },
+            ToolDef {
+                name: "get_inquiry",
+                title: "Inquiry conversation",
+                description: "One inquiry with all messages between the artist and AUDENIQ support.",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["inquiry_id"],"properties":{"inquiry_id": uuid_schema("The inquiry")}}),
+            },
+            ToolDef {
+                name: "create_inquiry",
+                title: "Ask AUDENIQ support",
+                description: "Send a new inquiry to AUDENIQ support, optionally about one release. Show the artist the subject and message and send only after they agree; it is sent in their name.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: false, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["category","subject","body"],"properties":{
+                    "category": {"type":"string","enum":["RELEASE","SETTLEMENT","CONTRACT","ACCOUNT","OTHER"]},
+                    "release_id": uuid_schema("Release the inquiry is about (optional)"),
+                    "subject": {"type":"string","minLength":1,"maxLength":200},
+                    "body": {"type":"string","minLength":1,"maxLength":4000}}}),
+            },
+            ToolDef {
+                name: "reply_inquiry",
+                title: "Reply to an inquiry",
+                description: "Add the artist's message to an open inquiry. Send only text the artist agreed to.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: false, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["inquiry_id","body"],"properties":{
+                    "inquiry_id": uuid_schema("The inquiry"),
+                    "body": {"type":"string","minLength":1,"maxLength":4000}}}),
+            },
+            ToolDef {
                 name: "get_settlement_summary",
                 title: "Settlement balance",
                 description: "The workspace's royalty balance in KRW: payable, pending payouts, held, available to withdraw, whether a payout account is registered (bank and last 4 digits only), the payout fee policy, and how much can still be requested through the assistant in the next 24 hours.",
@@ -478,6 +584,15 @@ fn mcp_message(code: &str) -> Option<&'static str> {
         "CORRECTION_INVALID" => "The correction lists an unknown track or an invalid credit.",
         "CORRECTION_EMPTY" => "Give a new genre or at least one track's credits.",
         "CORRECTION_REASON_REQUIRED" => "Give a reason for the correction.",
+        "PITCH_RELEASE_NOT_SUBMITTED" => {
+            "Pitches are for submitted releases. Submit the release first."
+        }
+        "PITCH_TOO_LATE" => {
+            "Pitches must reach editors at least 7 days before the release date; this release is too close (or has no date)."
+        }
+        "PITCH_INVALID" => {
+            "The description must be 20 to 1000 characters and the track must belong to the release."
+        }
         "PAYOUT_ACCOUNT_REQUIRED" => {
             "No payout account is registered. The artist registers it in AUDENIQ Studio (settlement)."
         }
@@ -669,6 +784,109 @@ async fn run(
             let release = release_arg(args)?;
             let v = crate::corrections::cancel(s, a, org, release).await?;
             Ok(json!({"view": "correction", "release_id": release, "request": v}))
+        }),
+        "get_playlist_pitch" => Box::pin(async move {
+            let release = release_arg(args)?;
+            let mut v = crate::pitching::status(s, a, org, release).await?;
+            v["view"] = json!("pitch");
+            v["release_id"] = json!(release);
+            v["lead_days"] = json!(crate::pitching::LEAD_DAYS);
+            Ok(v)
+        }),
+        "submit_playlist_pitch" => Box::pin(async move {
+            let release = release_arg(args)?;
+            let text = |k: &str| str_arg(args, k).unwrap_or_default().to_string();
+            let input = crate::pitching::PitchInput {
+                track_id: uuid_arg(args, "track_id")?,
+                description: text("description"),
+                genres: text("genres"),
+                moods: text("moods"),
+                instruments: text("instruments"),
+                similar_artists: text("similar_artists"),
+                marketing: text("marketing"),
+            };
+            crate::pitching::submit(s, a, org, release, input).await?;
+            let mut v = crate::pitching::status(s, a, org, release).await?;
+            v["view"] = json!("pitch");
+            v["release_id"] = json!(release);
+            Ok(v)
+        }),
+        "withdraw_playlist_pitch" => Box::pin(async move {
+            let release = release_arg(args)?;
+            crate::pitching::withdraw(s, a, org, release).await?;
+            let mut v = crate::pitching::status(s, a, org, release).await?;
+            v["view"] = json!("pitch");
+            v["release_id"] = json!(release);
+            Ok(v)
+        }),
+        "get_smart_link" => {
+            Box::pin(async move { smart_link(s, a, org, release_arg(args)?).await })
+        }
+        "save_smart_link" => Box::pin(async move {
+            let release = release_arg(args)?;
+            let links = args
+                .get("links")
+                .and_then(Value::as_object)
+                .into_iter()
+                .flatten()
+                .map(|(k, v)| (k.clone(), v.as_str().unwrap_or_default().to_string()))
+                .collect();
+            let input = crate::smart_links::LinkInput {
+                enabled: args.get("enabled").and_then(Value::as_bool).unwrap_or(true),
+                links,
+            };
+            crate::smart_links::save(s, a, org, release, input).await?;
+            smart_link(s, a, org, release).await
+        }),
+        "list_release_codes" => Box::pin(async move {
+            Ok(json!({"view": "codes", "releases": crate::codes::list(s, a, org).await?}))
+        }),
+        "list_notifications" => Box::pin(async move {
+            let mut v = crate::portal::list_notifications(s, a, org).await?;
+            v["view"] = json!("notifications");
+            Ok(v)
+        }),
+        "list_documents" => Box::pin(documents(s, a, org)),
+        "list_inquiries" => Box::pin(async move {
+            let mut v = crate::portal::list_inquiries(s, a, org).await?;
+            v["view"] = json!("inquiries");
+            v["studio_url"] = json!(format!("{}/inquiries", super::issuer(s)));
+            Ok(v)
+        }),
+        "get_inquiry" => Box::pin(async move {
+            let mut v =
+                crate::portal::get_inquiry(s, a, org, uuid_arg(args, "inquiry_id")?).await?;
+            v["view"] = json!("inquiry");
+            Ok(v)
+        }),
+        "create_inquiry" => Box::pin(async move {
+            let input = crate::portal::InquiryInput {
+                category: str_arg(args, "category").unwrap_or_default().to_string(),
+                release_id: args
+                    .get("release_id")
+                    .and_then(Value::as_str)
+                    .and_then(|v| v.parse().ok()),
+                subject: str_arg(args, "subject").unwrap_or_default().to_string(),
+                body: str_arg(args, "body").unwrap_or_default().to_string(),
+            };
+            let created = crate::portal::create_inquiry(s, a, org, input).await?;
+            let id = created["id"]
+                .as_str()
+                .and_then(|v| v.parse().ok())
+                .ok_or(Error::Internal)?;
+            let mut v = crate::portal::get_inquiry(s, a, org, id).await?;
+            v["view"] = json!("inquiry");
+            Ok(v)
+        }),
+        "reply_inquiry" => Box::pin(async move {
+            let id = uuid_arg(args, "inquiry_id")?;
+            let input = crate::portal::MessageInput {
+                body: str_arg(args, "body").unwrap_or_default().to_string(),
+            };
+            crate::portal::add_message(s, a, org, id, input).await?;
+            let mut v = crate::portal::get_inquiry(s, a, org, id).await?;
+            v["view"] = json!("inquiry");
+            Ok(v)
         }),
         "get_settlement_summary" => Box::pin(settlement_summary(s, p)),
         "list_settlement_statements" => Box::pin(statements(s, a, org, args)),
@@ -1878,6 +2096,57 @@ async fn request_correction(
     };
     crate::corrections::request(s, a, org, release, input).await?;
     corrections_view(s, a, org, release).await
+}
+
+// ---------------------------------------------------------------------------
+// Promotion, codes, notifications, documents
+// ---------------------------------------------------------------------------
+
+async fn smart_link(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    release: Uuid,
+) -> std::result::Result<Value, ToolError> {
+    let mut v = crate::smart_links::status(s, a, org, release).await?;
+    let url = v["link"]["slug"]
+        .as_str()
+        .map(|slug| format!("{}/l/{slug}", super::issuer(s)));
+    v["view"] = json!("smart_link");
+    v["release_id"] = json!(release);
+    v["url"] = json!(url);
+    Ok(v)
+}
+
+/// Status and where to act; the legal text, signatures and electronic
+/// records stay in Studio.
+async fn documents(s: &AppState, a: &Actor, org: Uuid) -> std::result::Result<Value, ToolError> {
+    let v = crate::portal::list_documents(s, a, org).await?;
+    let base = super::issuer(s);
+    let items: Vec<Value> = v["items"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|d| {
+            let agreement = d["kind"] == "AGREEMENT";
+            let id = d["id"].as_str().unwrap_or_default();
+            let next = match (agreement, d["status"].as_str()) {
+                (_, Some("SIGNED")) => "Done.",
+                (true, Some("APPROVED" | "PREPARED")) => "Ready to sign in AUDENIQ Studio.",
+                (_, Some("NEEDS")) => "AUDENIQ asked for more; see review_note and answer in AUDENIQ Studio.",
+                (_, Some("AWAITING_DOCUMENTS")) => "Upload the requested document in AUDENIQ Studio.",
+                (_, Some("REVIEW")) => "AUDENIQ is reviewing it.",
+                _ => "See AUDENIQ Studio.",
+            };
+            json!({
+                "document_id": d["id"], "kind": d["kind"], "title": d["title"], "status": d["status"],
+                "release_id": d["release_id"], "release_title": d["release_title"], "review_note": d["review_note"],
+                "signed_at": d["signed_at"], "updated_at": d["updated_at"], "next": next,
+                "studio_url": format!("{base}/{}/{id}", if agreement { "contracts" } else { "rights" }),
+            })
+        })
+        .collect();
+    Ok(json!({"view": "documents", "documents": items}))
 }
 
 // ---------------------------------------------------------------------------
