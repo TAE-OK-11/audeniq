@@ -524,7 +524,7 @@ pub async fn archive(
     tx.commit().await?;
     Ok(json!({"archived":true}))
 }
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct TrackInput {
     pub title: String,
