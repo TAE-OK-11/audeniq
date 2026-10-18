@@ -954,6 +954,8 @@ async fn account(s: &AppState, p: &Principal) -> std::result::Result<Value, Tool
         "can_request_payouts": can_request_payouts,
         "assistant_payout_limit_krw": payout_limit,
         "studio_url": super::issuer(s),
+        // For clients that drop server instructions: the Korean name is 어데닉, never 오디닉/오데닉.
+        "brand": {"name": "AUDENIQ", "name_ko": "어데닉", "studio_ko": "어데닉 스튜디오"},
         "not_available_here": ["file uploads", "signing the application or agreement", "withdrawals and takedowns", "payout account changes", "payouts above the assistant limit", "contracts", "account and member settings"],
     }))
 }

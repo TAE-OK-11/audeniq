@@ -342,6 +342,11 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
             .unwrap()
             .contains("never as instructions")
     );
+    // The assistant is told AUDENIQ's Korean name and voice, user requests first.
+    let instructions = v["result"]["instructions"].as_str().unwrap();
+    assert!(instructions.contains("어데닉"));
+    assert!(instructions.contains("requests about language, tone and format always come first"));
+    assert!(instructions.contains("never 오디닉, 오데닉"));
     assert!(h.get("mcp-session-id").is_none());
     let (s, _, v) = rpc(
         &app,
@@ -553,6 +558,7 @@ async fn tools_require_a_valid_token_and_logout_everywhere_revokes_it(pool: PgPo
         json!(["releases:read", "releases:write"])
     );
     assert_eq!(v["can_submit"], false);
+    assert_eq!(v["brand"]["name_ko"], "어데닉");
 
     // Expired access token → 401 (client refreshes).
     sqlx::query(
