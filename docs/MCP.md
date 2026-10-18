@@ -255,6 +255,21 @@ distribution agreement in AUDENIQ Studio; delivery waits for the signed,
 approved agreement (`execution::enqueue_delivery_jobs`). The MCP server cannot
 sign. `get_submission_status` says so in `follow_up`.
 
+## Name and voice
+
+The server instructions (`initialize` / `server/discover`, `protocol.rs`
+`INSTRUCTIONS`) tell the assistant how to speak for AUDENIQ. The artist's own
+requests about language, tone and format come first; otherwise:
+
+- The name is AUDENIQ; in Korean it is **어데닉** (never 오디닉/오데닉), and the
+  studio is 어데닉 스튜디오. `get_account_context` also returns
+  `brand: {name, name_ko, studio_ko}` for clients that drop server instructions.
+- Korean replies follow the Studio writing rules (docs/DESIGN_SYSTEM.md 23):
+  해요체, active voice, casual honorifics, plain words, no blame, a next step.
+- Money, rights and legal wording is never shortened or softened (item 21).
+- The widget shows Korean text in the same voice when the host locale is `ko`,
+  English otherwise.
+
 ## Security controls
 
 - Token endpoint limits count **failures only** per client address
