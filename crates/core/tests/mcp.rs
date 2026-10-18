@@ -362,7 +362,7 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
     let (s, _, v) = rpc(&app, None, "tools/list", json!({})).await;
     assert_eq!(s, StatusCode::OK);
     let tools = v["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 38);
+    assert_eq!(tools.len(), 46);
     let public = [
         "get_release_requirements",
         "list_announcements",
@@ -2860,4 +2860,144 @@ async fn submit_release_is_marked_destructive(pool: PgPool) {
         .unwrap()
         .clone();
     assert_eq!(submit["annotations"]["destructiveHint"], true);
+}
+
+#[sqlx::test]
+async fn artist_pages_platform_requests_splits_prompts_and_upload_links(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let c = connect(&app, &u, &["scope_write", "scope_settlement"]).await;
+
+    // Artist pages: listed, registered from links the artist gave.
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/artists", u.org),
+        json!({"name":"Han River"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let artist = v["id"].as_str().unwrap().to_string();
+    let (err, v) = tool(&app, &c.access, "list_artist_pages", json!({})).await;
+    assert!(!err, "{v}");
+    assert_eq!(v["items"][0]["name"], "Han River");
+    let (err, v) = tool(&app, &c.access, "set_artist_pages", json!({"artist_id": artist,
+        "links": {"spotify": "https://open.spotify.com/artist/0123456789abcdefABCDEF", "melon": "https://www.melon.com/artist/detail.htm?artistId=123"}})).await;
+    assert!(!err, "{v}");
+    assert_eq!(v["saved"], 2);
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "set_artist_pages",
+        json!({"artist_id": artist,
+        "links": {"spotify": "https://evil.example/artist/x"}}),
+    )
+    .await;
+    assert!(err);
+    assert_eq!(v["error"]["code"], "ARTIST_PAGE_URL_INVALID");
+    let (_, v) = tool(&app, &c.access, "list_artist_pages", json!({})).await;
+    assert!(
+        v["items"][0]["pages"]["spotify"]["url"]
+            .as_str()
+            .unwrap()
+            .starts_with("https://open.spotify.com/artist/")
+    );
+
+    // Platform requests: filed, listed, cancelled.
+    let (err, v) = tool(&app, &c.access, "create_platform_request", json!({"kind": "PROFILE_MERGE", "platform": "melon",
+        "artist_name": "Han River", "urls": ["https://www.melon.com/artist/detail.htm?artistId=1", "https://www.melon.com/artist/detail.htm?artistId=2"]})).await;
+    assert!(!err, "{v}");
+    let id = v["id"].as_str().unwrap().to_string();
+    let (err, v) = tool(&app, &c.access, "create_platform_request", json!({"kind": "PROFILE_SPLIT", "platform": "melon",
+        "artist_name": "Han River", "urls": ["https://www.melon.com/artist/detail.htm?artistId=1"]})).await;
+    assert!(err, "a split needs a description");
+    assert_eq!(v["error"]["code"], "PLATFORM_REQUEST_DESCRIPTION_REQUIRED");
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "list_platform_requests",
+        json!({"group": "profile"}),
+    )
+    .await;
+    assert_eq!(v["items"].as_array().unwrap().len(), 1);
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "cancel_platform_request",
+        json!({"request_id": id}),
+    )
+    .await;
+    assert!(!err, "{v}");
+    assert_eq!(v["status"], "CANCELLED");
+
+    // Splits and upload link on a draft.
+    let (err, rel) = tool(
+        &app,
+        &c.access,
+        "create_release_draft",
+        json!({"title": "Spring", "release_type": "SINGLE", "artist_name": "Han River"}),
+    )
+    .await;
+    assert!(!err, "{rel}");
+    let release = rel["release_id"].as_str().unwrap().to_string();
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "get_release_splits",
+        json!({"release_id": release}),
+    )
+    .await;
+    assert!(!err, "{v}");
+    assert!(v["tracks"].is_array());
+    let (err, v) = tool(&app, &c.access, "list_received_splits", json!({})).await;
+    assert!(!err);
+    assert_eq!(v["items"], json!([]));
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "get_upload_link",
+        json!({"release_id": release}),
+    )
+    .await;
+    assert!(!err, "{v}");
+    assert_eq!(v["upload_url"], format!("{ORIGIN}/upload?edit={release}"));
+    assert_eq!(v["artwork_missing"], true);
+    assert_eq!(v["complete"], false);
+    // Splits need the settlement permission.
+    let read_only = connect(&app, &u, &["scope_write"]).await;
+    let (s, _, _) = rpc(
+        &app,
+        Some(&read_only.access),
+        "tools/call",
+        json!({"name": "get_release_splits", "arguments": {"release_id": release}}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+
+    // Prompts.
+    let (s, _, v) = rpc(&app, None, "prompts/list", json!({})).await;
+    assert_eq!(s, StatusCode::OK);
+    let names: Vec<&str> = v["result"]["prompts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["name"].as_str().unwrap())
+        .collect();
+    assert!(names.contains(&"prepare_release"), "{names:?}");
+    let (_, _, v) = rpc(
+        &app,
+        None,
+        "prompts/get",
+        json!({"name": "prepare_release", "arguments": {"title": "봄"}}),
+    )
+    .await;
+    let text = v["result"]["messages"][0]["content"]["text"]
+        .as_str()
+        .unwrap();
+    assert!(text.contains("어데닉") && text.contains("「봄」"), "{text}");
+    let (_, _, v) = rpc(&app, None, "prompts/get", json!({"name": "nope"})).await;
+    assert_eq!(v["error"]["code"], -32602);
+    let (_, _, v) = rpc(&app, None, "initialize", json!({"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}})).await;
+    assert!(v["result"]["capabilities"]["prompts"].is_object());
 }

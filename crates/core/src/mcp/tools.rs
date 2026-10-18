@@ -52,6 +52,11 @@ pub struct ToolDef {
     schema: fn() -> Value,
 }
 
+/// Platforms an artist page can be registered for (artist_pages::PLATFORMS).
+const PLATFORM_LINK_PROPS: [&str; 8] = [
+    "spotify", "apple", "melon", "genie", "flo", "bugs", "vibe", "youtube",
+];
+
 /// Public information anyone may read without connecting an account, under
 /// daily limits ([`super::public`]).
 const PUBLIC_TOOLS: [&str; 4] = [
@@ -409,6 +414,73 @@ fn defs() -> &'static [ToolDef] {
                     "amount":{"type":"integer","minimum":1,"maximum":1000000000},
                     "confirmation_token":{"type":"string","minLength":20,"maxLength":4096},
                     "artist_confirmed":{"type":"boolean","const":true,"description":"The artist explicitly confirmed this payout in the conversation"}}}),
+            },
+            ToolDef {
+                name: "get_upload_link",
+                title: "Upload files in AUDENIQ Studio",
+                description: "The AUDENIQ Studio page where the artist uploads this release's audio and cover art, and which files are still missing. Files are never sent through chat; the artist opens the link while signed in to AUDENIQ Studio.",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: release_id_schema,
+            },
+            ToolDef {
+                name: "list_artist_pages",
+                title: "Artist platform pages",
+                description: "Each artist in this workspace with their own page on Spotify, Apple Music, Melon and other platforms (link and status). AUDENIQ delivers new releases to these pages so they never land on a same-name stranger's page; PENDING means a first release is waiting for the new page's link.",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: empty_schema,
+            },
+            ToolDef {
+                name: "set_artist_pages",
+                title: "Register artist platform pages",
+                description: "Register or correct an artist's own page links (artist_id from list_artist_pages). Use only links the artist gave you; show them first. Each link must be that platform's artist page.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["artist_id","links"],"properties":{
+                    "artist_id": uuid_schema("The artist (from list_artist_pages)"),
+                    "links": {"type":"object","minProperties":1,"additionalProperties":false,"properties":
+                        PLATFORM_LINK_PROPS.iter().map(|p| (p.to_string(), json!({"type":"string","maxLength":500,"pattern":"^https://"}))).collect::<serde_json::Map<String, Value>>()}}}),
+            },
+            ToolDef {
+                name: "list_platform_requests",
+                title: "Platform requests",
+                description: "Requests the artist made for AUDENIQ to fix something at a platform after release (wrong artist page, merging or splitting pages, YouTube Official Artist Channel, Content ID), with status and the history of what AUDENIQ did.",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"properties":{
+                    "group": {"type":"string","enum":["profile","content_id"],"description":"profile = artist pages and OAC, content_id = YouTube Content ID; omit for all"}}}),
+            },
+            ToolDef {
+                name: "create_platform_request",
+                title: "Ask AUDENIQ to fix something at a platform",
+                description: "File a platform request: PROFILE_MISMATCH (a release sits on the wrong artist page; urls = that wrong page; release_id required), PROFILE_SPLIT (two artists share one page; description required), PROFILE_MERGE (duplicate pages; at least 2 urls), OAC (YouTube Official Artist Channel; url = the artist's channel), CID_ALLOWLIST (YouTube channels never to claim), CID_RELEASE_CLAIM (release a claim on a video), CID_DISPUTE (someone else's claim; description required), CID_OPT_OUT / CID_OPT_IN (Content ID for a release; release_id required). Show the artist exactly what will be sent and file it only after they agree; it is filed in their name.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: false, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["kind","artist_name"],"properties":{
+                    "kind": {"type":"string","enum":["PROFILE_MISMATCH","PROFILE_SPLIT","PROFILE_MERGE","OAC","CID_ALLOWLIST","CID_RELEASE_CLAIM","CID_DISPUTE","CID_OPT_OUT","CID_OPT_IN"]},
+                    "platform": {"type":"string","maxLength":40,"description":"For PROFILE_* kinds: melon, genie, flo, bugs, vibe, spotify, apple, youtube, amazon, deezer, tidal. YouTube kinds ignore it."},
+                    "release_id": uuid_schema("The release concerned (required for PROFILE_MISMATCH, CID_OPT_OUT, CID_OPT_IN)"),
+                    "artist_name": {"type":"string","minLength":1,"maxLength":200},
+                    "urls": {"type":"array","maxItems":10,"items":{"type":"string","maxLength":500,"pattern":"^https://"}},
+                    "description": {"type":"string","maxLength":2000}}}),
+            },
+            ToolDef {
+                name: "cancel_platform_request",
+                title: "Cancel a platform request",
+                description: "Cancel a platform request AUDENIQ has not finished yet.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["request_id"],"properties":{
+                    "request_id": uuid_schema("The platform request")}}),
+            },
+            ToolDef {
+                name: "get_release_splits",
+                title: "Revenue splits of a release",
+                description: "Per track, the collaborators who share its net royalty, their percentage (share_bps / 100), whether they accepted, and what was held or transferred to them; owner_bps is what the artist keeps. Read only: splits are changed in AUDENIQ Studio.",
+                scope: SCOPE_SETTLEMENT, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: release_id_schema,
+            },
+            ToolDef {
+                name: "list_received_splits",
+                title: "Splits received from others",
+                description: "Shares of other people's releases this workspace accepted, with the percentage and what was received so far.",
+                scope: SCOPE_SETTLEMENT, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: empty_schema,
             },
             ToolDef {
                 name: "cancel_payout",
@@ -975,6 +1047,74 @@ async fn run(
             v["view"] = json!("payout");
             Ok(v)
         }),
+        "get_upload_link" => Box::pin(upload_link(s, a, org, args)),
+        "list_artist_pages" => Box::pin(async move {
+            let mut v = crate::artist_pages::list(s, a, org).await?;
+            v["view"] = json!("artist_pages");
+            Ok(v)
+        }),
+        "set_artist_pages" => Box::pin(async move {
+            let artist = uuid_arg(args, "artist_id")?;
+            let links = args["links"]
+                .as_object()
+                .into_iter()
+                .flatten()
+                .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string())))
+                .collect();
+            let input = crate::artist_pages::PagesInput { links };
+            let mut v = crate::artist_pages::set_pages(s, a, org, artist, input).await?;
+            v["view"] = json!("artist_pages_saved");
+            Ok(v)
+        }),
+        "list_platform_requests" => Box::pin(async move {
+            let q = crate::platform_requests::ListQuery {
+                group: str_arg(args, "group").unwrap_or_default().to_string(),
+            };
+            let mut v = crate::platform_requests::list(s, a, org, q).await?;
+            v["view"] = json!("platform_requests");
+            v["studio_url"] = json!(format!("{}/inquiries", super::issuer(s)));
+            Ok(v)
+        }),
+        "create_platform_request" => Box::pin(async move {
+            let input = crate::platform_requests::NewRequest {
+                kind: str_arg(args, "kind").unwrap_or_default().to_string(),
+                platform: str_arg(args, "platform").unwrap_or_default().to_string(),
+                release_id: args
+                    .get("release_id")
+                    .and_then(Value::as_str)
+                    .and_then(|v| v.parse().ok()),
+                artist_name: str_arg(args, "artist_name").unwrap_or_default().to_string(),
+                urls: args["urls"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|v| v.as_str().map(str::to_owned))
+                    .collect(),
+                description: str_arg(args, "description").unwrap_or_default().to_string(),
+            };
+            let mut v = crate::platform_requests::create(s, a, org, input).await?;
+            v["view"] = json!("platform_request");
+            Ok(v)
+        }),
+        "cancel_platform_request" => Box::pin(async move {
+            let id = uuid_arg(args, "request_id")?;
+            let mut v = crate::platform_requests::cancel(s, a, org, id).await?;
+            v["view"] = json!("platform_request");
+            Ok(v)
+        }),
+        "get_release_splits" => Box::pin(async move {
+            let release = release_arg(args)?;
+            let mut v = crate::splits::sheet(s, a, org, release).await?;
+            v["view"] = json!("splits");
+            v["release_id"] = json!(release);
+            v["studio_url"] = json!(studio_url(s, release));
+            Ok(v)
+        }),
+        "list_received_splits" => Box::pin(async move {
+            let mut v = crate::splits::received(s, a, org).await?;
+            v["view"] = json!("received_splits");
+            Ok(v)
+        }),
         _ => return Err(tool_error("UNKNOWN_TOOL", "Unknown tool.")),
     };
     fut.await
@@ -998,6 +1138,34 @@ fn studio_url(s: &AppState, release: Uuid) -> String {
 }
 fn studio_edit_url(s: &AppState, release: Uuid) -> String {
     format!("{}/upload?edit={release}", super::issuer(s))
+}
+
+/// Where the artist uploads this release's files, and what is missing.
+async fn upload_link(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    args: &Value,
+) -> std::result::Result<Value, ToolError> {
+    let release = release_arg(args)?;
+    let (r, _) = load(s, a, org, release).await?;
+    let missing_audio: Vec<Value> = r["tracks"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|t| !t["asset_id"].is_string())
+        .map(|t| json!({"track_id": t["id"], "title": t["title"]}))
+        .collect();
+    let artwork_missing = !r["artwork_asset_id"].is_string();
+    Ok(json!({
+        "view": "upload_link",
+        "release_id": release,
+        "upload_url": studio_edit_url(s, release),
+        "tracks_without_audio": missing_audio,
+        "artwork_missing": artwork_missing,
+        "complete": missing_audio.is_empty() && !artwork_missing,
+        "note": "Open while signed in to AUDENIQ Studio. Audio: WAV or FLAC; cover: square JPG/PNG (see get_release_requirements).",
+    }))
 }
 
 // ---------------------------------------------------------------------------

@@ -12,7 +12,7 @@
 //!   request stands alone in both eras.
 use super::{
     oauth::{self, BearerError, Principal},
-    public, tools,
+    prompts, public, tools,
 };
 use crate::{api::AppState, error::Error};
 use axum::{
@@ -50,7 +50,7 @@ fn server_info() -> Value {
 }
 
 fn capabilities() -> Value {
-    json!({"tools": {"listChanged": false}, "resources": {"listChanged": false}})
+    json!({"tools": {"listChanged": false}, "resources": {"listChanged": false}, "prompts": {"listChanged": false}})
 }
 
 pub async fn not_allowed(State(s): State<AppState>) -> Response {
@@ -314,12 +314,12 @@ pub async fn post(State(s): State<AppState>, h: HeaderMap, body: Bytes) -> Respo
                     None,
                 );
             }
-            if matches!(method, "tools/call" | "resources/read") {
+            if matches!(method, "tools/call" | "resources/read" | "prompts/get") {
                 let name = params
-                    .get(if method == "tools/call" {
-                        "name"
-                    } else {
+                    .get(if method == "resources/read" {
                         "uri"
+                    } else {
+                        "name"
                     })
                     .and_then(Value::as_str);
                 let header_name = header_str(&h, "mcp-name").and_then(decode_header_value);
@@ -399,6 +399,24 @@ pub async fn post(State(s): State<AppState>, h: HeaderMap, body: Bytes) -> Respo
         ),
         "ping" => rpc_result(&id, complete(json!({}))),
         "tools/list" => rpc_result(&id, complete(json!({"tools": tools::list_json()}))),
+        "prompts/list" => rpc_result(&id, complete(json!({"prompts": prompts::list_json()}))),
+        "prompts/get" => {
+            let name = params.get("name").and_then(Value::as_str).unwrap_or("");
+            let args = params
+                .get("arguments")
+                .cloned()
+                .unwrap_or_else(|| json!({}));
+            match prompts::get(name, &args) {
+                Some(v) => rpc_result(&id, complete(v)),
+                None => rpc_error(
+                    StatusCode::OK,
+                    &id,
+                    -32602,
+                    &format!("Unknown prompt: {name}"),
+                    None,
+                ),
+            }
+        }
         "resources/list" => {
             rpc_result(&id, complete(json!({"resources": tools::resources_json()})))
         }
