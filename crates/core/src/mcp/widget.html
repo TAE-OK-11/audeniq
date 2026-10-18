@@ -27,6 +27,25 @@ a{color:inherit}
   // Every value shown here is data from the release (entered by people):
   // it is only ever inserted as text, never parsed as HTML.
   var root = document.getElementById("root");
+  // UI text: Korean in AUDENIQ's voice (해요체) when the host is Korean, English otherwise.
+  var KO = {
+    untitled: "제목 없음", tracks: "트랙", noWriter: "작사·작곡 크레딧 입력 전", audioOk: "음원 있음", audioMissing: "음원 없음",
+    track: " (트랙)", failed: "완료하지 못했어요", submitted: "발매 신청을 접수했어요", status: "상태: ", duplicate: " (이미 신청했어요)",
+    next: "다음 단계", openStudio: "어데닉 스튜디오에서 보기", toCorrect: "고칠 내용", reviewerNotes: "검토 메모", followUp: "이어서 할 일",
+    ready: "신청할 수 있어요", notReady: "아직 신청할 수 없어요", blocking: "신청 전에 고칠 내용", willBeReviewed: "검토에서 확인할 내용",
+    declarations: "확인 사항", yes: "예", no: "아니요", filesInStudio: "파일은 어데닉 스튜디오에서 올려 주세요.", upload: "파일 올리기"
+  };
+  var EN = {
+    untitled: "Untitled", tracks: "Tracks", noWriter: T.noWriter, audioOk: "audio ✓", audioMissing: "audio missing",
+    track: T.track, failed: T.failed, submitted: T.submitted, status: "Status: ", duplicate: T.duplicate,
+    next: "Next", openStudio: T.openStudio, toCorrect: T.toCorrect, reviewerNotes: T.reviewerNotes, followUp: T.followUp,
+    ready: "Ready to submit", notReady: "Not ready to submit", blocking: T.blocking, willBeReviewed: T.willBeReviewed,
+    declarations: "Declarations", yes: "yes", no: "no", filesInStudio: T.filesInStudio, upload: T.upload
+  };
+  var locale = String((window.openai && window.openai.locale) || navigator.language || "");
+  var T = /^ko\b/i.test(locale) ? KO : EN;
+  document.documentElement.lang = T === KO ? "ko" : "en";
+
   function el(tag, cls, text) {
     var e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -48,18 +67,18 @@ a{color:inherit}
     items.forEach(function (i) { add(ul, render(i)); });
   }
   function issue(i) {
-    var li = el("li", null, (i.message || i.code) + (i.track_id ? " (track)" : ""));
+    var li = el("li", null, (i.message || i.code) + (i.track_id ? T.track : ""));
     li.title = i.code || "";
     return li;
   }
   function releaseHeader(r) {
     if (!r) return;
-    add(root, el("h1", null, r.title || "Untitled"));
+    add(root, el("h1", null, r.title || T.untitled));
     add(root, el("div", "sub", [r.artist_name, r.release_type, r.release_date, r.status].filter(Boolean).join(" · ")));
     var chips = add(root, el("div"));
     (r.platforms || []).forEach(function (p) { add(chips, el("span", "chip", p)); });
     if (r.tracks && r.tracks.length) {
-      add(root, el("h2", null, "Tracks"));
+      add(root, el("h2", null, T.tracks));
       var t = add(root, el("table"));
       r.tracks.forEach(function (tr) {
         var row = add(t, el("tr"));
@@ -67,7 +86,7 @@ a{color:inherit}
         var c = add(row, el("td"));
         add(c, el("div", null, tr.title + (tr.version ? " (" + tr.version + ")" : "") + (tr.explicit ? " · E" : "")));
         var writers = [].concat((tr.credits && tr.credits.composers) || [], (tr.credits && tr.credits.lyricists) || []);
-        add(c, el("div", "sub", (writers.length ? writers.join(", ") : "No writer credit") + " · " + (tr.audio_attached ? "audio ✓" : "audio missing")));
+        add(c, el("div", "sub", (writers.length ? writers.join(", ") : T.noWriter) + " · " + (tr.audio_attached ? T.audioOk : T.audioMissing)));
       });
     }
   }
@@ -76,49 +95,49 @@ a{color:inherit}
     while (root.firstChild) root.removeChild(root.firstChild);
     var view = data.view;
     if (view === "error") {
-      add(root, el("h1", "bad", "Could not complete"));
+      add(root, el("h1", "bad", T.failed));
       add(root, el("p", null, data.error && data.error.message));
       return;
     }
     if (view === "submitted") {
-      add(root, el("h1", "ok", "Application submitted"));
-      add(root, el("p", "sub", "Status: " + data.status + (data.duplicate_request ? " (already submitted)" : "")));
-      list(root, "Next", data.next_steps, function (s) { return el("li", null, s); });
-      add(root, safeLink(data.studio_url, "Open in AUDENIQ Studio"));
+      add(root, el("h1", "ok", T.submitted));
+      add(root, el("p", "sub", T.status + data.status + (data.duplicate_request ? T.duplicate : "")));
+      list(root, T.next, data.next_steps, function (s) { return el("li", null, s); });
+      add(root, safeLink(data.studio_url, T.openStudio));
       return;
     }
     if (view === "status") {
       add(root, el("h1", null, data.title));
       add(root, el("div", "sub", data.status_explanation));
-      list(root, "To correct", data.corrections_required, issue);
-      list(root, "Reviewer notes", data.review_notes, function (n) { return el("li", null, n.note); });
-      list(root, "Follow-up", data.follow_up, function (s) { return el("li", null, s); });
-      add(root, safeLink(data.studio_url, "Open in AUDENIQ Studio"));
+      list(root, T.toCorrect, data.corrections_required, issue);
+      list(root, T.reviewerNotes, data.review_notes, function (n) { return el("li", null, n.note); });
+      list(root, T.followUp, data.follow_up, function (s) { return el("li", null, s); });
+      add(root, safeLink(data.studio_url, T.openStudio));
       return;
     }
     if (view === "validation" || view === "preview") {
       releaseHeader(data.release);
       var box = add(root, el("div", "box"));
-      add(box, el("strong", data.ready_to_submit ? "ok" : "bad", data.ready_to_submit ? "Ready to submit" : "Not ready to submit"));
-      list(box, "Blocking", data.blocking, issue);
-      list(box, "Will be reviewed", data.will_be_reviewed, issue);
+      add(box, el("strong", data.ready_to_submit ? "ok" : "bad", data.ready_to_submit ? T.ready : T.notReady));
+      list(box, T.blocking, data.blocking, issue);
+      list(box, T.willBeReviewed, data.will_be_reviewed, issue);
       if (view === "preview" && data.declarations) {
-        add(root, el("h2", null, "Declarations"));
+        add(root, el("h2", null, T.declarations));
         var ul = add(root, el("ul"));
         Object.keys(data.declarations).forEach(function (k) {
-          add(ul, el("li", null, k.replace(/_/g, " ") + ": " + (data.declarations[k] ? "yes" : "no")));
+          add(ul, el("li", null, k.replace(/_/g, " ") + ": " + (data.declarations[k] ? T.yes : T.no)));
         });
       }
       if (data.missing_files && data.missing_files.upload_url &&
           ((data.missing_files.tracks_without_audio || []).length || data.missing_files.artwork)) {
-        add(root, el("p", "warn", "Files are uploaded in AUDENIQ Studio."));
-        add(root, safeLink(data.missing_files.upload_url, "Upload files"));
+        add(root, el("p", "warn", T.filesInStudio));
+        add(root, safeLink(data.missing_files.upload_url, T.upload));
       }
       return;
     }
     if (view === "release") {
       releaseHeader(data);
-      add(root, safeLink(data.studio_url, "Open in AUDENIQ Studio"));
+      add(root, safeLink(data.studio_url, T.openStudio));
     }
   }
 
