@@ -35,6 +35,8 @@ const CREDIT_ROLES: [(&str, &str, &str); 4] = [
     ("arrangers", "Arranger", "arrangers"),
     ("producers", "Producer", "producer"),
 ];
+/// Longest a tool call may run (the edge gives up at about 100 s).
+const TOOL_DEADLINE: std::time::Duration = std::time::Duration::from_secs(60);
 /// A preview's confirmation is valid this long.
 const CONFIRM_SECONDS: i64 = 15 * 60;
 
@@ -208,7 +210,7 @@ fn defs() -> &'static [ToolDef] {
                 name: "submit_release",
                 title: "Submit application",
                 description: "Submit the previewed distribution application to AUDENIQ review. Only after the artist explicitly confirmed the preview in this conversation. Requires the confirmation_token from preview_submission and the same declarations. Fails if the release changed since the preview. Safe to retry with the same token (no duplicate application).",
-                scope: SCOPE_SUBMIT, read_only: false, destructive: false, idempotent: true, widget: true,
+                scope: SCOPE_SUBMIT, read_only: false, destructive: true, idempotent: true, widget: true,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","confirmation_token","declarations","artist_confirmed"],"properties":{
                     "release_id": uuid_schema("The release"),
                     "confirmation_token": {"type":"string","minLength":20,"maxLength":4096},
@@ -695,9 +697,22 @@ pub async fn call(s: &AppState, p: &Principal, def: &ToolDef, args: Value) -> Va
         return invalid;
     }
     let started = std::time::Instant::now();
-    let outcome = run(s, p, def, &args).await;
+    // Shorter than the edge's and clients' own deadlines, so the client gets
+    // an answer it can act on instead of a dropped connection and a retry.
+    let outcome = match tokio::time::timeout(TOOL_DEADLINE, run(s, p, def, &args)).await {
+        Ok(v) => v,
+        Err(_) => Err(tool_error(
+            "TOOL_TIMEOUT",
+            "This took too long and was stopped. It may have partly completed: check the current state (get_release, get_submission_status, list_payouts) before trying again.",
+        )),
+    };
     let ok = outcome.is_ok();
-    tracing::info!(tool = def.name, grant = %p.grant, ok, elapsed_ms = started.elapsed().as_millis(), "mcp_tool");
+    let code = outcome
+        .as_ref()
+        .err()
+        .map(|e| e.code.as_str())
+        .unwrap_or("");
+    tracing::info!(tool = def.name, grant = %p.grant, ok, code, elapsed_ms = started.elapsed().as_millis(), "mcp_tool");
     if !def.read_only {
         // Consequential calls are recorded with the client that made them;
         // the services add their own audit rows under the same request id.
