@@ -21,7 +21,10 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
     if path.starts_with("/api/content/") {
         return Response::error("Not found", 404);
     }
-    if !request.path().starts_with("/api/") {
+    // OAuth discovery for AI assistants (crate::mcp in the API) lives at the
+    // origin's /.well-known; it is answered by the private API.
+    let mcp_discovery = is_mcp_discovery(&path);
+    if !request.path().starts_with("/api/") && !mcp_discovery {
         if !matches!(request.method(), Method::Get | Method::Head) {
             return Response::error("Method not allowed", 405);
         }
@@ -33,6 +36,10 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
     // Apple sign-in returns with a cross-site form POST (no studio Origin);
     // the API authenticates it by the one-time state and the code exchange.
     let oauth_form_post = is_oauth_form_post(&request.method(), &path);
+    // AI assistants call the MCP endpoint and the OAuth token/registration/
+    // revocation endpoints server to server: no browser Origin. The API
+    // authenticates them by bearer token, PKCE or client credentials.
+    let mcp_client = is_mcp_client_call(&request.method(), &path);
     // During maintenance the private API is not called (no writes while the
     // database is being worked on); session checks and sign-in stay open.
     if !content::allowed_during_maintenance(&request.method(), &path)
@@ -43,6 +50,7 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
     if !matches!(request.method(), Method::Get | Method::Head)
         && !partner_hook
         && !oauth_form_post
+        && !mcp_client
         && request.headers().get("origin")?.as_deref() != Some(&origin)
     {
         return Response::error("Forbidden origin", 403);
@@ -79,6 +87,21 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
     ] {
         if let Some(value) = request.headers().get(name)? {
             forwarded.headers_mut()?.set(name, &value)?;
+        }
+    }
+    if mcp_client {
+        // Only these calls may carry an Authorization header (bearer token or
+        // client credentials) and the MCP request metadata headers.
+        for name in [
+            "authorization",
+            "accept",
+            "mcp-protocol-version",
+            "mcp-method",
+            "mcp-name",
+        ] {
+            if let Some(value) = request.headers().get(name)? {
+                forwarded.headers_mut()?.set(name, &value)?;
+            }
         }
     }
     if partner_hook {
@@ -137,6 +160,23 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
 
 fn is_oauth_form_post(method: &Method, path: &str) -> bool {
     *method == Method::Post && path == "/api/auth/oauth/apple/callback"
+}
+
+fn is_mcp_discovery(path: &str) -> bool {
+    matches!(
+        path,
+        "/.well-known/oauth-protected-resource"
+            | "/.well-known/oauth-protected-resource/api/mcp"
+            | "/.well-known/oauth-authorization-server"
+    )
+}
+
+fn is_mcp_client_call(method: &Method, path: &str) -> bool {
+    *method == Method::Post
+        && matches!(
+            path,
+            "/api/mcp" | "/api/oauth/token" | "/api/oauth/register" | "/api/oauth/revoke"
+        )
 }
 
 fn is_partner_hook(method: &Method, path: &str) -> bool {
@@ -284,6 +324,21 @@ mod tests {
         assert!(matches!(static_route("/404.html"), StaticRoute::NotFound));
     }
 
+    #[test]
+    fn mcp_routes_are_exact() {
+        assert!(is_mcp_client_call(&Method::Post, "/api/mcp"));
+        assert!(is_mcp_client_call(&Method::Post, "/api/oauth/token"));
+        assert!(!is_mcp_client_call(&Method::Get, "/api/mcp"));
+        // The consent decision is a browser form post: it keeps the Origin rule.
+        assert!(!is_mcp_client_call(&Method::Post, "/api/oauth/authorize"));
+        assert!(!is_mcp_client_call(&Method::Post, "/api/mcp/x"));
+        assert!(!is_mcp_client_call(&Method::Post, "/api/orgs"));
+        assert!(is_mcp_discovery("/.well-known/oauth-authorization-server"));
+        assert!(is_mcp_discovery(
+            "/.well-known/oauth-protected-resource/api/mcp"
+        ));
+        assert!(!is_mcp_discovery("/.well-known/security.txt"));
+    }
     #[test]
     fn partner_hooks_skip_origin_but_not_our_headers() {
         assert!(is_partner_hook(&Method::Post, "/api/partner-hooks/D-5"));

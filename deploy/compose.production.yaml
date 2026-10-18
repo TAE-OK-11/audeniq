@@ -229,6 +229,10 @@ services:
       EMAIL_OCI_REGION: ${EMAIL_OCI_REGION:-}
       EMAIL_OCI_USERNAME: ${EMAIL_OCI_USERNAME:-}
       EMAIL_OCI_PASSWORD: ${EMAIL_OCI_PASSWORD:-}
+      # AI 어시스턴트 연결 (MCP, docs/MCP.md): 기본 꺼짐. 켜기 전에 문서의 점검 항목을 확인한다.
+      AUDENIQ_MCP_ENABLED: ${AUDENIQ_MCP_ENABLED:-false}
+      AUDENIQ_MCP_CIMD_HOSTS: ${AUDENIQ_MCP_CIMD_HOSTS:-chatgpt.com,claude.ai}
+      AUDENIQ_MCP_DYNAMIC_REGISTRATION: ${AUDENIQ_MCP_DYNAMIC_REGISTRATION:-true}
     volumes:
       - av_socket:/run/audeniq-av:ro
       - ${PAYOUT_KEYRING_DIR:-/dev/shm/audeniq-secrets}:/run/audeniq-keys:ro

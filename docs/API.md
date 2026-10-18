@@ -403,3 +403,7 @@ immutable results remain unchanged; Stage 2 effective status includes unexpired 
 Second-approval counts/queues include only unexpired requests for a release's current
 revision in STAGE2_REVIEW. Renewing an expired request closes it with an expiry audit event;
 correction/rejection closes outstanding requests with a cancellation audit event.
+
+## AI assistants (MCP, `/api/mcp`, `/api/oauth/*`)
+
+Off unless `AUDENIQ_MCP_ENABLED=true`. An MCP server (Streamable HTTP, JSON-RPC) and its OAuth 2.1 authorization server let an artist prepare, check and submit a release from ChatGPT, Claude or another MCP client. Bearer tokens, not the session cookie; `POST /api/mcp` and `POST /api/oauth/{token,register,revoke}` need no Origin. `GET /api/auth/ai-connections` and `POST /api/auth/ai-connections/{id}/revoke` (session) list and revoke the user's connections. See [MCP.md](MCP.md).
