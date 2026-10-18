@@ -131,14 +131,17 @@ notices and events, as on `/api/notices` and `/api/events`) and
 
 | Caller | Daily limit (KST day) | Over the limit |
 |---|---|---|
-| No token | `AUDENIQ_MCP_PUBLIC_DAILY_ANONYMOUS` (default 10) per client IP (`x-audeniq-client-ip` from the edge) | HTTP 401 with the `WWW-Authenticate` challenge and `error.data.reason = DAILY_ANONYMOUS_LIMIT`, so the client starts account linking |
+| No token | None (not counted) | — |
 | Token | `AUDENIQ_MCP_PUBLIC_DAILY_USER` (default 150) per user, or the user's own limit | Tool error `DAILY_LIMIT_REACHED` with the support link; support raises it with `audeniq-admin --operator NAME mcp-limit set EMAIL N [--note TEXT]` (`clear EMAIL` = default, `list`) |
 
 Only the public tools count toward these limits; account tools keep their own
 per-connection rate limits. A sent token must be valid (401 otherwise, so the
 client refreshes); it is never silently treated as anonymous. Each result
-carries `usage` (`limit`, `used_today`, `remaining_today`, `signed_in`).
-Counts live in `identity.mcp_daily_usage` (keyed HMAC of the IP or user, like
+carries `usage` (`signed_in`, and for signed-in users `limit`, `used_today`,
+`remaining_today`). Calls without an account are not counted (AI platforms
+call from shared server addresses, so a per-IP cap would be shared by all of
+their users).
+Counts live in `identity.mcp_daily_usage` (keyed HMAC of the user, like
 the login limits) and are deleted after a day; per-user limits in
 `identity.mcp_usage_limits` (changes audited as `mcp.usage_limit_set`).
 
@@ -314,7 +317,6 @@ sign. `get_submission_status` says so in `follow_up`.
 | `AUDENIQ_MCP_ENABLED` | `false` | Everything above answers 404 when off |
 | `AUDENIQ_MCP_CIMD_HOSTS` | `chatgpt.com,claude.ai` | Hosts whose client metadata documents may be fetched |
 | `AUDENIQ_MCP_DYNAMIC_REGISTRATION` | `true` | RFC 7591 endpoint |
-| `AUDENIQ_MCP_PUBLIC_DAILY_ANONYMOUS` | `10` | Public tools per IP per day without an account |
 | `AUDENIQ_MCP_PUBLIC_DAILY_USER` | `150` | Public tools per signed-in user per day (per-user override: `mcp-limit`) |
 | `AUDENIQ_MCP_PAYOUT_LIMIT_KRW` | `300000` | Assistant payout limit per request and per 24 h; `0` = off |
 
