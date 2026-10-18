@@ -13,8 +13,8 @@ export function NotFound() {
         title="페이지를 찾을 수 없어요"
         description={<><p>주소가 바뀌었거나 삭제된 페이지일 수 있어요.</p><code className="aq-errscreen-path">{loc.pathname}</code></>}
         actions={[
-          { label: '홈으로', onClick: () => nav('/'), primary: true },
-          { label: '이전 화면', onClick: () => (window.history.length > 1 ? nav(-1) : nav('/')) },
+          { label: '홈으로 가기', onClick: () => nav('/'), primary: true },
+          { label: '뒤로 가기', onClick: () => (window.history.length > 1 ? nav(-1) : nav('/')) },
         ]}
       />
     </div>
