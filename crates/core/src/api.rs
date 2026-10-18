@@ -45,6 +45,8 @@ pub struct AppState {
     pub dummy_hash: String,
     pub payout_keys: Arc<crate::payout_keys::KeyRing>,
     pub antivirus_enabled: bool,
+    /// AI assistant access (crate::mcp). Off unless AUDENIQ_MCP_ENABLED.
+    pub mcp: Arc<crate::mcp::Settings>,
     service_secret_digest: [u8; 32],
 }
 impl AppState {
@@ -62,6 +64,7 @@ impl AppState {
             inline_slots: Arc::new(Semaphore::new(2)),
             payout_keys: Arc::new(crate::payout_keys::KeyRing::from_env(false)?),
             antivirus_enabled: crate::config::antivirus_enabled()?,
+            mcp: Arc::new(crate::mcp::Settings::from_env()),
             dummy_hash: auth::password_hash(auth::random_token()).await?,
             service_secret_digest,
         })
@@ -194,6 +197,7 @@ pub fn router(s: AppState) -> Router {
         .merge(crate::artist_pages::routes())
         .merge(crate::partner_hooks::routes())
         .merge(crate::site_content::routes())
+        .merge(crate::mcp::routes())
         .fallback(|| async { Error::NotFound.into_response() })
         // Innermost: the boundary middleware still stamps the request id,
         // no-store and the access log on a panic's 500.
@@ -312,9 +316,13 @@ async fn boundary(State(s): State<AppState>, mut req: Request, next: Next) -> Re
     // and the code exchange authenticate it (crate::oauth::callback).
     let oauth_form_post =
         *req.method() == Method::POST && req.uri().path() == "/api/auth/oauth/apple/callback";
+    // AI clients (crate::mcp) call the MCP and OAuth endpoints server to
+    // server: bearer token / PKCE / client credentials authenticate them.
+    let mcp_client = crate::mcp::origin_exempt(req.method(), req.uri().path());
     if !matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS)
         && !partner_hook
         && !oauth_form_post
+        && !mcp_client
         && auth::origin(req.headers(), &s.config).is_err()
     {
         return Error::Forbidden.into_response();
@@ -424,8 +432,13 @@ async fn available_dsps(
     Path(org): Path<Uuid>,
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    Ok(Json(dsp_availability(&s, &a, org).await?))
+}
+/// Platforms this workspace can request, with whether each is routable now
+/// (Studio platform step, MCP `list_distribution_platforms`).
+pub async fn dsp_availability(s: &AppState, a: &auth::Actor, org: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
-    auth::membership(&mut tx, &a, org, false).await?;
+    auth::membership(&mut tx, a, org, false).await?;
     tx.commit().await?;
     let ids: Vec<Uuid> = dsp_registry::Dsp::ALL.iter().map(|d| d.uuid()).collect();
     let decisions = routing::public_routes(&s.pool, org, &ids).await?;
@@ -444,7 +457,7 @@ async fn available_dsps(
                           "region":"GLOBAL","category":"STREAMING","available":true}),
         );
     }
-    Ok(Json(json!({"items":items})))
+    Ok(json!({"items":items}))
 }
 async fn register(
     State(s): State<AppState>,
@@ -642,45 +655,8 @@ async fn create_party(
     Json(i): Json<PartyInput>,
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, true).await?;
-    let name = i.display_name.trim();
-    if name.is_empty() || name.chars().count() > 200 {
-        return Err(Error::Invalid);
-    }
-    crate::text_policy::check(name)?;
-    let mut tx = s.pool.begin().await?;
-    auth::membership(&mut tx, &a, org, true).await?;
-    let existing: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM identity.parties WHERE org_id=$1 AND kind='PERSON' AND display_name=$2 ORDER BY id LIMIT 1",
-    )
-    .bind(org)
-    .bind(name)
-    .fetch_optional(&mut *tx)
-    .await?;
-    if let Some(id) = existing {
-        tx.commit().await?;
-        return Ok(Json(json!({"party_id":id,"created":false})));
-    }
-    let id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO identity.parties(id,org_id,kind,display_name) VALUES($1,$2,'PERSON',$3)",
-    )
-    .bind(id)
-    .bind(org)
-    .bind(name)
-    .execute(&mut *tx)
-    .await?;
-    crate::operations::audit(
-        &mut tx,
-        Some(a.user),
-        Some(org),
-        Some(id),
-        "party.created",
-        "USER_EDIT",
-        a.request,
-    )
-    .await?;
-    tx.commit().await?;
-    Ok(Json(json!({"party_id":id,"created":true})))
+    let (id, created) = catalog::ensure_party(&s, &a, org, &i.display_name).await?;
+    Ok(Json(json!({"party_id":id,"created":created})))
 }
 async fn create(
     State(s): State<AppState>,
