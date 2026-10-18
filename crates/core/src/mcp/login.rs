@@ -9,7 +9,8 @@
 //!   client secret, go through the login rate limits, and never get
 //!   `payouts:request`.
 //! - Connection tokens: every other agent uses a fixed bearer token the
-//!   artist makes in the Studio (shown once, 90 days at most, revocable).
+//!   artist makes in the Studio (shown once, 1-90 days or no end date,
+//!   revocable; password change and log out everywhere end it too).
 use super::oauth::{
     self, BAD_GRANT, CLIENT_COLS, Client, ConsentTarget, TokenError, authenticate_client,
     create_grant, escape, issue_tokens, live_grant, oauth_error, page, page_consent, page_error,
@@ -529,6 +530,10 @@ pub struct TokenInput {
     pub scopes: Vec<String>,
     #[serde(default)]
     pub days: Option<i64>,
+    /// No end date: the token works until the artist revokes it (or
+    /// changes the password / logs out everywhere). `days` must be absent.
+    #[serde(default)]
+    pub no_expiry: bool,
 }
 
 /// A fixed bearer token for an agent that cannot use OAuth. The value is
@@ -547,8 +552,12 @@ pub async fn create_connection_token(
     if label.is_empty() || label.chars().count() > 60 || label.chars().any(char::is_control) {
         return Err(Error::InvalidCode("LABEL_INVALID"));
     }
-    let days = i.days.unwrap_or(TOKEN_DEFAULT_DAYS);
-    if !(1..=TOKEN_MAX_DAYS).contains(&days) {
+    let days = match (i.no_expiry, i.days) {
+        (true, Some(_)) => return Err(Error::InvalidCode("DAYS_INVALID")),
+        (true, None) => None,
+        (false, d) => Some(d.unwrap_or(TOKEN_DEFAULT_DAYS)),
+    };
+    if days.is_some_and(|d| !(1..=TOKEN_MAX_DAYS).contains(&d)) {
         return Err(Error::InvalidCode("DAYS_INVALID"));
     }
     let mut scopes = vec![SCOPE_READ.to_string()];
@@ -579,12 +588,12 @@ pub async fn create_connection_token(
     )
     .await?;
     let token = auth::random_token();
-    let expires_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
+    let expires_at: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
         "INSERT INTO identity.mcp_tokens(token_hash,grant_id,kind,expires_at) VALUES($1,$2,'ACCESS',now()+make_interval(days=>$3)) RETURNING expires_at",
     )
     .bind(auth::hash_token(&token))
     .bind(grant)
-    .bind(days as i32)
+    .bind(days.map(|d| d as i32))
     .fetch_one(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -592,6 +601,7 @@ pub async fn create_connection_token(
         "id": grant,
         "token": token,
         "expires_at": expires_at,
+        "no_expiry": expires_at.is_none(),
         "scopes": scopes,
         "mcp_url": super::resource(&s),
     })))
