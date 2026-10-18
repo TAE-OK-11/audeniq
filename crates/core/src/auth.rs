@@ -442,11 +442,26 @@ pub async fn login(
     input: Credentials,
 ) -> Result<(HeaderMap, Json<Value>)> {
     origin(h, &s.config)?;
+    let (user, hash) = check_password(s, h, input, "login").await?;
+    let mut tx = s.pool.begin().await?;
+    current_password(&mut tx, user, &hash).await?;
+    issue_session(s, tx, h, user, "PASSWORD", false).await
+}
+/// Verifies an e-mail and password under the login rate limits (`action`
+/// names the limit buckets). Returns the user and the password hash that
+/// matched; callers recheck it with [`current_password`] in the transaction
+/// that issues the credential. A wrong password is audited.
+pub(crate) async fn check_password(
+    s: &AppState,
+    h: &HeaderMap,
+    input: Credentials,
+    action: &str,
+) -> Result<(Uuid, String)> {
     let email = credentials(&input)?;
     rate_auth(
         &s.pool,
         h,
-        "login",
+        action,
         &email,
         LOGIN_PER_SOURCE,
         Some(LOGIN_PER_SOURCE_ACCOUNT),
@@ -477,12 +492,12 @@ pub async fn login(
     .await
     .map(|(_, valid)| valid)
     .unwrap_or(false);
-    let mut tx = s.pool.begin().await?;
     if !ok
         || row
             .as_ref()
             .is_none_or(|r| r.get::<String, _>("status") != "ACTIVE")
     {
+        let mut tx = s.pool.begin().await?;
         operations::audit(
             &mut tx,
             None,
@@ -496,18 +511,21 @@ pub async fn login(
         tx.commit().await?;
         return Err(Error::Unauthorized);
     }
-    let user: Uuid = row.unwrap().get("id");
-    // Serialize with password change and recheck the exact credential version before session issuance.
+    Ok((row.unwrap().get("id"), hash))
+}
+/// Serialize with password change and recheck the exact credential version
+/// before a session or token is issued.
+pub(crate) async fn current_password(c: &mut PgConnection, user: Uuid, hash: &str) -> Result<()> {
     let current: Option<String> = sqlx::query_scalar(
         "SELECT password_hash FROM identity.users WHERE id=$1 AND status='ACTIVE' FOR SHARE",
     )
     .bind(user)
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut *c)
     .await?;
-    if current.as_deref() != Some(hash.as_str()) {
+    if current.as_deref() != Some(hash) {
         return Err(Error::Unauthorized);
     }
-    issue_session(s, tx, h, user, "PASSWORD", false).await
+    Ok(())
 }
 /// Creates a session for a user whose credential was just verified inside
 /// `tx`. `mfa`: the credential itself was multi-factor (a passkey with user

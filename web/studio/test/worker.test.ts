@@ -90,6 +90,13 @@ test('AI assistant (MCP) calls carry their bearer token and MCP headers; other /
     assert.equal(h.get('mcp-method'), null);
     await worker.fetch(new Request('https://studio.audeniq.com/api/oauth/authorize', { headers: { authorization: 'Bearer tok' } }), env());
     assert.equal(seen[3].headers.get('authorization'), null);
+    // Device authorization (link + code): client authentication passes through; the browser page does not get it
+    await worker.fetch(new Request('https://studio.audeniq.com/api/oauth/device_authorization', {
+      method: 'POST', headers: { authorization: 'Basic abc', 'content-type': 'application/x-www-form-urlencoded' }, body: 'client_id=x',
+    }), env());
+    assert.equal(seen[4].headers.get('authorization'), 'Basic abc');
+    await worker.fetch(new Request('https://studio.audeniq.com/api/oauth/device?user_code=BCDF-GHJK', { headers: { authorization: 'Basic abc' } }), env());
+    assert.equal(seen[5].headers.get('authorization'), null);
   });
 });
 

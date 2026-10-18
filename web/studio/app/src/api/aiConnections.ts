@@ -12,11 +12,30 @@ export interface AiConnection {
   scopes: string[];
   created_at: string;
   last_used_at: string | null;
+  /** CONSENT: AI 앱에서 브라우저로 승인 · DEVICE: 링크와 코드로 승인 · PASSWORD: 등록된 에이전트에 로그인 · TOKEN: 연결 토큰 */
+  method?: 'CONSENT' | 'DEVICE' | 'PASSWORD' | 'TOKEN';
+  /** 연결 토큰에 붙인 이름 */
+  label?: string | null;
+  /** 연결 토큰의 만료 시각 */
+  expires_at?: string | null;
+}
+
+export interface NewConnectionToken {
+  id: string;
+  /** 한 번만 보여 준다. 서버에는 해시만 남는다. */
+  token: string;
+  expires_at: string;
+  scopes: string[];
+  mcp_url: string;
 }
 
 export const aiConnections = () => req<{ items: AiConnection[] }>('/api/auth/ai-connections').then(r => r.items);
 export const revokeAiConnection = (id: string) =>
   req<{ revoked: boolean }>(`/api/auth/ai-connections/${encodeURIComponent(id)}/revoke`, { method: 'POST', body: {} });
+
+/** OAuth를 쓰지 못하는 에이전트용 고정 토큰 — 지금 작업 공간에서, 고른 권한만. */
+export const createConnectionToken = (input: { label: string; org_id: string; scopes: string[]; days: number }) =>
+  req<NewConnectionToken>('/api/auth/ai-connections/tokens', { method: 'POST', body: input });
 
 /** 동의 화면과 같은 이름 */
 export const SCOPE_LABEL: Record<string, string> = {

@@ -1998,3 +1998,502 @@ async fn promotion_codes_notifications_documents_and_support(pool: PgPool) {
     let (_, v) = tool(&app, &oc.access, "list_documents", json!({})).await;
     assert_eq!(v["documents"], json!([]));
 }
+
+// ---------------------------------------------------------------------------
+// Other ways to connect: device authorization, password grant for trusted
+// agents, Studio connection tokens.
+// ---------------------------------------------------------------------------
+
+async fn device_poll(app: &Router, client_id: &str, device_code: &str) -> (StatusCode, Value) {
+    let (s, _, body) = raw(
+        app,
+        "POST",
+        "/api/oauth/token",
+        &[("content-type", "application/x-www-form-urlencoded")],
+        form(&[
+            ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+            ("device_code", device_code),
+            ("client_id", client_id),
+        ]),
+    )
+    .await;
+    (s, serde_json::from_str(&body).unwrap_or(Value::Null))
+}
+
+async fn device_start(app: &Router, client_id: &str, scope: &str) -> Value {
+    let (s, h, body) = raw(
+        app,
+        "POST",
+        "/api/oauth/device_authorization",
+        &[("content-type", "application/x-www-form-urlencoded")],
+        form(&[("client_id", client_id), ("scope", scope)]),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{body}");
+    assert_eq!(h["cache-control"], "no-store");
+    serde_json::from_str(&body).unwrap()
+}
+
+fn request_field(body: &str) -> String {
+    let start = body.find("name=\"request\" value=\"").unwrap() + "name=\"request\" value=\"".len();
+    let end = body[start..].find('"').unwrap() + start;
+    body[start..end].to_string()
+}
+
+#[sqlx::test]
+async fn device_authorization_links_with_a_code(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let client_id = register_client(&app).await;
+
+    let (_, _, meta) = raw(
+        &app,
+        "GET",
+        "/.well-known/oauth-authorization-server",
+        &[],
+        String::new(),
+    )
+    .await;
+    let meta: Value = serde_json::from_str(&meta).unwrap();
+    assert_eq!(
+        meta["device_authorization_endpoint"],
+        format!("{ORIGIN}/api/oauth/device_authorization")
+    );
+    assert!(
+        meta["grant_types_supported"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|g| g == "urn:ietf:params:oauth:grant-type:device_code")
+    );
+
+    let d = device_start(
+        &app,
+        &client_id,
+        "releases:read releases:write releases:submit",
+    )
+    .await;
+    let device_code = d["device_code"].as_str().unwrap();
+    let user_code = d["user_code"].as_str().unwrap();
+    assert_eq!(user_code.len(), 9);
+    assert_eq!(d["verification_uri"], format!("{ORIGIN}/api/oauth/device"));
+    assert_eq!(d["interval"], 5);
+
+    // Not approved yet; polling again at once is too fast.
+    let (s, v) = device_poll(&app, &client_id, device_code).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    assert_eq!(v["error"], "authorization_pending");
+    let (_, v) = device_poll(&app, &client_id, device_code).await;
+    assert_eq!(v["error"], "slow_down");
+    // Another client cannot use the code.
+    let other = register_client(&app).await;
+    let (_, v) = device_poll(&app, &other, device_code).await;
+    assert_eq!(v["error"], "invalid_grant");
+
+    // The link: sign in first, then a wrong code, then the real one (any case).
+    let page = format!("/api/oauth/device?user_code={}", user_code.to_lowercase());
+    let (s, _, body) = raw(&app, "GET", &page, &[], String::new()).await;
+    assert_eq!(s, StatusCode::OK);
+    assert!(body.contains("먼저 어데닉에 로그인해 주세요"), "{body}");
+    let (_, _, body) = raw(
+        &app,
+        "GET",
+        "/api/oauth/device?user_code=BCDF-BCDF",
+        &[("cookie", &u.cookie)],
+        String::new(),
+    )
+    .await;
+    assert!(body.contains("코드가 맞지 않거나 만료됐어요"), "{body}");
+    let (s, _, body) = raw(&app, "GET", &page, &[("cookie", &u.cookie)], String::new()).await;
+    assert_eq!(s, StatusCode::OK);
+    assert!(
+        body.contains(user_code),
+        "the page shows the code to compare"
+    );
+    assert!(body.contains("Test &lt;b&gt;Assistant&lt;/b&gt;"));
+    let request = request_field(&body);
+
+    // The form needs the Studio Origin and the session that saw it.
+    let org = u.org.to_string();
+    let approve_form = form(&[
+        ("request", &request),
+        ("org", &org),
+        ("decision", "approve"),
+        ("scope_write", "on"),
+        ("scope_submit", "on"),
+    ]);
+    let (s, _, _) = raw(
+        &app,
+        "POST",
+        "/api/oauth/device",
+        &[
+            ("cookie", &u.cookie),
+            ("content-type", "application/x-www-form-urlencoded"),
+        ],
+        approve_form.clone(),
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    let other_user = user(&app).await;
+    let (s, _, _) = raw(
+        &app,
+        "POST",
+        "/api/oauth/device",
+        &[
+            ("cookie", &other_user.cookie),
+            ("origin", ORIGIN),
+            ("content-type", "application/x-www-form-urlencoded"),
+        ],
+        approve_form.clone(),
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    let (s, _, body) = raw(
+        &app,
+        "POST",
+        "/api/oauth/device",
+        &[
+            ("cookie", &u.cookie),
+            ("origin", ORIGIN),
+            ("content-type", "application/x-www-form-urlencoded"),
+        ],
+        approve_form.clone(),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert!(body.contains("연결했어요"), "{body}");
+    // The same code cannot be approved twice.
+    let (s, _, body) = raw(
+        &app,
+        "POST",
+        "/api/oauth/device",
+        &[
+            ("cookie", &u.cookie),
+            ("origin", ORIGIN),
+            ("content-type", "application/x-www-form-urlencoded"),
+        ],
+        approve_form,
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    assert!(body.contains("이미 처리됐어요"));
+
+    let (s, v) = device_poll(&app, &client_id, device_code).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["scope"], "releases:read releases:write releases:submit");
+    let access = v["access_token"].as_str().unwrap().to_string();
+    let (err, acct) = tool(&app, &access, "get_account_context", json!({})).await;
+    assert!(!err, "{acct}");
+    assert_eq!(acct["workspace"]["id"], org);
+    assert_eq!(acct["can_submit"], true);
+    // A device code is used once.
+    let (_, v) = device_poll(&app, &client_id, device_code).await;
+    assert_eq!(v["error"], "invalid_grant");
+    let (_, list) = call(&app, "GET", "/api/auth/ai-connections", json!({}), Some(&u)).await;
+    assert_eq!(list["items"][0]["method"], "DEVICE");
+
+    // Denied on the page → access_denied for the client.
+    let d = device_start(&app, &client_id, "").await;
+    let page = format!(
+        "/api/oauth/device?user_code={}",
+        d["user_code"].as_str().unwrap()
+    );
+    let (_, _, body) = raw(&app, "GET", &page, &[("cookie", &u.cookie)], String::new()).await;
+    let request = request_field(&body);
+    let (s, _, body) = raw(
+        &app,
+        "POST",
+        "/api/oauth/device",
+        &[
+            ("cookie", &u.cookie),
+            ("origin", ORIGIN),
+            ("content-type", "application/x-www-form-urlencoded"),
+        ],
+        form(&[("request", &request), ("decision", "deny")]),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert!(body.contains("연결을 거부했어요"));
+    let (_, v) = device_poll(&app, &client_id, d["device_code"].as_str().unwrap()).await;
+    assert_eq!(v["error"], "access_denied");
+
+    // Expired codes.
+    let d = device_start(&app, &client_id, "").await;
+    sqlx::query("UPDATE identity.mcp_device_codes SET expires_at=now()-interval '1 second'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (_, v) = device_poll(&app, &client_id, d["device_code"].as_str().unwrap()).await;
+    assert_eq!(v["error"], "expired_token");
+}
+
+async fn password_token(
+    app: &Router,
+    client_id: &str,
+    secret: &str,
+    email: &str,
+    password: &str,
+    scope: &str,
+) -> (StatusCode, Value) {
+    use base64::Engine as _;
+    let basic = format!(
+        "Basic {}",
+        base64::engine::general_purpose::STANDARD.encode(format!("{client_id}:{secret}"))
+    );
+    let (s, _, body) = raw(
+        app,
+        "POST",
+        "/api/oauth/token",
+        &[
+            ("content-type", "application/x-www-form-urlencoded"),
+            ("authorization", &basic),
+        ],
+        form(&[
+            ("grant_type", "password"),
+            ("username", email),
+            ("password", password),
+            ("scope", scope),
+        ]),
+    )
+    .await;
+    (s, serde_json::from_str(&body).unwrap_or(Value::Null))
+}
+
+#[sqlx::test]
+async fn password_grant_only_for_registered_trusted_agents(pool: PgPool) {
+    use audeniq_core::mcp::login;
+    let (app, _) = app(pool.clone()).await;
+    let email = format!("{}@example.test", Uuid::new_v4());
+    let password = "Long-test-password-123!";
+    let (s, r) = call(
+        &app,
+        "POST",
+        "/api/auth/register",
+        json!({"email": email, "password": password, "terms_version": "AUD-TERMS 2026.10.1"}),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{r}");
+
+    assert!(
+        login::admin_add_client(&pool, "", "Muse", true, false, &[])
+            .await
+            .is_err(),
+        "operator required"
+    );
+    let (muse, secret) = login::admin_add_client(&pool, "ops@audeniq", "Muse", true, false, &[])
+        .await
+        .unwrap();
+    let (plain, plain_secret) =
+        login::admin_add_client(&pool, "ops@audeniq", "Plain agent", false, false, &[])
+            .await
+            .unwrap();
+
+    // A public client, a client without the flag, a wrong secret: refused.
+    let dcr = register_client(&app).await;
+    let (s, _, body) = raw(
+        &app,
+        "POST",
+        "/api/oauth/token",
+        &[("content-type", "application/x-www-form-urlencoded")],
+        form(&[
+            ("grant_type", "password"),
+            ("username", &email),
+            ("password", password),
+            ("client_id", &dcr),
+        ]),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED, "{body}");
+    assert!(body.contains("unauthorized_client"));
+    let (s, v) = password_token(&app, &plain, &plain_secret, &email, password, "").await;
+    assert_eq!(
+        (s, v["error"].as_str()),
+        (StatusCode::UNAUTHORIZED, Some("unauthorized_client"))
+    );
+    let (s, v) = password_token(&app, &muse, &"0".repeat(64), &email, password, "").await;
+    assert_eq!(
+        (s, v["error"].as_str()),
+        (StatusCode::UNAUTHORIZED, Some("invalid_client"))
+    );
+
+    // Wrong password, payouts, then a real login.
+    let (s, v) = password_token(&app, &muse, &secret, &email, "Wrong-password-12345", "").await;
+    assert_eq!(
+        (s, v["error"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("invalid_grant"))
+    );
+    let (_, v) = password_token(
+        &app,
+        &muse,
+        &secret,
+        &email,
+        password,
+        "releases:read payouts:request",
+    )
+    .await;
+    assert_eq!(v["error"], "invalid_scope");
+    let (s, v) = password_token(
+        &app,
+        &muse,
+        &secret,
+        &email.to_uppercase(),
+        password,
+        "releases:read releases:write settlement:read",
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["scope"], "releases:read releases:write settlement:read");
+    let access = v["access_token"].as_str().unwrap().to_string();
+    let refresh = v["refresh_token"].as_str().unwrap().to_string();
+    let (err, acct) = tool(&app, &access, "get_account_context", json!({})).await;
+    assert!(!err, "{acct}");
+    assert_eq!(acct["workspace"]["id"], r["org_id"]);
+    assert_eq!(acct["connection"]["client"], "Muse");
+
+    // The agent has no browser redirect.
+    let (s, _, body) = raw(
+        &app,
+        "GET",
+        &format!("/api/oauth/authorize?client_id={muse}&response_type=code"),
+        &[],
+        String::new(),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    assert!(body.contains("브라우저 연결을 쓰지 않아요"), "{body}");
+
+    let grants: Vec<String> =
+        sqlx::query_scalar("SELECT method FROM identity.mcp_grants WHERE revoked_at IS NULL")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(grants, vec!["PASSWORD".to_string()]);
+
+    // Disabling the agent ends its connections.
+    login::admin_disable_client(&pool, "ops@audeniq", &muse)
+        .await
+        .unwrap();
+    let (s, _, _) = rpc(
+        &app,
+        Some(&access),
+        "tools/call",
+        json!({"name":"get_account_context","arguments":{}}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+    use base64::Engine as _;
+    let basic = format!(
+        "Basic {}",
+        base64::engine::general_purpose::STANDARD.encode(format!("{muse}:{secret}"))
+    );
+    let (s, _, _) = raw(
+        &app,
+        "POST",
+        "/api/oauth/token",
+        &[
+            ("content-type", "application/x-www-form-urlencoded"),
+            ("authorization", &basic),
+        ],
+        form(&[("grant_type", "refresh_token"), ("refresh_token", &refresh)]),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+    let listed = login::admin_list_clients(&pool).await.unwrap();
+    assert_eq!(listed["items"].as_array().unwrap().len(), 2);
+    assert!(listed["items"][0]["disabled_at"].is_string());
+}
+
+#[sqlx::test]
+async fn connection_tokens_are_made_in_the_studio(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let org = u.org.to_string();
+    for bad in [
+        json!({"label": "", "org_id": org, "scopes": []}),
+        json!({"label": "Agent", "org_id": org, "scopes": ["releases:delete"]}),
+        json!({"label": "Agent", "org_id": org, "scopes": [], "days": 91}),
+    ] {
+        let (s, v) = call(
+            &app,
+            "POST",
+            "/api/auth/ai-connections/tokens",
+            bad,
+            Some(&u),
+        )
+        .await;
+        assert_eq!(s, StatusCode::BAD_REQUEST, "{v}");
+    }
+    let stranger = user(&app).await;
+    let (s, _) = call(
+        &app,
+        "POST",
+        "/api/auth/ai-connections/tokens",
+        json!({"label": "Agent", "org_id": stranger.org, "scopes": []}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+
+    let (s, v) = call(&app, "POST", "/api/auth/ai-connections/tokens",
+        json!({"label": "My agent", "org_id": org, "scopes": ["releases:write", "settlement:read"], "days": 7}), Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(
+        v["scopes"],
+        json!(["releases:read", "releases:write", "settlement:read"])
+    );
+    assert_eq!(v["mcp_url"], format!("{ORIGIN}/api/mcp"));
+    let token = v["token"].as_str().unwrap().to_string();
+    let id = v["id"].as_str().unwrap().to_string();
+    let (err, acct) = tool(&app, &token, "get_account_context", json!({})).await;
+    assert!(!err, "{acct}");
+    assert_eq!(acct["can_view_settlement"], true);
+    assert_eq!(acct["can_submit"], false);
+
+    // A second token is a separate connection.
+    let (s, _) = call(
+        &app,
+        "POST",
+        "/api/auth/ai-connections/tokens",
+        json!({"label": "Other", "org_id": org, "scopes": []}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, list) = call(&app, "GET", "/api/auth/ai-connections", json!({}), Some(&u)).await;
+    let items = list["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    let mine = items.iter().find(|i| i["id"] == id.as_str()).unwrap();
+    assert_eq!(mine["method"], "TOKEN");
+    assert_eq!(mine["label"], "My agent");
+    assert!(mine["expires_at"].is_string());
+
+    // Revoking it in the Studio stops it at once.
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("/api/auth/ai-connections/{id}/revoke"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (s, _, _) = rpc(
+        &app,
+        Some(&token),
+        "tools/call",
+        json!({"name":"get_account_context","arguments":{}}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+    // The built-in token client cannot start a browser or device flow.
+    let (s, _, _) = raw(
+        &app,
+        "POST",
+        "/api/oauth/device_authorization",
+        &[("content-type", "application/x-www-form-urlencoded")],
+        form(&[("client_id", "audeniq-connection-token")]),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+}
