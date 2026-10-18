@@ -10,7 +10,9 @@
 //!   after consent at the latest.
 //! - Every token is bound to one user, one workspace (org), the approved
 //!   scopes and this server's MCP resource (audience).
-use super::{SCOPE_READ, SCOPE_SUBMIT, SCOPE_WRITE, SCOPES, Settings};
+use super::{
+    SCOPE_PAYOUT, SCOPE_READ, SCOPE_SETTLEMENT, SCOPE_SUBMIT, SCOPE_WRITE, SCOPES, Settings,
+};
 use crate::{
     api::AppState,
     auth::{self, Actor},
@@ -596,9 +598,13 @@ pub async fn authorize(State(s): State<AppState>, h: HeaderMap, RawQuery(q): Raw
             "unknown resource",
         );
     }
-    let Some(scopes) = requested_scopes(p.get("scope").map(String::as_str)) else {
+    let Some(mut scopes) = requested_scopes(p.get("scope").map(String::as_str)) else {
         return redirect_error(&s, &redirect_uri, state, "invalid_scope", "unknown scope");
     };
+    // Payouts through an assistant are switched off by a limit of 0.
+    if s.mcp.payout_limit_krw == 0 {
+        scopes.retain(|v| *v != SCOPE_PAYOUT);
+    }
     let a = match auth::actor(&s.pool, &h, &s.config, false).await {
         Ok(a) => a,
         Err(Error::Unauthorized) => return page_sign_in(&s),
@@ -624,7 +630,14 @@ pub async fn authorize(State(s): State<AppState>, h: HeaderMap, RawQuery(q): Raw
             "exp": chrono::Utc::now().timestamp() + CONSENT_SECONDS,
         }),
     );
-    page_consent(&client, &redirect_uri, &scopes, &orgs, &request)
+    page_consent(
+        &client,
+        &redirect_uri,
+        &scopes,
+        &orgs,
+        &request,
+        s.mcp.payout_limit_krw,
+    )
 }
 
 /// The consent form's answer. Bound to the signed request and the session
@@ -694,7 +707,12 @@ async fn decide_inner(s: &AppState, h: &HeaderMap, body: &[u8]) -> Result<Respon
     let offered: Vec<String> =
         serde_json::from_value(req["sc"].clone()).map_err(|_| Error::Invalid)?;
     let mut scopes = vec![SCOPE_READ.to_string()];
-    for (field, scope) in [("scope_write", SCOPE_WRITE), ("scope_submit", SCOPE_SUBMIT)] {
+    for (field, scope) in [
+        ("scope_write", SCOPE_WRITE),
+        ("scope_submit", SCOPE_SUBMIT),
+        ("scope_settlement", SCOPE_SETTLEMENT),
+        ("scope_payout", SCOPE_PAYOUT),
+    ] {
         if form.get(field).map(String::as_str) == Some("on") && offered.iter().any(|o| o == scope) {
             scopes.push(scope.to_string());
         }
@@ -727,13 +745,7 @@ async fn decide_inner(s: &AppState, h: &HeaderMap, body: &[u8]) -> Result<Respon
         Some(org),
         Some(grant),
         "mcp.grant_approved",
-        if scopes.iter().any(|s| s == SCOPE_SUBMIT) {
-            "SCOPES_READ_WRITE_SUBMIT"
-        } else if scopes.len() == 2 {
-            "SCOPES_READ_WRITE"
-        } else {
-            "SCOPES_READ"
-        },
+        &format!("SCOPES:{}", scopes.join(",")),
         a.request,
     )
     .await?;
@@ -1343,18 +1355,45 @@ fn page_sign_in(s: &AppState) -> Response {
     )
 }
 
-fn scope_label(scope: &str) -> (&'static str, &'static str) {
-    match scope {
+fn scope_label(scope: &str, payout_limit: i64) -> (&'static str, String) {
+    let (title, desc): (&'static str, &str) = match scope {
         SCOPE_READ => ("발매 정보 보기", "발매·트랙·검사 결과·접수 상태를 읽어요."),
         SCOPE_WRITE => (
             "발매 초안 작성·수정",
             "임시 저장 상태의 발매 정보·트랙·크레딧을 만들고 고쳐요. 접수된 발매는 바꾸지 못해요.",
         ),
-        _ => (
+        SCOPE_SUBMIT => (
             "발매 신청 접수",
             "내가 대화에서 최종 확인한 내용 그대로 배급 신청을 접수해요. 대화에서 확인한 권리·성인 확인 선언은 내 선언으로 기록돼요.",
         ),
+        SCOPE_SETTLEMENT => (
+            "정산 보기",
+            "정산 잔액·내역·플랫폼별 수익 보고·지급 신청 현황을 읽어요. 계좌번호는 보이지 않아요.",
+        ),
+        _ => {
+            return (
+                "소액 지급 신청",
+                format!(
+                    "등록해 둔 계좌로 {}원 이하(24시간 합계)의 지급 신청과 취소를 해요. 대화에서 금액을 확인한 뒤에만 신청되고, 그보다 큰 금액과 계좌 변경은 Studio에서만 할 수 있어요.",
+                    won(payout_limit)
+                ),
+            );
+        }
+    };
+    (title, desc.to_string())
+}
+
+/// 300000 → "300,000"
+fn won(v: i64) -> String {
+    let digits = v.to_string();
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
     }
+    out
 }
 
 fn page_consent(
@@ -1363,6 +1402,7 @@ fn page_consent(
     scopes: &[&str],
     orgs: &[(Uuid, String, String)],
     request: &str,
+    payout_limit: i64,
 ) -> Response {
     let redirect = url::Url::parse(redirect_uri).ok();
     let redirect_host = redirect
@@ -1389,19 +1429,22 @@ fn page_consent(
     }
     let mut scope_rows = String::new();
     for scope in scopes {
-        let (title, desc) = scope_label(scope);
+        let (title, desc) = scope_label(scope, payout_limit);
         let control = match *scope {
-            SCOPE_READ => "<input type=\"checkbox\" checked disabled>".to_string(),
-            SCOPE_WRITE => "<input type=\"checkbox\" name=\"scope_write\" checked>".to_string(),
-            // Submitting is never pre-selected: the user opts in.
-            _ => "<input type=\"checkbox\" name=\"scope_submit\">".to_string(),
+            SCOPE_READ => "<input type=\"checkbox\" checked disabled>",
+            SCOPE_WRITE => "<input type=\"checkbox\" name=\"scope_write\" checked>",
+            // Submitting, settlement and payouts are never pre-selected.
+            SCOPE_SUBMIT => "<input type=\"checkbox\" name=\"scope_submit\">",
+            SCOPE_SETTLEMENT => "<input type=\"checkbox\" name=\"scope_settlement\">",
+            _ => "<input type=\"checkbox\" name=\"scope_payout\">",
         };
+        let desc = escape(&desc);
         scope_rows.push_str(&format!("<label>{control}<span><b>{title}</b><br><span class=\"muted\">{desc}</span></span></label>"));
     }
     let cimd = client.client_id.starts_with("https://");
     let body = format!(
         "<h1>{name}이(가) AUDENIQ 계정에 연결하려고 해요</h1>\
-         <p class=\"muted\">승인하면 이 AI 앱이 아래 작업 공간에서 선택한 일만 할 수 있어요. 정산·지급, 계약 서명, 계정 설정은 어떤 경우에도 할 수 없어요.</p>\
+         <p class=\"muted\">승인하면 이 AI 앱이 아래 작업 공간에서 선택한 일만 할 수 있어요. 지급 계좌 변경, 계약 서명, 계정 설정과 고액 지급은 어떤 경우에도 할 수 없어요.</p>\
          <form method=\"post\" action=\"/api/oauth/authorize\">\
          <div class=\"card\"><b>작업 공간</b><select name=\"org\" required>{org_options}</select></div>\
          <div class=\"card\">{scope_rows}</div>\
@@ -1514,6 +1557,7 @@ mod tests {
             enabled: true,
             cimd_hosts: vec!["chatgpt.com".into()],
             dynamic_registration: true,
+            payout_limit_krw: 0,
         };
         assert!(cimd_allowed(&s, "https://chatgpt.com/oauth/client.json"));
         assert!(!cimd_allowed(

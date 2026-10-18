@@ -26,15 +26,28 @@ use axum::{
 };
 use base64::Engine as _;
 
-/// Scopes a client can be granted. `releases:submit` is opt-in on the
-/// consent screen; nothing grants payouts, contracts or account changes.
+/// Scopes a client can be granted. Everything but `releases:read` and
+/// `releases:write` is opt-in on the consent screen. Nothing grants payout
+/// account changes, contracts, signatures or account settings, and payouts
+/// above [`Settings::payout_limit_krw`] always go through the Studio.
 pub const SCOPE_READ: &str = "releases:read";
 pub const SCOPE_WRITE: &str = "releases:write";
 pub const SCOPE_SUBMIT: &str = "releases:submit";
-pub const SCOPES: [&str; 3] = [SCOPE_READ, SCOPE_WRITE, SCOPE_SUBMIT];
+pub const SCOPE_SETTLEMENT: &str = "settlement:read";
+pub const SCOPE_PAYOUT: &str = "payouts:request";
+pub const SCOPES: [&str; 5] = [
+    SCOPE_READ,
+    SCOPE_WRITE,
+    SCOPE_SUBMIT,
+    SCOPE_SETTLEMENT,
+    SCOPE_PAYOUT,
+];
 
 /// Path of the MCP endpoint (behind the edge at the Studio origin).
 pub const MCP_PATH: &str = "/api/mcp";
+
+/// Default AI payout limit: 300,000원 per request and per 24 hours.
+pub const DEFAULT_PAYOUT_LIMIT_KRW: i64 = 300_000;
 
 #[derive(Clone, Debug)]
 pub struct Settings {
@@ -45,6 +58,9 @@ pub struct Settings {
     pub cimd_hosts: Vec<String>,
     /// RFC 7591 registration (deprecated by MCP, still used by clients).
     pub dynamic_registration: bool,
+    /// Largest payout (KRW) an AI assistant may request, per request and in
+    /// total over 24 hours; above it the artist uses the Studio. 0 = never.
+    pub payout_limit_krw: i64,
 }
 
 impl Settings {
@@ -53,6 +69,7 @@ impl Settings {
             enabled: false,
             cimd_hosts: Vec::new(),
             dynamic_registration: false,
+            payout_limit_krw: 0,
         }
     }
     pub fn from_env() -> Self {
@@ -71,6 +88,11 @@ impl Settings {
             enabled: flag("AUDENIQ_MCP_ENABLED", false),
             cimd_hosts,
             dynamic_registration: flag("AUDENIQ_MCP_DYNAMIC_REGISTRATION", true),
+            payout_limit_krw: std::env::var("AUDENIQ_MCP_PAYOUT_LIMIT_KRW")
+                .ok()
+                .and_then(|v| v.trim().parse::<i64>().ok())
+                .filter(|v| *v >= 0)
+                .unwrap_or(DEFAULT_PAYOUT_LIMIT_KRW),
         }
     }
 }

@@ -1438,6 +1438,32 @@ pub async fn list_payouts(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
     Ok(json!({"items":items}))
 }
 
+/// Total of the organisation's payout requests (not cancelled) whose
+/// idempotency key starts with `key_prefix`, made in the last `hours`: the
+/// AI assistant channel's rolling limit (crate::mcp) counts only its own.
+pub async fn payouts_requested_since(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    key_prefix: &str,
+    hours: i32,
+) -> Result<Decimal> {
+    let mut tx = s.pool.begin().await?;
+    member(&mut tx, a, org, false).await?;
+    let total: Decimal = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(amount),0) FROM portal.payout_requests
+          WHERE org_id=$1 AND starts_with(idempotency_key,$2) AND cancelled_at IS NULL
+            AND created_at > now() - make_interval(hours => $3)",
+    )
+    .bind(org)
+    .bind(key_prefix)
+    .bind(hours)
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.rollback().await?;
+    Ok(total)
+}
+
 /// "30,000원" for user-facing notices (no ₩ glyph — it renders differently per font/OS).
 fn won(amount: Decimal) -> String {
     let digits = amount.trunc().abs().to_string();
@@ -1464,6 +1490,25 @@ pub async fn request_payout(
     org: Uuid,
     i: PayoutRequestInput,
 ) -> Result<Value> {
+    request_payout_capped(s, a, org, i, None).await
+}
+
+/// A channel's own payout ceiling: requests whose idempotency key starts with
+/// `key_prefix` may total at most `limit` in any `hours` window. Checked under
+/// the organisation's payout lock, so concurrent requests cannot both pass.
+pub struct PayoutCap<'a> {
+    pub key_prefix: &'a str,
+    pub limit: Decimal,
+    pub hours: i32,
+}
+
+pub async fn request_payout_capped(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    i: PayoutRequestInput,
+    cap: Option<PayoutCap<'_>>,
+) -> Result<Value> {
     let amount = Decimal::from_str(i.amount.trim()).map_err(|_| Error::Invalid)?;
     let q = payout_policy::quote(amount, chrono::Utc::now())?;
     let key = text(&i.idempotency_key, 8, 120)?;
@@ -1483,6 +1528,24 @@ pub async fn request_payout(
     .await?
     {
         return Ok(v);
+    }
+    if let Some(cap) = cap {
+        if !i.idempotency_key.starts_with(cap.key_prefix) {
+            return Err(Error::Invalid);
+        }
+        let used: Decimal = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(amount),0) FROM portal.payout_requests
+              WHERE org_id=$1 AND starts_with(idempotency_key,$2) AND cancelled_at IS NULL
+                AND created_at > now() - make_interval(hours => $3)",
+        )
+        .bind(org)
+        .bind(cap.key_prefix)
+        .bind(cap.hours)
+        .fetch_one(&mut *tx)
+        .await?;
+        if used + amount > cap.limit {
+            return Err(Error::PolicyGate("PAYOUT_USE_STUDIO"));
+        }
     }
     // 신청 시점의 수령 계좌를 고정한다: 이후 계좌를 바꿔도 이 신청은 이 계좌로 간다.
     let account = sqlx::query(
