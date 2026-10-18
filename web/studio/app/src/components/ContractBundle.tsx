@@ -61,7 +61,7 @@ export function ContractBundle({ releaseId, releaseTitle, agreement, hasApplicat
           <span className="aq-bundle-no" aria-hidden="true">{hasApplication ? <CheckIcon size={14} /> : 1}</span>
           <div className="min-0">
             <strong>배급 신청서</strong>
-            <span>{hasApplication ? '접수할 때 서명 완료' : '발매를 접수할 때 서명해요'}</span>
+            <span>{hasApplication ? '접수할 때 서명했어요' : '발매를 접수할 때 서명해요'}</span>
           </div>
           {hasApplication && (
             <button type="button" className="ui-btn is-soft is-sm" onClick={() => nav(`/releases/${encodeURIComponent(releaseId)}/application`)}>
@@ -81,7 +81,7 @@ export function ContractBundle({ releaseId, releaseTitle, agreement, hasApplicat
           </div>
           {canOpen && (
             <button type="button" className={stage === 'to-sign' ? 'ui-btn is-primary aq-bundle-sign' : 'ui-btn is-soft is-sm'} onClick={() => (stage === 'signed' ? nav(`/contracts/${encodeURIComponent(agreement!.id)}`) : onOpenAgreement(agreement!.id))}>
-              {stage === 'to-sign' ? '확인하고 서명' : '계약서 최종본'}
+              {stage === 'to-sign' ? '확인하고 서명' : '계약서 보기'}
             </button>
           )}
         </li>

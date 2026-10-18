@@ -202,11 +202,11 @@ export function DocumentModal({
   const needsFile = canSubmit && (doc.reviewStatus === 'awaiting_documents' || doc.kind === 'rights');
   const tone = docBadgeTone(doc);
   // 맨 위 '지금 할 일' 한 줄 — 어디까지 왔고 무엇을 하면 되는지 먼저
-  const next = toSign ? { icon: 'pencil' as const, title: '서명만 남았어요', desc: '내용을 확인하고 서명하면 계약이 체결되고 배급이 시작돼요.' }
+  const next = toSign ? { icon: 'pencil' as const, title: '서명만 남았어요', desc: '내용을 확인하고 서명하면 바로 배급을 시작해요.' }
     : doc.reviewStatus === 'needs' ? { icon: 'alert' as const, title: '보완이 필요해요', desc: doc.reviewNote || (doc.electronic ? '보완 내용을 반영한 전자 문서를 새로 작성해 주세요.' : '보완을 요청한 서류를 첨부해 주세요.') }
       : doc.reviewStatus === 'awaiting_documents' ? { icon: 'clip' as const, title: doc.kind === 'rights' ? '서류를 첨부해 주세요' : '내용을 확인해 주세요', desc: doc.kind === 'rights' ? '원본을 첨부하고 검토 요청을 누르면 담당자가 확인해요.' : '확인하면 담당자 검토가 시작돼요.' }
         : doc.reviewStatus === 'review' || doc.reviewStatus === 'prepared' ? { icon: 'clock' as const, title: '담당자가 검토하고 있어요', desc: '검토가 끝나면 알림으로 알려 드려요.' }
-          : doc.localSignatureAt ? { icon: 'check' as const, title: doc.kind === 'agreements' ? '계약이 체결됐어요' : '서명이 끝났어요', desc: `${doc.signerName || '서명자'} · ${localStamp(doc.localSignatureAt)}` }
+          : doc.localSignatureAt ? { icon: 'check' as const, title: doc.kind === 'agreements' ? '계약이 체결됐어요' : '서명을 마쳤어요', desc: `${doc.signerName || '서명자'} · ${localStamp(doc.localSignatureAt)}` }
             : doc.reviewStatus === 'approved' ? { icon: 'check' as const, title: '승인됐어요', desc: '따로 할 일은 없어요.' } : null;
 
   return (
@@ -241,7 +241,7 @@ export function DocumentModal({
           )}
           {doc.electronic && (
             <button type="button" className="aq-dm-link aq-doc-open-app" onClick={() => { onClose(); nav(`/rights/${encodeURIComponent(doc.id)}`); }}>
-              <Glyph name="doc" size={17} /><span>완성된 전자 문서 보기 · PDF 저장</span><Glyph name="chevron-right" size={16} />
+              <Glyph name="doc" size={17} /><span>계약서 보기 · PDF 저장</span><Glyph name="chevron-right" size={16} />
             </button>
           )}
           {doc.fileName && (
@@ -271,7 +271,7 @@ export function DocumentModal({
           <h4>{doc.electronic ? '권리자 서명' : '직접 서명 기록'}</h4>
           <img src={doc.localSignatureData} alt="직접 입력한 서명" />
           <small>{doc.signerName || '서명자'} · {localStamp(doc.localSignatureAt)}</small>
-          <small>{doc.electronic ? `서명자 구분: ${doc.electronic.signer_role} · 문서 번호: ${doc.electronic.document_no}` : '본인 확인 및 법적 전자서명 처리는 별도 절차에서 진행돼요.'}</small>
+          <small>{doc.electronic ? `서명자 구분: ${doc.electronic.signer_role} · 문서 번호: ${doc.electronic.document_no}` : '본인 인증과 법적 전자서명은 따로 진행해요.'}</small>
         </section>
       )}
 
