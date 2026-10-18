@@ -92,12 +92,37 @@ describe('AiConnections', () => {
       method: 'POST', body: { label: '작업실 에이전트', org_id: 'o1', scopes: ['releases:write'], days: 30 },
     });
     expect(el.textContent).toContain('a'.repeat(64));
-    expect(el.textContent).toContain('다시 볼 수 없으니');
+    expect(el.textContent).toContain('토큰을 다시 볼 수 없어요');
     expect([...el.querySelectorAll('li strong')].map(s => s.textContent)).toEqual(['작업실 에이전트']);
     expect(el.textContent).toContain('연결 토큰 · 내 작업 공간');
     // Closing the notice hides the token for good.
     await act(async () => { buttons('닫기')[0].click(); });
     expect(el.textContent).not.toContain('a'.repeat(64));
+  });
+
+  it('allows every permission and no end date, with a warning', async () => {
+    const token = { id: 'g4', token: 'b'.repeat(64), expires_at: null, no_expiry: true, scopes: [], mcp_url: 'https://studio.audeniq.com/api/mcp' };
+    http.req.mockImplementation((url: string) => Promise.resolve(url.endsWith('/tokens') ? token : { items: [] }));
+    await render();
+    await act(async () => { buttons('연결 토큰 만들기')[0].click(); });
+    const input = el.querySelector<HTMLInputElement>('#aqTokenLabel')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '서버 에이전트');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const all = [...el.querySelectorAll('label')].find(l => l.textContent === '모든 권한 허용')!.querySelector('input')!;
+    await act(async () => { all.click(); });
+    await act(async () => { buttons('무기한')[0].click(); });
+    expect(buttons('무기한')[0].getAttribute('aria-checked')).toBe('true');
+    expect(el.textContent).toContain('직접 끊기 전까지 계속 쓸 수 있어요');
+    expect(el.textContent).toContain('내 이름으로 신청할 수 있어요');
+    await act(async () => { el.querySelector('form')!.requestSubmit(); });
+    expect(http.req).toHaveBeenCalledWith('/api/auth/ai-connections/tokens', {
+      method: 'POST',
+      body: { label: '서버 에이전트', org_id: 'o1', scopes: ['releases:write', 'releases:submit', 'settlement:read', 'payouts:request'], no_expiry: true },
+    });
+    expect(el.textContent).toContain('무기한으로 쓸 수 있어요');
+    // Unticking "all" turns every optional permission off again.
   });
 
   it('shows a load error', async () => {

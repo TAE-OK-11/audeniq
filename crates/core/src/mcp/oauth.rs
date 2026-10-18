@@ -1254,7 +1254,7 @@ pub async fn principal(s: &AppState, h: &HeaderMap) -> std::result::Result<Princ
            JOIN identity.mcp_grants g ON g.id=t.grant_id
            JOIN identity.users u ON u.id=g.user_id
            JOIN identity.mcp_clients c ON c.id=g.client_pk
-          WHERE t.token_hash=$1 AND t.kind='ACCESS' AND t.expires_at > now()
+          WHERE t.token_hash=$1 AND t.kind='ACCESS' AND (t.expires_at IS NULL OR t.expires_at > now())
             AND g.revoked_at IS NULL AND u.status='ACTIVE' AND c.disabled_at IS NULL",
     )
     .bind(&hash)
@@ -1308,10 +1308,11 @@ pub async fn connections(State(s): State<AppState>, h: HeaderMap) -> Result<Json
     let items: Vec<Value> = sqlx::query_scalar(
         "SELECT jsonb_build_object('id',g.id,'client_name',c.client_name,'client_id',c.client_id,'org_id',g.org_id,'org_name',o.name,
                 'scopes',g.scopes,'created_at',g.created_at,'last_used_at',g.last_used_at,'method',g.method,'label',g.label,
-                'expires_at',CASE WHEN g.method='TOKEN' THEN (SELECT max(t.expires_at) FROM identity.mcp_tokens t WHERE t.grant_id=g.id) END)
+                'expires_at',CASE WHEN g.method='TOKEN' THEN (SELECT max(t.expires_at) FROM identity.mcp_tokens t WHERE t.grant_id=g.id) END,
+                'no_expiry',g.method='TOKEN' AND EXISTS (SELECT 1 FROM identity.mcp_tokens t WHERE t.grant_id=g.id AND t.expires_at IS NULL))
            FROM identity.mcp_grants g JOIN identity.mcp_clients c ON c.id=g.client_pk JOIN identity.orgs o ON o.id=g.org_id
           WHERE g.user_id=$1 AND g.revoked_at IS NULL
-            AND (g.method<>'TOKEN' OR EXISTS (SELECT 1 FROM identity.mcp_tokens t WHERE t.grant_id=g.id AND t.expires_at > now()))
+            AND (g.method<>'TOKEN' OR EXISTS (SELECT 1 FROM identity.mcp_tokens t WHERE t.grant_id=g.id AND (t.expires_at IS NULL OR t.expires_at > now())))
           ORDER BY g.created_at DESC LIMIT 100",
     )
     .bind(a.user)
