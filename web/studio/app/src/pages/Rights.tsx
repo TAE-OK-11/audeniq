@@ -191,7 +191,7 @@ export function Rights() {
       </section>
 
       {formOpen && (
-        <Modal title="권리 서류 작성·접수" onClose={() => setFormOpen(false)} dismissible={false}>
+        <Modal title="권리 서류 작성·제출" onClose={() => setFormOpen(false)} dismissible={false}>
           <p className="small muted">
             AUDENIQ에서 문서를 자동 작성하고 권리자가 서명하거나, 보유한 허락서를 첨부할 수 있어요.
           </p>

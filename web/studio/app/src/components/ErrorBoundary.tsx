@@ -51,7 +51,7 @@ export class ErrorBoundary extends Component<Props, State> {
           eyebrow="업데이트"
           title="스튜디오가 새 버전으로 업데이트됐어요"
           description="새로고침하면 바로 이어서 쓸 수 있어요. 네트워크가 불안정할 때도 이 안내가 보일 수 있어요."
-          actions={[{ label: '새로고침', onClick: this.retry, primary: true }, { label: '홈으로', href: home }]}
+          actions={[{ label: '새로고침', onClick: this.retry, primary: true }, { label: '홈으로 가기', href: home }]}
           meta={meta}
         />
       );
@@ -62,7 +62,7 @@ export class ErrorBoundary extends Component<Props, State> {
         eyebrow="화면 오류"
         title="화면을 표시하는 중 문제가 생겼어요"
         description="저장한 내용은 그대로 있어요. 같은 문제가 계속되면 아래 오류 코드와 함께 문의해 주세요."
-        actions={[{ label: '다시 시도', onClick: this.retry, primary: true }, { label: '홈으로', href: home }]}
+        actions={[{ label: '다시 시도', onClick: this.retry, primary: true }, { label: '홈으로 가기', href: home }]}
         meta={meta}
       />
     );

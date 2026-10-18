@@ -94,15 +94,16 @@ export function RightsReport() {
                 <textarea id="rrWork" className="ui-input" rows={3} maxLength={2000} value={f.work} onChange={e => set('work', e.target.value)} placeholder="곡 제목, 권리자, 발표 시기 등" /></div>
               <div className="ui-field"><label htmlFor="rrTarget">침해하는 음원</label>
                 <textarea id="rrTarget" className="ui-input" rows={3} maxLength={2000} value={f.target} onChange={e => set('target', e.target.value)} placeholder="곡 제목·아티스트, 플랫폼 주소, UPC·ISRC를 아시면 함께" /></div>
-              <div className="ui-field"><label htmlFor="rrUrls">증빙 링크 (선택, 한 줄에 하나, 5개까지)</label>
-                <textarea id="rrUrls" className="ui-input" rows={2} value={f.urls} onChange={e => set('urls', e.target.value)} placeholder="https://" /></div>
+              <div className="ui-field"><label htmlFor="rrUrls">증빙 링크<span className="aq-optional">선택</span></label>
+                <textarea id="rrUrls" className="ui-input" rows={2} value={f.urls} onChange={e => set('urls', e.target.value)} placeholder="https://" aria-describedby="rrUrlsHelp" />
+                <p id="rrUrlsHelp" className="ui-field-help">한 줄에 하나씩, 5개까지 적어 주세요.</p></div>
             </fieldset>
             <label className="aq-check-line">
               <input type="checkbox" checked={f.agree} onChange={e => set('agree', e.target.checked)} />
               <span>적은 내용이 사실이며, 신고하는 음원의 이용이 권리자에게 허락받지 않은 것이라고 믿을 만한 이유가 있어요. 사실과 다른 신고로 다른 사람에게 손해를 끼치면 책임질 수 있음을 알고 있어요.</span>
             </label>
             {error && <div className="ui-callout is-danger" role="alert">{error}</div>}
-            <button type="submit" className={`ui-btn is-primary is-lg${busy ? ' is-busy' : ''}`} disabled={busy}>신고하기</button>
+            <button type="submit" className={`ui-btn is-primary is-lg is-block${busy ? ' is-busy' : ''}`} disabled={busy}>신고하기</button>
             <p className="ui-field-help">연락처는 암호화해 보관하고 이 신고의 처리에만 써요. 배급한 아티스트에게는 신고 내용만 전달되고 연락처는 보이지 않아요.</p>
           </form>
         )}
