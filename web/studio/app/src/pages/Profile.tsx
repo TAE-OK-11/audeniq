@@ -12,6 +12,7 @@ import { refreshAccount } from '../store/portalSync';
 import { IdentityVerify } from '../components/IdentityVerify';
 import { PasskeySettings } from '../components/PasskeySettings';
 import { ConnectedAccounts } from '../components/ConnectedAccounts';
+import { AiConnections } from '../components/AiConnections';
 import { TeamSettings } from '../components/TeamSettings';
 import { ArtistPagesCard } from '../components/ArtistPagesCard';
 import { OAUTH_LABEL, takeOAuthResult } from '../api/oauth';
@@ -198,6 +199,7 @@ export function Profile() {
   const [showPayment, setShowPayment] = useState(false);
   const [showPasskeys, setShowPasskeys] = useState(false);
   const [showConnected, setShowConnected] = useState(false);
+  const [showAi, setShowAi] = useState(false);
   // 홈 '확인할 작업'·왼쪽 메뉴 알림에서 바로 온 경우 — 정산 계좌 등록·본인인증 창을 곧장 연다 (주소의 ?open=은 지운다).
   // 이미 이 화면에 있을 때 눌러도 열리도록 주소가 바뀔 때마다 읽는다
   const [params, setParams] = useSearchParams();
@@ -314,6 +316,7 @@ export function Profile() {
           <h2 id="setSignIn">로그인</h2>
           <SetRow id="accountRowPasskey" label="패스키" empty="비밀번호 대신 지문·얼굴로 로그인" onClick={() => setShowPasskeys(true)} />
           <SetRow id="accountRowConnected" label="연결된 계정" empty="Google · Apple" onClick={() => setShowConnected(true)} />
+          <SetRow id="accountRowAi" label="연결된 AI 앱" empty="ChatGPT · Claude 등" onClick={() => setShowAi(true)} />
         </section>
       )}
 
@@ -348,6 +351,11 @@ export function Profile() {
       {showConnected && (
         <Modal title="연결된 계정" onClose={() => setShowConnected(false)} modalClass="aq-set-modal">
           <ConnectedAccounts />
+        </Modal>
+      )}
+      {showAi && (
+        <Modal title="연결된 AI 앱" onClose={() => setShowAi(false)} modalClass="aq-set-modal">
+          <AiConnections />
         </Modal>
       )}
       {accountEdit === 'verify' && (

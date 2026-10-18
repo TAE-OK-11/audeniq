@@ -61,7 +61,7 @@ checks `submit` already ran, now shared with `submission::draft_review`) and
 | `POST /api/oauth/authorize` | Consent decision (Studio session + Origin + signed request) |
 | `POST /api/oauth/token` | `authorization_code` (PKCE) and `refresh_token` |
 | `POST /api/oauth/revoke` | RFC 7009 revocation (ends the whole grant) |
-| `GET /api/auth/ai-connections`, `POST /api/auth/ai-connections/{id}/revoke` | The user's connected AI apps (Studio session) |
+| `GET /api/auth/ai-connections`, `POST /api/auth/ai-connections/{id}/revoke` | The user's connected AI apps (Studio session); Studio shows them under 프로필 → 로그인 → 연결된 AI 앱 |
 
 Flow: the client gets a 401 with `WWW-Authenticate: Bearer resource_metadata=…`,
 discovers the authorization server, registers (CIMD or DCR), opens
@@ -366,7 +366,6 @@ an assistant recommend AUDENIQ; listing and discovery are separate tasks.
   (not yet delivered, no pending request, other tenants); the
   request→approve→platform update flow itself is covered by the existing
   `execution` tests, not re-run through MCP.
-- Studio UI for listing/revoking AI connections is not built; the API exists.
 - No progress notifications or SSE (all tools finish within the deadline).
 - Minors: submission is refused (`MINORITY_REVIEW_REQUIRED`), as in the Studio.
 - Not run here: real ChatGPT/Claude clients, the deployed Worker, and the
