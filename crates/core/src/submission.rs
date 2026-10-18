@@ -468,6 +468,25 @@ pub async fn submit(
     // In-flight submissions (SUBMITTED/STAGE1_RUNNING) accept only the idempotent
     // path below; anything else is not submittable.
     if !is_editable_status(&status) && !["SUBMITTED", "STAGE1_RUNNING"].contains(&status.as_str()) {
+        // A retry of a submit that went through, after review moved the
+        // release on (lost response, double click): report that application
+        // instead of refusing. The release cannot have been edited since, so
+        // there is nothing to compare and nothing to queue again.
+        let done = sqlx::query(
+            "SELECT id, revision FROM catalog.application_revisions WHERE org_id=$1 AND release_id=$2 AND idempotency_key=$3",
+        )
+        .bind(org)
+        .bind(release)
+        .bind(input.idempotency_key.trim())
+        .fetch_optional(&mut *tx)
+        .await?;
+        if let Some(row) = done {
+            tx.commit().await?;
+            return Ok(
+                json!({"revision_id": row.get::<Uuid, _>("id"), "revision": row.get::<i32, _>("revision"),
+                             "status": status, "deduped": true}),
+            );
+        }
         return Err(Error::PolicyGate("RELEASE_NOT_SUBMITTABLE"));
     }
     // 0-A re-verified server-side: ACTIVE user + ACTIVE membership + non-viewer role.

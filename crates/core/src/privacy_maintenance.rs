@@ -37,6 +37,10 @@ pub async fn purge_transient(pool: &PgPool, operator: &str) -> Result<Value> {
         "WITH old AS (SELECT device_code_hash FROM identity.mcp_device_codes WHERE expires_at<now()-interval '1 day' ORDER BY expires_at LIMIT 10000 FOR UPDATE SKIP LOCKED) DELETE FROM identity.mcp_device_codes d USING old WHERE d.device_code_hash=old.device_code_hash",
         "DELETE FROM identity.mcp_daily_usage WHERE day < (now() AT TIME ZONE 'Asia/Seoul')::date - 1",
         "DELETE FROM identity.mcp_idempotency WHERE created_at < now()-interval '7 days'",
+        // Dynamically registered AI clients that never got a connection.
+        "WITH old AS (SELECT c.id FROM identity.mcp_clients c WHERE c.kind='DCR' AND c.created_at < now()-interval '30 days'
+            AND NOT EXISTS (SELECT 1 FROM identity.mcp_grants g WHERE g.client_pk=c.id) ORDER BY c.created_at LIMIT 10000 FOR UPDATE OF c SKIP LOCKED)
+         DELETE FROM identity.mcp_clients c USING old WHERE c.id=old.id",
     ] {
         mcp += sqlx::query(q).execute(&mut *tx).await?.rows_affected();
     }

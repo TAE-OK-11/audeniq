@@ -127,12 +127,23 @@ jobs:
       CARGO_TERM_COLOR: never
     steps:
       - checkout
+      # 이 워크플로의 workspace를 항상 만든다: 백엔드 변경이 없어 이미지 작업이 건너뛰어도
+      # deploy의 attach_workspace가 실패하지 않고 main 최신 이미지로 배포한다
+      - run: mkdir -p /tmp/audeniq-digests && touch /tmp/audeniq-digests/.workspace
+      - persist_to_workspace:
+          root: /tmp
+          paths:
+            - audeniq-digests/.workspace
       - skip-unless-changed:
           paths: '^(Cargo\.toml|Cargo\.lock|rust-toolchain\.toml|crates/|config/|migrations/|\.circleci/)'
       - restore_cache:
           keys:
             - cargo-v1-{{ checksum "Cargo.lock" }}-{{ checksum "rust-toolchain.toml" }}
             - cargo-v1-
+      # 의존성 빌드 결과: 우리 코드만 바뀐 푸시는 의존성을 다시 컴파일하지 않는다 (크레딧 절약)
+      - restore_cache:
+          keys:
+            - cargo-target-v1-{{ checksum "Cargo.lock" }}-{{ checksum "rust-toolchain.toml" }}
       - run:
           name: Toolchain
           command: |
@@ -161,6 +172,17 @@ jobs:
       - run:
           name: Edge routing tests
           command: cargo test --locked -p audeniq-edge --lib
+      - run:
+          name: Keep only dependency build output for the cache
+          command: |
+            # 우리 크레이트 결과물은 매번 바뀌므로 캐시에서 뺀다 (캐시 크기·업로드 시간)
+            rm -rf target/debug/incremental
+            find target/debug/deps target/debug/.fingerprint target/debug/build -maxdepth 1 -name 'audeniq*' -exec rm -rf {} + 2>/dev/null || true
+            rm -f target/debug/audeniq-* 2>/dev/null || true
+      - save_cache:
+          key: cargo-target-v1-{{ checksum "Cargo.lock" }}-{{ checksum "rust-toolchain.toml" }}
+          paths:
+            - target
       - save_cache:
           key: cargo-v1-{{ checksum "Cargo.lock" }}-{{ checksum "rust-toolchain.toml" }}
           paths:
@@ -358,10 +380,19 @@ jobs:
     resource_class: small
     steps:
       - checkout
-      - skip-unless-backend-changed
       - attach_workspace:
           at: /tmp
       - image-name
+      - run:
+          name: Only the latest main is deployed
+          command: |
+            # 예전 파이프라인의 승인을 눌러 오래된 이미지가 배포되는 것을 막는다
+            git fetch --quiet origin main
+            latest=$(git rev-parse origin/main)
+            if [ "$latest" != "$CIRCLE_SHA1" ]; then
+              echo "이 파이프라인($CIRCLE_SHA1)보다 새로운 main 커밋($latest)이 있어요. 가장 최근 main 파이프라인에서 승인해 주세요." >&2
+              exit 1
+            fi
       - run:
           name: Check deploy settings
           command: |
@@ -396,8 +427,16 @@ jobs:
             # 서버 CPU가 맞지 않으면 deploy.sh(check-cpu.sh)가 DB를 건드리기 전에 거절한다.
             if [ -f /tmp/audeniq-digests/tuned ]; then
               ref="$IMAGE@$(cat /tmp/audeniq-digests/tuned)"
-            else
+            elif [ -f /tmp/audeniq-digests/portable ]; then
               ref="$IMAGE@$(cat /tmp/audeniq-digests/portable)"
+            else
+              # 이 파이프라인에는 백엔드 변경이 없어 새 이미지가 없다: 아무것도 하지 않고 성공으로 끝나던 것을
+              # 바꿔, main에서 마지막으로 만든 이미지를 배포한다 (deploy.sh가 받아서 digest로 고정·기록).
+              case "${BACKEND_CPU_VARIANT:-portable}" in
+                portable|"") ref="$IMAGE:main" ;;
+                *) ref="$IMAGE:main-$BACKEND_CPU_VARIANT" ;;
+              esac
+              echo "이 파이프라인에는 새 백엔드 이미지가 없어요. main의 최신 이미지를 배포해요: $ref"
             fi
             # deploy.sh가 표준입력의 토큰으로 GHCR에 로그인해 받고, 끝나면 로그아웃한다
             ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
