@@ -4,12 +4,14 @@
 // <SelectHost/>를 앱에 한 번 두면 화면의 모든 <select>가 이 시트로 열린다. 원래 <select>는 그대로 남아
 // 값·onChange·폼·테스트(selectOption)가 그대로 동작하고, 고르면 값만 바꾼 뒤 change 이벤트를 보낸다.
 // 기본 팝업이 꼭 필요한 곳은 조상에 data-native-select를 붙인다.
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { coverOutsideFixedLayer } from './Modal';
 import { Glyph } from './Glyph';
 
 const SHEET_QUERY = '(max-width: 600px), (pointer: coarse) and (max-width: 900px)';
+/** 이만큼 끌어내리면 닫는다 (Modal과 같은 값) */
+const SHEET_CLOSE_PX = 96;
 const isSheet = () => typeof window !== 'undefined' && !!window.matchMedia?.(SHEET_QUERY).matches;
 
 // ---------------------------------------------------------------------------
@@ -85,6 +87,45 @@ export function Surface({ anchor, title, onClose, className, children, labelledB
     return () => { html.style.overflow = prev; };
   }, [sheet]);
 
+  // 휴대폰 시트: 손잡이·제목 줄을 잡고 끌어내려 닫는다 (Modal과 같은 손맛). 덜 끌면 제자리로 부드럽게 돌아가고,
+  // 닫을 때는 놓은 자리에서 그대로 내려간다 — 닫힘 복사본(is-leaving)의 내려가는 애니메이션이 지금 위치에서 출발한다
+  const drag = useRef<{ y: number; dy: number; v: number; lastY: number; lastT: number } | null>(null);
+  const onDragStart = (e: ReactPointerEvent) => {
+    if (!sheet || e.pointerType === 'mouse') return;
+    drag.current = { y: e.clientY, dy: 0, v: 0, lastY: e.clientY, lastT: performance.now() };
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+  };
+  const onDragMove = (e: ReactPointerEvent) => {
+    const d = drag.current;
+    const el = boxRef.current;
+    if (!d || !el) return;
+    d.dy = Math.max(0, e.clientY - d.y);
+    const now = performance.now();
+    const dt = now - d.lastT;
+    if (dt > 0) d.v = d.v * 0.4 + ((e.clientY - d.lastY) / dt) * 0.6;
+    d.lastY = e.clientY;
+    d.lastT = now;
+    el.style.transition = 'none';
+    el.style.animation = 'none';
+    el.style.transform = `translate3d(0,${d.dy}px,0)`;
+  };
+  const onDragEnd = () => {
+    const d = drag.current;
+    const el = boxRef.current;
+    drag.current = null;
+    if (!d || !el) return;
+    const speed = performance.now() - d.lastT > 80 ? 0 : d.v;
+    const closing = d.dy > SHEET_CLOSE_PX ? speed > -0.2 : d.dy > 24 && speed > 0.5;
+    el.style.animation = '';
+    if (closing) {
+      el.style.transition = 'none';
+      onClose();
+    } else {
+      el.style.transition = 'transform .42s cubic-bezier(.32,.72,0,1)';
+      el.style.transform = '';
+    }
+  };
+
   // 넓은 화면: 바깥 스크롤·창 크기 변경이면 닫는다(칸에서 떨어져 떠 있지 않도록)
   useEffect(() => {
     if (sheet) return;
@@ -104,7 +145,7 @@ export function Surface({ anchor, title, onClose, className, children, labelledB
       >
         {/* 시트의 손잡이·제목은 위에 붙어 있다 — 고른 항목으로 목록을 굴려도 무엇을 고르는 중인지 보이게 */}
         {sheet && (
-          <div className="aq-picker-head">
+          <div className="aq-picker-head" onPointerDown={onDragStart} onPointerMove={onDragMove} onPointerUp={onDragEnd} onPointerCancel={onDragEnd}>
             <span className="aq-picker-grip" aria-hidden="true" />
             {title && <p className="aq-picker-title">{title}</p>}
           </div>
