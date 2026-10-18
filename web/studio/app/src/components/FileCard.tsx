@@ -5,7 +5,7 @@ import { Glyph } from './Glyph';
 
 export function FileCard({ id, accept, fileName, onFile, busy, hint = 'PDF · JPG · PNG', title = '서류를 끌어다 놓거나 눌러서 선택', status }: {
   id: string; accept?: string; fileName?: string; busy?: boolean; hint?: string; title?: string;
-  /** 고른 뒤 아래 줄 (예: ‘서버에 등록됨’) — 없으면 ‘다시 선택’ 안내 */
+  /** 고른 뒤 아래 줄 (예: ‘올렸어요 · 다시 누르면 바꿀 수 있어요’) — 없으면 ‘다시 선택’ 안내 */
   status?: string;
   onFile: (file: File, input?: HTMLInputElement) => void;
 }) {
