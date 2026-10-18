@@ -93,6 +93,9 @@ GRANT SELECT,INSERT,UPDATE ON identity.staff_mfa TO audeniq_api;
 GRANT SELECT,INSERT,UPDATE,DELETE ON identity.passkeys,identity.webauthn_challenges TO audeniq_api;
 -- Google·Apple 로그인 (0105)
 GRANT SELECT,INSERT,UPDATE,DELETE ON identity.oauth_identities,identity.oauth_states TO audeniq_api;
+-- AI 어시스턴트 연결 (MCP OAuth, 0131): 만료 코드·토큰은 API가 지운다
+GRANT SELECT,INSERT,UPDATE ON identity.mcp_clients,identity.mcp_grants TO audeniq_api;
+GRANT SELECT,INSERT,UPDATE,DELETE ON identity.mcp_codes,identity.mcp_tokens TO audeniq_api;
 -- 출력물 식별 기록 (0107): 추가·조회만
 GRANT SELECT,INSERT ON operations.print_stamps TO audeniq_api;
 -- 문서 봉인·약관 동의 (0108): API가 서명·접수 트랜잭션 안에서 추가한다. 원본 보관·고정은 owner CLI만.

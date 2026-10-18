@@ -691,6 +691,8 @@ pub async fn logout_all(s: &AppState, h: &HeaderMap) -> Result<(HeaderMap, Json<
     .bind(a.user)
     .execute(&mut *tx)
     .await?;
+    // "Everywhere" includes the AI assistants connected to the account.
+    crate::mcp::oauth::revoke_user_grants(&mut tx, a.user, "LOGOUT_ALL").await?;
     operations::audit(
         &mut tx,
         Some(a.user),
@@ -789,6 +791,7 @@ pub async fn change_password(
     .bind(a.user)
     .execute(&mut *tx)
     .await?;
+    crate::mcp::oauth::revoke_user_grants(&mut tx, a.user, "PASSWORD_CHANGED").await?;
     operations::audit(
         &mut tx,
         Some(a.user),

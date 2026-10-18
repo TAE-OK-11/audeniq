@@ -573,6 +573,74 @@ pub async fn submit(
         // In flight with a *changed* body: the user must wait or correct first.
         return Err(Error::PolicyGate("RELEASE_NOT_SUBMITTABLE"));
     }
+    submit_draft_checks(s, &mut tx, org, &body).await?;
+    let revision: i32 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(revision),0)+1 FROM catalog.application_revisions WHERE release_id=$1",
+    )
+    .bind(release)
+    .fetch_one(&mut *tx)
+    .await?;
+    let rid = Uuid::new_v4();
+    // ON CONFLICT is the backstop for two identical submits racing past the
+    // pre-check above; the loser converges onto the winner's revision.
+    let inserted: Option<Uuid> = sqlx::query_scalar("INSERT INTO catalog.application_revisions(id, org_id, release_id, revision, body, body_hash, consent_package_hash, created_by, idempotency_key) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(release_id, idempotency_key) DO NOTHING RETURNING id")
+        .bind(rid).bind(org).bind(release).bind(revision).bind(&body).bind(&body_hash).bind(&consent_package_hash).bind(a.user).bind(&idem_key)
+        .fetch_optional(&mut *tx).await?;
+    let rid = match inserted {
+        Some(id) => id,
+        None => {
+            let v =
+                keyed_revision_response(&mut tx, org, release, &idem_key, &body, &status).await?;
+            tx.commit().await?;
+            return Ok(v);
+        }
+    };
+    // DRAFT/STAGE1_CORRECTION -> SUBMITTED; the worker moves it to STAGE1_RUNNING.
+    sqlx::query("UPDATE catalog.releases SET status='SUBMITTED', current_revision_id=$3, row_version=row_version+1 WHERE org_id=$1 AND id=$2")
+        .bind(org).bind(release).bind(rid).execute(&mut *tx).await?;
+    enqueue_stage1(&mut tx, rid).await?;
+    // The artist's platform pages as this application states them (0122).
+    crate::artist_pages::record_from_application(
+        &mut tx,
+        org,
+        release,
+        &body["release"]["draft"],
+        a.user,
+    )
+    .await?;
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        Some(org),
+        Some(release),
+        "submission.created",
+        "USER_SUBMIT",
+        a.request,
+    )
+    .await?;
+    operations::event(
+        &mut tx,
+        org,
+        release,
+        "submission.created",
+        &format!("submit:{rid}"),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"revision_id": rid, "revision": revision, "status": "SUBMITTED", "deduped": false}))
+}
+
+/// Everything submit checks on the frozen body before a revision exists:
+/// territory/time/preview/pre-order formats, special-content details, the
+/// platform selection and routability, and the published-text and
+/// protected-name policies. Shared with the MCP pre-submit review so a
+/// draft reported as ready passes exactly these checks.
+async fn submit_draft_checks(
+    s: &AppState,
+    c: &mut PgConnection,
+    org: Uuid,
+    body: &Value,
+) -> Result<()> {
     let draft = &body["release"]["draft"];
     // The delivered deal territory comes from this frozen value; refuse a
     // malformed one now rather than at packaging.
@@ -661,7 +729,7 @@ pub async fn submit(
     // input-time checks can be bypassed by data written before they existed
     // (or by list changes), and a late failure would otherwise surface only
     // at packaging.
-    let texts = published_texts(&mut tx, org, &body).await?;
+    let texts = published_texts(&mut *c, org, body).await?;
     if !texts.iter().all(|t| crate::text_policy::is_clean(t, false))
         || !crate::text_policy::json_is_clean(&body["release"]["draft"])
     {
@@ -670,61 +738,62 @@ pub async fn submit(
         ));
     }
     let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
-    crate::protected_names::enforce(&mut tx, org, &refs).await?;
-    let revision: i32 = sqlx::query_scalar(
-        "SELECT COALESCE(MAX(revision),0)+1 FROM catalog.application_revisions WHERE release_id=$1",
+    crate::protected_names::enforce(&mut *c, org, &refs).await?;
+    Ok(())
+}
+
+/// Read-only pre-submit review of a draft (MCP `validate_release` /
+/// `preview_submission`): the Stage 1 field rules (1-B) on the body submit
+/// would freeze, the submit-time draft checks, and the hash of the consent
+/// scope so a confirmation can be bound to this exact content.
+pub async fn draft_review(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    release: Uuid,
+    declarations: &DeclarationsInput,
+) -> Result<Value> {
+    let mut tx = s.pool.begin().await?;
+    auth::authorize(&mut tx, a, org, release, "release", false).await?;
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM catalog.releases WHERE org_id=$1 AND id=$2 AND archived_at IS NULL)",
     )
+    .bind(org)
     .bind(release)
     .fetch_one(&mut *tx)
     .await?;
-    let rid = Uuid::new_v4();
-    // ON CONFLICT is the backstop for two identical submits racing past the
-    // pre-check above; the loser converges onto the winner's revision.
-    let inserted: Option<Uuid> = sqlx::query_scalar("INSERT INTO catalog.application_revisions(id, org_id, release_id, revision, body, body_hash, consent_package_hash, created_by, idempotency_key) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(release_id, idempotency_key) DO NOTHING RETURNING id")
-        .bind(rid).bind(org).bind(release).bind(revision).bind(&body).bind(&body_hash).bind(&consent_package_hash).bind(a.user).bind(&idem_key)
-        .fetch_optional(&mut *tx).await?;
-    let rid = match inserted {
-        Some(id) => id,
-        None => {
-            let v =
-                keyed_revision_response(&mut tx, org, release, &idem_key, &body, &status).await?;
-            tx.commit().await?;
-            return Ok(v);
+    if !exists {
+        return Err(Error::NotFound);
+    }
+    let scope_hash = sha256_json(&scope_of(&mut tx, org, release).await?);
+    let body = revision_body(&mut tx, org, release, "", false, declarations).await?;
+    let fields: Vec<Value> = field_checks(&body)
+        .into_iter()
+        .filter(|c| !matches!(c.status, CheckStatus::Pass | CheckStatus::NotApplicable))
+        .map(|c| {
+            json!({"check_code": c.check_code, "status": c.status.as_db(), "detail": c.detail,
+                   "message": crate::error::message(c.check_code)})
+        })
+        .collect();
+    let submit_check = match submit_draft_checks(s, &mut tx, org, &body).await {
+        Ok(()) => None,
+        Err(e @ (Error::PolicyGate(_) | Error::InvalidCode(_))) => {
+            let code = match e {
+                Error::PolicyGate(c) | Error::InvalidCode(c) => c,
+                _ => unreachable!(),
+            };
+            Some(json!({"code": code, "message": crate::error::message(code)}))
         }
+        Err(e) => return Err(e),
     };
-    // DRAFT/STAGE1_CORRECTION -> SUBMITTED; the worker moves it to STAGE1_RUNNING.
-    sqlx::query("UPDATE catalog.releases SET status='SUBMITTED', current_revision_id=$3, row_version=row_version+1 WHERE org_id=$1 AND id=$2")
-        .bind(org).bind(release).bind(rid).execute(&mut *tx).await?;
-    enqueue_stage1(&mut tx, rid).await?;
-    // The artist's platform pages as this application states them (0122).
-    crate::artist_pages::record_from_application(
-        &mut tx,
-        org,
-        release,
-        &body["release"]["draft"],
-        a.user,
-    )
-    .await?;
-    operations::audit(
-        &mut tx,
-        Some(a.user),
-        Some(org),
-        Some(release),
-        "submission.created",
-        "USER_SUBMIT",
-        a.request,
-    )
-    .await?;
-    operations::event(
-        &mut tx,
-        org,
-        release,
-        "submission.created",
-        &format!("submit:{rid}"),
-    )
-    .await?;
-    tx.commit().await?;
-    Ok(json!({"revision_id": rid, "revision": revision, "status": "SUBMITTED", "deduped": false}))
+    tx.rollback().await?;
+    Ok(json!({
+        "release_id": release,
+        "scope_hash": scope_hash,
+        "field_findings": fields,
+        "submit_check": submit_check,
+        "body": body,
+    }))
 }
 
 /// Current submission state: release status, latest revision, its checks.
@@ -1556,12 +1625,8 @@ fn field_checks(body: &Value) -> Vec<StagedCheck> {
         },
     );
     let n = tracks.len();
-    let type_ok = match rtype {
-        "SINGLE" => n == 1,
-        "EP" => (2..=6).contains(&n),
-        "ALBUM" => n >= 7,
-        _ => false,
-    };
+    let type_ok = release_type_tracks(rtype)
+        .is_some_and(|(min, max)| n >= min && max.is_none_or(|max| n <= max));
     push(
         "FIELD_RELEASE_TYPE_MISMATCH",
         if type_ok {
@@ -1636,6 +1701,16 @@ fn field_checks(body: &Value) -> Vec<StagedCheck> {
         );
     }
     out
+}
+
+/// Track count a release type allows: (min, max), `None` max = no limit.
+pub fn release_type_tracks(release_type: &str) -> Option<(usize, Option<usize>)> {
+    match release_type {
+        "SINGLE" => Some((1, Some(1))),
+        "EP" => Some((2, Some(6))),
+        "ALBUM" => Some((7, None)),
+        _ => None,
+    }
 }
 
 /// Stage 1 title checks: (explicit marker in the title, style advisories) for one title.

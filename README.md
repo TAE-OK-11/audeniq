@@ -56,6 +56,10 @@ Every platform is addressed by an internal code (`D-1`…`D-11`). After Stage 3,
 
 Real transmission is implemented: DDEX ERN over SFTP/S3 (ERN choreography, completion marker last, ACK files), a JSON+CSV feed for the Korean services, a REST API adapter, and signed partner webhooks. A contracted DSP is turned on with its config file in `PARTNER_CONFIG_DIR` and `audeniq-admin partner probe|dpid|test-ern|test-ack|capabilities|contract|go-live`, without code changes: see [partner delivery](docs/PARTNER_DELIVERY.md).
 
+## AI assistants (MCP)
+
+`audeniq-api` includes AUDENIQ's own MCP server and OAuth 2.1 authorization server so an artist can prepare, validate and submit a distribution application from ChatGPT, Claude or another MCP client, through the same services the Studio uses. It is off by default (`AUDENIQ_MCP_ENABLED`). See [MCP server](docs/MCP.md).
+
 ## Connected Studio and rented-server deployment
 
 The connected frontend now has a Rust/WASM client in `crates/studio`. Build it using [the Studio deployment guide](docs/STUDIO_DEPLOYMENT.md); serve its generated assets through the Rust Worker in `crates/edge`. The original Studio prototype remains preserved but is not the connected deployment entry point. Landing/survey remain unchanged.

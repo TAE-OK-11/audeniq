@@ -180,6 +180,86 @@ pub async fn create(s: &AppState, a: &Actor, org: Uuid, kind: Kind, i: Input) ->
     tx.commit().await?;
     Ok(json!({"id":id,"row_version":0}))
 }
+/// A named person that track credits (composer, lyricist, ...) point at.
+/// It is only a display name inside the org: no rights, no verified identity.
+/// The same name in the same org returns the existing party: (id, created).
+pub async fn ensure_party(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    display_name: &str,
+) -> Result<(Uuid, bool)> {
+    let name = display_name.trim();
+    if name.is_empty() || name.chars().count() > 200 {
+        return Err(Error::Invalid);
+    }
+    crate::text_policy::check(name)?;
+    let mut tx = s.pool.begin().await?;
+    auth::membership(&mut tx, a, org, true).await?;
+    let existing: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM identity.parties WHERE org_id=$1 AND kind='PERSON' AND display_name=$2 ORDER BY id LIMIT 1",
+    )
+    .bind(org)
+    .bind(name)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if let Some(id) = existing {
+        tx.commit().await?;
+        return Ok((id, false));
+    }
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO identity.parties(id,org_id,kind,display_name) VALUES($1,$2,'PERSON',$3)",
+    )
+    .bind(id)
+    .bind(org)
+    .bind(name)
+    .execute(&mut *tx)
+    .await?;
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        Some(org),
+        Some(id),
+        "party.created",
+        "USER_EDIT",
+        a.request,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok((id, true))
+}
+/// The workspace as its member sees it: name, kind and the member's role.
+pub async fn workspace(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
+    let mut tx = s.pool.begin().await?;
+    let role = auth::membership(&mut tx, a, org, false).await?;
+    let (name, kind): (String, String) =
+        sqlx::query_as("SELECT name, kind FROM identity.orgs WHERE id=$1")
+            .bind(org)
+            .fetch_one(&mut *tx)
+            .await?;
+    tx.commit().await?;
+    Ok(json!({"id": org, "name": name, "kind": kind, "role": role}))
+}
+/// Display names of this org's parties (credit names), for a member.
+pub async fn party_names(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    ids: &[Uuid],
+) -> Result<std::collections::HashMap<Uuid, String>> {
+    let mut tx = s.pool.begin().await?;
+    auth::membership(&mut tx, a, org, false).await?;
+    let rows: Vec<(Uuid, String)> = sqlx::query_as(
+        "SELECT id, display_name FROM identity.parties WHERE org_id=$1 AND id = ANY($2)",
+    )
+    .bind(org)
+    .bind(ids)
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(rows.into_iter().collect())
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Page {
