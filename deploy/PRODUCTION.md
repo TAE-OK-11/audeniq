@@ -94,6 +94,24 @@ CircleCI 조직 설정 → Contexts에 `audeniq-production`을 만들고 다음 
 
 같은 파일의 **frontend** 워크플로는 Studio(`web/studio`)·관리자(`web/admin`)·랜딩(`web/landing`)·설문(`web/survey`)을 각 폴더가 바뀐 푸시마다 테스트·빌드하고, main에서만 Cloudflare Workers로 배포한다. Worker는 화면 서빙과 `/api` 전달(터널 → api)만 하고, 공지·이벤트·서버 점검·인증 보조는 백엔드가 한다 (`crates/core/src/site_content.rs`, `sites.rs`). 설문은 베타 전까지 D1 Worker 그대로다. 예전 D1 데이터는 `node deploy/aws/migrate-d1.ts`로 옮긴다. 나중에 AWS로 옮길 때는 [`aws/README.md`](aws/README.md). 설문 D1 마이그레이션은 `web/survey/migrations`가 바뀌었거나 파이프라인 파라미터 `apply_migrations=true`일 때만 적용하고, 설문은 `bun run preflight`(실제 D1 ID·Turnstile 키)를 통과해야 배포한다. 수동 실행에서 파이프라인 파라미터 `target`을 `backend` 또는 `frontend`로 주면 그 워크플로만 돈다(`force=true`와 함께 쓰면 변경 여부와 상관없이 실행).
 
+### CI 없이 서버에서 직접 빌드·배포
+
+CircleCI·GitHub Actions를 쓸 수 없을 때(크레딧·사용 시간 소진 등) 운영 서버에서 [`build-on-server.sh`](build-on-server.sh)로 같은 Dockerfile·release 프로필의 이미지를 서버 아키텍처 하나만 빌드한다. 이미지를 GHCR(`:sha-<커밋>-server-<arch>-<variant>`)에 올리고, 같은 커밋의 배포 파일을 복사한 뒤 `deploy.sh`로 배포한다. 준비물(저장소 clone, 엔진 저장소 읽기 토큰 파일, `write:packages` GHCR 로그인)은 스크립트 머리말에 있다.
+
+```sh
+cd /opt/audeniq && ./build-on-server.sh            # origin/main
+BUILD_ONLY=1 ./build-on-server.sh <커밋>           # 이미지만 (배포는 나중에 ./deploy.sh <digest>)
+```
+
+빌드 중에는 서버 CPU·메모리를 많이 쓴다(release는 fat LTO). 사용자가 적은 시간에 돌리고, 메모리가 8GB보다 적으면 스왑을 먼저 늘린다. CI가 돌아오면 다시 CI 이미지로 배포한다.
+
+Studio·관리자 화면(Cloudflare Workers)은 백엔드 배포 뒤에 개발 PC에서 올린다 (`CLOUDFLARE_API_TOKEN`·`CLOUDFLARE_ACCOUNT_ID` 필요):
+
+```sh
+cd web/studio/app && bun install --frozen-lockfile && bun run test && bun run build
+cd .. && npx --yes wrangler@4.141.0 deploy
+```
+
 ### PostgreSQL 17 → 18 (한 번)
 
 이미지는 `postgres:18-trixie`이고 데이터는 새 볼륨 `pg18_prod`에 둔다(18은 `/var/lib/postgresql/18/docker`에
