@@ -586,10 +586,8 @@ fn public_table(name: &str) -> Option<Table> {
     Table::parse(name).filter(|t| *t != Table::Maintenance)
 }
 
-async fn public_list(State(s): State<AppState>, Path(name): Path<String>) -> Response {
-    let Some(table) = public_table(&name) else {
-        return fail(StatusCode::NOT_FOUND, "NOT_FOUND");
-    };
+/// 공개된 공지·이벤트 목록 (게시 시각이 지난 것, 최대 200개). MCP 공개 도구도 쓴다.
+pub async fn published(s: &AppState, table: Table) -> Result<Vec<Value>, Error> {
     let now = now_utc();
     let sql = format!(
         "SELECT {} FROM content.{} WHERE deleted_at IS NULL AND published_at <= $1 ORDER BY {} LIMIT 200",
@@ -597,20 +595,43 @@ async fn public_list(State(s): State<AppState>, Path(name): Path<String>) -> Res
         table.name(),
         table.order()
     );
-    match sqlx::query_scalar::<_, Value>(sqlx::AssertSqlSafe(sql))
+    let rows = sqlx::query_scalar::<_, Value>(sqlx::AssertSqlSafe(sql))
         .bind(now)
         .fetch_all(&s.pool)
-        .await
-    {
-        Ok(rows) => {
-            let today = today_kst(now);
-            let items: Vec<Value> = rows
-                .into_iter()
-                .map(|r| present(table, r, &today))
-                .collect();
-            reply(StatusCode::OK, json!({"items": items}), PUBLIC_CACHE)
-        }
-        Err(e) => from_error(e.into()),
+        .await?;
+    let today = today_kst(now);
+    Ok(rows
+        .into_iter()
+        .map(|r| present(table, r, &today))
+        .collect())
+}
+
+/// 공개된 공지·이벤트 하나. 없거나 아직 게시 전이면 `None`.
+pub async fn published_one(s: &AppState, table: Table, id: &str) -> Result<Option<Value>, Error> {
+    if !valid_id(id) {
+        return Ok(None);
+    }
+    let now = now_utc();
+    let sql = format!(
+        "SELECT {} FROM content.{} WHERE id = $1 AND deleted_at IS NULL AND published_at <= $2",
+        table.json(),
+        table.name()
+    );
+    let row = sqlx::query_scalar::<_, Value>(sqlx::AssertSqlSafe(sql))
+        .bind(id)
+        .bind(now)
+        .fetch_optional(&s.pool)
+        .await?;
+    Ok(row.map(|r| present(table, r, &today_kst(now))))
+}
+
+async fn public_list(State(s): State<AppState>, Path(name): Path<String>) -> Response {
+    let Some(table) = public_table(&name) else {
+        return fail(StatusCode::NOT_FOUND, "NOT_FOUND");
+    };
+    match published(&s, table).await {
+        Ok(items) => reply(StatusCode::OK, json!({"items": items}), PUBLIC_CACHE),
+        Err(e) => from_error(e),
     }
 }
 
@@ -621,28 +642,10 @@ async fn public_get(
     let Some(table) = public_table(&name) else {
         return fail(StatusCode::NOT_FOUND, "NOT_FOUND");
     };
-    if !valid_id(&id) {
-        return fail(StatusCode::NOT_FOUND, "NOT_FOUND");
-    }
-    let now = now_utc();
-    let sql = format!(
-        "SELECT {} FROM content.{} WHERE id = $1 AND deleted_at IS NULL AND published_at <= $2",
-        table.json(),
-        table.name()
-    );
-    match sqlx::query_scalar::<_, Value>(sqlx::AssertSqlSafe(sql))
-        .bind(&id)
-        .bind(now)
-        .fetch_optional(&s.pool)
-        .await
-    {
-        Ok(Some(row)) => reply(
-            StatusCode::OK,
-            present(table, row, &today_kst(now)),
-            PUBLIC_CACHE,
-        ),
+    match published_one(&s, table, &id).await {
+        Ok(Some(row)) => reply(StatusCode::OK, row, PUBLIC_CACHE),
         Ok(None) => fail(StatusCode::NOT_FOUND, "NOT_FOUND"),
-        Err(e) => from_error(e.into()),
+        Err(e) => from_error(e),
     }
 }
 

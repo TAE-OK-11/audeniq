@@ -8,6 +8,8 @@
 //!   bound to one user, one workspace and the scopes the user approved.
 //! - [`login`]: other ways to connect: device authorization (link + code),
 //!   password grant for operator-registered agents, Studio connection tokens.
+//! - [`public`]: tools that need no account (notices, events, service
+//!   status, release requirements) under daily limits per IP / per user.
 //! - [`protocol`]: Streamable HTTP + JSON-RPC (2026-07-28 per-request
 //!   metadata and the earlier `initialize`-based revisions).
 //! - [`tools`]: tool schemas and handlers. Handlers only call the existing
@@ -20,6 +22,7 @@
 pub mod login;
 pub mod oauth;
 pub mod protocol;
+pub mod public;
 pub mod tools;
 
 use crate::api::AppState;
@@ -49,6 +52,15 @@ pub const SCOPES: [&str; 5] = [
 /// Path of the MCP endpoint (behind the edge at the Studio origin).
 pub const MCP_PATH: &str = "/api/mcp";
 
+/// Public tools (notices, events, service status, release requirements)
+/// without signing in: calls per IP address per day (KST). Above it the
+/// client is asked to connect an account.
+pub const DEFAULT_PUBLIC_DAILY_ANONYMOUS: i32 = 10;
+/// Public tools for a signed-in user: calls per day (KST). Above it the
+/// artist contacts support; an operator can raise one user's limit
+/// (`audeniq-admin mcp-limit`).
+pub const DEFAULT_PUBLIC_DAILY_USER: i32 = 150;
+
 /// Default AI payout limit: 300,000원 per request and per 24 hours.
 pub const DEFAULT_PAYOUT_LIMIT_KRW: i64 = 300_000;
 
@@ -64,6 +76,10 @@ pub struct Settings {
     /// Largest payout (KRW) an AI assistant may request, per request and in
     /// total over 24 hours; above it the artist uses the Studio. 0 = never.
     pub payout_limit_krw: i64,
+    /// Public tools per IP per day without an account.
+    pub public_daily_anonymous: i32,
+    /// Public tools per signed-in user per day (unless overridden).
+    pub public_daily_user: i32,
 }
 
 impl Settings {
@@ -73,6 +89,8 @@ impl Settings {
             cimd_hosts: Vec::new(),
             dynamic_registration: false,
             payout_limit_krw: 0,
+            public_daily_anonymous: DEFAULT_PUBLIC_DAILY_ANONYMOUS,
+            public_daily_user: DEFAULT_PUBLIC_DAILY_USER,
         }
     }
     pub fn from_env() -> Self {
@@ -80,6 +98,13 @@ impl Settings {
             Ok("true" | "1") => true,
             Ok("false" | "0") => false,
             _ => default,
+        };
+        let count = |name: &str, default: i32| {
+            std::env::var(name)
+                .ok()
+                .and_then(|v| v.trim().parse::<i32>().ok())
+                .filter(|v| *v >= 0)
+                .unwrap_or(default)
         };
         let cimd_hosts = std::env::var("AUDENIQ_MCP_CIMD_HOSTS")
             .unwrap_or_else(|_| "chatgpt.com,claude.ai".into())
@@ -96,6 +121,11 @@ impl Settings {
                 .and_then(|v| v.trim().parse::<i64>().ok())
                 .filter(|v| *v >= 0)
                 .unwrap_or(DEFAULT_PAYOUT_LIMIT_KRW),
+            public_daily_anonymous: count(
+                "AUDENIQ_MCP_PUBLIC_DAILY_ANONYMOUS",
+                DEFAULT_PUBLIC_DAILY_ANONYMOUS,
+            ),
+            public_daily_user: count("AUDENIQ_MCP_PUBLIC_DAILY_USER", DEFAULT_PUBLIC_DAILY_USER),
         }
     }
 }

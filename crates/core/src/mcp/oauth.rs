@@ -1639,6 +1639,8 @@ mod tests {
             cimd_hosts: vec!["chatgpt.com".into()],
             dynamic_registration: true,
             payout_limit_krw: 0,
+            public_daily_anonymous: 10,
+            public_daily_user: 150,
         };
         assert!(cimd_allowed(&s, "https://chatgpt.com/oauth/client.json"));
         assert!(!cimd_allowed(
