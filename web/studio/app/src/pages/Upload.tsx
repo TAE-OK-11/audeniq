@@ -88,7 +88,7 @@ const CONDITIONAL_RIGHTS: [string, string, (o: ReleaseOptions) => boolean][] = [
   ['rightsSamples', '샘플링·피처링 관련 제3자 권리 허락을 확보했어요.', o => o.sample || o.featured],
   ['rightsAi', 'AI 생성·보조 제작물의 플랫폼 수용 기준을 확인했어요.', o => o.ai],
   ['rightsShared', '공동 권리자와의 배급 위임 범위를 확인했어요.', o => o.shared],
-  ['rightsRerelease', '기존 발매와의 중복 송출 여부를 확인했어요.', o => o.rerelease],
+  ['rightsRerelease', '이전 발매와 겹쳐 보내지 않는지 확인했어요.', o => o.rerelease],
 ];
 
 interface Track {
@@ -190,17 +190,17 @@ const EMPTY: WizardForm = {
 };
 
 const SERVICE_OPTIONS: [keyof ReleaseOptions, string, string][] = [
-  ['express', '신속 발매 요청', '희망 일정과 우선 검토 가능 여부를 확인해요.'],
+  ['express', '신속 발매 요청', '원하는 일정에 먼저 검토할 수 있는지 확인해요.'],
 ];
 
 const RIGHTS_OPTIONS: [keyof ReleaseOptions, string, string][] = [
   ['minor', '미성년 아티스트·권리자', '법정대리인의 동의와 권한 확인이 필요해요.'],
   ['cover', '커버곡', '원곡의 작사·작곡 저작물 이용 권한을 확인해요.'],
   ['sample', '샘플링·타인 음원 사용', '원본 음원과 저작물의 이용 허락을 확인해요.'],
-  ['featured', '피처링·공동 실연', '참여자 크레딧 및 필요한 이용 허락을 확인해요.'],
+  ['featured', '피처링·공동 실연', '참여자 크레딧과 필요한 이용 허락을 확인해요.'],
   ['ai', 'AI 생성·보조 제작', '제작 방식과 각 플랫폼의 수용 기준을 검토해요.'],
   ['shared', '공동 권리자·레이블 계약', '각 권리자와 배급 위임 범위를 확인해요.'],
-  ['rerelease', '기존 발매 이전·재발매', '이전 발매의 음반·음원 코드와 중복 발매 여부를 확인해요.'],
+  ['rerelease', '기존 발매 이전·재발매', '이전 발매의 음반·음원 코드와 겹치지 않는지 확인해요.'],
 ];
 
 const OPTIONS_CATALOG: [keyof ReleaseOptions, string, string][] = [
@@ -296,7 +296,7 @@ function DocAttach({ id, label, fileName, assetId, busy, onSelect, required, hel
         id={id} fileName={fileName} busy={busy}
         accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
         hint={help || 'PDF · JPG · PNG'}
-        status={fileName ? (assetId ? '서버에 등록됨 · 다시 누르면 바꿀 수 있어요' : '다시 첨부해 주세요 (서버 등록 기록 없음)') : undefined}
+        status={fileName ? (assetId ? '올렸어요 · 다시 누르면 바꿀 수 있어요' : '올린 기록이 없어요. 다시 첨부해 주세요') : undefined}
         onFile={f => onSelect(f)}
       /></>}
       {docs.map(d => <button key={d.id} type="button" className="aq-rights-receipt" onClick={() => onOpenDoc(d.id)}><CheckIcon size={16} /><span>{d.electronic?.rights_holder} · {d.reviewStatus === 'needs' ? '보완 요청' : '서명 완료'}<small>{d.reviewStatus === 'approved' ? 'AUDENIQ 검토 승인' : d.reviewStatus === 'needs' ? d.reviewNote : 'AUDENIQ 검토 중'} · 문서 보기</small></span></button>)}
@@ -858,7 +858,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
         </div>
         <div className="ui-field"><label htmlFor="aqRereleaseAudio">이번 음원은 기존 녹음과 같은가요? <span className="required">*</span></label>
           <select id="aqRereleaseAudio" value={o.rereleaseAudio ?? ''} onChange={e => set('options', { ...o, rereleaseAudio: e.target.value as RereleaseData['rereleaseAudio'], rereleaseAck: false })}>
-            <option value="">선택해 주세요</option><option value="same">같은 녹음 · 음원 내용 변경 없음</option><option value="changed">새 녹음·리믹스 등 음악 내용 변경</option><option value="unknown">리마스터 등 변경 여부 확인 필요</option>
+            <option value="">선택해 주세요</option><option value="same">같은 녹음 · 음원 내용 변경 없음</option><option value="changed">새 녹음·리믹스 등 음악 내용 변경</option><option value="unknown">리마스터처럼 바뀐 점이 있는지 확인이 필요해요</option>
           </select>
         </div>
         {o.rereleaseAudio && <div className="aq-option-note" role="status">
@@ -868,7 +868,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
         </div>}
         <div className="ui-field"><label htmlFor="aqPreviousUpc">기존 음반 코드 UPC <span className="aq-optional">선택</span></label>
           <input id="aqPreviousUpc" inputMode="numeric" maxLength={14} value={o.previousUpc ?? ''} onChange={e => setOpt('previousUpc', e.target.value)} placeholder="기존 앨범·싱글의 UPC" />
-          {o.rereleaseKind === 'transfer' && o.rereleaseAudio === 'same' && o.previousUpc && <button type="button" className="ui-btn is-white is-sm" onClick={() => set('upc', o.previousUpc ?? '')}>동일한 음반의 UPC를 배급 설정에 적용</button>}
+          {o.rereleaseKind === 'transfer' && o.rereleaseAudio === 'same' && o.previousUpc && <button type="button" className="ui-btn is-white is-sm" onClick={() => set('upc', o.previousUpc ?? '')}>같은 음반의 UPC를 배급 설정에 넣기</button>}
           <p className="ui-field-help">트랙 구성이나 버전이 다른 음반은 새 UPC를 사용해요. 기존 UPC는 이전 유통사에서 확인할 수 있어요.</p>
         </div>
         <h4>트랙별 기존 ISRC</h4>
@@ -1009,8 +1009,8 @@ function FinalReviewBanner({ form }: { form: WizardForm }) {
   const o = form.options;
   const chosen = selectedOptions(o);
   const warnings: string[] = [];
-  if (o.express) warnings.push('신속 발매: 희망일 및 이용 조건 확인 후 진행');
-  if (o.minor) warnings.push('미성년: 법정대리인 동의서 및 자격 확인 필요');
+  if (o.express) warnings.push('신속 발매: 원하는 날짜와 이용 조건을 확인한 뒤 진행');
+  if (o.minor) warnings.push('미성년: 법정대리인 동의서와 자격 확인 필요');
   if (o.ai) warnings.push('AI 음원: 이용 권한과 플랫폼별 허용 기준 확인 필요');
   if (chosen.length) warnings.push('필요한 허락서·동의서는 AUDENIQ 전자 문서 작성 또는 보유 서류 첨부로 준비');
   if (o.rerelease) warnings.push(rereleaseSummary(o));
@@ -1057,7 +1057,7 @@ function FinalReviewBanner({ form }: { form: WizardForm }) {
 /** 업로드 진행 표시 */
 function UploadStatus({ upload, idle }: { upload?: UploadState; idle: string }) {
   if (!upload || upload.state === 'done') return <p className="ui-field-help">{idle}</p>;
-  if (upload.state === 'error') return <p className="ui-field-help aq-help-error" role="alert">{upload.message || '업로드에 실패했어요. 파일을 다시 선택해 주세요.'}</p>;
+  if (upload.state === 'error') return <p className="ui-field-help aq-help-error" role="alert">{upload.message || '파일을 올리지 못했어요. 다시 선택해 주세요.'}</p>;
   const pct = Math.round(upload.pct * 100);
   return (
     <div className="aq-upload-progress" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="업로드 진행률">
@@ -1338,7 +1338,7 @@ function ensureReleaseDocuments(f: WizardForm, releaseId: string) {
     ...base, id: uid('doc'), kind: 'agreements',
     title: title + ' · AUDENIQ 디지털 음원 배급 신청·계약서',
     content: lines.join('\n'),
-    reviewHistory: [{ status: '접수 요청', time: at, detail: '신청서가 작성됐어요. 담당자 검토 후 서명을 진행할 수 있어요.' }],
+    reviewHistory: [{ status: '접수 요청', time: at, detail: '신청서를 만들었어요. 담당자 검토가 끝나면 서명할 수 있어요.' }],
     reviewStatus: 'prepared',
   };
   if (!existing.some(d => d.kind === 'rights')) addDoc(rights);
@@ -1438,7 +1438,7 @@ export function Upload() {
       return r.assetId;
     } catch (e) {
       if (ctrl.signal.aborted) return null;
-      setUpload(key, { pct: 0, state: 'error', message: errorMessage(e, '업로드에 실패했어요. 파일을 다시 선택해 주세요.') });
+      setUpload(key, { pct: 0, state: 'error', message: errorMessage(e, '파일을 올리지 못했어요. 다시 선택해 주세요.') });
       return null;
     } finally {
       if (uploadAborts.current.get(key) === ctrl) uploadAborts.current.delete(key);
@@ -1770,8 +1770,8 @@ export function Upload() {
         if (!t.audioName) return fail(`트랙 ${k + 1}의 음원 파일을 선택해 주세요.`, `#trackFile-${k}`);
         const up = uploads[t.id];
         if (up?.state === 'uploading') return fail(`트랙 ${k + 1}의 음원을 올리는 중이에요. 업로드가 끝나면 다음으로 넘어갈 수 있어요.`, null);
-        if (up?.state === 'error') return fail(`트랙 ${k + 1}의 음원 업로드에 실패했어요. 파일을 다시 선택해 주세요.`, `#trackFile-${k}`);
-        if (!MOCK && !t.assetId) return fail(`트랙 ${k + 1}의 음원 파일을 다시 선택해 주세요. (업로드 기록이 없어요)`, `#trackFile-${k}`);
+        if (up?.state === 'error') return fail(`트랙 ${k + 1}의 음원 파일을 올리지 못했어요. 다시 선택해 주세요.`, `#trackFile-${k}`);
+        if (!MOCK && !t.assetId) return fail(`트랙 ${k + 1}의 음원을 올린 기록이 없어요. 파일을 다시 선택해 주세요.`, `#trackFile-${k}`);
         const dupIsrc = t.isrc.trim() && form.tracks.findIndex(o => o.isrc.trim() && normalizeIsrc(o.isrc) === normalizeIsrc(t.isrc)) !== k;
         if (dupIsrc) {
           setExpandedTracks(prev => new Set(prev).add(t.id));
@@ -1790,8 +1790,8 @@ export function Upload() {
     if (i === 2) {
       if (!form.coverName) return fail('커버아트를 등록해 주세요.', '#coverFile');
       if (uploads.cover?.state === 'uploading') return fail('커버아트를 올리는 중이에요. 업로드가 끝나면 다음으로 넘어갈 수 있어요.', null);
-      if (uploads.cover?.state === 'error') return fail('커버아트 업로드에 실패했어요. 이미지를 다시 선택해 주세요.', '#coverFile');
-      if (!MOCK && !form.coverAssetId) return fail('커버아트를 다시 선택해 주세요. (업로드 기록이 없어요)', '#coverFile');
+      if (uploads.cover?.state === 'error') return fail('커버아트를 올리지 못했어요. 이미지를 다시 선택해 주세요.', '#coverFile');
+      if (!MOCK && !form.coverAssetId) return fail('커버아트를 올린 기록이 없어요. 이미지를 다시 선택해 주세요.', '#coverFile');
     }
     if (i === 3) {
       if (!form.releaseDate) return fail('발매일을 선택해 주세요.', '#f-releaseDate');
@@ -2158,10 +2158,10 @@ export function Upload() {
   const saveLabel = !canAutoSave ? '수정 중'
     : save.kind === 'saving' ? '저장 중'
     : save.kind === 'saved' ? `저장됨 ${save.at}`
-    : save.kind === 'error' ? '저장 실패' : '';
+    : save.kind === 'error' ? '저장 안 됨' : '';
   const saveTitle = !canAutoSave ? '수정 내용은 마지막 단계에서 ‘수정 완료’를 눌러야 반영돼요.'
     : save.kind === 'saved' ? `${save.at}에 자동으로 저장했어요.`
-    : save.kind === 'error' ? (save.message || '자동 저장에 실패했어요. 네트워크를 확인해 주세요.') : '';
+    : save.kind === 'error' ? (save.message || '자동으로 저장하지 못했어요. 인터넷 연결을 확인해 주세요.') : '';
 
   return (
     <section id="view-new" className="view">

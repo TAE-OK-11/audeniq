@@ -301,7 +301,7 @@ export function Settlement() {
               <strong>{payment.bank}</strong>
               <span>•••• {payment.last4} · {payment.recipient}</span>
             </span>
-            <span className="settle-hero-link" aria-hidden="true">변경</span>
+            <span className="settle-hero-link" aria-hidden="true">바꾸기</span>
           </button>
         )}
         <div className="settle-hero-actions">
@@ -439,7 +439,7 @@ export function Settlement() {
           <div className="studio-payout-form">
             <p className="eyebrow">지급 요청 가능 금액</p>
             <strong className="studio-payout-number"><Money value={left} mark /></strong>
-            <p className="small muted">원하는 금액을 입력하고 받으실 계좌를 확인해 주세요.</p>
+            <p className="small muted">원하는 금액을 입력하고 받을 계좌를 확인해 주세요.</p>
             <form id="payoutForm" onSubmit={submitPayout}>
               <div className="ui-field">
                 <label htmlFor="pAmount">받을 금액 (원)</label>
@@ -456,7 +456,7 @@ export function Settlement() {
                 <p className="ui-field-help">
                   {!MOCK && Number(amount) > 0
                     ? `출금 수수료 ${payoutFee(Number(amount)) ? money(payoutFee(Number(amount))) : '무료'} · 실수령 ${money(Math.max(0, Number(amount) - payoutFee(Number(amount))))}`
-                    : '요청 가능 금액을 초과할 수 없어요.'}
+                    : '요청할 수 있는 금액보다 많아요.'}
                 </p>
               </div>
               <div className="studio-receive-account">
@@ -467,7 +467,7 @@ export function Settlement() {
                     {payment?.recipient || '받는 분 등록 전'} · {payment?.last4 ? `•••• ${payment.last4}` : '계좌 등록 전'}
                   </p>
                 </div>
-                <span className="studio-account-check" aria-label="선택된 수령 계좌"><CheckIcon size={12} /></span>
+                <span className="studio-account-check" aria-label="받을 계좌"><CheckIcon size={12} /></span>
               </div>
               {MOCK && <div className="ui-field">
                 <label htmlFor="pNote">메모<span className="aq-optional">선택</span></label>
@@ -478,7 +478,7 @@ export function Settlement() {
               </div>}
               <div className="doc-connection">
                 {MOCK
-                  ? '신청 내용은 현재 작업 공간에 저장돼요. 지급 서비스가 연결되기 전에는 실제 송금이 진행되지 않아요.'
+                  ? '신청 내용은 현재 작업 공간에 저장돼요. 지급 서비스가 연결되기 전에는 실제로 송금되지 않아요.'
                   : `담당자가 확인한 뒤 등록한 계좌로 보내 드려요. 30,000원 이하는 수수료 500원(부가가치세 포함), 초과는 무료예요.${minimum > 0 ? ` ${money(minimum)} 이상부터 요청할 수 있어요.` : ' 2027년 12월 31일까지는 최소 출금금액 없이 요청할 수 있어요.'} 담당자가 승인하기 전까지는 취소할 수 있어요.`}
               </div>
               <div className="aq-sticky-foot">
