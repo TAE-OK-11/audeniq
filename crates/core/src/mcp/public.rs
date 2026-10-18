@@ -1,13 +1,11 @@
 //! Public tools: AUDENIQ information that needs no account (notices,
 //! events, service status, release requirements).
 //!
-//! Without a token a client may call them [`Settings::public_daily_anonymous`]
-//! times per IP address per day (KST); after that it gets 401 and the
-//! assistant asks the artist to connect an account. A connected user gets
-//! [`Settings::public_daily_user`] calls a day (or the limit an operator set
-//! for them in `identity.mcp_usage_limits`) and is then pointed to support.
+//! Without a token anyone may call them; nothing is counted. A connected
+//! user gets [`Settings::public_daily_user`] calls a day (or the limit an
+//! operator set for them in `identity.mcp_usage_limits`) and is then
+//! pointed to support.
 //!
-//! [`Settings::public_daily_anonymous`]: super::Settings::public_daily_anonymous
 //! [`Settings::public_daily_user`]: super::Settings::public_daily_user
 use super::oauth::Principal;
 use super::tools::{
@@ -23,22 +21,6 @@ use chrono::{Duration, FixedOffset, TimeZone, Utc};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
-
-pub enum Caller<'a> {
-    /// No token: counted per client IP (the edge's `x-audeniq-client-ip`).
-    Anonymous {
-        source: String,
-    },
-    User(&'a Principal),
-}
-
-pub enum Outcome {
-    /// The JSON-RPC `result` of `tools/call`.
-    Result(Value),
-    /// The anonymous daily allowance is used up: answer 401 so the client
-    /// starts account linking.
-    SignInRequired { limit: i32, resets_at: String },
-}
 
 /// The next midnight in Korea, when the daily counts start over.
 fn resets_at() -> String {
@@ -73,56 +55,55 @@ async fn user_limit(s: &AppState, user: Uuid) -> Result<i32> {
     Ok(own.unwrap_or(s.mcp.public_daily_user))
 }
 
-pub async fn call(s: &AppState, def: &ToolDef, args: Value, caller: Caller<'_>) -> Result<Outcome> {
-    let (key, limit, signed_in) = match &caller {
-        Caller::Anonymous { source } => (
-            format!("mcp-public:ip:{source}"),
-            s.mcp.public_daily_anonymous,
-            false,
-        ),
-        Caller::User(p) => (
-            format!("mcp-public:user:{}", p.actor.user),
-            user_limit(s, p.actor.user).await?,
-            true,
-        ),
-    };
-    let used = count(&s.pool, &key).await?;
-    if used > limit {
-        tracing::info!(tool = def.name, signed_in, limit, "mcp_public_limit");
-        if !signed_in {
-            return Ok(Outcome::SignInRequired {
-                limit,
-                resets_at: resets_at(),
-            });
+/// Runs a public tool; returns the JSON-RPC `result` of `tools/call`.
+/// `user`: the connected account, if a valid token came with the call.
+pub async fn call(
+    s: &AppState,
+    def: &ToolDef,
+    args: Value,
+    user: Option<&Principal>,
+) -> Result<Value> {
+    let mut usage = json!({"signed_in": user.is_some()});
+    if let Some(p) = user {
+        let limit = user_limit(s, p.actor.user).await?;
+        let used = count(&s.pool, &format!("mcp-public:user:{}", p.actor.user)).await?;
+        if used > limit {
+            tracing::info!(tool = def.name, limit, "mcp_public_limit");
+            let mut e = tool_error(
+                "DAILY_LIMIT_REACHED",
+                "Today's limit for AUDENIQ's public information is used up. To use more, the artist asks AUDENIQ support to raise it (create_inquiry, or the support page in AUDENIQ Studio).",
+            );
+            e.details = Some(json!({
+                "limit": limit,
+                "resets_at": resets_at(),
+                "support_url": format!("{}/inquiries", super::issuer(s)),
+            }));
+            return Ok(err_result(e));
         }
-        let mut e = tool_error(
-            "DAILY_LIMIT_REACHED",
-            "Today's limit for AUDENIQ's public information is used up. To use more, the artist asks AUDENIQ support to raise it (create_inquiry, or the support page in AUDENIQ Studio).",
-        );
-        e.details = Some(json!({
+        usage = json!({
+            "signed_in": true,
             "limit": limit,
-            "resets_at": resets_at(),
-            "support_url": format!("{}/inquiries", super::issuer(s)),
-        }));
-        return Ok(Outcome::Result(err_result(e)));
+            "used_today": used,
+            "remaining_today": (limit - used).max(0),
+        });
     }
     if let Some(invalid) = invalid_arguments(def, &args) {
-        return Ok(Outcome::Result(invalid));
+        return Ok(invalid);
     }
     let outcome = run(s, def, &args).await;
-    tracing::info!(tool = def.name, signed_in, ok = outcome.is_ok(), "mcp_tool");
-    Ok(Outcome::Result(match outcome {
+    tracing::info!(
+        tool = def.name,
+        signed_in = user.is_some(),
+        ok = outcome.is_ok(),
+        "mcp_tool"
+    );
+    Ok(match outcome {
         Ok(mut v) => {
-            v["usage"] = json!({
-                "signed_in": signed_in,
-                "limit": limit,
-                "used_today": used,
-                "remaining_today": (limit - used).max(0),
-            });
+            v["usage"] = usage;
             ok_result(v.to_string(), v)
         }
         Err(e) => err_result(e),
-    }))
+    })
 }
 
 async fn run(s: &AppState, def: &ToolDef, args: &Value) -> std::result::Result<Value, ToolError> {

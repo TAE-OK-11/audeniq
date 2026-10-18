@@ -56,7 +56,6 @@ async fn app_with(pool: PgPool, enabled: bool, bypass_dsp_gate: bool) -> (Router
         cimd_hosts: vec!["clients.example.test".into()],
         dynamic_registration: true,
         payout_limit_krw: 300_000,
-        public_daily_anonymous: 10,
         public_daily_user: 150,
     });
     (router(s), store)
@@ -2672,10 +2671,7 @@ async fn public_tools_need_no_account_within_daily_limits(pool: PgPool) {
     );
     assert_eq!(r["items"][0]["url"], format!("{ORIGIN}/notices/n-holiday"));
     assert!(r["items"][0].get("body").is_none());
-    assert_eq!(
-        r["usage"],
-        json!({"signed_in": false, "limit": 10, "used_today": 1, "remaining_today": 9})
-    );
+    assert_eq!(r["usage"], json!({"signed_in": false}));
 
     let (_, _, v) = anon_tool(
         &app,
@@ -2709,30 +2705,16 @@ async fn public_tools_need_no_account_within_daily_limits(pool: PgPool) {
     let (s, _, _) = anon_tool(&app, ip, "list_releases", json!({})).await;
     assert_eq!(s, StatusCode::UNAUTHORIZED);
 
-    // 6 calls so far; the 11th of the day asks to sign in.
-    for _ in 0..4 {
-        let (s, _, _) = anon_tool(&app, ip, "get_release_requirements", json!({})).await;
-        assert_eq!(s, StatusCode::OK);
+    // Without an account nothing is counted: no daily cap.
+    for _ in 0..30 {
+        let (s, _, v) = anon_tool(&app, ip, "list_announcements", json!({})).await;
+        assert_eq!(s, StatusCode::OK, "{v}");
     }
-    let (s, h, v) = anon_tool(&app, ip, "list_announcements", json!({})).await;
-    assert_eq!(s, StatusCode::UNAUTHORIZED, "{v}");
-    assert!(
-        h["www-authenticate"]
-            .to_str()
-            .unwrap()
-            .contains("resource_metadata=")
-    );
-    assert_eq!(v["error"]["data"]["reason"], "DAILY_ANONYMOUS_LIMIT");
-    assert_eq!(v["error"]["data"]["limit"], 10);
-    assert!(
-        v["error"]["data"]["resets_at"]
-            .as_str()
-            .unwrap()
-            .ends_with("T15:00:00Z")
-    );
-    // Another address has its own allowance.
-    let (s, _, _) = anon_tool(&app, "198.51.100.7", "list_announcements", json!({})).await;
-    assert_eq!(s, StatusCode::OK);
+    let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM identity.mcp_daily_usage")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 0);
 
     // Signed in: the user's own daily count, then support.
     let u = user(&app).await;

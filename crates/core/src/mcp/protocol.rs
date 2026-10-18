@@ -124,8 +124,8 @@ fn server_error(id: &Value, e: Error) -> Response {
     )
 }
 
-/// A public tool: anyone, counted per IP per day without a token, per user
-/// with one. A token that is sent must be valid (the client refreshes it).
+/// A public tool: anyone without a token; counted per user with one. A
+/// token that is sent must be valid (the client refreshes it).
 async fn public_call(
     s: &AppState,
     h: &HeaderMap,
@@ -144,35 +144,8 @@ async fn public_call(
     } else {
         None
     };
-    let caller = match &principal {
-        Some(p) => public::Caller::User(p),
-        None => public::Caller::Anonymous {
-            source: crate::auth::client_ip_key(h).unwrap_or_else(|| "unknown".into()),
-        },
-    };
-    match public::call(s, def, args, caller).await {
-        Ok(public::Outcome::Result(v)) => rpc_result(id, complete(v)),
-        Ok(public::Outcome::SignInRequired { limit, resets_at }) => {
-            let mut r = rpc_error(
-                StatusCode::UNAUTHORIZED,
-                id,
-                -32001,
-                &format!(
-                    "Without an account this is limited to {limit} calls a day. Connect your AUDENIQ account to continue."
-                ),
-                Some(
-                    json!({"reason": "DAILY_ANONYMOUS_LIMIT", "limit": limit, "resets_at": resets_at}),
-                ),
-            );
-            r.headers_mut().insert(
-                header::WWW_AUTHENTICATE,
-                challenge(
-                    s,
-                    ", error=\"invalid_token\", error_description=\"Daily limit without an account reached; connect your AUDENIQ account\"",
-                ),
-            );
-            r
-        }
+    match public::call(s, def, args, principal.as_ref()).await {
+        Ok(v) => rpc_result(id, complete(v)),
         Err(e) => server_error(e),
     }
 }
