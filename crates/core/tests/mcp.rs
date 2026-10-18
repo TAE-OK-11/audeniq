@@ -29,6 +29,9 @@ use support::{MemStore, ORIGIN, SECRET, User, call, register_asset, user};
 const REDIRECT: &str = "https://client.example.test/callback";
 const VERIFIER: &str = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
 const CHALLENGE: &str = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+/// Stands in for an audio file uploaded in Studio: these tests never run QC
+/// on it (no ffmpeg or analyzer needed), only its registration and hash.
+const AUDIO: &[u8] = b"RIFF\x24\x00\x00\x00WAVEfmt mcp-test-audio";
 
 async fn app_with(pool: PgPool, enabled: bool, bypass_dsp_gate: bool) -> (Router, Arc<MemStore>) {
     database::MIGRATOR.run(&pool).await.unwrap();
@@ -52,6 +55,7 @@ async fn app_with(pool: PgPool, enabled: bool, bypass_dsp_gate: bool) -> (Router
         enabled,
         cimd_hosts: vec!["clients.example.test".into()],
         dynamic_registration: true,
+        payout_limit_krw: 300_000,
     });
     (router(s), store)
 }
@@ -230,7 +234,7 @@ async fn connect(app: &Router, u: &User, scopes: &[&str]) -> Conn {
         app,
         u,
         &client_id,
-        "releases:read releases:write releases:submit",
+        "releases:read releases:write releases:submit settlement:read payouts:request",
     )
     .await;
     let (s, location) = approve(app, u, &request, scopes).await;
@@ -351,7 +355,7 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
     let (s, _, v) = rpc(&app, None, "tools/list", json!({})).await;
     assert_eq!(s, StatusCode::OK);
     let tools = v["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 13);
+    assert_eq!(tools.len(), 23);
     for t in tools {
         assert_eq!(
             t["inputSchema"]["additionalProperties"], false,
@@ -1175,7 +1179,7 @@ async fn conversational_release_preparation_to_confirmed_submission(pool: PgPool
     );
 
     // The artist uploads audio in Studio (simulated: a registered asset).
-    let asset = register_asset(&pool, &store, &u, "night.wav", support::wav_bytes()).await;
+    let asset = register_asset(&pool, &store, &u, "night.wav", AUDIO).await;
     let (err, v) = tool(
         &app,
         &c.access,
@@ -1366,7 +1370,7 @@ async fn submit_scope_is_opt_in_and_platform_rules_are_enforced(pool: PgPool) {
     )
     .await;
     let release = rel["release_id"].as_str().unwrap().to_string();
-    let asset = register_asset(&pool, &store, &u, "t.wav", support::wav_bytes()).await;
+    let asset = register_asset(&pool, &store, &u, "t.wav", AUDIO).await;
     let (_, v) = tool(
         &app,
         &c.access,
@@ -1425,4 +1429,329 @@ async fn submit_scope_is_opt_in_and_platform_rules_are_enforced(pool: PgPool) {
         "release_id": release, "confirmation_token": "x".repeat(40), "declarations": declarations(true), "artist_confirmed": true}})).await;
     assert_eq!(s, StatusCode::FORBIDDEN, "{v}");
     assert_eq!(v["error"]["data"]["required_scope"], "releases:submit");
+}
+
+async fn fund(pool: &PgPool, u: &User, amount: &str) {
+    use audeniq_core::finance::{self, EntrySide, LedgerEntryInput, PostTransaction};
+    let entry = |account, side| LedgerEntryInput {
+        account,
+        side,
+        amount: amount.parse().unwrap(),
+        currency: None,
+        party_id: Some(u.party),
+        isrc: Some("KRA402600001"),
+        split_snapshot_id: None,
+    };
+    finance::post_transaction(
+        pool,
+        u.org,
+        PostTransaction {
+            transaction_code: "ROYALTY_ACCRUAL",
+            currency: "KRW",
+            entries: vec![
+                entry("ROYALTY_RECEIVABLE", EntrySide::Debit),
+                entry("ROYALTY_PAYABLE", EntrySide::Credit),
+            ],
+            match_status: Some("AUTO"),
+            fx_rate: None,
+            fee_policy_version: None,
+            contract_version: None,
+            tax_rule_version: None,
+            source_ref: json!({"isrc": "KRA402600001"}),
+            description: "accrual",
+            created_by: None,
+        },
+    )
+    .await
+    .unwrap();
+}
+
+async fn register_payout_account(app: &Router, u: &User, number: &str) {
+    let (s, v) = call(
+        app,
+        "PUT",
+        &format!("/api/orgs/{}/payout-account", u.org),
+        json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":number,
+               "consents":["settlement_terms","privacy","financial_info","payee_accuracy"]}),
+        Some(u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+}
+
+#[sqlx::test]
+async fn settlement_view_and_small_payouts_large_ones_go_to_studio(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let c = connect(&app, &u, &["scope_settlement", "scope_payout"]).await;
+    let preview = |amount: i64| {
+        let app = app.clone();
+        let access = c.access.clone();
+        async move { tool(&app, &access, "preview_payout", json!({"amount": amount})).await }
+    };
+    let request = |amount: i64, token: String| {
+        let app = app.clone();
+        let access = c.access.clone();
+        async move {
+            tool(
+                &app,
+                &access,
+                "request_payout",
+                json!({"amount": amount, "confirmation_token": token, "artist_confirmed": true}),
+            )
+            .await
+        }
+    };
+
+    let (err, v) = tool(&app, &c.access, "get_settlement_summary", json!({})).await;
+    assert!(!err, "{v}");
+    assert_eq!(v["available"], "0");
+    assert_eq!(v["account"]["registered"], false);
+    assert_eq!(v["assistant_payouts"]["limit_krw_per_24h"], 300_000);
+    // No account yet: no confirmation.
+    let (_, v) = preview(10_000).await;
+    assert_eq!(v["allowed"], false);
+    assert_eq!(v["blocked_by"]["code"], "PAYOUT_ACCOUNT_REQUIRED");
+
+    register_payout_account(&app, &u, "123456-78-901234").await;
+    fund(&pool, &u, "1000000").await;
+    let (_, v) = tool(&app, &c.access, "get_settlement_summary", json!({})).await;
+    assert_eq!(v["available"], "1000000");
+    assert_eq!(v["account"]["account_last4"], "1234");
+    assert!(
+        v["account"].get("holder_name").is_none(),
+        "the holder name stays in Studio"
+    );
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "list_settlement_statements",
+        json!({"limit": 5}),
+    )
+    .await;
+    assert!(!err && v["items"].as_array().unwrap().len() == 1, "{v}");
+    let (err, _) = tool(
+        &app,
+        &c.access,
+        "get_royalty_reports",
+        json!({"from": "2026-01", "to": "2026-10"}),
+    )
+    .await;
+    assert!(!err);
+
+    // Above the assistant limit: Studio only.
+    let (_, v) = preview(400_000).await;
+    assert_eq!(v["allowed"], false);
+    assert_eq!(v["blocked_by"]["code"], "PAYOUT_USE_STUDIO");
+    assert!(
+        v["blocked_by"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("/settlement")
+    );
+    assert!(v.get("confirmation_token").is_none());
+    // A small fee applies to small amounts (settlement terms).
+    let (_, v) = preview(20_000).await;
+    assert_eq!(
+        (v["fee"].as_str(), v["net"].as_str()),
+        (Some("500"), Some("19500"))
+    );
+
+    // Two previews issued before either is used: the cap is rechecked under
+    // the payout lock, so together they cannot pass the 24-hour limit.
+    let (_, p1) = preview(200_000).await;
+    let (_, p2) = preview(200_000).await;
+    let t1 = p1["confirmation_token"].as_str().unwrap().to_string();
+    let t2 = p2["confirmation_token"].as_str().unwrap().to_string();
+    let (err, v) = request(100_000, t1.clone()).await;
+    assert_eq!(
+        (err, v["error"]["code"].as_str()),
+        (true, Some("CONFIRMATION_INVALID"))
+    );
+    let (err, first) = request(200_000, t1.clone()).await;
+    assert!(!err, "{first}");
+    assert_eq!(first["status"], "REQUESTED");
+    assert_eq!(first["net"], "200000");
+    let (err, again) = request(200_000, t1).await;
+    assert!(!err);
+    assert_eq!(
+        again["payout_id"], first["payout_id"],
+        "a retry is the same request"
+    );
+    let (err, v) = request(200_000, t2).await;
+    assert_eq!(
+        (err, v["error"]["code"].as_str()),
+        (true, Some("PAYOUT_USE_STUDIO"))
+    );
+    let n: i64 = sqlx::query_scalar("SELECT count(*) FROM portal.payout_requests WHERE org_id=$1")
+        .bind(u.org)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 1);
+
+    // The account changed after the preview: refused.
+    let (_, p3) = preview(50_000).await;
+    register_payout_account(&app, &u, "999999-11-222222").await;
+    let (err, v) = request(50_000, p3["confirmation_token"].as_str().unwrap().into()).await;
+    assert_eq!(
+        (err, v["error"]["code"].as_str()),
+        (true, Some("PAYOUT_ACCOUNT_CHANGED"))
+    );
+
+    // Listing hides the holder name; cancelling frees the assistant limit again.
+    let (_, v) = tool(&app, &c.access, "list_payouts", json!({})).await;
+    let item = &v["items"][0];
+    assert!(item["account"].get("holder_name").is_none(), "{item}");
+    assert_eq!(item["cancellable"], true);
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "cancel_payout",
+        json!({"payout_id": first["payout_id"]}),
+    )
+    .await;
+    assert!(!err && v["status"] == "CANCELLED", "{v}");
+    let (_, v) = preview(300_000).await;
+    assert_eq!(v["allowed"], true, "{v}");
+    let audited: i64 = sqlx::query_scalar("SELECT count(*) FROM operations.audit_events WHERE action='mcp.request_payout' AND actor_user_id=$1")
+        .bind(u.user).fetch_one(&pool).await.unwrap();
+    assert_eq!(audited, 5, "every payout attempt is audited");
+}
+
+#[sqlx::test]
+async fn settlement_and_payouts_need_their_own_opt_in_scopes_and_the_owner(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let c = connect(&app, &u, &["scope_write"]).await;
+    for (name, args, scope) in [
+        ("get_settlement_summary", json!({}), "settlement:read"),
+        (
+            "preview_payout",
+            json!({"amount": 10000}),
+            "payouts:request",
+        ),
+    ] {
+        let (s, _, v) = rpc(
+            &app,
+            Some(&c.access),
+            "tools/call",
+            json!({"name": name, "arguments": args}),
+        )
+        .await;
+        assert_eq!(s, StatusCode::FORBIDDEN, "{name}: {v}");
+        assert_eq!(v["error"]["data"]["required_scope"], scope);
+    }
+    // An editor (not the owner) cannot get a payout confirmation.
+    let editor = user(&app).await;
+    sqlx::query("UPDATE identity.memberships SET status='REVOKED' WHERE user_id=$1")
+        .bind(editor.user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO identity.memberships(org_id,user_id,role) VALUES($1,$2,'EDITOR')")
+        .bind(u.org)
+        .bind(editor.user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let client_id = register_client(&app).await;
+    let request = consent_page(
+        &app,
+        &editor,
+        &client_id,
+        "releases:read settlement:read payouts:request",
+    )
+    .await;
+    let org = u.org.to_string();
+    let (_, h, _) = raw(
+        &app,
+        "POST",
+        "/api/oauth/authorize",
+        &[
+            ("cookie", &editor.cookie),
+            ("origin", ORIGIN),
+            ("content-type", "application/x-www-form-urlencoded"),
+        ],
+        form(&[
+            ("request", &request),
+            ("org", &org),
+            ("decision", "approve"),
+            ("scope_settlement", "on"),
+            ("scope_payout", "on"),
+        ]),
+    )
+    .await;
+    let code = query_param(h["location"].to_str().unwrap(), "code").unwrap();
+    let (_, t) = exchange(&app, &client_id, &code, VERIFIER).await;
+    let access = t["access_token"].as_str().unwrap();
+    let (_, v) = tool(&app, access, "preview_payout", json!({"amount": 10000})).await;
+    assert_eq!(v["blocked_by"]["code"], "PAYOUT_OWNER_ONLY", "{v}");
+}
+
+#[sqlx::test]
+async fn corrections_are_only_for_delivered_releases(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let c = connect(&app, &u, &["scope_write"]).await;
+    let (_, rel) = tool(
+        &app,
+        &c.access,
+        "create_release_draft",
+        json!({"title":"T","release_type":"SINGLE","artist_name":"A"}),
+    )
+    .await;
+    let release = rel["release_id"].as_str().unwrap().to_string();
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "get_release_corrections",
+        json!({"release_id": release}),
+    )
+    .await;
+    assert!(!err, "{v}");
+    assert_eq!(v["can_request"], false);
+    assert_eq!(v["review"], "No correction requested yet.");
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "request_release_correction",
+        json!({"release_id": release, "reason": "typo", "genre": "rock"}),
+    )
+    .await;
+    assert_eq!(
+        (err, v["error"]["code"].as_str()),
+        (true, Some("CORRECTION_NOTHING_SENT"))
+    );
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("edit the draft")
+    );
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "cancel_release_correction",
+        json!({"release_id": release}),
+    )
+    .await;
+    assert_eq!(
+        (err, v["error"]["code"].as_str()),
+        (true, Some("NOT_FOUND"))
+    );
+    // Another account cannot read it.
+    let other = user(&app).await;
+    let oc = connect(&app, &other, &[]).await;
+    let (err, v) = tool(
+        &app,
+        &oc.access,
+        "get_release_corrections",
+        json!({"release_id": release}),
+    )
+    .await;
+    assert_eq!(
+        (err, v["error"]["code"].as_str()),
+        (true, Some("FORBIDDEN"))
+    );
 }

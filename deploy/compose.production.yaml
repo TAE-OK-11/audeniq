@@ -233,6 +233,7 @@ services:
       AUDENIQ_MCP_ENABLED: ${AUDENIQ_MCP_ENABLED:-false}
       AUDENIQ_MCP_CIMD_HOSTS: ${AUDENIQ_MCP_CIMD_HOSTS:-chatgpt.com,claude.ai}
       AUDENIQ_MCP_DYNAMIC_REGISTRATION: ${AUDENIQ_MCP_DYNAMIC_REGISTRATION:-true}
+      AUDENIQ_MCP_PAYOUT_LIMIT_KRW: ${AUDENIQ_MCP_PAYOUT_LIMIT_KRW:-300000}
     volumes:
       - av_socket:/run/audeniq-av:ro
       - ${PAYOUT_KEYRING_DIR:-/dev/shm/audeniq-secrets}:/run/audeniq-keys:ro

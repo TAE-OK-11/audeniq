@@ -7,7 +7,10 @@
 //! What is deliberately not exposed: file uploads (done in Studio, where the
 //! bytes go straight to storage), signing the application or agreement,
 //! withdrawals, takedowns, payouts, payout accounts, members and contracts.
-use super::{SCOPE_READ, SCOPE_SUBMIT, SCOPE_WRITE, oauth::Principal, protocol::error_code};
+use super::{
+    SCOPE_PAYOUT, SCOPE_READ, SCOPE_SETTLEMENT, SCOPE_SUBMIT, SCOPE_WRITE, oauth::Principal,
+    protocol::error_code,
+};
 use crate::{
     api::AppState,
     auth::Actor,
@@ -178,6 +181,94 @@ fn defs() -> &'static [ToolDef] {
                 description: "Where a submitted application stands: review stage, check results, what the artist must correct, staff review notes, agreement signature and per-platform delivery/live state.",
                 scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: true,
                 schema: release_id_schema,
+            },
+            ToolDef {
+                name: "get_release_corrections",
+                title: "Released metadata corrections",
+                description: "For a release already sent to platforms: the current genre and per-track credits (with approved corrections applied), the latest correction request with AUDENIQ's review decision and note, and whether a new request is possible. Title, artist names, audio, identifiers, release date and rights lines cannot be corrected (they need a new release).",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: release_id_schema,
+            },
+            ToolDef {
+                name: "request_release_correction",
+                title: "Request a metadata correction",
+                description: "Ask AUDENIQ to correct a delivered release: the genre and/or the full credit list of given tracks (composer, lyricist, arranger, producer, engineer...; artist and featured-artist credits are locked). AUDENIQ staff review it; once approved the update goes to every platform carrying the release. One open request per release. Confirm the exact changes with the artist first.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: false, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","reason"],"properties":{
+                    "release_id": uuid_schema("The delivered release"),
+                    "reason": {"type":"string","minLength":1,"maxLength":1000,"description":"Why the change is needed (shown to the reviewer)"},
+                    "genre": {"type":"string","minLength":1,"maxLength":60},
+                    "tracks": {"type":"array","maxItems":99,"items":{"type":"object","additionalProperties":false,"required":["track_id","credits"],"properties":{
+                        "track_id": uuid_schema("Track of this release"),
+                        "credits": {"type":"array","maxItems":50,"description":"The track's complete new credit list (replaces all non-artist credits)",
+                            "items":{"type":"object","additionalProperties":false,"required":["name","role"],"properties":{
+                                "name":{"type":"string","minLength":1,"maxLength":200},
+                                "role":{"type":"string","minLength":1,"maxLength":80,"description":"Composer, Lyricist, Arranger, Producer, Engineer, ..."}}}}}}}}}),
+            },
+            ToolDef {
+                name: "cancel_release_correction",
+                title: "Cancel a correction request",
+                description: "Withdraw the release's pending correction request before AUDENIQ reviews it.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: release_id_schema,
+            },
+            ToolDef {
+                name: "get_settlement_summary",
+                title: "Settlement balance",
+                description: "The workspace's royalty balance in KRW: payable, pending payouts, held, available to withdraw, whether a payout account is registered (bank and last 4 digits only), the payout fee policy, and how much can still be requested through the assistant in the next 24 hours.",
+                scope: SCOPE_SETTLEMENT, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: empty_schema,
+            },
+            ToolDef {
+                name: "list_settlement_statements",
+                title: "Settlement statement",
+                description: "Royalty ledger lines (earnings, payouts, adjustments), newest first. Use next_before to page.",
+                scope: SCOPE_SETTLEMENT, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"properties":{
+                    "limit":{"type":"integer","minimum":1,"maximum":100,"default":30},
+                    "before":{"type":"string","maxLength":120,"description":"next_before from the previous page"}}}),
+            },
+            ToolDef {
+                name: "get_royalty_reports",
+                title: "Royalty reports",
+                description: "Streams and revenue reported by platforms, by month, platform and release, for a period of whole months (default: the last 12).",
+                scope: SCOPE_SETTLEMENT, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"properties":{
+                    "from":{"type":"string","pattern":"^[0-9]{4}-(0[1-9]|1[0-2])$","description":"First month YYYY-MM"},
+                    "to":{"type":"string","pattern":"^[0-9]{4}-(0[1-9]|1[0-2])$","description":"Last month YYYY-MM"}}}),
+            },
+            ToolDef {
+                name: "list_payouts",
+                title: "Payout requests",
+                description: "The workspace's payout requests with amount, fee, net, status and whether each can still be cancelled.",
+                scope: SCOPE_SETTLEMENT, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: empty_schema,
+            },
+            ToolDef {
+                name: "preview_payout",
+                title: "Preview a payout",
+                description: "Quote a payout to the registered account: fee, net amount, available balance and the assistant limit. Larger amounts must be requested in AUDENIQ Studio. When the payout is allowed, returns a confirmation_token for request_payout (10 minutes, this amount and account only). Only workspace owners can request payouts.",
+                scope: SCOPE_PAYOUT, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["amount"],"properties":{
+                    "amount":{"type":"integer","minimum":1,"maximum":1000000000,"description":"Requested amount in KRW (before the fee)"}}}),
+            },
+            ToolDef {
+                name: "request_payout",
+                title: "Request a payout",
+                description: "Request the previewed payout to the registered account. Only after the artist explicitly confirmed the amount, fee, net amount and account in this conversation. Requires the confirmation_token from preview_payout. Safe to retry with the same token.",
+                scope: SCOPE_PAYOUT, read_only: false, destructive: true, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["amount","confirmation_token","artist_confirmed"],"properties":{
+                    "amount":{"type":"integer","minimum":1,"maximum":1000000000},
+                    "confirmation_token":{"type":"string","minLength":20,"maxLength":4096},
+                    "artist_confirmed":{"type":"boolean","const":true,"description":"The artist explicitly confirmed this payout in the conversation"}}}),
+            },
+            ToolDef {
+                name: "cancel_payout",
+                title: "Cancel a payout request",
+                description: "Cancel a payout request that has not been sent to the bank yet; the amount returns to the available balance.",
+                scope: SCOPE_PAYOUT, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["payout_id"],"properties":{
+                    "payout_id": uuid_schema("The payout request")}}),
             },
         ]
     })
@@ -375,6 +466,30 @@ fn mcp_message(code: &str) -> Option<&'static str> {
         "SPECIAL_DECLARATION_MISMATCH" => {
             "The draft's cover/sample/AI options disagree with the declarations. Fix them in AUDENIQ Studio or adjust the declarations."
         }
+        "CORRECTION_NOTHING_SENT" => {
+            "Corrections are for releases already sent to a platform. Before that, edit the draft (or the release returned for correction) instead."
+        }
+        "CORRECTION_ALREADY_REQUESTED" => {
+            "This release already has a correction request waiting for review. Cancel it first to send a different one."
+        }
+        "CORRECTION_ARTIST_LOCKED" => {
+            "Artist and featured-artist names cannot be corrected after delivery; that needs a new release."
+        }
+        "CORRECTION_INVALID" => "The correction lists an unknown track or an invalid credit.",
+        "CORRECTION_EMPTY" => "Give a new genre or at least one track's credits.",
+        "CORRECTION_REASON_REQUIRED" => "Give a reason for the correction.",
+        "PAYOUT_ACCOUNT_REQUIRED" => {
+            "No payout account is registered. The artist registers it in AUDENIQ Studio (settlement)."
+        }
+        "PAYOUT_EXCEEDS_BALANCE" => "The amount is more than the available balance.",
+        "PAYOUT_BELOW_MINIMUM" => "The amount is below the minimum payout.",
+        "PAYOUT_NET_NOT_POSITIVE" => {
+            "After the fee nothing would be paid out; request a larger amount."
+        }
+        "PAYEE_ON_HOLD" => "Payouts are on hold for this account. Contact AUDENIQ support.",
+        "PAYOUT_NOT_CANCELLABLE" => {
+            "This payout was already sent to the bank and can no longer be cancelled."
+        }
         "COVER_DETAILS_REQUIRED" | "AI_DETAILS_REQUIRED" | "EXPRESS_ACK_REQUIRED" => {
             "This release's special options need details that are entered in AUDENIQ Studio."
         }
@@ -483,6 +598,13 @@ fn summary(tool: &str, v: &Value) -> String {
                 )
             }
         }
+        "request_payout" => format!(
+            "Payout requested: {} KRW (fee {}, net {}), status {}.",
+            v["amount"].as_str().unwrap_or("?"),
+            v["fee"].as_str().unwrap_or("?"),
+            v["net"].as_str().unwrap_or("?"),
+            v["status"].as_str().unwrap_or("?")
+        ),
         _ => String::new(),
     };
     if lead.is_empty() {
@@ -500,6 +622,9 @@ async fn rate(s: &AppState, p: &Principal, def: &ToolDef) -> Result<()> {
     crate::auth::rate(&s.pool, &format!("mcp:{}", p.grant), 900).await?;
     if !def.read_only {
         crate::auth::rate(&s.pool, &format!("mcp-write:{}", p.grant), 300).await?;
+    }
+    if def.scope == SCOPE_PAYOUT && !def.read_only {
+        crate::auth::rate(&s.pool, &format!("mcp-payout:{}", p.grant), 10).await?;
     }
     if def.scope == SCOPE_SUBMIT {
         crate::auth::rate(&s.pool, &format!("mcp-submit:{}", p.grant), 30).await?;
@@ -536,6 +661,35 @@ async fn run(
         "get_submission_status" => {
             Box::pin(async move { status(s, a, org, release_arg(args)?).await })
         }
+        "get_release_corrections" => {
+            Box::pin(async move { corrections_view(s, a, org, release_arg(args)?).await })
+        }
+        "request_release_correction" => Box::pin(request_correction(s, a, org, args)),
+        "cancel_release_correction" => Box::pin(async move {
+            let release = release_arg(args)?;
+            let v = crate::corrections::cancel(s, a, org, release).await?;
+            Ok(json!({"view": "correction", "release_id": release, "request": v}))
+        }),
+        "get_settlement_summary" => Box::pin(settlement_summary(s, p)),
+        "list_settlement_statements" => Box::pin(statements(s, a, org, args)),
+        "get_royalty_reports" => Box::pin(async move {
+            let period = crate::portal::Period {
+                from: str_arg(args, "from").map(str::to_owned),
+                to: str_arg(args, "to").map(str::to_owned),
+            };
+            let mut v = crate::portal::reports(s, a, org, period).await?;
+            v["view"] = json!("royalty_reports");
+            Ok(v)
+        }),
+        "list_payouts" => Box::pin(payouts(s, a, org)),
+        "preview_payout" => Box::pin(preview_payout(s, p, args)),
+        "request_payout" => Box::pin(request_payout(s, p, args)),
+        "cancel_payout" => Box::pin(async move {
+            let id = uuid_arg(args, "payout_id")?;
+            let mut v = crate::portal::cancel_payout(s, a, org, id).await?;
+            v["view"] = json!("payout");
+            Ok(v)
+        }),
         _ => return Err(tool_error("UNKNOWN_TOOL", "Unknown tool.")),
     };
     fut.await
@@ -570,14 +724,19 @@ async fn account(s: &AppState, p: &Principal) -> std::result::Result<Value, Tool
     let role = ws["role"].as_str().unwrap_or("");
     let can_edit = role != "VIEWER" && p.has(SCOPE_WRITE);
     let can_submit = matches!(role, "OWNER" | "EDITOR") && p.has(SCOPE_SUBMIT);
+    let payout_limit = s.mcp.payout_limit_krw;
+    let can_request_payouts = role == "OWNER" && p.has(SCOPE_PAYOUT) && payout_limit > 0;
     Ok(json!({
         "view": "account",
         "workspace": ws,
         "connection": {"client": p.client_name, "scopes": p.scopes},
         "can_edit_drafts": can_edit,
         "can_submit": can_submit,
+        "can_view_settlement": p.has(SCOPE_SETTLEMENT),
+        "can_request_payouts": can_request_payouts,
+        "assistant_payout_limit_krw": payout_limit,
         "studio_url": super::issuer(s),
-        "not_available_here": ["file uploads", "signing the application or agreement", "withdrawals and takedowns", "payouts and payout accounts", "contracts", "account and member settings"],
+        "not_available_here": ["file uploads", "signing the application or agreement", "withdrawals and takedowns", "payout account changes", "payouts above the assistant limit", "contracts", "account and member settings"],
     }))
 }
 
@@ -1649,6 +1808,302 @@ async fn status(
     }))
 }
 
+// ---------------------------------------------------------------------------
+// Corrections of delivered releases
+// ---------------------------------------------------------------------------
+
+async fn corrections_view(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    release: Uuid,
+) -> std::result::Result<Value, ToolError> {
+    let mut v = crate::corrections::status(s, a, org, release).await?;
+    let review = match v["request"]["status"].as_str() {
+        Some("PENDING") => "Waiting for AUDENIQ review.",
+        Some("APPROVED") => "Approved; the update was sent to the platforms carrying the release.",
+        Some("DECLINED") => "Declined by AUDENIQ; see decision_note.",
+        Some("CANCELLED") => "Cancelled by the artist.",
+        _ => "No correction requested yet.",
+    };
+    v["view"] = json!("correction");
+    v["release_id"] = json!(release);
+    v["review"] = json!(review);
+    v["correctable"] = json!(["genre", "track credits except artist and featured artist"]);
+    v["locked"] = json!([
+        "title",
+        "artist and featured-artist names",
+        "audio",
+        "ISRC/UPC",
+        "release date",
+        "P/C lines"
+    ]);
+    Ok(v)
+}
+
+async fn request_correction(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    args: &Value,
+) -> std::result::Result<Value, ToolError> {
+    use crate::corrections::{Changes, CreditInput, RequestInput, TrackCredits};
+    let release = release_arg(args)?;
+    let mut tracks = Vec::new();
+    for t in args
+        .get("tracks")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        tracks.push(TrackCredits {
+            track_id: uuid_arg(t, "track_id")?,
+            credits: t["credits"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|c| CreditInput {
+                    name: c["name"].as_str().unwrap_or_default().to_string(),
+                    role: c["role"].as_str().unwrap_or_default().to_string(),
+                })
+                .collect(),
+        });
+    }
+    let input = RequestInput {
+        changes: Changes {
+            genre: str_arg(args, "genre").map(str::to_owned),
+            tracks,
+        },
+        reason: str_arg(args, "reason").unwrap_or_default().to_string(),
+    };
+    crate::corrections::request(s, a, org, release, input).await?;
+    corrections_view(s, a, org, release).await
+}
+
+// ---------------------------------------------------------------------------
+// Settlement and payouts
+// ---------------------------------------------------------------------------
+
+/// Idempotency-key prefix of payouts requested through an assistant: the
+/// 24-hour assistant limit counts exactly these.
+const PAYOUT_KEY_PREFIX: &str = "mcp:";
+const PAYOUT_WINDOW_HOURS: i32 = 24;
+/// A payout preview's confirmation is valid this long.
+const PAYOUT_CONFIRM_SECONDS: i64 = 10 * 60;
+
+fn settlement_url(s: &AppState) -> String {
+    format!("{}/settlement", super::issuer(s))
+}
+
+/// Bank and last four digits only: the holder name and number stay in Studio.
+fn account_brief(v: &Value) -> Value {
+    if v["registered"] != true {
+        return json!({"registered": false});
+    }
+    json!({"registered": true, "bank_name": v["bank_name"], "account_last4": v["account_last4"], "payee_type": v["payee_type"]})
+}
+
+async fn assistant_payout_room(s: &AppState, p: &Principal) -> Result<(i64, i64)> {
+    let used = crate::portal::payouts_requested_since(
+        s,
+        &p.actor,
+        p.org,
+        PAYOUT_KEY_PREFIX,
+        PAYOUT_WINDOW_HOURS,
+    )
+    .await?;
+    let used = rust_decimal::prelude::ToPrimitive::to_i64(&used.trunc()).unwrap_or(i64::MAX);
+    Ok((used, (s.mcp.payout_limit_krw - used).max(0)))
+}
+
+async fn settlement_summary(s: &AppState, p: &Principal) -> std::result::Result<Value, ToolError> {
+    let mut v = crate::portal::finance_summary(s, &p.actor, p.org).await?;
+    let account = crate::portal::get_payout_account(s, &p.actor, p.org).await?;
+    let (used, room) = assistant_payout_room(s, p).await?;
+    v["view"] = json!("settlement");
+    v["account"] = account_brief(&account);
+    v["assistant_payouts"] = json!({
+        "limit_krw_per_24h": s.mcp.payout_limit_krw,
+        "requested_last_24h": used,
+        "remaining_krw": room,
+        "allowed_for_this_connection": p.has(SCOPE_PAYOUT),
+        "above_limit": format!("Request larger payouts in AUDENIQ Studio: {}", settlement_url(s)),
+    });
+    Ok(v)
+}
+
+async fn statements(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    args: &Value,
+) -> std::result::Result<Value, ToolError> {
+    let page = crate::portal::StatementPage {
+        before: str_arg(args, "before").map(str::to_owned),
+        limit: Some(args.get("limit").and_then(Value::as_i64).unwrap_or(30)),
+    };
+    let mut v = crate::portal::statements(s, a, org, page).await?;
+    v["view"] = json!("statements");
+    Ok(v)
+}
+
+async fn payouts(s: &AppState, a: &Actor, org: Uuid) -> std::result::Result<Value, ToolError> {
+    let mut v = crate::portal::list_payouts(s, a, org).await?;
+    for item in v["items"].as_array_mut().into_iter().flatten() {
+        if let Some(acc) = item.get_mut("account").and_then(Value::as_object_mut) {
+            acc.remove("holder_name");
+        }
+    }
+    v["view"] = json!("payouts");
+    Ok(v)
+}
+
+async fn preview_payout(
+    s: &AppState,
+    p: &Principal,
+    args: &Value,
+) -> std::result::Result<Value, ToolError> {
+    let amount = args.get("amount").and_then(Value::as_i64).unwrap_or(0);
+    let ws = catalog::workspace(s, &p.actor, p.org).await?;
+    let quote = crate::portal::quote_payout(s, &p.actor, p.org, &amount.to_string()).await?;
+    let account = crate::portal::get_payout_account(s, &p.actor, p.org).await?;
+    let (used, room) = assistant_payout_room(s, p).await?;
+    let limit = s.mcp.payout_limit_krw;
+    let blocked = if ws["role"] != "OWNER" {
+        Some((
+            "PAYOUT_OWNER_ONLY",
+            "Only the workspace owner can request payouts.".to_string(),
+        ))
+    } else if account["registered"] != true {
+        Some((
+            "PAYOUT_ACCOUNT_REQUIRED",
+            mcp_message("PAYOUT_ACCOUNT_REQUIRED")
+                .unwrap_or_default()
+                .to_string(),
+        ))
+    } else if quote["within_balance"] != true {
+        Some((
+            "PAYOUT_EXCEEDS_BALANCE",
+            mcp_message("PAYOUT_EXCEEDS_BALANCE")
+                .unwrap_or_default()
+                .to_string(),
+        ))
+    } else if limit == 0 || amount > room {
+        Some((
+            "PAYOUT_USE_STUDIO",
+            format!(
+                "Through the assistant at most {limit} KRW can be requested per 24 hours ({room} KRW left). Request this amount in AUDENIQ Studio: {}",
+                settlement_url(s)
+            ),
+        ))
+    } else {
+        None
+    };
+    let mut v = json!({
+        "view": "payout_preview",
+        "amount": quote["amount"], "fee": quote["fee"], "net": quote["net"],
+        "available": quote["available"], "policy_version": quote["policy_version"],
+        "account": account_brief(&account),
+        "assistant_limit_krw": limit, "assistant_requested_last_24h": used,
+        "allowed": blocked.is_none(),
+    });
+    match blocked {
+        Some((code, message)) => {
+            v["blocked_by"] = json!({"code": code, "message": message});
+        }
+        None => {
+            let exp = chrono::Utc::now().timestamp() + PAYOUT_CONFIRM_SECONDS;
+            v["confirmation_token"] = json!(super::seal(
+                s,
+                "payout-confirmation",
+                &json!({"g": p.grant, "o": p.org, "a": amount, "rv": account["row_version"],
+                        "n": crate::auth::random_token()[..24].to_string(), "exp": exp}),
+            ));
+            v["confirmation_expires_at"] =
+                json!(chrono::DateTime::from_timestamp(exp, 0).map(|t| t.to_rfc3339()));
+            v["instruction"] = json!(
+                "Show the amount, fee, net amount and account (bank, last 4 digits) to the artist. Call request_payout only after they explicitly confirm."
+            );
+        }
+    }
+    Ok(v)
+}
+
+async fn request_payout(
+    s: &AppState,
+    p: &Principal,
+    args: &Value,
+) -> std::result::Result<Value, ToolError> {
+    let amount = args.get("amount").and_then(Value::as_i64).unwrap_or(0);
+    let stale = || {
+        tool_error(
+            "CONFIRMATION_INVALID",
+            "The confirmation is missing, expired or for another amount. Call preview_payout again and have the artist confirm.",
+        )
+    };
+    let token = super::open(
+        s,
+        "payout-confirmation",
+        str_arg(args, "confirmation_token").unwrap_or(""),
+    )
+    .ok_or_else(stale)?;
+    if token["g"].as_str() != Some(p.grant.to_string().as_str())
+        || token["o"].as_str() != Some(p.org.to_string().as_str())
+        || token["a"].as_i64() != Some(amount)
+    {
+        return Err(stale());
+    }
+    if args["artist_confirmed"] != true {
+        return Err(tool_error(
+            "CONFIRMATION_REQUIRED",
+            "The artist must explicitly confirm the payout first.",
+        ));
+    }
+    let account = crate::portal::get_payout_account(s, &p.actor, p.org).await?;
+    if account["row_version"] != token["rv"] {
+        return Err(tool_error(
+            "PAYOUT_ACCOUNT_CHANGED",
+            "The payout account changed after the preview. Call preview_payout again.",
+        ));
+    }
+    let nonce = token["n"].as_str().ok_or_else(stale)?;
+    let limit = s.mcp.payout_limit_krw;
+    if limit == 0 {
+        return Err(tool_error(
+            "PAYOUT_USE_STUDIO",
+            &format!("Request payouts in AUDENIQ Studio: {}", settlement_url(s)),
+        ));
+    }
+    let v = crate::portal::request_payout_capped(
+        s,
+        &p.actor,
+        p.org,
+        crate::portal::PayoutRequestInput {
+            amount: amount.to_string(),
+            idempotency_key: format!("{PAYOUT_KEY_PREFIX}{nonce}"),
+        },
+        Some(crate::portal::PayoutCap {
+            key_prefix: PAYOUT_KEY_PREFIX,
+            limit: rust_decimal::Decimal::from(limit),
+            hours: PAYOUT_WINDOW_HOURS,
+        }),
+    )
+    .await
+    .map_err(|e| match e {
+        Error::PolicyGate("PAYOUT_USE_STUDIO") => tool_error(
+            "PAYOUT_USE_STUDIO",
+            &format!("This would exceed the assistant payout limit of {limit} KRW per 24 hours. Request it in AUDENIQ Studio: {}", settlement_url(s)),
+        ),
+        e => e.into(),
+    })?;
+    Ok(json!({
+        "view": "payout",
+        "payout_id": v["id"], "amount": v["amount"], "fee": v["fee"], "net": v["net"], "status": v["status"],
+        "account": account_brief(&account),
+        "next": "AUDENIQ staff check the request, then send the net amount to the registered account. It can be cancelled until it is sent to the bank (cancel_payout).",
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1664,7 +2119,7 @@ mod tests {
         assert_eq!(names.len(), defs().len(), "tool names are unique");
     }
     #[test]
-    fn only_submit_release_needs_the_submit_scope_and_reads_are_read_only() {
+    fn scopes_and_annotations_match_what_each_tool_does() {
         for d in defs() {
             assert_eq!(
                 d.scope == SCOPE_SUBMIT,
@@ -1672,8 +2127,16 @@ mod tests {
                 "{}",
                 d.name
             );
-            assert_eq!(d.read_only, d.scope == SCOPE_READ, "{}", d.name);
-            assert!(!d.destructive, "{}", d.name);
+            // Only reads under the release/settlement read scopes; every
+            // write needs a write-type scope.
+            if d.scope == SCOPE_READ || d.scope == SCOPE_SETTLEMENT {
+                assert!(d.read_only, "{}", d.name);
+            }
+            if d.scope == SCOPE_WRITE || d.scope == SCOPE_SUBMIT {
+                assert!(!d.read_only, "{}", d.name);
+            }
+            // Moving money is the one action clients must treat as destructive.
+            assert_eq!(d.destructive, d.name == "request_payout", "{}", d.name);
         }
     }
     #[test]

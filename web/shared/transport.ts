@@ -138,6 +138,16 @@ export async function readLimitedBody(request: Request, maxBytes: number): Promi
 // user-agent: 권리 서류 서명 기록(증거)에 남긴다
 const FORWARD_HEADERS = ['cookie', 'origin', 'content-type', 'accept', 'x-csrf-token', 'sec-fetch-site', 'x-request-id', 'user-agent'];
 const PARTNER_HOOK = /^\/api\/partner-hooks\//;
+// AI 어시스턴트(MCP, crates/core/src/mcp)의 서버 간 호출: 이 경로에만 Authorization(베어러 토큰·클라이언트 인증)과
+// MCP 요청 메타데이터 헤더를 넘긴다. 그 밖의 /api는 지금처럼 쿠키만 쓴다.
+const MCP_CLIENT_PATHS = new Set(['/api/mcp', '/api/oauth/token', '/api/oauth/register', '/api/oauth/revoke']);
+const MCP_HEADERS = ['authorization', 'mcp-protocol-version', 'mcp-method', 'mcp-name'];
+/** OAuth 발견 문서 (RFC 8414·9728): 사이트 루트의 /.well-known에 있어야 하고 백엔드가 답한다 */
+export const MCP_DISCOVERY_PATHS = new Set([
+  '/.well-known/oauth-protected-resource',
+  '/.well-known/oauth-protected-resource/api/mcp',
+  '/.well-known/oauth-authorization-server',
+]);
 const PARTNER_DROP = new Set(['x-forwarded-for', 'x-real-ip', 'host', 'connection', 'accept-encoding']);
 
 export function backendHeaders(request: WorkerRequest, env: Required<Pick<TransportEnv, 'EDGE_SERVICE_SECRET'>>, pathname: string, site: string): Headers {
@@ -148,6 +158,12 @@ export function backendHeaders(request: WorkerRequest, env: Required<Pick<Transp
     if (v) headers.set(name, v);
   }
   headers.set('accept-encoding', passThroughEncoding(clientEncoding(request)));
+  if (MCP_CLIENT_PATHS.has(pathname)) {
+    for (const name of MCP_HEADERS) {
+      const v = src.get(name);
+      if (v) headers.set(name, v);
+    }
+  }
   if (PARTNER_HOOK.test(pathname)) {
     // 파트너 설정이 정한 서명·시각 헤더(이름 자유)는 전달하되 우리 이름공간·전달 IP 헤더는 제외
     for (const [name, value] of src) {
