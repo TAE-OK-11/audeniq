@@ -175,7 +175,7 @@ export function ReleaseDetail() {
         <p>{error || '발매를 찾을 수 없어요.'}</p>
         <div className="row-actions" style={{ justifyContent: 'center' }}>
           <button type="button" className="ui-btn is-soft" onClick={reload}>다시 시도</button>
-          <button type="button" className="ui-btn is-primary" onClick={() => nav('/releases')}>발매 목록으로</button>
+          <button type="button" className="ui-btn is-primary" onClick={() => nav('/releases')}>발매 목록 보기</button>
         </div>
       </div>
     );

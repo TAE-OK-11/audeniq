@@ -120,6 +120,8 @@
 .ui-select,.ui-field :where(select){padding-right:44px}
 .ui-select.is-sm{padding-right:38px}
 .ui-textarea,.ui-field :where(textarea){min-height:112px;padding-block:13px;line-height:1.65;resize:vertical}
+/* 손가락으로는 크기 조절 손잡이를 잡을 수 없다 — 모서리에 남는 점만 지운다 */
+@media (pointer:coarse){#root textarea,#modal textarea{resize:none}}
 .ui-input.is-sm,.ui-select.is-sm{--ui-input-h:var(--aq-h-sm);--ui-input-r:var(--aq-r-ctl-sm);padding-inline:13px;font-size:var(--aq-fs-md)}
 .ui-input.is-lg,.ui-select.is-lg{--ui-input-h:var(--aq-h-lg);--ui-input-r:var(--aq-r-ctl-lg);padding-inline:18px;font-size:16px}
 .ui-select.is-auto,.ui-input.is-auto{width:auto}
