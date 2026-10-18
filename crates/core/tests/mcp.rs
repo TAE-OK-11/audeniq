@@ -3001,3 +3001,269 @@ async fn artist_pages_platform_requests_splits_prompts_and_upload_links(pool: Pg
     let (_, _, v) = rpc(&app, None, "initialize", json!({"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}})).await;
     assert!(v["result"]["capabilities"]["prompts"].is_object());
 }
+
+/// A complete draft and its preview's confirmation token (not submitted).
+async fn previewed_release(
+    app: &Router,
+    pool: &PgPool,
+    store: &MemStore,
+    u: &User,
+    access: &str,
+    title: &str,
+) -> (String, String) {
+    let (_, rel) = tool(
+        app,
+        access,
+        "create_release_draft",
+        json!({"title": title, "release_type":"SINGLE","artist_name":"Han River",
+        "release_date":"2027-04-01","p_line":"2026 Han River","c_line":"2026 Han River"}),
+    )
+    .await;
+    let release = rel["release_id"].as_str().unwrap().to_string();
+    let asset = register_asset(pool, store, u, "a.wav", AUDIO).await;
+    let (_, v) = tool(
+        app,
+        access,
+        "upsert_track",
+        json!({"release_id": release, "title": title, "track_number": 1, "asset_id": asset}),
+    )
+    .await;
+    tool(
+        app,
+        access,
+        "set_track_credits",
+        json!({"release_id": release, "track_id": v["track_id"], "composers": ["Kim"]}),
+    )
+    .await;
+    let (_, p) = tool(
+        app,
+        access,
+        "preview_submission",
+        json!({"release_id": release, "declarations": declarations(true)}),
+    )
+    .await;
+    let token = p["confirmation_token"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{p}"))
+        .to_string();
+    (release, token)
+}
+
+async fn notices(pool: &PgPool, user: Uuid) -> Vec<String> {
+    sqlx::query_scalar(
+        "SELECT title FROM portal.notifications WHERE user_id=$1 ORDER BY created_at",
+    )
+    .bind(user)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+#[sqlx::test]
+async fn activity_notices_retry_safe_creates_and_studio_approval(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let c = connect(&app, &u, &["scope_write", "scope_submit"]).await;
+    // A new connection is announced to the user.
+    assert_eq!(
+        notices(&pool, u.user).await,
+        vec!["새 AI 앱이 연결됐어요".to_string()]
+    );
+
+    // Retry-safe create: the same client_request_id returns the first draft.
+    let args = json!({"title":"Once","release_type":"SINGLE","artist_name":"Han River","client_request_id":"req-0001-abcd"});
+    let (err, first) = tool(&app, &c.access, "create_release_draft", args.clone()).await;
+    assert!(!err, "{first}");
+    let (err, again) = tool(&app, &c.access, "create_release_draft", args).await;
+    assert!(!err, "{again}");
+    assert_eq!(again["release_id"], first["release_id"]);
+    assert_eq!(again["duplicate_request"], true);
+    let drafts: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM catalog.releases WHERE org_id=$1 AND title='Once'",
+    )
+    .bind(u.org)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(drafts, 1);
+    let (_, _, v) = rpc(&app, None, "tools/list", json!({})).await;
+    let create = v["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "create_release_draft")
+        .unwrap()
+        .clone();
+    assert!(create["inputSchema"]["properties"]["client_request_id"].is_object());
+
+    // Submitting without Studio approval: submitted, announced; a retry
+    // after the release moved on still reports the same application.
+    let (release, token) = previewed_release(&app, &pool, &store, &u, &c.access, "Direct").await;
+    let submit = |release: String, token: String| {
+        let app = app.clone();
+        let access = c.access.clone();
+        async move {
+            tool(
+                &app,
+                &access,
+                "submit_release",
+                json!({"release_id": release, "confirmation_token": token,
+                "declarations": declarations(true), "artist_confirmed": true}),
+            )
+            .await
+        }
+    };
+    let (err, v) = submit(release.clone(), token.clone()).await;
+    assert!(!err, "{v}");
+    assert_eq!(v["view"], "submitted");
+    sqlx::query("UPDATE catalog.releases SET status='IN_REVIEW' WHERE id=$1::uuid")
+        .bind(&release)
+        .execute(&pool)
+        .await
+        .ok();
+    let (err, again) = submit(release.clone(), token).await;
+    assert!(!err, "{again}");
+    assert_eq!(again["duplicate_request"], true);
+    assert_eq!(again["application_id"], v["application_id"]);
+    assert!(
+        notices(&pool, u.user)
+            .await
+            .contains(&"AI 앱으로 발매를 신청했어요".to_string())
+    );
+
+    // Studio approval on: the AI submission waits for the artist.
+    let (s, v) = call(
+        &app,
+        "PUT",
+        "/api/auth/ai-settings",
+        json!({"studio_approval": true}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, v["studio_approval"].as_bool()),
+        (StatusCode::OK, Some(true))
+    );
+    let (release, token) = previewed_release(&app, &pool, &store, &u, &c.access, "Held").await;
+    let (err, v) = submit(release.clone(), token.clone()).await;
+    assert!(!err, "{v}");
+    assert_eq!(v["view"], "pending_approval");
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM catalog.releases WHERE id=$1::uuid")
+            .bind(&release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(status, "DRAFT", "nothing is submitted before approval");
+    let (_, again) = submit(release.clone(), token.clone()).await;
+    assert_eq!(again["duplicate_request"], true);
+    assert!(
+        notices(&pool, u.user)
+            .await
+            .contains(&"AI 앱이 보낸 발매 신청을 승인해 주세요".to_string())
+    );
+    let (s, list) = call(
+        &app,
+        "GET",
+        "/api/auth/ai-submissions",
+        json!(null),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let items = list["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["title"], "Held");
+    assert_eq!(items[0]["declarations"]["rights_confirmed"], true);
+    let id = items[0]["id"].as_str().unwrap().to_string();
+    // Only that user can decide.
+    let other = user(&app).await;
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("/api/auth/ai-submissions/{id}/approve"),
+        json!({}),
+        Some(&other),
+    )
+    .await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/auth/ai-submissions/{id}/approve"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["status"], "APPROVED");
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM catalog.releases WHERE id=$1::uuid")
+            .bind(&release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_ne!(status, "DRAFT");
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("/api/auth/ai-submissions/{id}/approve"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "decided once");
+    // The assistant's retry now sees the application.
+    let (_, again) = submit(release.clone(), token).await;
+    assert_eq!(again["view"], "submitted");
+
+    // A release changed after the chat confirmation cannot be approved.
+    let (release, token) = previewed_release(&app, &pool, &store, &u, &c.access, "Changed").await;
+    let (_, v) = submit(release.clone(), token).await;
+    assert_eq!(v["view"], "pending_approval");
+    let id = v["approval_id"].as_str().unwrap().to_string();
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "update_release_draft",
+        json!({"release_id": release, "genre": "Jazz"}),
+    )
+    .await;
+    assert!(!err, "{v}");
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/auth/ai-submissions/{id}/approve"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(v["error"]["code"], "AI_SUBMISSION_STALE");
+
+    // Rejecting leaves the draft as it was.
+    let (release, token) = previewed_release(&app, &pool, &store, &u, &c.access, "Rejected").await;
+    let (_, v) = submit(release.clone(), token).await;
+    let id = v["approval_id"].as_str().unwrap().to_string();
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/auth/ai-submissions/{id}/reject"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, v["status"].as_str()),
+        (StatusCode::OK, Some("REJECTED"))
+    );
+    let (_, list) = call(
+        &app,
+        "GET",
+        "/api/auth/ai-submissions",
+        json!(null),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(list["items"], json!([]));
+}

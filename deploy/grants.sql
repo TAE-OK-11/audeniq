@@ -97,6 +97,9 @@ GRANT SELECT,INSERT,UPDATE,DELETE ON identity.oauth_identities,identity.oauth_st
 GRANT SELECT,INSERT,UPDATE ON identity.mcp_clients,identity.mcp_grants TO audeniq_api;
 GRANT SELECT,INSERT,UPDATE,DELETE ON identity.mcp_codes,identity.mcp_tokens,identity.mcp_device_codes,identity.mcp_daily_usage TO audeniq_api;
 GRANT SELECT ON identity.mcp_usage_limits TO audeniq_api;
+GRANT SELECT,INSERT,UPDATE,DELETE ON identity.mcp_idempotency TO audeniq_api;
+GRANT SELECT,INSERT,UPDATE ON identity.mcp_user_settings,identity.mcp_pending_submissions TO audeniq_api;
+GRANT EXECUTE ON FUNCTION identity.mcp_notice(uuid, uuid, text, text, text, text) TO audeniq_api;
 -- 출력물 식별 기록 (0107): 추가·조회만
 GRANT SELECT,INSERT ON operations.print_stamps TO audeniq_api;
 -- 문서 봉인·약관 동의 (0108): API가 서명·접수 트랜잭션 안에서 추가한다. 원본 보관·고정은 owner CLI만.

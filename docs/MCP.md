@@ -280,6 +280,31 @@ requests about language, tone and format come first; otherwise:
 - The widget shows Korean text in the same voice when the host locale is `ko`,
   English otherwise.
 
+## Safety (migration 0135)
+
+- **Activity notices.** A new AI connection (any method) or connection token,
+  a submission and a payout request made through an assistant become a Studio
+  notice to that user (`identity.mcp_notice`, kind ACCOUNT), mailed like any
+  other notice, with a link to 프로필 → 연결된 AI 앱 (`/profile?open=ai`).
+  Retries of the same submission or payout do not notify twice.
+- **Retry-safe creates.** `create_release_draft`, `create_inquiry` and
+  `create_platform_request` accept an optional `client_request_id`; the same
+  id on the same connection returns the first result (`duplicate_request:
+  true`) instead of a duplicate (`identity.mcp_idempotency`, kept 7 days).
+  A `submit_release` retry with the same confirmation reports the application
+  it created even after the release moved on in review.
+- **Studio approval (opt-in per user).** With 연결된 AI 앱 → "AI 발매 신청은
+  스튜디오에서 한 번 더 승인" on (`PUT /api/auth/ai-settings`), `submit_release`
+  records the confirmed content (declarations, release content hash) in
+  `identity.mcp_pending_submissions` and answers `view: pending_approval`;
+  nothing is submitted. The artist approves or rejects in the Studio
+  (`GET /api/auth/ai-submissions`, `POST …/{id}/approve|reject`, session +
+  CSRF, only their own); approval re-checks that the release is unchanged
+  (`AI_SUBMISSION_STALE` otherwise) and submits through the same path, in
+  their name. Pending ones lapse after 7 days.
+- **Client allowlist.** `AUDENIQ_MCP_CIMD_HOSTS` entries may be exact
+  `https://` document URLs instead of hosts, pinning one client each.
+
 ## Security controls
 
 - Token endpoint limits count **failures only** per client address

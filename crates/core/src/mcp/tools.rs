@@ -21,6 +21,7 @@ use crate::{
     submission::{self, DeclarationsInput},
 };
 use serde_json::{Value, json};
+use sqlx::Row;
 use std::{collections::HashMap, sync::OnceLock};
 use uuid::Uuid;
 
@@ -70,7 +71,27 @@ impl ToolDef {
     pub fn public(&self) -> bool {
         PUBLIC_TOOLS.contains(&self.name)
     }
+    fn retry_safe(&self) -> bool {
+        RETRY_SAFE_TOOLS.contains(&self.name)
+    }
+    /// The published input schema (retry-safe creates also take
+    /// `client_request_id`).
+    pub fn input_schema(&self) -> Value {
+        let mut s = (self.schema)();
+        if self.retry_safe() {
+            s["properties"]["client_request_id"] = json!({"type":"string","minLength":8,"maxLength":64,"pattern":"^[A-Za-z0-9_-]+$",
+                "description":"Optional: a random id for this request. Sending the same id again (e.g. a retry after a lost response) returns the first result instead of creating a duplicate."});
+        }
+        s
+    }
 }
+
+/// Tools that create something and accept `client_request_id` ([`super::safety`]).
+const RETRY_SAFE_TOOLS: [&str; 3] = [
+    "create_release_draft",
+    "create_inquiry",
+    "create_platform_request",
+];
 
 fn defs() -> &'static [ToolDef] {
     static DEFS: OnceLock<Vec<ToolDef>> = OnceLock::new();
@@ -574,7 +595,7 @@ pub fn list_json() -> Vec<Value> {
                 "name": d.name,
                 "title": d.title,
                 "description": d.description,
-                "inputSchema": (d.schema)(),
+                "inputSchema": d.input_schema(),
                 "annotations": {
                     "title": d.title,
                     "readOnlyHint": d.read_only,
@@ -624,7 +645,7 @@ fn validator(def: &ToolDef) -> &'static jsonschema::Validator {
             .map(|d| {
                 (
                     d.name,
-                    jsonschema::validator_for(&(d.schema)()).expect("tool schemas are valid"),
+                    jsonschema::validator_for(&d.input_schema()).expect("tool schemas are valid"),
                 )
             })
             .collect()
@@ -771,12 +792,27 @@ pub async fn call(s: &AppState, p: &Principal, def: &ToolDef, args: Value) -> Va
     let started = std::time::Instant::now();
     // Shorter than the edge's and clients' own deadlines, so the client gets
     // an answer it can act on instead of a dropped connection and a retry.
-    let outcome = match tokio::time::timeout(TOOL_DEADLINE, run(s, p, def, &args)).await {
-        Ok(v) => v,
-        Err(_) => Err(tool_error(
-            "TOOL_TIMEOUT",
-            "This took too long and was stopped. It may have partly completed: check the current state (get_release, get_submission_status, list_payouts) before trying again.",
-        )),
+    let request_key = args
+        .get("client_request_id")
+        .and_then(Value::as_str)
+        .filter(|_| def.retry_safe())
+        .map(str::to_owned);
+    let outcome = match &request_key {
+        Some(key) => match super::safety::reserve(&s.pool, p.grant, def.name, key).await {
+            Ok(super::safety::Reserved::New) => {
+                let r = run_with_deadline(s, p, def, &args).await;
+                let id = r.as_ref().ok().and_then(|v| created_id(def.name, v));
+                super::safety::finish(&s.pool, p.grant, def.name, key, id).await;
+                r
+            }
+            Ok(super::safety::Reserved::Done(id)) => Box::pin(replay(s, p, def, id)).await,
+            Ok(super::safety::Reserved::Running) => Err(tool_error(
+                "REQUEST_IN_PROGRESS",
+                "The first request with this client_request_id is still running. Wait a moment and check the result (list_releases, list_inquiries, list_platform_requests) instead of sending it again.",
+            )),
+            Err(e) => Err(e.into()),
+        },
+        None => run_with_deadline(s, p, def, &args).await,
     };
     let ok = outcome.is_ok();
     let code = outcome
@@ -827,6 +863,52 @@ pub async fn call(s: &AppState, p: &Principal, def: &ToolDef, args: Value) -> Va
         }
         Err(e) => err_result(e),
     }
+}
+
+async fn run_with_deadline(
+    s: &AppState,
+    p: &Principal,
+    def: &ToolDef,
+    args: &Value,
+) -> std::result::Result<Value, ToolError> {
+    match tokio::time::timeout(TOOL_DEADLINE, run(s, p, def, args)).await {
+        Ok(v) => v,
+        Err(_) => Err(tool_error(
+            "TOOL_TIMEOUT",
+            "This took too long and was stopped. It may have partly completed: check the current state (get_release, get_submission_status, list_payouts) before trying again.",
+        )),
+    }
+}
+
+/// The id a retry-safe create returned.
+fn created_id(tool: &str, v: &Value) -> Option<Uuid> {
+    let key = if tool == "create_release_draft" {
+        "release_id"
+    } else {
+        "id"
+    };
+    v[key].as_str().and_then(|v| v.parse().ok())
+}
+
+/// What the first call of a retried create made.
+async fn replay(
+    s: &AppState,
+    p: &Principal,
+    def: &ToolDef,
+    id: Uuid,
+) -> std::result::Result<Value, ToolError> {
+    let (a, org) = (&p.actor, p.org);
+    let mut v = match def.name {
+        "create_release_draft" => release_view(s, a, org, id).await?,
+        "create_inquiry" => {
+            let mut v = crate::portal::get_inquiry(s, a, org, id).await?;
+            v["view"] = json!("inquiry");
+            v
+        }
+        _ => json!({"view": "platform_request", "id": id}),
+    };
+    v["duplicate_request"] = json!(true);
+    Ok(v)
 }
 
 /// A short text rendering for clients that only read `content`, followed by
@@ -2023,7 +2105,7 @@ async fn validate(
     }))
 }
 
-fn declarations_from(v: &Value) -> DeclarationsInput {
+pub(super) fn declarations_from(v: &Value) -> DeclarationsInput {
     let b = |k: &str| v.get(k).and_then(Value::as_bool).unwrap_or(false);
     DeclarationsInput {
         rights_confirmed: b("rights_confirmed"),
@@ -2128,6 +2210,14 @@ async fn submit(
     }
     let nonce = token["n"].as_str().ok_or_else(stale)?;
     let idempotency_key = format!("mcp:{release}:{nonce}");
+    // A retry after a lost response converges before anything else is
+    // checked: the release may have moved on (review started) since.
+    if let Some(v) = already_submitted(s, p.org, release, &idempotency_key).await? {
+        return Ok(v);
+    }
+    if let Some((id, status)) = super::safety::pending_for(&s.pool, &idempotency_key).await? {
+        return Ok(pending_view(s, release, id, &status, true));
+    }
     // The content must be what the artist confirmed.
     let review = Box::pin(submission::draft_review(s, &p.actor, p.org, release, &d)).await?;
     if review["scope_hash"] != token["h"] {
@@ -2136,16 +2226,74 @@ async fn submit(
             "The release changed after the preview. Call preview_submission again and have the artist confirm the new preview.",
         ));
     }
-    // A retry after a lost response converges: the same confirmation gives
-    // the same idempotency key, and submit returns the revision it created.
+    let title = super::safety::release_title(&s.pool, p.org, release).await;
+    if super::safety::studio_approval(&s.pool, p.actor.user).await? {
+        let (id, new) = super::safety::hold(
+            &s.pool,
+            super::safety::Pending {
+                org: p.org,
+                release,
+                user: p.actor.user,
+                grant: p.grant,
+                client_name: &p.client_name,
+                declarations: declarations_json(&d),
+                scope_hash: review["scope_hash"].as_str().unwrap_or(""),
+                idempotency_key: &idempotency_key,
+            },
+        )
+        .await?;
+        if new {
+            super::safety::notice(
+                &s.pool,
+                p.org,
+                p.actor.user,
+                "AI 앱이 보낸 발매 신청을 승인해 주세요",
+                &format!(
+                    "{}에서 ‘{title}’ 발매 신청을 보냈어요. 프로필 → 연결된 AI 앱에서 승인하면 접수돼요. 7일 안에 승인하지 않으면 취소돼요.",
+                    p.client_name
+                ),
+                "/profile?open=ai",
+            )
+            .await;
+        }
+        return Ok(pending_view(s, release, id, "PENDING", !new));
+    }
+    let result = submit_now(s, &p.actor, p.org, release, d, idempotency_key).await?;
+    if result["deduped"] != true {
+        super::safety::notice(
+            &s.pool,
+            p.org,
+            p.actor.user,
+            "AI 앱으로 발매를 신청했어요",
+            &format!(
+                "{}에서 ‘{title}’ 발매 신청을 접수했어요. 내가 한 신청이 아니라면 프로필 → 연결된 AI 앱에서 연결을 끊고 어데닉에 문의해 주세요.",
+                p.client_name
+            ),
+            &format!("/releases/{release}"),
+        )
+        .await;
+    }
+    Ok(submitted_view(s, release, &result))
+}
+
+/// Records the consent package and submits (the Studio's own path), with
+/// the confirmation's idempotency key.
+pub(super) async fn submit_now(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    release: Uuid,
+    d: DeclarationsInput,
+    idempotency_key: String,
+) -> Result<Value> {
     let consent = submission::create_consent(
         s,
-        &p.actor,
-        p.org,
+        a,
+        org,
         release,
         submission::ConsentInput {
             parties: vec![submission::ConsentPartyInput {
-                party_id: p.actor.party,
+                party_id: a.party,
                 role: "RIGHTS_HOLDER".into(),
             }],
             minority_declared: false,
@@ -2157,10 +2305,10 @@ async fn submit(
         .as_str()
         .and_then(|v| v.parse().ok())
         .ok_or(Error::Internal)?;
-    let result = Box::pin(submission::submit(
+    Box::pin(submission::submit(
         s,
-        &p.actor,
-        p.org,
+        a,
+        org,
         release,
         submission::SubmitInput {
             consent_id,
@@ -2169,8 +2317,11 @@ async fn submit(
             declarations: d,
         },
     ))
-    .await?;
-    Ok(json!({
+    .await
+}
+
+fn submitted_view(s: &AppState, release: Uuid, result: &Value) -> Value {
+    json!({
         "view": "submitted",
         "release_id": release,
         "application_id": result["revision_id"],
@@ -2182,6 +2333,48 @@ async fn submit(
             "AUDENIQ runs automatic checks and staff review; use get_submission_status to follow it.",
         ],
         "studio_url": studio_url(s, release),
+    })
+}
+
+fn pending_view(s: &AppState, release: Uuid, id: Uuid, status: &str, duplicate: bool) -> Value {
+    json!({
+        "view": "pending_approval",
+        "release_id": release,
+        "approval_id": id,
+        "approval_status": status,
+        "duplicate_request": duplicate,
+        "next_steps": [
+            format!("The artist asked to approve AI submissions in AUDENIQ Studio. It is not submitted yet: they approve it under Profile → Connected AI apps ({}/profile?open=ai) within 7 days.", super::issuer(s)),
+        ],
+        "studio_url": format!("{}/profile?open=ai", super::issuer(s)),
+    })
+}
+
+/// The application a confirmation already created, if any.
+async fn already_submitted(
+    s: &AppState,
+    org: Uuid,
+    release: Uuid,
+    key: &str,
+) -> std::result::Result<Option<Value>, ToolError> {
+    let row = sqlx::query(
+        "SELECT ar.id, ar.revision, r.status FROM catalog.application_revisions ar
+           JOIN catalog.releases r ON r.org_id=ar.org_id AND r.id=ar.release_id
+          WHERE ar.org_id=$1 AND ar.release_id=$2 AND ar.idempotency_key=$3",
+    )
+    .bind(org)
+    .bind(release)
+    .bind(key)
+    .fetch_optional(&s.pool)
+    .await
+    .map_err(Error::from)?;
+    Ok(row.map(|r| {
+        submitted_view(
+            s,
+            release,
+            &json!({"revision_id": r.get::<Uuid, _>("id"), "revision": r.get::<i32, _>("revision"),
+                    "status": r.get::<String, _>("status"), "deduped": true}),
+        )
     }))
 }
 
@@ -2580,6 +2773,14 @@ async fn request_payout(
             &format!("Request payouts in AUDENIQ Studio: {}", settlement_url(s)),
         ));
     }
+    let retried: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM portal.payout_requests WHERE org_id=$1 AND idempotency_key=$2)",
+    )
+    .bind(p.org)
+    .bind(format!("{PAYOUT_KEY_PREFIX}{nonce}"))
+    .fetch_one(&s.pool)
+    .await
+    .map_err(Error::from)?;
     let v = crate::portal::request_payout_capped(
         s,
         &p.actor,
@@ -2602,6 +2803,23 @@ async fn request_payout(
         ),
         e => e.into(),
     })?;
+    if !retried {
+        super::safety::notice(
+        &s.pool,
+        p.org,
+        p.actor.user,
+        "AI 앱으로 지급을 신청했어요",
+        &format!(
+            "{}에서 {}원 지급을 신청했어요 (수수료 {}원, 받을 금액 {}원). 내가 한 신청이 아니라면 정산 화면에서 바로 취소하고 어데닉에 문의해 주세요.",
+            p.client_name,
+            v["amount"].as_str().unwrap_or("?"),
+            v["fee"].as_str().unwrap_or("?"),
+            v["net"].as_str().unwrap_or("?")
+        ),
+        "/settlement",
+    )
+    .await;
+    }
     Ok(json!({
         "view": "payout",
         "payout_id": v["id"], "amount": v["amount"], "fee": v["fee"], "net": v["net"], "status": v["status"],
@@ -2616,7 +2834,7 @@ mod tests {
     #[test]
     fn every_tool_schema_compiles_and_is_strict() {
         for d in defs() {
-            let schema = (d.schema)();
+            let schema = d.input_schema();
             jsonschema::validator_for(&schema).unwrap_or_else(|e| panic!("{}: {e}", d.name));
             assert_eq!(schema["type"], "object", "{}", d.name);
             assert_eq!(schema["additionalProperties"], false, "{}", d.name);

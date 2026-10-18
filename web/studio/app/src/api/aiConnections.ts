@@ -68,3 +68,36 @@ export function clientHost(clientId: string): string | null {
     return null;
   }
 }
+
+/** AI 앱으로 한 발매 신청 중 스튜디오 승인을 기다리는 것 (설정에서 켠 경우) */
+export interface AiSubmission {
+  id: string;
+  org_id: string;
+  org_name: string;
+  release_id: string;
+  title: string;
+  client_name: string;
+  declarations: Record<string, boolean>;
+  created_at: string;
+  expires_at: string;
+}
+
+export const aiSettings = () => req<{ studio_approval: boolean }>('/api/auth/ai-settings');
+export const saveAiSettings = (studio_approval: boolean) =>
+  req<{ studio_approval: boolean }>('/api/auth/ai-settings', { method: 'PUT', body: { studio_approval } });
+export const aiSubmissions = () => req<{ items: AiSubmission[] }>('/api/auth/ai-submissions').then(r => r.items);
+export const approveAiSubmission = (id: string) =>
+  req<{ status: string }>(`/api/auth/ai-submissions/${encodeURIComponent(id)}/approve`, { method: 'POST', body: {} });
+export const rejectAiSubmission = (id: string) =>
+  req<{ status: string }>(`/api/auth/ai-submissions/${encodeURIComponent(id)}/reject`, { method: 'POST', body: {} });
+
+/** 발매 신청 때 아티스트가 하는 선언 (내 이름으로 기록돼요) */
+export const DECLARATION_LABEL: Record<string, string> = {
+  rights_confirmed: '음원·작품·커버에 필요한 권리를 갖고 있어요',
+  adult_confirmed: '만 18세 이상이에요',
+  is_cover: '다른 사람의 곡을 커버했어요',
+  is_remix: '기존 음원의 리믹스예요',
+  contains_samples: '다른 음원을 샘플링했어요',
+  ai_involved: '음악·보컬·가사에 AI 도구를 썼어요',
+  explicit_content: '청소년에게 유해한 내용이 있어요',
+};
