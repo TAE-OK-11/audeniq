@@ -20,7 +20,7 @@ import { dspLabel, durationLabel, genreLabel, kindLabel, languageLabel } from '.
 import { docBadgeTone, docState, docsForRelease, openFixes, pendingProofs, proofPath, useDocs } from '../store/docs';
 import { refreshDocs } from '../store/portalSync';
 import { MOCK } from '../lib/mode';
-import { errorMessage } from '../api/errors';
+import { ApiError, errorMessage } from '../api/errors';
 import { CorrectionList, ReviewNote } from '../components/CorrectionList';
 import { fixCountWord, fixPath, splitCorrections } from '../lib/corrections';
 import { CheckIcon } from '../components/Check';
@@ -140,7 +140,10 @@ export function ReleaseDetail() {
   }, [tab, keepY]);
   const [deleting, setDeleting] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
-  const { data: rel, error, loading, reload } = useAsync(() => api.getRelease(id), [id], { key: `release:${id}` });
+  const { data: rel, error, loading, reload } = useAsync(
+    // 없는 발매(404)는 오류가 아니라 '찾을 수 없음' — 다시 시도해도 소용없으니 목록으로 안내한다
+    () => api.getRelease(id).catch(e => { if (e instanceof ApiError && e.status === 404) return null; throw e; }),
+    [id], { key: `release:${id}` });
   // 배급 탭을 열 때만 플랫폼별 진행을 불러온다 (준비 전이면 빈 목록)
   const delivery = useAsync<DeliveryItem[]>(
     () => (tab === 'delivery' ? api.getDelivery(id).catch(() => []) : Promise.resolve([])),
@@ -171,11 +174,12 @@ export function ReleaseDetail() {
   if (error || !rel) {
     return (
       <div className="ui-empty">
-        <h2>발매 정보를 불러오지 못했어요.</h2>
-        <p>{error || '발매를 찾을 수 없어요.'}</p>
-        <div className="row-actions" style={{ justifyContent: 'center' }}>
-          <button type="button" className="ui-btn is-soft" onClick={reload}>다시 시도</button>
-          <button type="button" className="ui-btn is-primary" onClick={() => nav('/releases')}>발매 목록 보기</button>
+        {/* 불러오기 실패면 다시 시도가, 없는 발매면 목록으로 가는 것이 할 일 — 강조 버튼은 하나만 */}
+        <h2>{error ? '발매 정보를 불러오지 못했어요.' : '발매를 찾을 수 없어요.'}</h2>
+        <p>{error || '삭제됐거나 주소가 바뀌었을 수 있어요.'}</p>
+        <div className="row-actions">
+          {error && <button type="button" className="ui-btn is-primary" onClick={reload}>다시 시도하기</button>}
+          <button type="button" className={`ui-btn ${error ? 'is-soft' : 'is-primary'}`} onClick={() => nav('/releases')}>발매 목록 보기</button>
         </div>
       </div>
     );
@@ -479,7 +483,7 @@ export function ReleaseDetail() {
                         </span>
                         {/* 크레딧 · 길이 / 식별자 · 파일 — 잘리지 않게 두 줄로 나눈다 */}
                         <span className="ui-row-meta aq-track-credit">
-                          작곡 {t.composers || '없음'} · 작사 {t.lyricists || '없음'}
+                          작곡 {t.composers || '입력 전'} · 작사 {t.lyricists || '입력 전'}
                           {t.duration_ms ? ` · ${durationLabel(t.duration_ms)}` : ''}
                         </span>
                         <span className="aq-track-facts">
