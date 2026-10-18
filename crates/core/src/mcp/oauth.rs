@@ -290,8 +290,15 @@ fn cimd_allowed(settings: &Settings, client_id: &str) -> bool {
         && u.query().is_none()
         && u.fragment().is_none()
         && u.username().is_empty()
-        && u.host_str()
-            .is_some_and(|h| settings.cimd_hosts.iter().any(|a| a == h))
+        && settings.cimd_hosts.iter().any(|allowed| {
+            // An exact document URL pins one client; a bare host allows any
+            // document path on it.
+            if allowed.starts_with("https://") {
+                allowed == client_id
+            } else {
+                u.host_str() == Some(allowed.as_str())
+            }
+        })
 }
 
 async fn fetch_cimd(url: &str) -> anyhow::Result<Value> {
@@ -778,6 +785,36 @@ pub(super) async fn create_grant(
     sqlx::query("INSERT INTO identity.mcp_grants(id,client_pk,user_id,org_id,scopes,resource,method,label) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
         .bind(grant).bind(client_pk).bind(user).bind(org).bind(scopes).bind(super::resource(s)).bind(method).bind(label)
         .execute(&mut *c).await?;
+    // Tell the user (Studio notice + e-mail): a connection they did not make
+    // is noticed at once.
+    let client: String =
+        sqlx::query_scalar("SELECT client_name FROM identity.mcp_clients WHERE id=$1")
+            .bind(client_pk)
+            .fetch_one(&mut *c)
+            .await?;
+    let (title, detail) = if method == "TOKEN" {
+        (
+            "연결 토큰을 만들었어요".to_string(),
+            format!(
+                "‘{}’ 연결 토큰을 만들었어요. 내가 만든 게 아니라면 프로필 → 연결된 AI 앱에서 바로 끊고 비밀번호를 바꿔 주세요.",
+                label.unwrap_or("")
+            ),
+        )
+    } else {
+        (
+            "새 AI 앱이 연결됐어요".to_string(),
+            format!(
+                "{client}이(가) 어데닉 계정에 연결됐어요. 내가 연결하지 않았다면 프로필 → 연결된 AI 앱에서 바로 끊고 비밀번호를 바꿔 주세요."
+            ),
+        )
+    };
+    sqlx::query("SELECT identity.mcp_notice($1,$2,'ACCOUNT',$3,$4,'/profile?open=ai')")
+        .bind(org)
+        .bind(user)
+        .bind(&title)
+        .bind(&detail)
+        .execute(&mut *c)
+        .await?;
     operations::audit(
         c,
         Some(user),
@@ -1785,6 +1822,22 @@ mod tests {
         ));
         assert!(!cimd_allowed(&s, "https://chatgpt.com/"));
         assert!(!cimd_allowed(&s, "https://169.254.169.254/latest"));
+        let pinned = Settings {
+            cimd_hosts: vec!["https://claude.ai/oauth/mcp-oauth-client-metadata".into()],
+            ..s
+        };
+        assert!(cimd_allowed(
+            &pinned,
+            "https://claude.ai/oauth/mcp-oauth-client-metadata"
+        ));
+        assert!(!cimd_allowed(
+            &pinned,
+            "https://claude.ai/other/client.json"
+        ));
+        assert!(!cimd_allowed(
+            &pinned,
+            "https://chatgpt.com/oauth/client.json"
+        ));
     }
     #[test]
     fn escape_neutralizes_markup() {

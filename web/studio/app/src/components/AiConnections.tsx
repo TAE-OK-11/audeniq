@@ -7,8 +7,9 @@ import { CopyButton } from './CopyButton';
 import { errorMessage } from '../api/errors';
 import { orgId } from '../api/http';
 import {
-  aiConnections, clientHost, createConnectionToken, revokeAiConnection, SCOPE_HELP, SCOPE_LABEL,
-  type AiConnection, type NewConnectionToken,
+  aiConnections, aiSettings, aiSubmissions, approveAiSubmission, clientHost, createConnectionToken, DECLARATION_LABEL,
+  rejectAiSubmission, revokeAiConnection, saveAiSettings, SCOPE_HELP, SCOPE_LABEL,
+  type AiConnection, type AiSubmission, type NewConnectionToken,
 } from '../api/aiConnections';
 import { relativeTime } from '../lib/date';
 
@@ -137,6 +138,89 @@ function MadeToken({ made, onClose }: { made: NewConnectionToken; onClose: () =>
   );
 }
 
+/** AI 앱으로 한 발매 신청 중 승인을 기다리는 것 — 승인하면 그때 접수돼요. */
+function PendingSubmissions({ items, onDone }: { items: AiSubmission[]; onDone: (id: string) => void }) {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const [busy, setBusy] = useState<string | null>(null);
+
+  async function decide(p: AiSubmission, approve: boolean) {
+    const declared = Object.entries(p.declarations).filter(([, v]) => v).map(([k]) => DECLARATION_LABEL[k] ?? k);
+    const ok = await confirm(approve
+      ? {
+        title: `‘${p.title}’ 발매를 신청할까요?`,
+        message: (
+          <>
+            <p>{p.client_name}에서 대화로 확인한 내용 그대로 접수해요. 아래 선언은 내 이름으로 기록돼요.</p>
+            <ul>{(declared.length ? declared : ['선언 없음']).map(d => <li key={d}>{d}</li>)}</ul>
+          </>
+        ),
+        confirmLabel: '승인하고 신청하기',
+      }
+      : { title: `‘${p.title}’ 신청을 거절할까요?`, message: '거절하면 접수되지 않아요. 발매 초안은 그대로 남아요.', confirmLabel: '거절하기', danger: true });
+    if (!ok) return;
+    setBusy(p.id);
+    try {
+      if (approve) await approveAiSubmission(p.id); else await rejectAiSubmission(p.id);
+      onDone(p.id);
+      toast(approve ? '발매 신청을 접수했어요.' : '신청을 거절했어요.', approve ? 'success' : 'info');
+    } catch (err) {
+      toast(errorMessage(err, approve ? '신청하지 못했어요.' : '거절하지 못했어요.'), 'error');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section className="aq-token-section" aria-labelledby="aqAiPending">
+      <h3 id="aqAiPending" className="ui-field-label">승인을 기다리는 AI 신청</h3>
+      <ul className="aq-passkey-list">
+        {items.map(p => (
+          <li key={p.id}>
+            <span className="min-0">
+              <strong>{p.title}</strong>
+              <small>{[p.client_name, workspaceName(p.org_name), `${day(p.expires_at)}까지 승인`].join(' · ')}</small>
+            </span>
+            <span className="aq-row-actions">
+              <button type="button" className="ui-btn is-soft is-sm" disabled={busy !== null} onClick={() => void decide(p, false)}>거절</button>
+              <button type="button" className="ui-btn is-primary is-sm" disabled={busy !== null} onClick={() => void decide(p, true)}>
+                {busy === p.id ? '처리 중' : '승인'}
+              </button>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** AI로 하는 발매 신청을 스튜디오에서 한 번 더 승인할지 */
+function StudioApproval() {
+  const toast = useToast();
+  const [on, setOn] = useState<boolean | null>(null);
+  useEffect(() => { aiSettings().then(v => setOn(v.studio_approval)).catch(() => setOn(null)); }, []);
+  if (on === null) return null;
+  async function change(next: boolean) {
+    setOn(next);
+    try {
+      await saveAiSettings(next);
+      toast(next ? 'AI 발매 신청은 이제 여기서 승인해야 접수돼요.' : 'AI 발매 신청이 대화에서 확인한 대로 바로 접수돼요.', 'info');
+    } catch (err) {
+      setOn(!next);
+      toast(errorMessage(err, '설정을 바꾸지 못했어요.'), 'error');
+    }
+  }
+  return (
+    <label className="ui-check">
+      <input type="checkbox" checked={on} onChange={e => void change(e.target.checked)} />
+      <span>
+        <strong>AI 발매 신청은 스튜디오에서 한 번 더 승인</strong>
+        <small>켜 두면 AI 앱이 신청을 보내도 여기서 승인해야 접수돼요. 7일 안에 승인하지 않으면 취소돼요.</small>
+      </span>
+    </label>
+  );
+}
+
 export function AiConnections() {
   const toast = useToast();
   const confirm = useConfirm();
@@ -145,6 +229,8 @@ export function AiConnections() {
   const [busy, setBusy] = useState<string | null>(null);
   const [making, setMaking] = useState(false);
   const [made, setMade] = useState<NewConnectionToken | null>(null);
+  const [pending, setPending] = useState<AiSubmission[]>([]);
+  useEffect(() => { aiSubmissions().then(setPending).catch(() => setPending([])); }, []);
 
   const load = () => aiConnections().then(setItems).catch(err => setError(errorMessage(err, '연결된 AI 앱을 불러오지 못했어요.')));
   useEffect(() => { void load(); }, []);
@@ -177,6 +263,7 @@ export function AiConnections() {
 
   return (
     <div className="aq-passkeys">
+      {pending.length > 0 && <PendingSubmissions items={pending} onDone={id => setPending(list => list.filter(p => p.id !== id))} />}
       <p className="aq-muted">
         ChatGPT·Claude 같은 AI 앱에서 어데닉을 연결하면 여기에 나와요. 앱마다 승인한 일만 할 수 있어요.
       </p>
@@ -223,6 +310,10 @@ export function AiConnections() {
             <button type="button" className="ui-btn" onClick={() => setMaking(true)}>연결 토큰 만들기</button>
           </>
         )}
+      </section>
+
+      <section className="aq-token-section aq-token-group" aria-label="AI 신청 설정">
+        <StudioApproval />
       </section>
 
       <p className="aq-muted aq-token-note">

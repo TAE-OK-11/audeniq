@@ -7,8 +7,13 @@ import { ConfirmProvider } from './Confirm';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const http = vi.hoisted(() => ({ req: vi.fn() }));
-vi.mock('../api/http', () => ({ req: http.req, orgId: () => 'o1', orgPath: (p: string) => `/api/orgs/o1${p}` }));
+const http = vi.hoisted(() => ({ req: vi.fn(), side: vi.fn() }));
+// AI 설정·승인 대기 목록은 따로 받는다 (각 테스트의 연결 목록 응답과 섞이지 않게)
+vi.mock('../api/http', () => ({
+  req: (...args: [string, unknown?]) => (/\/ai-(settings|submissions)/.test(args[0]) ? http.side(...args) : http.req(...args)),
+  orgId: () => 'o1',
+  orgPath: (p: string) => `/api/orgs/o1${p}`,
+}));
 vi.mock('../lib/mode', () => ({ MOCK: false }));
 
 import { AiConnections } from './AiConnections';
@@ -25,8 +30,11 @@ const items = [
 ];
 
 let root: Root; let el: HTMLDivElement;
-beforeEach(() => { el = document.createElement('div'); document.body.appendChild(el); root = createRoot(el); });
-afterEach(() => { act(() => root.unmount()); el.remove(); http.req.mockReset(); document.body.innerHTML = ''; });
+beforeEach(() => {
+  el = document.createElement('div'); document.body.appendChild(el); root = createRoot(el);
+  http.side.mockImplementation((url: string) => Promise.resolve(url.includes('/ai-settings') ? { studio_approval: false } : { items: [] }));
+});
+afterEach(() => { act(() => root.unmount()); el.remove(); http.req.mockReset(); http.side.mockReset(); document.body.innerHTML = ''; });
 
 async function render() {
   await act(async () => {
@@ -123,6 +131,34 @@ describe('AiConnections', () => {
     });
     expect(el.textContent).toContain('무기한으로 쓸 수 있어요');
     // Unticking "all" turns every optional permission off again.
+  });
+
+  it('approves an AI submission only after showing the declarations, and toggles Studio approval', async () => {
+    const pending = [{
+      id: 'p1', org_id: 'o1', org_name: 'Personal workspace', release_id: 'r1', title: 'Spring', client_name: 'Claude',
+      declarations: { rights_confirmed: true, adult_confirmed: true, is_cover: false }, created_at: '2026-10-18T00:00:00Z', expires_at: '2026-10-25T00:00:00Z',
+    }];
+    http.req.mockResolvedValue({ items: [] });
+    http.side.mockImplementation((url: string, opts?: { method?: string; body?: unknown }) => {
+      if (url.endsWith('/approve')) return Promise.resolve({ status: 'APPROVED' });
+      if (url.includes('/ai-settings')) return Promise.resolve({ studio_approval: opts?.method === 'PUT' ? true : false });
+      return Promise.resolve({ items: pending });
+    });
+    await render();
+    expect(el.textContent).toContain('승인을 기다리는 AI 신청');
+    expect(el.textContent).toContain('Spring');
+    await act(async () => { buttons('승인')[0].click(); });
+    // The confirm dialog lists what will be declared in the artist's name.
+    expect(document.body.textContent).toContain('만 18세 이상이에요');
+    expect(document.body.textContent).not.toContain('다른 사람의 곡을 커버했어요');
+    await act(async () => { buttons('승인하고 신청하기')[0].click(); });
+    expect(http.side).toHaveBeenCalledWith('/api/auth/ai-submissions/p1/approve', { method: 'POST', body: {} });
+    expect(el.textContent).not.toContain('승인을 기다리는 AI 신청');
+
+    const toggle = [...el.querySelectorAll('label')].find(l => l.textContent?.includes('스튜디오에서 한 번 더 승인'))!.querySelector('input')!;
+    expect(toggle.checked).toBe(false);
+    await act(async () => { toggle.click(); });
+    expect(http.side).toHaveBeenCalledWith('/api/auth/ai-settings', { method: 'PUT', body: { studio_approval: true } });
   });
 
   it('shows a load error', async () => {

@@ -36,6 +36,7 @@ pub async fn purge_transient(pool: &PgPool, operator: &str) -> Result<Value> {
         "WITH old AS (SELECT token_hash FROM identity.mcp_tokens WHERE expires_at<now()-interval '1 day' ORDER BY expires_at LIMIT 10000 FOR UPDATE SKIP LOCKED) DELETE FROM identity.mcp_tokens t USING old WHERE t.token_hash=old.token_hash",
         "WITH old AS (SELECT device_code_hash FROM identity.mcp_device_codes WHERE expires_at<now()-interval '1 day' ORDER BY expires_at LIMIT 10000 FOR UPDATE SKIP LOCKED) DELETE FROM identity.mcp_device_codes d USING old WHERE d.device_code_hash=old.device_code_hash",
         "DELETE FROM identity.mcp_daily_usage WHERE day < (now() AT TIME ZONE 'Asia/Seoul')::date - 1",
+        "DELETE FROM identity.mcp_idempotency WHERE created_at < now()-interval '7 days'",
     ] {
         mcp += sqlx::query(q).execute(&mut *tx).await?.rows_affected();
     }

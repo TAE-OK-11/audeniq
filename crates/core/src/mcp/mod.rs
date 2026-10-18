@@ -10,6 +10,8 @@
 //!   password grant for operator-registered agents, Studio connection tokens.
 //! - [`public`]: tools that need no account (notices, events, service
 //!   status, release requirements) under daily limits per IP / per user.
+//! - [`safety`]: activity notices, retry-safe creates, optional Studio
+//!   approval of AI submissions.
 //! - [`protocol`]: Streamable HTTP + JSON-RPC (2026-07-28 per-request
 //!   metadata and the earlier `initialize`-based revisions).
 //! - [`tools`]: tool schemas and handlers. Handlers only call the existing
@@ -24,6 +26,7 @@ pub mod oauth;
 pub mod prompts;
 pub mod protocol;
 pub mod public;
+pub mod safety;
 pub mod tools;
 
 use crate::api::AppState;
@@ -65,9 +68,10 @@ pub const DEFAULT_PAYOUT_LIMIT_KRW: i64 = 300_000;
 #[derive(Clone, Debug)]
 pub struct Settings {
     pub enabled: bool,
-    /// Hosts whose Client ID Metadata Documents the server fetches. Only
-    /// these hosts are ever contacted (no server-side request to an
-    /// arbitrary URL a caller names).
+    /// Hosts (any document path on them) or exact `https://` document URLs
+    /// whose Client ID Metadata Documents the server fetches. Only these are
+    /// ever contacted (no server-side request to an arbitrary URL a caller
+    /// names).
     pub cimd_hosts: Vec<String>,
     /// RFC 7591 registration (deprecated by MCP, still used by clients).
     pub dynamic_registration: bool,
@@ -104,7 +108,15 @@ impl Settings {
         let cimd_hosts = std::env::var("AUDENIQ_MCP_CIMD_HOSTS")
             .unwrap_or_else(|_| "chatgpt.com,claude.ai".into())
             .split(',')
-            .map(|h| h.trim().to_ascii_lowercase())
+            // Hosts compare case-insensitively; exact document URLs as given.
+            .map(|h| {
+                let h = h.trim();
+                if h.starts_with("https://") {
+                    h.to_string()
+                } else {
+                    h.to_ascii_lowercase()
+                }
+            })
             .filter(|h| !h.is_empty())
             .collect();
         Self {
@@ -165,6 +177,16 @@ pub fn routes() -> Router<AppState> {
             "/api/auth/ai-connections/tokens",
             post(login::create_connection_token),
         )
+        .route(
+            "/api/auth/ai-settings",
+            get(safety::get_settings).put(safety::put_settings),
+        )
+        .route("/api/auth/ai-submissions", get(safety::list_pending))
+        .route(
+            "/api/auth/ai-submissions/{id}/approve",
+            post(safety::approve),
+        )
+        .route("/api/auth/ai-submissions/{id}/reject", post(safety::reject))
 }
 
 /// Requests the boundary lets through without the Studio `Origin`: AI
