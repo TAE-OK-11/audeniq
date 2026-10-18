@@ -59,7 +59,10 @@ checks `submit` already ran, now shared with `submission::draft_review`) and
 | `POST /api/oauth/register` | RFC 7591 dynamic registration (`AUDENIQ_MCP_DYNAMIC_REGISTRATION`) |
 | `GET /api/oauth/authorize` | Consent screen (server-rendered, no script) |
 | `POST /api/oauth/authorize` | Consent decision (Studio session + Origin + signed request) |
-| `POST /api/oauth/token` | `authorization_code` (PKCE) and `refresh_token` |
+| `POST /api/oauth/token` | `authorization_code` (PKCE), `refresh_token`, `urn:ietf:params:oauth:grant-type:device_code`, `password` (trusted agents only) |
+| `POST /api/oauth/device_authorization` | RFC 8628: a device code for the client, a link and user code for the artist |
+| `GET /api/oauth/device`, `POST /api/oauth/device` | The link's page: Studio sign-in, code check, consent (same screen and rules as `/authorize`) |
+| `POST /api/auth/ai-connections/tokens` | Studio session: make a connection token (fixed bearer) for the current workspace |
 | `POST /api/oauth/revoke` | RFC 7009 revocation (ends the whole grant) |
 | `GET /api/auth/ai-connections`, `POST /api/auth/ai-connections/{id}/revoke` | The user's connected AI apps (Studio session); Studio shows them under 프로필 → 로그인 → 연결된 AI 앱 |
 
@@ -96,6 +99,28 @@ permissions. `releases:submit` is never pre-selected. Approval redirects with
 - Not implemented: OpenID Connect (no ID token/UserInfo; ChatGPT only needs it
   for workspace domain restrictions), `private_key_jwt` client authentication
   (ChatGPT also offers `none`), mTLS client certificates.
+
+### Other ways to connect
+
+Clients that can open a browser redirect (ChatGPT, Claude) use the flow above.
+Three more, by what the agent can do:
+
+| Agent | How it connects | Grant `method` |
+|---|---|---|
+| Can call OAuth endpoints but has no browser redirect | **Link + code** (RFC 8628): `POST /api/oauth/device_authorization` → the assistant shows `verification_uri_complete` and `user_code` in the chat → the artist opens it, signs in to the Studio, checks the code and approves → the client polls `/api/oauth/token` (`authorization_pending`, `slow_down` faster than every 5 s, `access_denied`, `expired_token`). | `DEVICE` |
+| Has a credential form that sends the e-mail and password to AUDENIQ without the model seeing them (an operator verified this) | **Password grant**: `grant_type=password&username=&password=[&scope=][&org_id=]` with the client secret an operator issued (`audeniq-admin mcp-client add NAME --password-grant`). Login rate limits (`mcp-password` buckets) and audit apply; `payouts:request` is refused; workspace defaults to the first editable one. Public, DCR and CIMD clients get `unauthorized_client`. | `PASSWORD` |
+| Anything else (only a fixed `Authorization` header) | **Connection token**: the artist makes one in the Studio (프로필 → 로그인 → 연결된 AI 앱 → 연결 토큰 만들기): name, permissions (read always, write on by default, submit/settlement/payout opt-in), 7/30/90 days. Shown once; stored as SHA-256; listed and revocable like any connection. | `TOKEN` |
+
+Never ask the artist to type a password into a chat: a model that sees it
+keeps it in the conversation history. Agents that cannot keep it from the
+model use a connection token or the link + code.
+
+Operators: `audeniq-admin mcp-client list`, `audeniq-admin --operator NAME
+mcp-client add NAME [--password-grant] [--secret-post] [--redirect-uri URI]...`
+(prints `client_id` and `client_secret` once; without `--redirect-uri` the
+agent cannot use the browser redirect), `audeniq-admin --operator NAME
+mcp-client disable CLIENT_ID` (ends all of its connections). Changes are
+audited as `mcp.client_registered` / `mcp.client_disabled` with the operator.
 
 ### Scopes
 
@@ -376,7 +401,9 @@ an assistant recommend AUDENIQ; listing and discovery are separate tasks.
 
 - Enable per environment with `AUDENIQ_MCP_ENABLED`; disable to cut all AI
   access instantly (tokens remain stored but unusable while disabled).
-- Disable one client: `UPDATE identity.mcp_clients SET disabled_at=now() WHERE client_id=…`.
+- Disable one client: `audeniq-admin --operator NAME mcp-client disable CLIENT_ID`
+  for operator-registered agents, otherwise `UPDATE identity.mcp_clients SET disabled_at=now() WHERE client_id=…`.
+- Pending device codes expire after 10 minutes and are deleted a day later.
 - Watch: `mcp_tool` log lines (error rate by tool), `RATE_LIMITED` responses,
   `mcp.grant_revoked` audit rows with `REFRESH_REUSED`/`CODE_REPLAYED`
   (possible token theft), and `submission.created` rows following

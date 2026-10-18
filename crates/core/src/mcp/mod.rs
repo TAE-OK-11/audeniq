@@ -6,6 +6,8 @@
 //! - [`oauth`]: OAuth 2.1 authorization server (consent screen on the Studio
 //!   session, PKCE, rotating refresh tokens, CIMD + DCR clients). A token is
 //!   bound to one user, one workspace and the scopes the user approved.
+//! - [`login`]: other ways to connect: device authorization (link + code),
+//!   password grant for operator-registered agents, Studio connection tokens.
 //! - [`protocol`]: Streamable HTTP + JSON-RPC (2026-07-28 per-request
 //!   metadata and the earlier `initialize`-based revisions).
 //! - [`tools`]: tool schemas and handlers. Handlers only call the existing
@@ -15,6 +17,7 @@
 //!
 //! Off unless `AUDENIQ_MCP_ENABLED=true`: the endpoints answer 404 until an
 //! operator turns them on. See docs/MCP.md.
+pub mod login;
 pub mod oauth;
 pub mod protocol;
 pub mod tools;
@@ -123,11 +126,23 @@ pub fn routes() -> Router<AppState> {
             get(oauth::authorize).post(oauth::decide),
         )
         .route("/api/oauth/token", post(oauth::token))
+        .route(
+            "/api/oauth/device_authorization",
+            post(login::device_authorization),
+        )
+        .route(
+            "/api/oauth/device",
+            get(login::device_page).post(login::device_decide),
+        )
         .route("/api/oauth/revoke", post(oauth::revoke))
         .route("/api/auth/ai-connections", get(oauth::connections))
         .route(
             "/api/auth/ai-connections/{id}/revoke",
             post(oauth::revoke_connection),
+        )
+        .route(
+            "/api/auth/ai-connections/tokens",
+            post(login::create_connection_token),
         )
 }
 
@@ -139,7 +154,11 @@ pub fn origin_exempt(method: &axum::http::Method, path: &str) -> bool {
     *method == axum::http::Method::POST
         && matches!(
             path,
-            MCP_PATH | "/api/oauth/register" | "/api/oauth/token" | "/api/oauth/revoke"
+            MCP_PATH
+                | "/api/oauth/register"
+                | "/api/oauth/token"
+                | "/api/oauth/revoke"
+                | "/api/oauth/device_authorization"
         )
 }
 
