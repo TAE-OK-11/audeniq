@@ -109,6 +109,65 @@ commands:
           command: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
 jobs:
+  # Rust 검사·MCP 테스트 (실제 PostgreSQL). 네이티브 엔진(audeniq-qc·audeniq-photo)이 필요한 스위트는
+  # 이미지 안에서만 돈다 — 여기서는 엔진 없이 끝까지 도는 것만 돌린다. main에서는 이미지 빌드 전에 통과해야 한다.
+  backend-test:
+    docker:
+      - image: rust:1.98.1-bookworm
+      - image: postgres:18-trixie
+        environment:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ephemeral-ci-only
+          POSTGRES_DB: postgres
+    resource_class: large
+    environment:
+      DATABASE_URL: postgres://postgres:ephemeral-ci-only@localhost:5432/postgres
+      PAYOUT_ACCOUNT_KEY: '0000000000000000000000000000000000000000000000000000000000000000'
+      CARGO_INCREMENTAL: '0'
+      CARGO_TERM_COLOR: never
+    steps:
+      - checkout
+      - skip-unless-changed:
+          paths: '^(Cargo\.toml|Cargo\.lock|rust-toolchain\.toml|crates/|config/|migrations/|\.circleci/)'
+      - restore_cache:
+          keys:
+            - cargo-v1-{{ checksum "Cargo.lock" }}-{{ checksum "rust-toolchain.toml" }}
+            - cargo-v1-
+      - run:
+          name: Toolchain
+          command: |
+            rustup show active-toolchain
+            cargo --version
+      - run:
+          name: Format and lint
+          command: |
+            cargo fmt --all --check
+            cargo clippy -p audeniq-core --lib --bins --test mcp --locked -- -D warnings
+      - run:
+          name: Wait for PostgreSQL
+          command: |
+            for i in $(seq 1 60); do
+              (exec 3<>/dev/tcp/127.0.0.1/5432) 2>/dev/null && exit 0
+              sleep 1
+            done
+            echo "PostgreSQL did not start" >&2; exit 1
+      - run:
+          name: MCP and auth tests
+          no_output_timeout: 30m
+          command: |
+            cargo test --locked -p audeniq-core --lib mcp
+            cargo test --locked -p audeniq-core --test mcp -- --test-threads=4
+            cargo test --locked -p audeniq-core --test password_reset -- --test-threads=2
+      - run:
+          name: Edge routing tests
+          command: cargo test --locked -p audeniq-edge --lib
+      - save_cache:
+          key: cargo-v1-{{ checksum "Cargo.lock" }}-{{ checksum "rust-toolchain.toml" }}
+          paths:
+            - /usr/local/cargo/registry
+            - /usr/local/cargo/git
+            - /usr/local/rustup/toolchains
+
   build:
     parameters:
       arch:
@@ -491,12 +550,15 @@ workflows:
       not:
         equal: [frontend, << pipeline.parameters.target >>]
     jobs:
+      # 모든 브랜치에서 돈다 (PR 확인용). main에서는 이미지 빌드의 전제 조건
+      - backend-test
       - build:
           name: build-amd64
           context: audeniq-production
           arch: amd64
           cpu: x86-64
           resource_class: large
+          requires: [backend-test]
           filters: &main-only
             branches:
               only: main
@@ -506,9 +568,11 @@ workflows:
           arch: arm64
           cpu: generic
           resource_class: arm.large
+          requires: [backend-test]
           filters: *main-only
       - build-tuned:
           context: audeniq-production
+          requires: [backend-test]
           filters: *main-only
       - image:
           context: audeniq-production

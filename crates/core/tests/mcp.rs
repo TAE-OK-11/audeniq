@@ -29,6 +29,9 @@ use support::{MemStore, ORIGIN, SECRET, User, call, register_asset, user};
 const REDIRECT: &str = "https://client.example.test/callback";
 const VERIFIER: &str = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
 const CHALLENGE: &str = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+/// Stands in for an audio file uploaded in Studio: these tests never run QC
+/// on it (no ffmpeg or analyzer needed), only its registration and hash.
+const AUDIO: &[u8] = b"RIFF\x24\x00\x00\x00WAVEfmt mcp-test-audio";
 
 async fn app_with(pool: PgPool, enabled: bool, bypass_dsp_gate: bool) -> (Router, Arc<MemStore>) {
     database::MIGRATOR.run(&pool).await.unwrap();
@@ -1175,7 +1178,7 @@ async fn conversational_release_preparation_to_confirmed_submission(pool: PgPool
     );
 
     // The artist uploads audio in Studio (simulated: a registered asset).
-    let asset = register_asset(&pool, &store, &u, "night.wav", support::wav_bytes()).await;
+    let asset = register_asset(&pool, &store, &u, "night.wav", AUDIO).await;
     let (err, v) = tool(
         &app,
         &c.access,
@@ -1366,7 +1369,7 @@ async fn submit_scope_is_opt_in_and_platform_rules_are_enforced(pool: PgPool) {
     )
     .await;
     let release = rel["release_id"].as_str().unwrap().to_string();
-    let asset = register_asset(&pool, &store, &u, "t.wav", support::wav_bytes()).await;
+    let asset = register_asset(&pool, &store, &u, "t.wav", AUDIO).await;
     let (_, v) = tool(
         &app,
         &c.access,
