@@ -198,6 +198,8 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 
 /* 내 음악 — 휴대폰에서도 검색과 정렬을 한 줄로 (정렬은 좁게) */
 @media(max-width:759px){#view-catalog .toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto}#view-catalog .toolbar select{min-width:0}}
+/* 아주 좁은 화면은 검색칸 안내가 '발매·아...'로 잘려 검색창과 정렬을 위아래로 */
+@media(max-width:359px){#view-catalog .toolbar{grid-template-columns:minmax(0,1fr)}}
 
 /* PC 머리 버튼(새 발매·CSV 내보내기·새 문의…) — 설명 줄 아래에 떠 보이지 않게 제목 묶음 가운데에 */
 @media(min-width:761px){.ui-page-head{align-items:center}}
