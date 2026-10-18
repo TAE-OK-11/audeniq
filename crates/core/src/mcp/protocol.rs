@@ -12,7 +12,7 @@
 //!   request stands alone in both eras.
 use super::{
     oauth::{self, BearerError, Principal},
-    tools,
+    public, tools,
 };
 use crate::{api::AppState, error::Error};
 use axum::{
@@ -101,6 +101,67 @@ fn unauthorized(s: &AppState, id: &Value) -> Response {
         ),
     );
     r
+}
+
+/// A public tool: anyone, counted per IP per day without a token, per user
+/// with one. A token that is sent must be valid (the client refreshes it).
+async fn public_call(
+    s: &AppState,
+    h: &HeaderMap,
+    id: &Value,
+    def: &'static tools::ToolDef,
+    args: Value,
+    complete: impl Fn(Value) -> Value,
+) -> Response {
+    let server_error = |e: Error| {
+        rpc_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            id,
+            -32603,
+            crate::error::message(error_code(&e)).unwrap_or("Server error"),
+            None,
+        )
+    };
+    let principal = if h.contains_key(header::AUTHORIZATION) {
+        match oauth::principal(s, h).await {
+            Ok(p) => Some(p),
+            Err(BearerError::Invalid) => return unauthorized(s, id),
+            Err(BearerError::Api(e)) => return server_error(e),
+        }
+    } else {
+        None
+    };
+    let caller = match &principal {
+        Some(p) => public::Caller::User(p),
+        None => public::Caller::Anonymous {
+            source: crate::auth::client_ip_key(h).unwrap_or_else(|| "unknown".into()),
+        },
+    };
+    match public::call(s, def, args, caller).await {
+        Ok(public::Outcome::Result(v)) => rpc_result(id, complete(v)),
+        Ok(public::Outcome::SignInRequired { limit, resets_at }) => {
+            let mut r = rpc_error(
+                StatusCode::UNAUTHORIZED,
+                id,
+                -32001,
+                &format!(
+                    "Without an account this is limited to {limit} calls a day. Connect your AUDENIQ account to continue."
+                ),
+                Some(
+                    json!({"reason": "DAILY_ANONYMOUS_LIMIT", "limit": limit, "resets_at": resets_at}),
+                ),
+            );
+            r.headers_mut().insert(
+                header::WWW_AUTHENTICATE,
+                challenge(
+                    s,
+                    ", error=\"invalid_token\", error_description=\"Daily limit without an account reached; connect your AUDENIQ account\"",
+                ),
+            );
+            r
+        }
+        Err(e) => server_error(e),
+    }
 }
 
 fn insufficient_scope(s: &AppState, id: &Value, scope: &str) -> Response {
@@ -372,6 +433,13 @@ pub async fn post(State(s): State<AppState>, h: HeaderMap, body: Bytes) -> Respo
                     None,
                 );
             };
+            let args = params
+                .get("arguments")
+                .cloned()
+                .unwrap_or_else(|| json!({}));
+            if def.public() {
+                return public_call(&s, &h, &id, def, args, complete).await;
+            }
             let principal: Principal = match oauth::principal(&s, &h).await {
                 Ok(p) => p,
                 Err(BearerError::Invalid) => return unauthorized(&s, &id),
@@ -388,10 +456,6 @@ pub async fn post(State(s): State<AppState>, h: HeaderMap, body: Bytes) -> Respo
             if !principal.has(def.scope) {
                 return insufficient_scope(&s, &id, def.scope);
             }
-            let args = params
-                .get("arguments")
-                .cloned()
-                .unwrap_or_else(|| json!({}));
             let result = Box::pin(tools::call(&s, &principal, def, args)).await;
             rpc_result(&id, complete(result))
         }
