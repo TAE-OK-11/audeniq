@@ -558,6 +558,39 @@ pub async fn gate(State(s): State<AppState>, req: Request, next: Next) -> Respon
         return next.run(req).await;
     }
     match active_maintenance(&s).await {
+        Some(m) if req.uri().path() == crate::mcp::MCP_PATH => {
+            // AI clients: a JSON-RPC error they can show, not a transport failure.
+            let title = m["title"].as_str().unwrap_or("Maintenance");
+            let mut r = reply(
+                StatusCode::SERVICE_UNAVAILABLE,
+                json!({"jsonrpc":"2.0","id":null,"error":{"code":-32000,
+                    "message":format!("AUDENIQ is under maintenance: {title}"),"data":{"maintenance":m}}}),
+                "no-store",
+            );
+            r.headers_mut()
+                .insert(header::RETRY_AFTER, HeaderValue::from_static("60"));
+            r
+        }
+        Some(_)
+            if req.method() == Method::POST
+                && matches!(
+                    req.uri().path(),
+                    "/api/oauth/token"
+                        | "/api/oauth/register"
+                        | "/api/oauth/revoke"
+                        | "/api/oauth/device_authorization"
+                ) =>
+        {
+            // Token, registration and revocation in OAuth's shape: clients retry.
+            let mut r = reply(
+                StatusCode::SERVICE_UNAVAILABLE,
+                json!({"error":"temporarily_unavailable","error_description":"AUDENIQ is under maintenance. Retry later."}),
+                "no-store",
+            );
+            r.headers_mut()
+                .insert(header::RETRY_AFTER, HeaderValue::from_static("60"));
+            r
+        }
         Some(m) => {
             let mut r = reply(
                 StatusCode::SERVICE_UNAVAILABLE,

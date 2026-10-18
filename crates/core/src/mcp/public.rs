@@ -61,12 +61,6 @@ async fn count(pool: &PgPool, key: &str) -> Result<i32> {
     .bind(auth::bucket_hash(key))
     .fetch_one(pool)
     .await?;
-    if calls == 1 {
-        // A new bucket for today: drop counts older than yesterday.
-        sqlx::query("DELETE FROM identity.mcp_daily_usage WHERE day < (now() AT TIME ZONE 'Asia/Seoul')::date - 1")
-            .execute(pool)
-            .await?;
-    }
     Ok(calls)
 }
 

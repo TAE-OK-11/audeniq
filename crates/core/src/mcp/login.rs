@@ -111,6 +111,18 @@ pub async fn device_authorization(
         Ok(c) => c,
         Err(r) => return *r,
     };
+    // Only agents an operator registered (with a client secret). Anyone can
+    // name a public client (ChatGPT's CIMD URL, a DCR client called
+    // "ChatGPT") and, with no redirect to bind it, send the artist a real
+    // AUDENIQ link that shows that name: a phishing kit. Browser clients use
+    // the redirect flow; other agents use a connection token.
+    if c.kind != "ADMIN" {
+        return oauth_error(
+            StatusCode::UNAUTHORIZED,
+            "unauthorized_client",
+            "The link-and-code flow is for agents registered with AUDENIQ. Use the browser authorization flow, or a connection token made in AUDENIQ Studio.",
+        );
+    }
     if !resource_ok(&s, form.get("resource").map(String::as_str)) {
         return oauth_error(
             StatusCode::BAD_REQUEST,
@@ -188,7 +200,7 @@ fn page_done(title: &str, message: &str) -> Response {
 
 async fn client_by_pk(s: &AppState, pk: Uuid) -> Result<Option<Client>> {
     let row = sqlx::query(sqlx::AssertSqlSafe(format!(
-        "SELECT {CLIENT_COLS} FROM identity.mcp_clients WHERE id=$1 AND disabled_at IS NULL AND kind<>'TOKEN'"
+        "SELECT {CLIENT_COLS} FROM identity.mcp_clients WHERE id=$1 AND disabled_at IS NULL AND kind='ADMIN'"
     )))
     .bind(pk)
     .fetch_optional(&s.pool)
@@ -270,7 +282,7 @@ pub async fn device_page(
         &ConsentTarget {
             action: "/api/oauth/device",
             note: format!(
-                "연결 코드: <code>{}</code><br>AI 앱에 보이는 코드와 같을 때만 승인해 주세요.",
+                "연결 코드: <code>{}</code><br>어데닉에 등록된 에이전트예요. 내가 시작한 연결이고 AI 앱에 보이는 코드와 같을 때만 승인해 주세요.",
                 display_code(&code)
             ),
             form_origin: None,
@@ -477,11 +489,18 @@ pub(super) async fn password_grant(
         privacy_notice_version: None,
     };
     let bad_login = TokenError::Oauth("invalid_grant", "The e-mail or password is incorrect.");
-    let (user, hash) = match auth::check_password(s, h, creds, "mcp-password").await {
-        Ok(v) => v,
-        Err(Error::Unauthorized | Error::Invalid) => return Err(bad_login),
-        Err(e) => return Err(TokenError::Api(e)),
-    };
+    let (user, hash) =
+        match auth::check_password(s, h, creds, auth::PasswordVia::Agent(client.pk)).await {
+            Ok(v) => v,
+            Err(Error::Unauthorized | Error::Invalid) => return Err(bad_login),
+            Err(Error::RateLimited) => {
+                return Err(TokenError::Oauth(
+                    "invalid_grant",
+                    "Too many sign-in attempts for this account. Try again in 15 minutes.",
+                ));
+            }
+            Err(e) => return Err(TokenError::Api(e)),
+        };
     let mut tx = s.pool.begin().await?;
     if auth::current_password(&mut tx, user, &hash).await.is_err() {
         return Err(bad_login);
