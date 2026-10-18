@@ -671,6 +671,11 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
     /* 위쪽도 같다 — 위 끝에 닿은 고정 요소가 없으면 사파리가 상태 표시줄 아래로 지나가는 내용을 흐리게 비춰 보였다
        (발매 신청 머리처럼 sticky인 곳). 흰 띠를 두어 상태 표시줄 칸을 불투명한 흰색으로 */
     .aq-tint-top{display:block;position:fixed;left:0;right:0;top:-8px;min-height:12px;background:#fff;z-index:2147483000;pointer-events:none}
+    /* 스튜디오 화면(머리가 상태 표시줄 칸까지 흰 바탕으로 채우는 곳)은 띠를 상태 표시줄 칸 전체로 —
+       아래 주소창이 줄어드는 동안 sticky 머리는 한 박자 늦게 따라와 그 사이 칸 아래로 내용이 비쳤다(발매 신청·수정 화면 녹화).
+       고정(fixed) 띠는 화면에 붙어 바로 따라오고, 덮는 곳은 원래 흰 머리 여백이라 모양은 그대로다.
+       창(Modal)이 열려 있으면 위쪽을 어두운 배경 색으로 덮어야 하므로 예전 크기로 둔다. 로그인 등 머리 없는 화면도 그대로 */
+    body:has(.portal-header):not(:has(#modal))>.aq-tint-top{height:calc(env(safe-area-inset-top,0px) + 12px)}
   }
 }
 
