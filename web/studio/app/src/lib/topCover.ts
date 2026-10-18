@@ -2,6 +2,14 @@
  *  위 상태 표시줄 칸에는 페이지 자체만 그린다. 그래서 칸을 눌러 입력하는 동안 머리 위로 스크롤된 내용이 비쳐 보였다.
  *  고정 레이어로는 그 칸을 덮을 수 없으므로 페이지 안(absolute)에 흰 덮개를 두고, 화면 맨 위 바로 위쪽을 늘 덮도록 스크롤을 따라간다.
  *  평소에는 화면 밖에 있어 보이지 않는다. 창(Modal)이 열리면 창이 자기 덮개(coverOutsideFixedLayer)를 그 위에 깐다. */
+
+/** 덮개의 아래 끝(문서 기준 y) — 보이는 화면(visual viewport)의 맨 위.
+ *  키보드가 뜬 채 입력칸을 누르거나 스크롤하면 iOS는 보이는 화면만 아래로 옮기고 window.scrollY는 그대로 둘 때가 있다.
+ *  scrollY에 맞추면 그 차이(offsetTop)만큼 상태 표시줄 칸 바로 아래가 덮이지 않아, 발매 신청·수정 중 스크롤하면 내용이 비쳤다. */
+export function coverEdge(scrollY: number, vv: Pick<VisualViewport, 'offsetTop'> | null | undefined): number {
+  return scrollY + Math.max(0, vv?.offsetTop ?? 0);
+}
+
 export function initTopCover() {
   if (!window.matchMedia?.('(pointer: coarse)').matches) return;
   const cover = document.createElement('div');
@@ -12,7 +20,7 @@ export function initTopCover() {
   const place = () => {
     raf = 0;
     const h = Math.max(window.innerHeight, window.screen?.height ?? 0);
-    cover.style.top = `${Math.round(window.scrollY - h)}px`;
+    cover.style.top = `${Math.round(coverEdge(window.scrollY, window.visualViewport) - h)}px`;
     cover.style.height = `${h}px`;
   };
   const schedule = () => { if (!raf) raf = requestAnimationFrame(place); };
