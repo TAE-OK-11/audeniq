@@ -235,13 +235,39 @@ async fn content_maintenance_and_site_rules(pool: PgPool) {
         "POST",
         "/api/mcp",
         &[],
-        json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}),
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_release","arguments":{}}}),
     )
     .await;
     assert_eq!(s, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(v["jsonrpc"], "2.0");
     assert_eq!(v["error"]["code"], -32000);
     assert!(v["error"]["message"].as_str().unwrap().contains("DB 작업"));
+    // The request's id comes back, and discovery still works.
+    let (s, v) = raw(
+        &app,
+        "POST",
+        "/api/mcp",
+        &[],
+        json!({"jsonrpc":"2.0","id":42,"method":"tools/call","params":{"name":"list_releases","arguments":{}}}),
+    )
+    .await;
+    assert_eq!(
+        (s, v["id"].clone()),
+        (StatusCode::SERVICE_UNAVAILABLE, json!(42))
+    );
+    let (s, _) = raw(
+        &app,
+        "POST",
+        "/api/mcp",
+        &[],
+        json!({"jsonrpc":"2.0","id":43,"method":"tools/call","params":{"name":"get_service_status","arguments":{}}}),
+    )
+    .await;
+    assert_ne!(
+        s,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "the status tool explains the maintenance"
+    );
     let (s, v) = raw(&app, "POST", "/api/oauth/token", &[], json!(null)).await;
     assert_eq!(s, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(v["error"], "temporarily_unavailable");

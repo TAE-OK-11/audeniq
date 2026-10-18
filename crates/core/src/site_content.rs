@@ -551,6 +551,29 @@ pub fn allowed_during_maintenance(method: &Method, path: &str) -> bool {
 }
 
 /// 점검 중 API 차단 (서비스 비밀 확인 뒤에 돈다, api::router). 관리자 사이트는 막지 않는다.
+/// MCP calls that keep working during maintenance: session setup, the tool
+/// and prompt lists, and the public status and notices (no account data).
+fn mcp_allowed_during_maintenance(msg: &Value) -> bool {
+    match msg.get("method").and_then(Value::as_str) {
+        Some(
+            "initialize"
+            | "notifications/initialized"
+            | "ping"
+            | "server/discover"
+            | "tools/list"
+            | "prompts/list"
+            | "prompts/get"
+            | "resources/list"
+            | "resources/read",
+        ) => true,
+        Some("tools/call") => matches!(
+            msg["params"]["name"].as_str(),
+            Some("get_service_status" | "list_announcements" | "get_announcement")
+        ),
+        _ => false,
+    }
+}
+
 pub async fn gate(State(s): State<AppState>, req: Request, next: Next) -> Response {
     if crate::sites::site(req.headers()) == crate::sites::Site::Admin
         || allowed_during_maintenance(req.method(), req.uri().path())
@@ -558,12 +581,24 @@ pub async fn gate(State(s): State<AppState>, req: Request, next: Next) -> Respon
         return next.run(req).await;
     }
     match active_maintenance(&s).await {
-        Some(m) if req.uri().path() == crate::mcp::MCP_PATH => {
-            // AI clients: a JSON-RPC error they can show, not a transport failure.
+        Some(m) if req.uri().path() == crate::mcp::MCP_PATH && req.method() == Method::POST => {
+            // AI clients: discovery and the service status keep working (so the
+            // assistant can explain the maintenance); everything else gets a
+            // JSON-RPC error with the request's id, not a transport failure.
+            let (parts, body) = req.into_parts();
+            let bytes = axum::body::to_bytes(body, 64 * 1024)
+                .await
+                .unwrap_or_default();
+            let msg: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+            if mcp_allowed_during_maintenance(&msg) {
+                return next
+                    .run(Request::from_parts(parts, axum::body::Body::from(bytes)))
+                    .await;
+            }
             let title = m["title"].as_str().unwrap_or("Maintenance");
             let mut r = reply(
                 StatusCode::SERVICE_UNAVAILABLE,
-                json!({"jsonrpc":"2.0","id":null,"error":{"code":-32000,
+                json!({"jsonrpc":"2.0","id":msg.get("id").cloned().unwrap_or(Value::Null),"error":{"code":-32000,
                     "message":format!("AUDENIQ is under maintenance: {title}"),"data":{"maintenance":m}}}),
                 "no-store",
             );
