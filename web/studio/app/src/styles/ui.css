@@ -777,6 +777,8 @@ summary::-webkit-details-marker{display:none}
 /* 시트 머리(손잡이·제목) — 상자 위 여백까지 덮으며 위에 붙는다 */
 .aq-picker-head{position:sticky;top:-8px;z-index:1;margin:-8px -12px 0;padding:8px 12px 10px;background:#fff}
 .aq-picker-head>.aq-picker-title{margin-bottom:0}
+/* 손잡이·제목 줄은 끌어내려 닫는 자리 — 브라우저 스크롤 대신 앱이 손가락을 받는다 (PickerSurface) */
+.aq-picker.is-sheet .aq-picker-head{touch-action:none;cursor:grab}
 .aq-picker-title{margin:0 10px 10px;font-size:var(--aq-fs-title);font-weight:var(--aq-fw-bold);letter-spacing:-.02em;color:var(--aq-text)}
 .aq-picker-opt{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:54px;padding:0 14px;border:0;border-radius:var(--aq-r-lg);background:none;color:var(--aq-text);font:inherit;font-size:var(--aq-fs-title-sm);font-weight:500;text-align:left;cursor:pointer}
 .aq-picker.is-pop .aq-picker-opt{min-height:42px;padding:0 12px;font-size:var(--aq-fs-md);border-radius:var(--aq-r-md)}
