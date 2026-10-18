@@ -3116,15 +3116,50 @@ async fn activity_notices_retry_safe_creates_and_studio_approval(pool: PgPool) {
     let (err, v) = submit(release.clone(), token.clone()).await;
     assert!(!err, "{v}");
     assert_eq!(v["view"], "submitted");
-    sqlx::query("UPDATE catalog.releases SET status='IN_REVIEW' WHERE id=$1::uuid")
+    // Review moves on (Stage 1 runs and passes).
+    for next in ["STAGE1_RUNNING", "STAGE1_PASSED"] {
+        sqlx::query(
+            "UPDATE catalog.releases SET status=$2, row_version=row_version+1 WHERE id=$1::uuid",
+        )
         .bind(&release)
+        .bind(next)
         .execute(&pool)
         .await
-        .ok();
+        .unwrap();
+    }
     let (err, again) = submit(release.clone(), token).await;
     assert!(!err, "{again}");
     assert_eq!(again["duplicate_request"], true);
     assert_eq!(again["application_id"], v["application_id"]);
+    // The Studio's own retry (a new consent, the same key) also reports the
+    // application instead of RELEASE_NOT_SUBMITTABLE.
+    let key: String = sqlx::query_scalar(
+        "SELECT idempotency_key FROM catalog.application_revisions WHERE release_id=$1::uuid",
+    )
+    .bind(&release)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let (s, consent) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/releases/{release}/consents", u.org),
+        json!({"parties":[{"party_id":u.party,"role":"ARTIST"}],"minority_declared":false}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{consent}");
+    let (s, studio) = call(&app, "POST", &format!("/api/orgs/{}/releases/{release}/submit", u.org),
+        json!({"consent_id": consent["consent_id"], "minority_declared": false, "idempotency_key": key, "declarations": declarations(true)}),
+        Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{studio}");
+    assert_eq!(studio["deduped"], true);
+    assert_eq!(studio["revision_id"], v["application_id"]);
+    // A different key on that release is still refused.
+    let (s, _) = call(&app, "POST", &format!("/api/orgs/{}/releases/{release}/submit", u.org),
+        json!({"consent_id": consent["consent_id"], "minority_declared": false, "idempotency_key": "other-key-1234", "declarations": declarations(true)}),
+        Some(&u)).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
     assert!(
         notices(&pool, u.user)
             .await
@@ -3474,4 +3509,31 @@ async fn approval_is_decided_once_and_abandoned_request_ids_are_reclaimed(pool: 
             .unwrap(),
         safety::Reserved::New
     ));
+}
+
+#[sqlx::test]
+async fn maintenance_purge_removes_unused_registered_clients(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let unused = register_client(&app).await;
+    let used = connect(&app, &u, &[]).await;
+    sqlx::query(
+        "UPDATE identity.mcp_clients SET created_at=now()-interval '40 days' WHERE kind='DCR'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    audeniq_core::privacy_maintenance::purge_transient(&pool, "test-operator")
+        .await
+        .unwrap();
+    let left: Vec<String> =
+        sqlx::query_scalar("SELECT client_id FROM identity.mcp_clients WHERE kind='DCR'")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert!(!left.contains(&unused), "an unused registration is removed");
+    assert!(
+        left.contains(&used.client_id),
+        "a client with a connection stays"
+    );
 }
