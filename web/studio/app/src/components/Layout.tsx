@@ -75,6 +75,14 @@ const TAB_ITEMS: NavItem[] = [
 const isActive = (pathname: string, to: string) =>
   to === '/' ? pathname === '/' : pathname === to || pathname.startsWith(to + '/');
 
+const APP_TITLE = 'AUDENIQ STUDIO';
+/** 탭 제목에 쓸 화면 이름 — 메뉴 이름을 그대로 쓰고, 홈과 메뉴에 없는 화면은 앱 이름만 */
+function pageLabel(pathname: string): string {
+  if (pathname === '/upload') return '새 발매';
+  for (const g of NAV_GROUPS) for (const item of g.items) if (item.to !== '/' && isActive(pathname, item.to)) return item.label;
+  return '';
+}
+
 const NAV_EXIT_MS = 160;
 
 export function Layout({ children }: { children: ReactNode }) {
@@ -104,9 +112,11 @@ export function Layout({ children }: { children: ReactNode }) {
     window.addEventListener(LIVE_NOTICE_EVENT, on);
     return () => window.removeEventListener(LIVE_NOTICE_EVENT, on);
   }, [toast]);
-  // 탭 제목에 읽지 않은 알림 수
+  // 탭 제목 — 지금 화면 이름 + 읽지 않은 알림 수. 모든 화면이 'AUDENIQ STUDIO'면 탭·방문 기록에서 구분이 안 되고
+  // 화면이 바뀐 것을 스크린리더가 알려 주지 못한다
   useEffect(() => {
-    const base = document.title.replace(/^\(\d+\+?\) /, '');
+    const label = pageLabel(loc.pathname);
+    const base = label ? `${label} · ${APP_TITLE}` : APP_TITLE;
     document.title = unread ? `(${unread > 99 ? '99+' : unread}) ${base}` : base;
   }, [unread, loc.pathname]);
   const [menuClosing, setMenuClosing] = useState(false);
@@ -353,13 +363,8 @@ export function Layout({ children }: { children: ReactNode }) {
         </nav>
       </header>
 
-      <main className="portal-layout" id="main" tabIndex={-1}>
-        <ViewEnter pathname={loc.pathname}>
-          {children}
-        </ViewEnter>
-      </main>
-
-      {/* 데스크톱 왼쪽 고정 메뉴 — 넓은 화면에서는 메뉴를 숨기지 않고 늘 보여 준다 (숨긴 메뉴는 덜 발견되고 이동이 느리다) */}
+      {/* 데스크톱 왼쪽 고정 메뉴 — 넓은 화면에서는 메뉴를 숨기지 않고 늘 보여 준다 (숨긴 메뉴는 덜 발견되고 이동이 느리다)
+          화면에서 본문보다 먼저 보이므로 Tab 순서도 본문 앞에 둔다 (고정 위치라 배치는 같다, '본문으로 건너뛰기'가 이 메뉴를 건너뛴다) */}
       <nav className="aq-sidebar" aria-label="전체 메뉴">
         {/* 가장 자주 하는 일은 메뉴 맨 위에 — 휴대폰 전체 메뉴의 '새 발매 등록하기'와 같은 자리 */}
         <Link to="/upload" className="ui-btn is-soft aq-side-cta" onPointerEnter={() => prefetchRoute('/upload')}>
@@ -383,6 +388,12 @@ export function Layout({ children }: { children: ReactNode }) {
           </div>
         ))}
       </nav>
+
+      <main className="portal-layout" id="main" tabIndex={-1}>
+        <ViewEnter pathname={loc.pathname}>
+          {children}
+        </ViewEnter>
+      </main>
 
       {/* 휴대폰 아래 탭 바 — 자주 가는 4곳은 한 번에, 나머지는 '전체'에서 */}
       <nav className="aq-tabbar" aria-label="주요 화면">
