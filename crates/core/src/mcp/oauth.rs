@@ -76,7 +76,8 @@ pub async fn authorization_server_metadata(State(s): State<AppState>) -> Result<
         "revocation_endpoint": format!("{base}/api/oauth/revoke"),
         "response_types_supported": ["code"],
         "response_modes_supported": ["query"],
-        "grant_types_supported": ["authorization_code", "refresh_token"],
+        "device_authorization_endpoint": format!("{base}/api/oauth/device_authorization"),
+        "grant_types_supported": ["authorization_code", "refresh_token", super::login::DEVICE_GRANT],
         "code_challenge_methods_supported": ["S256"],
         "token_endpoint_auth_methods_supported": ["none", "client_secret_post", "client_secret_basic"],
         "revocation_endpoint_auth_methods_supported": ["none", "client_secret_post", "client_secret_basic"],
@@ -102,7 +103,14 @@ pub struct Client {
     pub redirect_uris: Vec<String>,
     pub auth_method: String,
     secret_hash: Option<Vec<u8>>,
+    /// An operator-registered agent that may send the artist's e-mail and
+    /// password (`grant_type=password`); always a confidential client.
+    pub password_grant: bool,
 }
+
+/// Redirect URI stored for clients that never use the browser redirect
+/// (operator-registered agents without one); never redirected to.
+pub const NO_REDIRECT: &str = "https://invalid.audeniq.local/none";
 
 /// A redirect URI an AI client may use: HTTPS without fragment or
 /// credentials, or an RFC 8252 loopback `http` URI for native clients.
@@ -148,7 +156,7 @@ fn redirect_matches(registered: &[String], given: &str) -> bool {
     })
 }
 
-fn row_client(r: &sqlx::postgres::PgRow) -> Client {
+pub(super) fn row_client(r: &sqlx::postgres::PgRow) -> Client {
     Client {
         pk: r.get("id"),
         client_id: r.get("client_id"),
@@ -156,10 +164,11 @@ fn row_client(r: &sqlx::postgres::PgRow) -> Client {
         redirect_uris: r.get("redirect_uris"),
         auth_method: r.get("token_endpoint_auth_method"),
         secret_hash: r.get("secret_hash"),
+        password_grant: r.get("password_grant"),
     }
 }
 
-const CLIENT_COLS: &str = "id, client_id, client_name, redirect_uris, token_endpoint_auth_method, secret_hash, kind, fetched_at";
+pub(super) const CLIENT_COLS: &str = "id, client_id, client_name, redirect_uris, token_endpoint_auth_method, secret_hash, kind, fetched_at, password_grant";
 
 /// The registered client for `client_id`. A URL client id is a Client ID
 /// Metadata Document: fetched (from allowlisted hosts only) and cached.
@@ -171,7 +180,7 @@ pub async fn client(s: &AppState, client_id: &str) -> Result<Option<Client>> {
     let row = sqlx::query(sqlx::AssertSqlSafe(format!(
         "SELECT {CLIENT_COLS}, fetched_at > now() - make_interval(hours => {CIMD_FRESH_HOURS}) AS fresh,
                 fetched_at > now() - make_interval(days => {CIMD_STALE_DAYS}) AS usable
-         FROM identity.mcp_clients WHERE client_id=$1 AND disabled_at IS NULL"
+         FROM identity.mcp_clients WHERE client_id=$1 AND disabled_at IS NULL AND kind<>'TOKEN'"
     )))
     .bind(client_id)
     .fetch_optional(&s.pool)
@@ -449,7 +458,7 @@ async fn register_inner(
 // Authorization endpoint (consent screen)
 // ---------------------------------------------------------------------------
 
-fn single_params(raw: &str) -> Option<BTreeMap<String, String>> {
+pub(super) fn single_params(raw: &str) -> Option<BTreeMap<String, String>> {
     let mut out = BTreeMap::new();
     for (k, v) in url::form_urlencoded::parse(raw.as_bytes()) {
         // RFC 6749 §3.1: parameters must not repeat.
@@ -490,7 +499,7 @@ pub fn requested_scopes(raw: Option<&str>) -> Option<Vec<&'static str>> {
 
 /// RFC 8707 resource: this server's MCP endpoint (scheme/host compared
 /// case-insensitively, trailing slash tolerated). Absent = this server.
-fn resource_ok(s: &AppState, given: Option<&str>) -> bool {
+pub(super) fn resource_ok(s: &AppState, given: Option<&str>) -> bool {
     let Some(given) = given else { return true };
     let ours = super::resource(s);
     let norm = |v: &str| -> Option<String> {
@@ -561,6 +570,11 @@ pub async fn authorize(State(s): State<AppState>, h: HeaderMap, RawQuery(q): Raw
         None if client.redirect_uris.len() == 1 => client.redirect_uris[0].clone(),
         _ => return page_error("이 AI 앱에 등록된 돌아갈 주소가 아니에요. 연결을 중단했어요."),
     };
+    if redirect_uri == NO_REDIRECT {
+        return page_error(
+            "이 AI 앱은 브라우저 연결을 쓰지 않아요. AI 앱에서 안내하는 방법으로 연결해 주세요.",
+        );
+    }
     let state = p.get("state").map(String::as_str);
     if state.is_some_and(|st| st.len() > 512) {
         return redirect_error(&s, &redirect_uri, None, "invalid_request", "state too long");
@@ -610,16 +624,9 @@ pub async fn authorize(State(s): State<AppState>, h: HeaderMap, RawQuery(q): Raw
         Err(Error::Unauthorized) => return page_sign_in(&s),
         Err(e) => return e.into_response(),
     };
-    let orgs: Vec<(Uuid, String, String)> = match sqlx::query_as(
-        "SELECT o.id, o.name, m.role FROM identity.orgs o JOIN identity.memberships m ON m.org_id=o.id
-          WHERE m.user_id=$1 AND m.status='ACTIVE' ORDER BY (m.role='VIEWER'), o.created_at, o.id LIMIT 100",
-    )
-    .bind(a.user)
-    .fetch_all(&s.pool)
-    .await
-    {
+    let orgs = match user_orgs(&s, a.user).await {
         Ok(v) => v,
-        Err(e) => return Error::from(e).into_response(),
+        Err(e) => return e.into_response(),
     };
     let request = super::seal(
         &s,
@@ -630,14 +637,98 @@ pub async fn authorize(State(s): State<AppState>, h: HeaderMap, RawQuery(q): Raw
             "exp": chrono::Utc::now().timestamp() + CONSENT_SECONDS,
         }),
     );
+    let redirect = url::Url::parse(&redirect_uri).ok();
+    let host = redirect
+        .as_ref()
+        .and_then(|u| u.host_str().map(str::to_owned))
+        .unwrap_or_default();
     page_consent(
         &client,
-        &redirect_uri,
+        &ConsentTarget {
+            action: "/api/oauth/authorize",
+            note: format!("승인 후 돌아갈 곳: <code>{}</code>", escape(&host)),
+            form_origin: redirect.map(|u| u.origin().ascii_serialization()),
+        },
         &scopes,
         &orgs,
         &request,
         s.mcp.payout_limit_krw,
     )
+}
+
+/// The workspaces a user can connect, editable ones first.
+pub(super) async fn user_orgs(s: &AppState, user: Uuid) -> Result<Vec<(Uuid, String, String)>> {
+    Ok(sqlx::query_as(
+        "SELECT o.id, o.name, m.role FROM identity.orgs o JOIN identity.memberships m ON m.org_id=o.id
+          WHERE m.user_id=$1 AND m.status='ACTIVE' ORDER BY (m.role='VIEWER'), o.created_at, o.id LIMIT 100",
+    )
+    .bind(user)
+    .fetch_all(&s.pool)
+    .await?)
+}
+
+/// The scopes ticked on a consent form, among those offered. Read is always
+/// included.
+pub(super) fn scopes_from_form(form: &BTreeMap<String, String>, offered: &[String]) -> Vec<String> {
+    let mut scopes = vec![SCOPE_READ.to_string()];
+    for (field, scope) in [
+        ("scope_write", SCOPE_WRITE),
+        ("scope_submit", SCOPE_SUBMIT),
+        ("scope_settlement", SCOPE_SETTLEMENT),
+        ("scope_payout", SCOPE_PAYOUT),
+    ] {
+        if form.get(field).map(String::as_str) == Some("on") && offered.iter().any(|o| o == scope) {
+            scopes.push(scope.to_string());
+        }
+    }
+    scopes
+}
+
+/// A new grant for an active client. `replace`: one live grant per client,
+/// user and workspace, so re-connecting the same app replaces the old one
+/// (connection tokens are separate grants each).
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn create_grant(
+    c: &mut PgConnection,
+    s: &AppState,
+    client_pk: Uuid,
+    user: Uuid,
+    org: Uuid,
+    scopes: &[String],
+    method: &str,
+    label: Option<&str>,
+    replace: bool,
+    request: Uuid,
+) -> Result<Uuid> {
+    let disabled: Option<bool> =
+        sqlx::query_scalar("SELECT disabled_at IS NOT NULL FROM identity.mcp_clients WHERE id=$1")
+            .bind(client_pk)
+            .fetch_optional(&mut *c)
+            .await?;
+    if disabled != Some(false) {
+        return Err(Error::Forbidden);
+    }
+    if replace {
+        sqlx::query("UPDATE identity.mcp_grants SET revoked_at=now(), revoke_reason='REPLACED' WHERE client_pk=$1 AND user_id=$2 AND org_id=$3 AND revoked_at IS NULL")
+            .bind(client_pk).bind(user).bind(org).execute(&mut *c).await?;
+        sqlx::query("DELETE FROM identity.mcp_tokens WHERE grant_id IN (SELECT id FROM identity.mcp_grants WHERE client_pk=$1 AND user_id=$2 AND org_id=$3 AND revoke_reason='REPLACED')")
+            .bind(client_pk).bind(user).bind(org).execute(&mut *c).await?;
+    }
+    let grant = Uuid::new_v4();
+    sqlx::query("INSERT INTO identity.mcp_grants(id,client_pk,user_id,org_id,scopes,resource,method,label) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
+        .bind(grant).bind(client_pk).bind(user).bind(org).bind(scopes).bind(super::resource(s)).bind(method).bind(label)
+        .execute(&mut *c).await?;
+    operations::audit(
+        c,
+        Some(user),
+        Some(org),
+        Some(grant),
+        "mcp.grant_approved",
+        &format!("{method}:{}", scopes.join(",")),
+        request,
+    )
+    .await?;
+    Ok(grant)
 }
 
 /// The consent form's answer. Bound to the signed request and the session
@@ -706,49 +797,18 @@ async fn decide_inner(s: &AppState, h: &HeaderMap, body: &[u8]) -> Result<Respon
         .ok_or(Error::Invalid)?;
     let offered: Vec<String> =
         serde_json::from_value(req["sc"].clone()).map_err(|_| Error::Invalid)?;
-    let mut scopes = vec![SCOPE_READ.to_string()];
-    for (field, scope) in [
-        ("scope_write", SCOPE_WRITE),
-        ("scope_submit", SCOPE_SUBMIT),
-        ("scope_settlement", SCOPE_SETTLEMENT),
-        ("scope_payout", SCOPE_PAYOUT),
-    ] {
-        if form.get(field).map(String::as_str) == Some("on") && offered.iter().any(|o| o == scope) {
-            scopes.push(scope.to_string());
-        }
-    }
+    let scopes = scopes_from_form(&form, &offered);
     let mut tx = s.pool.begin().await?;
     auth::membership(&mut tx, &a, org, false).await?;
-    let disabled: Option<bool> =
-        sqlx::query_scalar("SELECT disabled_at IS NOT NULL FROM identity.mcp_clients WHERE id=$1")
-            .bind(client_pk)
-            .fetch_optional(&mut *tx)
-            .await?;
-    if disabled != Some(false) {
-        return Err(Error::Forbidden);
-    }
-    // One live grant per client, user and workspace: re-connecting replaces it.
-    sqlx::query("UPDATE identity.mcp_grants SET revoked_at=now(), revoke_reason='REPLACED' WHERE client_pk=$1 AND user_id=$2 AND org_id=$3 AND revoked_at IS NULL")
-        .bind(client_pk).bind(a.user).bind(org).execute(&mut *tx).await?;
-    let grant = Uuid::new_v4();
-    sqlx::query("INSERT INTO identity.mcp_grants(id,client_pk,user_id,org_id,scopes,resource) VALUES($1,$2,$3,$4,$5,$6)")
-        .bind(grant).bind(client_pk).bind(a.user).bind(org).bind(&scopes).bind(super::resource(s))
-        .execute(&mut *tx).await?;
+    let grant = create_grant(
+        &mut tx, s, client_pk, a.user, org, &scopes, "CONSENT", None, true, a.request,
+    )
+    .await?;
     let code = auth::random_token();
     sqlx::query("INSERT INTO identity.mcp_codes(code_hash,grant_id,redirect_uri,code_challenge,expires_at) VALUES($1,$2,$3,$4,now()+make_interval(secs=>$5))")
         .bind(auth::hash_token(&code)).bind(grant).bind(&redirect_uri)
         .bind(req["ch"].as_str().ok_or(Error::Invalid)?).bind(CODE_SECONDS as f64)
         .execute(&mut *tx).await?;
-    operations::audit(
-        &mut tx,
-        Some(a.user),
-        Some(org),
-        Some(grant),
-        "mcp.grant_approved",
-        &format!("SCOPES:{}", scopes.join(",")),
-        a.request,
-    )
-    .await?;
     tx.commit().await?;
     let pairs = with_state(vec![("code", code)]);
     let refs: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (*k, v.as_str())).collect();
@@ -776,7 +836,7 @@ pub fn oauth_error(status: StatusCode, code: &str, desc: &str) -> Response {
 
 /// Client authentication at the token/revocation endpoints, by the method
 /// the client registered. Returns the client or an OAuth error response.
-async fn authenticate_client(
+pub(super) async fn authenticate_client(
     s: &AppState,
     h: &HeaderMap,
     form: &BTreeMap<String, String>,
@@ -866,7 +926,11 @@ pub async fn token(State(s): State<AppState>, h: HeaderMap, body: Bytes) -> Resp
         Ok(c) => c,
         Err(r) => return *r,
     };
-    if let Err(e) = auth::rate(&s.pool, &format!("mcp-token:client:{}", c.pk), 300).await {
+    let grant_type = form.get("grant_type").map(String::as_str);
+    // Device-code polls are paced per code (slow_down), not per client.
+    if grant_type != Some(super::login::DEVICE_GRANT)
+        && let Err(e) = auth::rate(&s.pool, &format!("mcp-token:client:{}", c.pk), 300).await
+    {
         return e.into_response();
     }
     if !resource_ok(&s, form.get("resource").map(String::as_str)) {
@@ -876,12 +940,14 @@ pub async fn token(State(s): State<AppState>, h: HeaderMap, body: Bytes) -> Resp
             "Unknown resource.",
         );
     }
-    let result = match form.get("grant_type").map(String::as_str) {
+    let result = match grant_type {
         Some("authorization_code") => exchange_code(&s, &h, &c, &form).await,
         Some("refresh_token") => refresh(&s, &h, &c, &form).await,
+        Some(super::login::DEVICE_GRANT) => super::login::exchange_device_code(&s, &c, &form).await,
+        Some("password") => super::login::password_grant(&s, &h, &c, &form).await,
         _ => Err(TokenError::Oauth(
             "unsupported_grant_type",
-            "Use authorization_code or refresh_token.",
+            "Use authorization_code, refresh_token or the device_code grant.",
         )),
     };
     match result {
@@ -892,12 +958,15 @@ pub async fn token(State(s): State<AppState>, h: HeaderMap, body: Bytes) -> Resp
             r
         }
         Err(TokenError::Oauth(code, desc)) => oauth_error(StatusCode::BAD_REQUEST, code, desc),
+        Err(TokenError::Client(code, desc)) => oauth_error(StatusCode::UNAUTHORIZED, code, desc),
         Err(TokenError::Api(e)) => e.into_response(),
     }
 }
 
-enum TokenError {
+pub(super) enum TokenError {
     Oauth(&'static str, &'static str),
+    /// 401: the client may not use this grant.
+    Client(&'static str, &'static str),
     Api(Error),
 }
 impl From<Error> for TokenError {
@@ -910,12 +979,12 @@ impl From<sqlx::Error> for TokenError {
         TokenError::Api(e.into())
     }
 }
-const BAD_GRANT: TokenError =
+pub(super) const BAD_GRANT: TokenError =
     TokenError::Oauth("invalid_grant", "The grant is invalid, expired or revoked.");
 
 /// The grant is still usable: not revoked, inside its lifetime, its user and
 /// membership still active, its client not disabled.
-async fn live_grant(
+pub(super) async fn live_grant(
     c: &mut PgConnection,
     grant: Uuid,
 ) -> std::result::Result<Vec<String>, TokenError> {
@@ -934,7 +1003,11 @@ async fn live_grant(
     scopes.ok_or(BAD_GRANT)
 }
 
-async fn issue_tokens(c: &mut PgConnection, grant: Uuid, scopes: &[String]) -> Result<Value> {
+pub(super) async fn issue_tokens(
+    c: &mut PgConnection,
+    grant: Uuid,
+    scopes: &[String],
+) -> Result<Value> {
     let access = auth::random_token();
     let refresh = auth::random_token();
     sqlx::query("INSERT INTO identity.mcp_tokens(token_hash,grant_id,kind,expires_at) VALUES($1,$3,'ACCESS',now()+make_interval(secs=>$4)),($2,$3,'REFRESH',now()+make_interval(secs=>$5))")
@@ -953,7 +1026,7 @@ async fn issue_tokens(c: &mut PgConnection, grant: Uuid, scopes: &[String]) -> R
     }))
 }
 
-async fn revoke_grant(c: &mut PgConnection, grant: Uuid, reason: &str) -> Result<()> {
+pub(super) async fn revoke_grant(c: &mut PgConnection, grant: Uuid, reason: &str) -> Result<()> {
     sqlx::query("UPDATE identity.mcp_grants SET revoked_at=COALESCE(revoked_at,now()), revoke_reason=COALESCE(revoke_reason,$2) WHERE id=$1")
         .bind(grant).bind(reason).execute(&mut *c).await?;
     sqlx::query("DELETE FROM identity.mcp_tokens WHERE grant_id=$1")
@@ -1234,9 +1307,12 @@ pub async fn connections(State(s): State<AppState>, h: HeaderMap) -> Result<Json
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
     let items: Vec<Value> = sqlx::query_scalar(
         "SELECT jsonb_build_object('id',g.id,'client_name',c.client_name,'client_id',c.client_id,'org_id',g.org_id,'org_name',o.name,
-                'scopes',g.scopes,'created_at',g.created_at,'last_used_at',g.last_used_at)
+                'scopes',g.scopes,'created_at',g.created_at,'last_used_at',g.last_used_at,'method',g.method,'label',g.label,
+                'expires_at',CASE WHEN g.method='TOKEN' THEN (SELECT max(t.expires_at) FROM identity.mcp_tokens t WHERE t.grant_id=g.id) END)
            FROM identity.mcp_grants g JOIN identity.mcp_clients c ON c.id=g.client_pk JOIN identity.orgs o ON o.id=g.org_id
-          WHERE g.user_id=$1 AND g.revoked_at IS NULL ORDER BY g.created_at DESC LIMIT 100",
+          WHERE g.user_id=$1 AND g.revoked_at IS NULL
+            AND (g.method<>'TOKEN' OR EXISTS (SELECT 1 FROM identity.mcp_tokens t WHERE t.grant_id=g.id AND t.expires_at > now()))
+          ORDER BY g.created_at DESC LIMIT 100",
     )
     .bind(a.user)
     .fetch_all(&s.pool)
@@ -1301,7 +1377,7 @@ main{max-width:480px;margin:0 auto;padding:32px 16px}h1{font-size:22px;margin:0 
 .primary{background:#151515;color:#fff}.secondary{background:#fff;color:#151515}code{word-break:break-all;font-size:13px}.warn{background:#fff7e6;border-color:#f0d9a8}
 @media (prefers-color-scheme:dark){body{background:#111;color:#eee}.card{background:#1b1b1b;border-color:#333}.muted{color:#aaa}.primary{background:#eee;color:#111}.secondary{background:#1b1b1b;color:#eee;border-color:#eee}.warn{background:#2a2316;border-color:#5a4a26}select{background:#1b1b1b;color:#eee}}";
 
-fn page(title: &str, body: &str, form_action_extra: Option<&str>) -> Response {
+pub(super) fn page(title: &str, body: &str, form_action_extra: Option<&str>) -> Response {
     let html = format!(
         "<!doctype html><html lang=\"ko\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"robots\" content=\"noindex\"><title>{}</title><style>{STYLE}</style></head><body><main>{body}</main></body></html>",
         escape(title)
@@ -1329,9 +1405,9 @@ fn page(title: &str, body: &str, form_action_extra: Option<&str>) -> Response {
     r
 }
 
-fn page_error(message: &str) -> Response {
+pub(super) fn page_error(message: &str) -> Response {
     let mut r = page(
-        "AUDENIQ 연결",
+        "어데닉 연결",
         &format!(
             "<h1>AI 앱을 연결할 수 없어요</h1><div class=\"card\">{}</div><p class=\"muted\">이 창을 닫고 AI 앱에서 연결을 다시 시작해 주세요.</p>",
             escape(message)
@@ -1342,12 +1418,12 @@ fn page_error(message: &str) -> Response {
     r
 }
 
-fn page_sign_in(s: &AppState) -> Response {
+pub(super) fn page_sign_in(s: &AppState) -> Response {
     let login = format!("{}/login", super::issuer(s));
     page(
-        "AUDENIQ 로그인 필요",
+        "어데닉 로그인 필요",
         &format!(
-            "<h1>먼저 AUDENIQ에 로그인해 주세요</h1><div class=\"card\"><p>AI 앱 연결은 이 브라우저에서 로그인한 AUDENIQ 계정으로 승인해요. 비밀번호는 AI 앱에 전달되지 않아요.</p>\
+            "<h1>먼저 어데닉에 로그인해 주세요</h1><div class=\"card\"><p>AI 앱 연결은 이 브라우저에서 로그인한 어데닉 계정으로 승인해요. 비밀번호는 AI 앱에 전달되지 않아요.</p>\
              <div class=\"row\"><a class=\"btn secondary\" href=\"{}\" target=\"_blank\" rel=\"noopener\">새 창에서 로그인</a><a class=\"btn primary\" href=\"\">로그인했어요 · 계속</a></div></div>",
             escape(&login)
         ),
@@ -1355,7 +1431,7 @@ fn page_sign_in(s: &AppState) -> Response {
     )
 }
 
-fn scope_label(scope: &str, payout_limit: i64) -> (&'static str, String) {
+pub(super) fn scope_label(scope: &str, payout_limit: i64) -> (&'static str, String) {
     let (title, desc): (&'static str, &str) = match scope {
         SCOPE_READ => ("발매 정보 보기", "발매·트랙·검사 결과·접수 상태를 읽어요."),
         SCOPE_WRITE => (
@@ -1374,7 +1450,7 @@ fn scope_label(scope: &str, payout_limit: i64) -> (&'static str, String) {
             return (
                 "소액 지급 신청",
                 format!(
-                    "등록해 둔 계좌로 {}원 이하(24시간 합계)의 지급 신청과 취소를 해요. 대화에서 금액을 확인한 뒤에만 신청되고, 그보다 큰 금액과 계좌 변경은 Studio에서만 할 수 있어요.",
+                    "등록해 둔 계좌로 {}원 이하(24시간 합계)의 지급 신청과 취소를 해요. 대화에서 금액을 확인한 뒤에만 신청되고, 그보다 큰 금액과 계좌 변경은 어데닉 스튜디오에서만 할 수 있어요.",
                     won(payout_limit)
                 ),
             );
@@ -1384,7 +1460,7 @@ fn scope_label(scope: &str, payout_limit: i64) -> (&'static str, String) {
 }
 
 /// 300000 → "300,000"
-fn won(v: i64) -> String {
+pub(super) fn won(v: i64) -> String {
     let digits = v.to_string();
     let mut out = String::new();
     for (i, c) in digits.chars().enumerate() {
@@ -1396,20 +1472,24 @@ fn won(v: i64) -> String {
     out
 }
 
-fn page_consent(
+/// Where a consent form posts and what it tells the artist about the
+/// destination.
+pub(super) struct ConsentTarget {
+    pub action: &'static str,
+    /// HTML (escaped by the caller): where the approval goes.
+    pub note: String,
+    /// An extra origin the form may navigate to (the client's redirect).
+    pub form_origin: Option<String>,
+}
+
+pub(super) fn page_consent(
     client: &Client,
-    redirect_uri: &str,
+    target: &ConsentTarget,
     scopes: &[&str],
     orgs: &[(Uuid, String, String)],
     request: &str,
     payout_limit: i64,
 ) -> Response {
-    let redirect = url::Url::parse(redirect_uri).ok();
-    let redirect_host = redirect
-        .as_ref()
-        .and_then(|u| u.host_str().map(str::to_owned))
-        .unwrap_or_default();
-    let redirect_origin = redirect.as_ref().map(|u| u.origin().ascii_serialization());
     let mut org_options = String::new();
     for (id, name, role) in orgs {
         let role = match role.as_str() {
@@ -1443,17 +1523,18 @@ fn page_consent(
     }
     let cimd = client.client_id.starts_with("https://");
     let body = format!(
-        "<h1>{name}이(가) AUDENIQ 계정에 연결하려고 해요</h1>\
+        "<h1>{name}이(가) 어데닉 계정에 연결하려고 해요</h1>\
          <p class=\"muted\">승인하면 이 AI 앱이 아래 작업 공간에서 선택한 일만 할 수 있어요. 지급 계좌 변경, 계약 서명, 계정 설정과 고액 지급은 어떤 경우에도 할 수 없어요.</p>\
-         <form method=\"post\" action=\"/api/oauth/authorize\">\
+         <form method=\"post\" action=\"{action}\">\
          <div class=\"card\"><b>작업 공간</b><select name=\"org\" required>{org_options}</select></div>\
          <div class=\"card\">{scope_rows}</div>\
-         <div class=\"card warn muted\">승인 후 돌아갈 곳: <code>{host}</code>{cimd_note}<br>연결은 언제든 끊을 수 있고, 비밀번호를 바꾸거나 모든 기기에서 로그아웃하면 함께 끊겨요.</div>\
+         <div class=\"card warn muted\">{note}{cimd_note}<br>연결은 언제든 끊을 수 있고, 비밀번호를 바꾸거나 모든 기기에서 로그아웃하면 함께 끊겨요.</div>\
          <input type=\"hidden\" name=\"request\" value=\"{request}\">\
          <div class=\"row\"><button class=\"secondary\" name=\"decision\" value=\"deny\">거부</button><button class=\"primary\" name=\"decision\" value=\"approve\">승인</button></div>\
          </form>",
         name = escape(&client.name),
-        host = escape(&redirect_host),
+        action = target.action,
+        note = target.note,
         cimd_note = if cimd {
             format!(
                 "<br>앱 확인 주소: <code>{}</code>",
@@ -1464,7 +1545,7 @@ fn page_consent(
         },
         request = escape(request),
     );
-    page("AUDENIQ에 AI 앱 연결", &body, redirect_origin.as_deref())
+    page("어데닉에 AI 앱 연결", &body, target.form_origin.as_deref())
 }
 
 #[cfg(test)]
