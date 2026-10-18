@@ -880,6 +880,15 @@ async fn run_with_deadline(
     }
 }
 
+/// Records a retry-safe create's result the moment it is committed, so a
+/// later failure (or the deadline) in the same call cannot free the
+/// `client_request_id` for a duplicate.
+async fn record_created(s: &AppState, grant: Uuid, tool: &str, args: &Value, id: Uuid) {
+    if let Some(key) = args.get("client_request_id").and_then(Value::as_str) {
+        super::safety::finish(&s.pool, grant, tool, key, Some(id)).await;
+    }
+}
+
 /// The id a retry-safe create returned.
 fn created_id(tool: &str, v: &Value) -> Option<Uuid> {
     let key = if tool == "create_release_draft" {
@@ -916,7 +925,12 @@ async fn replay(
 fn summary(tool: &str, v: &Value) -> String {
     let mut json = v.to_string();
     if json.len() > 60_000 {
-        json.truncate(60_000);
+        // Cut on a character boundary (Korean text is 3 bytes per character).
+        let mut cut = 60_000;
+        while !json.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        json.truncate(cut);
         json.push('…');
     }
     let lead = match tool {
@@ -985,7 +999,7 @@ async fn run(
         "get_release_requirements" => Box::pin(async { Ok(requirements()) }),
         "list_releases" => Box::pin(list_releases(s, a, org, args)),
         "get_release" => Box::pin(async move { release_view(s, a, org, release_arg(args)?).await }),
-        "create_release_draft" => Box::pin(create_draft(s, a, org, args)),
+        "create_release_draft" => Box::pin(create_draft(s, p.grant, a, org, args)),
         "update_release_draft" => Box::pin(update_draft(s, a, org, args)),
         "upsert_track" => Box::pin(upsert_track(s, a, org, args)),
         "set_track_credits" => Box::pin(set_credits(s, a, org, args)),
@@ -1095,6 +1109,7 @@ async fn run(
                 .as_str()
                 .and_then(|v| v.parse().ok())
                 .ok_or(Error::Internal)?;
+            record_created(s, p.grant, "create_inquiry", args, id).await;
             let mut v = crate::portal::get_inquiry(s, a, org, id).await?;
             v["view"] = json!("inquiry");
             Ok(v)
@@ -1175,6 +1190,9 @@ async fn run(
                 description: str_arg(args, "description").unwrap_or_default().to_string(),
             };
             let mut v = crate::platform_requests::create(s, a, org, input).await?;
+            if let Some(id) = v["id"].as_str().and_then(|v| v.parse().ok()) {
+                record_created(s, p.grant, "create_platform_request", args, id).await;
+            }
             v["view"] = json!("platform_request");
             Ok(v)
         }),
@@ -1667,6 +1685,38 @@ fn sync_draft_tracks(
 
 /// Re-reads the release and rewrites its draft (one retry when a concurrent
 /// edit bumped the version in between).
+const RESYNC_ATTEMPTS: usize = 8;
+
+/// Waits before retrying a write that lost a version race: growing, with
+/// jitter so racing calls do not collide again in lock step.
+async fn backoff(attempt: usize) {
+    let jitter = (Uuid::new_v4().as_u128() % 40) as u64;
+    tokio::time::sleep(std::time::Duration::from_millis(
+        15 * attempt as u64 + jitter,
+    ))
+    .await;
+}
+
+/// After the track or credit write committed: a draft re-sync that still
+/// loses to parallel calls does not fail the call (the write is saved; the
+/// next call or the Studio rebuilds the draft's track list from the rows).
+async fn resync_after_write(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    release: Uuid,
+    given: Option<(Uuid, &Value)>,
+) -> Result<bool> {
+    match resync(s, a, org, release, given).await {
+        Ok(()) => Ok(true),
+        Err(Error::Conflict) => {
+            tracing::info!(%release, "mcp draft resync deferred after parallel writes");
+            Ok(false)
+        }
+        Err(e) => Err(e),
+    }
+}
+
 async fn resync(
     s: &AppState,
     a: &Actor,
@@ -1674,12 +1724,17 @@ async fn resync(
     release: Uuid,
     given: Option<(Uuid, &Value)>,
 ) -> Result<()> {
-    for attempt in 0..2 {
+    // Parallel track calls on one release (assistants issue them together)
+    // each bump the release version; retry on the latest one a few times.
+    for attempt in 0..RESYNC_ATTEMPTS {
         let (r, names) = load(s, a, org, release).await?;
         let mut draft = r["draft"].clone();
         sync_draft_tracks(&mut draft, &r, &names, given);
         match write_release(s, a, org, release, &r, draft, &json!({})).await {
-            Err(Error::Conflict) if attempt == 0 => continue,
+            Err(Error::Conflict) if attempt + 1 < RESYNC_ATTEMPTS => {
+                backoff(attempt + 1).await;
+                continue;
+            }
             other => return other.map(|_| ()),
         }
     }
@@ -1738,6 +1793,7 @@ async fn ensure_artist(s: &AppState, a: &Actor, org: Uuid, name: &str) -> Result
 
 async fn create_draft(
     s: &AppState,
+    grant: Uuid,
     a: &Actor,
     org: Uuid,
     args: &Value,
@@ -1748,6 +1804,12 @@ async fn create_draft(
         draft["language"] = json!("ko");
     }
     let artist = str_arg(args, "artist_name").unwrap_or("").to_string();
+    // What catalog::create would refuse is checked before the artist is
+    // created, so a refusal leaves no orphan artist behind.
+    crate::text_policy::check(str_arg(args, "title").unwrap_or("").trim())?;
+    if let Some(upc) = str_arg(args, "upc").filter(|v| !v.is_empty()) {
+        crate::identifiers::validate_upc(upc)?;
+    }
     // The artist must be creatable (protected names, text policy) before the
     // release exists, so a refusal leaves nothing behind.
     ensure_artist(s, a, org, &artist).await?;
@@ -1772,6 +1834,7 @@ async fn create_draft(
         .as_str()
         .and_then(|v| v.parse().ok())
         .ok_or(Error::Internal)?;
+    record_created(s, grant, "create_release_draft", args, id).await;
     let mut v = release_view(s, a, org, id).await?;
     v["next_steps"] = json!([
         "Add tracks with upsert_track and credits with set_track_credits.",
@@ -1877,18 +1940,75 @@ async fn upsert_track(
         version: pick("version", "version"),
         isrc: pick("isrc", "isrc"),
     };
-    let saved = match track_id {
-        Some(t) => drafts::replace_track(s, a, org, release, t, input).await?,
-        None => catalog::track(s, a, org, release, input).await?,
+    // The draft save checks lyrics against protected names; check before
+    // writing so a refusal leaves nothing half-saved.
+    if let Some(lyrics) = input.lyrics.as_deref() {
+        let mut c = s.pool.acquire().await.map_err(Error::from)?;
+        crate::protected_names::enforce(&mut c, org, &[lyrics]).await?;
+    }
+    let (disc, number) = (input.disc_number, input.track_number);
+    // Parallel calls on one release race on its version; a write that lost
+    // the race saved nothing, so it retries on the latest version (MCP never
+    // shows the artist a version to conflict with).
+    let mut input = input;
+    let mut attempt = 0;
+    let saved = loop {
+        let result = match track_id {
+            Some(t) => drafts::replace_track(s, a, org, release, t, input.clone()).await,
+            None => catalog::track(s, a, org, release, input.clone()).await,
+        };
+        match result {
+            Ok(v) => break v,
+            Err(Error::Conflict) if attempt + 1 < RESYNC_ATTEMPTS => {
+                attempt += 1;
+                backoff(attempt).await;
+                let (r, _) = load(s, a, org, release).await?;
+                input.row_version = r["row_version"].as_i64().unwrap_or(0);
+            }
+            Err(Error::Database(sqlx::Error::Database(d)))
+                if track_id.is_none() && d.constraint() == Some("tracks_active_position") =>
+            {
+                return Err(position_taken(s, a, org, release, disc, number).await);
+            }
+            Err(e) => return Err(e.into()),
+        }
     };
-    resync(s, a, org, release, None).await?;
+    let synced = resync_after_write(s, a, org, release, None).await?;
     let id = saved["id"]
         .as_str()
         .map(str::to_owned)
         .or_else(|| track_id.map(|t| t.to_string()));
     let mut v = release_view(s, a, org, release).await?;
     v["track_id"] = json!(id);
+    if !synced {
+        v["draft_sync_pending"] = json!(true);
+    }
     Ok(v)
+}
+
+/// A new track at a position another track already holds (often a retry of
+/// a call that did save): name that track so the assistant edits it.
+async fn position_taken(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    release: Uuid,
+    disc: i32,
+    number: i32,
+) -> ToolError {
+    let existing = load(s, a, org, release).await.ok().and_then(|(r, _)| {
+        r["tracks"].as_array()?.iter().find_map(|t| {
+            (t["disc_number"].as_i64() == Some(disc as i64)
+                && t["track_number"].as_i64() == Some(number as i64))
+            .then(|| t["id"].clone())
+        })
+    });
+    let mut e = tool_error(
+        "TRACK_POSITION_TAKEN",
+        "A track already exists at this disc and track number (perhaps an earlier call saved it). Update it with its track_id instead of adding it again.",
+    );
+    e.details = Some(json!({"disc_number": disc, "track_number": number, "track_id": existing}));
+    e
 }
 
 async fn set_credits(
@@ -1920,21 +2040,29 @@ async fn set_credits(
             }
         }
     }
-    let (r, _) = load(s, a, org, release).await?;
-    drafts::replace_credits(
-        s,
-        a,
-        org,
-        release,
-        track,
-        drafts::CreditsInput {
+    // Same retry on the latest version as upsert_track.
+    let mut attempt = 0;
+    loop {
+        let (r, _) = load(s, a, org, release).await?;
+        let input = drafts::CreditsInput {
             row_version: r["row_version"].as_i64().unwrap_or(0),
-            credits,
-        },
-    )
-    .await?;
-    resync(s, a, org, release, Some((track, args))).await?;
-    release_view(s, a, org, release).await
+            credits: credits.clone(),
+        };
+        match drafts::replace_credits(s, a, org, release, track, input).await {
+            Ok(_) => break,
+            Err(Error::Conflict) if attempt + 1 < RESYNC_ATTEMPTS => {
+                attempt += 1;
+                backoff(attempt).await;
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+    let synced = resync_after_write(s, a, org, release, Some((track, args))).await?;
+    let mut v = release_view(s, a, org, release).await?;
+    if !synced {
+        v["draft_sync_pending"] = json!(true);
+    }
+    Ok(v)
 }
 
 // ---------------------------------------------------------------------------
@@ -2258,7 +2386,17 @@ async fn submit(
         }
         return Ok(pending_view(s, release, id, "PENDING", !new));
     }
-    let result = submit_now(s, &p.actor, p.org, release, d, idempotency_key).await?;
+    let confirmed = token["h"].as_str().unwrap_or("").to_string();
+    let result = match submit_now(s, &p.actor, p.org, release, d, idempotency_key, &confirmed).await
+    {
+        Err(Error::PolicyGate("RELEASE_CHANGED" | "CONSENT_SCOPE_MISMATCH")) => {
+            return Err(tool_error(
+                "RELEASE_CHANGED",
+                "The release changed after the preview. Call preview_submission again and have the artist confirm the new preview.",
+            ));
+        }
+        other => other?,
+    };
     if result["deduped"] != true {
         super::safety::notice(
             &s.pool,
@@ -2285,6 +2423,7 @@ pub(super) async fn submit_now(
     release: Uuid,
     d: DeclarationsInput,
     idempotency_key: String,
+    confirmed_scope: &str,
 ) -> Result<Value> {
     let consent = submission::create_consent(
         s,
@@ -2301,6 +2440,12 @@ pub(super) async fn submit_now(
         },
     )
     .await?;
+    // The consent records the release as it is now: it must still be what
+    // the artist confirmed (a write could land between the check and here).
+    // submit then refuses any change after the consent (CONSENT_SCOPE_MISMATCH).
+    if consent["scope_hash"].as_str() != Some(confirmed_scope) {
+        return Err(Error::PolicyGate("RELEASE_CHANGED"));
+    }
     let consent_id: Uuid = consent["consent_id"]
         .as_str()
         .and_then(|v| v.parse().ok())
@@ -2830,6 +2975,13 @@ async fn request_payout(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn long_korean_results_are_cut_on_a_character_boundary() {
+        let v = json!({"note": "가".repeat(30_000)});
+        let text = summary("get_inquiry", &v);
+        assert!(text.ends_with('…'));
+        assert!(text.len() <= 60_000 + '…'.len_utf8());
+    }
     use super::*;
     #[test]
     fn every_tool_schema_compiles_and_is_strict() {

@@ -82,7 +82,14 @@ export interface AiSubmission {
   expires_at: string;
 }
 
-export const aiSettings = () => req<{ studio_approval: boolean }>('/api/auth/ai-settings');
+/** 스튜디오 승인 설정과, 서버가 지금 허용하는 것 (MCP가 꺼져 있으면 연결 토큰을 만들 수 없어요) */
+export interface AiSettings {
+  studio_approval: boolean;
+  mcp_enabled?: boolean;
+  /** 소액 지급 신청 권한을 줄 수 있는지 (AI 지급 한도가 0이면 false) */
+  payout_scope?: boolean;
+}
+export const aiSettings = () => req<AiSettings>('/api/auth/ai-settings');
 export const saveAiSettings = (studio_approval: boolean) =>
   req<{ studio_approval: boolean }>('/api/auth/ai-settings', { method: 'PUT', body: { studio_approval } });
 export const aiSubmissions = () => req<{ items: AiSubmission[] }>('/api/auth/ai-submissions').then(r => r.items);

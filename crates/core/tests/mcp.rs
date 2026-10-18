@@ -3267,3 +3267,211 @@ async fn activity_notices_retry_safe_creates_and_studio_approval(pool: PgPool) {
     .await;
     assert_eq!(list["items"], json!([]));
 }
+
+#[sqlx::test]
+async fn parallel_track_writes_retries_and_protected_lyrics(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let c = connect(&app, &u, &["scope_write"]).await;
+    let (_, rel) = tool(
+        &app,
+        &c.access,
+        "create_release_draft",
+        json!({"title":"Album","release_type":"ALBUM","artist_name":"Han River"}),
+    )
+    .await;
+    let release = rel["release_id"].as_str().unwrap().to_string();
+
+    // An assistant adds eight tracks at once: every track is saved and no
+    // call reports a failure for a write that went through.
+    let mut set = tokio::task::JoinSet::new();
+    for n in 1..=8 {
+        let app = app.clone();
+        let access = c.access.clone();
+        let release = release.clone();
+        set.spawn(async move {
+            tool(
+                &app,
+                &access,
+                "upsert_track",
+                json!({"release_id": release, "title": format!("Song {n}"), "track_number": n}),
+            )
+            .await
+        });
+    }
+    let results = set.join_all().await;
+    let saved: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM catalog.tracks WHERE release_id=$1::uuid AND archived_at IS NULL",
+    )
+    .bind(&release)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    for (err, v) in &results {
+        // A lost race before anything was written is an honest CONFLICT the
+        // assistant can retry; a saved write never reports failure.
+        if *err {
+            assert_eq!(v["error"]["code"], "CONFLICT", "{v}");
+        }
+    }
+    let ok = results.iter().filter(|(err, _)| !err).count() as i64;
+    assert_eq!(saved, ok, "every saved track was reported as saved");
+    assert!(ok >= 1);
+
+    assert_eq!(
+        ok, 8,
+        "parallel writes retry on the latest version: {results:?}"
+    );
+    // A retry at a taken position names the existing track.
+    let existing: String = sqlx::query_scalar("SELECT id::text FROM catalog.tracks WHERE release_id=$1::uuid AND track_number=1 AND archived_at IS NULL")
+        .bind(&release).fetch_one(&pool).await.unwrap();
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "upsert_track",
+        json!({"release_id": release, "title": "Again", "track_number": 1}),
+    )
+    .await;
+    assert!(err, "{v}");
+    assert_eq!(v["error"]["code"], "TRACK_POSITION_TAKEN");
+    assert_eq!(v["error"]["details"]["track_id"], existing);
+
+    // Lyrics naming a protected artist are refused before anything is saved.
+    let before: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM catalog.tracks WHERE release_id=$1::uuid")
+            .bind(&release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "upsert_track",
+        json!({"release_id": release, "title": "Cover", "track_number": 20,
+        "lyrics": "I sing like Taylor Swift tonight"}),
+    )
+    .await;
+    assert!(err);
+    assert_eq!(v["error"]["code"], "ARTIST_NAME_PROTECTED");
+    let after: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM catalog.tracks WHERE release_id=$1::uuid")
+            .bind(&release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(before, after);
+    // The release stays editable afterwards.
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "upsert_track",
+        json!({"release_id": release, "title": "Fine", "track_number": 21}),
+    )
+    .await;
+    assert!(!err, "{v}");
+
+    // A refused title leaves no orphan artist behind.
+    let artists = || async {
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM catalog.artists WHERE org_id=$1")
+            .bind(u.org)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+    };
+    let n = artists().await;
+    let (err, _) = tool(&app, &c.access, "create_release_draft",
+        json!({"title":"Bad","release_type":"SINGLE","artist_name":"Brand New Artist","upc":"123456789990"})).await;
+    assert!(err);
+    assert_eq!(artists().await, n);
+}
+
+#[sqlx::test]
+async fn approval_is_decided_once_and_abandoned_request_ids_are_reclaimed(pool: PgPool) {
+    use audeniq_core::mcp::safety;
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let c = connect(&app, &u, &["scope_write", "scope_submit"]).await;
+    let (s, _) = call(
+        &app,
+        "PUT",
+        "/api/auth/ai-settings",
+        json!({"studio_approval": true}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (release, token) = previewed_release(&app, &pool, &store, &u, &c.access, "Race").await;
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "submit_release",
+        json!({"release_id": release, "confirmation_token": token,
+        "declarations": declarations(true), "artist_confirmed": true}),
+    )
+    .await;
+    let id = v["approval_id"].as_str().unwrap().to_string();
+
+    // Approve and reject at once (two tabs): exactly one decides.
+    let mut set = tokio::task::JoinSet::new();
+    for action in ["approve", "reject"] {
+        let app = app.clone();
+        let u = u.clone();
+        let path = format!("/api/auth/ai-submissions/{id}/{action}");
+        set.spawn(async move { call(&app, "POST", &path, json!({}), Some(&u)).await });
+    }
+    let results = set.join_all().await;
+    let ok: Vec<_> = results
+        .iter()
+        .filter(|(s, _)| *s == StatusCode::OK)
+        .collect();
+    assert_eq!(ok.len(), 1, "{results:?}");
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM identity.mcp_pending_submissions WHERE id=$1::uuid")
+            .bind(&id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let release_status: String =
+        sqlx::query_scalar("SELECT status FROM catalog.releases WHERE id=$1::uuid")
+            .bind(&release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    // The record matches what happened to the release.
+    assert_eq!(
+        status == "APPROVED",
+        release_status != "DRAFT",
+        "{status} / {release_status}"
+    );
+
+    // A client_request_id whose first call never finished is reclaimed after two minutes.
+    let grant: Uuid = sqlx::query_scalar(
+        "SELECT id FROM identity.mcp_grants WHERE user_id=$1 AND revoked_at IS NULL LIMIT 1",
+    )
+    .bind(u.user)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(matches!(
+        safety::reserve(&pool, grant, "create_inquiry", "req-stuck-0001")
+            .await
+            .unwrap(),
+        safety::Reserved::New
+    ));
+    assert!(matches!(
+        safety::reserve(&pool, grant, "create_inquiry", "req-stuck-0001")
+            .await
+            .unwrap(),
+        safety::Reserved::Running
+    ));
+    sqlx::query("UPDATE identity.mcp_idempotency SET created_at=now()-interval '3 minutes'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(matches!(
+        safety::reserve(&pool, grant, "create_inquiry", "req-stuck-0001")
+            .await
+            .unwrap(),
+        safety::Reserved::New
+    ));
+}

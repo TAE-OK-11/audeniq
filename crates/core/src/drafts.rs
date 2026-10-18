@@ -149,7 +149,7 @@ pub async fn archive_track(
     tx.commit().await?;
     Ok(json!({"id":track,"archived":true,"row_version":version+1}))
 }
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Credit {
     pub party_id: Uuid,
