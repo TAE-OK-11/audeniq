@@ -85,7 +85,13 @@ function TicketThread({ ticket, onClosed }: { ticket: Ticket; onClosed: () => vo
   };
 
   if (loading && !data) return <SkeletonList rows={2} />;
-  if (error) return <button type="button" className="ui-btn is-soft" onClick={reload}>다시 불러오기</button>;
+  if (error) return (
+    <div className="ui-empty">
+      <h2>대화를 불러오지 못했어요.</h2>
+      <p>{error}</p>
+      <button type="button" className="ui-btn is-soft" onClick={reload}>다시 불러오기</button>
+    </div>
+  );
   return (
     <>
       <ol className="aq-thread" ref={listRef} aria-live="polite">
