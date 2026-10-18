@@ -333,8 +333,9 @@ body.wizard-mode .portal-header{display:none!important}
 .settle-hero-account .min-0>span{font-size:13px;color:var(--aq-text-4);overflow-wrap:anywhere}
 .settle-hero-link{flex:none;border:0;background:transparent;padding:8px 10px;border-radius:var(--aq-r-sm);font:inherit;font-size:14px;font-weight:700;color:var(--aq-blue-500);cursor:pointer;transition:background-color .2s ease}
 @media(hover:hover){.settle-hero-link:hover{background:var(--aq-blue-100)}}
-.settle-hero-actions{display:flex;gap:8px;margin-top:16px}
-.settle-hero-actions>.ui-btn{flex:1 1 0;justify-content:center}
+.settle-hero-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+/* 좁은 화면(320px)에서 버튼 이름이 두 줄로 꺾이지 않게 — 한 줄에 안 들어가면 버튼을 아래로 내린다 */
+.settle-hero-actions>.ui-btn{flex:1 1 0;min-width:max-content;justify-content:center}
 .studio-payout-actions{display:flex;align-items:flex-end;flex-direction:column;gap:11px}
 .studio-payout-form .eyebrow{margin-bottom:5px}.studio-payout-number{font-size:clamp(25px,6vw,34px);font-weight:800;color:var(--aq-text);letter-spacing:-.04em}
 .studio-payout-form .ui-field{margin:22px 0}.studio-amount-field{display:flex;align-items:center;background:var(--aq-blue-25);border:1px solid var(--aq-blue-200);border-radius:var(--aq-r-lg);padding-right:9px;min-width:0}
