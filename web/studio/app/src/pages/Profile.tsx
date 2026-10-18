@@ -208,7 +208,7 @@ export function Profile() {
     if (!openParam) return;
     if (openParam === 'payout') setShowPayment(true);
     else if (openParam === 'verify') setAccountEdit('verify');
-    else if (openParam === 'ai') setShowAi(true);
+    else if (openParam === 'ai' && !MOCK) setShowAi(true);
     setParams({}, { replace: true });
   }, [openParam, setParams]);
   // Google·Apple 연결을 마치고 돌아온 경우

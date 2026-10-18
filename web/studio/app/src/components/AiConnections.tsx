@@ -1,15 +1,15 @@
 // 연결된 AI 앱 — AI 어시스턴트(ChatGPT·Claude 등)가 이 계정에 받은 권한을 보고, 언제든 끊는다.
 // OAuth를 쓰지 못하는 에이전트에게 줄 연결 토큰도 여기서 만든다 (한 번만 보여 줌).
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useToast } from './Toast';
 import { useConfirm } from './Confirm';
 import { CopyButton } from './CopyButton';
-import { errorMessage } from '../api/errors';
+import { ApiError, errorMessage } from '../api/errors';
 import { orgId } from '../api/http';
 import {
   aiConnections, aiSettings, aiSubmissions, approveAiSubmission, clientHost, createConnectionToken, DECLARATION_LABEL,
   rejectAiSubmission, revokeAiConnection, saveAiSettings, SCOPE_HELP, SCOPE_LABEL,
-  type AiConnection, type AiSubmission, type NewConnectionToken,
+  type AiConnection, type AiSettings, type AiSubmission, type NewConnectionToken,
 } from '../api/aiConnections';
 import { relativeTime } from '../lib/date';
 
@@ -31,27 +31,37 @@ const PERIODS: { days: number; label: string }[] = [
   { days: 0, label: '무기한' },
 ];
 
-function TokenForm({ onCreated, onClose }: { onCreated: (t: NewConnectionToken) => void; onClose: () => void }) {
+function TokenForm({ payoutScope, onCreated, onClose }: { payoutScope: boolean; onCreated: (t: NewConnectionToken) => void; onClose: () => void }) {
+  // AI 지급 한도가 0이면 서버가 지급 신청 권한을 거절하므로 고를 수 없게 한다
+  const offered = OPTIONAL_SCOPES.filter(o => payoutScope || o.scope !== 'payouts:request');
   const [label, setLabel] = useState('');
-  const [scopes, setScopes] = useState<Record<string, boolean>>(() => Object.fromEntries(OPTIONAL_SCOPES.map(o => [o.scope, o.on])));
+  const [scopes, setScopes] = useState<Record<string, boolean>>(() => Object.fromEntries(offered.map(o => [o.scope, o.on])));
+  const periodRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [days, setDays] = useState(30);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const all = OPTIONAL_SCOPES.every(o => scopes[o.scope]);
+  const all = offered.every(o => scopes[o.scope]);
   const forever = days === 0;
   const strong = scopes['releases:submit'] || scopes['payouts:request'];
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (busy) return;
+    const org = orgId();
+    if (!org) {
+      setError('작업 공간을 찾을 수 없어요. 다시 로그인해 주세요.');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
-      const picked = OPTIONAL_SCOPES.filter(o => scopes[o.scope]).map(o => o.scope);
+      const picked = offered.filter(o => scopes[o.scope]).map(o => o.scope);
       const period = forever ? { no_expiry: true } : { days };
-      onCreated(await createConnectionToken({ label: label.trim(), org_id: orgId(), scopes: picked, ...period }));
+      onCreated(await createConnectionToken({ label: label.trim(), org_id: org, scopes: picked, ...period }));
     } catch (err) {
-      setError(errorMessage(err, '연결 토큰을 만들지 못했어요.'));
+      setError(err instanceof ApiError && err.status === 404
+        ? '지금은 연결 토큰을 만들 수 없어요.'
+        : errorMessage(err, '연결 토큰을 만들지 못했어요.'));
     } finally {
       setBusy(false);
     }
@@ -69,7 +79,7 @@ function TokenForm({ onCreated, onClose }: { onCreated: (t: NewConnectionToken) 
         <div className="aq-token-group-head">
           <p id="aqTokenScopes" className="ui-field-label">할 수 있는 일</p>
           <label className="aq-token-all">
-            <input type="checkbox" checked={all} onChange={e => setScopes(Object.fromEntries(OPTIONAL_SCOPES.map(o => [o.scope, e.target.checked])))} />
+            <input type="checkbox" checked={all} onChange={e => setScopes(Object.fromEntries(offered.map(o => [o.scope, e.target.checked])))} />
             <span>모든 권한 허용</span>
           </label>
         </div>
@@ -77,7 +87,7 @@ function TokenForm({ onCreated, onClose }: { onCreated: (t: NewConnectionToken) 
           <input type="checkbox" checked disabled />
           <span><strong>{SCOPE_LABEL['releases:read']}</strong><small>{SCOPE_HELP['releases:read']} 항상 포함돼요.</small></span>
         </label>
-        {OPTIONAL_SCOPES.map(o => (
+        {offered.map(o => (
           <label key={o.scope} className="ui-check">
             <input type="checkbox" checked={scopes[o.scope]} onChange={e => setScopes(v => ({ ...v, [o.scope]: e.target.checked }))} />
             <span><strong>{SCOPE_LABEL[o.scope]}</strong><small>{SCOPE_HELP[o.scope]}</small></span>
@@ -88,8 +98,23 @@ function TokenForm({ onCreated, onClose }: { onCreated: (t: NewConnectionToken) 
       <div className="aq-token-group">
         <p id="aqTokenPeriod" className="ui-field-label">쓸 수 있는 기간</p>
         <div className="ui-chips is-wrap" role="radiogroup" aria-labelledby="aqTokenPeriod">
-          {PERIODS.map(p => (
-            <button key={p.days} type="button" className="ui-chip" role="radio" aria-checked={days === p.days} aria-pressed={days === p.days} onClick={() => setDays(p.days)}>
+          {PERIODS.map((p, i) => (
+            <button
+              key={p.days} type="button" role="radio" aria-checked={days === p.days}
+              className={`ui-chip${days === p.days ? ' is-on' : ''}`}
+              tabIndex={days === p.days ? 0 : -1}
+              ref={el => { periodRefs.current[i] = el; }}
+              onClick={() => setDays(p.days)}
+              onKeyDown={e => {
+                // 라디오 그룹: 화살표로 옮기면서 고른다
+                const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+                if (!step) return;
+                e.preventDefault();
+                const next = (i + step + PERIODS.length) % PERIODS.length;
+                setDays(PERIODS[next].days);
+                periodRefs.current[next]?.focus();
+              }}
+            >
               {p.label}
             </button>
           ))}
@@ -115,9 +140,12 @@ function TokenForm({ onCreated, onClose }: { onCreated: (t: NewConnectionToken) 
 }
 
 function MadeToken({ made, onClose }: { made: NewConnectionToken; onClose: () => void }) {
+  // 화면 읽기 프로그램에는 완료 문장만 알린다 (토큰 값을 소리 내어 읽지 않게)
+  const title = useRef<HTMLParagraphElement>(null);
+  useEffect(() => { title.current?.focus(); }, []);
   return (
-    <div className="ui-callout is-success aq-token-made" role="status">
-      <p><strong>연결 토큰을 만들었어요.</strong></p>
+    <div className="ui-callout is-success aq-token-made">
+      <p role="status" tabIndex={-1} ref={title}><strong>연결 토큰을 만들었어요.</strong></p>
       <p>이 창을 닫으면 토큰을 다시 볼 수 없어요. 지금 에이전트 설정에 넣어 주세요.</p>
       <div className="aq-token-value">
         <span className="ui-field-label">MCP 주소</span>
@@ -166,6 +194,8 @@ function PendingSubmissions({ items, onDone }: { items: AiSubmission[]; onDone: 
       toast(approve ? '발매 신청을 접수했어요.' : '신청을 거절했어요.', approve ? 'success' : 'info');
     } catch (err) {
       toast(errorMessage(err, approve ? '신청하지 못했어요.' : '거절하지 못했어요.'), 'error');
+      // 서버가 이미 정리한 신청(내용 바뀜·기한 지남·이미 처리)은 목록에서 뺀다
+      if (err instanceof ApiError && ['AI_SUBMISSION_STALE', 'AI_SUBMISSION_EXPIRED', 'AI_SUBMISSION_DECIDED'].includes(err.code)) onDone(p.id);
     } finally {
       setBusy(null);
     }
@@ -195,24 +225,28 @@ function PendingSubmissions({ items, onDone }: { items: AiSubmission[]; onDone: 
 }
 
 /** AI로 하는 발매 신청을 스튜디오에서 한 번 더 승인할지 */
-function StudioApproval() {
+function StudioApproval({ initial }: { initial: boolean }) {
   const toast = useToast();
-  const [on, setOn] = useState<boolean | null>(null);
-  useEffect(() => { aiSettings().then(v => setOn(v.studio_approval)).catch(() => setOn(null)); }, []);
-  if (on === null) return null;
+  const [on, setOn] = useState(initial);
+  const [saving, setSaving] = useState(false);
   async function change(next: boolean) {
+    if (saving) return;
+    const before = on;
     setOn(next);
+    setSaving(true);
     try {
       await saveAiSettings(next);
       toast(next ? 'AI 발매 신청은 이제 여기서 승인해야 접수돼요.' : 'AI 발매 신청이 대화에서 확인한 대로 바로 접수돼요.', 'info');
     } catch (err) {
-      setOn(!next);
+      setOn(before);
       toast(errorMessage(err, '설정을 바꾸지 못했어요.'), 'error');
+    } finally {
+      setSaving(false);
     }
   }
   return (
     <label className="ui-check">
-      <input type="checkbox" checked={on} onChange={e => void change(e.target.checked)} />
+      <input type="checkbox" checked={on} disabled={saving} aria-busy={saving} onChange={e => void change(e.target.checked)} />
       <span>
         <strong>AI 발매 신청은 스튜디오에서 한 번 더 승인</strong>
         <small>켜 두면 AI 앱이 신청을 보내도 여기서 승인해야 접수돼요. 7일 안에 승인하지 않으면 취소돼요.</small>
@@ -230,10 +264,17 @@ export function AiConnections() {
   const [making, setMaking] = useState(false);
   const [made, setMade] = useState<NewConnectionToken | null>(null);
   const [pending, setPending] = useState<AiSubmission[]>([]);
-  useEffect(() => { aiSubmissions().then(setPending).catch(() => setPending([])); }, []);
+  const [settings, setSettings] = useState<AiSettings | null>(null);
+  useEffect(() => {
+    aiSubmissions().then(setPending).catch(() => setPending([]));
+    aiSettings().then(setSettings).catch(() => setSettings(null));
+  }, []);
 
-  const load = () => aiConnections().then(setItems).catch(err => setError(errorMessage(err, '연결된 AI 앱을 불러오지 못했어요.')));
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    aiConnections().then(setItems).catch(err => setError(errorMessage(err, '연결된 AI 앱을 불러오지 못했어요.')));
+  }, []);
+  // 토큰을 만든 뒤의 새로고침: 실패해도 화면(방금 만든 토큰)을 덮지 않는다
+  const refresh = () => aiConnections().then(setItems).catch(() => toast('목록을 새로 불러오지 못했어요. 창을 다시 열어 주세요.', 'error'));
 
   async function disconnect(c: AiConnection) {
     const name = c.label ?? c.client_name;
@@ -298,12 +339,13 @@ export function AiConnections() {
         </ul>
       )}
 
+      {(settings?.mcp_enabled !== false || made) && (
       <section className="aq-token-section" aria-labelledby="aqTokenTitle">
         <h3 id="aqTokenTitle" className="ui-field-label">연결 토큰</h3>
         {made ? (
           <MadeToken made={made} onClose={() => setMade(null)} />
         ) : making ? (
-          <TokenForm onClose={() => setMaking(false)} onCreated={t => { setMade(t); setMaking(false); void load(); }} />
+          <TokenForm payoutScope={settings?.payout_scope !== false} onClose={() => setMaking(false)} onCreated={t => { setMade(t); setMaking(false); void refresh(); }} />
         ) : (
           <>
             <p className="aq-muted">OAuth 로그인을 지원하지 않는 에이전트에 넣는 토큰이에요. 지금 작업 공간에서 고른 일만 할 수 있어요.</p>
@@ -311,10 +353,13 @@ export function AiConnections() {
           </>
         )}
       </section>
+      )}
 
-      <section className="aq-token-section aq-token-group" aria-label="AI 신청 설정">
-        <StudioApproval />
-      </section>
+      {settings && (
+        <section className="aq-token-section aq-token-group" aria-label="AI 신청 설정">
+          <StudioApproval initial={settings.studio_approval} />
+        </section>
+      )}
 
       <p className="aq-muted aq-token-note">
         지급 계좌 변경·계약 서명·고액 지급은 어떤 앱도 할 수 없어요. 비밀번호를 바꾸거나 모든 기기에서 로그아웃하면 모든 연결이 끊겨요.
