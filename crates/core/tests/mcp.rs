@@ -355,7 +355,7 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
     let (s, _, v) = rpc(&app, None, "tools/list", json!({})).await;
     assert_eq!(s, StatusCode::OK);
     let tools = v["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 23);
+    assert_eq!(tools.len(), 35);
     for t in tools {
         assert_eq!(
             t["inputSchema"]["additionalProperties"], false,
@@ -1754,4 +1754,241 @@ async fn corrections_are_only_for_delivered_releases(pool: PgPool) {
         (err, v["error"]["code"].as_str()),
         (true, Some("FORBIDDEN"))
     );
+}
+
+/// A release taken through the MCP flow up to submission.
+async fn submitted_release(
+    app: &Router,
+    pool: &PgPool,
+    store: &MemStore,
+    u: &User,
+    access: &str,
+    title: &str,
+) -> (String, String) {
+    let (_, rel) = tool(
+        app,
+        access,
+        "create_release_draft",
+        json!({"title": title, "release_type":"SINGLE","artist_name":"Han River",
+        "release_date":"2027-04-01","p_line":"2026 Han River","c_line":"2026 Han River"}),
+    )
+    .await;
+    let release = rel["release_id"].as_str().unwrap().to_string();
+    let asset = register_asset(pool, store, u, "a.wav", AUDIO).await;
+    let (_, v) = tool(
+        app,
+        access,
+        "upsert_track",
+        json!({"release_id": release, "title": title, "track_number": 1, "asset_id": asset}),
+    )
+    .await;
+    let track = v["track_id"].as_str().unwrap().to_string();
+    tool(
+        app,
+        access,
+        "set_track_credits",
+        json!({"release_id": release, "track_id": track, "composers": ["Kim"]}),
+    )
+    .await;
+    let (_, p) = tool(
+        app,
+        access,
+        "preview_submission",
+        json!({"release_id": release, "declarations": declarations(true)}),
+    )
+    .await;
+    let token = p["confirmation_token"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{p}"))
+        .to_string();
+    let (err, v) = tool(
+        app,
+        access,
+        "submit_release",
+        json!({"release_id": release, "confirmation_token": token,
+        "declarations": declarations(true), "artist_confirmed": true}),
+    )
+    .await;
+    assert!(!err, "{v}");
+    (release, track)
+}
+
+#[sqlx::test]
+async fn promotion_codes_notifications_documents_and_support(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let c = connect(&app, &u, &["scope_write", "scope_submit"]).await;
+
+    // Pitch: not before submission, then within the lead time.
+    let (_, draft) = tool(
+        &app,
+        &c.access,
+        "create_release_draft",
+        json!({"title":"Draft","release_type":"SINGLE","artist_name":"Han River"}),
+    )
+    .await;
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "upsert_track",
+        json!({"release_id": draft["release_id"], "title": "Draft", "track_number": 1}),
+    )
+    .await;
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "submit_playlist_pitch",
+        json!({"release_id": draft["release_id"], "track_id": v["track_id"],
+        "description": "A slow night-drive song about the Han river."}),
+    )
+    .await;
+    assert_eq!(
+        (err, v["error"]["code"].as_str()),
+        (true, Some("PITCH_RELEASE_NOT_SUBMITTED")),
+        "{v}"
+    );
+
+    let (release, track) =
+        submitted_release(&app, &pool, &store, &u, &c.access, "Night Drive").await;
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "submit_playlist_pitch",
+        json!({"release_id": release, "track_id": track,
+        "description": "too short"}),
+    )
+    .await;
+    assert_eq!(
+        (err, v["error"]["code"].as_str()),
+        (true, Some("INVALID_ARGUMENTS"))
+    );
+    let (err, v) = tool(&app, &c.access, "submit_playlist_pitch", json!({"release_id": release, "track_id": track,
+        "description": "A slow night-drive song about the Han river, built on warm synths.", "moods": "calm, nostalgic"})).await;
+    assert!(!err, "{v}");
+    assert_eq!(v["view"], "pitch");
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "submit_playlist_pitch",
+        json!({"release_id": release, "track_id": track,
+        "description": "A second pitch for the same release, which is not allowed."}),
+    )
+    .await;
+    assert!(err, "one active pitch per release: {v}");
+    let (err, _) = tool(
+        &app,
+        &c.access,
+        "withdraw_playlist_pitch",
+        json!({"release_id": release}),
+    )
+    .await;
+    assert!(!err);
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "get_playlist_pitch",
+        json!({"release_id": release}),
+    )
+    .await;
+    assert!(!err, "{v}");
+
+    // Smart link: saved links, public URL, fan alert counts.
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "save_smart_link",
+        json!({"release_id": release, "links": {"spotify": "https://open.spotify.com/album/abc"}}),
+    )
+    .await;
+    assert!(!err, "{v}");
+    assert!(
+        v["url"]
+            .as_str()
+            .unwrap()
+            .starts_with(&format!("{ORIGIN}/l/")),
+        "{v}"
+    );
+    assert_eq!(
+        v["link"]["links"]["spotify"],
+        "https://open.spotify.com/album/abc"
+    );
+    assert_eq!(v["stats"]["alerts"], 0);
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "save_smart_link",
+        json!({"release_id": release, "links": {"myspace": "https://myspace.com/x"}}),
+    )
+    .await;
+    assert_eq!(
+        (err, v["error"]["code"].as_str()),
+        (true, Some("INVALID_ARGUMENTS"))
+    );
+
+    // Codes, notifications.
+    let (err, v) = tool(&app, &c.access, "list_release_codes", json!({})).await;
+    assert!(!err, "{v}");
+    assert!(
+        v["releases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r.to_string().contains(&release)),
+        "{v}"
+    );
+    let (err, v) = tool(&app, &c.access, "list_notifications", json!({})).await;
+    assert!(!err && v["unread"].is_number(), "{v}");
+
+    // Documents: status and the Studio link, never the signature or legal text.
+    support::set_agreement(&pool, u.org, uuid::Uuid::parse_str(&release).unwrap(), true).await;
+    let (err, v) = tool(&app, &c.access, "list_documents", json!({})).await;
+    assert!(!err, "{v}");
+    let d = &v["documents"][0];
+    assert_eq!(d["status"], "SIGNED");
+    assert!(d["studio_url"].as_str().unwrap().contains("/contracts/"));
+    assert!(
+        !v.to_string().contains("data:image"),
+        "no signature images: {v}"
+    );
+
+    // Support inquiries.
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "create_inquiry",
+        json!({"category": "RELEASE", "release_id": release,
+        "subject": "Release time", "body": "Can the release go out at 18:00 KST?"}),
+    )
+    .await;
+    assert!(!err, "{v}");
+    let inquiry = v["id"].as_str().unwrap().to_string();
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "reply_inquiry",
+        json!({"inquiry_id": inquiry, "body": "Also on Spotify, please."}),
+    )
+    .await;
+    assert!(!err, "{v}");
+    assert_eq!(v["messages"].as_array().unwrap().len(), 2);
+    let (err, v) = tool(&app, &c.access, "list_inquiries", json!({})).await;
+    assert!(!err && v["items"].as_array().unwrap().len() == 1, "{v}");
+
+    // Other accounts see none of it.
+    let other = user(&app).await;
+    let oc = connect(&app, &other, &["scope_write"]).await;
+    for (name, args) in [
+        ("get_inquiry", json!({"inquiry_id": inquiry})),
+        ("get_smart_link", json!({"release_id": release})),
+        ("get_playlist_pitch", json!({"release_id": release})),
+    ] {
+        let (err, v) = tool(&app, &oc.access, name, args).await;
+        assert!(err, "{name}: {v}");
+        assert!(
+            matches!(v["error"]["code"].as_str(), Some("FORBIDDEN" | "NOT_FOUND")),
+            "{name}: {v}"
+        );
+    }
+    let (_, v) = tool(&app, &oc.access, "list_documents", json!({})).await;
+    assert_eq!(v["documents"], json!([]));
 }
