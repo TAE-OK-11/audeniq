@@ -28,11 +28,11 @@ subtle = "2.6.1"
 # Email notifications over SMTP (AWS SES, OCI Email Delivery): STARTTLS with
 # rustls on aws-lc-rs and the Mozilla roots, no native-tls.
 lettre = { version = "=0.11.23", default-features = false, features = ["builder", "smtp-transport", "tokio1", "tokio1-rustls", "aws-lc-rs", "webpki-roots"] }
-reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json", "stream", "gzip", "brotli", "zstd"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json", "stream", "gzip", "brotli"] }
 url = "2.5.8"
 async-trait = "0.1.92"
 tracing = "0.1.44"
-tower-http = { version = "0.7.1", features = ["compression-br", "compression-zstd", "compression-gzip", "catch-panic"] }
+tower-http = { version = "0.7.1", features = ["compression-br", "compression-gzip", "catch-panic"] }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 anyhow = "1.0.104"
 jsonschema = { version = "0.58.1", default-features = false, features = ["idna"] }  # 내장 스키마만 — 원격 $ref 받기 끔
