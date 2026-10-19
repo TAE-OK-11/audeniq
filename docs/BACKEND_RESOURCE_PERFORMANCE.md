@@ -49,7 +49,7 @@ Graviton4 실기 측정은 아니다.
 할당 추적은 단일 스레드에서 System allocator를 감싼 별도 측정이며,
 타이밍 중에는 추적하지 않는다. **payload 피크는 RSS가 아니다.** 입력
 fixture, 이미 준비된 캐시, allocator 관리 비용, 스택, 다른 프로세스는
-제외한다. 운영 API/worker의 mimalloc이나 전체 서비스 RAM 감소율을 나타내지
+제외한다. 운영 API/worker의 할당기(jemalloc)나 전체 서비스 RAM 감소율을 나타내지
 않는다. 표의 남은 64바이트 할당은 해시의 hex 문자열이다.
 
 네 validator를 모두 준비하면 총 37609바이트의 할당 payload가 캐시에
@@ -57,6 +57,35 @@ fixture, 이미 준비된 캐시, allocator 관리 비용, 스택, 다른 프로
 반복 컴파일과 큰 패키지의 임시 복사를 없앤다. 작은 단일 요청에서 전체
 프로세스 RSS까지 줄어든다는 의미는 아니다. SHA-256 sink 자체는 기존
 스트리밍 구현을 유지했다.
+
+## Allocator (2026-10-19)
+
+API와 worker의 전역 할당기는 jemalloc(`tikv-jemallocator`)이다. 실제 `audeniq-api`(release,
+thin LTO)를 PostgreSQL에 붙여 같은 부하를 주고 비교했다. API 2코어, 부하 생성기(oha) 2코어로 나누고
+매 회차 새 프로세스로 시작했다.
+
+부하: MCP `tools/list`(약 54 KB JSON) 동시 32개 20초 → MCP 도구 호출 동시 32개 15초 →
+`/api/notices`(공지 40건, DB) 동시 32개 15초 → 로그인(Argon2, 해시당 19 MiB) 동시 8개 20초 → 30초 유휴.
+
+1차(7종, `LD_PRELOAD`, 2회 평균)에서 glibc는 유휴 후 168 MB를 반환하지 않았고 snmalloc은 3배 느렸다.
+jemalloc도 preload로는 3배 느리게 나왔지만, 크레이트로 직접 링크하면 아래처럼 정상이었다
+(preload 측정의 문제). rpmalloc은 Rust 크레이트가 수년째 갱신되지 않아 제외했다.
+
+2차(상위 3종, 직접 링크, 3회, 순서를 돌려 가며):
+
+| | mimalloc v3 | mimalloc v2 | **jemalloc** |
+|---|---|---|---|
+| 시작 RSS | 43 MB | 53 MB | **23 MB** |
+| 부하 후 30초 유휴 RSS | 58 MB | 114 MB | **31 MB** |
+| 최대 RSS | 175 MB | 166 MB | **122 MB** |
+| MCP tools/list req/s (p99) | 1,272 (47 ms) | 1,336 (45 ms) | 1,228 (48 ms) |
+| MCP 도구 호출 req/s (p99) | 7,595 (8.8 ms) | 7,944 (8.4 ms) | 8,212 (8.2 ms) |
+| 공지 조회 req/s (p99) | 1,221 (53 ms) | 1,395 (36 ms) | 1,740 (27 ms) |
+| 로그인/s (p99) | 95 (117 ms) | 95 (119 ms) | 71 (140 ms) |
+
+jemalloc은 메모리를 30~50% 덜 쓰고 DB가 섞인 요청은 더 빠르다. Argon2 로그인 처리량은 25% 낮지만
+로그인은 IP·계정당 횟수 제한이 있어 이 처리량에 닿지 않는다. ARM 이미지는 64 KiB 페이지로 빌드한다
+(`deploy/build-target.sh`, 4/16/64 KiB 커널 모두에서 실행).
 
 ## 검증과 재현
 

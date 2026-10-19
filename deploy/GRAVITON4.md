@@ -34,7 +34,7 @@ Ampere A1 이미지(`neoverse-n1`)는 모든 코어가 ARMv8.2 원자 연산·�
 ## Graviton4 최적화
 
 `neoverse-v2`는 Rust의 LSE 원자 연산과 해당 CPU의 벡터 명령·명령 스케줄링을
-활성화한다. C/C++로 빌드되는 AWS-LC, mimalloc, 압축 코덱에도 같은 CPU
+활성화한다. C/C++로 빌드되는 AWS-LC, jemalloc, 압축 코덱에도 같은 CPU
 설정을 적용한다. 의존성 빌드와 최종 빌드가 동일한 옵션을 사용한다.
 release 프로필은 기존의 opt-level 3, fat LTO, codegen-units 1을 유지한다.
 `native`를 지정하지 않아 CI 러너 CPU가 배포 CPU 기준선에 섞이지 않는다.

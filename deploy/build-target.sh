@@ -1,6 +1,6 @@
 #!/bin/sh
 # Apply the same CPU settings to cargo-chef and the final build, including
-# native dependencies (AWS-LC, mimalloc, compression codecs).
+# native dependencies (AWS-LC, jemalloc, compression codecs).
 set -eu
 
 arch=${1:?usage: build-target.sh ARCH CPU COMMAND...}
@@ -22,6 +22,11 @@ case "$arch:$cpu" in
   arm64:ampere1a) native_flags=-mcpu=ampere1a ;;
   *) echo "unsupported architecture/CPU: $arch:$cpu" >&2; exit 1 ;;
 esac
+
+# jemalloc fixes its page size at build time and refuses to start on a kernel
+# with larger pages. ARM servers run 4, 16 or 64 KiB page kernels (Oracle
+# Linux UEK uses 64 KiB): build for 64 KiB, which works on all of them.
+if [ "$arch" = arm64 ]; then export JEMALLOC_SYS_WITH_LG_PAGE=16; fi
 
 export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C target-cpu=$cpu"
 export CFLAGS="${CFLAGS:+$CFLAGS }$native_flags"
