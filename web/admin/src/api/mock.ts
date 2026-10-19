@@ -4,7 +4,8 @@ import { ApiError, messageForCode } from './errors';
 import { applicationPending, needsSecond } from '../labels';
 import type {
   ApprovalItem, DecisionInput, DecisionResult, DeliveryDecisionInput, DeliveryItem, DspItem, InquiryMessage, InquiryItem,
-  Overview, PayoutItem, QueueRelease, ReleaseSheet, ReleaseTimelineItem, StagingRow, StaffDocument, StaffMe, AgreementTerms, AgreementTermsInput
+  Overview, PayoutItem, QueueRelease, ReleaseSheet, ReleaseTimelineItem, StagingRow, StaffDocument, StaffMe, AgreementTerms, AgreementTermsInput,
+  IdentityAccount, IdentityVerifyInput
 } from './staff';
 import { applicationHash, type StudioDraft } from '../lib/application';
 
@@ -207,7 +208,7 @@ const audit = (r: MockRelease, action: string, reason: string) =>
   r.sheet.timeline.unshift({ action, reason, actor_user_id: ME, actor_service: null, at: new Date().toISOString() });
 
 export const mockStaff = {
-  me: () => wait<StaffMe>({ user_id: ME, role: 'ADMIN', duties: ['REVIEW', 'DOCUMENTS', 'INQUIRIES', 'DELIVERY'], dual_approval: false }),
+  me: () => wait<StaffMe>({ user_id: ME, role: 'ADMIN', duties: ['REVIEW', 'DOCUMENTS', 'INQUIRIES', 'DELIVERY', 'IDENTITY'], dual_approval: false }),
   overview: () => wait<Overview>({
     review: releases.filter(awaiting).length,
     correction: releases.filter(r => r.q.status.endsWith('_CORRECTION')).length,
@@ -427,4 +428,22 @@ export const mockStaff = {
   restage: (_pkg: string) => wait({ job_id: uid() }),
   dsps: () => wait({ items: dsps }),
   payouts: (status: string) => wait({ items: payouts.filter(p => p.status === status) }),
+  identityLookup: (email: string) => (email.toLowerCase().endsWith('@example.com') ? wait(identityAccount) : fail('NOT_FOUND', 404)),
+  identityVerify: (_uid: string, b: IdentityVerifyInput) => {
+    identityAccount.identity = {
+      provider: 'OFFLINE', method: b.channel, offline: true, verified_at: iso(0),
+      name_masked: `${b.real_name.slice(0, 1)}**`, adult: true,
+    };
+    identityAccount.checks.unshift({
+      id: `chk-${identityAccount.checks.length + 1}`, staff_user_id: ME, channel: b.channel,
+      document_type: b.document_type, correction: b.correction, note: b.note, created_at: iso(0),
+    });
+    return wait(identityAccount);
+  },
+};
+
+// 실명인증 체험: 아무개@example.com 으로 찾을 수 있는 계정 하나
+const identityAccount: IdentityAccount = {
+  user_id: '7f1c2a90-5b3e-4d21-9a6f-0c8e1d2b3a45', email_masked: 'h***@e****.com', status: 'ACTIVE', joined_at: iso(4000),
+  identity: null, checks: [],
 };

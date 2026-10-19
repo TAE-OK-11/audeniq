@@ -64,13 +64,14 @@ RUN --mount=type=secret,id=github_token \
 FROM debian:13-slim
 # Audio probing, lossless FLAC conversion, Stage 1 QC and fingerprinting run
 # in audeniq-qc (built above); FFmpeg is no longer part of the runtime image.
-# Image metadata, QR, OCR and upload sanitization run in audeniq-photo; python3
-# remains for the antivirus updater and the parser sandbox self-test.
+# Image metadata, QR, OCR and upload sanitization run in audeniq-photo. No
+# Python: the antivirus updater and the parser sandbox self-test are part of
+# audeniq-admin (`antivirus-update`, `upload-sandbox-check`).
 # openssh-client: SFTP partner delivery (DDEX drops) runs `sftp -b -` with a
 # pinned known_hosts file (crate::transport::SftpTransport).
 # /var/tmp/audeniq is the worker TMPDIR. A new named volume copies this
 # ownership, so UID 10001 can write downloaded masters for QC.
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssh-client libxml2-utils python3 clamav-daemon clamav-freshclam && rm -rf /var/lib/apt/lists/* \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssh-client libxml2-utils clamav-daemon clamav-freshclam && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 audeniq && useradd --uid 10001 --gid 10001 --no-create-home audeniq \
     && install -d -o 10001 -g 10001 -m 700 /var/tmp/audeniq \
     && install -d -o 10001 -g 10001 -m 755 /var/lib/clamav /run/audeniq-av
@@ -78,7 +79,6 @@ COPY --from=build /out/ /usr/local/bin/
 COPY --from=engine /engine/root/bin/audeniq-qc /usr/local/bin/audeniq-qc
 COPY --from=photo /photo/root/bin/audeniq-photo /usr/local/bin/audeniq-photo
 COPY --from=build /meta/ /usr/local/share/audeniq/
-COPY deploy/update-antivirus.py /usr/local/lib/audeniq/update-antivirus.py
 COPY deploy/clamd.conf deploy/freshclam.conf /usr/local/share/audeniq/
 USER 10001:10001
 ENV RUST_LOG=info

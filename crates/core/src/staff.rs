@@ -56,6 +56,9 @@ pub enum Duty {
     Documents,
     Inquiries,
     Delivery,
+    /// Real-name verification from an ID shown in person or at the customer
+    /// center (crate::identity_desk).
+    Identity,
 }
 
 impl StaffRole {
@@ -82,7 +85,7 @@ impl StaffRole {
             Self::Admin => true,
             Self::Reviewer => matches!(duty, Review | Documents | Inquiries),
             Self::Operator => matches!(duty, Delivery),
-            Self::Support => matches!(duty, Inquiries),
+            Self::Support => matches!(duty, Inquiries | Identity),
         }
     }
 }
@@ -206,6 +209,7 @@ pub async fn me(s: &AppState, h: &HeaderMap) -> Result<Value> {
         (Duty::Documents, "DOCUMENTS"),
         (Duty::Inquiries, "INQUIRIES"),
         (Duty::Delivery, "DELIVERY"),
+        (Duty::Identity, "IDENTITY"),
     ]
     .into_iter()
     .filter(|(d, _)| st.role.may(*d))
@@ -1719,7 +1723,8 @@ pub async fn decide_second_approval(
         "PASS",
         &reason,
         requester,
-        Some(user),
+        // Its own requester closing it (switch off): no second approver.
+        (requester != user).then_some(user),
     )
     .await?;
     sqlx::query(
@@ -2117,7 +2122,7 @@ pub async fn document_file(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<Docu
     let bytes = s.storage.get(&key).await?;
     use sha2::Digest;
     if bytes.len() != size as usize
-        || hex::encode(sha2::Sha256::digest(&bytes)) != row.get::<String, _>("sha256")
+        || crate::hex::encode(sha2::Sha256::digest(&bytes)) != row.get::<String, _>("sha256")
     {
         return Err(Error::PolicyGate("ASSET_OBJECT_DRIFT"));
     }
@@ -3172,6 +3177,10 @@ mod tests {
         assert!(!StaffRole::Operator.may(Duty::Review));
         assert!(StaffRole::Support.may(Duty::Inquiries));
         assert!(!StaffRole::Support.may(Duty::Documents));
+        assert!(StaffRole::Support.may(Duty::Identity));
+        assert!(StaffRole::Admin.may(Duty::Identity));
+        assert!(!StaffRole::Reviewer.may(Duty::Identity));
+        assert!(!StaffRole::Operator.may(Duty::Identity));
     }
 
     #[test]

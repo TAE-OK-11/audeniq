@@ -1,7 +1,11 @@
 name: Foundation
-# 같은 저장소 브랜치의 PR은 push 실행 결과가 PR 체크로 붙으므로 pull_request로 한 번 더 돌리지 않는다
+# main으로 가는 PR에서만 돈다 (병합 전 검사). 작업 브랜치 푸시·문서만 바뀐 PR은 돌지 않는다.
+# 필요하면 Actions → Foundation → Run workflow로 아무 브랜치에서나 수동 실행
 on:
-  push:
+  pull_request:
+    branches: [main]
+    paths-ignore: ['**.md', 'docs/**']
+  workflow_dispatch:
 permissions:
   contents: read
 # 같은 브랜치에 새 커밋이 오면 이전 실행은 취소 (main은 커밋마다 끝까지 돌린다)
@@ -33,13 +37,13 @@ jobs:
       # Default runtime is off; CI still verifies the enabled implementation.
       UPLOAD_AV_ENABLED: 'true'
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: 1.98.1
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
-      - uses: actions/cache/restore@v6
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         id: rust-cache
         with:
           path: |
@@ -101,7 +105,7 @@ jobs:
           sudo chown -R "$USER" $S
           printf 'ls -1 %s/root\n' $S | sftp -b - -q -P 2222 -i $S/client -o BatchMode=yes -o UserKnownHostsFile=$S/known_hosts -o StrictHostKeyChecking=yes "$USER@127.0.0.1"
       # nextest: 테스트 바이너리를 차례로가 아니라 한꺼번에 병렬로 돌린다 (각 테스트는 자기 DB를 쓴다)
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2
         with:
           tool: cargo-nextest@0.9.146
       - run: cargo nextest run --locked -p audeniq-core --test-threads 4 --no-fail-fast
@@ -126,7 +130,7 @@ jobs:
           git fetch --no-tags --depth=1 origin bfa80c8594bb2892d727fdd28df618015027cf2c
           bash scripts/benchmark-fingerprint-review.sh 2>&1 | tee /tmp/backend-fingerprint-benchmark.log
           cargo test --locked -p audeniq-core --lib benchmark_prepared_matching -- --ignored --nocapture 2>&1 | tee /tmp/backend-name-benchmark.log
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: backend-review-benchmarks
@@ -137,7 +141,7 @@ jobs:
       - run: cargo build --locked -p audeniq-edge --target wasm32-unknown-unknown
       # 캐시에 같은 버전이 있으면 다시 컴파일하지 않는다
       - run: worker-build --version 2>/dev/null | grep -q '0\.8\.7' || cargo install worker-build --version 0.8.7 --locked --force
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.2
       - name: Build React Studio for the edge Worker
@@ -152,7 +156,7 @@ jobs:
           WRANGLER_SEND_METRICS: 'false'
         run: |
           cp wrangler.toml.example wrangler.toml
-          npx --yes wrangler@4.137.0 deploy --dry-run --outdir /tmp/audeniq-edge-bundle
+          npx --yes wrangler@4.149.0 deploy --dry-run --outdir /tmp/audeniq-edge-bundle
       - name: Shared HTTPS and compression tests
         run: node --experimental-strip-types --test web/shared/transport.test.ts
       - name: Studio Worker and D1 content tests
@@ -177,13 +181,13 @@ jobs:
       - name: Browser diagnostics
         if: failure()
         run: cat /tmp/api.log /tmp/web.log 2>/dev/null || true
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: studio-browser-results
           path: web/studio/app/test-results
           if-no-files-found: ignore
-      - uses: actions/cache/save@v6
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         if: always() && steps.rust-cache.outputs.cache-hit != 'true'
         with:
           path: |
@@ -200,7 +204,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: KMS, backup and HTTPS-only antivirus update tests
         run: |
           sudo apt-get update -qq
@@ -221,7 +225,7 @@ jobs:
       # 스모크는 이미지가 뜨는지만 본다: 운영용 LTO 빌드 대신 dev 프로필로 빨리 빌드
       CARGO_PROFILE: dev
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Validate isolated production configuration
         env:
           AUDENIQ_IMAGE: audeniq:test
@@ -259,22 +263,12 @@ jobs:
         run: |
           docker compose run --no-deps -d --name audeniq-ci-optional-security -e APP_ENV=production -e APP_ORIGIN=https://studio.audeniq.test \
             -e PAYOUT_ACCOUNT_KEY=0000000000000000000000000000000000000000000000000000000000000000 api
-          docker exec -i audeniq-ci-optional-security python3 - <<'PY'
-          import os, time, urllib.request
-          assert os.environ['PAYOUT_KMS_ENABLED'] == 'false'
-          assert os.environ['UPLOAD_AV_ENABLED'] == 'false'
-          assert not os.environ.get('PAYOUT_KEYRING_FILE')
-          request = urllib.request.Request('http://127.0.0.1:8080/ready', headers={'X-Audeniq-Service': os.environ['EDGE_SERVICE_SECRET']})
-          for attempt in range(30):
-              try:
-                  with urllib.request.urlopen(request, timeout=2) as response:
-                      assert response.status == 200
-                  break
-              except Exception:
-                  if attempt == 29:
-                      raise
-                  time.sleep(1)
-          PY
+          # The runtime image has no Python or curl: check the environment with sh and
+          # readiness from a curl container in the API container's network namespace.
+          docker exec audeniq-ci-optional-security sh -c 'test "$PAYOUT_KMS_ENABLED" = false && test "$UPLOAD_AV_ENABLED" = false && test -z "$PAYOUT_KEYRING_FILE"'
+          docker run --rm --network container:audeniq-ci-optional-security -e EDGE_SERVICE_SECRET curlimages/curl:8.11.1 \
+            --fail --silent --show-error --retry 30 --retry-all-errors --retry-delay 1 --max-time 60 \
+            -H "X-Audeniq-Service: $EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
           docker rm -f audeniq-ci-optional-security
           if docker compose run --rm --no-deps -e PAYOUT_KMS_ENABLED=true api > /tmp/kms-required.log 2>&1; then
             echo 'Enabled KMS accepted a missing keyring'

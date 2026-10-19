@@ -79,7 +79,7 @@ pub fn document_code(tag: &str, kind: &str, doc_ref: &str, content_hash: Option<
 }
 
 /// `h***@g****.com`
-fn mask_email(email: &str) -> String {
+pub(crate) fn mask_email(email: &str) -> String {
     let (local, domain) = email.split_once('@').unwrap_or((email, ""));
     let first = |s: &str| s.chars().next().map(String::from).unwrap_or_default();
     let (host, tld) = domain.rsplit_once('.').unwrap_or((domain, ""));
@@ -95,7 +95,7 @@ fn mask_email(email: &str) -> String {
     )
 }
 
-fn mask_name(name: &str) -> String {
+pub(crate) fn mask_name(name: &str) -> String {
     let mut c = name.trim().chars();
     match c.next() {
         Some(f) => format!("{f}{}", "*".repeat(c.count().clamp(1, 4))),

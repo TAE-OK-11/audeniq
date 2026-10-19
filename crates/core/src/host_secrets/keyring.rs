@@ -174,7 +174,7 @@ pub async fn wrap_legacy(
     let text = std::str::from_utf8(legacy_hex)
         .map_err(|_| CloudError("legacy key must be 64 hex characters".into()))?;
     let key = Zeroizing::new(
-        hex::decode(text.trim())
+        crate::hex::decode(text.trim())
             .map_err(|_| CloudError("legacy key must be 64 hex characters".into()))?,
     );
     if key.len() != 32 {
@@ -328,7 +328,7 @@ pub async fn materialize(
             if key.len() != 32 {
                 return fail("KMS key is not AES-256");
             }
-            Ok(Zeroizing::new(hex::encode(key.as_slice())))
+            Ok(Zeroizing::new(crate::hex::encode(key.as_slice())))
         })
     })
     .await?;
@@ -396,8 +396,8 @@ mod tests {
         assert_eq!(reparsed, bundle);
         let v = materialized(cloud.clone(), &bundle).await;
         assert_eq!(v["active_version"], 3);
-        assert_eq!(v["keys"]["1"], hex::encode([b'L'; 32]));
-        assert_eq!(v["keys"]["3"], hex::encode([b'G'; 32]));
+        assert_eq!(v["keys"]["1"], crate::hex::encode([b'L'; 32]));
+        assert_eq!(v["keys"]["3"], crate::hex::encode([b'G'; 32]));
         // The produced file is exactly what the API accepts.
         let parsed = crate::payout_keys::KeyRing::parse(&serde_json::to_vec(&v).unwrap());
         assert!(parsed.is_ok());

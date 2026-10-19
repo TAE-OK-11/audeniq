@@ -758,7 +758,10 @@ async fn alac_upload_is_registered_as_flac_and_aac_is_refused(pool: PgPool) {
         let stored = store.get(&key).await.unwrap();
         assert_eq!(ct, "audio/flac");
         assert_eq!(&stored[..4], b"fLaC");
-        assert_eq!(sha, hex::encode(sha2::Sha256::digest(&stored)));
+        assert_eq!(
+            sha,
+            audeniq_core::hex::encode(sha2::Sha256::digest(&stored))
+        );
     }
 
     let (s, v, asset) = send(m4a_bytes(&["-c:a", "aac", "-b:a", "128k"]), "audio/mp4").await;
