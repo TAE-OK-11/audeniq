@@ -1719,7 +1719,8 @@ pub async fn decide_second_approval(
         "PASS",
         &reason,
         requester,
-        Some(user),
+        // Its own requester closing it (switch off): no second approver.
+        (requester != user).then_some(user),
     )
     .await?;
     sqlx::query(
