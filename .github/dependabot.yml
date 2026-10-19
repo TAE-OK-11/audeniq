@@ -1,4 +1,4 @@
-# 의존성 업데이트 제안. CI 사용량을 줄이려고 생태계마다 한 PR로 묶어 주 1회만 연다.
+# 의존성 업데이트 제안. CI 사용량을 줄이려고 생태계마다 한 PR로 묶어 한 달에 한 번만 연다 (보안 업데이트는 바로).
 # cooldown: 새 버전은 공개 14일 뒤에야 제안한다(갓 나온 버전에 섞여 들어오는 공급망 공격 대비).
 # 보안 공지가 있는 업데이트는 Dependabot security updates가 따로, 기다리지 않고 연다.
 # 워크플로의 액션은 커밋 해시로 고정돼 있고(`@<sha> # vN`), 이 설정이 해시와 주석을 함께 올린다.
@@ -6,7 +6,7 @@ version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
-    schedule: { interval: weekly, day: monday }
+    schedule: { interval: monthly }
     cooldown: { default-days: 14 }
     groups:
       actions: { patterns: ["*"] }
@@ -14,7 +14,7 @@ updates:
 
   - package-ecosystem: cargo
     directory: /
-    schedule: { interval: weekly, day: monday }
+    schedule: { interval: monthly }
     cooldown: { default-days: 14 }
     groups:
       cargo-compatible:
@@ -23,7 +23,7 @@ updates:
 
   - package-ecosystem: bun
     directories: [/web/admin, /web/studio/app, /web/survey/app]
-    schedule: { interval: weekly, day: monday }
+    schedule: { interval: monthly }
     cooldown: { default-days: 14 }
     groups:
       web-compatible:
