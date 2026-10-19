@@ -85,6 +85,9 @@ GRANT SELECT ON portal.metadata_corrections TO audeniq_worker;
 GRANT USAGE ON SEQUENCE portal.signing_events_id_seq TO audeniq_api;
 -- 계정 정보 (0083): 본인인증 결과와 해외 납세 의무 (사용자 본인만)
 GRANT SELECT,INSERT,UPDATE ON portal.account_identities,portal.tax_residencies TO audeniq_api;
+-- 직원 실명인증 기록 (0136): 쌓기만 한다 (UPDATE·DELETE 없음)
+GRANT SELECT,INSERT ON portal.offline_identity_checks TO audeniq_api;
+GRANT EXECUTE ON FUNCTION portal.identity_desk_notice(uuid, text, text) TO audeniq_api;
 -- 휴대폰 번호 등록·비밀번호 재설정 문자 인증 (0084)
 GRANT SELECT,INSERT,UPDATE ON portal.account_phones,identity.sms_challenges TO audeniq_api;
 -- 스태프 TOTP (0103): API가 등록·확인한다. 초기화는 owner CLI(audeniq-admin staff reset-mfa)만.

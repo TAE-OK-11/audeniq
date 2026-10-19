@@ -37,6 +37,7 @@ pub mod fingerprint;
 pub mod hex;
 pub mod host_secrets;
 pub mod identifiers;
+pub mod identity_desk;
 pub mod infringement;
 pub mod mcp;
 pub mod mockdsp;

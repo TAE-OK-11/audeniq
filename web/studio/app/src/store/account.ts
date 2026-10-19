@@ -65,9 +65,12 @@ export const TAX_COUNTRIES: { code: string; label: string }[] = [
   { code: 'OTHER', label: '기타' },
 ];
 
+/** 직원이 신분증으로 확인한 실명인증 (crates/core/src/identity_desk.rs) */
+const OFFLINE_LABEL: Record<string, string> = { IN_PERSON: '현장 신분증 확인', CUSTOMER_CENTER: '고객센터 신분증 확인' };
+
 /** 인증 방법 표시 이름 — 서버가 돌려준 인증 기관 방법(예: TEST)도 그대로 보여 준다 */
 export function verifyLabel(method: string): string {
-  return VERIFY_LABEL[method as VerifyMethod] ?? method;
+  return VERIFY_LABEL[method as VerifyMethod] ?? OFFLINE_LABEL[method] ?? method;
 }
 
 export function taxCountryLabel(code: string): string {
