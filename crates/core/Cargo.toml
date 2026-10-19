@@ -44,9 +44,12 @@ libc = "0.2.189"
 unicode-security = "0.1.2"
 aes-gcm = { version = "0.11.1", features = ["zeroize"] }
 zeroize = "1.9.0"
-# Global allocator for the long-running api/worker binaries (see src/bin): lower RSS
-# than glibc malloc's per-thread arenas under tokio, and faster small allocs.
-mimalloc = { version = "0.1", default-features = false }
+# Global allocator for the long-running api/worker binaries (see src/bin). Chosen
+# by measuring the real API (docs/BACKEND_RESOURCE_PERFORMANCE.md "Allocator"):
+# about half the resident memory of mimalloc (start 23 vs 43 MB, idle after load
+# 31 vs 58 MB, peak 122 vs 175 MB) at the same request rate. ARM builds use
+# 64 KiB pages (deploy/build-target.sh) so one image runs on any page size.
+tikv-jemallocator = "0.7.0"
 tokio-stream = "0.1.19"
 
 [dev-dependencies]
