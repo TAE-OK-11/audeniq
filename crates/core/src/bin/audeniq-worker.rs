@@ -18,7 +18,7 @@ mod poll;
 mod unwind;
 
 #[global_allocator]
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 const QUEUES: [&str; 6] = [
     "interactive",

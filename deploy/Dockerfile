@@ -1,7 +1,9 @@
 FROM rust:1.98.1-slim-trixie AS chef
 # 빌드·실행 모두 Debian 13(trixie) slim 기반: 빌드는 rust slim-trixie, 실행은 debian:13-slim
 # 의존성은 cargo-chef로 따로 한 층에 빌드해, 우리 코드만 바뀌면 그 층을 캐시에서 그대로 쓴다
-RUN cargo install cargo-chef --version 0.1.78 --locked
+# make: tikv-jemalloc-sys builds jemalloc with its configure/make (the slim image has gcc only).
+RUN apt-get update && apt-get install -y --no-install-recommends make && rm -rf /var/lib/apt/lists/* \
+    && cargo install cargo-chef --version 0.1.78 --locked
 WORKDIR /build
 COPY deploy/build-target.sh /usr/local/bin/audeniq-build-target
 COPY deploy/with-github-token.sh /usr/local/bin/audeniq-with-github-token
