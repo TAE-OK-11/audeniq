@@ -42,6 +42,8 @@
 //! audeniq-admin staff reset-mfa EMAIL   (lost authenticator: re-enroll at next sign-in)
 //! audeniq-admin staff revoke EMAIL
 //!   (AUDENIQ employees for /api/staff; the API can only read this)
+//! audeniq-admin upload-sandbox-check   (deploy check: the upload parser sandbox holds)
+//! audeniq-admin antivirus-update       (FreshClam behind the TLS-only proxy; the antivirus-update service)
 //! audeniq-admin dsp list
 //! audeniq-admin mcp-client list
 //! audeniq-admin --operator NAME mcp-client add NAME [--password-grant] [--secret-post] [--redirect-uri URI]...
@@ -96,14 +98,37 @@ fn take_flag(args: &mut Vec<String>, key: &str) -> bool {
     }
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let mut args: Vec<String> = std::env::args().skip(1).collect();
-    if args == ["upload-sandbox-check"] {
-        audeniq_core::parser_sandbox::self_test()?;
-        println!("upload parser isolation verified");
-        return Ok(());
+fn main() -> anyhow::Result<()> {
+    // Plain processes, before any async runtime or thread starts.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
+        // The child that `upload-sandbox-check` runs inside the sandbox.
+        [audeniq_core::parser_sandbox::PROBE_ARG] => {
+            if let Err(e) = audeniq_core::parser_sandbox::probe() {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+            return Ok(());
+        }
+        ["upload-sandbox-check"] => {
+            audeniq_core::parser_sandbox::self_test()?;
+            println!("upload parser isolation verified");
+            return Ok(());
+        }
+        // The antivirus-update service: FreshClam behind the TLS-only proxy.
+        ["antivirus-update"] => {
+            let status = audeniq_core::av_update::run()?;
+            std::process::exit(status.code().unwrap_or(1));
+        }
+        _ => {}
     }
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(run(args))
+}
+
+async fn run(mut args: Vec<String>) -> anyhow::Result<()> {
     let operator = take_opt(&mut args, "--operator")
         .or_else(|| std::env::var("AUDENIQ_OPERATOR").ok())
         .unwrap_or_default();

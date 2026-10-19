@@ -63,7 +63,7 @@ commands:
   skip-unless-backend-changed:
     steps:
       - skip-unless-changed:
-          paths: '^(Cargo\.toml|Cargo\.lock|crates/core/|config/|migrations/|deploy/(Dockerfile|build-target\.sh|check-cpu\.sh|deploy\.sh|audeniq-photo\.rev|audeniq-qc\.rev|install-audeniq-photo\.sh|install-audeniq-qc\.sh|with-github-token\.sh|clamd\.conf|freshclam\.conf|update-antivirus\.py|pgbouncer/|compose\.production\.yaml)|\.dockerignore$)'
+          paths: '^(Cargo\.toml|Cargo\.lock|crates/core/|config/|migrations/|deploy/(Dockerfile|build-target\.sh|check-cpu\.sh|deploy\.sh|audeniq-photo\.rev|audeniq-qc\.rev|install-audeniq-photo\.sh|install-audeniq-qc\.sh|with-github-token\.sh|clamd\.conf|freshclam\.conf|pgbouncer/|compose\.production\.yaml)|\.dockerignore$)'
   setup-bun:
     description: web/<app>/.bun-version의 Bun 설치
     parameters:
@@ -243,8 +243,8 @@ jobs:
             test "$(docker image inspect --format '{{.Architecture}}' "$REF")" = << parameters.arch >>
             docker run --rm --entrypoint sh -e EXPECTED_ARCH=<< parameters.arch >> -e EXPECTED_CPU=<< parameters.cpu >> "$REF" -c '
               set -e
-              for b in audeniq-api audeniq-worker audeniq-migrate audeniq-admin audeniq-secrets audeniq-qc audeniq-photo sftp python3 xmllint clamd; do command -v "$b"; done
-              for b in exiftool tesseract zbarimg pdftoppm; do if command -v "$b"; then echo "$b must not ship in the runtime image"; exit 1; fi; done
+              for b in audeniq-api audeniq-worker audeniq-migrate audeniq-admin audeniq-secrets audeniq-qc audeniq-photo sftp xmllint clamd; do command -v "$b"; done
+              for b in exiftool tesseract zbarimg pdftoppm python3; do if command -v "$b"; then echo "$b must not ship in the runtime image"; exit 1; fi; done
               if command -v ffmpeg; then echo "ffmpeg must not ship in the runtime image"; exit 1; fi
               test "$(cat /usr/local/share/audeniq/target-arch)" = "$EXPECTED_ARCH"
               test "$(cat /usr/local/share/audeniq/target-cpu)" = "$EXPECTED_CPU"
