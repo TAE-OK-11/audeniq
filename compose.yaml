@@ -31,6 +31,10 @@ services:
       - ./deploy/grants.sql:/opt/audeniq/grants.sql:ro
     ports: ['127.0.0.1:5432:5432']
     networks: [backend]
+    # The entrypoint drops root itself (gosu); nothing may gain privileges after
+    # that. Processes: max_connections 40 + background workers, with room.
+    security_opt: ['no-new-privileges:true']
+    pids_limit: 256
     command: ['postgres', '-c', 'max_connections=40', '-c', 'shared_buffers=128MB']
     mem_limit: 768m
     cpus: 1.0
