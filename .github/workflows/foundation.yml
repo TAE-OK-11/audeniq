@@ -37,13 +37,13 @@ jobs:
       # Default runtime is off; CI still verifies the enabled implementation.
       UPLOAD_AV_ENABLED: 'true'
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: 1.98.1
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
-      - uses: actions/cache/restore@v6
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         id: rust-cache
         with:
           path: |
@@ -105,7 +105,7 @@ jobs:
           sudo chown -R "$USER" $S
           printf 'ls -1 %s/root\n' $S | sftp -b - -q -P 2222 -i $S/client -o BatchMode=yes -o UserKnownHostsFile=$S/known_hosts -o StrictHostKeyChecking=yes "$USER@127.0.0.1"
       # nextest: 테스트 바이너리를 차례로가 아니라 한꺼번에 병렬로 돌린다 (각 테스트는 자기 DB를 쓴다)
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2
         with:
           tool: cargo-nextest@0.9.146
       - run: cargo nextest run --locked -p audeniq-core --test-threads 4 --no-fail-fast
@@ -130,7 +130,7 @@ jobs:
           git fetch --no-tags --depth=1 origin bfa80c8594bb2892d727fdd28df618015027cf2c
           bash scripts/benchmark-fingerprint-review.sh 2>&1 | tee /tmp/backend-fingerprint-benchmark.log
           cargo test --locked -p audeniq-core --lib benchmark_prepared_matching -- --ignored --nocapture 2>&1 | tee /tmp/backend-name-benchmark.log
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: backend-review-benchmarks
@@ -141,7 +141,7 @@ jobs:
       - run: cargo build --locked -p audeniq-edge --target wasm32-unknown-unknown
       # 캐시에 같은 버전이 있으면 다시 컴파일하지 않는다
       - run: worker-build --version 2>/dev/null | grep -q '0\.8\.7' || cargo install worker-build --version 0.8.7 --locked --force
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.2
       - name: Build React Studio for the edge Worker
@@ -156,7 +156,7 @@ jobs:
           WRANGLER_SEND_METRICS: 'false'
         run: |
           cp wrangler.toml.example wrangler.toml
-          npx --yes wrangler@4.137.0 deploy --dry-run --outdir /tmp/audeniq-edge-bundle
+          npx --yes wrangler@4.149.0 deploy --dry-run --outdir /tmp/audeniq-edge-bundle
       - name: Shared HTTPS and compression tests
         run: node --experimental-strip-types --test web/shared/transport.test.ts
       - name: Studio Worker and D1 content tests
@@ -181,13 +181,13 @@ jobs:
       - name: Browser diagnostics
         if: failure()
         run: cat /tmp/api.log /tmp/web.log 2>/dev/null || true
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: studio-browser-results
           path: web/studio/app/test-results
           if-no-files-found: ignore
-      - uses: actions/cache/save@v6
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         if: always() && steps.rust-cache.outputs.cache-hit != 'true'
         with:
           path: |
@@ -204,7 +204,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: KMS, backup and HTTPS-only antivirus update tests
         run: |
           sudo apt-get update -qq
@@ -225,7 +225,7 @@ jobs:
       # 스모크는 이미지가 뜨는지만 본다: 운영용 LTO 빌드 대신 dev 프로필로 빨리 빌드
       CARGO_PROFILE: dev
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Validate isolated production configuration
         env:
           AUDENIQ_IMAGE: audeniq:test

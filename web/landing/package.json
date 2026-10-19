@@ -10,12 +10,12 @@
   "scripts": {
     "dev": "wrangler dev",
     "build:seo": "node --experimental-strip-types scripts/build-seo.ts",
-    "deploy": "npm run check && npx --yes wrangler@4.141.0 deploy",
+    "deploy": "npm run check && npx --yes wrangler@4.149.0 deploy",
     "verify:live": "node --experimental-strip-types scripts/verify-live.ts",
     "indexnow": "node --experimental-strip-types scripts/submit-indexnow.ts",
     "check": "node --experimental-strip-types scripts/build-seo.ts && node --experimental-strip-types --test test/*.test.ts"
   },
   "devDependencies": {
-    "wrangler": "^4.141.0"
+    "wrangler": "^4.149.0"
   }
 }
