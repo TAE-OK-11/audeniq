@@ -93,13 +93,13 @@ impl ObjectStore for MemStore {
             size: o.bytes.len() as i64,
             content_type: o.content_type.clone(),
             nonce: o.nonce.clone(),
-            etag: hex::encode(sha2::Sha256::digest(&o.bytes)),
+            etag: audeniq_core::hex::encode(sha2::Sha256::digest(&o.bytes)),
         }))
     }
     async fn freeze(&self, source: &str, target: &str, etag: &str) -> Result<()> {
         let mut m = self.objects.lock().await;
         let o = m.get(source).ok_or(Error::Storage)?;
-        if hex::encode(sha2::Sha256::digest(&o.bytes)) != etag {
+        if audeniq_core::hex::encode(sha2::Sha256::digest(&o.bytes)) != etag {
             return Err(Error::Conflict);
         }
         let copy = Obj {

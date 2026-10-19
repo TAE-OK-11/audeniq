@@ -3,41 +3,60 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub enum Error {
-    #[error("authentication required")]
     Unauthorized,
-    #[error("access denied")]
     Forbidden,
-    #[error("not found")]
     NotFound,
-    #[error("concurrent change or duplicate")]
     Conflict,
-    #[error("invalid input")]
     Invalid,
     /// Invalid input with a specific, user-explainable reason (HTTP 400).
-    #[error("invalid input: {0}")]
     InvalidCode(&'static str),
-    #[error("rate limit exceeded")]
     RateLimited,
-    #[error("feature gated")]
     Gated,
-    #[error("policy gate: {0}")]
     PolicyGate(&'static str),
-    #[error("storage unavailable")]
     Storage,
-    #[error("upload processing capacity reached")]
     UploadBusy,
-    #[error("database error")]
-    Database(#[from] sqlx::Error),
-    #[error("internal error")]
+    Database(sqlx::Error),
     Internal,
     /// Request headers exceed the API limit (HTTP 431).
-    #[error("request headers too large")]
     HeadersTooLarge,
     /// The request ran past the API's deadline (HTTP 504).
-    #[error("request timed out")]
     Timeout,
+}
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unauthorized => f.write_str("authentication required"),
+            Self::Forbidden => f.write_str("access denied"),
+            Self::NotFound => f.write_str("not found"),
+            Self::Conflict => f.write_str("concurrent change or duplicate"),
+            Self::Invalid => f.write_str("invalid input"),
+            Self::InvalidCode(v) => write!(f, "invalid input: {v}"),
+            Self::RateLimited => f.write_str("rate limit exceeded"),
+            Self::Gated => f.write_str("feature gated"),
+            Self::PolicyGate(v) => write!(f, "policy gate: {v}"),
+            Self::Storage => f.write_str("storage unavailable"),
+            Self::UploadBusy => f.write_str("upload processing capacity reached"),
+            Self::Database(_) => f.write_str("database error"),
+            Self::Internal => f.write_str("internal error"),
+            Self::HeadersTooLarge => f.write_str("request headers too large"),
+            Self::Timeout => f.write_str("request timed out"),
+        }
+    }
+}
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Database(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+impl From<sqlx::Error> for Error {
+    fn from(e: sqlx::Error) -> Self {
+        Self::Database(e)
+    }
 }
 pub type Result<T> = std::result::Result<T, Error>;
 /// The stable API error code of a failed response, carried as a response

@@ -694,6 +694,12 @@ async fn authorization_code_and_refresh_token_attacks_are_refused(pool: PgPool) 
     .await;
     assert_eq!(s, StatusCode::OK);
     assert!(body.contains("/login") && !body.contains("name=\"request\""));
+    // The login link brings the user back to this consent screen, in the same
+    // window (in-app browsers of the AI apps cannot open another one).
+    assert!(
+        body.contains("/login?next=%2Fapi%2Foauth%2Fauthorize%3F") && !body.contains("_blank"),
+        "{body}"
+    );
 
     // The consent request is bound to the session that saw it.
     let request = consent_page(&app, &u, &client_id, "releases:read").await;
@@ -817,20 +823,21 @@ async fn authorization_code_and_refresh_token_attacks_are_refused(pool: PgPool) 
     let (s, next) = refresh(c.refresh.clone()).await;
     assert_eq!(s, StatusCode::OK);
     // The same token again within seconds is the client racing itself
-    // (parallel calls, a retry): refused, but the first answer stays valid.
-    let (s, v) = refresh(c.refresh.clone()).await;
-    assert_eq!(
-        (s, v["error"].as_str()),
-        (StatusCode::BAD_REQUEST, Some("invalid_grant"))
-    );
-    let (err, _) = tool(
-        &app,
-        next["access_token"].as_str().unwrap(),
-        "get_account_context",
-        json!({}),
-    )
-    .await;
-    assert!(!err, "a racing refresh does not disconnect the user");
+    // (parallel calls, a retry): it gets tokens of its own, and the first
+    // answer stays valid. MCP clients drop stored tokens on invalid_grant.
+    let (s, raced) = refresh(c.refresh.clone()).await;
+    assert_eq!(s, StatusCode::OK, "{raced}");
+    assert_ne!(raced["refresh_token"], next["refresh_token"]);
+    for answer in [&next, &raced] {
+        let (err, _) = tool(
+            &app,
+            answer["access_token"].as_str().unwrap(),
+            "get_account_context",
+            json!({}),
+        )
+        .await;
+        assert!(!err, "a racing refresh does not disconnect the user");
+    }
     // Later reuse is theft: the whole grant ends.
     sqlx::query("UPDATE identity.mcp_tokens SET used_at=now()-interval '1 minute' WHERE used_at IS NOT NULL")
         .execute(&pool)
@@ -2175,6 +2182,10 @@ async fn device_authorization_links_with_a_code(pool: PgPool) {
     let (s, _, body) = raw(&app, "GET", &page, &[], String::new()).await;
     assert_eq!(s, StatusCode::OK);
     assert!(body.contains("먼저 어데닉에 로그인해 주세요"), "{body}");
+    assert!(
+        body.contains("/login?next=%2Fapi%2Foauth%2Fdevice%3Fuser_code%3D"),
+        "{body}"
+    );
     let (_, _, body) = raw(
         &app,
         "GET",

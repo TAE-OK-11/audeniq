@@ -58,7 +58,7 @@ async fn document_with_file(
     .unwrap();
     if matches!(content_type, "application/pdf" | "image/jpeg" | "image/png") {
         use sha2::Digest;
-        let sha = hex::encode(sha2::Sha256::digest(bytes));
+        let sha = audeniq_core::hex::encode(sha2::Sha256::digest(bytes));
         sqlx::query("UPDATE catalog.assets SET sha256=$2 WHERE id=$1")
             .bind(asset)
             .bind(&sha)

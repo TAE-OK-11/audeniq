@@ -16,9 +16,16 @@ use zeroize::Zeroizing;
 /// Largest response body read from any cloud API.
 pub const MAX_RESPONSE: usize = 256 * 1024;
 
-#[derive(Debug, thiserror::Error)]
-#[error("{0}")]
+#[derive(Debug)]
 pub struct CloudError(pub String);
+
+impl std::fmt::Display for CloudError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for CloudError {}
 
 pub type Result<T> = std::result::Result<T, CloudError>;
 
@@ -102,7 +109,7 @@ pub fn unb64(text: &str, what: &str) -> Result<Zeroizing<Vec<u8>>> {
 
 pub fn sha256_hex(data: &[u8]) -> String {
     use sha2::Digest;
-    hex::encode(sha2::Sha256::digest(data))
+    crate::hex::encode(sha2::Sha256::digest(data))
 }
 
 /// CRC32C (Castagnoli), as GCP integrity fields use.
