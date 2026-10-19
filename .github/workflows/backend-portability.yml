@@ -54,12 +54,16 @@ jobs:
           restore-keys: |
             backend-native-1.98.1-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}-
       - name: Build the pinned AUDENIQ media engine (audeniq-qc)
+        env:
+          AUDENIQ_GITHUB_TOKEN: ${{ secrets.AUDENIQ_GITHUB_TOKEN }}
         run: |
-          sh deploy/install-audeniq-qc.sh "$HOME/.local/audeniq-qc"
+          sh deploy/ci-engine-token.sh sh deploy/install-audeniq-qc.sh "$HOME/.local/audeniq-qc"
           echo "AUDENIQ_QC_BIN=$HOME/.local/audeniq-qc/bin/audeniq-qc" >> "$GITHUB_ENV"
       - name: Build the pinned AUDENIQ image toolkit (audeniq-photo)
+        env:
+          AUDENIQ_GITHUB_TOKEN: ${{ secrets.AUDENIQ_GITHUB_TOKEN }}
         run: |
-          sh deploy/install-audeniq-photo.sh "$HOME/.local/audeniq-photo"
+          sh deploy/ci-engine-token.sh sh deploy/install-audeniq-photo.sh "$HOME/.local/audeniq-photo"
           echo "AUDENIQ_PHOTO_BIN=$HOME/.local/audeniq-photo/bin/audeniq-photo" >> "$GITHUB_ENV"
       - name: Install native analyzers and disposable antivirus
         run: |
