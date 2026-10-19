@@ -126,7 +126,7 @@ pub async fn render(c: &mut PgConnection, kind: Kind, id: Uuid) -> Result<(Optio
 }
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
+    crate::hex::encode(Sha256::digest(bytes))
 }
 
 /// What the document key signs and the chain hashes.

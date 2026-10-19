@@ -90,7 +90,8 @@ pub async fn record(
 
 /// The signer as the server knows them: the account, and whether (how, when)
 /// its real name was verified. The verified identity is referenced by its CI
-/// hash; names and e-mail stay sealed in their own tables (0102).
+/// hash (none for an in-person check by staff, provider OFFLINE); names and
+/// e-mail stay sealed in their own tables (0102).
 pub async fn signer_identity(c: &mut PgConnection, user: Uuid) -> Result<Value> {
     type Row = (
         Option<String>,
@@ -108,7 +109,7 @@ pub async fn signer_identity(c: &mut PgConnection, user: Uuid) -> Result<Value> 
     .await?
     .ok_or(Error::NotFound)?;
     Ok(json!({
-        "user_id": user, "verified": ci_hash.is_some(), "provider": provider,
+        "user_id": user, "verified": provider.is_some(), "provider": provider,
         "method": method, "ci_hash": ci_hash, "verified_at": at,
     }))
 }

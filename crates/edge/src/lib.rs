@@ -72,7 +72,7 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
             .with_redirect(RequestRedirect::Manual),
     )?;
     // Allowlist, never propagate browser-provided service identity or user-id headers.
-    // accept-encoding: the API compresses JSON (zstd > br > gzip) for what the
+    // accept-encoding: the API compresses JSON (br > gzip) for what the
     // browser accepts, so the tunnel hop carries compressed bytes and the
     // response passes through to the browser unchanged.
     for name in [

@@ -6,7 +6,7 @@
 //!   this server never sees or asks for a password.
 //! - Authorization code + PKCE (S256 only). Codes live 10 minutes, once.
 //! - Opaque tokens, stored as SHA-256 digests. Access 1 h; refresh 30 days,
-//!   rotated on every use, reuse revokes the grant; a grant ends 90 days
+//!   rotated on every use, reuse after a 30 s grace revokes the grant; a grant ends 90 days
 //!   after consent at the latest.
 //! - Every token is bound to one user, one workspace (org), the approved
 //!   scopes and this server's MCP resource (audience).
@@ -35,7 +35,9 @@ const CODE_SECONDS: i64 = 600;
 pub const ACCESS_SECONDS: i64 = 3600;
 const REFRESH_SECONDS: i64 = 30 * 24 * 3600;
 const GRANT_MAX_DAYS: i64 = 90;
-/// A refresh token reused this soon after its first use is a client retry.
+/// A refresh token reused this soon after its first use is a client retry
+/// or two requests of the client refreshing at once; it gets its own new
+/// tokens (like Okta's grace period / Auth0's reuse interval).
 const REFRESH_REUSE_GRACE_SECONDS: i64 = 30;
 /// A consent screen must be answered within this window.
 const CONSENT_SECONDS: i64 = 600;
@@ -684,7 +686,7 @@ pub async fn authorize(State(s): State<AppState>, h: HeaderMap, RawQuery(q): Raw
     }
     let a = match auth::actor(&s.pool, &h, &s.config, false).await {
         Ok(a) => a,
-        Err(Error::Unauthorized) => return page_sign_in(&s),
+        Err(Error::Unauthorized) => return page_sign_in(&s, "/api/oauth/authorize", &p),
         Err(e) => return e.into_response(),
     };
     let orgs = match user_orgs(&s, a.user).await {
@@ -696,7 +698,7 @@ pub async fn authorize(State(s): State<AppState>, h: HeaderMap, RawQuery(q): Raw
         "consent",
         &json!({
             "c": client.pk, "r": redirect_uri, "ch": challenge, "st": state,
-            "sc": scopes, "sh": hex::encode(&a.session_hash),
+            "sc": scopes, "sh": crate::hex::encode(&a.session_hash),
             "exp": chrono::Utc::now().timestamp() + CONSENT_SECONDS,
         }),
     );
@@ -851,7 +853,7 @@ async fn decide_inner(s: &AppState, h: &HeaderMap, body: &[u8]) -> Result<Respon
         form.get("request").map(String::as_str).unwrap_or(""),
     )
     .ok_or(Error::InvalidCode("CONSENT_EXPIRED"))?;
-    if req["sh"].as_str() != Some(hex::encode(&a.session_hash).as_str()) {
+    if req["sh"].as_str() != Some(crate::hex::encode(&a.session_hash).as_str()) {
         return Err(Error::Forbidden);
     }
     let client_pk: Uuid = req["c"]
@@ -1286,12 +1288,12 @@ async fn refresh(
         return Err(BAD_GRANT);
     }
     // The same refresh token twice within seconds is a client racing itself
-    // (parallel calls, a retry after a lost response), not theft: refuse it
-    // but keep the tokens the first request got.
-    if row.get::<bool, _>("just_used") {
-        return Err(BAD_GRANT);
-    }
-    if row.get::<bool, _>("used") {
+    // (parallel calls, a retry after a lost response), not theft. Refusing it
+    // is not safe either: MCP clients drop their stored tokens on
+    // invalid_grant, which can also drop the ones the first request just
+    // saved and disconnect the user. Answer it with new tokens of its own.
+    let just_used = row.get::<bool, _>("just_used");
+    if row.get::<bool, _>("used") && !just_used {
         revoke_grant(&mut tx, grant, "REFRESH_REUSED").await?;
         operations::audit(
             &mut tx,
@@ -1321,10 +1323,13 @@ async fn refresh(
             "A refresh cannot add scopes.",
         ));
     }
-    sqlx::query("UPDATE identity.mcp_tokens SET used_at=now() WHERE token_hash=$1")
-        .bind(auth::hash_token(token))
-        .execute(&mut *tx)
-        .await?;
+    // A retry keeps the first use's time: the grace window does not move.
+    sqlx::query(
+        "UPDATE identity.mcp_tokens SET used_at=COALESCE(used_at, now()) WHERE token_hash=$1",
+    )
+    .bind(auth::hash_token(token))
+    .execute(&mut *tx)
+    .await?;
     let v = issue_tokens(&mut tx, grant, &scopes).await?;
     tx.commit().await?;
     Ok(v)
@@ -1591,13 +1596,34 @@ pub(super) fn page_error(message: &str) -> Response {
     r
 }
 
-pub(super) fn page_sign_in(s: &AppState) -> Response {
-    let login = format!("{}/login", super::issuer(s));
+/// Sign-in first. The login link opens in the same window and brings the
+/// user back here afterwards (`next`, read by the Studio's login screen):
+/// the in-app browsers of the AI apps cannot open a second window.
+/// `back` is this page's path with its parameters, e.g. `/api/oauth/authorize`.
+pub(super) fn page_sign_in(
+    s: &AppState,
+    back: &str,
+    params: &BTreeMap<String, String>,
+) -> Response {
+    let mut next = back.to_string();
+    if !params.is_empty() {
+        next.push('?');
+        next.push_str(
+            &url::form_urlencoded::Serializer::new(String::new())
+                .extend_pairs(params)
+                .finish(),
+        );
+    }
+    let login = format!(
+        "{}/login?next={}",
+        super::issuer(s),
+        url::form_urlencoded::byte_serialize(next.as_bytes()).collect::<String>()
+    );
     page(
         "어데닉 로그인 필요",
         &format!(
-            "<h1>먼저 어데닉에 로그인해 주세요</h1><div class=\"card\"><p>AI 앱 연결은 이 브라우저에서 로그인한 어데닉 계정으로 승인해요. 비밀번호는 AI 앱에 전달되지 않아요.</p>\
-             <div class=\"row\"><a class=\"btn secondary\" href=\"{}\" target=\"_blank\" rel=\"noopener\">새 창에서 로그인</a><a class=\"btn primary\" href=\"\">로그인했어요 · 계속</a></div></div>",
+            "<h1>먼저 어데닉에 로그인해 주세요</h1><div class=\"card\"><p>AI 앱 연결은 어데닉 계정으로 승인해요. 로그인하면 이 화면으로 돌아와요. 비밀번호는 AI 앱에 전달되지 않아요.</p>\
+             <div class=\"row\"><a class=\"btn secondary\" href=\"\">로그인했어요 · 계속</a><a class=\"btn primary\" href=\"{}\">로그인하기</a></div></div>",
             escape(&login)
         ),
         None,

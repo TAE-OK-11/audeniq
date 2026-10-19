@@ -79,7 +79,7 @@ Implemented in `crates/core/src/portal.rs`, schema `portal` (migration 0039). Sa
 |---|---|---|
 | GET/PUT | `/api/me/profile` | Per-user artist profile `{display_name,contact_email,bio(multi-line),country(ISO-2),row_version}`; PUT with `row_version` 0 creates, otherwise optimistic update (409 on stale) |
 | GET | `/api/me/account` | Per-user account info: `{real_name, verified:{provider,method,verified_at,adult}\|null, tax:{foreign,country,tin_last4,us_person,row_version,updated_at}\|null, identity_provider:{ready,name}}`. Birth date and CI are never returned (`adult` = 만 19세 이상) |
-| POST | `/api/me/identity` | `{transaction_id}` from the identity provider (same `IDENTITY_PROVIDER` integration as rights signing). The server verifies the transaction and stores the provider's name as `real_name`; the browser's name is not trusted. 422 `IDENTITY_PROVIDER_NOT_CONFIGURED` before a provider contract, 400 `IDENTITY_NOT_VERIFIED` (failed or reused transaction), 400 `IDENTITY_ACCOUNT_MISMATCH` (re-verification by a different person). CI kept only as a peppered hash. Rate limited |
+| POST | `/api/me/identity` | `{transaction_id}` from the identity provider (same `IDENTITY_PROVIDER` integration as rights signing). The server verifies the transaction and stores the provider's name as `real_name`; the browser's name is not trusted. 422 `IDENTITY_PROVIDER_NOT_CONFIGURED` before a provider contract, 400 `IDENTITY_NOT_VERIFIED` (failed or reused transaction), 400 `IDENTITY_ACCOUNT_MISMATCH` (re-verification by a different person; after an in-person check by staff, the provider's name and birth date must match it). CI kept only as a peppered hash. Rate limited |
 | PUT | `/api/me/tax` | Foreign tax residency `{foreign, country?(US,JP,CN,GB,CA,AU,DE,FR,SG,OTHER), tin?, keep_tin?, us_person?(US only), row_version}`; `row_version` 0 creates (rows start at 1), 409 on stale. TIN (4–30 letters/digits) is sealed with the payout account key (`PAYOUT_ACCOUNT_KEY`); only `tin_last4` is returned. `keep_tin` keeps the stored number |
 | POST | `/api/me/phone/start`, `/api/me/phone/verify` | Register the phone used for password reset: `{phone}` texts a 6-digit code → `{challenge_id, expires_at, phone_last4}`; `{challenge_id, code}` stores it (400 `SMS_CODE_INVALID`). Only a peppered hash and the last 4 digits are kept. `GET /api/me/account` adds `phone:{last4,verified_at}\|null` and `sms_ready` |
 | GET/PUT | `/api/orgs/{org}/payout-account` | GET → `{registered:false}` or `{payee_type,holder_name,bank_name,account_last4,registered_at}`. PUT (OWNER) `{payee_type:INDIVIDUAL/SOLE_PROPRIETOR/CORPORATION,holder_name,bank_name,account_number}`; the full number is sealed with AES-256-GCM (`PAYOUT_ACCOUNT_KEY`, 64 hex chars, org id as associated data) and never returned. Missing key → 422 `PAYOUT_ACCOUNT_KEY_MISSING`; bad number → `ACCOUNT_NUMBER_INVALID` |
@@ -149,10 +149,10 @@ Implemented in `crates/core/src/staff.rs` (docs/DISTRIBUTION_STAGING.md). Same s
 
 | Role | Duties |
 |---|---|
-| ADMIN | everything, payout-request list |
+| ADMIN | everything, payout-request list, correcting an in-person identity check |
 | REVIEWER | release decisions, second approvals, documents, inquiries |
 | OPERATOR | delivery staging decisions, re-stage |
-| SUPPORT | inquiries |
+| SUPPORT | inquiries, in-person identity checks |
 
 All roles can read every list below.
 
@@ -235,6 +235,8 @@ All roles can read every list below.
 | POST | `/api/staff/deliveries/{package}/{dsp}/live` | `{partner_release_id?, note}` — record LIVE evidence for a platform that never reports it (DELIVERY duty; only DELIVERED jobs; applied by the worker job `delivery.mark_live`, audited) |
 | GET | `/api/staff/dsps` | D-1..D-11 registry with spec, route profile and onboarding gaps |
 | GET | `/api/staff/payouts?status=REQUESTED` | ADMIN only; read-only (money still moves through operations tooling) |
+| POST | `/api/staff/identity/lookup` | IDENTITY duty (ADMIN, SUPPORT): `{email}` in the body (kept out of URLs and logs) → `{user_id, email_masked, status, joined_at, identity: {provider, method, offline, verified_at, name_masked, adult} or null, checks: [...]}`. 404 for an unknown e-mail. Rate limited per staff user (`crates/core/src/identity_desk.rs`) |
+| POST | `/api/staff/identity/{user}/verify` | IDENTITY duty: real-name check from an ID shown in person or at the customer center. `{real_name, birth_date: YYYY-MM-DD, channel: IN_PERSON or CUSTOMER_CENTER, document_type: RESIDENT_CARD, DRIVER_LICENSE, PASSPORT, ALIEN_REGISTRATION, DISABILITY_CARD or VETERAN_CARD, note?, correction?}`. No ID number is accepted or stored. Stores the sealed name and birth date as the account's identity (provider `OFFLINE`, method = channel, no CI). An already verified account must be the same person (`IDENTITY_ACCOUNT_MISMATCH`); a provider record (with its CI) is kept and only the check is logged. `correction: true` (ADMIN only, `note` required) replaces a mistaken `OFFLINE` record. Own account → `IDENTITY_SELF_VERIFY`; inactive account → `ACCOUNT_NOT_ACTIVE`. Every check is appended to `portal.offline_identity_checks`, audited (`portal.account.identity_verified` / `identity_corrected`) and the user is notified |
 
 ## Staff work module (`/api/staff/work/*`)
 

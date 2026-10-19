@@ -222,7 +222,7 @@ impl DigestBuilder {
     fn finish(self) -> ObjectDigest {
         ObjectDigest {
             size: self.size,
-            sha256: hex::encode(self.hasher.finalize()),
+            sha256: crate::hex::encode(self.hasher.finalize()),
             head: self.head,
         }
     }
@@ -506,7 +506,6 @@ impl S3Store {
             client: crate::external_http::client_builder(allow_http)
                 .no_gzip()
                 .no_brotli()
-                .no_zstd()
                 .no_deflate()
                 .timeout(std::time::Duration::from_secs(10))
                 .redirect(reqwest::redirect::Policy::none())
@@ -514,7 +513,6 @@ impl S3Store {
             download_client: crate::external_http::client_builder(allow_http)
                 .no_gzip()
                 .no_brotli()
-                .no_zstd()
                 .no_deflate()
                 .timeout(std::time::Duration::from_secs(900))
                 .connect_timeout(std::time::Duration::from_secs(10))
@@ -802,7 +800,7 @@ impl S3Store {
         Ok(format!(
             "{}://{host}{path}?{query}&X-Amz-Signature={}",
             self.endpoint.scheme(),
-            hex::encode(hmac(&key, &to_sign))
+            crate::hex::encode(hmac(&key, &to_sign))
         ))
     }
 }

@@ -88,7 +88,7 @@ pub async fn import(
         {
             return Err(Error::InvalidCode("REFERENCE_FINGERPRINT_NOT_DISTINCT"));
         }
-        Ok((hex::encode(digest.finalize()), fp))
+        Ok((crate::hex::encode(digest.finalize()), fp))
     })
     .await
     .map_err(|_| Error::Internal)??;

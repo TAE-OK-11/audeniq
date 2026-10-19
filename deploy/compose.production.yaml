@@ -29,6 +29,10 @@ services:
       - ./bootstrap.sql:/docker-entrypoint-initdb.d/001-roles.sql:ro
       - ./grants.sql:/opt/audeniq/grants.sql:ro
     networks: [backend]
+    # The entrypoint drops root itself (gosu); nothing may gain privileges after
+    # that. Processes: max_connections 40 + background workers, with room.
+    security_opt: ['no-new-privileges:true']
+    pids_limit: 256
     # 기본값은 1 vCPU / 1 GB 서버 기준(+ 스왑 2 GB). 서버를 키우면 production.env만 바꾼다:
     # 단계별 값은 deploy/PRODUCTION.md "서버 크기와 확장".
     # 병렬 쿼리·JIT는 끈다(작은 OLTP 쿼리에서는 오히려 느리고 메모리를 먹는다).
@@ -159,7 +163,7 @@ services:
   antivirus-update:
     profiles: [antivirus]
     <<: *runtime
-    command: [python3, /usr/local/lib/audeniq/update-antivirus.py]
+    command: [audeniq-admin, antivirus-update]
     restart: unless-stopped
     networks: [egress]
     volumes: [av_database:/var/lib/clamav]
