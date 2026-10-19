@@ -7,7 +7,7 @@ use audeniq_core::{
 use axum::serve::ListenerExt;
 use std::sync::Arc;
 #[global_allocator]
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 /// Below compose's 30 s stop_grace_period.
 const SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(25);
