@@ -163,7 +163,7 @@ services:
   antivirus-update:
     profiles: [antivirus]
     <<: *runtime
-    command: [python3, /usr/local/lib/audeniq/update-antivirus.py]
+    command: [audeniq-admin, antivirus-update]
     restart: unless-stopped
     networks: [egress]
     volumes: [av_database:/var/lib/clamav]

@@ -22,6 +22,7 @@ const PAGE_LOADERS = {
   Approvals: () => import('./pages/Approvals'),
   Documents: () => import('./pages/Documents'),
   PrintCheck: () => import('./pages/PrintCheck'),
+  IdentityDesk: () => import('./pages/IdentityDesk'),
   Inquiries: () => import('./pages/Inquiries'),
   Deliveries: () => import('./pages/Deliveries'),
   Dsps: () => import('./pages/Dsps'),
@@ -35,6 +36,7 @@ const ReviewDetail = page('ReviewDetail');
 const Approvals = page('Approvals');
 const Documents = page('Documents');
 const PrintCheck = page('PrintCheck');
+const IdentityDesk = page('IdentityDesk');
 const Inquiries = page('Inquiries');
 const Deliveries = page('Deliveries');
 const Dsps = page('Dsps');
@@ -62,7 +64,7 @@ export function Icon({ name }: { name: string }) {
   return <Glyph name={ICONS[name] ?? name} size={18} />;
 }
 
-interface NavItem { to: string; label: string; icon: string; count?: (o: Overview) => number; hot?: boolean; adminOnly?: boolean; also?: string[] }
+interface NavItem { to: string; label: string; icon: string; count?: (o: Overview) => number; hot?: boolean; adminOnly?: boolean; duty?: Duty; also?: string[] }
 const NAV: { group: string; items: NavItem[] }[] = [
   { group: '한눈에', items: [{ to: '/', label: '오늘의 업무', icon: 'home' }] },
   {
@@ -75,7 +77,14 @@ const NAV: { group: string; items: NavItem[] }[] = [
     ],
   },
   { group: '콘텐츠', items: [{ to: '/admin/content', label: '공지·이벤트 관리', icon: 'doc', adminOnly: true }] },
-  { group: '고객 지원', items: [{ to: '/inquiries', label: '문의 답변', icon: 'inquiry', count: o => o.inquiries, hot: true }] },
+  {
+    group: '고객 지원',
+    items: [
+      { to: '/inquiries', label: '문의 답변', icon: 'inquiry', count: o => o.inquiries, hot: true },
+      // 현장·고객센터에서 신분증을 보고 실명 등록 (ADMIN·SUPPORT)
+      { to: '/identity', label: '실명인증', icon: 'user', duty: 'IDENTITY' },
+    ],
+  },
   {
     group: '배급',
     items: [
@@ -199,7 +208,7 @@ export function AdminApp() {
             {NAV.map(g => (
               <div className="adm-side-group" key={g.group}>
                 <div className="adm-side-label">{g.group}</div>
-                {g.items.filter(i => !i.adminOnly || me.role === 'ADMIN').map(i => {
+                {g.items.filter(i => (!i.adminOnly || me.role === 'ADMIN') && (!i.duty || me.duties.includes(i.duty))).map(i => {
                   const n = counts && i.count ? i.count(counts) : 0;
                   const cur = active(loc.pathname, i.to) || !!i.also?.some(a => active(loc.pathname, a));
                   return (
@@ -225,6 +234,7 @@ export function AdminApp() {
               <Route path="/approvals" element={<Approvals />} />
               <Route path="/documents" element={<Documents />} />
               <Route path="/print-check" element={<PrintCheck />} />
+              <Route path="/identity" element={me.duties.includes('IDENTITY') ? <IdentityDesk /> : <Navigate to="/" replace />} />
               <Route path="/inquiries" element={<Inquiries />} />
               <Route path="/inquiries/:id" element={<Inquiries />} />
               <Route path="/deliveries" element={<Deliveries />} />

@@ -283,7 +283,7 @@ pub fn atomic_write(path: &Path, data: &[u8], gid: Option<u32>) -> Result<()> {
         .ok_or_else(|| CloudError("invalid output path".into()))?;
     let mut random = [0u8; 8];
     aws_lc_rs::rand::fill(&mut random).map_err(|_| CloudError("random name failed".into()))?;
-    let tmp = dir.join(format!(".secret-{}", hex::encode(random)));
+    let tmp = dir.join(format!(".secret-{}", crate::hex::encode(random)));
     let result = (|| -> std::io::Result<()> {
         let mut file = std::fs::OpenOptions::new()
             .write(true)
@@ -453,7 +453,7 @@ mod tests {
     pub(crate) fn tempdir_shm() -> PathBuf {
         let mut r = [0u8; 8];
         aws_lc_rs::rand::fill(&mut r).unwrap();
-        let dir = PathBuf::from("/dev/shm").join(format!("audeniq-test-{}", hex::encode(r)));
+        let dir = PathBuf::from("/dev/shm").join(format!("audeniq-test-{}", crate::hex::encode(r)));
         std::fs::create_dir(&dir).unwrap();
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
         dir

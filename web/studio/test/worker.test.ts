@@ -162,4 +162,8 @@ test('other paths go to assets; screen paths fall back to index.html when assets
   assert.equal(r.headers.get('Content-Security-Policy'), "default-src 'self'");
   assert.equal(r.headers.get('Cache-Control'), 'no-cache');
   assert.equal((await worker.fetch(new Request('https://studio.audeniq.com/missing.js'), e)).status, 404);
+  // Discovery paths the backend does not serve are a plain 404, never the app's HTML
+  for (const path of ['/.well-known/openid-configuration', '/.well-known/oauth-authorization-server/api/mcp']) {
+    assert.equal((await worker.fetch(new Request(`https://studio.audeniq.com${path}`), e)).status, 404, path);
+  }
 });

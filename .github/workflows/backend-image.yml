@@ -1,6 +1,9 @@
 name: Backend image
 # Native runners build each architecture; only validated digests receive release tags.
 # Common tags are portable amd64 + arm64. Tuned tags keep CPU requirements explicit.
+# A main push builds only the image that is deployed (BACKEND_CPU_VARIANT: portable =
+# amd64 + arm64, a tuned variant = that one) and deploys it unless AUTO_DEPLOY=false.
+# Manual runs can build every variant (all_variants).
 on:
   push:
     branches: [main]
@@ -18,7 +21,6 @@ on:
       - deploy/install-audeniq-photo.sh
       - deploy/clamd.conf
       - deploy/freshclam.conf
-      - deploy/update-antivirus.py
       - deploy/pgbouncer/**
       - deploy/compose.production.yaml
       - .dockerignore
@@ -34,47 +36,50 @@ on:
         type: choice
         options: [portable, x86-64-v3, graviton4, ampere-a4, ampere-a1]
         default: portable
+      all_variants:
+        description: 배포하지 않는 CPU 변형까지 모두 빌드
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
   group: backend-image-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      variant: ${{ steps.plan.outputs.variant }}
+    steps:
+      - id: plan
+        env:
+          VARIANT: ${{ inputs.cpu_variant || vars.BACKEND_CPU_VARIANT || 'portable' }}
+          ALL: ${{ inputs.all_variants || false }}
+        run: |
+          all='[
+            {"variant":"amd64","runner":"ubuntu-24.04","platform":"linux/amd64","arch":"amd64","cpu":"x86-64"},
+            {"variant":"arm64","runner":"ubuntu-24.04-arm","platform":"linux/arm64","arch":"arm64","cpu":"generic"},
+            {"variant":"x86-64-v3","runner":"ubuntu-24.04","platform":"linux/amd64","arch":"amd64","cpu":"x86-64-v3"},
+            {"variant":"graviton4","runner":"ubuntu-24.04-arm","platform":"linux/arm64","arch":"arm64","cpu":"neoverse-v2"},
+            {"variant":"ampere-a4","runner":"ubuntu-24.04-arm","platform":"linux/arm64","arch":"arm64","cpu":"ampere1a"},
+            {"variant":"ampere-a1","runner":"ubuntu-24.04-arm","platform":"linux/arm64","arch":"arm64","cpu":"neoverse-n1"}]'
+          case "$VARIANT" in
+            portable|x86-64-v3|graviton4|ampere-a4|ampere-a1) ;;
+            *) echo "Unsupported BACKEND_CPU_VARIANT: $VARIANT" >&2; exit 1 ;;
+          esac
+          if [ "$ALL" = true ]; then want='.'
+          elif [ "$VARIANT" = portable ]; then want='select(.variant == "amd64" or .variant == "arm64")'
+          else want="select(.variant == \"$VARIANT\")"; fi
+          echo "matrix=$(jq -c "{include: [.[] | $want]}" <<< "$all")" >> "$GITHUB_OUTPUT"
+          echo "variant=$VARIANT" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: plan
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - variant: amd64
-            runner: ubuntu-24.04
-            platform: linux/amd64
-            arch: amd64
-            cpu: x86-64
-          - variant: arm64
-            runner: ubuntu-24.04-arm
-            platform: linux/arm64
-            arch: arm64
-            cpu: generic
-          - variant: x86-64-v3
-            runner: ubuntu-24.04
-            platform: linux/amd64
-            arch: amd64
-            cpu: x86-64-v3
-          - variant: graviton4
-            runner: ubuntu-24.04-arm
-            platform: linux/arm64
-            arch: arm64
-            cpu: neoverse-v2
-          - variant: ampere-a4
-            runner: ubuntu-24.04-arm
-            platform: linux/arm64
-            arch: arm64
-            cpu: ampere1a
-          - variant: ampere-a1
-            runner: ubuntu-24.04-arm
-            platform: linux/arm64
-            arch: arm64
-            cpu: neoverse-n1
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     permissions:
@@ -122,8 +127,8 @@ jobs:
           test "$(docker image inspect --format '{{.Architecture}}' "$REF")" = "$ARCH"
           docker run --rm --entrypoint sh -e EXPECTED_ARCH="$ARCH" -e EXPECTED_CPU="$CPU" "$REF" -c '
             set -e
-            for b in audeniq-api audeniq-worker audeniq-migrate audeniq-admin audeniq-secrets audeniq-qc audeniq-photo sftp python3 xmllint clamd; do command -v "$b"; done
-            for b in exiftool tesseract zbarimg pdftoppm; do if command -v "$b"; then echo "$b must not ship in the runtime image"; exit 1; fi; done
+            for b in audeniq-api audeniq-worker audeniq-migrate audeniq-admin audeniq-secrets audeniq-qc audeniq-photo sftp xmllint clamd; do command -v "$b"; done
+            for b in exiftool tesseract zbarimg pdftoppm python3; do if command -v "$b"; then echo "$b must not ship in the runtime image"; exit 1; fi; done
             if command -v ffmpeg; then echo "ffmpeg must not ship in the runtime image"; exit 1; fi
             test "$(cat /usr/local/share/audeniq/target-arch)" = "$EXPECTED_ARCH"
             test "$(cat /usr/local/share/audeniq/target-cpu)" = "$EXPECTED_CPU"
@@ -180,7 +185,7 @@ jobs:
           retention-days: 1
 
   image:
-    needs: build
+    needs: [plan, build]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -212,21 +217,25 @@ jobs:
           SHA: ${{ github.sha }}
           BRANCH: ${{ github.ref }}
           # Repository variable keeps automatic deploys on their chosen CPU variant.
-          DEPLOY_VARIANT: ${{ inputs.cpu_variant || vars.BACKEND_CPU_VARIANT || 'portable' }}
+          DEPLOY_VARIANT: ${{ needs.plan.outputs.variant }}
         run: |
           set -euo pipefail
-          task_portable_tags=(-t "$IMAGE:sha-$SHA")
-          if [ "$BRANCH" = refs/heads/main ]; then task_portable_tags+=(-t "$IMAGE:main" -t "$IMAGE:latest"); fi
-          docker buildx imagetools create "${task_portable_tags[@]}" \
-            "$IMAGE@$(cat /tmp/audeniq-digests/amd64)" "$IMAGE@$(cat /tmp/audeniq-digests/arm64)"
+          # Only the variants this run built (see the plan job) are tagged.
+          if [ -s /tmp/audeniq-digests/amd64 ] && [ -s /tmp/audeniq-digests/arm64 ]; then
+            task_portable_tags=(-t "$IMAGE:sha-$SHA")
+            if [ "$BRANCH" = refs/heads/main ]; then task_portable_tags+=(-t "$IMAGE:main" -t "$IMAGE:latest"); fi
+            docker buildx imagetools create "${task_portable_tags[@]}" \
+              "$IMAGE@$(cat /tmp/audeniq-digests/amd64)" "$IMAGE@$(cat /tmp/audeniq-digests/arm64)"
+            # Verify the common manifest includes both executable architectures.
+            docker buildx imagetools inspect "$IMAGE:sha-$SHA" --raw > /tmp/audeniq-manifest.json
+            jq -e '[.manifests[].platform | select(.os == "linux") | .architecture] | sort == ["amd64", "arm64"]' /tmp/audeniq-manifest.json
+          fi
           for variant in x86-64-v3 graviton4 ampere-a4 ampere-a1; do
+            [ -s "/tmp/audeniq-digests/$variant" ] || continue
             task_tuned_tags=(-t "$IMAGE:sha-$SHA-$variant")
             if [ "$BRANCH" = refs/heads/main ]; then task_tuned_tags+=(-t "$IMAGE:main-$variant" -t "$IMAGE:latest-$variant"); fi
             docker buildx imagetools create "${task_tuned_tags[@]}" "$IMAGE@$(cat "/tmp/audeniq-digests/$variant")"
           done
-          # Verify the common manifest includes both executable architectures.
-          docker buildx imagetools inspect "$IMAGE:sha-$SHA" --raw > /tmp/audeniq-manifest.json
-          jq -e '[.manifests[].platform | select(.os == "linux") | .architecture] | sort == ["amd64", "arm64"]' /tmp/audeniq-manifest.json
           case "$DEPLOY_VARIANT" in
             portable) task_tag="$IMAGE:sha-$SHA" ;;
             x86-64-v3|graviton4|ampere-a4|ampere-a1) task_tag="$IMAGE:sha-$SHA-$DEPLOY_VARIANT" ;;
@@ -237,21 +246,21 @@ jobs:
           {
             echo "### Backend images"
             echo
-            echo "Portable amd64 + arm64: \`$IMAGE:sha-$SHA\`"
-            echo "AMD/Intel AVX2: \`$IMAGE:sha-$SHA-x86-64-v3\`"
-            echo "AWS Graviton4: \`$IMAGE:sha-$SHA-graviton4\`"
-            echo "Oracle Cloud A4 (AmpereOne M): \`$IMAGE:sha-$SHA-ampere-a4\`"
-            echo "Oracle Cloud Ampere A1 / AWS Graviton2: \`$IMAGE:sha-$SHA-ampere-a1\`"
+            if [ -s /tmp/audeniq-digests/amd64 ]; then echo "Portable amd64 + arm64: \`$IMAGE:sha-$SHA\`"; fi
+            for variant in x86-64-v3 graviton4 ampere-a4 ampere-a1; do
+              if [ -s "/tmp/audeniq-digests/$variant" ]; then echo "$variant: \`$IMAGE:sha-$SHA-$variant\`"; fi
+            done
             echo
             echo "Deploy ($DEPLOY_VARIANT): \`./deploy.sh $IMAGE@$task_digest\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
   deploy:
     needs: image
-    # 수동 실행에서 deploy를 켰거나, 저장소 변수 AUTO_DEPLOY=true면 main 통과 때마다 배포
+    # main 푸시(PR 병합)마다 배포한다. 끄려면 저장소 변수 AUTO_DEPLOY=false.
+    # 수동 실행은 deploy를 켰을 때만. 승인을 받고 싶으면 production 환경에 Required reviewers를 건다
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.deploy) ||
-      (github.event_name == 'push' && vars.AUTO_DEPLOY == 'true')
+      (github.event_name == 'push' && vars.AUTO_DEPLOY != 'false')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production

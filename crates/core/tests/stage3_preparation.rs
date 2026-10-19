@@ -65,7 +65,7 @@ fn facts(c: &PreparedRelease, xml: &str) -> (FreshnessPin, CurrentFacts) {
         snapshot_id: c.snapshot_id,
         rights_epoch: c.rights_epoch as u64,
         route_contract_id: Uuid::from_u128(99),
-        package_hash: hex::encode(Sha256::digest(xml.as_bytes())),
+        package_hash: audeniq_core::hex::encode(Sha256::digest(xml.as_bytes())),
     };
     let current = CurrentFacts {
         pin: pin.clone(),
