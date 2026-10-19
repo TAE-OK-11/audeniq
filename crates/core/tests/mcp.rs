@@ -694,6 +694,12 @@ async fn authorization_code_and_refresh_token_attacks_are_refused(pool: PgPool) 
     .await;
     assert_eq!(s, StatusCode::OK);
     assert!(body.contains("/login") && !body.contains("name=\"request\""));
+    // The login link brings the user back to this consent screen, in the same
+    // window (in-app browsers of the AI apps cannot open another one).
+    assert!(
+        body.contains("/login?next=%2Fapi%2Foauth%2Fauthorize%3F") && !body.contains("_blank"),
+        "{body}"
+    );
 
     // The consent request is bound to the session that saw it.
     let request = consent_page(&app, &u, &client_id, "releases:read").await;
@@ -2175,6 +2181,10 @@ async fn device_authorization_links_with_a_code(pool: PgPool) {
     let (s, _, body) = raw(&app, "GET", &page, &[], String::new()).await;
     assert_eq!(s, StatusCode::OK);
     assert!(body.contains("먼저 어데닉에 로그인해 주세요"), "{body}");
+    assert!(
+        body.contains("/login?next=%2Fapi%2Foauth%2Fdevice%3Fuser_code%3D"),
+        "{body}"
+    );
     let (_, _, body) = raw(
         &app,
         "GET",

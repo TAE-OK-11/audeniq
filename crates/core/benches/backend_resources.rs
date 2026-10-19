@@ -24,7 +24,7 @@ mod reference {
         use sha2::Digest;
         let mut writer = HashWriter(sha2::Sha256::new());
         serde_json::to_writer(&mut writer, value).unwrap();
-        hex::encode(writer.0.finalize())
+        audeniq_core::hex::encode(writer.0.finalize())
     }
     fn check(v: &Value, key: &str) -> bool {
         match v {

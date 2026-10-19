@@ -222,7 +222,7 @@ impl DigestBuilder {
     fn finish(self) -> ObjectDigest {
         ObjectDigest {
             size: self.size,
-            sha256: hex::encode(self.hasher.finalize()),
+            sha256: crate::hex::encode(self.hasher.finalize()),
             head: self.head,
         }
     }
@@ -802,7 +802,7 @@ impl S3Store {
         Ok(format!(
             "{}://{host}{path}?{query}&X-Amz-Signature={}",
             self.endpoint.scheme(),
-            hex::encode(hmac(&key, &to_sign))
+            crate::hex::encode(hmac(&key, &to_sign))
         ))
     }
 }

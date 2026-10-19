@@ -930,7 +930,7 @@ async fn fake_partner_api(state: Arc<FakeApi>) -> String {
         s.files
             .lock()
             .unwrap()
-            .push((name, hex::encode(sha2::Sha256::digest(&body))));
+            .push((name, audeniq_core::hex::encode(sha2::Sha256::digest(&body))));
         StatusCode::NO_CONTENT
     }
     async fn commit(State(s): State<Arc<FakeApi>>) -> StatusCode {

@@ -130,7 +130,7 @@ pub fn authorization(
     let k_region = hmac(&k_date, region.as_bytes());
     let k_service = hmac(&k_region, service.as_bytes());
     let k_signing = hmac(&k_service, b"aws4_request");
-    let signature = hex::encode(hmac(&k_signing, to_sign.as_bytes()));
+    let signature = crate::hex::encode(hmac(&k_signing, to_sign.as_bytes()));
     format!(
         "AWS4-HMAC-SHA256 Credential={}/{scope}, SignedHeaders={signed_headers}, Signature={signature}",
         creds.access_key

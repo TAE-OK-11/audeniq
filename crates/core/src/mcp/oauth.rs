@@ -684,7 +684,7 @@ pub async fn authorize(State(s): State<AppState>, h: HeaderMap, RawQuery(q): Raw
     }
     let a = match auth::actor(&s.pool, &h, &s.config, false).await {
         Ok(a) => a,
-        Err(Error::Unauthorized) => return page_sign_in(&s),
+        Err(Error::Unauthorized) => return page_sign_in(&s, "/api/oauth/authorize", &p),
         Err(e) => return e.into_response(),
     };
     let orgs = match user_orgs(&s, a.user).await {
@@ -696,7 +696,7 @@ pub async fn authorize(State(s): State<AppState>, h: HeaderMap, RawQuery(q): Raw
         "consent",
         &json!({
             "c": client.pk, "r": redirect_uri, "ch": challenge, "st": state,
-            "sc": scopes, "sh": hex::encode(&a.session_hash),
+            "sc": scopes, "sh": crate::hex::encode(&a.session_hash),
             "exp": chrono::Utc::now().timestamp() + CONSENT_SECONDS,
         }),
     );
@@ -851,7 +851,7 @@ async fn decide_inner(s: &AppState, h: &HeaderMap, body: &[u8]) -> Result<Respon
         form.get("request").map(String::as_str).unwrap_or(""),
     )
     .ok_or(Error::InvalidCode("CONSENT_EXPIRED"))?;
-    if req["sh"].as_str() != Some(hex::encode(&a.session_hash).as_str()) {
+    if req["sh"].as_str() != Some(crate::hex::encode(&a.session_hash).as_str()) {
         return Err(Error::Forbidden);
     }
     let client_pk: Uuid = req["c"]
@@ -1591,13 +1591,34 @@ pub(super) fn page_error(message: &str) -> Response {
     r
 }
 
-pub(super) fn page_sign_in(s: &AppState) -> Response {
-    let login = format!("{}/login", super::issuer(s));
+/// Sign-in first. The login link opens in the same window and brings the
+/// user back here afterwards (`next`, read by the Studio's login screen):
+/// the in-app browsers of the AI apps cannot open a second window.
+/// `back` is this page's path with its parameters, e.g. `/api/oauth/authorize`.
+pub(super) fn page_sign_in(
+    s: &AppState,
+    back: &str,
+    params: &BTreeMap<String, String>,
+) -> Response {
+    let mut next = back.to_string();
+    if !params.is_empty() {
+        next.push('?');
+        next.push_str(
+            &url::form_urlencoded::Serializer::new(String::new())
+                .extend_pairs(params)
+                .finish(),
+        );
+    }
+    let login = format!(
+        "{}/login?next={}",
+        super::issuer(s),
+        url::form_urlencoded::byte_serialize(next.as_bytes()).collect::<String>()
+    );
     page(
         "어데닉 로그인 필요",
         &format!(
-            "<h1>먼저 어데닉에 로그인해 주세요</h1><div class=\"card\"><p>AI 앱 연결은 이 브라우저에서 로그인한 어데닉 계정으로 승인해요. 비밀번호는 AI 앱에 전달되지 않아요.</p>\
-             <div class=\"row\"><a class=\"btn secondary\" href=\"{}\" target=\"_blank\" rel=\"noopener\">새 창에서 로그인</a><a class=\"btn primary\" href=\"\">로그인했어요 · 계속</a></div></div>",
+            "<h1>먼저 어데닉에 로그인해 주세요</h1><div class=\"card\"><p>AI 앱 연결은 어데닉 계정으로 승인해요. 로그인하면 이 화면으로 돌아와요. 비밀번호는 AI 앱에 전달되지 않아요.</p>\
+             <div class=\"row\"><a class=\"btn secondary\" href=\"\">로그인했어요 · 계속</a><a class=\"btn primary\" href=\"{}\">로그인하기</a></div></div>",
             escape(&login)
         ),
         None,
