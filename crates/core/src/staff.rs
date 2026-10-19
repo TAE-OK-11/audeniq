@@ -2117,7 +2117,7 @@ pub async fn document_file(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<Docu
     let bytes = s.storage.get(&key).await?;
     use sha2::Digest;
     if bytes.len() != size as usize
-        || hex::encode(sha2::Sha256::digest(&bytes)) != row.get::<String, _>("sha256")
+        || crate::hex::encode(sha2::Sha256::digest(&bytes)) != row.get::<String, _>("sha256")
     {
         return Err(Error::PolicyGate("ASSET_OBJECT_DRIFT"));
     }

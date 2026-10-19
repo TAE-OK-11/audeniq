@@ -254,7 +254,7 @@ pub async fn create_artist(app: &Router, u: &User) -> Uuid {
     Uuid::parse_str(v["id"].as_str().unwrap()).unwrap()
 }
 pub fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(sha2::Sha256::digest(bytes))
+    audeniq_core::hex::encode(sha2::Sha256::digest(bytes))
 }
 pub fn wav_bytes() -> &'static [u8] {
     static ONCE: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();

@@ -1,6 +1,7 @@
 import { claimChunkReload } from './lib/chunkRecovery';
 import { loginRedirect } from './lib/loginRedirect';
-import { Suspense, lazy, type ComponentType, type ReactNode } from 'react';
+import { rememberAiConnectReturn, takeAiConnectReturn } from './lib/aiConnectReturn';
+import { Suspense, lazy, useEffect, useState, type ComponentType, type ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from './lib/router';
 import { AuthProvider, useAuth } from './api/auth';
 import { Layout } from './components/Layout';
@@ -82,7 +83,14 @@ function BootScreen() {
 function Protected({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   const loc = useLocation();
-  if (loading) return <BootScreen />;
+  // AI 앱 연결 화면에서 로그인하러 왔으면 (Google·Apple 로그인 포함) 로그인 뒤 그 화면으로
+  const [leaving, setLeaving] = useState(false);
+  useEffect(() => {
+    if (!user) return;
+    const to = takeAiConnectReturn();
+    if (to) { setLeaving(true); window.location.assign(to); }
+  }, [user]);
+  if (loading || leaving) return <BootScreen />;
   if (!user) return <Navigate to="/login" replace state={{ from: loc.pathname + loc.search }} />;
   return <>{children}</>;
 }
@@ -91,6 +99,7 @@ function Protected({ children }: { children: ReactNode }) {
 function GuestOnly({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   const loc = useLocation();
+  rememberAiConnectReturn(loc.search);
   if (loading) return <BootScreen />;
   if (user) {
     const from = loginRedirect(loc.state);

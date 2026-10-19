@@ -45,7 +45,7 @@ pub struct ApiClient {
 pub fn hmac_hex(key: &[u8], msg: &[u8]) -> String {
     let mut m = Hmac::<Sha256>::new_from_slice(key).expect("hmac key");
     m.update(msg);
-    hex::encode(m.finalize().into_bytes())
+    crate::hex::encode(m.finalize().into_bytes())
 }
 
 pub fn fill(template: &str, id: &str, name: &str, key: &str) -> String {

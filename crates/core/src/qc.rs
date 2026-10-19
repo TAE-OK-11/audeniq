@@ -269,7 +269,7 @@ fn metric_hash(parts: &[&str]) -> String {
         h.update(p.as_bytes());
         h.update(b"\x00");
     }
-    hex::encode(h.finalize())
+    crate::hex::encode(h.finalize())
 }
 
 /// Cache key: identical check + rule version + asset bytes + metrics ⇒ identical outcome.
@@ -294,7 +294,7 @@ pub fn sha256_file(path: &Path) -> Result<String> {
         }
         h.update(&buf[..n]);
     }
-    Ok(hex::encode(h.finalize()))
+    Ok(crate::hex::encode(h.finalize()))
 }
 
 fn head_bytes(path: &Path) -> Result<Vec<u8>> {

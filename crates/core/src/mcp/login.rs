@@ -63,7 +63,7 @@ fn no_store(mut r: Response) -> Response {
 fn new_user_code() -> String {
     let mut out = String::with_capacity(8);
     while out.len() < 8 {
-        let bytes = hex::decode(auth::random_token()).expect("hex token");
+        let bytes = crate::hex::decode(auth::random_token()).expect("hex token");
         // Rejection sampling keeps every letter equally likely.
         for b in bytes {
             if out.len() < 8 && b < 240 {
@@ -222,7 +222,7 @@ pub async fn device_page(
     };
     let a = match auth::actor(&s.pool, &h, &s.config, false).await {
         Ok(a) => a,
-        Err(Error::Unauthorized) => return page_sign_in(&s),
+        Err(Error::Unauthorized) => return page_sign_in(&s, "/api/oauth/device", &p),
         Err(e) => return e.into_response(),
     };
     let Some(raw) = p.get("user_code") else {
@@ -272,8 +272,8 @@ pub async fn device_page(
         &s,
         "device-consent",
         &json!({
-            "d": hex::encode(row.get::<Vec<u8>, _>("device_code_hash")),
-            "c": client.pk, "sc": scopes, "sh": hex::encode(&a.session_hash),
+            "d": crate::hex::encode(row.get::<Vec<u8>, _>("device_code_hash")),
+            "c": client.pk, "sc": scopes, "sh": crate::hex::encode(&a.session_hash),
             "exp": chrono::Utc::now().timestamp() + DEVICE_SECONDS,
         }),
     );
@@ -315,12 +315,12 @@ async fn device_decide_inner(s: &AppState, h: &HeaderMap, body: &[u8]) -> Result
         form.get("request").map(String::as_str).unwrap_or(""),
     )
     .ok_or(Error::InvalidCode("CONSENT_EXPIRED"))?;
-    if req["sh"].as_str() != Some(hex::encode(&a.session_hash).as_str()) {
+    if req["sh"].as_str() != Some(crate::hex::encode(&a.session_hash).as_str()) {
         return Err(Error::Forbidden);
     }
     let device = req["d"]
         .as_str()
-        .and_then(|v| hex::decode(v).ok())
+        .and_then(|v| crate::hex::decode(v).ok())
         .ok_or(Error::Invalid)?;
     let client_pk: Uuid = req["c"]
         .as_str()
