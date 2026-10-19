@@ -483,7 +483,7 @@ jobs:
             - run:
                 name: Deploy audeniq-studio
                 working_directory: web/studio
-                command: npx --yes wrangler@4.141.0 deploy
+                command: npx --yes wrangler@4.149.0 deploy
 
   admin:
     docker:
@@ -513,7 +513,7 @@ jobs:
             - run:
                 name: Deploy audeniq-admin
                 working_directory: web/admin
-                command: npx --yes wrangler@4.141.0 deploy
+                command: npx --yes wrangler@4.149.0 deploy
 
   landing:
     docker:
@@ -538,7 +538,7 @@ jobs:
             - run:
                 name: Deploy audeniq-web
                 working_directory: web/landing
-                command: npx --yes wrangler@4.141.0 deploy
+                command: npx --yes wrangler@4.149.0 deploy
 
   survey:
     docker:
@@ -577,11 +577,11 @@ jobs:
                 working_directory: web/survey
                 command: |
                   [ -f /tmp/apply-migrations ] || exit 0
-                  npx --yes wrangler@4.141.0 d1 migrations apply audeniq-survey --remote
+                  npx --yes wrangler@4.149.0 d1 migrations apply audeniq-survey --remote
             - run:
                 name: Deploy audeniq-survey
                 working_directory: web/survey
-                command: npx --yes wrangler@4.141.0 deploy
+                command: npx --yes wrangler@4.149.0 deploy
 
 workflows:
   backend-image:

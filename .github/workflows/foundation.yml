@@ -152,7 +152,7 @@ jobs:
           WRANGLER_SEND_METRICS: 'false'
         run: |
           cp wrangler.toml.example wrangler.toml
-          npx --yes wrangler@4.137.0 deploy --dry-run --outdir /tmp/audeniq-edge-bundle
+          npx --yes wrangler@4.149.0 deploy --dry-run --outdir /tmp/audeniq-edge-bundle
       - name: Shared HTTPS and compression tests
         run: node --experimental-strip-types --test web/shared/transport.test.ts
       - name: Studio Worker and D1 content tests
