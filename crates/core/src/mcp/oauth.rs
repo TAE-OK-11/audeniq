@@ -6,7 +6,7 @@
 //!   this server never sees or asks for a password.
 //! - Authorization code + PKCE (S256 only). Codes live 10 minutes, once.
 //! - Opaque tokens, stored as SHA-256 digests. Access 1 h; refresh 30 days,
-//!   rotated on every use, reuse revokes the grant; a grant ends 90 days
+//!   rotated on every use, reuse after a 30 s grace revokes the grant; a grant ends 90 days
 //!   after consent at the latest.
 //! - Every token is bound to one user, one workspace (org), the approved
 //!   scopes and this server's MCP resource (audience).
@@ -35,7 +35,9 @@ const CODE_SECONDS: i64 = 600;
 pub const ACCESS_SECONDS: i64 = 3600;
 const REFRESH_SECONDS: i64 = 30 * 24 * 3600;
 const GRANT_MAX_DAYS: i64 = 90;
-/// A refresh token reused this soon after its first use is a client retry.
+/// A refresh token reused this soon after its first use is a client retry
+/// or two requests of the client refreshing at once; it gets its own new
+/// tokens (like Okta's grace period / Auth0's reuse interval).
 const REFRESH_REUSE_GRACE_SECONDS: i64 = 30;
 /// A consent screen must be answered within this window.
 const CONSENT_SECONDS: i64 = 600;
@@ -1286,12 +1288,12 @@ async fn refresh(
         return Err(BAD_GRANT);
     }
     // The same refresh token twice within seconds is a client racing itself
-    // (parallel calls, a retry after a lost response), not theft: refuse it
-    // but keep the tokens the first request got.
-    if row.get::<bool, _>("just_used") {
-        return Err(BAD_GRANT);
-    }
-    if row.get::<bool, _>("used") {
+    // (parallel calls, a retry after a lost response), not theft. Refusing it
+    // is not safe either: MCP clients drop their stored tokens on
+    // invalid_grant, which can also drop the ones the first request just
+    // saved and disconnect the user. Answer it with new tokens of its own.
+    let just_used = row.get::<bool, _>("just_used");
+    if row.get::<bool, _>("used") && !just_used {
         revoke_grant(&mut tx, grant, "REFRESH_REUSED").await?;
         operations::audit(
             &mut tx,
@@ -1321,10 +1323,13 @@ async fn refresh(
             "A refresh cannot add scopes.",
         ));
     }
-    sqlx::query("UPDATE identity.mcp_tokens SET used_at=now() WHERE token_hash=$1")
-        .bind(auth::hash_token(token))
-        .execute(&mut *tx)
-        .await?;
+    // A retry keeps the first use's time: the grace window does not move.
+    sqlx::query(
+        "UPDATE identity.mcp_tokens SET used_at=COALESCE(used_at, now()) WHERE token_hash=$1",
+    )
+    .bind(auth::hash_token(token))
+    .execute(&mut *tx)
+    .await?;
     let v = issue_tokens(&mut tx, grant, &scopes).await?;
     tx.commit().await?;
     Ok(v)

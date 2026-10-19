@@ -84,7 +84,8 @@ permissions. `releases:submit` is never pre-selected. Approval redirects with
   HTTPS without fragment, or loopback `http` (any port, RFC 8252).
 - **Codes/tokens.** Codes: 10 min, once, PKCE S256 only, bound to client and
   redirect URI; a replayed code revokes the grant. Access tokens: 1 h. Refresh
-  tokens: 30 days, rotated on every use; reuse revokes the grant. A grant ends
+  tokens: 30 days, rotated on every use; reuse revokes the grant, except within
+  30 s of the first use (a retry or parallel refresh gets its own new tokens). A grant ends
   90 days after consent at the latest. All are opaque 256-bit random values
   stored as SHA-256 digests. Tokens are bound to the `{origin}/api/mcp`
   resource (RFC 8707; any other `resource` is `invalid_target`).

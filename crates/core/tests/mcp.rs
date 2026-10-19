@@ -823,20 +823,21 @@ async fn authorization_code_and_refresh_token_attacks_are_refused(pool: PgPool) 
     let (s, next) = refresh(c.refresh.clone()).await;
     assert_eq!(s, StatusCode::OK);
     // The same token again within seconds is the client racing itself
-    // (parallel calls, a retry): refused, but the first answer stays valid.
-    let (s, v) = refresh(c.refresh.clone()).await;
-    assert_eq!(
-        (s, v["error"].as_str()),
-        (StatusCode::BAD_REQUEST, Some("invalid_grant"))
-    );
-    let (err, _) = tool(
-        &app,
-        next["access_token"].as_str().unwrap(),
-        "get_account_context",
-        json!({}),
-    )
-    .await;
-    assert!(!err, "a racing refresh does not disconnect the user");
+    // (parallel calls, a retry): it gets tokens of its own, and the first
+    // answer stays valid. MCP clients drop stored tokens on invalid_grant.
+    let (s, raced) = refresh(c.refresh.clone()).await;
+    assert_eq!(s, StatusCode::OK, "{raced}");
+    assert_ne!(raced["refresh_token"], next["refresh_token"]);
+    for answer in [&next, &raced] {
+        let (err, _) = tool(
+            &app,
+            answer["access_token"].as_str().unwrap(),
+            "get_account_context",
+            json!({}),
+        )
+        .await;
+        assert!(!err, "a racing refresh does not disconnect the user");
+    }
     // Later reuse is theft: the whole grant ends.
     sqlx::query("UPDATE identity.mcp_tokens SET used_at=now()-interval '1 minute' WHERE used_at IS NOT NULL")
         .execute(&pool)
