@@ -29,7 +29,9 @@ const studioWorker = {
     // 그 외는 정적 에셋 (없는 화면 경로는 index.html로 SPA 폴백)
     const assetRes = await serveAssets(request, env);
     if (assetRes.status === 404) {
-      const isAsset = /\.[a-z0-9]+$/i.test(url.pathname);
+      // /.well-known 아래는 화면이 아니다: AI 클라이언트가 찾아보는 다른 발견 문서
+      // (openid-configuration 등)에 화면 HTML을 200으로 주면 404로 넘어가지 못하고 실패한다
+      const isAsset = /\.[a-z0-9]+$/i.test(url.pathname) || url.pathname.startsWith('/.well-known/');
       if (!isAsset) {
         const indexRes = await serveAssets(new Request(new URL('/', request.url), request), env);
         if (indexRes.ok) {
