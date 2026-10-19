@@ -302,10 +302,8 @@ jobs:
       - name: Build and start the stack
         env:
           AUDENIQ_GITHUB_TOKEN: ${{ secrets.AUDENIQ_GITHUB_TOKEN }}
-        run: |
-          printf %s "$AUDENIQ_GITHUB_TOKEN" > "$RUNNER_TEMP/github_token"
-          AUDENIQ_GITHUB_TOKEN_FILE="$RUNNER_TEMP/github_token" docker compose up --build -d postgres migrate grants pgbouncer api worker
-          rm -f "$RUNNER_TEMP/github_token"
+        # compose.yaml passes it as the build secret github_token (environment source)
+        run: docker compose up --build -d postgres migrate grants pgbouncer api worker
       - name: Check API readiness
         run: curl --fail --retry 15 --retry-all-errors --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
       - name: Production boots without cloud KMS or an antivirus engine
