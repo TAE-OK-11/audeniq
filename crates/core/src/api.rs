@@ -181,6 +181,7 @@ pub fn router(s: AppState) -> Router {
         .merge(crate::email::routes())
         .merge(crate::signing::routes())
         .merge(crate::staff::routes())
+        .merge(crate::identity_desk::routes())
         .merge(crate::work::routes())
         .merge(crate::live::routes())
         .merge(crate::members::routes())

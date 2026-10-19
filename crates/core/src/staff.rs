@@ -56,6 +56,9 @@ pub enum Duty {
     Documents,
     Inquiries,
     Delivery,
+    /// Real-name verification from an ID shown in person or at the customer
+    /// center (crate::identity_desk).
+    Identity,
 }
 
 impl StaffRole {
@@ -82,7 +85,7 @@ impl StaffRole {
             Self::Admin => true,
             Self::Reviewer => matches!(duty, Review | Documents | Inquiries),
             Self::Operator => matches!(duty, Delivery),
-            Self::Support => matches!(duty, Inquiries),
+            Self::Support => matches!(duty, Inquiries | Identity),
         }
     }
 }
@@ -206,6 +209,7 @@ pub async fn me(s: &AppState, h: &HeaderMap) -> Result<Value> {
         (Duty::Documents, "DOCUMENTS"),
         (Duty::Inquiries, "INQUIRIES"),
         (Duty::Delivery, "DELIVERY"),
+        (Duty::Identity, "IDENTITY"),
     ]
     .into_iter()
     .filter(|(d, _)| st.role.may(*d))
@@ -3172,6 +3176,10 @@ mod tests {
         assert!(!StaffRole::Operator.may(Duty::Review));
         assert!(StaffRole::Support.may(Duty::Inquiries));
         assert!(!StaffRole::Support.may(Duty::Documents));
+        assert!(StaffRole::Support.may(Duty::Identity));
+        assert!(StaffRole::Admin.may(Duty::Identity));
+        assert!(!StaffRole::Reviewer.may(Duty::Identity));
+        assert!(!StaffRole::Operator.may(Duty::Identity));
     }
 
     #[test]

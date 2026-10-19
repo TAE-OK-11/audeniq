@@ -521,3 +521,16 @@ input[aria-invalid=true]{box-shadow:0 0 0 3px rgba(228,109,109,.3)!important}
 /* 줄에서 고른 탭·칩으로 밀어 줄 때 부드럽게 (lib/rowNav.ts) */
 :is(.ui-tabs,.ui-chips){scroll-behavior:smooth}
 @media (prefers-reduced-motion:reduce){:is(.ui-tabs,.ui-chips){scroll-behavior:auto}#modal.is-nudge>.modal-inner{animation:none!important}}
+
+/* 실명인증 (pages/IdentityDesk.tsx) */
+.adm-id-find{display:flex;gap:8px;margin:0 0 16px;max-width:560px}
+.adm-id-find .ui-input{flex:1;min-width:0}
+.adm-id-form,.adm-print-detail+.ui-callout{max-width:860px;margin-top:16px}
+.adm-id-grid{clear:both;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0 16px}
+.adm-id-form .ui-field{margin-bottom:16px}
+.adm-id-form .ui-field>label{display:block;margin:0 0 8px}
+.adm-id-form .ui-field :is(.ui-input,.ui-select,.ui-textarea){width:100%}
+.adm-id-seen{display:flex;gap:10px;align-items:flex-start;margin:4px 0 16px;line-height:1.5}
+.adm-id-seen input{margin-top:3px;flex:none}
+.adm-id-actions{display:flex;flex-wrap:wrap;gap:8px}
+.adm-page>.ui-card{max-width:860px;margin-top:16px}
