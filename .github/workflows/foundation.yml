@@ -100,12 +100,16 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo build --locked -p audeniq-core --bins
       - name: Build the pinned AUDENIQ media engine (audeniq-qc)
+        env:
+          AUDENIQ_GITHUB_TOKEN: ${{ secrets.AUDENIQ_GITHUB_TOKEN }}
         run: |
-          sh deploy/install-audeniq-qc.sh "$HOME/.local/audeniq-qc"
+          sh deploy/ci-engine-token.sh sh deploy/install-audeniq-qc.sh "$HOME/.local/audeniq-qc"
           echo "AUDENIQ_QC_BIN=$HOME/.local/audeniq-qc/bin/audeniq-qc" >> "$GITHUB_ENV"
       - name: Build the pinned AUDENIQ image toolkit (audeniq-photo)
+        env:
+          AUDENIQ_GITHUB_TOKEN: ${{ secrets.AUDENIQ_GITHUB_TOKEN }}
         run: |
-          sh deploy/install-audeniq-photo.sh "$HOME/.local/audeniq-photo"
+          sh deploy/ci-engine-token.sh sh deploy/install-audeniq-photo.sh "$HOME/.local/audeniq-photo"
           echo "AUDENIQ_PHOTO_BIN=$HOME/.local/audeniq-photo/bin/audeniq-photo" >> "$GITHUB_ENV"
       - name: Install FFmpeg (test fixtures and oracle only) and xmllint (DDEX XSD validation)
         run: |
@@ -295,7 +299,13 @@ jobs:
           jq -e '(.services.migrate.environment.DATABASE_URL | test("@postgres/"))' /tmp/production.json
       - name: Deploy script lint
         run: shellcheck deploy/deploy.sh deploy/build-target.sh deploy/check-cpu.sh
-      - run: docker compose up --build -d postgres migrate grants pgbouncer api worker
+      - name: Build and start the stack
+        env:
+          AUDENIQ_GITHUB_TOKEN: ${{ secrets.AUDENIQ_GITHUB_TOKEN }}
+        run: |
+          printf %s "$AUDENIQ_GITHUB_TOKEN" > "$RUNNER_TEMP/github_token"
+          AUDENIQ_GITHUB_TOKEN_FILE="$RUNNER_TEMP/github_token" docker compose up --build -d postgres migrate grants pgbouncer api worker
+          rm -f "$RUNNER_TEMP/github_token"
       - name: Check API readiness
         run: curl --fail --retry 15 --retry-all-errors --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
       - name: Production boots without cloud KMS or an antivirus engine

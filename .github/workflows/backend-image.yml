@@ -103,6 +103,9 @@ jobs:
         with:
           context: .
           file: deploy/Dockerfile
+          # 비공개 엔진 저장소를 받을 읽기 전용 토큰: 빌드 비밀로만 (레이어에 남지 않는다)
+          secrets: |
+            github_token=${{ secrets.AUDENIQ_GITHUB_TOKEN }}
           build-args: |
             CARGO_PROFILE=release
             TARGET_CPU=${{ matrix.cpu }}
