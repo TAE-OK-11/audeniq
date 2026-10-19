@@ -18,7 +18,6 @@ on:
       - deploy/install-audeniq-photo.sh
       - deploy/clamd.conf
       - deploy/freshclam.conf
-      - deploy/update-antivirus.py
       - deploy/pgbouncer/**
       - deploy/compose.production.yaml
       - .dockerignore
@@ -122,8 +121,8 @@ jobs:
           test "$(docker image inspect --format '{{.Architecture}}' "$REF")" = "$ARCH"
           docker run --rm --entrypoint sh -e EXPECTED_ARCH="$ARCH" -e EXPECTED_CPU="$CPU" "$REF" -c '
             set -e
-            for b in audeniq-api audeniq-worker audeniq-migrate audeniq-admin audeniq-secrets audeniq-qc audeniq-photo sftp python3 xmllint clamd; do command -v "$b"; done
-            for b in exiftool tesseract zbarimg pdftoppm; do if command -v "$b"; then echo "$b must not ship in the runtime image"; exit 1; fi; done
+            for b in audeniq-api audeniq-worker audeniq-migrate audeniq-admin audeniq-secrets audeniq-qc audeniq-photo sftp xmllint clamd; do command -v "$b"; done
+            for b in exiftool tesseract zbarimg pdftoppm python3; do if command -v "$b"; then echo "$b must not ship in the runtime image"; exit 1; fi; done
             if command -v ffmpeg; then echo "ffmpeg must not ship in the runtime image"; exit 1; fi
             test "$(cat /usr/local/share/audeniq/target-arch)" = "$EXPECTED_ARCH"
             test "$(cat /usr/local/share/audeniq/target-cpu)" = "$EXPECTED_CPU"
