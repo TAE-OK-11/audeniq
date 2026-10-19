@@ -2077,10 +2077,16 @@ pub async fn approve_override_request(
     // Membership first so non-members learn nothing about request ids.
     auth::membership(&mut tx, a, org, false).await?;
     let req = lock_pending(&mut tx, org, request_id).await?;
-    if req.requested_by == a.user {
+    // With two-person approval off, an OWNER applies a PASS alone, so a
+    // request filed before the switch went off may be applied by its own
+    // OWNER requester (recorded without a second approver).
+    let alone = req.requested_by == a.user;
+    if alone && crate::config::dual_approval_enabled() {
         return Err(Error::PolicyGate("SECOND_APPROVER_MUST_DIFFER"));
     }
-    check_approver_eligible(&mut tx, org, a.user).await?;
+    if !alone {
+        check_approver_eligible(&mut tx, org, a.user).await?;
+    }
     let release = release_of(&mut tx, org, req.revision_id).await?;
     auth::authorize(&mut tx, a, org, release, "release", false).await?;
     // The requester must still be entitled to ask (not revoked meanwhile).
@@ -2089,6 +2095,10 @@ pub async fn approve_override_request(
         .map_err(|_| Error::PolicyGate("REQUESTER_NO_LONGER_MEMBER"))?;
     if RIGHTS_MONEY_CLASSES.contains(&req.check_code.as_str()) && requester_role != "OWNER" {
         return Err(Error::PolicyGate("SENIOR_REVIEWER_REQUIRED"));
+    }
+    // Alone, the same rule as a direct PASS while the switch is off: OWNER only.
+    if alone && requester_role != "OWNER" {
+        return Err(Error::PolicyGate("SECOND_APPROVER_MUST_DIFFER"));
     }
     let id = insert_override(
         &mut tx,
@@ -2099,7 +2109,7 @@ pub async fn approve_override_request(
         &req.proposed_status,
         &req.reason,
         req.requested_by,
-        Some(a.user),
+        (!alone).then_some(a.user),
     )
     .await?;
     sqlx::query("UPDATE rights.override_requests SET status='APPROVED', decided_by=$3, decided_at=now(), override_id=$4 WHERE org_id=$1 AND id=$2")
@@ -2115,7 +2125,11 @@ pub async fn approve_override_request(
         Some(org),
         Some(id),
         "override.approved",
-        "SECOND_APPROVER",
+        if alone {
+            "SELF_APPROVED_DUAL_OFF"
+        } else {
+            "SECOND_APPROVER"
+        },
         a.request,
     )
     .await?;
