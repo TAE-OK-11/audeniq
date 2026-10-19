@@ -260,8 +260,9 @@ fn panic_response(err: Box<dyn std::any::Any + Send + 'static>) -> Response {
     Error::Internal.into_response()
 }
 /// JSON responses are compressed for whichever encoding the caller accepts
-/// (zstd, then brotli, then gzip; the edge forwards the browser's
-/// Accept-Encoding). Level 4: most of the size win of the maximum levels at
+/// (brotli, then gzip; the edge forwards the browser's Accept-Encoding).
+/// Both codecs are pure Rust; zstd was dropped with its C library (the
+/// Workers only ever ask the API for br/gzip, web/shared/transport.ts). Level 4: most of the size win of the maximum levels at
 /// a fraction of the CPU (brotli's default is 11, far too slow per request).
 /// Bodies under 1 KiB are sent as is: the framing costs more than it saves.
 fn compression() -> tower_http::compression::CompressionLayer<
@@ -1075,10 +1076,11 @@ mod tests {
                 (enc, len)
             }
         };
-        // Browsers send all three; zstd wins, then brotli, then gzip.
+        // Browsers also offer zstd; brotli wins, then gzip.
         let (enc, len) = call("/big", "gzip, deflate, br, zstd").await;
-        assert_eq!(enc.as_deref(), Some("zstd"));
-        assert!(len * 5 < raw_len, "zstd {len} vs {raw_len} bytes");
+        assert_eq!(enc.as_deref(), Some("br"));
+        assert!(len * 5 < raw_len, "br {len} vs {raw_len} bytes");
+        assert_eq!(call("/big", "zstd").await, (None, raw_len));
         let (enc, len) = call("/big", "gzip, br").await;
         assert_eq!(enc.as_deref(), Some("br"));
         assert!(len * 5 < raw_len, "br {len} vs {raw_len} bytes");
@@ -1088,19 +1090,19 @@ mod tests {
             Some("gzip")
         );
         assert_eq!(
-            call("/big", "zstd;q=0.2, br;q=1").await.0.as_deref(),
+            call("/big", "zstd;q=1, br;q=0.2").await.0.as_deref(),
             Some("br")
         );
         // No Accept-Encoding, or a tiny body: sent as is.
         assert_eq!(call("/big", "identity").await, (None, raw_len));
-        assert_eq!(call("/small", "zstd").await.0, None);
+        assert_eq!(call("/small", "br").await.0, None);
 
         // Exercise actual decoding, not only headers or compressed size.
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         let client = reqwest::Client::new();
-        for encoding in ["zstd", "br", "gzip"] {
+        for encoding in ["br", "gzip"] {
             let decoded: Value = client
                 .get(format!("http://{address}/big"))
                 .header("accept-encoding", encoding)
