@@ -7,7 +7,19 @@ import { req } from './http';
 import { MOCK } from '../lib/mode';
 
 export type StaffRole = 'ADMIN' | 'REVIEWER' | 'OPERATOR' | 'SUPPORT';
-export type Duty = 'REVIEW' | 'DOCUMENTS' | 'INQUIRIES' | 'DELIVERY';
+export type Duty = 'REVIEW' | 'DOCUMENTS' | 'INQUIRIES' | 'DELIVERY' | 'IDENTITY';
+
+/** 직원 실명인증 (crates/core/src/identity_desk.rs) */
+export type IdentityChannel = 'IN_PERSON' | 'CUSTOMER_CENTER';
+export type IdentityDocument = 'RESIDENT_CARD' | 'DRIVER_LICENSE' | 'PASSPORT' | 'ALIEN_REGISTRATION' | 'DISABILITY_CARD' | 'VETERAN_CARD';
+export interface IdentityAccount {
+  user_id: string; email_masked: string; status: string; joined_at: string;
+  identity: { provider: string; method: string; offline: boolean; verified_at: string; name_masked: string; adult: boolean } | null;
+  checks: { id: string; staff_user_id: string; channel: IdentityChannel; document_type: IdentityDocument; correction: boolean; note: string; created_at: string }[];
+}
+export interface IdentityVerifyInput {
+  real_name: string; birth_date: string; channel: IdentityChannel; document_type: IdentityDocument; note: string; correction: boolean;
+}
 
 export interface StaffMe { user_id: string; role: StaffRole; duties: Duty[]; /** 서버 DUAL_APPROVAL_ENABLED — 꺼져 있으면 2차 승인 없이 한 사람이 처리 */ dual_approval?: boolean }
 
@@ -282,6 +294,10 @@ const remote = {
   restage: (pkg: string) => req<{ job_id: string }>(`/api/staff/deliveries/${id(pkg)}/restage`, { method: 'POST' }),
   dsps: () => req<Page<DspItem>>('/api/staff/dsps'),
   payouts: (status: string) => req<Page<PayoutItem>>(`/api/staff/payouts${qs({ status, limit: 100 })}`),
+  /** 실명인증: 가입 이메일로 계정 찾기 (이메일은 주소에 남지 않게 본문으로) */
+  identityLookup: (email: string) => req<IdentityAccount>('/api/staff/identity/lookup', { method: 'POST', body: { email } }),
+  identityVerify: (uid: string, body: IdentityVerifyInput) =>
+    req<IdentityAccount>(`/api/staff/identity/${id(uid)}/verify`, { method: 'POST', body }),
 };
 
 export type StaffApi = typeof remote;
