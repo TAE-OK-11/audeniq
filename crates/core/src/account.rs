@@ -129,6 +129,72 @@ pub async fn get_account(s: &AppState, a: &Actor) -> Result<Value> {
 // ---------------------------------------------------------------------------
 // 본인인증
 // ---------------------------------------------------------------------------
+
+/// 저장된 본인인증 (복호화한 실명·생년월일).
+pub(crate) struct StoredIdentity {
+    pub provider: String,
+    pub method: String,
+    /// 인증 기관 연계정보 해시. 직원 실명인증(OFFLINE)은 없다.
+    pub ci_hash: Option<String>,
+    pub name: String,
+    pub birth: NaiveDate,
+    pub verified_at: DateTime<Utc>,
+}
+
+impl StoredIdentity {
+    /// 같은 사람: 실명(앞뒤 공백 무시)과 생년월일이 같다.
+    pub fn same_person(&self, name: &str, birth: NaiveDate) -> bool {
+        self.name.trim() == name.trim() && self.birth == birth
+    }
+}
+
+/// 사용자의 본인인증을 잠그고(FOR UPDATE) 읽는다.
+pub(crate) async fn stored_identity(
+    s: &AppState,
+    c: &mut sqlx::PgConnection,
+    user: uuid::Uuid,
+) -> Result<Option<StoredIdentity>> {
+    let Some(r) = sqlx::query(
+        "SELECT provider,method,ci_hash,real_name,real_name_cipher,birth_date,birth_date_cipher,verified_at
+           FROM portal.account_identities WHERE user_id=$1 FOR UPDATE",
+    )
+    .bind(user)
+    .fetch_optional(&mut *c)
+    .await?
+    else {
+        return Ok(None);
+    };
+    let name = crate::pii::open(
+        &s.payout_keys,
+        Field::IdentityRealName,
+        user,
+        r.get("real_name"),
+        r.get::<Option<Vec<u8>>, _>("real_name_cipher").as_deref(),
+    )?
+    .ok_or(Error::Internal)?;
+    let birth = match r.get::<Option<Vec<u8>>, _>("birth_date_cipher") {
+        Some(c) => parse_birth(
+            &s.payout_keys
+                .open_field(Field::IdentityBirthDate, user, &c)?,
+        )?,
+        None => r
+            .get::<Option<NaiveDate>, _>("birth_date")
+            .ok_or(Error::Internal)?,
+    };
+    Ok(Some(StoredIdentity {
+        provider: r.get("provider"),
+        method: r.get("method"),
+        ci_hash: r.get("ci_hash"),
+        name,
+        birth,
+        verified_at: r.get("verified_at"),
+    }))
+}
+
+/// 민법상 성년인지 (오늘, 한국 시각).
+pub(crate) fn is_adult(birth: NaiveDate) -> bool {
+    age_on(birth, crate::domain::today_kst()) >= ADULT_AGE
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IdentityInput {
@@ -174,22 +240,23 @@ pub async fn verify_identity(s: &AppState, a: &Actor, i: IdentityInput) -> Resul
     if reused {
         return Err(Error::InvalidCode("IDENTITY_NOT_VERIFIED"));
     }
-    // 계정의 주인은 한 사람: 다시 인증할 때는 같은 사람이어야 한다.
-    let previous: Option<String> = sqlx::query_scalar(
-        "SELECT ci_hash FROM portal.account_identities WHERE user_id=$1 FOR UPDATE",
-    )
-    .bind(a.user)
-    .fetch_optional(&mut *tx)
-    .await?;
-    if previous.as_deref().is_some_and(|p| p != ci) {
-        return Err(Error::InvalidCode("IDENTITY_ACCOUNT_MISMATCH"));
+    // 계정의 주인은 한 사람: 다시 인증할 때는 같은 사람이어야 한다. 직원이 신분증으로
+    // 인증한 계정(연계정보 없음)은 인증 기관이 확인한 실명·생년월일이 그 기록과 같아야 한다.
+    if let Some(previous) = stored_identity(s, &mut tx, a.user).await? {
+        let same = match &previous.ci_hash {
+            Some(p) => *p == ci,
+            None => previous.same_person(&name, birth),
+        };
+        if !same {
+            return Err(Error::InvalidCode("IDENTITY_ACCOUNT_MISMATCH"));
+        }
     }
     let row = sqlx::query(
         "INSERT INTO portal.account_identities(user_id,real_name_cipher,birth_date_cipher,provider,method,transaction_id,ci_hash)
          VALUES($1,$2,$3,$4,$5,$6,$7)
          ON CONFLICT(user_id) DO UPDATE SET real_name=NULL,real_name_cipher=EXCLUDED.real_name_cipher,
            birth_date=NULL,birth_date_cipher=EXCLUDED.birth_date_cipher,provider=EXCLUDED.provider,
-           method=EXCLUDED.method,transaction_id=EXCLUDED.transaction_id,verified_at=now(),
+           method=EXCLUDED.method,transaction_id=EXCLUDED.transaction_id,ci_hash=EXCLUDED.ci_hash,verified_at=now(),
            row_version=portal.account_identities.row_version+1
          RETURNING verified_at,row_version",
     )
