@@ -534,7 +534,6 @@ impl S3Transport {
             client: crate::external_http::client_builder(allow_local)
                 .no_gzip()
                 .no_brotli()
-                .no_zstd()
                 .no_deflate()
                 .connect_timeout(Duration::from_secs(15))
                 .read_timeout(Duration::from_secs(60))
