@@ -96,7 +96,7 @@ pub fn random_token() -> String {
     SysRng
         .try_fill_bytes(&mut bytes)
         .expect("operating system RNG unavailable");
-    hex::encode(bytes)
+    crate::hex::encode(bytes)
 }
 pub fn secret_eq(a: &str, b: &str) -> bool {
     token_digest(a).ct_eq(&token_digest(b)).into()
@@ -622,7 +622,7 @@ fn session_csrf(secret: &str, session_hash: &[u8]) -> String {
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).expect("HMAC key");
     mac.update(b"audeniq-session-csrf-v1:");
     mac.update(session_hash);
-    hex::encode(mac.finalize().into_bytes())
+    crate::hex::encode(mac.finalize().into_bytes())
 }
 /// Same-origin bootstrap: recovers a per-session CSRF token without browser storage.
 /// The token is stable across tabs. Existing sessions migrate on first bootstrap.
@@ -918,7 +918,7 @@ mod tests {
             assert!(!secret_matches_digest(&format!("{value}x"), &digest));
         }
         assert_eq!(
-            hex::encode(token_digest("abc")),
+            crate::hex::encode(token_digest("abc")),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
     }

@@ -117,7 +117,8 @@ impl KeyRing {
                 .parse()
                 .map_err(|_| Error::PolicyGate("PAYOUT_KEYRING_INVALID"))?;
             let value = Zeroizing::new(
-                hex::decode(value).map_err(|_| Error::PolicyGate("PAYOUT_KEYRING_INVALID"))?,
+                crate::hex::decode(value)
+                    .map_err(|_| Error::PolicyGate("PAYOUT_KEYRING_INVALID"))?,
             );
             if version <= 0 || value.len() != 32 {
                 return Err(Error::PolicyGate("PAYOUT_KEYRING_INVALID"));
@@ -205,7 +206,7 @@ impl KeyRing {
             Some(key) if !key.trim().is_empty() => {
                 let key = Zeroizing::new(key);
                 let decoded = Zeroizing::new(
-                    hex::decode(key.trim())
+                    crate::hex::decode(key.trim())
                         .map_err(|_| Error::PolicyGate("PAYOUT_ACCOUNT_KEY_MISSING"))?,
                 );
                 if decoded.len() != 32 {
@@ -293,7 +294,7 @@ impl KeyRing {
         let mut mac = <Hmac<sha2::Sha256> as KeyInit>::new_from_slice(key).expect("HMAC key");
         mac.update(field.aad_prefix());
         mac.update(value.as_bytes());
-        hex::encode(mac.finalize().into_bytes())
+        crate::hex::encode(mac.finalize().into_bytes())
     }
     /// Blind index under the active key version (stored with new rows).
     pub fn blind_index(&self, field: Field, value: &str) -> Result<String> {

@@ -17,7 +17,15 @@ Two-person approval is **off** unless the API/worker run with
   alone (EDITORs still can't PASS; rights/money classes still need an OWNER).
   Every override is still audited.
 - Staff 발매 심사 APPROVE applies directly — no `rights.staff_approvals`
-  request — and a request left over from before can be closed by anyone.
+  request — and a request left over from before can be closed by anyone,
+  including the reviewer who filed it (0137 dropped the table's
+  `decided_by <> requested_by` CHECK; the code enforces it while the switch
+  is on).
+- A member override request left over from before may be applied by its own
+  requester if they are an OWNER (as a direct PASS would be); the override is
+  recorded without a second approver and audited as
+  `override.approved` / `SELF_APPROVED_DUAL_OFF`. An EDITOR's request still
+  needs another eligible member.
 - Payouts: the creator may approve, and the approver may record the transfer.
 - Work docs: the requester may approve their own review request.
 - `GET /api/staff/me` returns `"dual_approval": false`, and the admin hides

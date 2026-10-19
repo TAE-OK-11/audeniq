@@ -1,7 +1,11 @@
 name: Foundation
-# 같은 저장소 브랜치의 PR은 push 실행 결과가 PR 체크로 붙으므로 pull_request로 한 번 더 돌리지 않는다
+# main으로 가는 PR에서만 돈다 (병합 전 검사). 작업 브랜치 푸시·문서만 바뀐 PR은 돌지 않는다.
+# 필요하면 Actions → Foundation → Run workflow로 아무 브랜치에서나 수동 실행
 on:
-  push:
+  pull_request:
+    branches: [main]
+    paths-ignore: ['**.md', 'docs/**']
+  workflow_dispatch:
 permissions:
   contents: read
 # 같은 브랜치에 새 커밋이 오면 이전 실행은 취소 (main은 커밋마다 끝까지 돌린다)
@@ -259,22 +263,12 @@ jobs:
         run: |
           docker compose run --no-deps -d --name audeniq-ci-optional-security -e APP_ENV=production -e APP_ORIGIN=https://studio.audeniq.test \
             -e PAYOUT_ACCOUNT_KEY=0000000000000000000000000000000000000000000000000000000000000000 api
-          docker exec -i audeniq-ci-optional-security python3 - <<'PY'
-          import os, time, urllib.request
-          assert os.environ['PAYOUT_KMS_ENABLED'] == 'false'
-          assert os.environ['UPLOAD_AV_ENABLED'] == 'false'
-          assert not os.environ.get('PAYOUT_KEYRING_FILE')
-          request = urllib.request.Request('http://127.0.0.1:8080/ready', headers={'X-Audeniq-Service': os.environ['EDGE_SERVICE_SECRET']})
-          for attempt in range(30):
-              try:
-                  with urllib.request.urlopen(request, timeout=2) as response:
-                      assert response.status == 200
-                  break
-              except Exception:
-                  if attempt == 29:
-                      raise
-                  time.sleep(1)
-          PY
+          # The runtime image has no Python or curl: check the environment with sh and
+          # readiness from a curl container in the API container's network namespace.
+          docker exec audeniq-ci-optional-security sh -c 'test "$PAYOUT_KMS_ENABLED" = false && test "$UPLOAD_AV_ENABLED" = false && test -z "$PAYOUT_KEYRING_FILE"'
+          docker run --rm --network container:audeniq-ci-optional-security -e EDGE_SERVICE_SECRET curlimages/curl:8.11.1 \
+            --fail --silent --show-error --retry 30 --retry-all-errors --retry-delay 1 --max-time 60 \
+            -H "X-Audeniq-Service: $EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
           docker rm -f audeniq-ci-optional-security
           if docker compose run --rm --no-deps -e PAYOUT_KMS_ENABLED=true api > /tmp/kms-required.log 2>&1; then
             echo 'Enabled KMS accepted a missing keyring'

@@ -32,6 +32,9 @@ Current configuration examples are not evidence of an established Tunnel, VPC Se
 - CPU 최적화 태그: 위 태그 뒤에 `-x86-64-v3`(AMD/Intel AVX2 서버, Oracle Cloud AMD E 시리즈 포함), `-graviton4`(ARM64 `neoverse-v2`, AWS Graviton4), `-ampere-a4`(ARM64 `ampere1a`, Oracle Cloud A4·AmpereOne M), `-ampere-a1`(ARM64 `neoverse-n1`, Oracle Cloud Ampere A1·AWS Graviton2 이상)을 붙인다. CircleCI 운영 배포는 컨텍스트 변수 `BACKEND_CPU_VARIANT`로 고른다. 그 밖의 ARM 서버는 공용 태그를 사용한다. Oracle Cloud 전체 설정은 [ORACLE_CLOUD.md](ORACLE_CLOUD.md).
 - 배포에는 항상 **digest**(`@sha256:…`)를 쓴다. 공용 manifest digest도 두 아키텍처를 유지한다. 실행 요약(Summary)에 태그와 선택한 배포 digest가 나온다.
 - PR과 다른 브랜치는 이미지를 만들지 않는다. Actions → Backend image → *Run workflow*로 수동 빌드도 된다.
+- `main` 푸시는 **배포할 이미지만** 만든다: 저장소 변수 `BACKEND_CPU_VARIANT`가 비었거나 `portable`이면 공용(amd64 + arm64), 아니면 그 CPU 최적화 이미지 하나. 모든 변형이 필요하면 수동 실행에서 `all_variants`를 켠다.
+- `main` 푸시(PR 병합)마다 그 이미지를 production 서버에 배포한다. 끄려면 저장소 변수 `AUTO_DEPLOY=false`, 승인을 거치려면 Settings → Environments → production에 Required reviewers를 건다. 배포에는 production 환경 시크릿 `DEPLOY_HOST`·`DEPLOY_USER`·`DEPLOY_SSH_KEY`·`DEPLOY_KNOWN_HOSTS`가 필요하다.
+- 테스트(**Foundation**, **Backend portability**)는 `main`으로 가는 PR에서만 돈다(문서만 바뀐 PR 제외). 작업 브랜치 푸시에는 CI가 돌지 않는다. CircleCI도 `main`과 수동 실행(Trigger Pipeline)에서만 돈다.
 - x86와 ARM 네이티브 러너에서 각각 빌드하고 캐시도 아키텍처·CPU별로 분리한다. 공용 이미지의 바이너리 실행·샌드박스와 각 이미지의 audeniq-qc·UID·CPU 메타데이터(ffmpeg 미포함 확인)를 검사한 뒤 태그를 게시한다. CPU 최적화 바이너리는 QEMU의 `max` CPU로 CLI 실행을 검사한다. 이는 Graviton4의 실제 성능 측정이 아니다. SBOM과 provenance가 함께 올라가며 공개 저장소의 각 빌드 digest에는 GitHub attestation도 붙는다.
 
 Graviton4 빌드와 서버 자원 조정은 [GRAVITON4.md](GRAVITON4.md)를 참고한다. **Foundation**의 Compose 스모크와 **Backend portability**의 QC·지문·무손실 변환·샌드박스 회귀 테스트도 x86/ARM 네이티브 러너에서 실행한다. 테스트 워크플로는 이미지 빌드와 별도로 실행되므로 배포 전에 같은 커밋의 결과를 확인한다.

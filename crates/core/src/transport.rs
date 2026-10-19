@@ -534,7 +534,6 @@ impl S3Transport {
             client: crate::external_http::client_builder(allow_local)
                 .no_gzip()
                 .no_brotli()
-                .no_zstd()
                 .no_deflate()
                 .connect_timeout(Duration::from_secs(15))
                 .read_timeout(Duration::from_secs(60))
@@ -610,7 +609,7 @@ impl S3Transport {
         format!(
             "{}://{host}{path}?{query}&X-Amz-Signature={}",
             self.endpoint.scheme(),
-            hex::encode(h(&k, &to_sign))
+            crate::hex::encode(h(&k, &to_sign))
         )
     }
 

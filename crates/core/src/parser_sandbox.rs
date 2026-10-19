@@ -2,15 +2,63 @@
 //! Landlock protects files; seccomp denies networking and cross-process access.
 use std::{io, path::Path, process::Command};
 
+/// Argument that makes `audeniq-admin` run [`probe`] (inside the sandbox).
+pub const PROBE_ARG: &str = "upload-sandbox-probe";
+
 /// Deployment check: exercise the actual enforced policy inside its container.
+/// Runs this program again under [`restrict`] with [`PROBE_ARG`]; no Python.
 pub fn self_test() -> io::Result<()> {
-    let mut command = Command::new("python3");
-    command.args(["-c", "import os,socket\nassert 'DATABASE_URL' not in os.environ\nfor path in ['/proc/self/environ', '/etc/shadow']:\n try: open(path).read()\n except PermissionError: pass\n else: raise Exception('filesystem isolation failed')\ntry: socket.socket()\nexcept PermissionError: pass\nelse: raise Exception('network isolation failed')\ntry: os.pidfd_open(os.getppid())\nexcept PermissionError: pass\nelse: raise Exception('cross-process isolation failed')"]);
+    let mut command = Command::new(std::env::current_exe()?);
+    command.arg(PROBE_ARG);
     restrict(&mut command, &[], &[])?;
-    if !command.status()?.success() {
+    let out = command.output()?;
+    if !out.status.success() {
+        eprint!("{}", String::from_utf8_lossy(&out.stderr));
         return Err(io::Error::from_raw_os_error(libc::EPERM));
     }
     Ok(())
+}
+
+/// Inside the sandbox: no secrets in the environment, no reading outside the
+/// allowed files, no network, no reaching other processes. Each must fail
+/// with a permission error (anything else, success included, is a failure).
+pub fn probe() -> Result<(), String> {
+    let denied = |e: &io::Error| {
+        e.kind() == io::ErrorKind::PermissionDenied
+            || matches!(e.raw_os_error(), Some(libc::EPERM | libc::EACCES))
+    };
+    if std::env::var_os("DATABASE_URL").is_some() {
+        return Err("environment isolation failed".into());
+    }
+    for path in ["/proc/self/environ", "/etc/shadow"] {
+        // Opening is enough; never print what was read (it may hold secrets).
+        match std::fs::File::open(path) {
+            Err(e) if denied(&e) => {}
+            Err(e) => return Err(format!("filesystem isolation failed: {path}: {e}")),
+            Ok(_) => return Err(format!("filesystem isolation failed: {path} is readable")),
+        }
+    }
+    // SAFETY: plain syscalls with constant arguments; a returned descriptor is closed.
+    let check = |ret: libc::c_long, what: &str| -> Result<(), String> {
+        if ret >= 0 {
+            unsafe { libc::close(ret as libc::c_int) };
+            return Err(format!("{what} isolation failed"));
+        }
+        let e = io::Error::last_os_error();
+        if denied(&e) {
+            Ok(())
+        } else {
+            Err(format!("{what} isolation failed: {e}"))
+        }
+    };
+    check(
+        unsafe { libc::socket(libc::AF_INET, libc::SOCK_STREAM, 0) } as libc::c_long,
+        "network",
+    )?;
+    check(
+        unsafe { libc::syscall(libc::SYS_pidfd_open, libc::getppid(), 0) },
+        "cross-process",
+    )
 }
 
 pub fn restrict(command: &mut Command, inputs: &[&Path], outputs: &[&Path]) -> io::Result<()> {

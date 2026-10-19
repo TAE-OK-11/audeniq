@@ -150,7 +150,7 @@ pub fn digest(value: &Value) -> String {
 /// Hex SHA-256 of raw bytes.
 pub fn sha256_hex(bytes: impl AsRef<[u8]>) -> String {
     use sha2::Digest;
-    hex::encode(sha2::Sha256::digest(bytes))
+    crate::hex::encode(sha2::Sha256::digest(bytes))
 }
 
 /// `io::Write` sink that feeds bytes straight into SHA-256.
@@ -172,7 +172,7 @@ pub fn sha256_json<T: Serialize + ?Sized>(value: &T) -> String {
     use sha2::Digest;
     let mut w = HashWriter(sha2::Sha256::new());
     serde_json::to_writer(&mut w, value).expect("json serializes");
-    hex::encode(w.0.finalize())
+    crate::hex::encode(w.0.finalize())
 }
 
 /// Serialize a borrowed object, omitting only its top-level self-hash.
@@ -206,7 +206,7 @@ mod hash_tests {
     fn streamed_hash_equals_buffered_hash() {
         use sha2::{Digest, Sha256};
         let v = serde_json::json!({"b": [1, 2, {"c": "한글"}], "a": null, "z": 1.5});
-        let buffered = hex::encode(Sha256::digest(serde_json::to_string(&v).unwrap()));
+        let buffered = crate::hex::encode(Sha256::digest(serde_json::to_string(&v).unwrap()));
         assert_eq!(super::sha256_json(&v), buffered);
     }
 

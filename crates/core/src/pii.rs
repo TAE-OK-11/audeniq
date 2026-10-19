@@ -100,7 +100,7 @@ pub fn reveal(keys: &KeyRing, value: &mut Value) -> Result<()> {
                 let revealed = match map.get("c").and_then(Value::as_str) {
                     None => plain,
                     Some(c) => {
-                        let cipher = hex::decode(c).map_err(|_| Error::Internal)?;
+                        let cipher = crate::hex::decode(c).map_err(|_| Error::Internal)?;
                         let subject: Uuid = map
                             .get("s")
                             .and_then(Value::as_str)
@@ -193,7 +193,7 @@ mod tests {
             .unwrap();
         let mut v = json!({
             "rows": [
-                {"email": {"$pii": "user_email", "s": user, "p": null, "c": hex::encode(&sealed)}},
+                {"email": {"$pii": "user_email", "s": user, "p": null, "c": crate::hex::encode(&sealed)}},
                 {"email": {"$pii": "user_email", "s": Uuid::new_v4(), "p": "old@example.com", "c": null}},
                 {"email": {"$pii": "user_email", "s": Uuid::new_v4(), "p": null, "c": null}},
             ]
@@ -208,7 +208,7 @@ mod tests {
     fn markers_fail_closed_for_another_subject_or_field() {
         let keys = keys();
         let user = Uuid::new_v4();
-        let sealed = hex::encode(
+        let sealed = crate::hex::encode(
             keys.seal_field(Field::UserEmail, user, "a@example.com")
                 .unwrap(),
         );

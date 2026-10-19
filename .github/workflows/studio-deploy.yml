@@ -1,17 +1,19 @@
 name: Studio deploy
-# Studio(web/studio)가 바뀌면 어느 브랜치든 테스트 → 빌드를 돌리고,
+# Studio(web/studio)가 바뀐 main PR에서 테스트 → 빌드를 돌리고,
 # main일 때만 Cloudflare Worker(audeniq-studio)로 배포한다. Worker는 화면 서빙과 /api 전달만 하고,
 # 공지·이벤트·서버 점검은 백엔드 Postgres에 있다 (crates/core/src/site_content.rs).
 # 필요한 저장소 Secrets: CLOUDFLARE_API_TOKEN (Workers Scripts:Edit), CLOUDFLARE_ACCOUNT_ID
 # 수동 실행: Actions → Studio deploy → Run workflow (main에서 실행하면 배포)
 on:
   push:
+    branches: [main]
     paths:
       - web/studio/**
       - web/shared/**
       - deploy/aws/**
       - .github/workflows/studio-deploy.yml
   pull_request:
+    branches: [main]
     paths:
       - web/studio/**
       - web/shared/**
