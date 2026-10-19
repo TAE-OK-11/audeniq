@@ -34,6 +34,7 @@ pub mod external_http;
 pub mod external_recordings;
 pub mod finance;
 pub mod fingerprint;
+pub mod hex;
 pub mod host_secrets;
 pub mod identifiers;
 pub mod infringement;

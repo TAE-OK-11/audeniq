@@ -23,7 +23,6 @@ aws-lc-rs = "1.18.1"
 # Content-MD5 for S3 Object Lock (WORM) uploads; already in the tree via sqlx.
 md5 = { package = "md-5", version = "0.11.0" }
 hmac = "0.13.0"
-hex = "0.4.3"
 base64 = "0.22.1"
 subtle = "2.6.1"
 # Email notifications over SMTP (AWS SES, OCI Email Delivery): STARTTLS with
@@ -35,7 +34,6 @@ async-trait = "0.1.92"
 tracing = "0.1.44"
 tower-http = { version = "0.7.1", features = ["compression-br", "compression-zstd", "compression-gzip", "catch-panic"] }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
-thiserror = "2.0.21"
 anyhow = "1.0.104"
 jsonschema = { version = "0.58.1", default-features = false, features = ["idna"] }  # 내장 스키마만 — 원격 $ref 받기 끔
 rust_decimal = { version = "1.43.0", features = ["serde", "db-postgres"] }

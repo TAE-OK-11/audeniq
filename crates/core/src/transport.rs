@@ -610,7 +610,7 @@ impl S3Transport {
         format!(
             "{}://{host}{path}?{query}&X-Amz-Signature={}",
             self.endpoint.scheme(),
-            hex::encode(h(&k, &to_sign))
+            crate::hex::encode(h(&k, &to_sign))
         )
     }
 
