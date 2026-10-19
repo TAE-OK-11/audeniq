@@ -176,7 +176,7 @@ BLUEPRINT §6의 3-A(Finalizer)/3-D(Canonical Model)/3-F(Package) — Muse 담�
 - `crates/core/src/`: `ern.rs`(synthetic ERN 생성·검증), `identifiers.rs`(식별자 ledger, `record_existing`), `preflight.rs`(XML/metadata/files/rights 4종 독립 체크), `preparation_model.rs`(`PreparedRelease`/`VerificationPackage`), `route_plan.rs`(DSP scope 검증·제출 계획).
 - 마이그레이션 0011: `distribution.identifier_assignments` (append-only, 불변 트리거, 강제 RLS, UPC-A 체크섬·ISRC 형식 SQL 검증).
 - 테스트: `stage3_identifiers.rs`(동시성·멱등·충돌·RLS), `stage3_preparation.rs`(synthetic 픽스처 3종·XSD).
-- `.github/workflows/f4-preparation.yml`: F4 acceptance 워크플로.
+- `.github/workflows/f4-preparation.yml`: F4 acceptance 워크플로 (대상 브랜치가 없어져 2026-10-19 삭제).
 
 ### 연동 내용 (Muse)
 

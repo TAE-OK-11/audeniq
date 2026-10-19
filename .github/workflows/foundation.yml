@@ -1,9 +1,12 @@
 name: Foundation
-# main으로 가는 PR에서만 돈다 (병합 전 검사). 작업 브랜치 푸시·문서만 바뀐 PR은 돌지 않는다.
-# 필요하면 Actions → Foundation → Run workflow로 아무 브랜치에서나 수동 실행
+# main으로 가는 PR에서만 돈다 (병합 전 검사). 작업 브랜치 푸시·문서만 바뀐 PR·초안 PR은 돌지 않는다.
+# PR이 바꾼 파일을 보고 필요한 job만 돈다 (changes job). Studio·Admin만 바뀐 PR은 각 앱의
+# 워크플로가 테스트·빌드하므로 여기서는 건너뛴다.
+# 필요하면 Actions → Foundation → Run workflow로 아무 브랜치에서나 수동 실행 (전부 돈다)
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths-ignore: ['**.md', 'docs/**']
   workflow_dispatch:
 permissions:
@@ -13,7 +16,39 @@ concurrency:
   group: foundation-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 jobs:
+  changes:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      backend: ${{ steps.files.outputs.backend }}
+      deploy: ${{ steps.files.outputs.deploy }}
+      smoke_runners: ${{ steps.files.outputs.smoke_runners }}
+    steps:
+      - id: files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PR" ]; then
+            backend=true deploy=true arch=true
+          else
+            gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[].filename' > /tmp/files
+            has() { grep -Eq "$1" /tmp/files && echo true || echo false; }
+            backend=$(has '^(Cargo\.(toml|lock)|rust-toolchain\.toml|crates/|migrations/|config/|schemas/|scripts/|web/shared/|compose\.yaml|\.github/workflows/foundation\.yml)')
+            deploy=$(has '^(deploy/|compose\.yaml|\.dockerignore|\.github/workflows/foundation\.yml)')
+            # arm64 이미지가 따로 깨질 수 있는 것: 빌드 설정·의존성·이미지
+            arch=$(has '^(Cargo\.(toml|lock)|rust-toolchain\.toml|deploy/(Dockerfile|build-target\.sh|check-cpu\.sh|install-)|\.github/workflows/foundation\.yml)')
+          fi
+          if [ "$arch" = true ]; then runners='["ubuntu-24.04","ubuntu-24.04-arm"]'; else runners='["ubuntu-24.04"]'; fi
+          { echo "backend=$backend"; echo "deploy=$deploy"; echo "smoke_runners=$runners"; } >> "$GITHUB_OUTPUT"
+          echo "backend=$backend deploy=$deploy smoke_runners=$runners"
   rust-postgres:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -201,6 +236,8 @@ jobs:
         if: always() && steps.formatting.outcome == 'failure'
         run: exit 1
   kms-backup:
+    needs: changes
+    if: needs.changes.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -211,10 +248,12 @@ jobs:
           sudo apt-get install --no-install-recommends -y age curl openssl
           python3 -m unittest discover -s deploy/tests -v
   compose-smoke:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.deploy == 'true'
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        runner: ${{ fromJSON(needs.changes.outputs.smoke_runners) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 35
     env:
