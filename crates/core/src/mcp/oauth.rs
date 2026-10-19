@@ -1568,9 +1568,12 @@ pub(super) fn page(title: &str, body: &str, form_action_extra: Option<&str>) -> 
         h.insert(header::CONTENT_SECURITY_POLICY, v);
     }
     h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+    // Not `no-referrer`: with it browsers send `Origin: null` on the form's
+    // POST, and the boundary refuses it (403 FORBIDDEN after "승인").
+    // `same-origin` still sends nothing to the client's redirect host.
     h.insert(
         header::REFERRER_POLICY,
-        HeaderValue::from_static("no-referrer"),
+        HeaderValue::from_static("same-origin"),
     );
     r
 }
@@ -1721,6 +1724,11 @@ pub(super) fn page_consent(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn consent_page_keeps_the_form_origin() {
+        let r = page("t", "", None);
+        assert_eq!(r.headers()[header::REFERRER_POLICY], "same-origin");
+    }
     #[test]
     fn redirect_uris_are_https_or_loopback() {
         for ok in [
