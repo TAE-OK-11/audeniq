@@ -3,9 +3,29 @@ mod error {
     #[derive(Debug)]
     pub enum Error {
         Internal,
+        InvalidCode(&'static str),
         PolicyGate(&'static str),
     }
     pub type Result<T> = std::result::Result<T, Error>;
+}
+// compute_fingerprint decodes through the AUDENIQ engine; the benchmark only
+// times the in-crate FFT and bit comparison, so the engine is never called.
+mod qc_engine {
+    use std::{path::Path, time::Duration};
+    pub enum EngineError {
+        Rejected(()),
+        Failed,
+    }
+    pub struct FingerprintWindow;
+    pub struct FingerprintReport {
+        pub fingerprint_windows: Vec<FingerprintWindow>,
+    }
+    pub fn fingerprint(_: &Path, _: Duration) -> Result<FingerprintReport, EngineError> {
+        unreachable!("the benchmark does not decode files")
+    }
+    pub fn windows_to_segments(_: &[FingerprintWindow]) -> Vec<Vec<f32>> {
+        unreachable!("the benchmark does not decode files")
+    }
 }
 #[path = "parser_sandbox.rs"]
 mod parser_sandbox;
