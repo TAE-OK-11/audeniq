@@ -72,6 +72,13 @@ jobs:
       # Default runtime is off; CI still verifies the enabled implementation.
       UPLOAD_AV_ENABLED: 'true'
     steps:
+      # 기본 러너 이미지의 쓰지 않는 SDK(.NET·Android·Haskell·Swift·CodeQL)를 지워 약 25GB를 확보한다.
+      # Rust 캐시·엔진 빌드·Docker 이미지가 기본 여유 공간(약 14GB)을 넘겨 디스크가 가득 찼다
+      - name: Free runner disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /usr/share/swift /opt/hostedtoolcache/CodeQL
+          df -h /
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
@@ -268,6 +275,13 @@ jobs:
       # 스모크는 이미지가 뜨는지만 본다: 운영용 LTO 빌드 대신 dev 프로필로 빨리 빌드
       CARGO_PROFILE: dev
     steps:
+      # 기본 러너 이미지의 쓰지 않는 SDK(.NET·Android·Haskell·Swift·CodeQL)를 지워 약 25GB를 확보한다.
+      # Rust 캐시·엔진 빌드·Docker 이미지가 기본 여유 공간(약 14GB)을 넘겨 디스크가 가득 찼다
+      - name: Free runner disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /usr/share/swift /opt/hostedtoolcache/CodeQL
+          df -h /
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Validate isolated production configuration
         env:

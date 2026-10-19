@@ -35,6 +35,8 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       DATABASE_URL: postgres://postgres:ephemeral-portability-ci@localhost:5432/postgres
+      # 개인정보는 암호문으로만 저장한다(0102): 키가 없으면 가입·연락처 저장이 거절된다. 테스트 전용 값.
+      PAYOUT_ACCOUNT_KEY: '0000000000000000000000000000000000000000000000000000000000000000'
       CARGO_INCREMENTAL: '0'
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
       UPLOAD_AV_ENABLED: 'true'
