@@ -73,8 +73,19 @@ commands:
       - run:
           name: Install Bun
           command: |
+            # 설치 스크립트를 실행하지 않고 릴리스 zip을 받아 고정 SHA-256으로 확인한다.
+            # .bun-version을 올리면 그 릴리스의 SHASUMS256.txt에서 bun-linux-x64.zip 값을 여기에 더한다.
             v=$(tr -d '[:space:]' < << parameters.version_file >>)
-            curl -fsSL https://bun.sh/install | bash -s "bun-v$v"
+            case "$v" in
+              1.4.2) sum=36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913 ;;
+              *) echo "Bun $v의 SHA-256이 .circleci/config.yml(setup-bun)에 없어요" >&2; exit 1 ;;
+            esac
+            tmp=$(mktemp -d)
+            curl -fsSL -o "$tmp/bun.zip" "https://github.com/oven-sh/bun/releases/download/bun-v$v/bun-linux-x64.zip"
+            echo "$sum  $tmp/bun.zip" | sha256sum -c --quiet
+            unzip -q "$tmp/bun.zip" -d "$tmp"
+            install -D -m 755 "$tmp/bun-linux-x64/bun" "$HOME/.bun/bin/bun"
+            ln -sf bun "$HOME/.bun/bin/bunx"
             echo 'export PATH="$HOME/.bun/bin:$PATH"' >> "$BASH_ENV"
   migrations-changed:
     description: D1 마이그레이션 폴더가 바뀌었으면 /tmp/apply-migrations 파일을 만든다
@@ -514,7 +525,8 @@ jobs:
             - run:
                 name: Deploy audeniq-admin
                 working_directory: web/admin
-                command: npx --yes wrangler@4.149.0 deploy
+                # bun.lock에 고정된 wrangler (위 bun install --frozen-lockfile)
+                command: bunx wrangler deploy
 
   landing:
     docker:

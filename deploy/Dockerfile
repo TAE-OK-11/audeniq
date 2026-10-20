@@ -1,4 +1,4 @@
-FROM rust:1.98.1-slim-trixie AS chef
+FROM rust:1.98.1-slim-trixie@sha256:4cd829461bd5c4d511c32e269da9cb8929223b666519d8004e35fc8d1d771ab7 AS chef
 # 빌드·실행 모두 Debian 13(trixie) slim 기반: 빌드는 rust slim-trixie, 실행은 debian:13-slim
 # 의존성은 cargo-chef로 따로 한 층에 빌드해, 우리 코드만 바뀌면 그 층을 캐시에서 그대로 쓴다
 # make: tikv-jemalloc-sys builds jemalloc with its configure/make (the slim image has gcc only).
@@ -61,7 +61,7 @@ COPY deploy/audeniq-photo.rev deploy/install-audeniq-photo.sh /photo/
 RUN --mount=type=secret,id=github_token \
     audeniq-build-target "$TARGETARCH" "$TARGET_CPU" \
     audeniq-with-github-token sh /photo/install-audeniq-photo.sh /photo/root
-FROM debian:13-slim
+FROM debian:13-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
 # Audio probing, lossless FLAC conversion, Stage 1 QC and fingerprinting run
 # in audeniq-qc (built above); FFmpeg is no longer part of the runtime image.
 # Image metadata, QR, OCR and upload sanitization run in audeniq-photo. No

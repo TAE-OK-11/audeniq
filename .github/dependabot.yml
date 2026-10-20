@@ -21,6 +21,15 @@ updates:
         update-types: [minor, patch]
     open-pull-requests-limit: 2
 
+  # Dockerfile의 베이스 이미지는 digest로 고정돼 있다. Debian 보안 패치가 늦지 않게 대기는 3일.
+  - package-ecosystem: docker
+    directory: /deploy
+    schedule: { interval: weekly, day: monday }
+    cooldown: { default-days: 3 }
+    groups:
+      base-images: { patterns: ["*"] }
+    open-pull-requests-limit: 1
+
   - package-ecosystem: bun
     directories: [/web/admin, /web/studio/app, /web/survey/app]
     schedule: { interval: weekly, day: monday }
