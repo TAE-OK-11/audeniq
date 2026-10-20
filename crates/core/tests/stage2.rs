@@ -803,7 +803,7 @@ fn tta_audio_tags_are_read_without_the_engine_fallback() {
     );
     let report = audeniq_core::provenance::inspect_audio(&path);
     assert_eq!(report["inspection_status"], "COMPLETED", "{report}");
-    // audeniq-photo reads TTA (APE) tags itself, unlike ExifTool.
+    // audeniq-music photo reads TTA (APE) tags itself, unlike ExifTool.
     assert!(report.get("reader").is_none(), "{report}");
     assert_eq!(report["outcome"], "AI_METADATA_SIGNAL", "{report}");
     assert_eq!(report["synthid"], "NOT_CHECKED");
