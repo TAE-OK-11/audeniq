@@ -3,9 +3,29 @@ mod error {
     #[derive(Debug)]
     pub enum Error {
         Internal,
+        InvalidCode(&'static str),
         PolicyGate(&'static str),
     }
     pub type Result<T> = std::result::Result<T, Error>;
+}
+// fingerprint.rs reads files through the engine; the benchmark only times
+// the pure fingerprint functions, so the engine side is a stand-in.
+mod qc_engine {
+    use std::{path::Path, time::Duration};
+    pub enum EngineError {
+        Unavailable,
+        Rejected(()),
+    }
+    pub struct FingerprintWindow;
+    pub struct FingerprintReport {
+        pub fingerprint_windows: Vec<FingerprintWindow>,
+    }
+    pub fn fingerprint(_: &Path, _: Duration) -> Result<FingerprintReport, EngineError> {
+        Err(EngineError::Unavailable)
+    }
+    pub fn windows_to_segments(_: &[FingerprintWindow]) -> Vec<Vec<f32>> {
+        Vec::new()
+    }
 }
 #[path = "parser_sandbox.rs"]
 mod parser_sandbox;
