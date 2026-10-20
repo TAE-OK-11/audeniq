@@ -27,7 +27,7 @@ Current configuration examples are not evidence of an established Tunnel, VPC Se
 
 `main`에 백엔드 변경이 푸시되면 **Backend image** 워크플로가 `deploy/Dockerfile`로 이미지를 만들어 GHCR에 올린다. 운영 프로필은 `CARGO_PROFILE=release`(`Cargo.toml` `[profile.release]`: fat LTO, opt-level 3, 코드젠 1)이다. 공용 이미지는 **Linux x86-64와 ARM64**를 함께 제공하며 Docker가 서버에 맞는 아키텍처를 선택한다. CPU 최적화 이미지는 별도 태그로 제공한다. Rust와 C/C++ 의존성에 같은 CPU 기준선을 적용하고 `/usr/local/share/audeniq/target-cpu`·`target-arch`에 기록한다. `deploy.sh`는 AUDENIQ 바이너리를 실행하기 전에 아키텍처와 CPU를 확인한다.
 
-- 이미지: `ghcr.io/tae-ok-11/audeniq` — `audeniq-api`, `audeniq-worker`, `audeniq-migrate`, `audeniq-admin` + `audeniq-qc`(자체 오디오 엔진, `deploy/audeniq-qc.rev` 고정 커밋), UID 10001. 런타임 이미지에 FFmpeg는 없다.
+- 이미지: `ghcr.io/tae-ok-11/audeniq` — `audeniq-api`, `audeniq-worker`, `audeniq-migrate`, `audeniq-admin` + `audeniq-music`(자체 미디어 엔진: 오디오 `qc`, 이미지·PDF `photo`, `deploy/audeniq-music.rev` 고정 커밋), UID 10001. 런타임 이미지에 FFmpeg는 없다.
 - 공용 태그: `sha-<커밋 전체 해시>`, `main`, `latest` — `linux/amd64` (`x86-64`) + `linux/arm64` (`generic`, ARMv8-A).
 - CPU 최적화 태그: 위 태그 뒤에 `-x86-64-v3`(AMD/Intel AVX2 서버, Oracle Cloud AMD E 시리즈 포함), `-graviton4`(ARM64 `neoverse-v2`, AWS Graviton4), `-ampere-a4`(ARM64 `ampere1a`, Oracle Cloud A4·AmpereOne M), `-ampere-a1`(ARM64 `neoverse-n1`, Oracle Cloud Ampere A1·AWS Graviton2 이상)을 붙인다. CircleCI 운영 배포는 컨텍스트 변수 `BACKEND_CPU_VARIANT`로 고른다. 그 밖의 ARM 서버는 공용 태그를 사용한다. Oracle Cloud 전체 설정은 [ORACLE_CLOUD.md](ORACLE_CLOUD.md).
 - 배포에는 항상 **digest**(`@sha256:…`)를 쓴다. 공용 manifest digest도 두 아키텍처를 유지한다. 실행 요약(Summary)에 태그와 선택한 배포 digest가 나온다.
@@ -35,7 +35,7 @@ Current configuration examples are not evidence of an established Tunnel, VPC Se
 - `main` 푸시는 **배포할 이미지만** 만든다: 저장소 변수 `BACKEND_CPU_VARIANT`가 비었거나 `portable`이면 공용(amd64 + arm64), 아니면 그 CPU 최적화 이미지 하나. 모든 변형이 필요하면 수동 실행에서 `all_variants`를 켠다.
 - `main` 푸시(PR 병합)마다 그 이미지를 production 서버에 배포한다. 끄려면 저장소 변수 `AUTO_DEPLOY=false`, 승인을 거치려면 Settings → Environments → production에 Required reviewers를 건다. 배포에는 production 환경 시크릿 `DEPLOY_HOST`·`DEPLOY_USER`·`DEPLOY_SSH_KEY`·`DEPLOY_KNOWN_HOSTS`가 필요하다.
 - 테스트(**Foundation**, **Backend portability**)는 `main`으로 가는 PR에서만 돈다(문서만 바뀐 PR 제외). 작업 브랜치 푸시에는 CI가 돌지 않는다. CircleCI도 `main`과 수동 실행(Trigger Pipeline)에서만 돈다.
-- x86와 ARM 네이티브 러너에서 각각 빌드하고 캐시도 아키텍처·CPU별로 분리한다. 공용 이미지의 바이너리 실행·샌드박스와 각 이미지의 audeniq-qc·UID·CPU 메타데이터(ffmpeg 미포함 확인)를 검사한 뒤 태그를 게시한다. CPU 최적화 바이너리는 QEMU의 `max` CPU로 CLI 실행을 검사한다. 이는 Graviton4의 실제 성능 측정이 아니다. SBOM과 provenance가 함께 올라가며 공개 저장소의 각 빌드 digest에는 GitHub attestation도 붙는다.
+- x86와 ARM 네이티브 러너에서 각각 빌드하고 캐시도 아키텍처·CPU별로 분리한다. 공용 이미지의 바이너리 실행·샌드박스와 각 이미지의 audeniq-music·UID·CPU 메타데이터(ffmpeg 미포함 확인)를 검사한 뒤 태그를 게시한다. CPU 최적화 바이너리는 QEMU의 `max` CPU로 CLI 실행을 검사한다. 이는 Graviton4의 실제 성능 측정이 아니다. SBOM과 provenance가 함께 올라가며 공개 저장소의 각 빌드 digest에는 GitHub attestation도 붙는다.
 
 Graviton4 빌드와 서버 자원 조정은 [GRAVITON4.md](GRAVITON4.md)를 참고한다. **Foundation**의 Compose 스모크와 **Backend portability**의 QC·지문·무손실 변환·샌드박스 회귀 테스트도 x86/ARM 네이티브 러너에서 실행한다. 테스트 워크플로는 이미지 빌드와 별도로 실행되므로 배포 전에 같은 커밋의 결과를 확인한다.
 
@@ -166,11 +166,11 @@ postgres 이미지를 17로, 볼륨을 `pg_prod:/var/lib/postgresql/data`로 되
    R2 스트리밍은 30초 읽기 대기/900초 전체 제한과 바이트 상한을 적용하고, 메모리 일괄
    읽기는 20MiB로 제한한다. 만료 검사는 해시·변환까지 끝난 뒤 트랜잭션 안에서 다시 한다.
    같은 컨테이너의 AAC는 `UPLOAD_LOSSY_NOT_ACCEPTED`로 거절. 판별·디코딩·FLAC 인코딩·무손실 검증은
-   샌드박스 안의 `audeniq-qc convert` 한 번으로 끝난다(원본 PCM SHA-256과 출력 재디코딩 해시 일치 후
+   샌드박스 안의 `audeniq-music qc convert` 한 번으로 끝난다(원본 PCM SHA-256과 출력 재디코딩 해시 일치 후
    전용 staging 디렉터리에만 게시). 변환은 API 프로세스당 한 번에 하나,
    임시 파일은 `api_tmp` 볼륨(`/var/tmp/audeniq`)에 둔다.
 5. 음원은 등록과 함께 `asset.analyze` 작업이 큐에 들어간다. worker가 원본을 **한 번만** 받아
-   받는 동안 SHA-256을 계산해 기록하고, 같은 FLAC으로 `audeniq-qc analyze --fingerprint` 한 번에 Stage 1 QC(형식·음량·클리핑·잘림)와 지문(v3)을
+   받는 동안 SHA-256을 계산해 기록하고, 같은 FLAC으로 `audeniq-music qc analyze --fingerprint` 한 번에 Stage 1 QC(형식·음량·클리핑·잘림)와 지문(v3)을
    미리 끝내 결과를 `operations.asset_qc_results`(내용 해시 기준 캐시)에 둔다. 아티스트가 신청서를
    쓰는 동안 검사가 끝나고, 접수 후 Stage 1은 캐시를 써서 원본을 다시 받지 않는다(유사곡 비교만
    접수 시점 카탈로그로 다시 한다). 검사가 끝나기 전에 접수하면 `AUDIO_NOT_VERIFIED`로 잠시 뒤 다시.
@@ -183,7 +183,7 @@ R2 설정 (Cloudflare 대시보드):
 - API 토큰 두 개, 둘 다 **이 버킷 하나로 범위 제한**:
   - api: *Object Read & Write* → `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY`
   - worker: *Object Read* → `S3_WORKER_ACCESS_KEY_ID`/`S3_WORKER_SECRET_ACCESS_KEY`
-    (audeniq-qc로 사용자 파일을 여는 쪽이라 쓰기·삭제 권한을 주지 않는다. 비우면 api 토큰을 쓴다)
+    (audeniq-music으로 사용자 파일을 여는 쪽이라 쓰기·삭제 권한을 주지 않는다. 비우면 api 토큰을 쓴다)
 - CORS: `r2-cors.json` (Studio 도메인에서 `PUT`만).
 - 수명 주기 규칙: `quarantine/` 접두사 1일 후 삭제 (격리본·완료되지 않은 업로드 정리). **필수**: 이 규칙이 없으면 격리본이 쌓인다.
 - 수명 주기 규칙: 완료되지 않은 멀티파트 업로드 2일 후 중단 (R2: *Abort incomplete multipart uploads*, S3: `AbortIncompleteMultipartUpload`). 16 MiB보다 큰 음원은 조각으로 이어 올리고(24시간 동안 이어 올리기 가능), 끝내지 않은 조각은 이 규칙이 지운다.

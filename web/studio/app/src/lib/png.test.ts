@@ -56,12 +56,12 @@ describe('서명 PNG', () => {
     expect(cleanPngDataUrl('data:image/jpeg;base64,AAAA')).toBe('data:image/jpeg;base64,AAAA');
   });
 
-  // 서버 검사기(audeniq-photo)가 있으면 실제로 통과하는지 확인
-  it.skipIf(!process.env.AUDENIQ_PHOTO_BIN)('서버 서명 검사를 통과한다', async () => {
+  // 서버 검사기(audeniq-music photo)가 있으면 실제로 통과하는지 확인
+  it.skipIf(!process.env.AUDENIQ_MUSIC_BIN)('서버 서명 검사를 통과한다', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'sig-'));
     const run = (png: Uint8Array) => {
       writeFileSync(join(dir, 'in.png'), png);
-      execFileSync(process.env.AUDENIQ_PHOTO_BIN!, ['sanitize', join(dir, 'in.png'), join(dir, 'out.png'), 'application/x-audeniq-signature']);
+      execFileSync(process.env.AUDENIQ_MUSIC_BIN!, ['photo', 'sanitize', join(dir, 'in.png'), join(dir, 'out.png'), 'application/x-audeniq-signature']);
     };
     const png = (await encodePng(420, 140, signaturePixels(420, 140)))!;
     run(png);

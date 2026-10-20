@@ -9,7 +9,7 @@
 //! The schema files are vendored at `schemas/ddex/ern-382/` (see its
 //! README for provenance and licence). Validation itself is delegated to
 //! `xmllint` (libxml2), the same "system binary the worker shells out to"
-//! pattern the QC pipeline uses for the `audeniq-qc` engine.
+//! pattern the QC pipeline uses for the `audeniq-music` engine.
 
 use crate::error::{Error, Result};
 use std::path::PathBuf;

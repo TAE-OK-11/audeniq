@@ -7,8 +7,8 @@ version: 2.1
 # CircleCI 프로젝트 설정 → Contexts에 "audeniq-production"을 만들고 다음 환경 변수를 넣는다:
 #   GHCR_USER            GitHub 아이디
 #   GHCR_TOKEN           GitHub PAT (write:packages, read:packages)
-#   AUDENIQ_GITHUB_TOKEN GitHub fine-grained PAT, audeniq-qc·audeniq-photo 저장소 Contents 읽기 전용
-#                        (비공개 엔진을 이미지 빌드에서 받는다. 빌드 비밀로만 쓰고 이미지에 남기지 않음)
+#   AUDENIQ_GITHUB_TOKEN GitHub fine-grained PAT, audeniq-media 저장소 Contents 읽기 전용
+#                        (엔진(audeniq-music)을 이미지 빌드에서 받는다. 빌드 비밀로만 쓰고 이미지에 남기지 않음)
 #   DEPLOY_HOST          서버 주소
 #   DEPLOY_USER          SSH 사용자 (docker 권한)
 #   DEPLOY_SSH_KEY       배포 전용 SSH 개인키를 base64 한 줄로 (base64 -w0 < key)
@@ -63,7 +63,7 @@ commands:
   skip-unless-backend-changed:
     steps:
       - skip-unless-changed:
-          paths: '^(Cargo\.toml|Cargo\.lock|crates/core/|config/|migrations/|deploy/(Dockerfile|build-target\.sh|check-cpu\.sh|deploy\.sh|audeniq-photo\.rev|audeniq-qc\.rev|install-audeniq-photo\.sh|install-audeniq-qc\.sh|with-github-token\.sh|clamd\.conf|freshclam\.conf|pgbouncer/|compose\.production\.yaml)|\.dockerignore$)'
+          paths: '^(Cargo\.toml|Cargo\.lock|crates/core/|config/|migrations/|deploy/(Dockerfile|build-target\.sh|check-cpu\.sh|deploy\.sh|audeniq-music\.rev|install-audeniq-music\.sh|with-github-token\.sh|clamd\.conf|freshclam\.conf|pgbouncer/|compose\.production\.yaml)|\.dockerignore$)'
   setup-bun:
     description: web/<app>/.bun-version의 Bun 설치
     parameters:
@@ -121,7 +121,7 @@ commands:
           command: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
 jobs:
-  # Rust 검사·MCP 테스트 (실제 PostgreSQL). 네이티브 엔진(audeniq-qc·audeniq-photo)이 필요한 스위트는
+  # Rust 검사·MCP 테스트 (실제 PostgreSQL). 네이티브 엔진(audeniq-music)이 필요한 스위트는
   # 이미지 안에서만 돈다 — 여기서는 엔진 없이 끝까지 도는 것만 돌린다. main에서는 이미지 빌드 전에 통과해야 한다.
   backend-test:
     docker:
@@ -225,7 +225,7 @@ jobs:
           command: |
             set -euo pipefail
             docker buildx create --name audeniq --driver docker-container --use >/dev/null
-            # 비공개 엔진 저장소(audeniq-qc·audeniq-photo)를 받을 읽기 전용 토큰: 빌드 비밀로만 넘긴다
+            # 엔진 저장소(audeniq-media)를 받을 읽기 전용 토큰: 빌드 비밀로만 넘긴다
             secret=()
             if [ -n "${AUDENIQ_GITHUB_TOKEN:-}" ]; then secret=(--secret id=github_token,env=AUDENIQ_GITHUB_TOKEN); fi
             # 아키텍처마다 같은 태그를 두고 다투지 않도록 digest로만 올린다
@@ -254,14 +254,14 @@ jobs:
             test "$(docker image inspect --format '{{.Architecture}}' "$REF")" = << parameters.arch >>
             docker run --rm --entrypoint sh -e EXPECTED_ARCH=<< parameters.arch >> -e EXPECTED_CPU=<< parameters.cpu >> "$REF" -c '
               set -e
-              for b in audeniq-api audeniq-worker audeniq-migrate audeniq-admin audeniq-secrets audeniq-qc audeniq-photo sftp xmllint clamd; do command -v "$b"; done
+              for b in audeniq-api audeniq-worker audeniq-migrate audeniq-admin audeniq-secrets audeniq-music sftp xmllint clamd; do command -v "$b"; done
               for b in exiftool tesseract zbarimg pdftoppm python3; do if command -v "$b"; then echo "$b must not ship in the runtime image"; exit 1; fi; done
               if command -v ffmpeg; then echo "ffmpeg must not ship in the runtime image"; exit 1; fi
               test "$(cat /usr/local/share/audeniq/target-arch)" = "$EXPECTED_ARCH"
               test "$(cat /usr/local/share/audeniq/target-cpu)" = "$EXPECTED_CPU"
               test "$(id -u)" = 10001
-              audeniq-qc capabilities
-              audeniq-photo --version'
+              audeniq-music qc capabilities
+              audeniq-music photo --version'
       - run:
           name: Verify binary execution and parser sandbox on native CPU
           command: |
@@ -342,7 +342,7 @@ jobs:
                   # 잘못된 명령어면 SIGILL(132); 그 밖의 종료(사용법·설정 없음)는 실행된 것
                   if [ "$rc" -ge 128 ]; then cat /tmp/out; echo "$b crashed ($rc)"; exit 1; fi
                 done
-                /usr/local/bin/audeniq-qemu -cpu max /usr/local/bin/audeniq-qc capabilities'
+                /usr/local/bin/audeniq-qemu -cpu max /usr/local/bin/audeniq-music qc capabilities'
       - persist_to_workspace:
           root: /tmp
           paths:

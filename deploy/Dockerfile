@@ -38,33 +38,26 @@ RUN AUDENIQ_BUILD_METADATA_DIR=/meta audeniq-build-target "$TARGETARCH" "$TARGET
     && dir="$triple/$profile_dir" \
     && cp "target/$dir/audeniq-api" "target/$dir/audeniq-worker" "target/$dir/audeniq-migrate" "target/$dir/audeniq-admin" "target/$dir/audeniq-secrets" /out/
 
-# The AUDENIQ media engine (probe, lossless FLAC conversion, QC decode,
-# fingerprint windows) at the commit pinned in deploy/audeniq-qc.rev. It is a
-# separate binary so uploads are parsed only in its sandboxed child process.
+# The AUDENIQ media engine at the commit pinned in deploy/audeniq-music.rev:
+# `audeniq-music qc` (probe, lossless FLAC conversion, QC decode, fingerprint
+# windows) and `audeniq-music photo` (cover metadata, QR, OCR, upload
+# sanitization; replaces ExifTool, ZBar, Tesseract and the Pillow/Poppler
+# sanitizer). It is a separate binary so uploads are parsed only in its
+# sandboxed child process.
 FROM chef AS engine
 ARG TARGETARCH
 ARG TARGET_CPU=
-COPY deploy/audeniq-qc.rev deploy/install-audeniq-qc.sh /engine/
-# audeniq-qc and audeniq-photo are private: CI passes a read-only token as the
-# BuildKit secret `github_token` (never stored in a layer; see with-github-token.sh).
+COPY deploy/audeniq-music.rev deploy/install-audeniq-music.sh /engine/
+# CI passes a read-only token as the BuildKit secret `github_token` (never
+# stored in a layer; see with-github-token.sh).
 RUN --mount=type=secret,id=github_token \
     audeniq-build-target "$TARGETARCH" "$TARGET_CPU" \
-    audeniq-with-github-token sh /engine/install-audeniq-qc.sh /engine/root
-
-# The AUDENIQ image toolkit (cover metadata, QR, OCR, upload sanitization) at
-# the commit pinned in deploy/audeniq-photo.rev; it replaces ExifTool, ZBar,
-# Tesseract and the Pillow/Poppler sanitizer and runs only in the parser sandbox.
-FROM chef AS photo
-ARG TARGETARCH
-ARG TARGET_CPU=
-COPY deploy/audeniq-photo.rev deploy/install-audeniq-photo.sh /photo/
-RUN --mount=type=secret,id=github_token \
-    audeniq-build-target "$TARGETARCH" "$TARGET_CPU" \
-    audeniq-with-github-token sh /photo/install-audeniq-photo.sh /photo/root
+    audeniq-with-github-token sh /engine/install-audeniq-music.sh /engine/root
 FROM debian:13-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
-# Audio probing, lossless FLAC conversion, Stage 1 QC and fingerprinting run
-# in audeniq-qc (built above); FFmpeg is no longer part of the runtime image.
-# Image metadata, QR, OCR and upload sanitization run in audeniq-photo. No
+# Audio probing, lossless FLAC conversion, Stage 1 QC and fingerprinting
+# (`audeniq-music qc`) and image metadata, QR, OCR and upload sanitization
+# (`audeniq-music photo`) run in audeniq-music (built above); FFmpeg is no
+# longer part of the runtime image. No
 # Python: the antivirus updater and the parser sandbox self-test are part of
 # audeniq-admin (`antivirus-update`, `upload-sandbox-check`).
 # openssh-client: SFTP partner delivery (DDEX drops) runs `sftp -b -` with a
@@ -76,8 +69,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && install -d -o 10001 -g 10001 -m 700 /var/tmp/audeniq \
     && install -d -o 10001 -g 10001 -m 755 /var/lib/clamav /run/audeniq-av
 COPY --from=build /out/ /usr/local/bin/
-COPY --from=engine /engine/root/bin/audeniq-qc /usr/local/bin/audeniq-qc
-COPY --from=photo /photo/root/bin/audeniq-photo /usr/local/bin/audeniq-photo
+COPY --from=engine /engine/root/bin/audeniq-music /usr/local/bin/audeniq-music
 COPY --from=build /meta/ /usr/local/share/audeniq/
 COPY deploy/clamd.conf deploy/freshclam.conf /usr/local/share/audeniq/
 USER 10001:10001

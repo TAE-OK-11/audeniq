@@ -25,7 +25,7 @@ AWS로 하던 일을 Oracle Cloud로도 할 수 있다. 사업자를 섞어 써�
 | Intel X9 / 그 밖 | `sha-<commit>` (공용) | | |
 
 - **A4 최적화**:
-  - API, worker와 오디오 엔진(audeniq-qc), 이미지 도구(audeniq-photo)까지 Rust와 C/C++ 의존성을 모두 같은 대상(`ampere1a`)으로 빌드한다.
+  - API, worker와 미디어 엔진(audeniq-music: 오디오 qc·이미지 photo)까지 Rust와 C/C++ 의존성을 모두 같은 대상(`ampere1a`)으로 빌드한다.
   - 그래서 업로드 변환·QC 분석의 디코딩·FFT에서 ARMv8.6 명령(BF16·I8MM·SHA3·내적 등)을 쓴다.
 - **배포 전 확인**: `check-cpu.sh`는 모든 코어가 컴파일러가 스스로 쓸 수 있는 v8.6 기능(`bf16 i8mm sha3 sha512 frint ilrcpc asimddp atomics …`)을 가졌는지 확인한다. 하나라도 없으면 DB를 건드리기 전에 거절한다. Graviton3/4는 통과하고, Altra(A1)는 거절된다.
 - **CircleCI(운영 배포)**: `audeniq-production` 컨텍스트에 `BACKEND_CPU_VARIANT=ampere-a4`를 넣는다. 그러면 main마다 A4 이미지를 따로 빌드하고, 승인하면 그 이미지를 배포한다.
