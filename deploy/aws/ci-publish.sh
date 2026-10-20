@@ -12,8 +12,17 @@ fi
 export AWS_REGION=${AWS_REGION:-${AWS_UI_REGION:-ap-northeast-2}}
 
 if ! command -v aws >/dev/null; then
+  # 버전과 SHA-256을 고정한다 (올릴 때: 같은 이름의 .sig를 AWS CLI 서명 키
+  # FB5D B77F D5C1 18B8 0511 ADA8 A631 0ACC 4672 475C로 확인한 뒤 해시를 바꾼다)
+  v=2.37.9
+  case "$(uname -m)" in
+    x86_64) sum=6b3a6a3d7bb3997928f0bdf7b866914224abf242c2e54e1dcebbe84bee64f356 ;;
+    aarch64) sum=e7d2cca3622af4765871fe9ce7eeed03acd09dca10a99ebc46e92f79d78765c0 ;;
+    *) echo "지원하지 않는 아키텍처: $(uname -m)" >&2; exit 1 ;;
+  esac
   tmp=$(mktemp -d)
-  curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "$tmp/awscli.zip"
+  curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m)-$v.zip" -o "$tmp/awscli.zip"
+  echo "$sum  $tmp/awscli.zip" | sha256sum -c --quiet
   unzip -q "$tmp/awscli.zip" -d "$tmp"
   sudo "$tmp/aws/install" >/dev/null
 fi
