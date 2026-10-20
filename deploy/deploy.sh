@@ -26,7 +26,7 @@ current_image() { sed -n 's/^AUDENIQ_IMAGE=//p' "$ENV_FILE" | tail -n 1; }
 # 시크릿 매니저(AWS/GCP/OCI)에서 tmpfs로 받은 비밀값: production.env 뒤에 읽어 같은 이름을 덮는다
 SECRETS_ENV_FILE=$(sed -n 's/^SECRETS_ENV_FILE=//p' "$ENV_FILE" | tail -n 1)
 if [ -n "$SECRETS_ENV_FILE" ]; then
-  [ -f "$SECRETS_ENV_FILE" ] && [ ! -L "$SECRETS_ENV_FILE" ] || die "시크릿을 먼저 tmpfs에 준비해 주세요 (audeniq-secrets secrets materialize): $SECRETS_ENV_FILE"
+  { [ -f "$SECRETS_ENV_FILE" ] && [ ! -L "$SECRETS_ENV_FILE" ]; } || die "시크릿을 먼저 tmpfs에 준비해 주세요 (audeniq-secrets secrets materialize): $SECRETS_ENV_FILE"
   [ "$(stat -f -c %T "$SECRETS_ENV_FILE")" = tmpfs ] || die "SECRETS_ENV_FILE은 tmpfs에 있어야 해요"
   [ "$(stat -c '%u %a' "$SECRETS_ENV_FILE")" = "$(id -u) 600" ] || die "SECRETS_ENV_FILE은 배포 사용자 소유 0600이어야 해요"
   ! grep -q '^AUDENIQ_IMAGE=' "$SECRETS_ENV_FILE" || die "SECRETS_ENV_FILE에 AUDENIQ_IMAGE를 둘 수 없어요"
