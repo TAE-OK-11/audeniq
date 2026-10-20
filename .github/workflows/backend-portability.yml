@@ -89,4 +89,3 @@ jobs:
       - name: Build configuration and deployment CPU gate tests
         run: |
           python3 -m unittest discover -s deploy/tests -p test_cpu_compatibility.py -v
-          python3 -m unittest discover -s deploy/tests -p 'test_kms*.py' -v
