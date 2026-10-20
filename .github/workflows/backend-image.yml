@@ -18,7 +18,10 @@ on:
       - deploy/check-cpu.sh
       - deploy/deploy.sh
       - deploy/audeniq-photo.rev
+      - deploy/audeniq-qc.rev
       - deploy/install-audeniq-photo.sh
+      - deploy/install-audeniq-qc.sh
+      - deploy/with-github-token.sh
       - deploy/clamd.conf
       - deploy/freshclam.conf
       - deploy/pgbouncer/**
