@@ -109,6 +109,22 @@ export const aiPermissionRequest = (id: string) =>
 export const decideAiPermission = (id: string, approve: boolean) =>
   req<{ status: string; connection_scopes: string[] }>(
     `/api/auth/ai-permission-requests/${encodeURIComponent(id)}/${approve ? 'approve' : 'reject'}`, { method: 'POST', body: {} });
+/** AI 앱이 요청한 작업 (스튜디오에서 한 번 승인해야 실행돼요) — crates/core/src/mcp/actions.rs */
+export interface AiActionRequest {
+  id: string; action: string;
+  status: 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'REJECTED' | 'EXPIRED' | 'REVOKED';
+  summary: { title: string; lines: { label: string; value: string }[]; warning: string };
+  client_name: string; org_id: string; org_name: string; release_id: string | null;
+  created_at: string; expires_at: string; decided_at: string | null;
+  error_code: string | null; connection_label: string | null; connection_revoked: boolean;
+}
+export const aiActionRequests = () =>
+  req<{ items: AiActionRequest[] }>('/api/auth/ai-action-requests').then(r => r.items);
+export const aiActionRequest = (id: string) =>
+  req<AiActionRequest>(`/api/auth/ai-action-requests/${encodeURIComponent(id)}`);
+export const decideAiAction = (id: string, approve: boolean) =>
+  req<{ status: string }>(
+    `/api/auth/ai-action-requests/${encodeURIComponent(id)}/${approve ? 'approve' : 'reject'}`, { method: 'POST', body: {} });
 export const rejectAiSubmission = (id: string) =>
   req<{ status: string }>(`/api/auth/ai-submissions/${encodeURIComponent(id)}/reject`, { method: 'POST', body: {} });
 

@@ -69,6 +69,7 @@ const NoticeDetail = lazyPage(pageLoaders.Notices, m => m.NoticeDetail);
 const NotFound = lazyPage(pageLoaders.NotFound, m => m.NotFound);
 const Profile = lazyPage(pageLoaders.Profile, m => m.Profile);
 const AiApprove = lazyPage(pageLoaders.AiApprove, m => m.AiApprove);
+const AiAction = lazyPage(pageLoaders.AiAction, m => m.AiAction);
 const AdminApp = lazyPage(pageLoaders.Admin, m => m.AdminApp);
 
 function BootScreen() {
@@ -158,6 +159,7 @@ function PortalRoutes() {
             <Route path="/support" element={<Navigate to="/inquiries" replace />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/ai/approve/:id" element={<AiApprove />} />
+            <Route path="/ai/actions/:id" element={<AiAction />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>
