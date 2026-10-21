@@ -1,5 +1,6 @@
 pub mod account;
 pub mod agreement;
+pub mod allocator;
 pub mod api;
 pub mod archive;
 pub mod artifacts;

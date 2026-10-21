@@ -215,6 +215,15 @@ pub fn message(code: &str) -> Option<&'static str> {
         "UPLOAD_CONTENT_MISMATCH" => {
             "The file's contents do not match its declared type (for example an MP3 or FLAC renamed to .wav). Upload the original WAV or FLAC master with its real type."
         }
+        "IMPORT_FETCH_FAILED" => {
+            "The file could not be downloaded from the link. Check that it is public and leads straight to the file."
+        }
+        "IMPORT_SIZE_MISMATCH" => {
+            "The download did not match the size the link reported. Try again, or send the file with start_upload."
+        }
+        "IMPORT_TIMEOUT" => {
+            "The download took too long. Use a faster link, or send the file with start_upload."
+        }
         "RELEASE_NOT_SUBMITTABLE" => "This release cannot be submitted in its current state.",
         "AUDIO_NOT_VERIFIED" => {
             "An attached audio file was never verified. Upload it again before submitting."
