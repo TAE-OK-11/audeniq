@@ -22,6 +22,7 @@
 //! Off unless `AUDENIQ_MCP_ENABLED=true`: the endpoints answer 404 until an
 //! operator turns them on. See docs/MCP.md.
 pub mod approvals;
+pub mod files;
 pub mod login;
 pub mod oauth;
 pub mod prompts;
