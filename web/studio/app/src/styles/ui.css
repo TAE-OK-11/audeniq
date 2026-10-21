@@ -1044,3 +1044,14 @@ legend{padding:0}
 .aq-copy-btn{gap:4px}
 .aq-copy-btn.is-copied{--btn-bg:var(--aq-green-50);--btn-fg:var(--aq-green-700);--btn-bg-hover:var(--aq-green-50);--btn-fg-hover:var(--aq-green-700)}
 .aq-inquiry-identity{margin:0 0 16px;line-height:1.6}
+/* AI 앱 권한 추가 요청 승인 (/ai/approve/:id) */
+.aq-ai-approve-card{max-width:640px}
+.aq-ai-approve-meta{display:grid;grid-template-columns:max-content 1fr;gap:8px 16px;margin:0 0 20px}
+.aq-ai-approve-meta dt{color:var(--aq-text-4);font-weight:600}
+.aq-ai-approve-meta dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.aq-ai-approve-reason{white-space:pre-wrap}
+.aq-ai-approve-scopes{display:grid;gap:8px;margin:8px 0 16px;padding:0;list-style:none}
+.aq-ai-approve-scopes li{display:grid;gap:2px;padding:12px 14px;border-radius:var(--aq-r-md);background:var(--aq-gray-50)}
+.aq-ai-approve-scopes li.is-strong{background:var(--aq-amber-50)}
+.aq-ai-approve-scopes span{color:var(--aq-text-3);font-size:var(--aq-fs-sm)}
+.aq-ai-approve-actions{display:flex;gap:8px;justify-content:flex-end;margin:12px 0}

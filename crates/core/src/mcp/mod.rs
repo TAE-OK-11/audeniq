@@ -21,6 +21,7 @@
 //!
 //! Off unless `AUDENIQ_MCP_ENABLED=true`: the endpoints answer 404 until an
 //! operator turns them on. See docs/MCP.md.
+pub mod approvals;
 pub mod login;
 pub mod oauth;
 pub mod prompts;
@@ -199,6 +200,16 @@ pub fn routes() -> Router<AppState> {
             get(safety::get_settings).put(safety::put_settings),
         )
         .route("/api/auth/ai-submissions", get(safety::list_pending))
+        .route("/api/auth/ai-permission-requests", get(approvals::list))
+        .route("/api/auth/ai-permission-requests/{id}", get(approvals::get))
+        .route(
+            "/api/auth/ai-permission-requests/{id}/approve",
+            post(approvals::approve),
+        )
+        .route(
+            "/api/auth/ai-permission-requests/{id}/reject",
+            post(approvals::reject),
+        )
         .route(
             "/api/auth/ai-submissions/{id}/approve",
             post(safety::approve),

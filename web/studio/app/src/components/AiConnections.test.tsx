@@ -7,14 +7,16 @@ import { ConfirmProvider } from './Confirm';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const http = vi.hoisted(() => ({ req: vi.fn(), side: vi.fn() }));
+const http = vi.hoisted(() => ({ req: vi.fn(), side: vi.fn(), asks: vi.fn() }));
 // AI 설정·승인 대기 목록은 따로 받는다 (각 테스트의 연결 목록 응답과 섞이지 않게)
 vi.mock('../api/http', () => ({
-  req: (...args: [string, unknown?]) => (/\/ai-(settings|submissions)/.test(args[0]) ? http.side(...args) : http.req(...args)),
+  req: (...args: [string, unknown?]) => (args[0].includes('/ai-permission-requests') ? http.asks(...args)
+    : /\/ai-(settings|submissions)/.test(args[0]) ? http.side(...args) : http.req(...args)),
   orgId: () => 'o1',
   orgPath: (p: string) => `/api/orgs/o1${p}`,
 }));
 vi.mock('../lib/mode', () => ({ MOCK: false }));
+vi.mock('../lib/router', () => ({ Link: ({ to, children, ...rest }: { to: string; children: unknown }) => <a href={to} {...rest}>{children as never}</a> }));
 
 import { AiConnections } from './AiConnections';
 
@@ -33,8 +35,9 @@ let root: Root; let el: HTMLDivElement;
 beforeEach(() => {
   el = document.createElement('div'); document.body.appendChild(el); root = createRoot(el);
   http.side.mockImplementation((url: string) => Promise.resolve(url.includes('/ai-settings') ? { studio_approval: false } : { items: [] }));
+  http.asks.mockResolvedValue({ items: [] });
 });
-afterEach(() => { act(() => root.unmount()); el.remove(); http.req.mockReset(); http.side.mockReset(); document.body.innerHTML = ''; });
+afterEach(() => { act(() => root.unmount()); el.remove(); http.req.mockReset(); http.side.mockReset(); http.asks.mockReset(); document.body.innerHTML = ''; });
 
 async function render() {
   await act(async () => {
@@ -159,6 +162,18 @@ describe('AiConnections', () => {
     expect(toggle.checked).toBe(false);
     await act(async () => { toggle.click(); });
     expect(http.side).toHaveBeenCalledWith('/api/auth/ai-settings', { method: 'PUT', body: { studio_approval: true } });
+  });
+
+  it('lists permission requests with a link to the approval page', async () => {
+    http.req.mockResolvedValue({ items: [] });
+    http.asks.mockResolvedValue({ items: [{ id: 'q1', status: 'PENDING', scopes: ['settlement:read'], reason: '정산 확인', client_name: 'Manus',
+        org_id: 'o1', org_name: 'Personal workspace', created_at: '2026-10-21T00:00:00Z', expires_at: '2026-10-21T01:00:00Z', decided_at: null,
+        connection_scopes: ['releases:read'], connection_label: null, connection_revoked: false }] });
+    await render();
+    expect(el.textContent).toContain('권한 추가 요청');
+    expect(el.textContent).toContain('Manus');
+    expect(el.textContent).toContain('정산 보기');
+    expect(el.querySelector('a[href="/ai/approve/q1"]')).not.toBeNull();
   });
 
   it('keeps a just-made token on screen when the list refresh fails', async () => {
