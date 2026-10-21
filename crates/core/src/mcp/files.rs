@@ -19,7 +19,7 @@ use super::{
 };
 use crate::{
     api::AppState,
-    auth::{self, Actor},
+    auth,
     error::{Error, Result},
     uploads::{self, CompleteInput, UploadInput},
 };
@@ -47,7 +47,10 @@ fn kind_arg(args: &Value) -> std::result::Result<&'static str, ToolError> {
     match args.get("kind").and_then(Value::as_str) {
         Some("AUDIO") => Ok("AUDIO"),
         Some("IMAGE") => Ok("IMAGE"),
-        _ => Err(tool_error("INVALID_ARGUMENTS", "kind must be AUDIO or IMAGE.")),
+        _ => Err(tool_error(
+            "INVALID_ARGUMENTS",
+            "kind must be AUDIO or IMAGE.",
+        )),
     }
 }
 
@@ -343,7 +346,9 @@ async fn fetch(mut url: url::Url) -> std::result::Result<reqwest::Response, Tool
     let failed = |what: &str| {
         tool_error(
             "IMPORT_FETCH_FAILED",
-            &format!("Could not download the file ({what}). Check that the link is public and points straight at the file."),
+            &format!(
+                "Could not download the file ({what}). Check that the link is public and points straight at the file."
+            ),
         )
     };
     for _ in 0..=IMPORT_MAX_HOPS {
@@ -378,7 +383,13 @@ fn content_type(kind: &str, args: &Value, res: &reqwest::Response) -> Option<Str
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
-        .map(|v| v.split(';').next().unwrap_or("").trim().to_ascii_lowercase());
+        .map(|v| {
+            v.split(';')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_ascii_lowercase()
+        });
     let ext = res
         .url()
         .path()
