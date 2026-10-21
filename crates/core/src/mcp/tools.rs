@@ -1179,7 +1179,10 @@ pub async fn call(s: &AppState, p: &Principal, def: &ToolDef, args: Value) -> Va
         }
     }
     match outcome {
-        Ok(v) => {
+        Ok(mut v) => {
+            if let Some(m) = super::voice::message_ko(&v) {
+                v["message_ko"] = json!(m);
+            }
             let text = summary(def.name, &v);
             ok_result(text, v)
         }

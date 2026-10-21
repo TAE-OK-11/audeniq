@@ -2410,7 +2410,7 @@ async fn device_authorization_links_with_a_code(pool: PgPool) {
     )
     .await;
     assert_eq!(s, StatusCode::OK);
-    assert!(body.contains("연결을 거부했어요"));
+    assert!(body.contains("연결을 거절했어요"));
     let (_, v) = device_poll(&app, &client_id, d["device_code"].as_str().unwrap()).await;
     assert_eq!(v["error"], "access_denied");
 

@@ -5,10 +5,11 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from '../lib/router';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
-import { errorMessage } from '../api/errors';
+import { ApiError, errorMessage } from '../api/errors';
 import { aiPermissionRequest, decideAiPermission, SCOPE_HELP, SCOPE_LABEL, type AiPermissionRequest } from '../api/aiConnections';
 import { MOCK } from '../lib/mode';
 import { PageHeader } from '../ui';
+import { AiRequestMissing } from '../components/AiRequestMissing';
 
 const workspaceName = (name: string) => (name === 'Personal workspace' ? '내 작업 공간' : name);
 /** 돈이 움직이거나 내 이름으로 접수되는 권한 — 한 번 더 확인한다 */
@@ -35,11 +36,12 @@ export function AiApprove() {
   const confirm = useConfirm();
   const [r, setR] = useState<AiPermissionRequest | null>(null);
   const [error, setError] = useState('');
+  const [missing, setMissing] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (MOCK) { setR(demo(id)); return; }
-    aiPermissionRequest(id).then(setR, err => setError(errorMessage(err, '요청을 찾지 못했어요. 링크가 맞는지, 요청한 계정으로 로그인했는지 확인해 주세요.')));
+    aiPermissionRequest(id).then(setR, err => (err instanceof ApiError && err.status === 404 ? setMissing(true) : setError(errorMessage(err, '요청을 불러오지 못했어요. 잠시 후 다시 열어 주세요.'))));
   }, [id]);
 
   async function decide(approve: boolean) {
@@ -71,7 +73,8 @@ export function AiApprove() {
     <div className="view-enter aq-ai-approve">
       <PageHeader eyebrow="AI 앱 연결" title="권한 추가 요청" sub="AI 앱이 이 연결에 권한을 더 달라고 요청했어요. 내가 요청한 게 아니라면 거절하고 연결을 끊어 주세요." />
       {error && <div className="ui-callout is-danger" role="alert">{error}</div>}
-      {!r && !error && <p role="status">불러오는 중이에요.</p>}
+      {missing && <AiRequestMissing hours="60분" />}
+      {!r && !error && !missing && <p role="status">불러오는 중이에요.</p>}
       {r && (
         <section className="ui-card aq-ai-approve-card">
           <dl className="aq-ai-approve-meta">
