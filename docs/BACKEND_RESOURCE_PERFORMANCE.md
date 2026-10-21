@@ -87,6 +87,32 @@ jemalloc은 메모리를 30~50% 덜 쓰고 DB가 섞인 요청은 더 빠르다.
 로그인은 IP·계정당 횟수 제한이 있어 이 처리량에 닿지 않는다. ARM 이미지는 64 KiB 페이지로 빌드한다
 (`deploy/build-target.sh`, 4/16/64 KiB 커널 모두에서 실행).
 
+### jemalloc 설정 (2026-10-21)
+
+로그인이 느린 원인은 Argon2의 19 MiB `alloc_zeroed`였다. jemalloc은 0으로 채운 큰 블록을
+`MALLOCX_ZERO`로 받으며 페이지를 비워(purge) 다시 받고, 8 MiB 이상은 `oversize_threshold`로
+전용 아레나에 가 해제 즉시 OS로 돌아간다. 로그인 한 번에 페이지 폴트가 약 4,880번 났다.
+
+- `crate::allocator::Allocator`: 1 MiB 이상의 `alloc_zeroed`를 `alloc` + 0 채우기로 바꾼다.
+- `_rjem_malloc_conf`(api, worker 바이너리): `oversize_threshold:0,background_thread:true`.
+  큰 블록도 일반 아레나의 decay를 따르고, purge는 jemalloc 백그라운드 스레드가 한다.
+
+로그인당 페이지 폴트는 4,881 → 13~17번. 같은 부하, 같은 바이너리에 설정만 바꿔 3회
+(MCP는 `/api/mcp/public`, 중앙값):
+
+| | 수정 전 | Allocator + oversize 0 | **+ background_thread** | + percpu_arena |
+|---|---|---|---|---|
+| 30초 유휴 RSS | 31 MB | 31 MB | **31 MB** | 31 MB |
+| 최대 RSS | 122 MB | 138 MB | **126 MB** | 131 MB |
+| MCP tools/list req/s | 9,891 | 9,765 | **9,958** | 10,027 |
+| MCP 도구 호출 req/s | 2,662 | 2,555 | **2,552** | 2,660 |
+| 공지 조회 req/s | 3,289 | 3,405 | **3,384** | 3,283 |
+| 로그인/s (p99) | 60 (173 ms) | 77 (139 ms) | **85 (129 ms)** | 85 (121 ms) |
+
+로그인은 41% 빨라졌고 나머지는 측정 오차 안이다. `percpu_arena`는 이득이 오차 안이라 넣지 않았다.
+decay를 늘리면(3초, 30초) 유휴 RSS가 47~79 MB로 늘었고, `narenas:2`는 느려졌고,
+tcache 크기 조정은 차이가 없었다. 시작 직후 RSS는 25 → 44 MB로 늘지만 부하 뒤 유휴 RSS는 같다.
+
 ## 검증과 재현
 
 - 실제 domain, packages, auth, password_work, worker poll 소스와 기존
