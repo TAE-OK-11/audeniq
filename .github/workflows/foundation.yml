@@ -263,10 +263,12 @@ jobs:
         env:
           AUDENIQ_GITHUB_TOKEN: ${{ secrets.AUDENIQ_GITHUB_TOKEN }}
         run: |
-          token=$(mktemp)
+          # Inside the project (compose reads no file outside it without --allow),
+          # under .git/ so it is never part of the build context (.dockerignore).
+          token=.git/audeniq-github-token
           trap 'rm -f "$token"' EXIT
-          printf '%s' "$AUDENIQ_GITHUB_TOKEN" > "$token"
-          AUDENIQ_GITHUB_TOKEN_FILE=$token docker compose up --build -d postgres migrate grants pgbouncer api worker
+          (umask 077 && printf '%s' "$AUDENIQ_GITHUB_TOKEN" > "$token")
+          AUDENIQ_GITHUB_TOKEN_FILE=./$token docker compose up --build -d postgres migrate grants pgbouncer api worker
       - name: Check API readiness
         run: curl --fail --retry 15 --retry-all-errors --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
       - name: Production boots without cloud KMS or an antivirus engine
