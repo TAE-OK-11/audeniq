@@ -4691,6 +4691,40 @@ async fn drafts_lose_tracks_and_signing_requests_can_be_cancelled(pool: PgPool) 
 }
 
 #[sqlx::test]
+async fn several_rate_buckets_are_counted_in_one_call(pool: PgPool) {
+    database::MIGRATOR.run(&pool).await.unwrap();
+    let key = Uuid::new_v4();
+    let (tight, loose) = (format!("t:{key}"), format!("l:{key}"));
+    let buckets = [(tight.as_str(), 2), (loose.as_str(), 5)];
+    for _ in 0..2 {
+        audeniq_core::auth::rate_all(&pool, &buckets).await.unwrap();
+    }
+    assert!(audeniq_core::auth::rate_all(&pool, &buckets).await.is_err());
+    // Each bucket keeps its own count.
+    assert!(
+        audeniq_core::auth::over_limit(&pool, &loose, 3)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !audeniq_core::auth::over_limit(&pool, &loose, 4)
+            .await
+            .unwrap()
+    );
+    // Three counted so far: the 4th and 5th pass, the 6th is over.
+    for _ in 0..2 {
+        audeniq_core::auth::rate_all(&pool, &[(loose.as_str(), 5)])
+            .await
+            .unwrap();
+    }
+    assert!(
+        audeniq_core::auth::rate_all(&pool, &[(loose.as_str(), 5)])
+            .await
+            .is_err()
+    );
+}
+
+#[sqlx::test]
 async fn risky_actions_wait_for_one_studio_approval(pool: PgPool) {
     let (app, _) = app(pool.clone()).await;
     let u = user(&app).await;
