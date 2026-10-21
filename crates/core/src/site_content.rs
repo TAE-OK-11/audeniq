@@ -569,7 +569,7 @@ fn mcp_allowed_during_maintenance(msg: &Value) -> bool {
         Some("tools/call") => matches!(
             msg["params"]["name"].as_str(),
             Some(
-                "get_announcements"
+                "get_audeniq_info"
                     | "get_service_status"
                     | "list_announcements"
                     | "get_announcement"

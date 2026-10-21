@@ -41,7 +41,7 @@ const STALE_MINUTES: i32 = 30;
 /// Imports running at once on this server (disk and bandwidth).
 static IMPORTS: Semaphore = Semaphore::const_new(4);
 
-const NEXT_STEP: &str = "Attach it: audio with upsert_track (asset_id), cover art with update_release_draft (artwork_asset_id).";
+const NEXT_STEP: &str = "Attach it: audio with upsert_track (asset_id), cover art with save_release_draft (action update, artwork_asset_id).";
 
 fn kind_arg(args: &Value) -> std::result::Result<&'static str, ToolError> {
     match args.get("kind").and_then(Value::as_str) {

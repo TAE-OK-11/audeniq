@@ -123,7 +123,7 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "list_announcements",
                 title: "AUDENIQ notices and events",
-                description: "AUDENIQ's published notices (service news, policy changes, holiday schedules) or events, newest first, with a short excerpt and a link. Works without connecting an account (a few calls a day); call get_announcements (view detail) for the full text.",
+                description: "AUDENIQ's published notices (service news, policy changes, holiday schedules) or events, newest first, with a short excerpt and a link. Works without connecting an account (a few calls a day); call get_audeniq_info (view detail) for the full text.",
                 scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"properties":{
                     "kind": {"type":"string","enum":["notices","events"],"default":"notices"},
@@ -132,7 +132,7 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "get_announcement",
                 title: "AUDENIQ notice or event",
-                description: "The full text of one published AUDENIQ notice or event (id from get_announcements). Works without connecting an account.",
+                description: "The full text of one published AUDENIQ notice or event (id from get_audeniq_info). Works without connecting an account.",
                 scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["kind","id"],"properties":{
                     "kind": {"type":"string","enum":["notices","events"]},
@@ -164,7 +164,7 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "create_release_draft",
                 title: "Create release draft",
-                description: "Create a new release draft in AUDENIQ. Only title, release_type and artist_name are required; add the rest now or later with update_release_draft. Creates a new draft on every call: check list_releases first to avoid duplicates.",
+                description: "Create a new release draft in AUDENIQ. Only title, release_type and artist_name are required; add the rest now or later with save_release_draft (action update). Creates a new draft on every call: check list_releases first to avoid duplicates.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: false, widget: true,
                 schema: || {
                     let mut s = draft_fields_schema();
@@ -466,7 +466,7 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "start_upload",
                 title: "Start a file upload",
-                description: "Get a signed URL to upload one audio master or cover image directly (for agents that can send HTTP requests with a file body). PUT the bytes to the returned url with exactly its headers within 10 minutes, then call upload_file with action complete. Audio: WAV, FLAC, AIFF, ALAC (.m4a), WavPack or TTA up to 512 MiB; cover: square JPG or PNG up to 20 MiB (see get_release_requirements). When you only have a link to the file, use action import instead.",
+                description: "Get a signed URL to upload one audio master or cover image directly (for agents that can send HTTP requests with a file body). PUT the bytes to the returned url with exactly its headers within 10 minutes, then call upload_file with action complete. Audio: WAV, FLAC, AIFF, ALAC (.m4a), WavPack or TTA up to 512 MiB; cover: square JPG or PNG up to 20 MiB (see get_audeniq_info with view requirements). When you only have a link to the file, use action import instead.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: false, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["kind","size_bytes","content_type"],"properties":{
                     "kind": {"type":"string","enum":["AUDIO","IMAGE","DOCUMENT"],"description":"AUDIO for a track master, IMAGE for cover art, DOCUMENT for a rights proof (PDF, JPG or PNG; attach with attach_rights_proof)"},
@@ -504,7 +504,7 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "mark_notifications_read",
                 title: "Mark notifications read",
-                description: "Mark notifications as read: the given notification_ids (from list_notifications) or all of them.",
+                description: "Mark notifications as read: the given notification_ids (from get_account_context with view notifications) or all of them.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"properties":{
                     "notification_ids": {"type":"array","maxItems":100,"uniqueItems":true,"items": uuid_schema("Notification")},
@@ -516,15 +516,15 @@ fn defs() -> &'static [ToolDef] {
                 description: "Close a support inquiry the artist says is resolved. Only when the artist asks to close it.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["inquiry_id"],"properties":{
-                    "inquiry_id": uuid_schema("The inquiry (from get_inquiries)")}}),
+                    "inquiry_id": uuid_schema("The inquiry (from get_account_context with view inquiries)")}}),
             },
             ToolDef {
                 name: "attach_rights_proof",
                 title: "Attach a rights proof",
-                description: "Attach a rights proof file (licence, consent letter; a DOCUMENT or IMAGE asset from upload_file) to a rights document waiting for one (document_id from list_documents), or add a new proof to a release (release_id and title instead of document_id). AUDENIQ then reviews it. Use only files the artist provided.",
+                description: "Attach a rights proof file (licence, consent letter; a DOCUMENT or IMAGE asset from upload_file) to a rights document waiting for one (document_id from get_account_context with view documents), or add a new proof to a release (release_id and title instead of document_id). AUDENIQ then reviews it. Use only files the artist provided.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: false, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["asset_id","file_name"],"properties":{
-                    "document_id": uuid_schema("The rights document waiting for a file (from list_documents)"),
+                    "document_id": uuid_schema("The rights document waiting for a file (from get_account_context with view documents)"),
                     "release_id": uuid_schema("New proof: the release it belongs to"),
                     "title": {"type":"string","minLength":1,"maxLength":200,"description":"New proof: what it is, e.g. 'Sample licence from X'"},
                     "asset_id": uuid_schema("The uploaded proof file"),
@@ -559,7 +559,7 @@ fn defs() -> &'static [ToolDef] {
                 scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","links"],"properties":{
                     "release_id": uuid_schema("The release"),
-                    "links": {"type":"object","minProperties":1,"maxProperties":20,"additionalProperties":{"type":"string","maxLength":500,"pattern":"^https://"},"description":"Platform key to link, as in save_smart_link"}}}),
+                    "links": {"type":"object","minProperties":1,"maxProperties":20,"additionalProperties":{"type":"string","maxLength":500,"pattern":"^https://"},"description":"Platform key to link, as in promote_release (action smart_link)"}}}),
             },
             ToolDef {
                 name: "list_signing_requests",
@@ -586,11 +586,11 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "resend_split_invite",
                 title: "Resend a split invite",
-                description: "E-mail a collaborator's revenue split invite again (share_id from get_settlement (view splits)). Limited to a few resends.",
+                description: "E-mail a collaborator's revenue split invite again (share_id from get_settlement with view splits). Limited to a few resends.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: false, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","share_id"],"properties":{
                     "release_id": uuid_schema("The release"),
-                    "share_id": uuid_schema("The collaborator's share (from get_settlement (view splits))")}}),
+                    "share_id": uuid_schema("The collaborator's share (from get_settlement with view splits)")}}),
             },
             ToolDef {
                 name: "export_csv",
@@ -648,7 +648,7 @@ fn defs() -> &'static [ToolDef] {
                     "tracks": {"type":"array","minItems":1,"maxItems":99,"items":{"type":"object","additionalProperties":false,"required":["track_id","shares"],"properties":{
                         "track_id": uuid_schema("The track"),
                         "shares": {"type":"array","maxItems":20,"items":{"type":"object","additionalProperties":false,"required":["name","share_bps"],"properties":{
-                            "id": uuid_schema("An existing collaborator (from get_settlement (view splits))"),
+                            "id": uuid_schema("An existing collaborator (from get_settlement with view splits)"),
                             "name": {"type":"string","minLength":1,"maxLength":120},
                             "email": {"type":"string","maxLength":320,"description":"Needed for a new collaborator"},
                             "share_bps": {"type":"integer","minimum":1,"maximum":10000}}}}}}}}}),
@@ -766,10 +766,10 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "set_artist_pages",
                 title: "Register artist platform pages",
-                description: "Register or correct an artist's own page links (artist_id from list_artist_pages). Use only links the artist gave you; show them first. Each link must be that platform's artist page.",
+                description: "Register or correct an artist's own page links (artist_id from get_account_context with view artist_pages). Use only links the artist gave you; show them first. Each link must be that platform's artist page.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["artist_id","links"],"properties":{
-                    "artist_id": uuid_schema("The artist (from list_artist_pages)"),
+                    "artist_id": uuid_schema("The artist (from get_account_context with view artist_pages)"),
                     "links": {"type":"object","minProperties":1,"additionalProperties":false,"properties":
                         PLATFORM_LINK_PROPS.iter().map(|p| (p.to_string(), json!({"type":"string","maxLength":500,"pattern":"^https://"}))).collect::<serde_json::Map<String, Value>>()}}}),
             },
@@ -875,7 +875,7 @@ fn draft_fields_schema() -> Value {
         "territories": {"type":"array","minItems":1,"maxItems":260,"uniqueItems":true,"items":{"type":"string","pattern":"^(WORLD|-?[A-Z]{2})$"},
             "description":"['WORLD'] for worldwide, ['WORLD','-JP'] to exclude countries, or ISO country codes ['KR','US'] for only those"},
         "platforms": {"type":"array","minItems":1,"maxItems":40,"uniqueItems":true,"items":{"type":"string","minLength":1,"maxLength":64},
-            "description":"Platform slugs from list_distribution_platforms (available ones only)"},
+            "description":"Platform slugs from get_account_context with view platforms (available ones only)"},
         "p_line": {"type":"string","maxLength":200,"description":"Sound recording copyright: year and owner, e.g. '2026 Artist Name'"},
         "c_line": {"type":"string","maxLength":200,"description":"Composition/artwork copyright: year and owner"},
         "notes": {"type":"string","maxLength":2000,"description":"Album introduction"},
@@ -909,25 +909,34 @@ struct Group {
 const GROUPS: &[Group] = &[
     Group {
         name: "get_account_context",
-        title: "AUDENIQ account",
-        intro: "The connected workspace and its members. Call first (view account).",
+        title: "AUDENIQ workspace",
+        intro: "The connected workspace and what is in it, one view at a time. Call first (view account).",
         key: "view",
         has_default: true,
         ops: &[
             ("account", "get_account_context"),
             ("members", "list_members"),
+            ("platforms", "list_distribution_platforms"),
+            ("notifications", "list_notifications"),
+            ("documents", "list_documents"),
+            ("signing_requests", "list_signing_requests"),
+            ("inquiries", "list_inquiries"),
+            ("inquiry", "get_inquiry"),
+            ("artist_pages", "list_artist_pages"),
+            ("platform_requests", "list_platform_requests"),
         ],
     },
     Group {
-        name: "get_announcements",
-        title: "AUDENIQ notices, events and service status",
-        intro: "AUDENIQ's published notices and events, and whether the service is under maintenance. Works without connecting an account (a few calls a day).",
+        name: "get_audeniq_info",
+        title: "AUDENIQ information",
+        intro: "AUDENIQ's own public information: notices and events, the service status and what a distribution application needs. Works without connecting an account (a few calls a day).",
         key: "view",
         has_default: true,
         ops: &[
             ("list", "list_announcements"),
             ("detail", "get_announcement"),
             ("service_status", "get_service_status"),
+            ("requirements", "get_release_requirements"),
         ],
     },
     Group {
@@ -955,6 +964,7 @@ const GROUPS: &[Group] = &[
             ("corrections", "get_release_corrections"),
             ("playlist_pitch", "get_playlist_pitch"),
             ("smart_link", "get_smart_link"),
+            ("smart_link_check", "check_smart_link"),
             ("claims", "list_infringement_claims"),
             ("missing_files", "get_upload_link"),
         ],
@@ -971,17 +981,6 @@ const GROUPS: &[Group] = &[
         ],
     },
     Group {
-        name: "list_documents",
-        title: "Agreements, rights documents and signing requests",
-        intro: "The workspace's agreements and rights documents, or the electronic signing requests sent for its releases.",
-        key: "view",
-        has_default: true,
-        ops: &[
-            ("documents", "list_documents"),
-            ("signing_requests", "list_signing_requests"),
-        ],
-    },
-    Group {
         name: "get_file_status",
         title: "File status",
         intro: "How an upload or import is going, or the detailed check results of a registered file.",
@@ -993,17 +992,9 @@ const GROUPS: &[Group] = &[
         ],
     },
     Group {
-        name: "get_inquiries",
-        title: "Support inquiries",
-        intro: "The workspace's inquiries to AUDENIQ support, or one conversation.",
-        key: "view",
-        has_default: true,
-        ops: &[("list", "list_inquiries"), ("detail", "get_inquiry")],
-    },
-    Group {
         name: "get_approval_status",
         title: "Approval request status",
-        intro: "The state of something the artist was asked to approve in AUDENIQ Studio: an action from request_approval or request_large_payout (kind action), or more permissions from request_permission (kind permission).",
+        intro: "The state of something the artist was asked to approve in AUDENIQ Studio: an action from request_approval or request_payout with action large (kind action), or more permissions from request_permission (kind permission).",
         key: "kind",
         has_default: true,
         ops: &[
@@ -1028,6 +1019,18 @@ const GROUPS: &[Group] = &[
         ],
     },
     Group {
+        name: "save_release_draft",
+        title: "Create or edit a release draft",
+        intro: "A release draft: create one, change its fields, or set its special-content details.",
+        key: "action",
+        has_default: false,
+        ops: &[
+            ("create", "create_release_draft"),
+            ("update", "update_release_draft"),
+            ("special_options", "set_special_options"),
+        ],
+    },
+    Group {
         name: "upsert_track",
         title: "Add or edit a track",
         intro: "A draft's tracks: add or edit one (action save), or replace its credits (action credits).",
@@ -1045,6 +1048,28 @@ const GROUPS: &[Group] = &[
             ("start", "start_upload"),
             ("complete", "complete_upload"),
             ("import", "import_file_from_url"),
+        ],
+    },
+    Group {
+        name: "promote_release",
+        title: "Promote a release",
+        intro: "Promotion of a submitted release: a playlist pitch to platform editors, or the public smart link.",
+        key: "action",
+        has_default: false,
+        ops: &[
+            ("pitch", "submit_playlist_pitch"),
+            ("smart_link", "save_smart_link"),
+        ],
+    },
+    Group {
+        name: "manage_artist_pages",
+        title: "Artist pages at platforms",
+        intro: "The artist's own pages at platforms: register their links, or ask AUDENIQ to fix something at a platform. Use only links the artist gave you and file only what they agreed to.",
+        key: "action",
+        has_default: false,
+        ops: &[
+            ("links", "set_artist_pages"),
+            ("platform_request", "create_platform_request"),
         ],
     },
     Group {
@@ -1088,6 +1113,18 @@ const GROUPS: &[Group] = &[
             ("release_end", "cancel_release_end"),
             ("contract_end", "cancel_contract_end"),
             ("platform_request", "cancel_platform_request"),
+        ],
+    },
+    Group {
+        name: "request_payout",
+        title: "Request or cancel a payout",
+        intro: "Payouts to the payout account registered in AUDENIQ Studio. Never suggest or request a payout on your own initiative.",
+        key: "action",
+        has_default: true,
+        ops: &[
+            ("small", "request_payout"),
+            ("large", "request_large_payout"),
+            ("cancel", "cancel_payout"),
         ],
     },
 ];
@@ -1391,10 +1428,10 @@ pub(super) fn tool_error(code: &str, message: &str) -> ToolError {
 fn mcp_message(code: &str) -> Option<&'static str> {
     Some(match code {
         "DSP_SELECTION_REQUIRED" => {
-            "Choose at least one platform (platforms) from list_distribution_platforms."
+            "Choose at least one platform (platforms) from get_account_context (view platforms)."
         }
         "DSP_SELECTION_INVALID" => {
-            "A selected platform is unknown. Use slugs from list_distribution_platforms."
+            "A selected platform is unknown. Use slugs from get_account_context (view platforms)."
         }
         "DSP_UNAVAILABLE" => "A selected platform is not available for this workspace right now.",
         "DECLARATION_REQUIRED" => {
@@ -1450,7 +1487,7 @@ fn mcp_message(code: &str) -> Option<&'static str> {
             "This payout was already sent to the bank and can no longer be cancelled."
         }
         "COVER_DETAILS_REQUIRED" | "AI_DETAILS_REQUIRED" | "EXPRESS_ACK_REQUIRED" => {
-            "This release's special options need details: set them with set_special_options (or in AUDENIQ Studio)."
+            "This release's special options need details: set them with save_release_draft with action special_options (or in AUDENIQ Studio)."
         }
         _ => return None,
     })
@@ -1513,7 +1550,7 @@ pub async fn call(s: &AppState, p: &Principal, def: &ToolDef, args: Value) -> Va
             Ok(super::safety::Reserved::Done(id)) => Box::pin(replay(s, p, def, id)).await,
             Ok(super::safety::Reserved::Running) => Err(tool_error(
                 "REQUEST_IN_PROGRESS",
-                "The first request with this client_request_id is still running. Wait a moment and check the result (list_releases, get_inquiries, list_platform_requests) instead of sending it again.",
+                "The first request with this client_request_id is still running. Wait a moment and check the result (list_releases, get_account_context (view inquiries), get_account_context with view platform_requests) instead of sending it again.",
             )),
             Err(e) => Err(e.into()),
         },
@@ -1984,7 +2021,7 @@ async fn upload_link(
         "tracks_without_audio": missing_audio,
         "artwork_missing": artwork_missing,
         "complete": missing_audio.is_empty() && !artwork_missing,
-        "note": "Open while signed in to AUDENIQ Studio. Audio: WAV or FLAC; cover: square JPG/PNG (see get_release_requirements).",
+        "note": "Open while signed in to AUDENIQ Studio. Audio: WAV or FLAC; cover: square JPG/PNG (see get_audeniq_info with view requirements).",
     }))
 }
 
@@ -2106,7 +2143,7 @@ pub(super) fn requirements() -> Value {
             "audio_note": "Lossless masters only (WAV, FLAC, ALAC, AIFF, WavPack, TTA); stored as FLAC. MP3/AAC are refused.",
             "artwork_types": images,
             "artwork_max_bytes": crate::uploads::MAX_IMAGE_BYTES,
-            "artwork_note": "Square; see artwork_min_px per platform in list_distribution_platforms.",
+            "artwork_note": "Square; see artwork_min_px per platform in get_account_context (view platforms).",
         },
         "declarations_at_submission": ["rights_confirmed (required true)", "adult_confirmed (required true)", "is_cover", "is_remix", "contains_samples", "ai_involved", "explicit_content"],
         "after_submission": "AUDENIQ runs automatic checks (metadata, audio QC, rights) and staff review. The artist signs the release application and distribution agreement in AUDENIQ Studio; delivery to platforms starts only after the agreement is signed and approved.",
@@ -2628,7 +2665,7 @@ async fn upsert_track(
         .ok_or_else(|| {
             tool_error(
                 "ARTIST_REQUIRED",
-                "Set the release's artist_name first (update_release_draft).",
+                "Set the release's artist_name first (save_release_draft with action update).",
             )
         })?;
     let artist_id = ensure_artist(s, a, org, artist).await?;
@@ -2837,7 +2874,7 @@ fn check_hint(code: &str) -> Option<&'static str> {
         "CLINE_MISSING" => "Set c_line (year and composition/artwork owner).",
         "FIELD_LANGUAGE_INVALID" => "language must be an ISO 639 code such as ko or en.",
         "TRACK_WRITER_CREDIT_MISSING" | "CREDIT_MISSING" => {
-            "Add at least one composer or lyricist (upsert_track (action credits))."
+            "Add at least one composer or lyricist (upsert_track with action credits)."
         }
         "FIELD_RELEASE_TYPE_MISMATCH" => {
             "The track count does not fit the release type (SINGLE 1, EP 2-6, ALBUM 7+)."
@@ -3713,7 +3750,7 @@ async fn request_payout(
         "view": "payout",
         "payout_id": v["id"], "amount": v["amount"], "fee": v["fee"], "net": v["net"], "status": v["status"],
         "account": account_brief(&account),
-        "next": "AUDENIQ staff check the request, then send the net amount to the registered account. It can be cancelled until it is sent to the bank (cancel_payout).",
+        "next": "AUDENIQ staff check the request, then send the net amount to the registered account. It can be cancelled until it is sent to the bank (request_payout with action cancel).",
     }))
 }
 
@@ -3798,7 +3835,7 @@ mod tests {
         }
         let names: std::collections::BTreeSet<_> = published().iter().map(|p| p.name).collect();
         assert_eq!(names.len(), published().len(), "published names are unique");
-        assert_eq!(published().len(), 39);
+        assert_eq!(published().len(), 25);
         assert_eq!(
             published().len() + grouped.len() - GROUPS.len(),
             defs().len(),
@@ -3865,14 +3902,8 @@ mod tests {
             resolve("no_such_tool", json!({})),
             Resolved::Unknown
         ));
-        let public: Vec<_> = list_json(true).iter().map(|t| t["name"].clone()).collect();
-        assert_eq!(
-            public,
-            json!(["get_release_requirements", "get_announcements"])
-                .as_array()
-                .unwrap()
-                .clone()
-        );
+        let public: Vec<Value> = list_json(true).iter().map(|t| t["name"].clone()).collect();
+        assert_eq!(public, vec![json!("get_audeniq_info")]);
     }
     #[test]
     fn schemas_reject_unknown_fields_and_bad_values() {

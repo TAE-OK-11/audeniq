@@ -399,13 +399,13 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
         .iter()
         .map(|t| t["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, ["get_release_requirements", "get_announcements"]);
-    // One public tool covers notices, events and the service status.
+    assert_eq!(names, ["get_audeniq_info"]);
+    // One public tool covers notices, events, the service status and requirements.
     let (s, _, v) = rpc(
         &app,
         None,
         "tools/call",
-        json!({"name":"get_announcements","arguments":{"view":"service_status"}}),
+        json!({"name":"get_audeniq_info","arguments":{"view":"service_status"}}),
     )
     .await;
     assert_eq!(s, StatusCode::OK);
@@ -436,9 +436,9 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
     let (s, _, v) = rpc(&app, Some(&c.access), "tools/list", json!({})).await;
     assert_eq!(s, StatusCode::OK);
     let tools = v["result"]["tools"].as_array().unwrap();
-    // Operations of the same kind are published as one tool (78 → 39).
-    assert_eq!(tools.len(), 39);
-    let public = ["get_release_requirements", "get_announcements"];
+    // Operations of the same kind are published as one tool (78 → 25).
+    assert_eq!(tools.len(), 25);
+    let public = ["get_audeniq_info"];
     let (err, v) = tool(
         &app,
         &c.access,
@@ -3280,10 +3280,10 @@ async fn activity_notices_retry_safe_creates_and_studio_approval(pool: PgPool) {
     );
 
     // Retry-safe create: the same client_request_id returns the first draft.
-    let args = json!({"title":"Once","release_type":"SINGLE","artist_name":"Han River","client_request_id":"req-0001-abcd"});
-    let (err, first) = tool(&app, &c.access, "create_release_draft", args.clone()).await;
+    let args = json!({"action":"create","title":"Once","release_type":"SINGLE","artist_name":"Han River","client_request_id":"req-0001-abcd"});
+    let (err, first) = tool(&app, &c.access, "save_release_draft", args.clone()).await;
     assert!(!err, "{first}");
-    let (err, again) = tool(&app, &c.access, "create_release_draft", args).await;
+    let (err, again) = tool(&app, &c.access, "save_release_draft", args).await;
     assert!(!err, "{again}");
     assert_eq!(again["release_id"], first["release_id"]);
     assert_eq!(again["duplicate_request"], true);
@@ -3300,7 +3300,7 @@ async fn activity_notices_retry_safe_creates_and_studio_approval(pool: PgPool) {
         .as_array()
         .unwrap()
         .iter()
-        .find(|t| t["name"] == "create_release_draft")
+        .find(|t| t["name"] == "save_release_draft")
         .unwrap()
         .clone();
     assert!(create["inputSchema"]["properties"]["client_request_id"].is_object());

@@ -273,7 +273,7 @@ async fn content_maintenance_and_site_rules(pool: PgPool) {
         "POST",
         "/api/mcp",
         &[],
-        json!({"jsonrpc":"2.0","id":44,"method":"tools/call","params":{"name":"get_announcements","arguments":{"view":"service_status"}}}),
+        json!({"jsonrpc":"2.0","id":44,"method":"tools/call","params":{"name":"get_audeniq_info","arguments":{"view":"service_status"}}}),
     )
     .await;
     assert_ne!(

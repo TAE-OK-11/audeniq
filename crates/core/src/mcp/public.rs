@@ -178,7 +178,7 @@ async fn announcement(s: &AppState, args: &Value) -> std::result::Result<Value, 
     let Some(mut row) = site_content::published_one(s, table, id).await? else {
         return Err(tool_error(
             "NOT_FOUND",
-            "No published notice or event has this id. Call get_announcements for current ones.",
+            "No published notice or event has this id. Call get_audeniq_info for current ones.",
         ));
     };
     row["url"] = json!(link(s, table, id));
