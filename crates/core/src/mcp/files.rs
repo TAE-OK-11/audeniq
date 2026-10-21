@@ -47,9 +47,10 @@ fn kind_arg(args: &Value) -> std::result::Result<&'static str, ToolError> {
     match args.get("kind").and_then(Value::as_str) {
         Some("AUDIO") => Ok("AUDIO"),
         Some("IMAGE") => Ok("IMAGE"),
+        Some("DOCUMENT") => Ok("DOCUMENT"),
         _ => Err(tool_error(
             "INVALID_ARGUMENTS",
-            "kind must be AUDIO or IMAGE.",
+            "kind must be AUDIO, IMAGE or DOCUMENT.",
         )),
     }
 }
@@ -404,6 +405,7 @@ fn content_type(kind: &str, args: &Value, res: &reqwest::Response) -> Option<Str
         Some("tta") => Some("audio/tta"),
         Some("jpg" | "jpeg") => Some("image/jpeg"),
         Some("png") => Some("image/png"),
+        Some("pdf") => Some("application/pdf"),
         _ => None,
     };
     [given.map(str::to_owned), header, by_ext.map(str::to_owned)]
