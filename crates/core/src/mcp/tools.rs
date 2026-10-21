@@ -941,7 +941,11 @@ fn draft_fields_schema() -> Value {
 /// [`Group`] are not listed under their own name any more, but clients
 /// that kept an older tool list can still call them by it.
 pub fn find(name: &str) -> Option<&'static ToolDef> {
-    defs().iter().find(|d| d.name == name)
+    static INDEX: OnceLock<HashMap<&'static str, &'static ToolDef>> = OnceLock::new();
+    INDEX
+        .get_or_init(|| defs().iter().map(|d| (d.name, d)).collect())
+        .get(name)
+        .copied()
 }
 
 /// Operations of the same kind published as one tool: `key` picks the
@@ -1144,7 +1148,7 @@ const GROUPS: &[Group] = &[
     Group {
         name: "request_approval",
         title: "Ask the artist to approve an action",
-        intro: "Withdrawals, takedowns, revenue splits, release or contract end dates, counter notices and member invites: only when the artist asked for it. This files a request the artist approves once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_approval_status.",
+        intro: "Withdrawals, takedowns, revenue splits, release or contract end dates, counter notices and member invites. Only when the artist asked for it. The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_approval_status.",
         key: "action",
         has_default: false,
         ops: &[
@@ -1242,7 +1246,7 @@ impl Published {
             destructive: d.destructive,
             idempotent: d.idempotent,
             widget: d.widget,
-            input_schema: d.input_schema(),
+            input_schema: listed(d.input_schema()),
         }
     }
     /// The group's hints are the most careful of its operations'.
@@ -1257,7 +1261,8 @@ impl Published {
             };
             description.push_str(&format!(
                 "\n- {}={value}{default}: {}",
-                g.key, d.description
+                g.key,
+                without_intro(d.description, g.intro)
             ));
         }
         Published {
@@ -1270,9 +1275,46 @@ impl Published {
             destructive: ops.iter().any(|d| d.destructive),
             idempotent: ops.iter().all(|d| d.idempotent),
             widget: ops.iter().any(|d| d.widget),
-            input_schema: group_schema(g, &ops),
+            input_schema: listed(group_schema(g, &ops)),
         }
     }
+}
+
+/// An operation's description without the sentences its group's intro
+/// already says once for all of them (approval, confirmation notes).
+fn without_intro(description: &str, intro: &str) -> String {
+    let said: Vec<&str> = sentences(intro).collect();
+    sentences(description)
+        .filter(|s| !said.contains(s))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn sentences(text: &str) -> impl Iterator<Item = &str> {
+    text.split_inclusive(". ")
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+/// The schema as listed: a UUID field shows `format: uuid` without the long
+/// pattern that repeats on every id (about 4 KB of `tools/list`, which goes
+/// into the model's context). Calls are still checked against the full
+/// schema, pattern included ([`validator`]).
+fn listed(mut schema: Value) -> Value {
+    fn walk(v: &mut Value) {
+        match v {
+            Value::Object(o) => {
+                if o.get("format").and_then(Value::as_str) == Some("uuid") {
+                    o.remove("pattern");
+                }
+                o.values_mut().for_each(walk);
+            }
+            Value::Array(a) => a.iter_mut().for_each(walk),
+            _ => {}
+        }
+    }
+    walk(&mut schema);
+    schema
 }
 
 /// The union of the operations' arguments plus `key`. A field required by
@@ -1401,7 +1443,15 @@ pub fn permitted(def: &ToolDef, p: &Principal) -> bool {
         }
 }
 
-pub fn list_json(public_only: bool) -> Vec<Value> {
+pub fn list_json(public_only: bool) -> &'static [Value] {
+    // Built once: the listing only changes with a new release of the server.
+    static ALL: OnceLock<Vec<Value>> = OnceLock::new();
+    static PUBLIC: OnceLock<Vec<Value>> = OnceLock::new();
+    let cell = if public_only { &PUBLIC } else { &ALL };
+    cell.get_or_init(|| build_list(public_only))
+}
+
+fn build_list(public_only: bool) -> Vec<Value> {
     published()
         .iter()
         .filter(|d| !public_only || d.public)
@@ -1665,10 +1715,11 @@ pub async fn call(s: &AppState, p: &Principal, def: &ToolDef, args: Value) -> Va
             });
         let reason = if ok { "MCP_OK" } else { "MCP_REJECTED" };
         let action = format!("mcp.{}", def.name);
+        // One statement: no transaction around it (two fewer round trips).
         let audit: Result<()> = async {
-            let mut tx = s.pool.begin().await?;
+            let mut c = s.pool.acquire().await?;
             operations::audit(
-                &mut tx,
+                &mut c,
                 Some(p.actor.user),
                 Some(p.org),
                 release,
@@ -1676,9 +1727,7 @@ pub async fn call(s: &AppState, p: &Principal, def: &ToolDef, args: Value) -> Va
                 reason,
                 p.actor.request,
             )
-            .await?;
-            tx.commit().await?;
-            Ok(())
+            .await
         }
         .await;
         if let Err(e) = audit {
@@ -1801,17 +1850,27 @@ type ToolFuture<'a> = std::pin::Pin<
 >;
 
 async fn rate(s: &AppState, p: &Principal, def: &ToolDef) -> Result<()> {
-    crate::auth::rate(&s.pool, &format!("mcp:{}", p.grant), 900).await?;
-    if !def.read_only {
-        crate::auth::rate(&s.pool, &format!("mcp-write:{}", p.grant), 300).await?;
-    }
-    if def.scope == SCOPE_PAYOUT && !def.read_only {
-        crate::auth::rate(&s.pool, &format!("mcp-payout:{}", p.grant), 10).await?;
-    }
-    if def.scope == SCOPE_SUBMIT {
-        crate::auth::rate(&s.pool, &format!("mcp-submit:{}", p.grant), 30).await?;
-    }
-    Ok(())
+    // Every bucket that applies, counted in one round trip.
+    let keys = [
+        (format!("mcp:{}", p.grant), 900, true),
+        (format!("mcp-write:{}", p.grant), 300, !def.read_only),
+        (
+            format!("mcp-payout:{}", p.grant),
+            10,
+            def.scope == SCOPE_PAYOUT && !def.read_only,
+        ),
+        (
+            format!("mcp-submit:{}", p.grant),
+            30,
+            def.scope == SCOPE_SUBMIT,
+        ),
+    ];
+    let buckets: Vec<(&str, i32)> = keys
+        .iter()
+        .filter(|(_, _, applies)| *applies)
+        .map(|(k, limit, _)| (k.as_str(), *limit))
+        .collect();
+    crate::auth::rate_all(&s.pool, &buckets).await
 }
 
 async fn run(
@@ -4013,6 +4072,31 @@ mod tests {
                 .unwrap_or_else(|e| panic!("{}: {e}", p.name));
             assert_eq!(p.input_schema["additionalProperties"], false, "{}", p.name);
         }
+        // Shortening a group's description never drops what an operation
+        // says: each sentence is in the operation's line or the intro.
+        for g in GROUPS {
+            let listed = &published()
+                .iter()
+                .find(|p| p.name == g.name)
+                .unwrap()
+                .description;
+            for (_, name) in g.ops {
+                for sentence in sentences(op(name).description) {
+                    assert!(listed.contains(sentence), "{}: {sentence}", g.name);
+                }
+            }
+        }
+        // Listed UUID fields leave out the pattern; calls are still checked
+        // against it.
+        let listed = &published()
+            .iter()
+            .find(|p| p.name == "get_release")
+            .unwrap()
+            .input_schema;
+        assert!(listed["properties"]["release_id"].get("pattern").is_none());
+        assert!(
+            !validator(find("get_release").unwrap()).is_valid(&json!({"release_id": "not-a-uuid"}))
+        );
         let submit = published()
             .iter()
             .find(|p| p.name == "submit_release")

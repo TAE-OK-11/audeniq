@@ -276,6 +276,23 @@ different scope, a confirmation step that must stay its own call
 `submit_release`), or a destructive or not-read-only hint that would
 otherwise spread to safe operations in the same tool.
 
+### Server cost per call
+
+- `tools/list` is built once per process (both endpoints) and is 57.9 KB
+  for 25 tools, against 91.4 KB for the earlier 78. Listed UUID fields show
+  `format: uuid` without the repeated pattern, and a group's operation lines
+  leave out sentences its intro already says; calls are still validated
+  against each operation's full schema.
+- Per call: one query resolves the token; every rate bucket that applies
+  (`mcp`, `mcp-write`, `mcp-payout`, `mcp-submit`) is counted in one
+  statement (`auth::rate_all`); a consequential call's audit row is one
+  statement without a transaction around it. A write used to cost up to
+  seven round trips besides the tool's own work and now costs three.
+- Overdue action and permission requests are marked EXPIRED only for the
+  connection (MCP) or user (Studio) reading them, through their indexes
+  (migration 0146), not by a sweep of the whole table on every read.
+- Operations are found through a name index.
+
 | Operation | Scope | Backed by | What it does |
 |---|---|---|---|
 | `get_account_context` | read | `catalog::workspace` | Workspace, role, connection scopes, `can_submit` |

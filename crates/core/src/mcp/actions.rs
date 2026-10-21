@@ -468,7 +468,7 @@ async fn file(
     payload: Value,
     summary: Value,
 ) -> ToolResult {
-    expire(s).await?;
+    expire(s, Owner::Grant(p.grant)).await?;
     if let Some(r) = sqlx::query(sqlx::AssertSqlSafe(format!(
         "SELECT {VIEW_COLUMNS} FROM identity.mcp_action_requests
           WHERE grant_id=$1 AND action=$2 AND release_id IS NOT DISTINCT FROM $3 AND payload=$4
@@ -536,7 +536,7 @@ fn with_instruction(mut v: Value) -> Value {
 /// `get_action_request`.
 async fn status(s: &AppState, p: &Principal, args: &Value) -> ToolResult {
     let id = uuid_arg(args, "request_id")?;
-    expire(s).await?;
+    expire(s, Owner::Grant(p.grant)).await?;
     let r = sqlx::query(sqlx::AssertSqlSafe(format!(
         "SELECT {VIEW_COLUMNS} FROM identity.mcp_action_requests WHERE id=$1 AND grant_id=$2"
     )))
@@ -554,7 +554,7 @@ async fn status(s: &AppState, p: &Principal, args: &Value) -> ToolResult {
 /// row lock, so a withdrawal and an approval never both win.
 async fn withdraw(s: &AppState, p: &Principal, args: &Value) -> ToolResult {
     let id = uuid_arg(args, "request_id")?;
-    expire(s).await?;
+    expire(s, Owner::Grant(p.grant)).await?;
     let done = sqlx::query(
         "UPDATE identity.mcp_action_requests SET status='WITHDRAWN', decided_at=now()
           WHERE id=$1 AND grant_id=$2 AND status='PENDING'",
@@ -570,6 +570,13 @@ async fn withdraw(s: &AppState, p: &Principal, args: &Value) -> ToolResult {
         return Err(not_pending(&v["status"]));
     }
     Ok(v)
+}
+
+/// Whose requests [`expire`] looks at.
+#[derive(Clone, Copy)]
+pub(super) enum Owner {
+    Grant(Uuid),
+    User(Uuid),
 }
 
 /// The error for a request that is no longer waiting for the artist.
@@ -611,10 +618,20 @@ async fn withdraw_submission(s: &AppState, p: &Principal, args: &Value) -> ToolR
     )
 }
 
-async fn expire(s: &AppState) -> Result<()> {
-    sqlx::query("UPDATE identity.mcp_action_requests SET status='EXPIRED', decided_at=now() WHERE status='PENDING' AND expires_at < now()")
-        .execute(&s.pool)
-        .await?;
+/// Marks the owner's (one connection's, or one user's) overdue requests
+/// EXPIRED: only their own rows, so a status read stays an index lookup.
+async fn expire(s: &AppState, owner: Owner) -> Result<()> {
+    let (sql, id) = match owner {
+        Owner::Grant(id) => (
+            "UPDATE identity.mcp_action_requests SET status='EXPIRED', decided_at=now() WHERE grant_id=$1 AND status='PENDING' AND expires_at < now()",
+            id,
+        ),
+        Owner::User(id) => (
+            "UPDATE identity.mcp_action_requests SET status='EXPIRED', decided_at=now() WHERE user_id=$1 AND status='PENDING' AND expires_at < now()",
+            id,
+        ),
+    };
+    sqlx::query(sql).bind(id).execute(&s.pool).await?;
     Ok(())
 }
 
@@ -752,7 +769,7 @@ const REQUEST_JSON: &str = "jsonb_build_object('id',q.id,'action',q.action,'stat
 /// The user's open requests (Studio: Profile → Connected AI apps).
 pub async fn list(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
-    expire(&s).await?;
+    expire(&s, Owner::User(a.user)).await?;
     let items: Vec<Value> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT {REQUEST_JSON} FROM identity.mcp_action_requests q
            JOIN identity.mcp_grants g ON g.id=q.grant_id JOIN identity.orgs o ON o.id=q.org_id
@@ -771,7 +788,7 @@ pub async fn get(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
-    expire(&s).await?;
+    expire(&s, Owner::User(a.user)).await?;
     let v: Value = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT {REQUEST_JSON} FROM identity.mcp_action_requests q
            JOIN identity.mcp_grants g ON g.id=q.grant_id JOIN identity.orgs o ON o.id=q.org_id
