@@ -8,9 +8,9 @@ import { CopyButton } from './CopyButton';
 import { ApiError, errorMessage } from '../api/errors';
 import { orgId } from '../api/http';
 import {
-  aiConnections, aiPermissionRequests, aiSettings, aiSubmissions, approveAiSubmission, clientHost, createConnectionToken, DECLARATION_LABEL,
+  aiActionRequests, aiConnections, aiPermissionRequests, aiSettings, aiSubmissions, approveAiSubmission, clientHost, createConnectionToken, DECLARATION_LABEL,
   rejectAiSubmission, revokeAiConnection, saveAiSettings, SCOPE_HELP, SCOPE_LABEL,
-  type AiConnection, type AiPermissionRequest, type AiSettings, type AiSubmission, type NewConnectionToken,
+  type AiActionRequest, type AiConnection, type AiPermissionRequest, type AiSettings, type AiSubmission, type NewConnectionToken,
 } from '../api/aiConnections';
 import { Link } from '../lib/router';
 import { relativeTime } from '../lib/date';
@@ -284,9 +284,11 @@ export function AiConnections() {
   const [pending, setPending] = useState<AiSubmission[]>([]);
   const [settings, setSettings] = useState<AiSettings | null>(null);
   const [asks, setAsks] = useState<AiPermissionRequest[]>([]);
+  const [actions, setActions] = useState<AiActionRequest[]>([]);
   useEffect(() => {
     aiSubmissions().then(setPending).catch(() => setPending([]));
     aiPermissionRequests().then(setAsks).catch(() => setAsks([]));
+    aiActionRequests().then(setActions).catch(() => setActions([]));
     aiSettings().then(setSettings).catch(() => setSettings(null));
   }, []);
 
@@ -335,6 +337,22 @@ export function AiConnections() {
                   <small>{[q.scopes.map(s => SCOPE_LABEL[s] ?? s).join('·'), workspaceName(q.org_name)].join(' · ')}</small>
                 </span>
                 <span className="aq-row-actions"><Link className="ui-btn is-primary is-sm" to={`/ai/approve/${q.id}`}>확인하기</Link></span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {actions.length > 0 && (
+        <section className="aq-token-section" aria-labelledby="aqAiActions">
+          <h3 id="aqAiActions" className="ui-field-label">승인을 기다리는 작업</h3>
+          <ul className="aq-passkey-list">
+            {actions.map(q => (
+              <li key={q.id}>
+                <span className="min-0">
+                  <strong>{q.summary.title}</strong>
+                  <small>{[q.client_name, workspaceName(q.org_name)].join(' · ')}</small>
+                </span>
+                <span className="aq-row-actions"><Link className="ui-btn is-primary is-sm" to={`/ai/actions/${q.id}`}>확인하기</Link></span>
               </li>
             ))}
           </ul>
