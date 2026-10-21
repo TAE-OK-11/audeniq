@@ -1,5 +1,6 @@
 // 연결된 AI 앱 — AI 어시스턴트(ChatGPT·Claude 등)가 이 계정에 받은 권한을 보고, 언제든 끊는다.
-// OAuth를 쓰지 못하는 에이전트에게 줄 연결 토큰도 여기서 만든다 (한 번만 보여 줌).
+// 에이전트마다 하나씩 주는 에이전트 키(서버의 연결 토큰)도 여기서 만든다 (한 번만 보여 줌).
+// 키는 그대로 쓰거나, 토큰 교환(RFC 8693)으로 권한을 좁힌 1시간짜리 작업 토큰을 받아 쓴다.
 import { useEffect, useRef, useState } from 'react';
 import { useToast } from './Toast';
 import { useConfirm } from './Confirm';
@@ -61,8 +62,8 @@ function TokenForm({ payoutScope, onCreated, onClose }: { payoutScope: boolean; 
       onCreated(await createConnectionToken({ label: label.trim(), org_id: org, scopes: picked, ...period }));
     } catch (err) {
       setError(err instanceof ApiError && err.status === 404
-        ? '지금은 연결 토큰을 만들 수 없어요.'
-        : errorMessage(err, '연결 토큰을 만들지 못했어요.'));
+        ? '지금은 에이전트 키를 만들 수 없어요.'
+        : errorMessage(err, '에이전트 키를 만들지 못했어요.'));
     } finally {
       setBusy(false);
     }
@@ -140,27 +141,43 @@ function TokenForm({ payoutScope, onCreated, onClose }: { payoutScope: boolean; 
   );
 }
 
+/** 토큰 교환 예시 (POST {origin}/api/oauth/token) — 키 값은 자리표시자로 둔다 */
+function exchangeExample(made: NewConnectionToken): string {
+  const origin = made.mcp_url.replace(/\/api\/mcp\/?$/, '');
+  return `curl -s -X POST ${origin}/api/oauth/token \\
+  -d grant_type=urn:ietf:params:oauth:grant-type:token-exchange \\
+  -d subject_token_type=urn:ietf:params:oauth:token-type:access_token \\
+  -d subject_token=$AUDENIQ_AGENT_KEY \\
+  -d scope="${made.scopes.join(' ')}"`;
+}
+
 function MadeToken({ made, onClose }: { made: NewConnectionToken; onClose: () => void }) {
   // 화면 읽기 프로그램에는 완료 문장만 알린다 (토큰 값을 소리 내어 읽지 않게)
   const title = useRef<HTMLParagraphElement>(null);
   useEffect(() => { title.current?.focus(); }, []);
   return (
     <div className="ui-callout is-success aq-token-made">
-      <p role="status" tabIndex={-1} ref={title}><strong>연결 토큰을 만들었어요.</strong></p>
-      <p>이 창을 닫으면 토큰을 다시 볼 수 없어요. 지금 에이전트 설정에 넣어 주세요.</p>
+      <p role="status" tabIndex={-1} ref={title}><strong>에이전트 키를 만들었어요.</strong></p>
+      <p>이 창을 닫으면 키를 다시 볼 수 없어요. 지금 에이전트 설정에 넣어 주세요.</p>
       <div className="aq-token-value">
         <span className="ui-field-label">MCP 주소</span>
         <code>{made.mcp_url}</code>
         <CopyButton text={made.mcp_url} />
       </div>
       <div className="aq-token-value">
-        <span className="ui-field-label">토큰 · 헤더 <code>Authorization: Bearer</code>로 보내요</span>
+        <span className="ui-field-label">에이전트 키 · 헤더 <code>Authorization: Bearer</code>로 보내요</span>
         <code>{made.token}</code>
-        <CopyButton text={made.token} label="토큰 복사" />
+        <CopyButton text={made.token} label="키 복사" />
       </div>
+      <details className="aq-token-exchange">
+        <summary>작업 토큰으로 바꿔 쓰기 (선택)</summary>
+        <p>키를 그대로 쓰지 않고, 필요한 권한만 담은 1시간짜리 작업 토큰을 받아 쓸 수 있어요. 키에 있는 권한 안에서만 받을 수 있어요.</p>
+        <pre><code>{exchangeExample(made)}</code></pre>
+        <CopyButton text={exchangeExample(made)} label="예시 복사" />
+      </details>
       <p className="aq-muted">
         {made.no_expiry || !made.expires_at ? '무기한으로 쓸 수 있어요.' : `${day(made.expires_at)}까지 쓸 수 있어요.`}
-        {' '}토큰은 비밀번호처럼 다뤄 주세요. 대화창에 붙여 넣지 말고 에이전트 설정에만 넣어 주세요.
+        {' '}키는 비밀번호처럼 다뤄 주세요. 대화창에 붙여 넣지 말고 에이전트 설정에만 넣어 주세요.
       </p>
       <button type="button" className="ui-btn is-soft is-sm" onClick={onClose}>닫기</button>
     </div>
@@ -284,7 +301,7 @@ export function AiConnections() {
     const ok = await confirm({
       title: `${name} 연결을 끊을까요?`,
       message: c.method === 'TOKEN'
-        ? '끊으면 이 토큰은 바로 쓸 수 없어요. 다시 쓰려면 연결 토큰을 새로 만들어 주세요.'
+        ? '끊으면 이 키와 키로 받은 작업 토큰을 바로 쓸 수 없어요. 다시 쓰려면 에이전트 키를 새로 만들어 주세요.'
         : '끊으면 이 AI 앱은 바로 어데닉에 접근할 수 없어요. 다시 쓰려면 AI 앱에서 새로 연결하면 돼요.',
       confirmLabel: '연결 끊기',
       danger: true,
@@ -330,7 +347,7 @@ export function AiConnections() {
       {items.length === 0 ? (
         <div className="aq-token-empty">
           <strong>연결된 AI 앱이 없어요</strong>
-          <small>AI 앱에서 어데닉을 연결하거나, 아래에서 연결 토큰을 만들 수 있어요.</small>
+          <small>AI 앱에서 어데닉을 연결하거나, 아래에서 에이전트 키를 만들 수 있어요.</small>
         </div>
       ) : (
         <ul className="aq-passkey-list">
@@ -340,7 +357,7 @@ export function AiConnections() {
             const token = c.method === 'TOKEN';
             const until = c.no_expiry || !c.expires_at ? '무기한' : `${day(c.expires_at)}까지`;
             const meta = token
-              ? ['연결 토큰', workspaceName(c.org_name), until, used]
+              ? ['에이전트 키', workspaceName(c.org_name), until, used]
               : [host, workspaceName(c.org_name), `연결 ${relativeTime(c.created_at)}`, used];
             return (
               <li key={c.id}>
@@ -360,15 +377,15 @@ export function AiConnections() {
 
       {(settings?.mcp_enabled !== false || made) && (
       <section className="aq-token-section" aria-labelledby="aqTokenTitle">
-        <h3 id="aqTokenTitle" className="ui-field-label">연결 토큰</h3>
+        <h3 id="aqTokenTitle" className="ui-field-label">에이전트 키</h3>
         {made ? (
           <MadeToken made={made} onClose={() => setMade(null)} />
         ) : making ? (
           <TokenForm payoutScope={settings?.payout_scope !== false} onClose={() => setMaking(false)} onCreated={t => { setMade(t); setMaking(false); void refresh(); }} />
         ) : (
           <>
-            <p className="aq-muted">OAuth 로그인을 지원하지 않는 에이전트에 넣는 토큰이에요. 지금 작업 공간에서 고른 일만 할 수 있어요.</p>
-            <button type="button" className="ui-btn" onClick={() => setMaking(true)}>연결 토큰 만들기</button>
+            <p className="aq-muted">에이전트마다 하나씩 만들어 주세요. 키를 그대로 쓰거나, 키로 권한을 좁힌 1시간짜리 작업 토큰을 받아 쓸 수 있어요. 지금 작업 공간에서 고른 일만 할 수 있고, 더 필요하면 에이전트가 권한 추가를 요청해요.</p>
+            <button type="button" className="ui-btn" onClick={() => setMaking(true)}>에이전트 키 만들기</button>
           </>
         )}
       </section>
