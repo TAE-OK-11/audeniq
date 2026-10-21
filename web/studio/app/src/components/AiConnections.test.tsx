@@ -79,9 +79,9 @@ describe('AiConnections', () => {
     expect(rows).toEqual(['Claude']);
   });
 
-  it('makes a connection token, shows it once and lists it by its name', async () => {
+  it('makes an agent key, shows it once and lists it by its name', async () => {
     const token = { id: 'g3', token: 'a'.repeat(64), expires_at: '2026-11-17T00:00:00Z', scopes: ['releases:read', 'releases:write'], mcp_url: 'https://studio.audeniq.com/api/mcp' };
-    const listed = { id: 'g3', client_name: '연결 토큰', client_id: 'audeniq-connection-token', org_id: 'o1', org_name: 'Personal workspace',
+    const listed = { id: 'g3', client_name: '에이전트 키', client_id: 'audeniq-connection-token', org_id: 'o1', org_name: 'Personal workspace',
       scopes: token.scopes, created_at: '2026-10-18T00:00:00Z', last_used_at: null, method: 'TOKEN', label: '작업실 에이전트', expires_at: token.expires_at };
     let made = false;
     http.req.mockImplementation((url: string) => {
@@ -100,7 +100,7 @@ describe('AiConnections', () => {
       method: 'POST', body: { label: '작업실 에이전트', org_id: 'o1', scopes: ['releases:write'], days: 30 },
     });
     expect(el.textContent).toContain('a'.repeat(64));
-    expect(el.textContent).toContain('토큰을 다시 볼 수 없어요');
+    expect(el.textContent).toContain('키를 다시 볼 수 없어요');
     expect([...el.querySelectorAll('li strong')].map(s => s.textContent)).toEqual(['작업실 에이전트']);
     expect(el.textContent).toContain('에이전트 키 · 내 작업 공간');
     // Closing the notice hides the token for good.

@@ -1045,13 +1045,19 @@ pub async fn token(State(s): State<AppState>, h: HeaderMap, body: Bytes) -> Resp
     // Token exchange authenticates with the agent key itself (no client).
     if form.get("grant_type").map(String::as_str) == Some(super::login::TOKEN_EXCHANGE) {
         if !resource_ok(&s, form.get("resource").map(String::as_str)) {
-            return oauth_error(StatusCode::BAD_REQUEST, "invalid_target", "Unknown resource.");
+            return oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_target",
+                "Unknown resource.",
+            );
         }
         return match super::login::exchange_agent_key(&s, &form).await {
             Ok(v) => {
                 let mut r = Json(v).into_response();
-                r.headers_mut().insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
-                r.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+                r.headers_mut()
+                    .insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
+                r.headers_mut()
+                    .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
                 r
             }
             Err(TokenError::Oauth(code, desc)) => {
