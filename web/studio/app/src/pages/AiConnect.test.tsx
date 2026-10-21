@@ -4,6 +4,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/errors';
+import { ConfirmProvider } from '../components/Confirm';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -37,25 +38,33 @@ afterEach(() => { act(() => root.unmount()); el.remove(); h.req.mockReset(); });
 
 async function render(search: string) {
   h.search = search;
-  await act(async () => { root.render(<AiConnect />); });
+  await act(async () => { root.render(<ConfirmProvider><AiConnect /></ConfirmProvider>); });
 }
 const click = async (node: Element | null | undefined) => { await act(async () => { (node as HTMLElement).click(); }); };
 const button = (text: string) => [...el.querySelectorAll('button')].find(b => b.textContent?.includes(text));
 
+const confirmDialog = async () => {
+  const ok = [...document.querySelectorAll('[role=dialog] button')].find(b => b.className.includes('is-primary'));
+  await click(ok);
+};
+
 describe('AI app connection page', () => {
-  it('shows who asks and sends only the chosen workspace and permissions', async () => {
+  it('shows who asks, then sends only the chosen workspace and permissions', async () => {
     h.req.mockImplementation((url: string) => (url.startsWith('/api/auth/ai-connect?')
       ? Promise.resolve(details)
       : Promise.resolve({ kind: 'browser', status: 'APPROVED', redirect: 'https://claude.ai/cb?code=x', scopes: ['releases:read'] })));
     await render('?request=abc');
     expect(h.req.mock.calls[0][0]).toBe('/api/auth/ai-connect?request=abc');
-    expect(el.textContent).toContain('Claude에서 어데닉을 쓸 수 있게 할까요?');
-    expect(el.textContent).toContain('claude.ai에서 확인된 앱');
+    expect(el.textContent).toContain('01 / 02 · 연결 확인');
+    expect(el.textContent).toContain('어데닉을 쓰려고 해요');
+    expect(el.textContent).toContain('claude.ai에서 확인된 앱이에요');
     expect(el.textContent).toContain('hana@example.com');
+    await click(el.querySelectorAll('input[name=aqConnectOrg]')[1]);
+    await click(el.querySelector('#wizardNext'));
+    expect(el.textContent).toContain('02 / 02 · 권한');
     expect(el.textContent).toContain('어떤 권한을 줘도 지켜져요');
-    await click(el.querySelector('[role=radio]:nth-child(2)'));
     await click(button('보기만'));
-    await click(button('허용하고 연결'));
+    await click(el.querySelector('#wizardNext'));
     const [url, opts] = h.req.mock.calls[1];
     expect(url).toBe('/api/auth/ai-connect');
     expect((opts as { body: unknown }).body).toEqual({ request: 'abc', decision: 'approve', org: 'o2', scopes: ['releases:read'] });
@@ -66,12 +75,22 @@ describe('AI app connection page', () => {
   it('asks once more before giving payout permission', async () => {
     h.req.mockResolvedValueOnce(details).mockResolvedValueOnce({ kind: 'browser', status: 'APPROVED', scopes: [] });
     await render('?request=abc');
+    await click(el.querySelector('#wizardNext'));
     await click(button('모두'));
-    await click(button('허용하고 연결'));
+    await click(el.querySelector('#wizardNext'));
     expect(h.req).toHaveBeenCalledTimes(1);
-    expect(el.textContent).toContain('소액 지급 신청 권한도 줄까요?');
-    await click(button('네, 허용하고 연결'));
+    expect(document.body.textContent).toContain('소액 지급 신청 권한도 줄까요?');
+    await confirmDialog();
     expect(h.req).toHaveBeenCalledTimes(2);
+  });
+
+  it('denies after a confirmation', async () => {
+    h.req.mockResolvedValueOnce(details).mockResolvedValueOnce({ kind: 'browser', status: 'DENIED', redirect: 'https://claude.ai/cb?error=access_denied', scopes: [] });
+    await render('?request=abc');
+    await click(button('연결하지 않을래요'));
+    await confirmDialog();
+    expect((h.req.mock.calls[1][1] as { body: { decision: string } }).body.decision).toBe('deny');
+    expect(el.textContent).toContain('연결하지 않았어요');
   });
 
   it('turns a device code into the request', async () => {
@@ -86,13 +105,13 @@ describe('AI app connection page', () => {
   it('explains a request that can no longer be opened', async () => {
     h.req.mockRejectedValue(new ApiError('시간이 지났어요', 400, 'AI_CONNECT_EXPIRED'));
     await render('?request=old');
-    expect(el.textContent).toContain('연결 요청을 열 수 없어요');
+    expect(el.textContent).toContain('열 수 없어요');
     expect(el.textContent).toContain('연결 요청 시간(10분)이 지났어요.');
   });
 
   it('asks for the code when none was given', async () => {
     await render('?device=1');
-    expect(el.textContent).toContain('AI 앱에 보이는 연결 코드를 입력해 주세요');
+    expect(el.textContent).toContain('입력해 주세요');
     expect(h.req).not.toHaveBeenCalled();
   });
 });
