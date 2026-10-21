@@ -319,7 +319,15 @@ pub async fn put_payout_account(
 // ---------------------------------------------------------------------------
 // Inquiries
 // ---------------------------------------------------------------------------
-const CATEGORIES: [&str; 5] = ["RELEASE", "SETTLEMENT", "CONTRACT", "ACCOUNT", "OTHER"];
+/// IDENTITY: 본인인증·실명인증 (인증 기관으로 안 되면 고객센터 실명인증, identity_desk)
+const CATEGORIES: [&str; 6] = [
+    "RELEASE",
+    "SETTLEMENT",
+    "CONTRACT",
+    "ACCOUNT",
+    "IDENTITY",
+    "OTHER",
+];
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

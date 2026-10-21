@@ -5,7 +5,7 @@ import { useToast } from '../components/Toast';
 import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { staffApi } from '../api/staff';
-import { INQUIRY_STATUS, ago, pick, when } from '../labels';
+import { INQUIRY_CATEGORY, INQUIRY_STATUS, ago, pick, when } from '../labels';
 import { EmptyState, ErrorBox, ChipGroup, NoDuty, PageHeader, SkeletonList, StatusBadge, useStaff } from '../staffUi';
 import { Glyph } from '../components/Glyph';
 
@@ -69,8 +69,9 @@ function Thread({ id, onReplied }: { id: string; onReplied: () => void }) {
         </div>
         <h2 style={{ marginTop: 8 }}>{q.subject}</h2>
         <span className="ui-row-meta">
-          <span>{q.org_name}</span><span>{q.category}</span>
+          <span>{q.org_name}</span><span>{INQUIRY_CATEGORY[q.category] ?? q.category}</span>
           {q.release_id && <span><Link to={`/reviews/${q.release_id}`}>관련 발매 <Glyph name="arrow-right" size={13} className="aq-inline-glyph" /></Link></span>}
+          {q.category === 'IDENTITY' && can('IDENTITY') && <span><Link to="/identity">실명인증 화면 <Glyph name="arrow-right" size={13} className="aq-inline-glyph" /></Link></span>}
         </span>
       </div>
       <ol className="adm-thread" ref={listRef}>
@@ -134,7 +135,7 @@ export function Inquiries() {
             <button key={q.id} type="button" className={`ui-row${q.id === id ? ' is-active' : ''}`} onClick={() => go(`/inquiries/${q.id}`)} style={{ gridTemplateColumns: 'minmax(0,1fr) auto' }}>
               <span className="adm-min">
                 <span className="ui-row-title">{q.subject}</span>
-                <span className="ui-row-meta"><span>{q.org_name}</span><span>{q.category}</span></span>
+                <span className="ui-row-meta"><span>{q.org_name}</span><span>{INQUIRY_CATEGORY[q.category] ?? q.category}</span></span>
               </span>
               <span className="ui-row-end">
                 <StatusBadge value={pick(INQUIRY_STATUS, q.status)} />
