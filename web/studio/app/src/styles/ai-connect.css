@@ -34,3 +34,13 @@
 .aq-connect-facts dd{margin:0;min-width:0;color:var(--aq-text-3);overflow-wrap:anywhere}
 
 .aq-connect-deny{order:99;margin:4px 0 calc(16px + env(safe-area-inset-bottom));text-align:center}
+
+/* 한 화면 — 작업 공간이 하나면 고르지 않고 보여 주기만, 허용할 일 제목 옆에 빠르게 고르기 */
+.aq-connect-one-ws{cursor:default}
+.aq-connect-scope-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.aq-connect-scope-head .subhead{margin-bottom:12px}
+.aq-connect-scope-head .aq-connect-presets{margin:0 0 12px}
+.aq-connect-scope-head .ui-chip{min-width:0!important;height:34px;padding:0 12px;font-size:13px}
+.aq-connect-code-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:8px 0 0;padding:14px 18px;border-radius:var(--aq-r-lg);background:var(--aq-gray-50)}
+.aq-connect-code-row span{color:var(--aq-text-3);font-size:13px}
+.aq-connect-code-row strong{font:800 20px/1.2 var(--font-mono);letter-spacing:.1em;color:var(--aq-text);white-space:nowrap}

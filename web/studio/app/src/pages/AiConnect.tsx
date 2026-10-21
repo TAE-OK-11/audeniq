@@ -2,10 +2,10 @@
 //  - ?request=…  : 서버가 확인하고 서명한 연결 요청 (브라우저 연결 또는 기기 코드 연결)
 //  - ?user_code= : AI 앱이 알려 준 코드로 온 기기 연결 → 코드를 확인해 요청으로 바꾼다
 //  - ?device=1   : 코드를 직접 입력
-// 발매 신청서(pages/Upload.tsx)와 같은 틀로 보여 준다: 위에 고정된 제목·진행 막대, "01 / 02 · …" 단계 제목,
-// 신청서의 고르는 카드(aq-choice)·옵션 카드(aq-option)·칩(ui-chip), 아래 고정 버튼(step-actions).
-//  1단계 연결 확인 — 어느 앱이 어디서 요청했는지, 어느 작업 공간에 연결할지
-//  2단계 권한 — 무엇을 허용할지, 어떤 권한을 줘도 지켜지는 것. 돈·접수 권한은 확인 창으로 한 번 더 묻는다.
+// 발매 신청서(pages/Upload.tsx)와 같은 틀로 한 화면에 보여 준다: 위에 고정된 제목 막대, 신청서의 단계 제목,
+// 고르는 카드(aq-choice)·옵션 카드(aq-option)·칩(ui-chip), 아래 고정 버튼(step-actions).
+// 위에서부터 누가(어느 앱이, 어디서) → 어느 작업 공간에 → 무엇을 허용할지 → 어떤 권한을 줘도 지켜지는 것.
+// 돈·접수 권한과 거절은 확인 창으로 한 번 더 묻는다.
 // 승인하면 브라우저 연결은 AI 앱으로 돌아가고, 기기 연결은 여기서 끝난다.
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from '../lib/router';
@@ -39,10 +39,6 @@ const FAILED_TEXT: Record<string, string> = {
   AI_CONNECT_CLIENT_UNKNOWN: '등록되지 않았거나 사용이 중단된 AI 앱이에요.',
 };
 
-const STEPS = [
-  { short: '연결 확인', kicker: '01 / 02 · 연결 확인' },
-  { short: '권한', kicker: '02 / 02 · 권한', title: '무엇을\n허용할까요?', sub: '허용한 일만 할 수 있어요. 나중에 연결된 AI 앱에서 바꾸거나 끊을 수 있어요.' },
-];
 
 const demo: AiConnectDetails = {
   kind: 'browser',
@@ -135,8 +131,8 @@ function BackIcon() {
   );
 }
 
-/** 신청서와 같은 위 막대(제목·로그인 계정·진행 막대). step -1이면 진행 막대 없이 */
-function Frame({ step, onBack, children }: { step: number; onBack?: () => void; children: React.ReactNode }) {
+/** 신청서와 같은 위 막대(제목·로그인 계정). 연결은 한 화면에서 끝나 진행 막대는 없다 */
+function Frame({ onBack, children }: { step?: number; onBack?: () => void; children: React.ReactNode }) {
   const { user } = useAuth();
   return (
     <>
@@ -150,13 +146,6 @@ function Frame({ step, onBack, children }: { step: number; onBack?: () => void; 
             {user?.email && <span className="aq-connect-account" title="이 계정으로 연결돼요">{user.email}</span>}
           </span>
         </div>
-        {step >= 0 && (
-          <div className="wizard-progress" aria-label={`AI 앱 연결 단계 ${step + 1} / ${STEPS.length}`}>
-            {STEPS.map((st, i) => (
-              <span key={st.short} className={`wizard-progress-seg${i <= step ? ' current' : ''}`}>{i === step && <em>{st.short}</em>}</span>
-            ))}
-          </div>
-        )}
       </div>
       {children}
     </>
@@ -179,7 +168,6 @@ function Review({ request, d, onDone, onFailed }: {
   onFailed: (err: unknown) => void;
 }) {
   const confirm = useConfirm();
-  const [step, setStep] = useState(0);
   const editable = d.workspaces.filter(w => w.role !== 'VIEWER');
   const [org, setOrg] = useState(() => (editable[0] ?? d.workspaces[0])?.id ?? '');
   const [on, setOn] = useState<Set<string>>(() => new Set(d.scopes.filter(s => s.checked).map(s => s.scope)));
@@ -189,7 +177,6 @@ function Review({ request, d, onDone, onFailed }: {
     const want = new Set(['releases:read', ...p.scopes.filter(s => offered.has(s))]);
     return want.size === on.size && [...want].every(s => on.has(s));
   })?.id;
-  const top = () => window.scrollTo({ top: 0 });
 
   const toggle = (scope: string, locked: boolean) => {
     if (locked) return;
@@ -236,110 +223,105 @@ function Review({ request, d, onDone, onFailed }: {
 
   const ws = d.workspaces.find(w => w.id === org);
   const verified = d.client.verified_host
-    ? `${d.client.verified_host}에서 확인된 앱이에요.`
-    : d.client.registered ? '어데닉에 등록된 에이전트예요.' : null;
+    ? `${d.client.verified_host}에서 확인된 앱`
+    : d.client.registered ? '어데닉에 등록된 에이전트' : null;
+  const from = d.requested_from ? `${d.requested_from}에서 요청` : '연결 코드로 요청';
 
   return (
-    <Frame step={step} onBack={step > 0 ? () => { setStep(0); top(); } : undefined}>
-      {step === 0 ? (
-        <>
-          <Header
-            kicker={STEPS[0].kicker}
-            title={`${d.client.name}에서\n어데닉을 쓰려고 해요`}
-            sub="연결할 작업 공간을 고르면 다음 단계에서 허용할 일을 정해요."
-          />
-          <div className="aq-connect-app-row">
-            <span className="aq-connect-app-mark" aria-hidden="true">{(d.client.name.match(/[\p{L}\p{N}]/u)?.[0] ?? 'A').toUpperCase()}</span>
-            <span className="min-0">
-              <strong>{d.client.name}</strong>
-              <small>{d.requested_from ? `${d.requested_from}에서 요청했어요` : '연결 코드로 요청했어요'}</small>
-            </span>
-            {verified && <span className="aq-connect-tag is-ok">확인됨</span>}
-          </div>
-          {verified
-            ? <p className="aq-option-note">{verified} 내가 방금 시작한 연결일 때만 계속해 주세요.</p>
-            : <p className="ui-callout is-warn small">어데닉이 이 앱이 누구인지 확인하지 못했어요. 내가 방금 시작한 연결일 때만 계속해 주세요.</p>}
-          {d.device_code && (
-            <>
-              <h2 className="subhead">연결 코드</h2>
-              <div className="aq-connect-code-box" aria-label="연결 코드">{d.device_code}</div>
-              <p className="aq-option-note">AI 앱에 보이는 코드와 같은지 확인해 주세요.</p>
-            </>
-          )}
-          <h2 className="subhead">어느 작업 공간에 연결할까요?</h2>
-          <div className="aq-choice-row aq-connect-workspaces" role="radiogroup" aria-label="연결할 작업 공간">
-            {d.workspaces.map(w => (
-              <label key={w.id} className={`aq-choice${org === w.id ? ' is-on' : ''}`}>
-                <input type="radio" name="aqConnectOrg" checked={org === w.id} onChange={() => setOrg(w.id)} />
-                <strong>{workspaceName(w.name)}</strong>
-                <small>{ROLE[w.role] ?? w.role}</small>
-              </label>
-            ))}
-          </div>
-        </>
-      ) : (
-        <>
-          <Header kicker={STEPS[1].kicker} title={STEPS[1].title} sub={STEPS[1].sub} />
-          <div className="aq-yesno aq-connect-presets" role="radiogroup" aria-label="빠르게 고르기">
-            {PRESETS.filter(p => p.id !== 'all' || d.scopes.length > 2).map(p => (
-              <button key={p.id} type="button" role="radio" aria-checked={preset === p.id} className={`ui-chip${preset === p.id ? ' is-on' : ''}`} onClick={() => pick(p.id)}>
-                {p.label}
-              </button>
-            ))}
-          </div>
-          <div className="aq-options">
-            {d.scopes.map(s => (
-              <Fragment key={s.scope}>
-                <label className={`aq-option${on.has(s.scope) ? ' is-on' : ''}${s.locked ? ' is-locked' : ''}`}>
-                  <span className="aq-option-text">
-                    <strong>
-                      {s.title}
-                      {s.locked && <span className="aq-connect-tag">항상 포함</span>}
-                      {s.risk === 'submit' && <span className="aq-connect-tag is-warn">내 이름으로 접수</span>}
-                      {s.risk === 'money' && <span className="aq-connect-tag is-warn">돈이 움직여요</span>}
-                    </strong>
-                    <small>{s.description}</small>
-                  </span>
-                  <input type="checkbox" aria-label={s.title} checked={on.has(s.scope)} disabled={s.locked} onChange={() => toggle(s.scope, s.locked)} />
-                </label>
-              </Fragment>
-            ))}
-          </div>
-          {ws?.role === 'VIEWER' && <p className="ui-callout is-info small">{workspaceName(ws.name)}에서는 보기 전용이라, 허용해도 읽기만 할 수 있어요.</p>}
+    <Frame step={-1}>
+      <Header
+        kicker="AI 앱 연결"
+        title={`${d.client.name}에서\n어데닉을 쓰려고 해요`}
+        sub="허용한 일만 할 수 있어요. 연결은 언제든 끊을 수 있어요."
+      />
 
-          <h2 className="subhead">어떤 권한을 줘도 지켜져요</h2>
-          <ul className="aq-connect-promise">
-            <li>지급 계좌를 바꾸거나 계약서·신청서에 서명할 수 없어요.</li>
-            <li>발매 취소·서비스 중단·큰 금액 지급은 요청만 할 수 있어요. 매번 스튜디오에서 내가 승인해요.</li>
-            <li>비밀번호·로그인 같은 계정 설정은 건드릴 수 없어요.</li>
-            <li>프로필 → 연결된 AI 앱에서 언제든 끊을 수 있어요.</li>
-          </ul>
-          <dl className="aq-connect-facts">
-            <dt>연결할 곳</dt><dd>{workspaceName(ws?.name ?? '')}</dd>
-            {d.return_to && <><dt>승인 후 돌아갈 곳</dt><dd>{d.return_to}</dd></>}
-            {d.client.client_id.startsWith('https://') && <><dt>앱 확인 주소</dt><dd>{d.client.client_id}</dd></>}
-          </dl>
-        </>
-      )}
-      <div className="step-actions">
-        {step === 0 ? (
-          <button type="button" id="wizardBack" className="ui-btn is-soft" disabled={!!busy} onClick={() => void decide(false)}>거절</button>
-        ) : (
-          <button type="button" id="wizardBack" className="ui-btn is-soft" disabled={!!busy} onClick={() => { setStep(0); top(); }}>이전</button>
-        )}
-        {step === 0 ? (
-          <button type="button" id="wizardNext" className="ui-btn is-primary" disabled={!org} onClick={() => { setStep(1); top(); }}>다음</button>
-        ) : (
-          <button type="button" id="wizardNext" className={`ui-btn is-primary${busy === 'approve' ? ' is-busy' : ''}`} disabled={!!busy || !org} onClick={() => void decide(true)}>
-            허용하고 연결
-          </button>
-        )}
+      <div className="aq-connect-app-row">
+        <span className="aq-connect-app-mark" aria-hidden="true">{(d.client.name.match(/[\p{L}\p{N}]/u)?.[0] ?? 'A').toUpperCase()}</span>
+        <span className="min-0">
+          <strong>{d.client.name}</strong>
+          <small>{verified ? `${verified} · ${from}` : from}</small>
+        </span>
+        {verified && <span className="aq-connect-tag is-ok">확인됨</span>}
       </div>
-      {(
-        <p className="aq-connect-deny">
-          <button type="button" className="ui-btn is-text" disabled={!!busy} onClick={() => void decide(false)}>연결하지 않을래요</button>
-        </p>
+      {!verified && <p className="ui-callout is-warn small">어데닉이 이 앱이 누구인지 확인하지 못했어요. 내가 방금 시작한 연결일 때만 허용해 주세요.</p>}
+      {d.device_code && (
+        <div className="aq-connect-code-row">
+          <span>AI 앱에 보이는 코드와 같은지 확인해 주세요</span>
+          <strong>{d.device_code}</strong>
+        </div>
       )}
+
+      <h2 className="subhead">연결할 작업 공간</h2>
+      {d.workspaces.length > 1 ? (
+        <div className="aq-choice-row aq-connect-workspaces" role="radiogroup" aria-label="연결할 작업 공간">
+          {d.workspaces.map(w => (
+            <label key={w.id} className={`aq-choice${org === w.id ? ' is-on' : ''}`}>
+              <input type="radio" name="aqConnectOrg" checked={org === w.id} onChange={() => setOrg(w.id)} />
+              <strong>{workspaceName(w.name)}</strong>
+              <small>{ROLE[w.role] ?? w.role}</small>
+            </label>
+          ))}
+        </div>
+      ) : (
+        <div className="aq-choice is-on aq-connect-one-ws">
+          <strong>{workspaceName(ws?.name ?? '')}</strong>
+          <small>{ROLE[ws?.role ?? ''] ?? ws?.role}</small>
+        </div>
+      )}
+
+      <div className="aq-connect-scope-head">
+        <h2 className="subhead">허용할 일</h2>
+        <div className="aq-yesno aq-connect-presets" role="radiogroup" aria-label="빠르게 고르기">
+          {PRESETS.filter(p => p.id !== 'all' || d.scopes.length > 2).map(p => (
+            <button key={p.id} type="button" role="radio" aria-checked={preset === p.id} className={`ui-chip${preset === p.id ? ' is-on' : ''}`} onClick={() => pick(p.id)}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="aq-options">
+        {d.scopes.map(s => (
+          <Fragment key={s.scope}>
+            <label className={`aq-option${on.has(s.scope) ? ' is-on' : ''}${s.locked ? ' is-locked' : ''}`}>
+              <span className="aq-option-text">
+                <strong>
+                  {s.title}
+                  {s.locked && <span className="aq-connect-tag">항상 포함</span>}
+                  {s.risk === 'submit' && <span className="aq-connect-tag is-warn">내 이름으로 접수</span>}
+                  {s.risk === 'money' && <span className="aq-connect-tag is-warn">돈이 움직여요</span>}
+                </strong>
+                <small>{s.description}</small>
+              </span>
+              <input type="checkbox" aria-label={s.title} checked={on.has(s.scope)} disabled={s.locked} onChange={() => toggle(s.scope, s.locked)} />
+            </label>
+          </Fragment>
+        ))}
+      </div>
+      {ws?.role === 'VIEWER' && <p className="ui-callout is-info small">{workspaceName(ws.name)}에서는 보기 전용이라, 허용해도 읽기만 할 수 있어요.</p>}
+
+      <h2 className="subhead">어떤 권한을 줘도 지켜져요</h2>
+      <ul className="aq-connect-promise">
+        <li>지급 계좌를 바꾸거나 계약서·신청서에 서명할 수 없어요.</li>
+        <li>발매 취소·서비스 중단·큰 금액 지급은 요청만 할 수 있어요. 매번 스튜디오에서 내가 승인해요.</li>
+        <li>비밀번호·로그인 같은 계정 설정은 건드릴 수 없어요.</li>
+        <li>프로필 → 연결된 AI 앱에서 언제든 끊을 수 있어요.</li>
+      </ul>
+      {(d.return_to || d.client.client_id.startsWith('https://')) && (
+        <dl className="aq-connect-facts">
+          {d.return_to && <><dt>승인 후 돌아갈 곳</dt><dd>{d.return_to}</dd></>}
+          {d.client.client_id.startsWith('https://') && <><dt>앱 확인 주소</dt><dd>{d.client.client_id}</dd></>}
+        </dl>
+      )}
+
+      <div className="step-actions">
+        <button type="button" id="wizardBack" className="ui-btn is-soft" disabled={!!busy} onClick={() => void decide(false)}>거절</button>
+        <button type="button" id="wizardNext" className={`ui-btn is-primary${busy === 'approve' ? ' is-busy' : ''}`} disabled={!!busy || !org} onClick={() => void decide(true)}>
+          {`${on.size}개 허용하고 연결`}
+        </button>
+      </div>
+      <p className="aq-connect-deny">
+        <button type="button" className="ui-btn is-text" disabled={!!busy} onClick={() => void decide(false)}>연결하지 않을래요</button>
+      </p>
     </Frame>
   );
 }
