@@ -403,7 +403,7 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
     let (s, _, v) = rpc(&app, Some(&c.access), "tools/list", json!({})).await;
     assert_eq!(s, StatusCode::OK);
     let tools = v["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 65);
+    assert_eq!(tools.len(), 78);
     let public = [
         "get_release_requirements",
         "list_announcements",
@@ -4339,4 +4339,231 @@ async fn workspace_tools_read_state_and_make_small_changes(pool: PgPool) {
     )
     .await;
     assert!(err);
+}
+
+#[sqlx::test]
+async fn risky_actions_wait_for_one_studio_approval(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let c = connect(&app, &u, &["scope_write"]).await;
+    let (_, rel) = tool(
+        &app,
+        &c.access,
+        "create_release_draft",
+        json!({"title":"Lantern","release_type":"SINGLE","artist_name":"Han River"}),
+    )
+    .await;
+    let release = rel["release_id"].as_str().unwrap().to_string();
+
+    // Special-content details need the artist's confirmation and land where
+    // the Studio editor keeps them.
+    let ai =
+        json!({"involved": true, "uses": ["작곡(멜로디)에 AI 도움을 받았어요"], "tools": ["Suno"]});
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "set_special_options",
+        json!({"release_id": release, "ai": ai}),
+    )
+    .await;
+    assert!(err && v["error"]["code"] == "INVALID_ARGUMENTS", "{v}");
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "set_special_options",
+        json!({"release_id": release, "artist_confirmed": true, "ai": ai,
+               "express": {"requested": true, "reason": "공연 일정에 맞춰야 해요", "terms_accepted": true}}),
+    )
+    .await;
+    assert!(!err, "{v}");
+    let options: Value =
+        sqlx::query_scalar("SELECT draft->'options' FROM catalog.releases WHERE id=$1::uuid")
+            .bind(&release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(options["ai"], true);
+    assert_eq!(
+        options["aiTool"],
+        "작곡(멜로디)에 AI 도움을 받았어요 / 도구: Suno"
+    );
+    assert_eq!(options["expressAck"], true);
+
+    // A draft is deleted, not withdrawn.
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "request_release_withdrawal",
+        json!({"release_id": release}),
+    )
+    .await;
+    assert!(err && v["error"]["code"] == "RELEASE_NOT_SUBMITTED", "{v}");
+
+    // Nothing happens until the artist approves in the Studio.
+    let end = (chrono::Utc::now() + chrono::Duration::days(90))
+        .format("%Y-%m-%d")
+        .to_string();
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "request_contract_end",
+        json!({"end_date": end}),
+    )
+    .await;
+    assert!(!err, "{v}");
+    assert_eq!(v["status"], "PENDING");
+    assert_eq!(v["summary"]["title"], "어데닉 계약 종료 예약");
+    let id = v["request_id"].as_str().unwrap().to_string();
+    assert_eq!(v["approve_url"], format!("{ORIGIN}/ai/actions/{id}"));
+    let (_, again) = tool(
+        &app,
+        &c.access,
+        "request_contract_end",
+        json!({"end_date": end}),
+    )
+    .await;
+    assert_eq!(again["request_id"], id.as_str());
+    assert!(
+        notices(&pool, u.user)
+            .await
+            .contains(&"AI 앱이 승인을 요청했어요: 계약 종료 예약".to_string())
+    );
+
+    let path = format!("/api/auth/ai-action-requests/{id}");
+    let other = user(&app).await;
+    let (s, _) = call(&app, "GET", &path, json!(null), Some(&other)).await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+    let (s, list) = call(
+        &app,
+        "GET",
+        "/api/auth/ai-action-requests",
+        json!(null),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(list["items"][0]["id"], id.as_str());
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("{path}/approve"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["status"], "DONE");
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "get_action_request",
+        json!({"request_id": id}),
+    )
+    .await;
+    assert_eq!(v["status"], "DONE", "{v}");
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("{path}/approve"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, v["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("AI_REQUEST_DECIDED"))
+    );
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "cancel_contract_end",
+        json!({"artist_confirmed": true}),
+    )
+    .await;
+    assert!(!err, "{v}");
+
+    // A failing action is reported to the page and to the assistant.
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "request_member_invite",
+        json!({"email": "nobody-here@example.test", "role": "VIEWER"}),
+    )
+    .await;
+    let invite = v["request_id"].as_str().unwrap().to_string();
+    assert_eq!(v["summary"]["lines"][0]["value"], "n***@example.test");
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/auth/ai-action-requests/{invite}/approve"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_ne!(s, StatusCode::OK, "{v}");
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "get_action_request",
+        json!({"request_id": invite}),
+    )
+    .await;
+    assert_eq!(
+        (v["status"].as_str(), v["error_code"].as_str()),
+        (Some("FAILED"), Some("MEMBER_ACCOUNT_NOT_FOUND"))
+    );
+
+    // Rejected and expired requests run nothing.
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "request_takedown",
+        json!({"release_id": release, "reason": "더 이상 서비스하지 않을래요"}),
+    )
+    .await;
+    let takedown = v["request_id"].as_str().unwrap().to_string();
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/auth/ai-action-requests/{takedown}/reject"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, v["status"].as_str()),
+        (StatusCode::OK, Some("REJECTED"))
+    );
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "request_takedown",
+        json!({"release_id": release, "reason": "다시 요청해요"}),
+    )
+    .await;
+    let late = v["request_id"].as_str().unwrap().to_string();
+    sqlx::query("UPDATE identity.mcp_action_requests SET expires_at=now()-interval '1 minute' WHERE id=$1::uuid")
+        .bind(&late)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (_, v) = call(
+        &app,
+        "POST",
+        &format!("/api/auth/ai-action-requests/{late}/approve"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "AI_REQUEST_EXPIRED");
+
+    // Payouts above the limit need the payout permission even to ask.
+    let (s, _, _) = rpc(
+        &app,
+        Some(&c.access),
+        "tools/call",
+        json!({"name":"request_large_payout","arguments":{"amount": 500000}}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
 }
