@@ -505,7 +505,7 @@ fn defs() -> &'static [ToolDef] {
                 name: "mark_notifications_read",
                 title: "Mark notifications read",
                 description: "Mark notifications as read: the given notification_ids (from list_notifications) or all of them.",
-                scope: SCOPE_READ, read_only: false, destructive: false, idempotent: true, widget: false,
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"properties":{
                     "notification_ids": {"type":"array","maxItems":100,"uniqueItems":true,"items": uuid_schema("Notification")},
                     "all": {"type":"boolean","description":"Mark every notification read"}}}),
@@ -3373,11 +3373,15 @@ mod tests {
             if d.scope == SCOPE_WRITE || d.scope == SCOPE_SUBMIT {
                 assert!(!d.read_only, "{}", d.name);
             }
-            // Moving money and submitting a release (declarations recorded
-            // as the artist's) are what clients must confirm with the user.
+            // Moving money, submitting a release (declarations recorded
+            // as the artist's) and deleting a draft (cannot be undone) are
+            // what clients must confirm with the user.
             assert_eq!(
                 d.destructive,
-                matches!(d.name, "request_payout" | "submit_release"),
+                matches!(
+                    d.name,
+                    "request_payout" | "submit_release" | "delete_release_draft"
+                ),
                 "{}",
                 d.name
             );
