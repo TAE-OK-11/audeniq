@@ -2,6 +2,15 @@
 //! single JSON object (no SSE, no server-initiated messages: every tool here
 //! finishes within the request deadline).
 //!
+//! Two endpoints:
+//! - `/api/mcp`: the account endpoint. Every request but `server/discover`
+//!   needs a token; without one the answer is 401 with the resource metadata
+//!   challenge, which is what makes clients start OAuth when they connect
+//!   (most only do so on a 401, never mid-session).
+//! - `/api/mcp/public`: no account. Only the public tools (notices, events,
+//!   service status, release requirements), counted per user when a token is
+//!   sent anyway.
+//!
 //! Dual-era server:
 //! - 2026-07-28 ("modern"): stateless; each request carries
 //!   `_meta["io.modelcontextprotocol/protocolVersion"]`, mirrored in the
@@ -151,10 +160,13 @@ async fn public_call(
     id: &Value,
     def: &'static tools::ToolDef,
     args: Value,
+    known: Option<Principal>,
     complete: impl Fn(Value) -> Value,
 ) -> Response {
     let server_error = |e: Error| server_error(id, e);
-    let principal = if h.contains_key(header::AUTHORIZATION) {
+    let principal = if known.is_some() {
+        known
+    } else if h.contains_key(header::AUTHORIZATION) {
         match oauth::principal(s, h).await {
             Ok(p) => Some(p),
             Err(BearerError::Invalid) => return unauthorized(s, h, id),
@@ -212,7 +224,23 @@ enum Era {
     Legacy,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum Endpoint {
+    /// `/api/mcp`: a token on every request.
+    Account,
+    /// `/api/mcp/public`: public tools without an account.
+    Public,
+}
+
 pub async fn post(State(s): State<AppState>, h: HeaderMap, body: Bytes) -> Response {
+    serve(s, h, body, Endpoint::Account).await
+}
+
+pub async fn post_public(State(s): State<AppState>, h: HeaderMap, body: Bytes) -> Response {
+    serve(s, h, body, Endpoint::Public).await
+}
+
+async fn serve(s: AppState, h: HeaderMap, body: Bytes, endpoint: Endpoint) -> Response {
     if !s.mcp.enabled {
         return Error::NotFound.into_response();
     }
@@ -370,6 +398,17 @@ pub async fn post(State(s): State<AppState>, h: HeaderMap, body: Bytes) -> Respo
             }
         }
     };
+    // The account endpoint answers nothing without a valid token (version
+    // discovery aside), so every client starts authorization on connect.
+    let known: Option<Principal> = if endpoint == Endpoint::Account && method != "server/discover" {
+        match oauth::principal(&s, &h).await {
+            Ok(p) => Some(p),
+            Err(BearerError::Invalid) => return unauthorized(&s, &h, &id),
+            Err(BearerError::Api(e)) => return server_error(&id, e),
+        }
+    } else {
+        None
+    };
     let modern = matches!(era, Era::Modern);
     let complete = |mut v: Value| {
         if modern {
@@ -409,7 +448,10 @@ pub async fn post(State(s): State<AppState>, h: HeaderMap, body: Bytes) -> Respo
             }),
         ),
         "ping" => rpc_result(&id, complete(json!({}))),
-        "tools/list" => rpc_result(&id, complete(json!({"tools": tools::list_json()}))),
+        "tools/list" => rpc_result(
+            &id,
+            complete(json!({"tools": tools::list_json(endpoint == Endpoint::Public)})),
+        ),
         "prompts/list" => rpc_result(&id, complete(json!({"prompts": prompts::list_json()}))),
         "prompts/get" => {
             let name = params.get("name").and_then(Value::as_str).unwrap_or("");
@@ -461,12 +503,27 @@ pub async fn post(State(s): State<AppState>, h: HeaderMap, body: Bytes) -> Respo
                 .cloned()
                 .unwrap_or_else(|| json!({}));
             if def.public() {
-                return public_call(&s, &h, &id, def, args, complete).await;
+                return public_call(&s, &h, &id, def, args, known, complete).await;
             }
-            let principal: Principal = match oauth::principal(&s, &h).await {
-                Ok(p) => p,
-                Err(BearerError::Invalid) => return unauthorized(&s, &h, &id),
-                Err(BearerError::Api(e)) => return server_error(&id, e),
+            if endpoint == Endpoint::Public {
+                return rpc_error(
+                    StatusCode::OK,
+                    &id,
+                    -32602,
+                    &format!(
+                        "{name} needs an AUDENIQ account: connect {} instead of the public endpoint.",
+                        super::resource(&s)
+                    ),
+                    None,
+                );
+            }
+            let principal: Principal = match known {
+                Some(p) => p,
+                None => match oauth::principal(&s, &h).await {
+                    Ok(p) => p,
+                    Err(BearerError::Invalid) => return unauthorized(&s, &h, &id),
+                    Err(BearerError::Api(e)) => return server_error(&id, e),
+                },
             };
             if !principal.has(def.scope) {
                 return insufficient_scope(&s, &id, def.scope);

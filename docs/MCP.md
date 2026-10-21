@@ -13,7 +13,7 @@ directory, not verified with a real ChatGPT or Claude client.**
 
 ```
 AI client ──HTTPS──▶ audeniq-studio Worker (web/studio) ──tunnel + service secret──▶ audeniq-api
-  POST /api/mcp                 forwards Authorization + MCP headers           crate::mcp::protocol  (JSON-RPC)
+  POST /api/mcp[/|/public]      forwards Authorization + MCP headers           crate::mcp::protocol  (JSON-RPC)
   /api/oauth/*                  only for these paths; no Origin needed         crate::mcp::oauth     (authorization server)
   /.well-known/oauth-*          for server-to-server calls                     crate::mcp::tools     (tool handlers)
                                                                                     │ Actor (user, party) + token's org
@@ -128,12 +128,24 @@ agent cannot use the browser redirect), `audeniq-admin --operator NAME
 mcp-client disable CLIENT_ID` (ends all of its connections). Changes are
 audited as `mcp.client_registered` / `mcp.client_disabled` with the operator.
 
+### Two endpoints
+
+- `POST /api/mcp` (also `/api/mcp/`): the account endpoint, the URL to add as
+  a connector. Every request but `server/discover` needs a token; without one
+  (including `initialize` and `tools/list`) it answers `401` with
+  `WWW-Authenticate: Bearer resource_metadata=…`, which is what makes Grok,
+  Manus, Cursor, VS Code, ChatGPT and Claude start OAuth when they connect
+  (most clients only do so on a 401, never mid-session).
+- `POST /api/mcp/public`: no account. `tools/list` shows only the public tools
+  below; any other tool answers a JSON-RPC error naming `/api/mcp`.
+
 ### Public tools (no account)
 
 `get_release_requirements`, `list_announcements`, `get_announcement` (published
 notices and events, as on `/api/notices` and `/api/events`) and
-`get_service_status` (maintenance, as on `/api/status`) need no token. Their
-`securitySchemes` list `noauth` first, then `oauth2`.
+`get_service_status` (maintenance, as on `/api/status`) need no token on
+`/api/mcp/public` (on `/api/mcp` they are called with the connection's token
+like the rest). Their `securitySchemes` list `noauth` first, then `oauth2`.
 
 | Caller | Daily limit (KST day) | Over the limit |
 |---|---|---|
@@ -438,8 +450,9 @@ Turning it on in production (after the deploy above):
    the API reads it.
 3. Check: `curl https://studio.audeniq.com/.well-known/oauth-authorization-server`
    returns JSON with `"issuer": "https://studio.audeniq.com"`, and
-   `curl -X POST https://studio.audeniq.com/api/mcp -H 'content-type: application/json'
-   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'` lists 13 tools.
+   `curl -X POST https://studio.audeniq.com/api/mcp/public -H 'content-type: application/json'
+   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'` lists the 4 public tools, and the
+   same request to `/api/mcp` answers 401 with a `WWW-Authenticate` challenge.
 4. Add `https://studio.audeniq.com/api/mcp` as a connector in ChatGPT
    (developer mode) or Claude and connect with a test account.
 

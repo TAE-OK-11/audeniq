@@ -57,6 +57,8 @@ pub const SCOPES: [&str; 5] = [
 pub const MCP_PATH: &str = "/api/mcp";
 /// The same endpoint as people paste it with a trailing slash.
 pub const MCP_PATH_SLASH: &str = "/api/mcp/";
+/// Public tools without an account (see [`protocol`]).
+pub const MCP_PUBLIC_PATH: &str = "/api/mcp/public";
 
 /// Public tools (notices, events, service status, release requirements)
 /// need no account and are not counted without one. For a signed-in user:
@@ -151,6 +153,12 @@ pub fn routes() -> Router<AppState> {
                 .delete(protocol::not_allowed),
         )
         .route(
+            MCP_PUBLIC_PATH,
+            post(protocol::post_public)
+                .get(protocol::not_allowed)
+                .delete(protocol::not_allowed),
+        )
+        .route(
             "/.well-known/oauth-protected-resource",
             get(oauth::protected_resource_metadata),
         )
@@ -208,6 +216,7 @@ pub fn origin_exempt(method: &axum::http::Method, path: &str) -> bool {
             path,
             MCP_PATH
                 | MCP_PATH_SLASH
+                | MCP_PUBLIC_PATH
                 | "/api/oauth/register"
                 | "/api/oauth/token"
                 | "/api/oauth/revoke"
