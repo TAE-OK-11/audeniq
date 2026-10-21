@@ -268,7 +268,7 @@ and `{code, message}` (stable API codes, human messages from
 | `start_upload` / `complete_upload` | write | `uploads::issue/complete` | Signed PUT for one audio master or cover, then the Studio's completion (sniff, antivirus, lossless FLAC) |
 | `import_file_from_url` | write | `external_http::public_client_builder`, `uploads::issue/complete` | Fetches a public https:// link the artist gave and registers it like an upload |
 | `get_upload_status` | read | `uploads::status` + `identity.mcp_uploads` | READY / PROCESSING / WAITING_FOR_FILE / EXPIRED / FAILED (error code) |
-| `mark_notifications_read` | read | `portal::read_notifications` | Given notification ids, or all |
+| `mark_notifications_read` | write | `portal::read_notifications` | Given notification ids, or all |
 | `close_inquiry` | write | `portal::close_inquiry` | Close a resolved support inquiry |
 | `attach_rights_proof` | write | `portal::attach_proof`, `portal::create_document` | A DOCUMENT/IMAGE upload becomes a rights proof (waiting document, or a new one for a release); AUDENIQ reviews it |
 | `get_file_checks` | read | `uploads::checks` | Per-file audio/image checks |
