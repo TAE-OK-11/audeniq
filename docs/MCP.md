@@ -115,7 +115,28 @@ Three more, by what the agent can do:
 |---|---|---|
 | Registered by an operator (client secret), no browser redirect | **Link + code** (RFC 8628; public DCR/CIMD clients get `unauthorized_client`, since without a redirect anyone could start it under ChatGPT's name and phish an approval): `POST /api/oauth/device_authorization` → the assistant shows `verification_uri_complete` and `user_code` in the chat → the artist opens it, signs in to the Studio, checks the code and approves → the client polls `/api/oauth/token` (`authorization_pending`, `slow_down` faster than every 5 s, `access_denied`, `expired_token`). | `DEVICE` |
 | Has a credential form that sends the e-mail and password to AUDENIQ without the model seeing them (an operator verified this) | **Password grant**: `grant_type=password&username=&password=[&scope=][&org_id=]` with the client secret an operator issued (`audeniq-admin mcp-client add NAME --password-grant`). Login rate limits (`mcp-password` buckets) and audit apply; `payouts:request` is refused; workspace defaults to the first editable one. Public, DCR and CIMD clients get `unauthorized_client`. | `PASSWORD` |
-| Anything else (only a fixed `Authorization` header) | **Connection token**: the artist makes one in the Studio (프로필 → 로그인 → 연결된 AI 앱 → 연결 토큰 만들기): name, permissions (read always, write on by default, submit/settlement/payout opt-in, or "모든 권한 허용"), 7/30/90 days or no end date (`no_expiry`: works until revoked; password change and log out everywhere still end it; the Studio warns before making one). Shown once; stored as SHA-256; listed and revocable like any connection. | `TOKEN` |
+| Anything else (only a fixed `Authorization` header) | **Agent key** (connection token): the artist makes one per agent in the Studio (프로필 → 로그인 → 연결된 AI 앱 → 에이전트 키 만들기): name, permissions (read always, write on by default, submit/settlement/payout opt-in, or "모든 권한 허용"), 7/30/90 days or no end date (`no_expiry`: works until revoked; password change and log out everywhere still end it; the Studio warns before making one). Shown once; stored as SHA-256; listed and revocable like any connection. | `TOKEN` |
+
+**Work tokens (migration 0142).** An agent key can be used as a bearer as it
+is, or exchanged for a short work token limited to what the task needs (RFC 8693):
+
+```sh
+curl -X POST https://studio.audeniq.com/api/oauth/token \
+  -d grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
+  -d subject_token_type=urn:ietf:params:oauth:token-type:access_token \
+  -d subject_token=$AUDENIQ_AGENT_KEY -d scope="releases:read releases:write"
+# → {"access_token":"…","issued_token_type":"urn:ietf:params:oauth:token-type:access_token",
+#    "token_type":"Bearer","expires_in":3600,"scope":"releases:read releases:write"}
+```
+
+No client authentication (the key is the credential). `scope` defaults to
+everything the connection has and can never exceed it (`invalid_scope`: ask
+with `request_permission`); the token's scopes are stored with it
+(`identity.mcp_tokens.scopes`) and intersected with the connection's on every
+call. Only agent keys (method `TOKEN`, not themselves exchanged) can be
+exchanged; OAuth connections refresh instead (`invalid_grant`). 600 work
+tokens per key per 15 minutes. Revoking the connection deletes the key and
+every work token. `grant_types_supported` lists the exchange grant.
 
 Never ask the artist to type a password into a chat: a model that sees it
 keeps it in the conversation history. Agents that cannot keep it from the

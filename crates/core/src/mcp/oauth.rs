@@ -81,7 +81,7 @@ pub async fn authorization_server_metadata(State(s): State<AppState>) -> Result<
         "response_types_supported": ["code"],
         "response_modes_supported": ["query"],
         "device_authorization_endpoint": format!("{base}/api/oauth/device_authorization"),
-        "grant_types_supported": ["authorization_code", "refresh_token", super::login::DEVICE_GRANT],
+        "grant_types_supported": ["authorization_code", "refresh_token", super::login::DEVICE_GRANT, super::login::TOKEN_EXCHANGE],
         "code_challenge_methods_supported": ["S256"],
         "token_endpoint_auth_methods_supported": ["none", "client_secret_post", "client_secret_basic"],
         "revocation_endpoint_auth_methods_supported": ["none", "client_secret_post", "client_secret_basic"],
@@ -1042,6 +1042,29 @@ pub async fn token(State(s): State<AppState>, h: HeaderMap, body: Bytes) -> Resp
     let failed = || async {
         let _ = auth::rate(&s.pool, &failures, i32::MAX).await;
     };
+    // Token exchange authenticates with the agent key itself (no client).
+    if form.get("grant_type").map(String::as_str) == Some(super::login::TOKEN_EXCHANGE) {
+        if !resource_ok(&s, form.get("resource").map(String::as_str)) {
+            return oauth_error(StatusCode::BAD_REQUEST, "invalid_target", "Unknown resource.");
+        }
+        return match super::login::exchange_agent_key(&s, &form).await {
+            Ok(v) => {
+                let mut r = Json(v).into_response();
+                r.headers_mut().insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
+                r.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+                r
+            }
+            Err(TokenError::Oauth(code, desc)) => {
+                failed().await;
+                oauth_error(StatusCode::BAD_REQUEST, code, desc)
+            }
+            Err(TokenError::Client(code, desc)) => {
+                failed().await;
+                oauth_error(StatusCode::UNAUTHORIZED, code, desc)
+            }
+            Err(TokenError::Api(e)) => token_api_error(e),
+        };
+    }
     let c = match authenticate_client(&s, &h, &form).await {
         Ok(c) => c,
         Err(r) => {
@@ -1433,7 +1456,9 @@ pub async fn principal(s: &AppState, h: &HeaderMap) -> std::result::Result<Princ
     }
     let hash = auth::hash_token(token);
     let row = sqlx::query(
-        "SELECT g.id, g.user_id, g.org_id, g.scopes, g.resource, u.party_id, c.client_name,
+        "SELECT g.id, g.user_id, g.org_id, g.resource, u.party_id, c.client_name,
+                CASE WHEN t.scopes IS NULL THEN g.scopes
+                     ELSE ARRAY(SELECT x FROM unnest(t.scopes) x WHERE x = ANY(g.scopes)) END AS scopes,
                 (g.last_used_at IS NULL OR g.last_used_at < now() - interval '1 minute') AS touch
            FROM identity.mcp_tokens t
            JOIN identity.mcp_grants g ON g.id=t.grant_id

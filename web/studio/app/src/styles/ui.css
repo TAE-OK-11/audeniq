@@ -956,6 +956,8 @@ summary::-webkit-details-marker{display:none}
 .aq-token-made{display:grid;gap:10px}
 .aq-token-made p{margin:0}
 .aq-token-value{display:grid;grid-template-columns:1fr auto;align-items:center;gap:6px 8px}
+.aq-token-exchange summary{cursor:pointer;font-weight:600}
+.aq-token-exchange pre{margin:8px 0;padding:10px 12px;border-radius:var(--aq-r-md);background:var(--aq-gray-50);white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
 .aq-token-value .ui-field-label{grid-column:1/-1;font-size:13px}
 .aq-token-value>code{min-width:0;padding:10px 12px;border-radius:var(--aq-r-md,10px);background:var(--aq-surface,#fff);font-size:13px;word-break:break-all;user-select:all}
 .aq-token-note{font-size:13px}
