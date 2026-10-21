@@ -22,9 +22,11 @@ static GLOBAL: audeniq_core::allocator::Allocator = audeniq_core::allocator::All
 /// jemalloc options, read at start-up (crate::allocator). `oversize_threshold:0`:
 /// blocks above 8 MiB (Argon2's 19 MiB per password hash) stay in the normal
 /// arenas and their decay instead of going back to the OS on every free.
+/// `background_thread:true`: purging runs on jemalloc's own threads, not on
+/// the request that frees (docs/BACKEND_RESOURCE_PERFORMANCE.md, Allocator).
 #[allow(non_upper_case_globals)]
 #[unsafe(export_name = "_rjem_malloc_conf")]
-pub static malloc_conf: &[u8] = b"oversize_threshold:0\0";
+pub static malloc_conf: &[u8] = b"oversize_threshold:0,background_thread:true\0";
 
 const QUEUES: [&str; 6] = [
     "interactive",

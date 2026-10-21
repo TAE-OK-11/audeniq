@@ -60,7 +60,10 @@ mod tests {
                 Allocator.dealloc(dirty, layout);
                 let p = Allocator.alloc_zeroed(layout);
                 assert!(!p.is_null());
-                assert!(std::slice::from_raw_parts(p, size).iter().all(|b| *b == 0), "{size}");
+                assert!(
+                    std::slice::from_raw_parts(p, size).iter().all(|b| *b == 0),
+                    "{size}"
+                );
                 assert_eq!(p as usize % 64, 0);
                 Allocator.dealloc(p, layout);
             }
