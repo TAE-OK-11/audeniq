@@ -281,6 +281,11 @@ and `{code, message}` (stable API codes, human messages from
 | `resend_split_invite` | write | `splits::resend` | E-mail a collaborator's split invite again (rate limited) |
 | `export_csv` | settlement | `portal::statements_csv/reports_csv` | Statements or royalty reports as CSV text (≤ 256 KB) |
 | `delete_release_draft` | write | `catalog::archive` | Never-submitted drafts only, with `artist_confirmed` |
+| `request_release_withdrawal` / `request_takedown` / `request_split_change` / `request_release_end` / `request_contract_end` / `request_counter_notice` / `request_member_invite` | write | `mcp::actions` → `withdraw`, `takedown`, `splits::save`, `contract_terms`, `infringement::counter`, `members::invite` | Filed for one Studio approval (see Actions approved once) |
+| `request_large_payout` | payout | `mcp::actions` → `portal::request_payout` | Any amount up to the balance, approved once in the Studio |
+| `get_action_request` | read | `identity.mcp_action_requests` | PENDING / DONE (result) / FAILED (error code) / REJECTED / EXPIRED / REVOKED |
+| `cancel_takedown` / `cancel_release_end` / `cancel_contract_end` | write | `takedown::cancel`, `contract_terms::cancel_*` | Undo a pending request or scheduled end; `artist_confirmed` |
+| `set_special_options` | write | `draft.options` via `catalog::update` | Cover (original work, rights, licence file), samples, AI use, express release; `artist_confirmed` |
 | `list_artist_pages` / `set_artist_pages` | read / write | `artist_pages::list/set_pages` | Each artist's own page per platform (Spotify, Apple Music, Melon, …), so deliveries never land on a same-name stranger's page |
 | `list_platform_requests` / `create_platform_request` / `cancel_platform_request` | read / write / write | `platform_requests::list/create/cancel` | After-release fixes AUDENIQ does at a platform: wrong artist page, page merge/split, YouTube OAC, Content ID |
 | `get_release_splits` / `list_received_splits` | settlement | `splits::sheet/received` | Collaborator revenue splits of a release (masked e-mails) and shares received; changes stay in the Studio |
@@ -313,6 +318,29 @@ without metadata.
 - The registered asset is attached with `upsert_track` (`asset_id`) or
   `update_release_draft` (`artwork_asset_id`). Rights proofs are uploaded as
   `DOCUMENT` (PDF, JPG, PNG) and attached with `attach_rights_proof`.
+
+### Actions approved once (migration 0144)
+
+Some actions change money, rights or legal standing. An assistant can only
+ask for them (`mcp::actions`); the artist approves each one in the Studio.
+
+- The `request_*` tool checks what it can now (fields, access to the
+  release, balance and account for a payout) and stores the payload with a
+  Korean summary in `identity.mcp_action_requests`. Asking again with the same
+  payload returns the open request; 20 requests per connection per rate
+  window. The artist gets a notice linking to `/ai/actions/{id}`.
+- The approval page shows the app, the workspace, the summary lines and a
+  warning. Approval locks the request with its connection (refused when
+  decided, expired after 24 hours or the connection was revoked), marks it
+  RUNNING and runs the action with the approving artist's own session, the
+  same service call the Studio makes. The outcome is stored (DONE with the
+  result, or FAILED with the error code) and shown on the page; the
+  assistant reads it with `get_action_request`.
+- Payouts approved this way use the idempotency key `mcp-approval:{id}`.
+- Undoing a pending takedown or a scheduled end, and a draft's special
+  options, need only the artist's explicit word in the conversation
+  (`artist_confirmed`); `set_special_options` writes `draft.options` exactly
+  as the Studio editor does, and the declarations at submission must match.
 
 **Prompts** (`prompts/list`, `prompts/get`; Claude shows them as slash
 commands): `prepare_release`, `check_release`, `submission_status`,
