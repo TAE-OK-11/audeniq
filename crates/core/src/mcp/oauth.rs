@@ -586,20 +586,27 @@ pub(super) fn resource_ok(s: &AppState, given: Option<&str>) -> bool {
 }
 
 fn redirect_with(redirect_uri: &str, pairs: &[(&str, &str)]) -> Response {
-    let Ok(mut u) = url::Url::parse(redirect_uri) else {
+    let pairs: Vec<(&str, String)> = pairs.iter().map(|(k, v)| (*k, v.to_string())).collect();
+    let Some(url) = redirect_url(redirect_uri, &pairs) else {
         return Error::Invalid.into_response();
     };
+    let mut r = StatusCode::SEE_OTHER.into_response();
+    if let Ok(v) = HeaderValue::from_str(&url) {
+        r.headers_mut().insert(header::LOCATION, v);
+    }
+    r
+}
+
+/// `redirect_uri` with the given query pairs appended.
+fn redirect_url(redirect_uri: &str, pairs: &[(&str, String)]) -> Option<String> {
+    let mut u = url::Url::parse(redirect_uri).ok()?;
     {
         let mut q = u.query_pairs_mut();
         for (k, v) in pairs {
             q.append_pair(k, v);
         }
     }
-    let mut r = StatusCode::SEE_OTHER.into_response();
-    if let Ok(v) = HeaderValue::from_str(u.as_str()) {
-        r.headers_mut().insert(header::LOCATION, v);
-    }
-    r
+    Some(u.into())
 }
 
 fn redirect_error(
@@ -700,10 +707,6 @@ pub async fn authorize(State(s): State<AppState>, h: HeaderMap, RawQuery(q): Raw
         Err(Error::Unauthorized) => return page_sign_in(&s, "/api/oauth/authorize", &p),
         Err(e) => return e.into_response(),
     };
-    let orgs = match user_orgs(&s, a.user).await {
-        Ok(v) => v,
-        Err(e) => return e.into_response(),
-    };
     let request = super::seal(
         &s,
         "consent",
@@ -713,28 +716,23 @@ pub async fn authorize(State(s): State<AppState>, h: HeaderMap, RawQuery(q): Raw
             "exp": chrono::Utc::now().timestamp() + CONSENT_SECONDS,
         }),
     );
-    let redirect = url::Url::parse(&redirect_uri).ok();
-    let host = redirect
-        .as_ref()
-        .and_then(|u| u.host_str().map(str::to_owned))
-        .unwrap_or_default();
-    page_consent(
-        &client,
-        &ConsentTarget {
-            action: "/api/oauth/authorize",
-            origin: format!("{host}에서 요청했어요"),
-            facts: vec![(
-                "승인 후 돌아갈 곳",
-                format!("<code>{}</code>", escape(&host)),
-            )],
-            caution: None,
-            form_origin: redirect.map(|u| u.origin().ascii_serialization()),
-        },
-        &scopes,
-        &orgs,
-        &request,
-        s.mcp.payout_limit_krw,
-    )
+    // The Studio's consent page (/ai/connect) shows the request and sends
+    // the decision back through `connect::decide`.
+    see_other(&format!(
+        "{}/ai/connect?request={}",
+        super::issuer(&s),
+        url::form_urlencoded::byte_serialize(request.as_bytes()).collect::<String>()
+    ))
+}
+
+pub(super) fn see_other(location: &str) -> Response {
+    let mut r = StatusCode::SEE_OTHER.into_response();
+    if let Ok(v) = HeaderValue::from_str(location) {
+        r.headers_mut().insert(header::LOCATION, v);
+    }
+    r.headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    r
 }
 
 /// The workspaces a user can connect, editable ones first.
@@ -869,6 +867,30 @@ async fn decide_inner(s: &AppState, h: &HeaderMap, body: &[u8]) -> Result<Respon
         form.get("request").map(String::as_str).unwrap_or(""),
     )
     .ok_or(Error::InvalidCode("CONSENT_EXPIRED"))?;
+    let approve = form.get("decision").map(String::as_str) == Some("approve");
+    let org = form.get("org").and_then(|v| v.parse().ok());
+    let offered: Vec<String> = serde_json::from_value(req["sc"].clone()).unwrap_or_default();
+    let chosen = scopes_from_form(&form, &offered);
+    let url = consent_outcome(s, &a, &req, approve, org, &chosen).await?;
+    let mut r = StatusCode::SEE_OTHER.into_response();
+    r.headers_mut().insert(
+        header::LOCATION,
+        HeaderValue::from_str(&url).map_err(|_| Error::Invalid)?,
+    );
+    Ok(r)
+}
+
+/// Approves or denies a sealed browser consent request and returns where
+/// the browser goes next: the client's redirect URI with a code, or with
+/// `access_denied`. `chosen`: the scopes to grant.
+pub(super) async fn consent_outcome(
+    s: &AppState,
+    a: &auth::Actor,
+    req: &Value,
+    approve: bool,
+    org: Option<Uuid>,
+    chosen: &[String],
+) -> Result<String> {
     if req["sh"].as_str() != Some(crate::hex::encode(&a.session_hash).as_str()) {
         return Err(Error::Forbidden);
     }
@@ -886,7 +908,7 @@ async fn decide_inner(s: &AppState, h: &HeaderMap, body: &[u8]) -> Result<Respon
         }
         pairs
     };
-    if form.get("decision").map(String::as_str) != Some("approve") {
+    if !approve {
         let mut tx = s.pool.begin().await?;
         operations::audit(
             &mut tx,
@@ -903,20 +925,13 @@ async fn decide_inner(s: &AppState, h: &HeaderMap, body: &[u8]) -> Result<Respon
             ("error", "access_denied".into()),
             ("error_description", "The user denied access.".into()),
         ]);
-        let refs: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (*k, v.as_str())).collect();
-        return Ok(redirect_with(&redirect_uri, &refs));
+        return redirect_url(&redirect_uri, &pairs).ok_or(Error::Invalid);
     }
-    let org: Uuid = form
-        .get("org")
-        .and_then(|v| v.parse().ok())
-        .ok_or(Error::Invalid)?;
-    let offered: Vec<String> =
-        serde_json::from_value(req["sc"].clone()).map_err(|_| Error::Invalid)?;
-    let scopes = scopes_from_form(&form, &offered);
+    let org = org.ok_or(Error::Invalid)?;
     let mut tx = s.pool.begin().await?;
-    auth::membership(&mut tx, &a, org, false).await?;
+    auth::membership(&mut tx, a, org, false).await?;
     let grant = create_grant(
-        &mut tx, s, client_pk, a.user, org, &scopes, "CONSENT", None, true, a.request,
+        &mut tx, s, client_pk, a.user, org, chosen, "CONSENT", None, true, a.request,
     )
     .await?;
     let code = auth::random_token();
@@ -926,8 +941,7 @@ async fn decide_inner(s: &AppState, h: &HeaderMap, body: &[u8]) -> Result<Respon
         .execute(&mut *tx).await?;
     tx.commit().await?;
     let pairs = with_state(vec![("code", code)]);
-    let refs: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (*k, v.as_str())).collect();
-    Ok(redirect_with(&redirect_uri, &refs))
+    redirect_url(&redirect_uri, &pairs).ok_or(Error::Invalid)
 }
 
 // ---------------------------------------------------------------------------
@@ -1692,21 +1706,11 @@ pub(super) fn page_sign_in(
                 .finish(),
         );
     }
-    let login = format!(
+    see_other(&format!(
         "{}/login?next={}",
         super::issuer(s),
         url::form_urlencoded::byte_serialize(next.as_bytes()).collect::<String>()
-    );
-    page(
-        "어데닉 로그인 필요",
-        &format!(
-            "<h1>먼저 어데닉에 로그인해 주세요</h1><p class=\"lead\">AI 앱 연결은 어데닉 계정으로 승인해요. 로그인하면 이 화면으로 돌아와요.</p>\
-             <div class=\"card soft\"><ul class=\"never\"><li>비밀번호는 AI 앱에 전달되지 않아요.</li><li>AI 앱을 쓰는 계정과 같은 어데닉 계정으로 로그인해 주세요.</li></ul></div>\
-             <div class=\"actions\"><a class=\"btn secondary\" href=\"\">로그인했어요</a><a class=\"btn primary\" href=\"{}\">로그인하기</a></div>",
-            escape(&login)
-        ),
-        None,
-    )
+    ))
 }
 
 pub(super) fn scope_label(scope: &str, payout_limit: i64) -> (&'static str, String) {
@@ -1750,174 +1754,9 @@ pub(super) fn won(v: i64) -> String {
     out
 }
 
-/// Where a consent form posts and what it tells the artist about the
-/// request.
-pub(super) struct ConsentTarget {
-    pub action: &'static str,
-    /// Plain text under the app's name: where the request came from.
-    pub origin: String,
-    /// Label and HTML (escaped by the caller) rows: where the approval goes,
-    /// the connection code.
-    pub facts: Vec<(&'static str, String)>,
-    /// An extra warning before approving (plain text).
-    pub caution: Option<&'static str>,
-    /// An extra origin the form may navigate to (the client's redirect).
-    pub form_origin: Option<String>,
-}
-
-/// Initial for the app's badge (its first letter or digit).
-fn initial(name: &str) -> String {
-    name.chars()
-        .find(|c| c.is_alphanumeric())
-        .map(|c| c.to_uppercase().collect())
-        .unwrap_or_else(|| "AI".into())
-}
-
-pub(super) fn page_consent(
-    client: &Client,
-    target: &ConsentTarget,
-    scopes: &[&str],
-    orgs: &[(Uuid, String, String)],
-    request: &str,
-    payout_limit: i64,
-) -> Response {
-    let mut org_options = String::new();
-    for (id, name, role) in orgs {
-        let role = match role.as_str() {
-            "OWNER" => "소유자",
-            "EDITOR" => "편집자",
-            _ => "보기 전용",
-        };
-        let name = if name == "Personal workspace" {
-            "내 작업 공간"
-        } else {
-            name.as_str()
-        };
-        org_options.push_str(&format!(
-            "<option value=\"{id}\">{} · {role}</option>",
-            escape(name)
-        ));
-    }
-    let mut scope_rows = String::new();
-    for scope in scopes {
-        let (title, desc) = scope_label(scope, payout_limit);
-        let (control, tag) = match *scope {
-            SCOPE_READ => (
-                "<input type=\"checkbox\" checked disabled>",
-                "<span class=\"tag\">기본</span>",
-            ),
-            SCOPE_WRITE => ("<input type=\"checkbox\" name=\"scope_write\" checked>", ""),
-            // Submitting, settlement and payouts are never pre-selected.
-            SCOPE_SUBMIT => (
-                "<input type=\"checkbox\" name=\"scope_submit\">",
-                "<span class=\"tag strong\">내 이름으로 접수</span>",
-            ),
-            SCOPE_SETTLEMENT => ("<input type=\"checkbox\" name=\"scope_settlement\">", ""),
-            _ => (
-                "<input type=\"checkbox\" name=\"scope_payout\">",
-                "<span class=\"tag strong\">돈이 움직여요</span>",
-            ),
-        };
-        let desc = escape(&desc);
-        scope_rows.push_str(&format!(
-            "<label class=\"perm\">{control}<span><b>{title}{tag}</b><small>{desc}</small></span></label>"
-        ));
-    }
-    let mut facts = String::new();
-    for (label, value) in &target.facts {
-        facts.push_str(&format!("<dt>{label}</dt><dd>{value}</dd>"));
-    }
-    if client.client_id.starts_with("https://") {
-        facts.push_str(&format!(
-            "<dt>앱 확인 주소</dt><dd><code>{}</code></dd>",
-            escape(&client.client_id)
-        ));
-    }
-    let caution = target
-        .caution
-        .map(|c| format!("<div class=\"card warn\">{}</div>", escape(c)))
-        .unwrap_or_default();
-    let body = format!(
-        "<div class=\"app\"><span class=\"app-icon\" aria-hidden=\"true\">{initial}</span><div><b>{name}</b><small>{origin}</small></div></div>\
-         <h1>{name}에서 어데닉을 쓸 수 있게 할까요?</h1>\
-         <p class=\"lead\">허용한 일만 할 수 있어요. 연결은 언제든 끊을 수 있어요.</p>\
-         <form method=\"post\" action=\"{action}\">\
-         <section class=\"card\"><h2>연결할 작업 공간</h2><select name=\"org\" required aria-label=\"연결할 작업 공간\">{org_options}</select></section>\
-         <section class=\"card\"><h2>허용할 일</h2>{scope_rows}</section>\
-         <section class=\"card soft\"><h2>이 앱이 할 수 없는 일</h2><ul class=\"never\">\
-         <li>지급 계좌를 바꾸거나 계약서·신청서에 서명하는 일</li>\
-         <li>비밀번호·로그인 같은 계정 설정</li>\
-         <li>발매 취소·서비스 중단·큰 금액 지급은 요청만 할 수 있어요. 매번 스튜디오에서 내가 승인해야 해요.</li>\
-         </ul></section>\
-         {caution}\
-         <dl class=\"facts\">{facts}</dl>\
-         <p class=\"fine\">연결은 어데닉 스튜디오의 프로필 → 연결된 AI 앱에서 끊을 수 있어요. 비밀번호를 바꾸거나 모든 기기에서 로그아웃해도 끊겨요.</p>\
-         <input type=\"hidden\" name=\"request\" value=\"{request}\">\
-         <div class=\"actions\"><button class=\"secondary\" name=\"decision\" value=\"deny\">거절</button><button class=\"primary\" name=\"decision\" value=\"approve\">허용하고 연결</button></div>\
-         </form>",
-        initial = escape(&initial(&client.name)),
-        name = escape(&client.name),
-        origin = escape(&target.origin),
-        action = target.action,
-        request = escape(request),
-    );
-    page("어데닉에 AI 앱 연결", &body, target.form_origin.as_deref())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[tokio::test]
-    async fn consent_page_shows_the_app_its_limits_and_the_decision() {
-        let client = Client {
-            pk: Uuid::nil(),
-            client_id: "https://claude.ai/oauth/mcp-oauth-client-metadata".into(),
-            name: "Claude".into(),
-            redirect_uris: vec![],
-            auth_method: "none".into(),
-            secret_hash: None,
-            kind: "CIMD".into(),
-            password_grant: false,
-        };
-        let target = ConsentTarget {
-            action: "/api/oauth/authorize",
-            origin: "claude.ai에서 요청했어요".into(),
-            facts: vec![("승인 후 돌아갈 곳", "<code>claude.ai</code>".into())],
-            caution: None,
-            form_origin: None,
-        };
-        let orgs = [(
-            Uuid::nil(),
-            "Personal workspace".to_string(),
-            "OWNER".to_string(),
-        )];
-        let scopes = [
-            SCOPE_READ,
-            SCOPE_WRITE,
-            SCOPE_SUBMIT,
-            SCOPE_SETTLEMENT,
-            SCOPE_PAYOUT,
-        ];
-        let r = page_consent(&client, &target, &scopes, &orgs, "req", 300_000);
-        let body = axum::body::to_bytes(r.into_body(), 1 << 20).await.unwrap();
-        let html = String::from_utf8(body.to_vec()).unwrap();
-        if let Ok(path) = std::env::var("AUDENIQ_CONSENT_DUMP") {
-            std::fs::write(path, &html).unwrap();
-        }
-        for text in [
-            "Claude에서 어데닉을 쓸 수 있게 할까요?",
-            "claude.ai에서 요청했어요",
-            "이 앱이 할 수 없는 일",
-            "내 작업 공간 · 소유자",
-            "허용하고 연결",
-            "AUDENIQ",
-        ] {
-            assert!(html.contains(text), "{text}");
-        }
-        // Submitting, settlement and payouts start unticked.
-        assert!(html.contains("<input type=\"checkbox\" name=\"scope_submit\">"));
-        assert!(html.contains("<input type=\"checkbox\" name=\"scope_payout\">"));
-    }
     #[test]
     fn consent_page_keeps_the_form_origin() {
         let r = page("t", "", None);

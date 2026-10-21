@@ -12,10 +12,9 @@
 //!   artist makes in the Studio (shown once, 1-90 days or no end date,
 //!   revocable; password change and log out everywhere end it too).
 use super::oauth::{
-    self, BAD_GRANT, CLIENT_COLS, Client, ConsentTarget, TokenError, authenticate_client,
-    create_grant, escape, issue_tokens, live_grant, oauth_error, page, page_consent, page_error,
-    page_sign_in, requested_scopes, resource_ok, row_client, scopes_from_form, single_params,
-    user_orgs,
+    self, BAD_GRANT, CLIENT_COLS, Client, TokenError, authenticate_client, create_grant, escape,
+    issue_tokens, live_grant, oauth_error, page, page_error, requested_scopes, resource_ok,
+    row_client, scopes_from_form, single_params,
 };
 use super::{SCOPE_PAYOUT, SCOPE_READ, SCOPES};
 use crate::{
@@ -39,7 +38,7 @@ use uuid::Uuid;
 
 pub const DEVICE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
 /// A device authorization must be approved within this window.
-const DEVICE_SECONDS: i64 = 600;
+pub(super) const DEVICE_SECONDS: i64 = 600;
 /// Minimum seconds between polls of one device code.
 const DEVICE_INTERVAL: i64 = 5;
 /// User codes: 8 letters without vowels (no words, no 0/O or 1/I mix-ups).
@@ -84,7 +83,7 @@ pub fn normalize_user_code(raw: &str) -> Option<String> {
     (code.len() == 8 && code.bytes().all(|b| USER_CODE_ALPHABET.contains(&b))).then_some(code)
 }
 
-fn display_code(code: &str) -> String {
+pub(super) fn display_code(code: &str) -> String {
     format!("{}-{}", &code[..4], &code[4..])
 }
 
@@ -169,24 +168,6 @@ pub async fn device_authorization(
     )
 }
 
-fn page_code_entry(message: Option<&str>) -> Response {
-    let note = message
-        .map(|m| format!("<div class=\"card warn\">{}</div>", escape(m)))
-        .unwrap_or_default();
-    page(
-        "어데닉에 AI 앱 연결",
-        &format!(
-            "<h1>AI 앱에 보이는 연결 코드를 입력해 주세요</h1>\
-             <p class=\"lead\">코드는 AI 앱이 대화에서 알려 줘요. 영문 8자리예요.</p>{note}\
-             <form method=\"get\" action=\"/api/oauth/device\"><div class=\"card\">\
-             <input class=\"code-input\" name=\"user_code\" autocomplete=\"off\" autocapitalize=\"characters\" placeholder=\"BCDF-GHJK\" aria-label=\"연결 코드\" required>\
-             </div><p class=\"fine\">내가 시작하지 않은 연결이라면 입력하지 마세요.</p>\
-             <div class=\"actions\"><button class=\"primary\">다음</button></div></form>"
-        ),
-        None,
-    )
-}
-
 fn page_done(title: &str, message: &str, ok: bool) -> Response {
     page(
         title,
@@ -201,7 +182,7 @@ fn page_done(title: &str, message: &str, ok: bool) -> Response {
     )
 }
 
-async fn client_by_pk(s: &AppState, pk: Uuid) -> Result<Option<Client>> {
+pub(super) async fn client_by_pk(s: &AppState, pk: Uuid) -> Result<Option<Client>> {
     let row = sqlx::query(sqlx::AssertSqlSafe(format!(
         "SELECT {CLIENT_COLS} FROM identity.mcp_clients WHERE id=$1 AND disabled_at IS NULL AND kind='ADMIN'"
     )))
@@ -211,91 +192,22 @@ async fn client_by_pk(s: &AppState, pk: Uuid) -> Result<Option<Client>> {
     Ok(row.as_ref().map(row_client))
 }
 
-/// The page the assistant's link opens: sign in, check the code, approve.
-pub async fn device_page(
-    State(s): State<AppState>,
-    h: HeaderMap,
-    RawQuery(q): RawQuery,
-) -> Response {
+/// The page the assistant's link opens. The Studio's consent page
+/// (/ai/connect) signs the artist in, takes the code and shows the request;
+/// `connect::device_lookup` checks the code.
+pub async fn device_page(State(s): State<AppState>, RawQuery(q): RawQuery) -> Response {
     if !s.mcp.enabled {
         return Error::NotFound.into_response();
     }
-    let Some(p) = single_params(q.as_deref().unwrap_or("")) else {
-        return page_code_entry(None);
+    let code = single_params(q.as_deref().unwrap_or(""))
+        .and_then(|p| p.get("user_code").cloned())
+        .and_then(|c| normalize_user_code(&c))
+        .map(|c| display_code(&c));
+    let to = match code {
+        Some(c) => format!("{}/ai/connect?user_code={c}", super::issuer(&s)),
+        None => format!("{}/ai/connect?device=1", super::issuer(&s)),
     };
-    let a = match auth::actor(&s.pool, &h, &s.config, false).await {
-        Ok(a) => a,
-        Err(Error::Unauthorized) => return page_sign_in(&s, "/api/oauth/device", &p),
-        Err(e) => return e.into_response(),
-    };
-    let Some(raw) = p.get("user_code") else {
-        return page_code_entry(None);
-    };
-    if auth::rate(&s.pool, &format!("mcp-device-lookup:{}", a.user), 20)
-        .await
-        .is_err()
-    {
-        return page_error("코드를 너무 많이 입력했어요. 15분 뒤에 다시 해 주세요.");
-    }
-    let Some(code) = normalize_user_code(raw) else {
-        return page_code_entry(Some("코드 형식이 맞지 않아요. 영문 8자리를 확인해 주세요."));
-    };
-    let row = match sqlx::query(
-        "SELECT device_code_hash, client_pk, scopes FROM identity.mcp_device_codes
-          WHERE user_code_hash=$1 AND expires_at > now() AND grant_id IS NULL AND denied_at IS NULL AND used_at IS NULL",
-    )
-    .bind(auth::hash_token(&code))
-    .fetch_optional(&s.pool)
-    .await
-    {
-        Ok(Some(r)) => r,
-        Ok(None) => {
-            return page_code_entry(Some(
-                "코드가 맞지 않거나 만료됐어요. AI 앱에 보이는 코드를 다시 확인해 주세요.",
-            ));
-        }
-        Err(e) => return Error::from(e).into_response(),
-    };
-    let client = match client_by_pk(&s, row.get("client_pk")).await {
-        Ok(Some(c)) => c,
-        Ok(None) => return page_error("등록되지 않았거나 허용되지 않은 AI 앱이에요."),
-        Err(e) => return e.into_response(),
-    };
-    let stored: Vec<String> = row.get("scopes");
-    let scopes: Vec<&str> = SCOPES
-        .iter()
-        .copied()
-        .filter(|k| stored.iter().any(|v| v == k))
-        .collect();
-    let orgs = match user_orgs(&s, a.user).await {
-        Ok(v) => v,
-        Err(e) => return e.into_response(),
-    };
-    let request = super::seal(
-        &s,
-        "device-consent",
-        &json!({
-            "d": crate::hex::encode(row.get::<Vec<u8>, _>("device_code_hash")),
-            "c": client.pk, "sc": scopes, "sh": crate::hex::encode(&a.session_hash),
-            "exp": chrono::Utc::now().timestamp() + DEVICE_SECONDS,
-        }),
-    );
-    page_consent(
-        &client,
-        &ConsentTarget {
-            action: "/api/oauth/device",
-            origin: "어데닉에 등록된 에이전트".into(),
-            facts: vec![("연결 코드", format!("<code>{}</code>", display_code(&code)))],
-            caution: Some(
-                "내가 시작한 연결이고, AI 앱에 보이는 코드가 위 연결 코드와 같을 때만 허용해 주세요.",
-            ),
-            form_origin: None,
-        },
-        &scopes,
-        &orgs,
-        &request,
-        s.mcp.payout_limit_krw,
-    )
+    oauth::see_other(&to)
 }
 
 pub async fn device_decide(State(s): State<AppState>, h: HeaderMap, body: Bytes) -> Response {
@@ -319,6 +231,47 @@ async fn device_decide_inner(s: &AppState, h: &HeaderMap, body: &[u8]) -> Result
         form.get("request").map(String::as_str).unwrap_or(""),
     )
     .ok_or(Error::InvalidCode("CONSENT_EXPIRED"))?;
+    let approve = form.get("decision").map(String::as_str) == Some("approve");
+    let org = form.get("org").and_then(|v| v.parse().ok());
+    let offered: Vec<String> = serde_json::from_value(req["sc"].clone()).unwrap_or_default();
+    let chosen = scopes_from_form(&form, &offered);
+    Ok(
+        match device_outcome(s, &a, &req, approve, org, &chosen).await? {
+            DeviceOutcome::Gone => page_error(
+                "연결 코드가 만료됐거나 이미 처리됐어요. AI 앱에서 연결을 다시 시작해 주세요.",
+            ),
+            DeviceOutcome::Denied => page_done(
+                "연결을 거절했어요",
+                "AI 앱은 이 계정에 접근할 수 없어요. 필요하면 AI 앱에서 다시 연결을 시작해 주세요.",
+                false,
+            ),
+            DeviceOutcome::Approved => page_done(
+                "연결했어요",
+                "AI 앱으로 돌아가 대화를 이어 가 주세요. 허용한 일만 할 수 있어요.",
+                true,
+            ),
+        },
+    )
+}
+
+/// What a device consent decided.
+pub(super) enum DeviceOutcome {
+    Approved,
+    Denied,
+    /// Expired, already approved or denied.
+    Gone,
+}
+
+/// Approves or denies the device code a sealed consent request names.
+/// `chosen`: the scopes to grant (read plus those ticked among offered).
+pub(super) async fn device_outcome(
+    s: &AppState,
+    a: &auth::Actor,
+    req: &Value,
+    approve: bool,
+    org: Option<Uuid>,
+    chosen: &[String],
+) -> Result<DeviceOutcome> {
     if req["sh"].as_str() != Some(crate::hex::encode(&a.session_hash).as_str()) {
         return Err(Error::Forbidden);
     }
@@ -340,11 +293,9 @@ async fn device_decide_inner(s: &AppState, h: &HeaderMap, body: &[u8]) -> Result
     .fetch_optional(&mut *tx)
     .await?;
     if pending.is_none() {
-        return Ok(page_error(
-            "연결 코드가 만료됐거나 이미 처리됐어요. AI 앱에서 연결을 다시 시작해 주세요.",
-        ));
+        return Ok(DeviceOutcome::Gone);
     }
-    if form.get("decision").map(String::as_str) != Some("approve") {
+    if !approve {
         sqlx::query(
             "UPDATE identity.mcp_device_codes SET denied_at=now() WHERE device_code_hash=$1",
         )
@@ -362,22 +313,12 @@ async fn device_decide_inner(s: &AppState, h: &HeaderMap, body: &[u8]) -> Result
         )
         .await?;
         tx.commit().await?;
-        return Ok(page_done(
-            "연결을 거절했어요",
-            "AI 앱은 이 계정에 접근할 수 없어요. 필요하면 AI 앱에서 다시 연결을 시작해 주세요.",
-            false,
-        ));
+        return Ok(DeviceOutcome::Denied);
     }
-    let org: Uuid = form
-        .get("org")
-        .and_then(|v| v.parse().ok())
-        .ok_or(Error::Invalid)?;
-    let offered: Vec<String> =
-        serde_json::from_value(req["sc"].clone()).map_err(|_| Error::Invalid)?;
-    let scopes = scopes_from_form(&form, &offered);
-    auth::membership(&mut tx, &a, org, false).await?;
+    let org = org.ok_or(Error::Invalid)?;
+    auth::membership(&mut tx, a, org, false).await?;
     let grant = create_grant(
-        &mut tx, s, client_pk, a.user, org, &scopes, "DEVICE", None, true, a.request,
+        &mut tx, s, client_pk, a.user, org, chosen, "DEVICE", None, true, a.request,
     )
     .await?;
     sqlx::query("UPDATE identity.mcp_device_codes SET grant_id=$2 WHERE device_code_hash=$1")
@@ -386,11 +327,7 @@ async fn device_decide_inner(s: &AppState, h: &HeaderMap, body: &[u8]) -> Result
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
-    Ok(page_done(
-        "연결했어요",
-        "AI 앱으로 돌아가 대화를 이어 가 주세요. 허용한 일만 할 수 있어요.",
-        true,
-    ))
+    Ok(DeviceOutcome::Approved)
 }
 
 /// The client's poll (RFC 8628 §3.4/3.5).

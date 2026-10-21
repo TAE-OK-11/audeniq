@@ -135,6 +135,15 @@ fn authorize_query(client_id: &str, scope: &str) -> String {
 
 /// The signed consent request embedded in the consent page.
 async fn consent_page(app: &Router, u: &User, client_id: &str, scope: &str) -> String {
+    let (request, details) = consent_details(app, u, client_id, scope).await;
+    // The page gets the name as data; the Studio renders it as text.
+    assert_eq!(details["client"]["name"], "Test <b>Assistant</b>");
+    request
+}
+
+/// The authorize link sends the signed-in browser to the Studio's consent
+/// page; returns its request and what the page shows.
+async fn consent_details(app: &Router, u: &User, client_id: &str, scope: &str) -> (String, Value) {
     let (s, h, body) = raw(
         app,
         "GET",
@@ -143,21 +152,26 @@ async fn consent_page(app: &Router, u: &User, client_id: &str, scope: &str) -> S
         String::new(),
     )
     .await;
-    assert_eq!(s, StatusCode::OK, "{body}");
+    assert_eq!(s, StatusCode::SEE_OTHER, "{body}");
+    let loc = h["location"].to_str().unwrap();
     assert!(
-        h["content-security-policy"]
-            .to_str()
-            .unwrap()
-            .contains("frame-ancestors 'none'")
+        loc.starts_with(&format!("{ORIGIN}/ai/connect?request=")),
+        "{loc}"
     );
-    assert!(
-        body.contains("Test &lt;b&gt;Assistant&lt;/b&gt;"),
-        "client name is escaped"
-    );
-    assert!(!body.contains("<b>Assistant"));
-    let start = body.find("name=\"request\" value=\"").unwrap() + "name=\"request\" value=\"".len();
-    let end = body[start..].find('"').unwrap() + start;
-    body[start..end].to_string()
+    let request = query_param(loc, "request").unwrap();
+    let (s, v) = call(
+        app,
+        "GET",
+        &format!(
+            "/api/auth/ai-connect?request={}",
+            url::form_urlencoded::byte_serialize(request.as_bytes()).collect::<String>()
+        ),
+        json!(null),
+        Some(u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    (request, v)
 }
 
 async fn approve(app: &Router, u: &User, request: &str, scopes: &[&str]) -> (StatusCode, String) {
@@ -785,14 +799,20 @@ async fn authorization_code_and_refresh_token_attacks_are_refused(pool: PgPool) 
         String::new(),
     )
     .await;
-    assert_eq!(s, StatusCode::OK);
-    assert!(body.contains("/login") && !body.contains("name=\"request\""));
-    // The login link brings the user back to this consent screen, in the same
-    // window (in-app browsers of the AI apps cannot open another one).
-    assert!(
-        body.contains("/login?next=%2Fapi%2Foauth%2Fauthorize%3F") && !body.contains("_blank"),
-        "{body}"
-    );
+    // Not signed in: to the Studio login, which comes back to this link in
+    // the same window (in-app browsers of the AI apps cannot open another).
+    assert_eq!(s, StatusCode::SEE_OTHER, "{body}");
+    let (_, h, _) = raw(
+        &app,
+        "GET",
+        &authorize_query(&client_id, "releases:read"),
+        &[],
+        String::new(),
+    )
+    .await;
+    assert!(h["location"].to_str().unwrap().starts_with(&format!(
+        "{ORIGIN}/login?next=%2Fapi%2Foauth%2Fauthorize%3F"
+    )));
 
     // The consent request is bound to the session that saw it.
     let request = consent_page(&app, &u, &client_id, "releases:read").await;
@@ -1040,16 +1060,8 @@ async fn client_id_metadata_documents_are_cached_and_allowlisted(pool: PgPool) {
     assert!(!body.contains("name=\"request\""));
 }
 async fn consent_page_named(app: &Router, u: &User, client_id: &str) -> String {
-    let (s, _, body) = raw(
-        app,
-        "GET",
-        &authorize_query(client_id, "releases:read"),
-        &[("cookie", &u.cookie)],
-        String::new(),
-    )
-    .await;
-    assert_eq!(s, StatusCode::OK, "{body}");
-    body
+    let (_, details) = consent_details(app, u, client_id, "releases:read").await;
+    details.to_string()
 }
 
 #[sqlx::test]
@@ -2214,12 +2226,6 @@ async fn device_start(app: &Router, client: &str, scope: &str) -> Value {
     serde_json::from_str(&body).unwrap()
 }
 
-fn request_field(body: &str) -> String {
-    let start = body.find("name=\"request\" value=\"").unwrap() + "name=\"request\" value=\"".len();
-    let end = body[start..].find('"').unwrap() + start;
-    body[start..end].to_string()
-}
-
 #[sqlx::test]
 async fn device_authorization_links_with_a_code(pool: PgPool) {
     let (app, _) = app(pool.clone()).await;
@@ -2283,32 +2289,71 @@ async fn device_authorization_links_with_a_code(pool: PgPool) {
     let (_, v) = device_poll(&app, &other, device_code).await;
     assert_eq!(v["error"], "invalid_grant");
 
-    // The link: sign in first, then a wrong code, then the real one (any case).
+    // The link opens the Studio's consent page with the code (any case).
     let page = format!("/api/oauth/device?user_code={}", user_code.to_lowercase());
-    let (s, _, body) = raw(&app, "GET", &page, &[], String::new()).await;
-    assert_eq!(s, StatusCode::OK);
-    assert!(body.contains("먼저 어데닉에 로그인해 주세요"), "{body}");
-    assert!(
-        body.contains("/login?next=%2Fapi%2Foauth%2Fdevice%3Fuser_code%3D"),
-        "{body}"
+    let (s, h, _) = raw(&app, "GET", &page, &[], String::new()).await;
+    assert_eq!(s, StatusCode::SEE_OTHER);
+    assert_eq!(
+        h["location"],
+        format!("{ORIGIN}/ai/connect?user_code={user_code}").as_str()
     );
-    let (_, _, body) = raw(
+    let (_, h, _) = raw(&app, "GET", "/api/oauth/device", &[], String::new()).await;
+    assert_eq!(
+        h["location"],
+        format!("{ORIGIN}/ai/connect?device=1").as_str()
+    );
+    // The page checks the code: a wrong one, then the real one.
+    let (s, v) = call(
         &app,
-        "GET",
-        "/api/oauth/device?user_code=BCDF-BCDF",
-        &[("cookie", &u.cookie)],
-        String::new(),
+        "POST",
+        "/api/auth/ai-connect/device",
+        json!({"user_code": "BCDF-BCDF"}),
+        Some(&u),
     )
     .await;
-    assert!(body.contains("코드가 맞지 않거나 만료됐어요"), "{body}");
-    let (s, _, body) = raw(&app, "GET", &page, &[("cookie", &u.cookie)], String::new()).await;
-    assert_eq!(s, StatusCode::OK);
-    assert!(
-        body.contains(user_code),
+    assert_eq!(
+        (s, v["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("AI_CONNECT_CODE_UNKNOWN")),
+        "{v}"
+    );
+    let (s, v) = call(
+        &app,
+        "POST",
+        "/api/auth/ai-connect/device",
+        json!({"user_code": user_code.to_lowercase()}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let request = v["request"].as_str().unwrap().to_string();
+    let enc = url::form_urlencoded::byte_serialize(request.as_bytes()).collect::<String>();
+    let (_, details) = call(
+        &app,
+        "GET",
+        &format!("/api/auth/ai-connect?request={enc}"),
+        json!(null),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(details["kind"], "device");
+    assert_eq!(
+        details["device_code"], user_code,
         "the page shows the code to compare"
     );
-    assert!(body.contains("Test &lt;b&gt;Assistant&lt;/b&gt;"));
-    let request = request_field(&body);
+    assert_eq!(details["client"]["name"], "Test <b>Assistant</b>");
+    let (s, v) = call(
+        &app,
+        "GET",
+        &format!("/api/auth/ai-connect?request={enc}"),
+        json!(null),
+        Some(&user(&app).await),
+    )
+    .await;
+    assert_eq!(
+        (s, v["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("AI_CONNECT_OTHER_SESSION")),
+        "{v}"
+    );
 
     // The form needs the Studio Origin and the session that saw it.
     let org = u.org.to_string();
@@ -2395,8 +2440,15 @@ async fn device_authorization_links_with_a_code(pool: PgPool) {
         "/api/oauth/device?user_code={}",
         d["user_code"].as_str().unwrap()
     );
-    let (_, _, body) = raw(&app, "GET", &page, &[("cookie", &u.cookie)], String::new()).await;
-    let request = request_field(&body);
+    let (_, v) = call(
+        &app,
+        "POST",
+        "/api/auth/ai-connect/device",
+        json!({"user_code": page.rsplit('=').next().unwrap()}),
+        Some(&u),
+    )
+    .await;
+    let request = v["request"].as_str().unwrap().to_string();
     let (s, _, body) = raw(
         &app,
         "POST",
@@ -4566,4 +4618,106 @@ async fn risky_actions_wait_for_one_studio_approval(pool: PgPool) {
     )
     .await;
     assert_eq!(s, StatusCode::FORBIDDEN);
+}
+
+#[sqlx::test]
+async fn the_studio_consent_page_connects_and_denies(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let client_id = register_client(&app).await;
+    let (request, details) = consent_details(
+        &app,
+        &u,
+        &client_id,
+        "releases:read releases:write releases:submit payouts:request",
+    )
+    .await;
+    assert_eq!(details["kind"], "browser");
+    assert_eq!(details["return_to"], "client.example.test");
+    assert_eq!(details["workspaces"][0]["id"], u.org.to_string());
+    let scopes: Vec<(String, bool, String)> = details["scopes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| {
+            (
+                s["scope"].as_str().unwrap().to_string(),
+                s["checked"].as_bool().unwrap(),
+                s["risk"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    assert_eq!(scopes[0], ("releases:read".into(), true, "none".into()));
+    assert_eq!(
+        scopes[2],
+        ("releases:submit".into(), false, "submit".into())
+    );
+
+    // The decision needs the Studio's CSRF token and the session that opened it.
+    let other = user(&app).await;
+    let body = json!({"request": request, "decision": "approve", "org": u.org, "scopes": ["releases:write", "payouts:request", "admin"]});
+    let (s, v) = call(
+        &app,
+        "POST",
+        "/api/auth/ai-connect",
+        body.clone(),
+        Some(&other),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "AI_CONNECT_OTHER_SESSION", "{s} {v}");
+    let (s, v) = call(
+        &app,
+        "POST",
+        "/api/auth/ai-connect",
+        json!({"request": request, "decision": "approve", "scopes": []}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, v["error"]["code"].as_str()),
+        (
+            StatusCode::BAD_REQUEST,
+            Some("AI_CONNECT_WORKSPACE_REQUIRED")
+        )
+    );
+    let (s, v) = call(&app, "POST", "/api/auth/ai-connect", body, Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["status"], "APPROVED");
+    // Only scopes the app asked for, and read always.
+    assert_eq!(
+        v["scopes"],
+        json!(["releases:read", "releases:write", "payouts:request"])
+    );
+    let redirect = v["redirect"].as_str().unwrap();
+    assert!(redirect.starts_with(REDIRECT));
+    assert_eq!(query_param(redirect, "state").as_deref(), Some("st-123"));
+    let code = query_param(redirect, "code").unwrap();
+    let (s, t) = exchange(&app, &client_id, &code, VERIFIER).await;
+    assert_eq!(s, StatusCode::OK, "{t}");
+
+    // Denying sends the app access_denied.
+    let (request, _) = consent_details(&app, &u, &client_id, "releases:read").await;
+    let (_, v) = call(
+        &app,
+        "POST",
+        "/api/auth/ai-connect",
+        json!({"request": request, "decision": "deny"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["status"], "DENIED");
+    assert_eq!(
+        query_param(v["redirect"].as_str().unwrap(), "error").as_deref(),
+        Some("access_denied")
+    );
+    // A tampered request is refused.
+    let (_, v) = call(
+        &app,
+        "GET",
+        "/api/auth/ai-connect?request=abc.def",
+        json!(null),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "AI_CONNECT_EXPIRED");
 }
