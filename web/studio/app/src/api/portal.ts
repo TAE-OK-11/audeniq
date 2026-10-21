@@ -137,10 +137,10 @@ export async function savePayoutAccount(p: PaymentInfo, accountNumber: string): 
 // 문의
 // ---------------------------------------------------------------------------
 const CATEGORY_TO: Record<string, string> = {
-  '발매·심사': 'RELEASE', '수정·테이크다운': 'RELEASE', '정산·지급': 'SETTLEMENT', '계약·권리': 'CONTRACT', '계정·기타': 'ACCOUNT',
+  '발매·심사': 'RELEASE', '수정·테이크다운': 'RELEASE', '정산·지급': 'SETTLEMENT', '계약·권리': 'CONTRACT', '본인인증·실명인증': 'IDENTITY', '계정·기타': 'ACCOUNT',
 };
 const CATEGORY_FROM: Record<string, string> = {
-  RELEASE: '발매·심사', SETTLEMENT: '정산·지급', CONTRACT: '계약·권리', ACCOUNT: '계정·기타', OTHER: '계정·기타',
+  RELEASE: '발매·심사', SETTLEMENT: '정산·지급', CONTRACT: '계약·권리', IDENTITY: '본인인증·실명인증', ACCOUNT: '계정·기타', OTHER: '계정·기타',
 };
 const TICKET_STATUS: Record<string, string> = { OPEN: '답변 대기', ANSWERED: '답변 완료', CLOSED: '종료' };
 

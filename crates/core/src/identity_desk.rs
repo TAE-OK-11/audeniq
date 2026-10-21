@@ -14,6 +14,10 @@
 //! - 이미 인증된 계정: 신분증 정보가 저장된 것과 같아야 한다. 인증 기관으로 인증한 계정은
 //!   그 기록(연계정보)을 그대로 두고 확인 기록만 남긴다. 직원 인증을 잘못 입력했으면 ADMIN만
 //!   `correction`으로 바로잡을 수 있고, 그때는 사유(note)가 필요하다.
+//! - 미성년자(만 19세 미만)도 인증할 수 있다. 주민등록증이 없는 나이라면 청소년증, 또는
+//!   가족관계증명서와 동행한 법정대리인의 신분증으로 확인한다(`MINOR_DOCUMENT_TYPES`, 성인은 쓸 수
+//!   없다). 법정대리인과 함께 확인했으면 관계(`guardian_relation`)를 남기고, 가족관계증명서로
+//!   확인할 때는 꼭 남긴다. 법정대리인의 이름·신분증 번호는 받지 않는다.
 //! - 처리할 때마다 `portal.offline_identity_checks`에 한 줄 쌓고(고치거나 지우지 않는다),
 //!   감사 기록과 사용자 알림을 남긴다.
 use crate::{
@@ -40,15 +44,22 @@ use uuid::Uuid;
 pub const PROVIDER: &str = "OFFLINE";
 /// 확인한 곳
 pub const CHANNELS: [&str; 2] = ["IN_PERSON", "CUSTOMER_CENTER"];
-/// 법령상 신분증 (주민등록증·운전면허증·여권·외국인등록증·장애인등록증·국가보훈등록증)
-pub const DOCUMENT_TYPES: [&str; 6] = [
+/// 법령상 신분증 (주민등록증·운전면허증·여권·외국인등록증·장애인등록증·국가보훈등록증·청소년증)과
+/// 가족관계증명서(법정대리인 동행)
+pub const DOCUMENT_TYPES: [&str; 8] = [
     "RESIDENT_CARD",
     "DRIVER_LICENSE",
     "PASSPORT",
     "ALIEN_REGISTRATION",
     "DISABILITY_CARD",
     "VETERAN_CARD",
+    "YOUTH_CARD",
+    "FAMILY_RELATION_CERT",
 ];
+/// 미성년자만 쓸 수 있는 서류 (청소년증, 가족관계증명서 + 법정대리인 신분증)
+pub const MINOR_DOCUMENT_TYPES: [&str; 2] = ["YOUTH_CARD", "FAMILY_RELATION_CERT"];
+/// 함께 온 법정대리인 (부모·후견인)
+pub const GUARDIAN_RELATIONS: [&str; 2] = ["PARENT", "GUARDIAN"];
 const NOTE_MAX: usize = 500;
 
 #[derive(Deserialize)]
@@ -67,6 +78,9 @@ pub struct VerifyInput {
     pub document_type: String,
     #[serde(default)]
     pub note: String,
+    /// 미성년자: 함께 확인한 법정대리인 (PARENT·GUARDIAN). 가족관계증명서로 확인하면 필수.
+    #[serde(default)]
+    pub guardian_relation: Option<String>,
     /// ADMIN: 이전 직원 실명인증을 다른 실명·생년월일로 바로잡는다.
     #[serde(default)]
     pub correction: bool,
@@ -90,6 +104,24 @@ pub fn parse_birth(raw: &str, today: NaiveDate) -> Result<NaiveDate> {
         return Err(Error::InvalidCode("BIRTH_DATE_INVALID"));
     }
     Ok(d)
+}
+
+/// 서류와 법정대리인이 나이에 맞는지: 미성년자 서류는 미성년자만, 법정대리인도 미성년자만.
+pub fn check_minor_rules(
+    document: &str,
+    guardian: Option<&str>,
+    birth: NaiveDate,
+    today: NaiveDate,
+) -> Result<()> {
+    let minor = account::age_on(birth, today) < account::ADULT_AGE;
+    if !minor && (MINOR_DOCUMENT_TYPES.contains(&document) || guardian.is_some()) {
+        return Err(Error::InvalidCode("IDENTITY_MINORS_ONLY"));
+    }
+    match guardian {
+        Some(g) if !GUARDIAN_RELATIONS.contains(&g) => Err(Error::Invalid),
+        None if document == "FAMILY_RELATION_CERT" => Err(Error::InvalidCode("GUARDIAN_REQUIRED")),
+        _ => Ok(()),
+    }
 }
 
 async fn desk(s: &AppState, h: &HeaderMap) -> Result<staff::Staff> {
@@ -119,7 +151,7 @@ async fn summary(s: &AppState, user: Uuid) -> Result<Value> {
     let email = crate::pii::user_email(&s.payout_keys, &mut *tx, user).await?;
     let identity = account::stored_identity(s, &mut tx, user).await?;
     let checks: Vec<Value> = sqlx::query(
-        "SELECT c.id, c.staff_user_id, c.channel, c.document_type, c.correction, c.note, c.created_at
+        "SELECT c.id, c.staff_user_id, c.channel, c.document_type, c.guardian_relation, c.correction, c.note, c.created_at
            FROM portal.offline_identity_checks c WHERE c.user_id=$1 ORDER BY c.created_at DESC LIMIT 20",
     )
     .bind(user)
@@ -132,6 +164,7 @@ async fn summary(s: &AppState, user: Uuid) -> Result<Value> {
             "staff_user_id": r.get::<Uuid, _>("staff_user_id"),
             "channel": r.get::<String, _>("channel"),
             "document_type": r.get::<String, _>("document_type"),
+            "guardian_relation": r.get::<Option<String>, _>("guardian_relation"),
             "correction": r.get::<bool, _>("correction"),
             "note": r.get::<String, _>("note"),
             "created_at": r.get::<DateTime<Utc>, _>("created_at"),
@@ -169,12 +202,15 @@ pub async fn verify(s: &AppState, h: &HeaderMap, user: Uuid, i: VerifyInput) -> 
         return Err(Error::InvalidCode("IDENTITY_SELF_VERIFY"));
     }
     let name = clean_name(&i.real_name)?;
-    let birth = parse_birth(&i.birth_date, crate::domain::today_kst())?;
+    let today = crate::domain::today_kst();
+    let birth = parse_birth(&i.birth_date, today)?;
     if !CHANNELS.contains(&i.channel.as_str())
         || !DOCUMENT_TYPES.contains(&i.document_type.as_str())
     {
         return Err(Error::Invalid);
     }
+    let guardian = i.guardian_relation.as_deref().filter(|g| !g.is_empty());
+    check_minor_rules(&i.document_type, guardian, birth, today)?;
     let note = i.note.trim();
     staff::note_ok(note, NOTE_MAX)?;
     if i.correction && st.role != StaffRole::Admin {
@@ -212,14 +248,15 @@ pub async fn verify(s: &AppState, h: &HeaderMap, user: Uuid, i: VerifyInput) -> 
     }
     let check = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO portal.offline_identity_checks(id,user_id,staff_user_id,channel,document_type,correction,note)
-         VALUES($1,$2,$3,$4,$5,$6,$7)",
+        "INSERT INTO portal.offline_identity_checks(id,user_id,staff_user_id,channel,document_type,guardian_relation,correction,note)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
     )
     .bind(check)
     .bind(user)
     .bind(st.actor.user)
     .bind(&i.channel)
     .bind(&i.document_type)
+    .bind(guardian)
     .bind(i.correction)
     .bind(note)
     .execute(&mut *tx)
@@ -262,7 +299,10 @@ pub async fn verify(s: &AppState, h: &HeaderMap, user: Uuid, i: VerifyInput) -> 
         None,
         Some(user),
         action,
-        &format!("STAFF_{}:{}", i.channel, i.document_type),
+        &match guardian {
+            Some(g) => format!("STAFF_{}:{}:GUARDIAN_{g}", i.channel, i.document_type),
+            None => format!("STAFF_{}:{}", i.channel, i.document_type),
+        },
         st.actor.request,
     )
     .await?;
@@ -331,6 +371,77 @@ mod tests {
             "",
         ] {
             assert!(parse_birth(bad, today).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn minors() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
+        let d = |v: &str| NaiveDate::parse_from_str(v, "%Y-%m-%d").unwrap();
+        let code = |r: Result<()>| match r {
+            Err(Error::InvalidCode(c)) => c,
+            Err(e) => panic!("{e:?}"),
+            Ok(()) => "OK",
+        };
+        let child = d("2014-05-05");
+        // 만 18세 (생일 하루 전까지 미성년), 만 19세
+        let almost = d("2007-10-20");
+        let adult = d("2007-10-19");
+        // 미성년자: 어떤 신분증이든, 청소년증, 가족관계증명서(법정대리인 필수)
+        assert_eq!(
+            code(check_minor_rules("PASSPORT", None, child, today)),
+            "OK"
+        );
+        assert_eq!(
+            code(check_minor_rules("YOUTH_CARD", None, almost, today)),
+            "OK"
+        );
+        assert_eq!(
+            code(check_minor_rules(
+                "YOUTH_CARD",
+                Some("PARENT"),
+                child,
+                today
+            )),
+            "OK"
+        );
+        assert_eq!(
+            code(check_minor_rules(
+                "FAMILY_RELATION_CERT",
+                Some("GUARDIAN"),
+                child,
+                today
+            )),
+            "OK"
+        );
+        assert_eq!(
+            code(check_minor_rules(
+                "FAMILY_RELATION_CERT",
+                None,
+                child,
+                today
+            )),
+            "GUARDIAN_REQUIRED"
+        );
+        assert!(matches!(
+            check_minor_rules("RESIDENT_CARD", Some("UNCLE"), child, today),
+            Err(Error::Invalid)
+        ));
+        // 성인: 미성년자 서류·법정대리인 없이
+        assert_eq!(
+            code(check_minor_rules("RESIDENT_CARD", None, adult, today)),
+            "OK"
+        );
+        for (doc, g) in [
+            ("YOUTH_CARD", None),
+            ("FAMILY_RELATION_CERT", Some("PARENT")),
+            ("RESIDENT_CARD", Some("PARENT")),
+        ] {
+            assert_eq!(
+                code(check_minor_rules(doc, g, adult, today)),
+                "IDENTITY_MINORS_ONLY",
+                "{doc}"
+            );
         }
     }
 }

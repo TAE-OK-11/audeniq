@@ -26,7 +26,8 @@ import { Badge, EmptyState, PageHeader, SkeletonList } from '../ui';
 import type { Tone } from '../ui/tone';
 
 /** 일반 문의 유형 */
-const INQUIRY_CATEGORIES = ['발매·심사', '수정·테이크다운', '정산·지급', '계약·권리', '계정·기타'];
+const INQUIRY_CATEGORIES = ['발매·심사', '수정·테이크다운', '정산·지급', '계약·권리', '본인인증·실명인증', '계정·기타'];
+const IDENTITY_CATEGORY = '본인인증·실명인증';
 /** 플랫폼에 전달하는 요청 — 같은 작성 창에서 유형으로 고른다 */
 const REQUEST_CATEGORIES: Record<string, RequestGroup> = { '아티스트 페이지': 'profile', '유튜브 Content ID': 'content_id' };
 const GROUP_CATEGORY: Record<RequestGroup, string> = { profile: '아티스트 페이지', content_id: '유튜브 Content ID' };
@@ -272,6 +273,13 @@ function TicketForm({ onSave, preset, releases, artist }: {
         </div>
       ) : (
         <>
+          {category === IDENTITY_CATEGORY && (
+            <div className="ui-callout aq-inquiry-identity">
+              휴대폰·PASS로 본인인증이 안 되면 고객센터에서 신분증 원본을 보고 실명인증을 도와드려요.
+              만 19세 미만은 청소년증이나, 법정대리인과 함께 가족관계증명서로 확인할 수 있어요.
+              <b> 신분증 사진이나 주민등록번호는 문의에 올리지 마세요.</b>
+            </div>
+          )}
           <div className="ui-field">
             <label htmlFor="tSubject">제목</label>
             <input id="tSubject" maxLength={180} required placeholder="문의 제목" value={subject} onChange={e => setSubject(e.target.value)} />
@@ -316,6 +324,7 @@ export function Inquiries() {
   const [showForm, setShowForm] = useState(!!newKind);
   const [preset] = useState<TicketPreset | null>(() => {
     if (newKind === 'edit') return { category: INQUIRY_CATEGORIES[1], releaseId: presetRelease, subject: '[발매 정보 수정 요청]', body: '접수한 발매 정보를 아래와 같이 수정해 주세요.\n\n수정할 내용: ' };
+    if (newKind === 'identity') return { category: IDENTITY_CATEGORY, releaseId: '', subject: '[실명인증 요청]', body: '휴대폰·PASS 본인인증이 되지 않아 고객센터 실명인증을 받고 싶어요.\n\n안 되는 이유(예: 본인 명의 휴대폰 없음, 미성년자): \n방문 또는 연락 가능한 시간: ' };
     if (newKind === 'cancel') return { category: INQUIRY_CATEGORIES[0], releaseId: presetRelease, subject: '[발매 취소 요청]', body: '이 발매 신청을 취소해 주세요.\n\n취소 사유: ' };
     if (newKind === 'request') {
       const g: RequestGroup = params.get('group') === 'content_id' ? 'content_id' : 'profile';
