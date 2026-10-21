@@ -4425,6 +4425,165 @@ async fn workspace_tools_read_state_and_make_small_changes(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn assistants_take_back_requests_the_artist_has_not_answered(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let c = connect(&app, &u, &["scope_write"]).await;
+
+    // An action request: withdrawn, the Studio then refuses to run it.
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "request_approval",
+        json!({"action": "member_invite", "email": "someone@example.test", "role": "VIEWER"}),
+    )
+    .await;
+    let withdrawn = v["request_id"].as_str().unwrap().to_string();
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "cancel_request",
+        json!({"kind": "approval", "request_id": withdrawn}),
+    )
+    .await;
+    assert!(!err && v["status"] == "WITHDRAWN", "{v}");
+    assert_eq!(
+        v["message_ko"],
+        "'멤버 초대' 요청을 거둬들였어요. 아무것도 바뀌지 않았어요."
+    );
+    let (_, v) = call(
+        &app,
+        "POST",
+        &format!("/api/auth/ai-action-requests/{withdrawn}/approve"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "AI_REQUEST_WITHDRAWN");
+    // A decided request cannot be withdrawn.
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "request_approval",
+        json!({"action": "member_invite", "email": "other@example.test", "role": "VIEWER"}),
+    )
+    .await;
+    let rejected = v["request_id"].as_str().unwrap().to_string();
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("/api/auth/ai-action-requests/{rejected}/reject"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "cancel_request",
+        json!({"kind": "approval", "request_id": rejected}),
+    )
+    .await;
+    assert!(err && v["error"]["code"] == "AI_REQUEST_DECIDED", "{v}");
+    assert_eq!(v["error"]["details"]["status"], "REJECTED");
+    // Only this connection's own requests.
+    let other = connect(&app, &u, &["scope_write"]).await;
+    let (err, v) = tool(
+        &app,
+        &other.access,
+        "withdraw_action_request",
+        json!({"request_id": rejected}),
+    )
+    .await;
+    assert!(err && v["error"]["code"] == "NOT_FOUND", "{v}");
+
+    // A permission request.
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "request_permission",
+        json!({"scopes": ["settlement:read"], "reason": "정산을 보려고요"}),
+    )
+    .await;
+    let unwanted = v["request_id"].as_str().unwrap().to_string();
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "request_permission",
+        json!({"action": "withdraw", "request_id": unwanted}),
+    )
+    .await;
+    assert!(!err && v["status"] == "WITHDRAWN", "{v}");
+    let (_, v) = call(
+        &app,
+        "POST",
+        &format!("/api/auth/ai-permission-requests/{unwanted}/approve"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "AI_REQUEST_WITHDRAWN");
+
+    // An application waiting for the artist's one-time approval.
+    let (release, token) = Box::pin(previewed_release(
+        &app, &pool, &store, &u, &c.access, "Twice",
+    ))
+    .await;
+    let submit = json!({"release_id": release, "confirmation_token": token,
+        "declarations": declarations(true), "artist_confirmed": true});
+    let (_, v) = tool(&app, &c.access, "submit_release", submit.clone()).await;
+    assert_eq!(v["view"], "pending_approval", "{v}");
+    let held = v["approval_id"].as_str().unwrap().to_string();
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "cancel_request",
+        json!({"kind": "submission", "release_id": release}),
+    )
+    .await;
+    assert!(!err && v["approval_status"] == "WITHDRAWN", "{v}");
+    let (_, list) = call(
+        &app,
+        "GET",
+        "/api/auth/ai-submissions",
+        json!(null),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(list["items"], json!([]), "no longer shown for approval");
+    let (_, v) = call(
+        &app,
+        "POST",
+        &format!("/api/auth/ai-submissions/{held}/approve"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "AI_SUBMISSION_WITHDRAWN");
+    let (_, v) = tool(&app, &c.access, "submit_release", submit).await;
+    assert_eq!(
+        v["approval_status"], "WITHDRAWN",
+        "a retry does not send it again: {v}"
+    );
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "cancel_request",
+        json!({"kind": "submission", "release_id": release}),
+    )
+    .await;
+    assert!(err && v["error"]["code"] == "NOT_FOUND", "{v}");
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM catalog.releases WHERE id=$1::uuid")
+            .bind(&release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(status, "DRAFT");
+}
+
+#[sqlx::test]
 async fn risky_actions_wait_for_one_studio_approval(pool: PgPool) {
     let (app, _) = app(pool.clone()).await;
     let u = user(&app).await;

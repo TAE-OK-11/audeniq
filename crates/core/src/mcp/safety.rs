@@ -287,6 +287,9 @@ async fn take(s: &AppState, user: Uuid, id: Uuid) -> Result<(Uuid, Uuid, Value, 
         decide(&s.pool, id, "EXPIRED", None).await?;
         return Err(Error::PolicyGate("AI_SUBMISSION_EXPIRED"));
     }
+    if row.get::<String, _>("status") == "WITHDRAWN" {
+        return Err(Error::PolicyGate("AI_SUBMISSION_WITHDRAWN"));
+    }
     Err(Error::PolicyGate("AI_SUBMISSION_DECIDED"))
 }
 

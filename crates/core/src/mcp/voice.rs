@@ -24,6 +24,7 @@ pub fn message_ko(v: &Value) -> Option<String> {
             "ALREADY_GRANTED" => "이미 필요한 권한이 있어요.".into(),
             "REJECTED" => "권한 요청을 거절했어요. 지금 권한으로 할 수 있는 일만 할게요.".into(),
             "EXPIRED" => "권한 요청 시간이 지났어요. 필요하면 다시 요청할게요.".into(),
+            "WITHDRAWN" => "권한 요청을 거둬들였어요.".into(),
             _ => return None,
         },
         "action_request" => {
@@ -36,6 +37,7 @@ pub fn message_ko(v: &Value) -> Option<String> {
                 "FAILED" => format!("'{title}'을(를) 승인했지만 처리하지 못했어요."),
                 "REJECTED" => format!("'{title}' 요청을 거절했어요. 아무것도 바뀌지 않았어요."),
                 "EXPIRED" => format!("'{title}' 요청 시간이 지났어요. 필요하면 다시 요청할게요."),
+                "WITHDRAWN" => format!("'{title}' 요청을 거둬들였어요. 아무것도 바뀌지 않았어요."),
                 _ => return None,
             }
         }
@@ -47,9 +49,13 @@ pub fn message_ko(v: &Value) -> Option<String> {
             "FAILED" => "파일을 확인하지 못했어요. 다른 파일로 다시 올려 주세요.".into(),
             _ => return None,
         },
-        "pending_approval" => {
-            "신청서를 보냈어요. 어데닉 스튜디오에서 한 번 더 승인하면 접수돼요.".into()
-        }
+        "pending_approval" => match s(v, "approval_status") {
+            "WITHDRAWN" => "승인 대기 중이던 신청을 거둬들였어요. 접수되지 않았어요.".into(),
+            "PENDING" | "" => {
+                "신청서를 보냈어요. 어데닉 스튜디오에서 한 번 더 승인하면 접수돼요.".into()
+            }
+            _ => return None,
+        },
         "submitted" => "발매를 신청했어요. 어데닉이 검토를 시작해요.".into(),
         "release_deleted" => "초안을 삭제했어요.".into(),
         "notifications_read" => "알림을 읽음으로 표시했어요.".into(),

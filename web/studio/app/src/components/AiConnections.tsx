@@ -213,7 +213,7 @@ function PendingSubmissions({ items, onDone }: { items: AiSubmission[]; onDone: 
     } catch (err) {
       toast(errorMessage(err, approve ? '신청하지 못했어요.' : '거절하지 못했어요.'), 'error');
       // 서버가 이미 정리한 신청(내용 바뀜·기한 지남·이미 처리)은 목록에서 뺀다
-      if (err instanceof ApiError && ['AI_SUBMISSION_STALE', 'AI_SUBMISSION_EXPIRED', 'AI_SUBMISSION_DECIDED'].includes(err.code)) onDone(p.id);
+      if (err instanceof ApiError && ['AI_SUBMISSION_STALE', 'AI_SUBMISSION_EXPIRED', 'AI_SUBMISSION_DECIDED', 'AI_SUBMISSION_WITHDRAWN'].includes(err.code)) onDone(p.id);
     } finally {
       setBusy(null);
     }

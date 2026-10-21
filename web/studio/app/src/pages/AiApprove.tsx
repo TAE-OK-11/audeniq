@@ -21,6 +21,7 @@ const STATUS_TEXT: Record<AiPermissionRequest['status'], string> = {
   REJECTED: '거절했어요. 연결의 권한은 그대로예요.',
   EXPIRED: '요청 시간(60분)이 지났어요. 필요하면 AI 앱에서 다시 요청해 주세요.',
   REVOKED: '이 연결은 이미 끊겼어요.',
+  WITHDRAWN: 'AI 앱에서 요청을 거둬들였어요. 연결의 권한은 그대로예요.',
 };
 
 const demo = (id: string): AiPermissionRequest => ({

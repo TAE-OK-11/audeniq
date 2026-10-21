@@ -824,6 +824,29 @@ fn defs() -> &'static [ToolDef] {
                 schema: || json!({"type":"object","additionalProperties":false,"required":["payout_id"],"properties":{
                     "payout_id": uuid_schema("The payout request")}}),
             },
+            ToolDef {
+                name: "withdraw_action_request",
+                title: "Withdraw an approval request",
+                description: "Take back a request this connection filed for the artist's approval (request_approval, request_payout with action large) while the artist has not answered it yet; nothing is done. Only when the artist asks, or when the request is no longer wanted. Once approved, undo the result with cancel_request instead.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["request_id"],"properties":{
+                    "request_id": uuid_schema("From request_approval or request_payout (action large)")}}),
+            },
+            ToolDef {
+                name: "withdraw_pending_submission",
+                title: "Withdraw an application waiting for approval",
+                description: "Take back this connection's application for the release that still waits for the artist's one-time approval in AUDENIQ Studio (submit_release answered pending_approval); nothing is submitted. Only when the artist asks. An application already submitted is withdrawn with request_approval (action withdrawal).",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: release_id_schema,
+            },
+            ToolDef {
+                name: "withdraw_permission_request",
+                title: "Withdraw a permission request",
+                description: "Take back a permission request from this connection that the artist has not answered yet (when the task no longer needs it). Permissions already given stay until the connection is disconnected.",
+                scope: SCOPE_READ, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["request_id"],"properties":{
+                    "request_id": uuid_schema("From request_permission")}}),
+            },
         ]
     })
 }
@@ -1103,7 +1126,7 @@ const GROUPS: &[Group] = &[
     Group {
         name: "cancel_request",
         title: "Cancel or withdraw a request",
-        intro: "Cancel something the artist asked for that AUDENIQ has not finished yet. Only when the artist asks.",
+        intro: "Cancel something the artist asked for that AUDENIQ has not finished yet, or take back what this connection sent for the artist's approval before they answer (kind approval, kind submission). Only when the artist asks.",
         key: "kind",
         has_default: false,
         ops: &[
@@ -1113,6 +1136,19 @@ const GROUPS: &[Group] = &[
             ("release_end", "cancel_release_end"),
             ("contract_end", "cancel_contract_end"),
             ("platform_request", "cancel_platform_request"),
+            ("approval", "withdraw_action_request"),
+            ("submission", "withdraw_pending_submission"),
+        ],
+    },
+    Group {
+        name: "request_permission",
+        title: "Ask for more permissions",
+        intro: "More permissions for this connection, approved by the artist in AUDENIQ Studio: ask (action request), or take back a request the artist has not answered (action withdraw).",
+        key: "action",
+        has_default: true,
+        ops: &[
+            ("request", "request_permission"),
+            ("withdraw", "withdraw_permission_request"),
         ],
     },
     Group {
@@ -1309,9 +1345,17 @@ pub fn resolve(name: &str, mut args: Value) -> Resolved {
 /// Tool listing; `public_only` for the endpoint without an account.
 /// Whether the connection may call the tool: its scope, or for
 /// submit_release a write connection (the application then waits for the
-/// artist's one-time approval).
+/// artist's one-time approval), and for the withdrawals the scope that let
+/// the connection send what it takes back.
 pub fn permitted(def: &ToolDef, p: &Principal) -> bool {
-    p.has(def.scope) || (def.name == "submit_release" && p.has(SCOPE_WRITE))
+    p.has(def.scope)
+        || match def.name {
+            "submit_release" => p.has(SCOPE_WRITE),
+            // A connection can always take back what it was allowed to send.
+            "withdraw_pending_submission" => p.has(SCOPE_SUBMIT),
+            "withdraw_action_request" => p.has(SCOPE_PAYOUT),
+            _ => false,
+        }
 }
 
 pub fn list_json(public_only: bool) -> Vec<Value> {
@@ -1742,6 +1786,7 @@ async fn run(
         "get_account_context" => Box::pin(account(s, p)),
         "request_permission" => Box::pin(super::approvals::request(s, p, args)),
         "get_permission_request" => Box::pin(super::approvals::status(s, p, args)),
+        "withdraw_permission_request" => Box::pin(super::approvals::withdraw(s, p, args)),
         "start_upload" => Box::pin(super::files::start(s, p, args)),
         "complete_upload" => Box::pin(super::files::complete(s, p, args)),
         "import_file_from_url" => Box::pin(super::files::import(s, p, args)),
@@ -3789,7 +3834,7 @@ mod tests {
             // request_permission only files a request the artist answers
             // in the Studio; every connection may make one.
             if (d.scope == SCOPE_READ || d.scope == SCOPE_SETTLEMENT)
-                && d.name != "request_permission"
+                && !matches!(d.name, "request_permission" | "withdraw_permission_request")
             {
                 assert!(d.read_only, "{}", d.name);
             }
@@ -3835,7 +3880,7 @@ mod tests {
         }
         let names: std::collections::BTreeSet<_> = published().iter().map(|p| p.name).collect();
         assert_eq!(names.len(), published().len(), "published names are unique");
-        assert_eq!(published().len(), 25);
+        assert_eq!(published().len(), 25, "withdrawals join existing tools");
         assert_eq!(
             published().len() + grouped.len() - GROUPS.len(),
             defs().len(),
