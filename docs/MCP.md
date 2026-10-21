@@ -432,14 +432,35 @@ voice for what was done, no hype); the server instructions ask Korean replies
 to start from it. Amounts, declarations and review results are never
 paraphrased there; they stay in the structured fields.
 
-### Connection pages
+### Connection page (Studio `/ai/connect`)
 
-The consent, device-code, sign-in and error pages the server renders itself
-(`oauth::page`) use the Studio's design tokens and the AUDENIQ wordmark
-(`mcp/logo.svg`, inlined; the CSP still loads nothing from elsewhere). The
-consent page shows the requesting app and where it asked from, the workspace,
-the permissions (submit and payouts start unticked and are tagged), what no
-app can do, and a decision bar that stays above the browser's toolbar.
+Approving a connection happens on a Studio page, not a server-rendered form
+(`mcp::connect`, `pages/AiConnect.tsx`):
+
+- `/api/oauth/authorize` checks the client, redirect, PKCE and scopes, seals
+  the request to the signed-in session (10 minutes) and sends the browser to
+  `/ai/connect?request=…`; signed out, it sends it to the Studio login, which
+  comes back to the same link. `/api/oauth/device` sends the browser to
+  `/ai/connect?user_code=…` (or the code entry, `?device=1`).
+- The page reads `GET /api/auth/ai-connect?request=` (app name, verified host
+  of its metadata document or "registered agent", where it returns, device
+  code, offered scopes with their defaults and risk, workspaces) and shows:
+  the app ↔ AUDENIQ, the workspace to connect (cards), what to allow
+  (switches and quick picks: view only, drafts — suggested — or all), what no
+  permission can do, the details, and a sticky decision bar. Submitting or
+  payout permission asks once more in the bar.
+- `POST /api/auth/ai-connect` (CSRF) approves or denies with the chosen
+  workspace and scopes (read plus offered ones only). A browser connection
+  answers with the client's redirect URL and the page navigates there (the
+  Studio's CSP keeps forms on its own origin); a device connection ends on
+  the page. `POST /api/auth/ai-connect/device` turns a code into a request.
+- A request opened by another session, tampered with or expired answers
+  `AI_CONNECT_OTHER_SESSION` / `AI_CONNECT_EXPIRED`, and the page says to
+  start again in the AI app.
+
+The server form endpoints (`POST /api/oauth/authorize`, `/api/oauth/device`)
+remain for clients that post them directly; their result pages and errors use
+the Studio's design tokens and the AUDENIQ wordmark (`mcp/logo.svg`).
 
 ## Safety (migration 0135)
 
