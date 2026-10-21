@@ -23,6 +23,7 @@
 //! operator turns them on. See docs/MCP.md.
 pub mod actions;
 pub mod approvals;
+pub mod connect;
 pub mod files;
 pub mod login;
 pub mod oauth;
@@ -204,6 +205,11 @@ pub fn routes() -> Router<AppState> {
             get(safety::get_settings).put(safety::put_settings),
         )
         .route("/api/auth/ai-submissions", get(safety::list_pending))
+        .route(
+            "/api/auth/ai-connect",
+            get(connect::details).post(connect::decide),
+        )
+        .route("/api/auth/ai-connect/device", post(connect::device_lookup))
         .route("/api/auth/ai-action-requests", get(actions::list))
         .route("/api/auth/ai-action-requests/{id}", get(actions::get))
         .route(
