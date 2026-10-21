@@ -1307,7 +1307,8 @@ async fn account(s: &AppState, p: &Principal) -> std::result::Result<Value, Tool
     let can_submit = matches!(role, "OWNER" | "EDITOR") && p.has(SCOPE_SUBMIT);
     // Without the submit permission a write connection can still send an
     // application, which then waits for the artist's one-time approval.
-    let can_submit_with_approval = matches!(role, "OWNER" | "EDITOR") && !can_submit && p.has(SCOPE_WRITE);
+    let can_submit_with_approval =
+        matches!(role, "OWNER" | "EDITOR") && !can_submit && p.has(SCOPE_WRITE);
     let payout_limit = s.mcp.payout_limit_krw;
     let can_request_payouts = role == "OWNER" && p.has(SCOPE_PAYOUT) && payout_limit > 0;
     Ok(json!({
@@ -3045,7 +3046,9 @@ mod tests {
             // write needs a write-type scope.
             // request_permission only files a request the artist answers
             // in the Studio; every connection may make one.
-            if (d.scope == SCOPE_READ || d.scope == SCOPE_SETTLEMENT) && d.name != "request_permission" {
+            if (d.scope == SCOPE_READ || d.scope == SCOPE_SETTLEMENT)
+                && d.name != "request_permission"
+            {
                 assert!(d.read_only, "{}", d.name);
             }
             if d.scope == SCOPE_WRITE || d.scope == SCOPE_SUBMIT {

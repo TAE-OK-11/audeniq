@@ -1577,7 +1577,12 @@ async fn submit_scope_is_opt_in_and_platform_rules_are_enforced(pool: PgPool) {
         "release_id": release, "confirmation_token": "x".repeat(40), "declarations": declarations(true), "artist_confirmed": true}})).await;
     assert_eq!(s, StatusCode::FORBIDDEN, "{v}");
     assert_eq!(v["error"]["data"]["required_scope"], "releases:submit");
-    assert!(v["error"]["message"].as_str().unwrap().contains("request_permission"));
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("request_permission")
+    );
 }
 
 async fn fund(pool: &PgPool, u: &User, amount: &str) {
@@ -3711,7 +3716,13 @@ async fn connections_ask_for_more_permissions_and_send_one_time_submissions(pool
         let app = app.clone();
         let access = c.access.clone();
         async move {
-            tool(&app, &access, "request_permission", json!({"scopes": scopes, "reason": "정산 내역을 확인하려고요"})).await
+            tool(
+                &app,
+                &access,
+                "request_permission",
+                json!({"scopes": scopes, "reason": "정산 내역을 확인하려고요"}),
+            )
+            .await
         }
     };
     let (err, v) = ask(json!(["settlement:read", "releases:read"])).await;
@@ -3724,44 +3735,102 @@ async fn connections_ask_for_more_permissions_and_send_one_time_submissions(pool
     let (_, again) = ask(json!(["settlement:read"])).await;
     assert_eq!(again["request_id"], id.as_str());
     let (err, v) = ask(json!(["admin:all"])).await;
-    assert!(err && v["error"]["code"] == "SCOPE_UNKNOWN", "{v}");
-    assert!(notices(&pool, u.user).await.contains(&"AI 앱이 권한을 더 요청했어요".to_string()));
+    assert!(err && v["error"]["code"] == "INVALID_ARGUMENTS", "{v}");
+    assert!(
+        notices(&pool, u.user)
+            .await
+            .contains(&"AI 앱이 권한을 더 요청했어요".to_string())
+    );
 
     // Only that user sees and decides it in the Studio.
     let other = user(&app).await;
     let path = format!("/api/auth/ai-permission-requests/{id}");
     let (s, _) = call(&app, "GET", &path, json!(null), Some(&other)).await;
     assert_eq!(s, StatusCode::NOT_FOUND);
-    let (s, _) = call(&app, "POST", &format!("{path}/approve"), json!({}), Some(&other)).await;
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("{path}/approve"),
+        json!({}),
+        Some(&other),
+    )
+    .await;
     assert_eq!(s, StatusCode::NOT_FOUND);
-    let (s, list) = call(&app, "GET", "/api/auth/ai-permission-requests", json!(null), Some(&u)).await;
+    let (s, list) = call(
+        &app,
+        "GET",
+        "/api/auth/ai-permission-requests",
+        json!(null),
+        Some(&u),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK);
     assert_eq!(list["items"][0]["id"], id.as_str());
     assert_eq!(list["items"][0]["reason"], "정산 내역을 확인하려고요");
-    let (s, v) = call(&app, "POST", &format!("{path}/approve"), json!({}), Some(&u)).await;
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("{path}/approve"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "{v}");
-    assert_eq!(v["connection_scopes"], json!(["releases:read", "releases:write", "settlement:read"]));
+    assert_eq!(
+        v["connection_scopes"],
+        json!(["releases:read", "releases:write", "settlement:read"])
+    );
     // The token the assistant already holds has it now.
     let (err, v) = tool(&app, &c.access, "get_settlement_summary", json!({})).await;
     assert!(!err, "{v}");
-    let (_, v) = tool(&app, &c.access, "get_permission_request", json!({"request_id": id})).await;
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "get_permission_request",
+        json!({"request_id": id}),
+    )
+    .await;
     assert_eq!(v["status"], "APPROVED");
-    let (s, v) = call(&app, "POST", &format!("{path}/approve"), json!({}), Some(&u)).await;
-    assert_eq!((s, v["error"]["code"].as_str()), (StatusCode::BAD_REQUEST, Some("AI_REQUEST_DECIDED")));
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("{path}/approve"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, v["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("AI_REQUEST_DECIDED"))
+    );
     let (_, v) = ask(json!(["settlement:read"])).await;
     assert_eq!(v["status"], "ALREADY_GRANTED");
 
     // Rejected and expired requests change nothing.
     let (_, v) = ask(json!(["releases:submit"])).await;
     let rejected = v["request_id"].as_str().unwrap().to_string();
-    let (s, _) = call(&app, "POST", &format!("/api/auth/ai-permission-requests/{rejected}/reject"), json!({}), Some(&u)).await;
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("/api/auth/ai-permission-requests/{rejected}/reject"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK);
     let (_, v) = ask(json!(["releases:submit"])).await;
     let late = v["request_id"].as_str().unwrap().to_string();
     assert_ne!(late, rejected);
     sqlx::query("UPDATE identity.mcp_permission_requests SET expires_at=now()-interval '1 minute' WHERE id=$1::uuid")
         .bind(&late).execute(&pool).await.unwrap();
-    let (_, v) = call(&app, "POST", &format!("/api/auth/ai-permission-requests/{late}/approve"), json!({}), Some(&u)).await;
+    let (_, v) = call(
+        &app,
+        "POST",
+        &format!("/api/auth/ai-permission-requests/{late}/approve"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
     assert_eq!(v["error"]["code"], "AI_REQUEST_EXPIRED");
     let (_, acct) = tool(&app, &c.access, "get_account_context", json!({})).await;
     assert_eq!(acct["can_submit"], false);
@@ -3770,26 +3839,69 @@ async fn connections_ask_for_more_permissions_and_send_one_time_submissions(pool
     // Without the submit permission an application waits for a one-time
     // approval of exactly what was confirmed, even with Studio approval off.
     let (release, token) = previewed_release(&app, &pool, &store, &u, &c.access, "Once").await;
-    let (err, v) = tool(&app, &c.access, "submit_release", json!({"release_id": release, "confirmation_token": token,
-        "declarations": declarations(true), "artist_confirmed": true})).await;
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "submit_release",
+        json!({"release_id": release, "confirmation_token": token,
+        "declarations": declarations(true), "artist_confirmed": true}),
+    )
+    .await;
     assert!(!err, "{v}");
     assert_eq!(v["view"], "pending_approval");
-    let status: String = sqlx::query_scalar("SELECT status FROM catalog.releases WHERE id=$1::uuid")
-        .bind(&release).fetch_one(&pool).await.unwrap();
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM catalog.releases WHERE id=$1::uuid")
+            .bind(&release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(status, "DRAFT");
-    let (_, list) = call(&app, "GET", "/api/auth/ai-submissions", json!(null), Some(&u)).await;
+    let (_, list) = call(
+        &app,
+        "GET",
+        "/api/auth/ai-submissions",
+        json!(null),
+        Some(&u),
+    )
+    .await;
     let pending = list["items"][0]["id"].as_str().unwrap().to_string();
-    let (s, v) = call(&app, "POST", &format!("/api/auth/ai-submissions/{pending}/approve"), json!({}), Some(&u)).await;
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/auth/ai-submissions/{pending}/approve"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "{v}");
     assert_eq!(v["status"], "APPROVED");
 
     // A revoked connection's request can no longer be approved.
     let (_, v) = ask(json!(["releases:submit"])).await;
     let orphan = v["request_id"].as_str().unwrap().to_string();
-    let grant: Uuid = sqlx::query_scalar("SELECT grant_id FROM identity.mcp_permission_requests WHERE id=$1::uuid")
-        .bind(&orphan).fetch_one(&pool).await.unwrap();
-    let (s, _) = call(&app, "POST", &format!("/api/auth/ai-connections/{grant}/revoke"), json!({}), Some(&u)).await;
+    let grant: Uuid = sqlx::query_scalar(
+        "SELECT grant_id FROM identity.mcp_permission_requests WHERE id=$1::uuid",
+    )
+    .bind(&orphan)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("/api/auth/ai-connections/{grant}/revoke"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK);
-    let (_, v) = call(&app, "POST", &format!("/api/auth/ai-permission-requests/{orphan}/approve"), json!({}), Some(&u)).await;
+    let (_, v) = call(
+        &app,
+        "POST",
+        &format!("/api/auth/ai-permission-requests/{orphan}/approve"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
     assert_eq!(v["error"]["code"], "AI_CONNECTION_REVOKED");
 }
