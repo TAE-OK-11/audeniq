@@ -403,7 +403,7 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
     let (s, _, v) = rpc(&app, Some(&c.access), "tools/list", json!({})).await;
     assert_eq!(s, StatusCode::OK);
     let tools = v["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 48);
+    assert_eq!(tools.len(), 52);
     let public = [
         "get_release_requirements",
         "list_announcements",
@@ -3904,4 +3904,162 @@ async fn connections_ask_for_more_permissions_and_send_one_time_submissions(pool
     )
     .await;
     assert_eq!(v["error"]["code"], "AI_CONNECTION_REVOKED");
+}
+
+#[sqlx::test]
+async fn assistants_send_and_import_files(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let c = connect(&app, &u, &["scope_write"]).await;
+    let (err, rel) = tool(
+        &app,
+        &c.access,
+        "create_release_draft",
+        json!({"title":"Paper Moon","release_type":"SINGLE","artist_name":"Han River"}),
+    )
+    .await;
+    assert!(!err, "{rel}");
+    let release = rel["release_id"].as_str().unwrap().to_string();
+
+    // A signed PUT, then completion registers the checked image.
+    let cover = support::cover_png();
+    let (err, up) = tool(
+        &app,
+        &c.access,
+        "start_upload",
+        json!({"kind":"IMAGE","size_bytes":cover.len(),"content_type":"image/png"}),
+    )
+    .await;
+    assert!(!err, "{up}");
+    let key = up["expected_key"].as_str().unwrap().to_string();
+    assert_eq!(up["upload"]["method"], "PUT");
+    let done = json!({"upload_session_id": up["upload_session_id"], "asset_id": up["asset_id"], "expected_key": key});
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "get_upload_status",
+        json!({"upload_session_id": up["upload_session_id"]}),
+    )
+    .await;
+    assert_eq!(v["state"], "WAITING_FOR_FILE", "{v}");
+    store.put_signed(&up["upload"], &key, cover).await;
+    let (err, v) = tool(&app, &c.access, "complete_upload", done.clone()).await;
+    assert!(!err, "{v}");
+    assert_eq!(v["state"], "READY", "{v}");
+    assert_eq!(v["asset_id"], up["asset_id"]);
+    let (err, again) = tool(&app, &c.access, "complete_upload", done).await;
+    assert!(!err && again["state"] == "READY", "{again}");
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "get_upload_status",
+        json!({"upload_session_id": up["upload_session_id"]}),
+    )
+    .await;
+    assert_eq!(v["state"], "READY", "{v}");
+
+    // Attached as the cover, also in the Studio editor's working copy.
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "update_release_draft",
+        json!({"release_id": release, "artwork_asset_id": up["asset_id"]}),
+    )
+    .await;
+    assert!(!err, "{v}");
+    let (artwork, draft_cover): (Option<Uuid>, Option<String>) = sqlx::query_as(
+        "SELECT artwork_asset_id, draft->>'coverAssetId' FROM catalog.releases WHERE id=$1::uuid",
+    )
+    .bind(&release)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        artwork.map(|a| a.to_string()).as_deref(),
+        up["asset_id"].as_str()
+    );
+    assert_eq!(draft_cover.as_deref(), up["asset_id"].as_str());
+
+    // A file whose bytes are not what was declared is refused and recorded.
+    let (_, up) = tool(
+        &app,
+        &c.access,
+        "start_upload",
+        json!({"kind":"AUDIO","size_bytes":100,"content_type":"audio/wav"}),
+    )
+    .await;
+    let key = up["expected_key"].as_str().unwrap().to_string();
+    let mut mp3 = b"ID3\x04\x00".to_vec();
+    mp3.resize(100, 0);
+    store.put_signed(&up["upload"], &key, &mp3).await;
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "complete_upload",
+        json!({"upload_session_id": up["upload_session_id"], "asset_id": up["asset_id"], "expected_key": key}),
+    )
+    .await;
+    assert!(
+        err && v["error"]["code"] == "UPLOAD_CONTENT_MISMATCH",
+        "{v}"
+    );
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "get_upload_status",
+        json!({"upload_session_id": up["upload_session_id"]}),
+    )
+    .await;
+    assert_eq!(
+        (v["state"].as_str(), v["error_code"].as_str()),
+        (Some("FAILED"), Some("UPLOAD_CONTENT_MISMATCH"))
+    );
+
+    // Imports only fetch public https:// names.
+    for url in [
+        "https://127.0.0.1/cover.png",
+        "https://localhost/cover.png",
+        "https://user:pw@example.com/cover.png",
+    ] {
+        let (err, v) = tool(
+            &app,
+            &c.access,
+            "import_file_from_url",
+            json!({"kind":"IMAGE","url":url}),
+        )
+        .await;
+        assert!(
+            err && v["error"]["code"] == "IMPORT_URL_INVALID",
+            "{url}: {v}"
+        );
+    }
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "import_file_from_url",
+        json!({"kind":"IMAGE","url":"http://example.com/cover.png"}),
+    )
+    .await;
+    assert!(err && v["error"]["code"] == "INVALID_ARGUMENTS", "{v}");
+
+    // Another workspace's token cannot see the upload; a read-only
+    // connection cannot start one.
+    let other = user(&app).await;
+    let oc = connect(&app, &other, &[]).await;
+    let (err, v) = tool(
+        &app,
+        &oc.access,
+        "get_upload_status",
+        json!({"upload_session_id": up["upload_session_id"]}),
+    )
+    .await;
+    assert!(err && v["error"]["code"] == "NOT_FOUND", "{v}");
+    let (s, _, _) = rpc(
+        &app,
+        Some(&oc.access),
+        "tools/call",
+        json!({"name":"start_upload","arguments":{"kind":"IMAGE","size_bytes":10,"content_type":"image/png"}}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
 }
