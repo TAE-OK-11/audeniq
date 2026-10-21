@@ -372,7 +372,7 @@ fn defs() -> &'static [ToolDef] {
                 description: "Send a new inquiry to AUDENIQ support, optionally about one release. Show the artist the subject and message and send only after they agree; it is sent in their name.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: false, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["category","subject","body"],"properties":{
-                    "category": {"type":"string","enum":["RELEASE","SETTLEMENT","CONTRACT","ACCOUNT","OTHER"]},
+                    "category": {"type":"string","enum":["RELEASE","SETTLEMENT","CONTRACT","ACCOUNT","IDENTITY","OTHER"],"description":"IDENTITY: identity or real-name verification problems (AUDENIQ support can verify with an ID at the customer center; never ask for ID photos or numbers in the message)"},
                     "release_id": uuid_schema("Release the inquiry is about (optional)"),
                     "subject": {"type":"string","minLength":1,"maxLength":200},
                     "body": {"type":"string","minLength":1,"maxLength":4000}}}),

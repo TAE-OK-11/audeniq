@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useModalClose } from './Modal';
 import { Glyph } from './Glyph';
+import { Link } from '../lib/router';
 import { getAccountSnapshot, patchAccount, VERIFY_LABEL, type VerifyMethod } from '../store/account';
 import { MOCK } from '../api/client';
 import { verifyAccountIdentity } from '../api/portal';
@@ -165,6 +166,7 @@ export function IdentityVerify({ onDone }: { onDone: (name: string, method: Veri
           ))}
         </div>
         <button type="button" className="ui-btn is-primary is-block" onClick={() => setStep('form')}>다음</button>
+        <p className="aq-verify-help">본인 명의 휴대폰이 없거나 인증이 안 되나요? <Link to="/inquiries?new=identity">고객센터 실명인증 문의</Link></p>
       </div>
     );
   }

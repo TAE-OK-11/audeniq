@@ -986,6 +986,20 @@ async fn inquiries_threads_staff_replies_and_notifications(pool: PgPool) {
     .await;
     assert_eq!(v["items"][0]["release_title"], "Draft");
     assert_eq!(v["items"][0]["status"], "OPEN");
+    // Identity verification problems have their own category; unknown ones are refused.
+    let identity = json!({"category":"IDENTITY","subject":"[실명인증 요청]","body":"본인 명의 휴대폰이 없어요."});
+    let (s, _, v) = call(
+        &app,
+        "POST",
+        &org_path(&u, "/inquiries"),
+        identity,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let unknown = json!({"category":"SIGNATURE","subject":"x","body":"x"});
+    let (s, _, _) = call(&app, "POST", &org_path(&u, "/inquiries"), unknown, Some(&u)).await;
+    assert!(s.is_client_error());
     // Operations answers; the thread becomes ANSWERED and the author is notified.
     sqlx::query("SELECT portal.staff_reply($1::uuid,'다음 주 금요일에 공개돼요.')")
         .bind(&id)
