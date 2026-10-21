@@ -162,11 +162,11 @@ audited as `mcp.client_registered` / `mcp.client_disabled` with the operator.
 
 ### Public tools (no account)
 
-`get_release_requirements` and `get_announcements` (published notices and
-events, as on `/api/notices` and `/api/events`, and with `view: service_status`
-maintenance, as on `/api/status`) need no token on
+`get_audeniq_info` (published notices and events, as on `/api/notices` and
+`/api/events`; with `view: service_status` maintenance, as on `/api/status`;
+with `view: requirements` the release requirements) needs no token on
 `/api/mcp/public` (on `/api/mcp` they are called with the connection's token
-like the rest). Their `securitySchemes` list `noauth` first, then `oauth2`.
+like the rest). Its `securitySchemes` list `noauth` first, then `oauth2`.
 
 | Caller | Daily limit (KST day) | Over the limit |
 |---|---|---|
@@ -235,7 +235,7 @@ and `{code, message}` (stable API codes, human messages from
 
 ### Published tools and operations
 
-`tools/list` shows 39 tools. The 78 operations below are the units of scope,
+`tools/list` shows 25 tools. The 78 operations below are the units of scope,
 schema, rate limit, audit (`mcp.<operation>`) and handler; operations of the
 same kind are published as one tool, and one argument picks the operation
 (`view` for reads, `action` or `kind` for writes). The other arguments are the
@@ -248,26 +248,32 @@ its own name.
 
 | Tool | Argument | Operations |
 |---|---|---|
-| `get_account_context` | `view`: `account` (default), `members` | `get_account_context`, `list_members` |
-| `get_announcements` (public) | `view`: `list` (default), `detail`, `service_status` | `list_announcements`, `get_announcement`, `get_service_status` |
+| `get_account_context` | `view`: `account` (default), `members`, `platforms`, `notifications`, `documents`, `signing_requests`, `inquiries`, `inquiry`, `artist_pages`, `platform_requests` | `get_account_context`, `list_members`, `list_distribution_platforms`, `list_notifications`, `list_documents`, `list_signing_requests`, `list_inquiries`, `get_inquiry`, `list_artist_pages`, `list_platform_requests` |
+| `get_audeniq_info` (public) | `view`: `list` (default), `detail`, `service_status`, `requirements` | `list_announcements`, `get_announcement`, `get_service_status`, `get_release_requirements` |
 | `list_releases` | `view`: `releases` (default), `codes` | `list_releases`, `list_release_codes` |
-| `get_release` | `view`: `details` (default), `status`, `delivery`, `content_id`, `corrections`, `playlist_pitch`, `smart_link`, `claims`, `missing_files` | `get_release`, `get_submission_status`, `get_delivery_status`, `get_content_id_status`, `get_release_corrections`, `get_playlist_pitch`, `get_smart_link`, `list_infringement_claims`, `get_upload_link` |
+| `get_release` | `view`: `details` (default), `status`, `delivery`, `content_id`, `corrections`, `playlist_pitch`, `smart_link`, `smart_link_check`, `claims`, `missing_files` | `get_release`, `get_submission_status`, `get_delivery_status`, `get_content_id_status`, `get_release_corrections`, `get_playlist_pitch`, `get_smart_link`, `check_smart_link`, `list_infringement_claims`, `get_upload_link` |
 | `validate_release` | `view`: `checks` (default), `preview` | `validate_release`, `preview_submission` |
-| `list_documents` | `view`: `documents` (default), `signing_requests` | `list_documents`, `list_signing_requests` |
 | `get_file_status` | `view`: `upload`, `checks` | `get_upload_status`, `get_file_checks` |
-| `get_inquiries` | `view`: `list` (default), `detail` | `list_inquiries`, `get_inquiry` |
 | `get_approval_status` | `kind`: `action` (default), `permission` | `get_action_request`, `get_permission_request` |
 | `get_settlement` (settlement) | `view`: `summary` (default), `statements`, `royalty_reports`, `payouts`, `splits`, `received_splits`, `csv` | `get_settlement_summary`, `list_settlement_statements`, `get_royalty_reports`, `list_payouts`, `get_release_splits`, `list_received_splits`, `export_csv` |
+| `save_release_draft` | `action`: `create`, `update`, `special_options` | `create_release_draft`, `update_release_draft`, `set_special_options` |
 | `upsert_track` | `action`: `save` (default), `credits` | `upsert_track`, `set_track_credits` |
 | `upload_file` | `action`: `start`, `complete`, `import` | `start_upload`, `complete_upload`, `import_file_from_url` |
+| `promote_release` | `action`: `pitch`, `smart_link` | `submit_playlist_pitch`, `save_smart_link` |
+| `manage_artist_pages` | `action`: `links`, `platform_request` | `set_artist_pages`, `create_platform_request` |
 | `manage_inquiry` | `action`: `create`, `reply`, `close` | `create_inquiry`, `reply_inquiry`, `close_inquiry` |
 | `request_approval` | `action`: `withdrawal`, `takedown`, `split_change`, `release_end`, `contract_end`, `counter_notice`, `member_invite` | `request_release_withdrawal`, `request_takedown`, `request_split_change`, `request_release_end`, `request_contract_end`, `request_counter_notice`, `request_member_invite` |
 | `cancel_request` | `kind`: `correction`, `playlist_pitch`, `takedown`, `release_end`, `contract_end`, `platform_request` | `cancel_release_correction`, `withdraw_playlist_pitch`, `cancel_takedown`, `cancel_release_end`, `cancel_contract_end`, `cancel_platform_request` |
+| `request_payout` (payout, destructive) | `action`: `small` (default), `large`, `cancel` | `request_payout`, `request_large_payout`, `cancel_payout` |
 
-The other 24 operations are published under their own name. Payout
-operations (`preview_payout`, `request_payout`, `request_large_payout`,
-`cancel_payout`), `submit_release` and `delete_release_draft` stay separate on
-purpose: each needs its own confirmation step or scope.
+The other 8 operations are published under their own name:
+`request_permission`, `mark_notifications_read`, `delete_release_draft`,
+`attach_rights_proof`, `request_release_correction`, `resend_split_invite`,
+`preview_payout` and `submit_release`. They stay separate on purpose: a
+different scope, a confirmation step that must stay its own call
+(`preview_payout` before `request_payout`, `validate_release` preview before
+`submit_release`), or a destructive or not-read-only hint that would
+otherwise spread to safe operations in the same tool.
 
 | Operation | Scope | Backed by | What it does |
 |---|---|---|---|
