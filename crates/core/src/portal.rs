@@ -319,7 +319,15 @@ pub async fn put_payout_account(
 // ---------------------------------------------------------------------------
 // Inquiries
 // ---------------------------------------------------------------------------
-const CATEGORIES: [&str; 5] = ["RELEASE", "SETTLEMENT", "CONTRACT", "ACCOUNT", "OTHER"];
+/// IDENTITY: 본인인증·실명인증 (인증 기관으로 안 되면 고객센터 실명인증, identity_desk)
+const CATEGORIES: [&str; 6] = [
+    "RELEASE",
+    "SETTLEMENT",
+    "CONTRACT",
+    "ACCOUNT",
+    "IDENTITY",
+    "OTHER",
+];
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1136,6 +1144,16 @@ pub async fn record_application(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(Error::NotFound)?;
+    // Lock the agreement row before the seal chain, in the same order as
+    // sign_document (document row → seal lock); the other order deadlocks
+    // when signing and a replacement application race.
+    sqlx::query(
+        "SELECT 1 FROM portal.documents WHERE org_id=$1 AND release_id=$2 AND kind='AGREEMENT' FOR UPDATE",
+    )
+    .bind(org)
+    .bind(release)
+    .fetch_optional(&mut *tx)
+    .await?;
     // Same number again = the client retried: return the stored record.
     let existing: Option<bool> = sqlx::query_scalar(
         "SELECT release_id=$2 AND org_id=$3 AND content_hash=$4 AND form=$5 AND signer_name=$6

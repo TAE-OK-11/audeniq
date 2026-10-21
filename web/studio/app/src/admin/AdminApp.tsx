@@ -20,6 +20,7 @@ const PAGE_LOADERS = {
   Approvals: () => import('./pages/Approvals'),
   Documents: () => import('./pages/Documents'),
   Inquiries: () => import('./pages/Inquiries'),
+  IdentityDesk: () => import('./pages/IdentityDesk'),
   Deliveries: () => import('./pages/Deliveries'),
   Dsps: () => import('./pages/Dsps'),
   Takedowns: () => import('./pages/Takedowns'),
@@ -49,6 +50,7 @@ const ReviewDetail = page('ReviewDetail');
 const Approvals = page('Approvals');
 const Documents = page('Documents');
 const Inquiries = page('Inquiries');
+const IdentityDesk = page('IdentityDesk');
 const Deliveries = page('Deliveries');
 const Dsps = page('Dsps');
 const Takedowns = page('Takedowns');
@@ -99,7 +101,7 @@ export function Icon({ name }: { name: string }) {
   return <Glyph name={ICONS[name] ?? name} size={18} />;
 }
 
-interface NavItem { to: string; label: string; icon: string; count?: (o: Overview | null, w: WorkSummary | null) => number; hot?: boolean; adminOnly?: boolean; also?: string[] }
+interface NavItem { to: string; label: string; icon: string; count?: (o: Overview | null, w: WorkSummary | null) => number; hot?: boolean; adminOnly?: boolean; duty?: Duty; also?: string[] }
 const NAV: { group: string; items: NavItem[] }[] = [
   { group: '한눈에', items: [{ to: '/admin', label: '오늘의 업무', icon: 'home' }] },
   {
@@ -119,7 +121,10 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { to: '/admin/documents', label: '서류 검토', icon: 'doc', count: o => (o ? o.documents : 0) },
     ],
   },
-  { group: '고객 지원', items: [{ to: '/admin/inquiries', label: '문의 답변', icon: 'inquiry', count: o => (o ? o.inquiries : 0), hot: true }] },
+  { group: '고객 지원', items: [
+    { to: '/admin/inquiries', label: '문의 답변', icon: 'inquiry', count: o => (o ? o.inquiries : 0), hot: true },
+    { to: '/admin/identity', label: '실명인증', icon: 'user', duty: 'IDENTITY' },
+  ] },
   { group: '콘텐츠', items: [{ to: '/admin/content', label: '공지·이벤트 관리', icon: 'doc', adminOnly: true }] },
   {
     group: '배급',
@@ -278,7 +283,7 @@ export function AdminApp() {
             {NAV.map(g => (
               <div className="adm-side-group" key={g.group}>
                 <div className="adm-side-label">{g.group}</div>
-                {g.items.filter(i => !i.adminOnly || me.role === 'ADMIN').map(i => {
+                {g.items.filter(i => (!i.adminOnly || me.role === 'ADMIN') && (!i.duty || me.duties.includes(i.duty))).map(i => {
                   const n = i.count ? i.count(counts, work) : 0;
                   const cur = active(loc.pathname, i.to) || !!i.also?.some(a => active(loc.pathname, a));
                   return (
@@ -308,6 +313,7 @@ export function AdminApp() {
               <Route path="/admin/documents" element={<Documents />} />
               <Route path="/admin/inquiries" element={<Inquiries />} />
               <Route path="/admin/inquiries/:id" element={<Inquiries />} />
+              <Route path="/admin/identity" element={me.duties.includes('IDENTITY') ? <IdentityDesk /> : <Navigate to="/admin" replace />} />
               <Route path="/admin/deliveries" element={<Deliveries />} />
               <Route path="/admin/dsps" element={<Dsps />} />
               <Route path="/admin/takedowns" element={<Takedowns />} />

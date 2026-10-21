@@ -11,7 +11,7 @@ export const ROLE_LABEL: Record<StaffRole, string> = {
 };
 
 export const DUTY_LABEL: Record<Duty, string> = {
-  REVIEW: '발매 심사', DOCUMENTS: '서류 검토', INQUIRIES: '문의 답변', DELIVERY: '배급 승인',
+  REVIEW: '발매 심사', DOCUMENTS: '서류 검토', INQUIRIES: '문의 답변', DELIVERY: '배급 승인', IDENTITY: '실명인증',
 };
 
 export const RELEASE_STATUS: Record<string, [string, Tone]> = {
@@ -60,6 +60,10 @@ export const DOC_STATUS: Record<string, [string, Tone]> = {
 
 /** 발매 신청서(배급 계약서)가 담당자 결정을 기다리는 상태 */
 export const applicationPending = (agreement: string | null | undefined) => agreement === 'REVIEW' || agreement === 'PREPARED';
+
+export const INQUIRY_CATEGORY: Record<string, string> = {
+  RELEASE: '발매·심사', SETTLEMENT: '정산·지급', CONTRACT: '계약·권리', ACCOUNT: '계정', IDENTITY: '본인인증·실명인증', OTHER: '기타',
+};
 
 export const INQUIRY_STATUS: Record<string, [string, Tone]> = {
   OPEN: ['답변 대기', 'violet'], ANSWERED: ['답변 완료', 'green'], CLOSED: ['종료', 'gray'],

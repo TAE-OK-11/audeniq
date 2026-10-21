@@ -250,4 +250,61 @@ async fn staff_verify_real_names_from_an_id(pool: PgPool) {
             .await
             .unwrap();
     assert_eq!(checks, 3);
+
+    // Minors: no resident card yet, so a youth card or a family relation
+    // certificate with the legal guardian who came along. Adults cannot use those.
+    let (_, v) = send(
+        &app,
+        "POST",
+        &verify,
+        json!({"real_name": "홍길돈", "birth_date": "1990-01-01", "channel": "IN_PERSON", "document_type": "YOUTH_CARD"}),
+        Some(&support),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "IDENTITY_MINORS_ONLY", "{v}");
+    let kid_email = format!("{}@example.test", Uuid::new_v4());
+    let kid = member(&app, &kid_email).await;
+    let kid_verify = format!("/api/staff/identity/{}/verify", kid.user);
+    let family = |guardian: Value| {
+        json!({"real_name": "홍아기", "birth_date": "2016-03-01", "channel": "IN_PERSON",
+               "document_type": "FAMILY_RELATION_CERT", "guardian_relation": guardian})
+    };
+    let (s, v) = send(
+        &app,
+        "POST",
+        &kid_verify,
+        family(Value::Null),
+        Some(&support),
+    )
+    .await;
+    assert_eq!(
+        (s, v["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("GUARDIAN_REQUIRED")),
+        "{v}"
+    );
+    let (s, _) = send(
+        &app,
+        "POST",
+        &kid_verify,
+        family(json!("UNCLE")),
+        Some(&support),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    let (s, v) = send(
+        &app,
+        "POST",
+        &kid_verify,
+        family(json!("PARENT")),
+        Some(&support),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["identity"]["provider"], "OFFLINE");
+    assert_eq!(v["identity"]["adult"], false);
+    assert_eq!(v["checks"][0]["document_type"], "FAMILY_RELATION_CERT");
+    assert_eq!(v["checks"][0]["guardian_relation"], "PARENT");
+    let (_, acct) = send(&app, "GET", "/api/me/account", Value::Null, Some(&kid)).await;
+    assert_eq!(acct["real_name"], "홍아기");
+    assert_eq!(acct["verified"]["adult"], false, "{acct}");
 }

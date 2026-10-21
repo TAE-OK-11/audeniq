@@ -698,6 +698,8 @@ summary::-webkit-details-marker{display:none}
 .aq-verify .ui-btn{width:100%;margin-top:4px}
 .aq-verify-demo{margin:0;padding:10px 12px;border-radius:var(--aq-r-md);background:var(--aq-gray-50);color:var(--aq-text-4);font-size:var(--aq-fs-xs);line-height:1.5}
 .aq-verify-lead{margin:0;color:var(--aq-text-2);font-size:var(--aq-fs-md);line-height:1.6}
+.aq-verify-help{margin:4px 0 0;text-align:center;color:var(--aq-text-3);font-size:var(--aq-fs-sm);line-height:1.6}
+.aq-verify-help a{font-weight:600}
 .aq-verify-methods{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .aq-verify-method{position:relative;display:grid;gap:4px;align-content:start;padding:16px;border-radius:var(--aq-r-lg);background:var(--aq-gray-50);cursor:pointer;transition:background-color .2s ease,box-shadow .2s ease,transform .12s ease}
 .aq-verify-method input{position:absolute;opacity:0;pointer-events:none}
@@ -1041,3 +1043,4 @@ legend{padding:0}
 /* 복사 버튼 — 누르면 잠깐 초록 '복사됨 ✓' (components/CopyButton.tsx) */
 .aq-copy-btn{gap:4px}
 .aq-copy-btn.is-copied{--btn-bg:var(--aq-green-50);--btn-fg:var(--aq-green-700);--btn-bg-hover:var(--aq-green-50);--btn-fg-hover:var(--aq-green-700)}
+.aq-inquiry-identity{margin:0 0 16px;line-height:1.6}

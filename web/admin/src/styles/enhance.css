@@ -530,6 +530,7 @@ input[aria-invalid=true]{box-shadow:0 0 0 3px rgba(228,109,109,.3)!important}
 .adm-id-form .ui-field{margin-bottom:16px}
 .adm-id-form .ui-field>label{display:block;margin:0 0 8px}
 .adm-id-form .ui-field :is(.ui-input,.ui-select,.ui-textarea){width:100%}
+.adm-id-minor{margin:0 0 16px;line-height:1.6}
 .adm-id-seen{display:flex;gap:10px;align-items:flex-start;margin:4px 0 16px;line-height:1.5}
 .adm-id-seen input{margin-top:3px;flex:none}
 .adm-id-actions{display:flex;flex-wrap:wrap;gap:8px}

@@ -7,7 +7,7 @@ import { req } from '../api/http';
 import { MOCK } from '../lib/mode';
 
 export type StaffRole = 'ADMIN' | 'REVIEWER' | 'OPERATOR' | 'SUPPORT';
-export type Duty = 'REVIEW' | 'DOCUMENTS' | 'INQUIRIES' | 'DELIVERY';
+export type Duty = 'REVIEW' | 'DOCUMENTS' | 'INQUIRIES' | 'DELIVERY' | 'IDENTITY';
 
 export interface StaffMe { user_id: string; role: StaffRole; duties: Duty[]; /** 서버 DUAL_APPROVAL_ENABLED — 꺼져 있으면 2차 승인 없이 한 사람이 처리 */ dual_approval?: boolean }
 
@@ -254,6 +254,20 @@ export interface DspItem {
   };
 }
 
+/** 직원 실명인증 (crates/core/src/identity_desk.rs) — 신분증 원본을 직접 보고 등록. 신분증 번호는 받지 않는다 */
+export type IdentityChannel = 'IN_PERSON' | 'CUSTOMER_CENTER';
+export type IdentityDocument = 'RESIDENT_CARD' | 'DRIVER_LICENSE' | 'PASSPORT' | 'ALIEN_REGISTRATION' | 'DISABILITY_CARD' | 'VETERAN_CARD'
+  /** 미성년자만: 청소년증, 가족관계증명서 + 함께 온 법정대리인의 신분증 */
+  | 'YOUTH_CARD' | 'FAMILY_RELATION_CERT';
+/** 함께 확인한 법정대리인 (미성년자만, 이름·신분증 번호는 받지 않는다) */
+export type GuardianRelation = 'PARENT' | 'GUARDIAN';
+export interface IdentityAccount {
+  user_id: string; email_masked: string; status: string; joined_at: string;
+  identity: { provider: string; method: string; offline: boolean; verified_at: string; name_masked: string; adult: boolean } | null;
+  checks: { id: string; staff_user_id: string; channel: IdentityChannel; document_type: IdentityDocument; guardian_relation?: GuardianRelation | null; correction: boolean; note: string; created_at: string }[];
+}
+export interface IdentityVerifyInput { real_name: string; birth_date: string; channel: IdentityChannel; document_type: IdentityDocument; guardian_relation?: GuardianRelation | null; note: string; correction: boolean }
+
 export interface PayoutItem {
   id: string; org_id: string; org_name: string; amount: string | number; currency: string; status: string;
   payout_order_id: string | null; created_at: string;
@@ -338,6 +352,8 @@ const remote = {
   markTakenDown: (pkg: string, partner: string, note: string) =>
     req<{ job_id: string }>(`/api/staff/deliveries/${id(pkg)}/${id(partner)}/taken-down`, { method: 'POST', body: { note } }),
   payouts: (status: string) => req<Page<PayoutItem>>(`/api/staff/payouts${qs({ status, limit: 100 })}`),
+  identityLookup: (email: string) => req<IdentityAccount>('/api/staff/identity/lookup', { method: 'POST', body: { email } }),
+  identityVerify: (uid: string, body: IdentityVerifyInput) => req<IdentityAccount>(`/api/staff/identity/${id(uid)}/verify`, { method: 'POST', body }),
 };
 
 export type StaffApi = typeof remote;
