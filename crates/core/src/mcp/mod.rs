@@ -31,6 +31,7 @@ pub mod protocol;
 pub mod public;
 pub mod safety;
 pub mod tools;
+pub mod voice;
 pub mod workspace;
 
 use crate::api::AppState;

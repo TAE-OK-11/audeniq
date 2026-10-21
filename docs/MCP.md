@@ -423,6 +423,24 @@ requests about language, tone and format come first; otherwise:
 - The widget shows Korean text in the same voice when the host locale is `ko`,
   English otherwise.
 
+### AUDENIQ's own wording (`message_ko`)
+
+Assistants reply in their own words, so the same result reads differently in
+ChatGPT, Claude or Grok. Results whose outcome fits one sentence carry
+`message_ko`, the sentence AUDENIQ would say (`mcp::voice`: 해요체, active
+voice for what was done, no hype); the server instructions ask Korean replies
+to start from it. Amounts, declarations and review results are never
+paraphrased there; they stay in the structured fields.
+
+### Connection pages
+
+The consent, device-code, sign-in and error pages the server renders itself
+(`oauth::page`) use the Studio's design tokens and the AUDENIQ wordmark
+(`mcp/logo.svg`, inlined; the CSP still loads nothing from elsewhere). The
+consent page shows the requesting app and where it asked from, the workspace,
+the permissions (submit and payouts start unticked and are tagged), what no
+app can do, and a decision bar that stays above the browser's toolbar.
+
 ## Safety (migration 0135)
 
 - **Activity notices.** A new AI connection (any method) or connection token,
