@@ -37,8 +37,8 @@
 
 /* 한 화면 — 작업 공간이 하나면 고르지 않고 보여 주기만, 허용할 일 제목 옆에 빠르게 고르기 */
 .aq-connect-one-ws{cursor:default}
-.aq-connect-scope-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
-.aq-connect-scope-head .subhead{margin-bottom:12px}
+.aq-connect-scope-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:24px}
+.aq-connect-scope-head .subhead{margin:0 0 12px}
 .aq-connect-scope-head .aq-connect-presets{margin:0 0 12px}
 .aq-connect-scope-head .ui-chip{min-width:0!important;height:34px;padding:0 12px;font-size:13px}
 .aq-connect-code-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:8px 0 0;padding:14px 18px;border-radius:var(--aq-r-lg);background:var(--aq-gray-50)}
@@ -46,13 +46,23 @@
 .aq-connect-code-row strong{font:800 20px/1.2 var(--font-mono);letter-spacing:.1em;color:var(--aq-text);white-space:nowrap}
 
 /* 항상 포함되는 권한은 고르는 카드가 아니라 한 줄 안내로 */
-.aq-connect-always{margin:0 2px 12px;color:var(--aq-text-3);font-size:13px;line-height:1.55;word-break:keep-all}
+.aq-connect-always{display:flex;align-items:flex-start;gap:8px;margin:0 0 10px;padding:12px 16px;border-radius:var(--aq-r-lg);border:1px dashed var(--aq-gray-200,#E3E7EE);color:var(--aq-text-3);font-size:13px;line-height:1.55;word-break:keep-all}
+.aq-connect-always .aq-connect-tag{flex:none;margin:0}
 /* 앱 확인 주소 같은 기술 정보는 접어 둔다 */
 .aq-connect-more{margin:14px 2px 0;font-size:13px}
 .aq-connect-more summary{cursor:pointer;color:var(--aq-text-3);font-weight:600;list-style:none}
 .aq-connect-more summary::-webkit-details-marker{display:none}
-.aq-connect-more summary::after{content:" ›";display:inline-block;transition:transform .15s}
+.aq-connect-more summary::after{content:"›";display:inline-block;margin-left:6px;transition:transform .15s}
 .aq-connect-more[open] summary::after{transform:rotate(90deg)}
 .aq-connect-more .aq-connect-facts{margin-top:10px}
 /* 넓은 화면은 아래 막대에 '거절'이 있으니 글자 버튼은 휴대폰에서만 */
 @media(min-width:760px){.aq-connect-deny{display:none}}
+
+/* 넓은 화면 — 동의 화면은 읽고 고르는 일이라 신청서보다 좁은 한 단, 아래 버튼 줄도 같은 폭 */
+@media(min-width:760px){
+  body.wizard-mode .portal-layout.aq-connect-layout{width:min(640px,calc(100% - 56px))!important;max-width:640px!important}
+  #view-new.aq-connect-view .wizard{max-width:640px!important;margin:0 auto}
+  #view-new.aq-connect-view .step-actions{padding-left:calc(50vw - 50%)!important;padding-right:calc(50vw - 50%)!important;justify-content:center!important}
+  #view-new.aq-connect-view .aq-choice-row{grid-template-columns:1fr 1fr}
+  #view-new.aq-connect-view .aq-options{grid-template-columns:1fr!important}
+}

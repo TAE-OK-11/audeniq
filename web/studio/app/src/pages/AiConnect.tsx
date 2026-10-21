@@ -283,7 +283,7 @@ function Review({ request, d, onDone, onFailed }: {
         </div>
       </div>
       {always.length > 0 && (
-        <p className="aq-connect-always">{always.map(s => s.title).join('·')}는 항상 포함돼요. {always.map(s => s.description).join(' ')}</p>
+        <p className="aq-connect-always"><span className="aq-connect-tag">항상 포함</span><span>{always.map(s => s.title).join('·')}는 항상 포함돼요. {always.map(s => s.description).join(' ')}</span></p>
       )}
       <div className="aq-options">
         {d.scopes.filter(s => !s.locked).map(s => (
