@@ -95,6 +95,20 @@ export const saveAiSettings = (studio_approval: boolean) =>
 export const aiSubmissions = () => req<{ items: AiSubmission[] }>('/api/auth/ai-submissions').then(r => r.items);
 export const approveAiSubmission = (id: string) =>
   req<{ status: string }>(`/api/auth/ai-submissions/${encodeURIComponent(id)}/approve`, { method: 'POST', body: {} });
+/** AI 앱이 연결에 권한을 더 달라고 한 요청 (crates/core/src/mcp/approvals.rs) */
+export interface AiPermissionRequest {
+  id: string; status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'REVOKED';
+  scopes: string[]; reason: string; client_name: string; org_id: string; org_name: string;
+  created_at: string; expires_at: string; decided_at: string | null;
+  connection_scopes: string[]; connection_label: string | null; connection_revoked: boolean;
+}
+export const aiPermissionRequests = () =>
+  req<{ items: AiPermissionRequest[] }>('/api/auth/ai-permission-requests').then(r => r.items);
+export const aiPermissionRequest = (id: string) =>
+  req<AiPermissionRequest>(`/api/auth/ai-permission-requests/${encodeURIComponent(id)}`);
+export const decideAiPermission = (id: string, approve: boolean) =>
+  req<{ status: string; connection_scopes: string[] }>(
+    `/api/auth/ai-permission-requests/${encodeURIComponent(id)}/${approve ? 'approve' : 'reject'}`, { method: 'POST', body: {} });
 export const rejectAiSubmission = (id: string) =>
   req<{ status: string }>(`/api/auth/ai-submissions/${encodeURIComponent(id)}/reject`, { method: 'POST', body: {} });
 
