@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { useConfirm } from '../../components/Confirm';
 import { useToast } from '../../components/Toast';
-import { errorMessage } from '../../api/errors';
+import { ApiError, errorMessage } from '../../api/errors';
 import { staffApi, type GuardianRelation, type IdentityAccount, type IdentityChannel, type IdentityDocument } from '../api';
 import { NoDuty, PageHeader, useStaff } from '../ui';
 import { when } from '../labels';
@@ -107,7 +107,10 @@ export function IdentityDesk() {
       setF(EMPTY);
       toast(correction ? '실명 정보를 바로잡았어요.' : '실명인증을 저장했어요.', 'success');
     } catch (err) {
-      setError(errorMessage(err, '저장하지 못했어요.'));
+      // 같은 코드가 발매 보완 요청에도 쓰여 일반 문구가 맞지 않는다
+      setError(err instanceof ApiError && err.code === 'NOTHING_TO_CORRECT'
+        ? '바로잡을 직원 인증 기록이 없거나 지금 기록과 같은 내용이에요.'
+        : errorMessage(err, '저장하지 못했어요.'));
     } finally {
       setBusy(false);
     }
@@ -142,7 +145,10 @@ export function IdentityDesk() {
               : '아직 안 했어요'}</dd>
           </dl>
 
-          {account.status !== 'ACTIVE' ? (
+          {account.user_id === me.user_id ? (
+            // 서버도 거절한다 (IDENTITY_SELF_VERIFY): 직원은 자기 실명을 스스로 등록할 수 없다
+            <div className="ui-callout">내 계정은 직접 실명인증할 수 없어요. 다른 직원에게 신분증 확인을 요청하거나, 스튜디오 프로필에서 본인인증을 해 주세요.</div>
+          ) : account.status !== 'ACTIVE' ? (
             <div className="ui-callout">사용 중인 계정만 인증할 수 있어요.</div>
           ) : (
             <div className="ui-card adm-id-form">
