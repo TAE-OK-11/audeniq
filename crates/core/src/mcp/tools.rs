@@ -615,7 +615,7 @@ fn defs() -> &'static [ToolDef] {
                 name: "request_release_withdrawal",
                 title: "Ask to withdraw an application",
                 description: "Ask the artist to approve withdrawing a submitted release's application (it stops the review; limited per month; impossible once delivery started). Only when the artist asked for it. The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_action_request.",
-                scope: SCOPE_WRITE, read_only: false, destructive: true, idempotent: true, widget: false,
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["release_id"],"properties":{
                     "release_id": uuid_schema("The submitted release"),
                     "reason": {"type":"string","maxLength":500,"description":"Why, in the artist's words"}}}),
@@ -624,7 +624,7 @@ fn defs() -> &'static [ToolDef] {
                 name: "request_takedown",
                 title: "Ask to take a release down",
                 description: "Ask the artist to approve a takedown of a release that is on platforms; AUDENIQ reviews it and removes it everywhere. Only when the artist asked for it. The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_action_request.",
-                scope: SCOPE_WRITE, read_only: false, destructive: true, idempotent: true, widget: false,
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","reason"],"properties":{
                     "release_id": uuid_schema("The delivered release"),
                     "reason": {"type":"string","minLength":2,"maxLength":1000,"description":"Why, in the artist's words"}}}),
@@ -657,7 +657,7 @@ fn defs() -> &'static [ToolDef] {
                 name: "request_release_end",
                 title: "Ask to end a release",
                 description: "Ask the artist to approve ending a delivered release's service on a date (contract end, licence expiry, or transfer to another distributor named in transfer_to). The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_action_request.",
-                scope: SCOPE_WRITE, read_only: false, destructive: true, idempotent: true, widget: false,
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","end_date","reason"],"properties":{
                     "release_id": uuid_schema("The release"),
                     "end_date": {"type":"string","pattern":"^[0-9]{4}-[0-9]{2}-[0-9]{2}$","description":"YYYY-MM-DD"},
@@ -678,7 +678,7 @@ fn defs() -> &'static [ToolDef] {
                 name: "request_contract_end",
                 title: "Ask to end the AUDENIQ contract",
                 description: "Ask the workspace owner to approve ending this workspace's AUDENIQ contract on a date (no new releases after that; all releases end on the date). The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_action_request.",
-                scope: SCOPE_WRITE, read_only: false, destructive: true, idempotent: true, widget: false,
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["end_date"],"properties":{
                     "end_date": {"type":"string","pattern":"^[0-9]{4}-[0-9]{2}-[0-9]{2}$","description":"YYYY-MM-DD"},
                     "note": {"type":"string","maxLength":1000}}}),
@@ -713,7 +713,7 @@ fn defs() -> &'static [ToolDef] {
                 name: "request_large_payout",
                 title: "Ask for a payout above the assistant limit",
                 description: "Ask the workspace owner to approve a payout to the registered account (any amount up to the available balance; amount, fee and net shown on the approval page). Never on your own initiative. The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_action_request.",
-                scope: SCOPE_PAYOUT, read_only: false, destructive: true, idempotent: true, widget: false,
+                scope: SCOPE_PAYOUT, read_only: false, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["amount"],"properties":{
                     "amount": {"type":"integer","minimum":1,"maximum":1000000000,"description":"KRW before the fee"}}}),
             },
