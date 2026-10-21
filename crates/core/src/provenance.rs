@@ -34,7 +34,7 @@ pub fn inspect(path: &Path) -> Value {
     }
 }
 
-/// audeniq-photo reads RIFF, AIFF, FLAC, MP4, WavPack and TTA tags; the
+/// `audeniq-music photo` reads RIFF, AIFF, FLAC, MP4, WavPack and TTA tags; the
 /// AUDENIQ engine's tag reader remains the fallback for anything else. Both
 /// readers are local, sandboxed and bounded.
 pub fn inspect_audio(path: &Path) -> Value {

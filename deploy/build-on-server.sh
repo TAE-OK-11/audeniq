@@ -10,7 +10,7 @@
 #     (비공개 저장소면 Contents 읽기 토큰으로: git clone https://x-access-token:<토큰>@github.com/TAE-OK-11/audeniq.git ...
 #      clone 뒤 `git -C /opt/audeniq-src remote set-url origin https://github.com/TAE-OK-11/audeniq.git` 로 토큰을 지우고
 #      fetch 때는 GIT_ASKPASS나 credential helper를 쓴다)
-#   비공개 엔진(audeniq-qc·audeniq-photo) 읽기 토큰을 파일로: install -m 600 /dev/null ~/.audeniq-engine-token, 토큰을 넣는다
+#   엔진 저장소(audeniq-media) 읽기 토큰을 파일로: install -m 600 /dev/null ~/.audeniq-engine-token, 토큰을 넣는다
 #   GHCR에 올릴 수 있게 로그인 (write:packages): echo '<PAT>' | docker login ghcr.io -u <github 아이디> --password-stdin
 #
 # 환경 변수 (선택):
