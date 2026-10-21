@@ -62,7 +62,11 @@ describe('AI app connection page', () => {
     expect(el.textContent).toContain('어떤 권한을 줘도 지켜져요');
     expect(el.querySelector('.aq-wiz-progress, .wizard-progress')).toBeNull();
     await click(el.querySelectorAll('input[name=aqConnectOrg]')[1]);
+    // 항상 포함되는 보기 권한은 고르는 칸이 아니라 안내 한 줄
+    expect(el.querySelectorAll('.aq-option input[type=checkbox]')).toHaveLength(2);
+    expect(el.textContent).toContain('발매 정보 보기는 항상 포함돼요.');
     await click(button('보기만'));
+    expect(el.querySelector('#wizardNext')?.textContent).toBe('보기만 허용하고 연결');
     await click(el.querySelector('#wizardNext'));
     const [url, opts] = h.req.mock.calls[1];
     expect(url).toBe('/api/auth/ai-connect');

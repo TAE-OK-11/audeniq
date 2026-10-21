@@ -178,8 +178,7 @@ function Review({ request, d, onDone, onFailed }: {
     return want.size === on.size && [...want].every(s => on.has(s));
   })?.id;
 
-  const toggle = (scope: string, locked: boolean) => {
-    if (locked) return;
+  const toggle = (scope: string) => {
     setOn(prev => {
       const next = new Set(prev);
       if (next.has(scope)) next.delete(scope); else next.add(scope);
@@ -225,12 +224,16 @@ function Review({ request, d, onDone, onFailed }: {
   const verified = d.client.verified_host
     ? `${d.client.verified_host}에서 확인된 앱`
     : d.client.registered ? '어데닉에 등록된 에이전트' : null;
-  const from = d.requested_from ? `${d.requested_from}에서 요청` : '연결 코드로 요청';
+  // 확인된 곳과 요청한 곳이 같으면 한 번만 말한다
+  const from = d.requested_from && d.requested_from === d.client.verified_host ? null
+    : d.requested_from ? `${d.requested_from}에서 요청` : '연결 코드로 요청';
+  const always = d.scopes.filter(s => s.locked);
+  const extra = d.scopes.filter(s => !s.locked && on.has(s.scope)).length;
 
   return (
     <Frame step={-1}>
       <Header
-        kicker="AI 앱 연결"
+        kicker="연결 요청"
         title={`${d.client.name}에서\n어데닉을 쓰려고 해요`}
         sub="허용한 일만 할 수 있어요. 연결은 언제든 끊을 수 있어요."
       />
@@ -239,7 +242,7 @@ function Review({ request, d, onDone, onFailed }: {
         <span className="aq-connect-app-mark" aria-hidden="true">{(d.client.name.match(/[\p{L}\p{N}]/u)?.[0] ?? 'A').toUpperCase()}</span>
         <span className="min-0">
           <strong>{d.client.name}</strong>
-          <small>{verified ? `${verified} · ${from}` : from}</small>
+          <small>{[verified, from].filter(Boolean).join(' · ')}</small>
         </span>
         {verified && <span className="aq-connect-tag is-ok">확인됨</span>}
       </div>
@@ -279,20 +282,22 @@ function Review({ request, d, onDone, onFailed }: {
           ))}
         </div>
       </div>
+      {always.length > 0 && (
+        <p className="aq-connect-always">{always.map(s => s.title).join('·')}는 항상 포함돼요. {always.map(s => s.description).join(' ')}</p>
+      )}
       <div className="aq-options">
-        {d.scopes.map(s => (
+        {d.scopes.filter(s => !s.locked).map(s => (
           <Fragment key={s.scope}>
-            <label className={`aq-option${on.has(s.scope) ? ' is-on' : ''}${s.locked ? ' is-locked' : ''}`}>
+            <label className={`aq-option${on.has(s.scope) ? ' is-on' : ''}`}>
               <span className="aq-option-text">
                 <strong>
                   {s.title}
-                  {s.locked && <span className="aq-connect-tag">항상 포함</span>}
                   {s.risk === 'submit' && <span className="aq-connect-tag is-warn">내 이름으로 접수</span>}
                   {s.risk === 'money' && <span className="aq-connect-tag is-warn">돈이 움직여요</span>}
                 </strong>
                 <small>{s.description}</small>
               </span>
-              <input type="checkbox" aria-label={s.title} checked={on.has(s.scope)} disabled={s.locked} onChange={() => toggle(s.scope, s.locked)} />
+              <input type="checkbox" aria-label={s.title} checked={on.has(s.scope)} onChange={() => toggle(s.scope)} />
             </label>
           </Fragment>
         ))}
@@ -307,16 +312,19 @@ function Review({ request, d, onDone, onFailed }: {
         <li>프로필 → 연결된 AI 앱에서 언제든 끊을 수 있어요.</li>
       </ul>
       {(d.return_to || d.client.client_id.startsWith('https://')) && (
-        <dl className="aq-connect-facts">
-          {d.return_to && <><dt>승인 후 돌아갈 곳</dt><dd>{d.return_to}</dd></>}
-          {d.client.client_id.startsWith('https://') && <><dt>앱 확인 주소</dt><dd>{d.client.client_id}</dd></>}
-        </dl>
+        <details className="aq-connect-more">
+          <summary>연결 정보 자세히</summary>
+          <dl className="aq-connect-facts">
+            {d.return_to && <><dt>승인 후 돌아갈 곳</dt><dd>{d.return_to}</dd></>}
+            {d.client.client_id.startsWith('https://') && <><dt>앱 확인 주소</dt><dd>{d.client.client_id}</dd></>}
+          </dl>
+        </details>
       )}
 
       <div className="step-actions">
         <button type="button" id="wizardBack" className="ui-btn is-soft" disabled={!!busy} onClick={() => void decide(false)}>거절</button>
         <button type="button" id="wizardNext" className={`ui-btn is-primary${busy === 'approve' ? ' is-busy' : ''}`} disabled={!!busy || !org} onClick={() => void decide(true)}>
-          {`${on.size}개 허용하고 연결`}
+          {extra ? '허용하고 연결' : '보기만 허용하고 연결'}
         </button>
       </div>
       <p className="aq-connect-deny">
