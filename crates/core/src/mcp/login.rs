@@ -176,21 +176,24 @@ fn page_code_entry(message: Option<&str>) -> Response {
     page(
         "어데닉에 AI 앱 연결",
         &format!(
-            "<h1>AI 앱에 보이는 코드를 입력해 주세요</h1>{note}\
+            "<h1>AI 앱에 보이는 연결 코드를 입력해 주세요</h1>\
+             <p class=\"lead\">코드는 AI 앱이 대화에서 알려 줘요. 영문 8자리예요.</p>{note}\
              <form method=\"get\" action=\"/api/oauth/device\"><div class=\"card\">\
-             <input name=\"user_code\" autocomplete=\"off\" autocapitalize=\"characters\" placeholder=\"BCDF-GHJK\" required style=\"width:100%;box-sizing:border-box;padding:12px;font:inherit;font-size:20px;letter-spacing:2px;border-radius:10px;border:1px solid #ccc\">\
-             </div><div class=\"row\"><button class=\"primary\">다음</button></div></form>\
-             <p class=\"muted\">코드는 AI 앱이 대화에서 알려 줘요. 내가 시작하지 않은 연결이라면 입력하지 마세요.</p>"
+             <input class=\"code-input\" name=\"user_code\" autocomplete=\"off\" autocapitalize=\"characters\" placeholder=\"BCDF-GHJK\" aria-label=\"연결 코드\" required>\
+             </div><p class=\"fine\">내가 시작하지 않은 연결이라면 입력하지 마세요.</p>\
+             <div class=\"actions\"><button class=\"primary\">다음</button></div></form>"
         ),
         None,
     )
 }
 
-fn page_done(title: &str, message: &str) -> Response {
+fn page_done(title: &str, message: &str, ok: bool) -> Response {
     page(
         title,
         &format!(
-            "<h1>{}</h1><div class=\"card\">{}</div>",
+            "<div class=\"status {}\" aria-hidden=\"true\">{}</div><h1>{}</h1><p class=\"lead\">{}</p><p class=\"fine\">이 창은 닫아도 돼요.</p>",
+            if ok { "ok" } else { "bad" },
+            if ok { "✓" } else { "–" },
             escape(title),
             escape(message)
         ),
@@ -281,9 +284,10 @@ pub async fn device_page(
         &client,
         &ConsentTarget {
             action: "/api/oauth/device",
-            note: format!(
-                "연결 코드: <code>{}</code><br>어데닉에 등록된 에이전트예요. 내가 시작한 연결이고 AI 앱에 보이는 코드와 같을 때만 승인해 주세요.",
-                display_code(&code)
+            origin: "어데닉에 등록된 에이전트".into(),
+            facts: vec![("연결 코드", format!("<code>{}</code>", display_code(&code)))],
+            caution: Some(
+                "내가 시작한 연결이고, AI 앱에 보이는 코드가 위 연결 코드와 같을 때만 허용해 주세요.",
             ),
             form_origin: None,
         },
@@ -359,8 +363,9 @@ async fn device_decide_inner(s: &AppState, h: &HeaderMap, body: &[u8]) -> Result
         .await?;
         tx.commit().await?;
         return Ok(page_done(
-            "연결을 거부했어요",
-            "AI 앱은 이 계정에 접근할 수 없어요. 이 창을 닫아도 돼요.",
+            "연결을 거절했어요",
+            "AI 앱은 이 계정에 접근할 수 없어요. 필요하면 AI 앱에서 다시 연결을 시작해 주세요.",
+            false,
         ));
     }
     let org: Uuid = form
@@ -383,7 +388,8 @@ async fn device_decide_inner(s: &AppState, h: &HeaderMap, body: &[u8]) -> Result
     tx.commit().await?;
     Ok(page_done(
         "연결했어요",
-        "AI 앱이 어데닉 계정에 연결됐어요. AI 앱으로 돌아가 대화를 이어 가 주세요.",
+        "AI 앱으로 돌아가 대화를 이어 가 주세요. 허용한 일만 할 수 있어요.",
+        true,
     ))
 }
 
