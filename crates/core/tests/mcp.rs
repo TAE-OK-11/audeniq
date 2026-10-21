@@ -4584,6 +4584,113 @@ async fn assistants_take_back_requests_the_artist_has_not_answered(pool: PgPool)
 }
 
 #[sqlx::test]
+async fn drafts_lose_tracks_and_signing_requests_can_be_cancelled(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let c = connect(&app, &u, &["scope_write"]).await;
+    let (err, rel) = tool(
+        &app,
+        &c.access,
+        "save_release_draft",
+        json!({"action": "create", "title": "Two Songs", "release_type": "EP", "artist_name": "Han River"}),
+    )
+    .await;
+    assert!(!err, "{rel}");
+    let release = rel["release_id"].as_str().unwrap().to_string();
+    let mut tracks = Vec::new();
+    for (n, title) in [(1, "Keep"), (2, "Drop")] {
+        let (err, v) = tool(
+            &app,
+            &c.access,
+            "upsert_track",
+            json!({"release_id": release, "title": title, "track_number": n}),
+        )
+        .await;
+        assert!(!err, "{v}");
+        tracks.push(v["track_id"].as_str().unwrap().to_string());
+    }
+
+    // Removing a track needs the artist's word and leaves the editor's copy in step.
+    let remove = json!({"action": "track", "release_id": release, "track_id": tracks[1], "artist_confirmed": true});
+    let (err, v) = tool(&app, &c.access, "delete_release_draft", remove.clone()).await;
+    assert!(!err, "{v}");
+    let titles: Vec<&str> = v["tracks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|t| t["title"].as_str())
+        .collect();
+    assert_eq!(titles, ["Keep"]);
+    let draft_titles: Vec<String> = sqlx::query_scalar(
+        "SELECT t->>'title' FROM catalog.releases, jsonb_array_elements(draft->'draftTracks') t WHERE id=$1::uuid",
+    )
+    .bind(&release)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(draft_titles, ["Keep"]);
+    let (err, v) = tool(&app, &c.access, "delete_release_draft", remove).await;
+    assert!(err && v["error"]["code"] == "NOT_FOUND", "{v}");
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "delete_release_draft",
+        json!({"action": "track", "release_id": release, "track_id": tracks[0]}),
+    )
+    .await;
+    assert!(err && v["error"]["code"] == "INVALID_ARGUMENTS", "{v}");
+
+    // Read-only views that came from the Studio.
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "get_account_context",
+        json!({"view": "withdrawal_quota"}),
+    )
+    .await;
+    assert!(
+        !err && v["used"] == 0 && v["remaining"] == v["limit"],
+        "{v}"
+    );
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "get_release",
+        json!({"view": "handover", "release_id": release}),
+    )
+    .await;
+    assert!(err, "no transfer was scheduled: {v}");
+
+    // A signing request sent from the Studio can be cancelled by the assistant.
+    let (s, created) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/signing-requests", u.org),
+        json!({"release_id": release, "document_no": Uuid::new_v4(), "document_kind": "composition",
+            "title": "작사·작곡 이용 허락서", "body": "허락서 본문",
+            "rights_holder": "홍길동", "signer_name": "홍길동", "signer_role": "권리자 본인", "channel": "LINK"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{created}");
+    let cancel = json!({"kind": "signing_request", "request_id": created["id"]});
+    let (err, v) = tool(&app, &c.access, "cancel_request", cancel.clone()).await;
+    assert!(!err && v["status"] == "CANCELLED", "{v}");
+    let (err, v) = tool(&app, &c.access, "cancel_request", cancel).await;
+    assert!(err && v["error"]["code"] == "SIGNING_REQUEST_CLOSED", "{v}");
+    let other = user(&app).await;
+    let c2 = connect(&app, &other, &["scope_write"]).await;
+    let (err, _) = tool(
+        &app,
+        &c2.access,
+        "cancel_request",
+        json!({"kind": "signing_request", "request_id": created["id"]}),
+    )
+    .await;
+    assert!(err, "another workspace's request is not reachable");
+}
+
+#[sqlx::test]
 async fn risky_actions_wait_for_one_studio_approval(pool: PgPool) {
     let (app, _) = app(pool.clone()).await;
     let u = user(&app).await;
