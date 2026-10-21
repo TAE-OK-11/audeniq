@@ -403,7 +403,7 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
     let (s, _, v) = rpc(&app, Some(&c.access), "tools/list", json!({})).await;
     assert_eq!(s, StatusCode::OK);
     let tools = v["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 52);
+    assert_eq!(tools.len(), 65);
     let public = [
         "get_release_requirements",
         "list_announcements",
@@ -4177,4 +4177,166 @@ async fn agent_keys_exchange_for_scoped_work_tokens(pool: PgPool) {
         .await;
         assert_eq!(s, StatusCode::UNAUTHORIZED);
     }
+}
+
+#[sqlx::test]
+async fn workspace_tools_read_state_and_make_small_changes(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let c = connect(&app, &u, &["scope_write", "scope_settlement"]).await;
+    let (_, rel) = tool(
+        &app,
+        &c.access,
+        "create_release_draft",
+        json!({"title":"Tidal","release_type":"SINGLE","artist_name":"Han River"}),
+    )
+    .await;
+    let release = rel["release_id"].as_str().unwrap().to_string();
+
+    // A rights proof sent as a file and added to the release goes to review.
+    let proof = support::cover_png();
+    let (_, up) = tool(
+        &app,
+        &c.access,
+        "start_upload",
+        json!({"kind":"DOCUMENT","size_bytes":proof.len(),"content_type":"image/png"}),
+    )
+    .await;
+    let key = up["expected_key"].as_str().unwrap().to_string();
+    store.put_signed(&up["upload"], &key, proof).await;
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "complete_upload",
+        json!({"upload_session_id": up["upload_session_id"], "asset_id": up["asset_id"], "expected_key": key}),
+    )
+    .await;
+    assert!(!err && v["state"] == "READY", "{v}");
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "attach_rights_proof",
+        json!({"release_id": release, "title": "샘플 이용 허락서", "asset_id": up["asset_id"], "file_name": "licence.png"}),
+    )
+    .await;
+    assert!(!err, "{v}");
+    let doc = v["id"].as_str().unwrap().to_string();
+    let (_, docs) = tool(&app, &c.access, "list_documents", json!({})).await;
+    assert!(docs.to_string().contains(&doc), "{docs}");
+    // A replacement file for the same document while it is in review.
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "attach_rights_proof",
+        json!({"document_id": doc, "asset_id": up["asset_id"], "file_name": "licence-2.png"}),
+    )
+    .await;
+    assert!(!err, "{v}");
+    let (status, file): (String, String) =
+        sqlx::query_as("SELECT status, file_name FROM portal.documents WHERE id=$1::uuid")
+            .bind(&doc)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        (status.as_str(), file.as_str()),
+        ("REVIEW", "licence-2.png")
+    );
+
+    for (name, args, view) in [
+        (
+            "get_delivery_status",
+            json!({"release_id": release}),
+            "delivery",
+        ),
+        (
+            "get_content_id_status",
+            json!({"release_id": release}),
+            "content_id",
+        ),
+        (
+            "list_signing_requests",
+            json!({"release_id": release}),
+            "signing_requests",
+        ),
+        (
+            "list_infringement_claims",
+            json!({"release_id": release}),
+            "infringement_claims",
+        ),
+        ("list_members", json!({}), "members"),
+        (
+            "get_file_checks",
+            json!({"asset_id": up["asset_id"]}),
+            "file_checks",
+        ),
+        (
+            "check_smart_link",
+            json!({"release_id": release, "links": {"melon": "https://www.melon.com/album/detail.htm?albumId=1"}}),
+            "smart_link_check",
+        ),
+        (
+            "mark_notifications_read",
+            json!({"all": true}),
+            "notifications_read",
+        ),
+        ("export_csv", json!({"kind": "statements"}), "csv_export"),
+        (
+            "export_csv",
+            json!({"kind": "royalty_reports", "from": "2026-01", "to": "2026-06"}),
+            "csv_export",
+        ),
+    ] {
+        let (err, v) = tool(&app, &c.access, name, args).await;
+        assert!(!err, "{name}: {v}");
+        assert_eq!(v["view"], view, "{name}: {v}");
+    }
+    let (_, v) = tool(&app, &c.access, "list_members", json!({})).await;
+    assert_eq!(v["items"][0]["role"], "OWNER", "{v}");
+
+    // Inquiries close; drafts are deleted only with the artist's go-ahead.
+    let (_, inq) = tool(
+        &app,
+        &c.access,
+        "create_inquiry",
+        json!({"category":"RELEASE","subject":"Test","body":"Testing the inquiry close tool."}),
+    )
+    .await;
+    let id = inq["id"].as_str().unwrap_or_else(|| panic!("{inq}"));
+    let (err, v) = tool(&app, &c.access, "close_inquiry", json!({"inquiry_id": id})).await;
+    assert!(!err, "{v}");
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "delete_release_draft",
+        json!({"release_id": release}),
+    )
+    .await;
+    assert!(err && v["error"]["code"] == "INVALID_ARGUMENTS", "{v}");
+    let other = user(&app).await;
+    let oc = connect(&app, &other, &["scope_write"]).await;
+    let (err, v) = tool(
+        &app,
+        &oc.access,
+        "delete_release_draft",
+        json!({"release_id": release, "artist_confirmed": true}),
+    )
+    .await;
+    assert!(err, "another workspace cannot delete it: {v}");
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "delete_release_draft",
+        json!({"release_id": release, "artist_confirmed": true}),
+    )
+    .await;
+    assert!(!err && v["deleted"] == true, "{v}");
+    let (err, _) = tool(
+        &app,
+        &c.access,
+        "get_release",
+        json!({"release_id": release}),
+    )
+    .await;
+    assert!(err);
 }

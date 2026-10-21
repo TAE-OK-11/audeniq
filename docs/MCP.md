@@ -268,6 +268,19 @@ and `{code, message}` (stable API codes, human messages from
 | `start_upload` / `complete_upload` | write | `uploads::issue/complete` | Signed PUT for one audio master or cover, then the Studio's completion (sniff, antivirus, lossless FLAC) |
 | `import_file_from_url` | write | `external_http::public_client_builder`, `uploads::issue/complete` | Fetches a public https:// link the artist gave and registers it like an upload |
 | `get_upload_status` | read | `uploads::status` + `identity.mcp_uploads` | READY / PROCESSING / WAITING_FOR_FILE / EXPIRED / FAILED (error code) |
+| `mark_notifications_read` | read | `portal::read_notifications` | Given notification ids, or all |
+| `close_inquiry` | write | `portal::close_inquiry` | Close a resolved support inquiry |
+| `attach_rights_proof` | write | `portal::attach_proof`, `portal::create_document` | A DOCUMENT/IMAGE upload becomes a rights proof (waiting document, or a new one for a release); AUDENIQ reviews it |
+| `get_file_checks` | read | `uploads::checks` | Per-file audio/image checks |
+| `get_delivery_status` | read | `delivery_staging::release_delivery_view` | Per-platform delivery of a release |
+| `get_content_id_status` | read | `platform_requests::content_id` | YouTube Content ID state |
+| `check_smart_link` | read | `smart_links::check` | Verdict per platform link, nothing saved |
+| `list_signing_requests` | read | `signing::list` | Signing requests and status (no signing links) |
+| `list_members` | read | `members::list` | Members and roles; e-mails masked unless owner |
+| `list_infringement_claims` | read | `infringement::for_release` | Claims against a release and the counter deadline |
+| `resend_split_invite` | write | `splits::resend` | E-mail a collaborator's split invite again (rate limited) |
+| `export_csv` | settlement | `portal::statements_csv/reports_csv` | Statements or royalty reports as CSV text (≤ 256 KB) |
+| `delete_release_draft` | write | `catalog::archive` | Never-submitted drafts only, with `artist_confirmed` |
 | `list_artist_pages` / `set_artist_pages` | read / write | `artist_pages::list/set_pages` | Each artist's own page per platform (Spotify, Apple Music, Melon, …), so deliveries never land on a same-name stranger's page |
 | `list_platform_requests` / `create_platform_request` / `cancel_platform_request` | read / write / write | `platform_requests::list/create/cancel` | After-release fixes AUDENIQ does at a platform: wrong artist page, page merge/split, YouTube OAC, Content ID |
 | `get_release_splits` / `list_received_splits` | settlement | `splits::sheet/received` | Collaborator revenue splits of a release (masked e-mails) and shares received; changes stay in the Studio |
@@ -298,8 +311,8 @@ without metadata.
   in `identity.mcp_uploads`, which `get_upload_status` reads (work without an
   outcome after 30 minutes reports `IMPORT_INTERRUPTED`).
 - The registered asset is attached with `upsert_track` (`asset_id`) or
-  `update_release_draft` (`artwork_asset_id`). Rights proof documents are
-  still uploaded in the Studio.
+  `update_release_draft` (`artwork_asset_id`). Rights proofs are uploaded as
+  `DOCUMENT` (PDF, JPG, PNG) and attached with `attach_rights_proof`.
 
 **Prompts** (`prompts/list`, `prompts/get`; Claude shows them as slash
 commands): `prepare_release`, `check_release`, `submission_status`,
@@ -615,9 +628,8 @@ an assistant recommend AUDENIQ; listing and discovery are separate tasks.
 
 ## Known limitations
 
-- Rights proof documents are uploaded in AUDENIQ Studio; tools return the
-  Studio link. Audio and cover art can also come through the tools (see
-  Files). Special-content options (cover licences, sample
+- Audio, cover art and rights proofs can come through the tools (see Files).
+  Special-content options (cover licences, sample
   clearances, AI tool details, express review) are entered in the Studio.
 - Signing the application/agreement, withdrawal, takedown, payout account
   changes, payouts above the limit, members, account settings: not exposed by

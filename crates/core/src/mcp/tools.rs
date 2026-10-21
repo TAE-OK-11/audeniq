@@ -469,9 +469,9 @@ fn defs() -> &'static [ToolDef] {
                 description: "Get a signed URL to upload one audio master or cover image directly (for agents that can send HTTP requests with a file body). PUT the bytes to the returned url with exactly its headers within 10 minutes, then call complete_upload. Audio: WAV, FLAC, AIFF, ALAC (.m4a), WavPack or TTA up to 512 MiB; cover: square JPG or PNG up to 20 MiB (see get_release_requirements). When you only have a link to the file, use import_file_from_url instead.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: false, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["kind","size_bytes","content_type"],"properties":{
-                    "kind": {"type":"string","enum":["AUDIO","IMAGE"],"description":"AUDIO for a track master, IMAGE for cover art"},
+                    "kind": {"type":"string","enum":["AUDIO","IMAGE","DOCUMENT"],"description":"AUDIO for a track master, IMAGE for cover art, DOCUMENT for a rights proof (PDF, JPG or PNG; attach with attach_rights_proof)"},
                     "size_bytes": {"type":"integer","minimum":1,"maximum":536870912,"description":"Exact file size in bytes"},
-                    "content_type": {"type":"string","enum":["audio/wav","audio/x-wav","audio/flac","audio/mp4","audio/x-m4a","audio/aiff","audio/x-aiff","audio/wavpack","audio/x-wavpack","audio/tta","audio/x-tta","image/jpeg","image/png"]}}}),
+                    "content_type": {"type":"string","enum":["audio/wav","audio/x-wav","audio/flac","audio/mp4","audio/x-m4a","audio/aiff","audio/x-aiff","audio/wavpack","audio/x-wavpack","audio/tta","audio/x-tta","image/jpeg","image/png","application/pdf"]}}}),
             },
             ToolDef {
                 name: "complete_upload",
@@ -489,9 +489,9 @@ fn defs() -> &'static [ToolDef] {
                 description: "Fetch an audio master or cover image from a public https:// download link the artist gave you (cloud drive share link set to anyone with the link, file host) and register it like an upload. Use only links the artist provided. The link must lead straight to the file and report its size. Returns state READY with the asset_id to attach, or PROCESSING: then poll get_upload_status.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: false, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["kind","url"],"properties":{
-                    "kind": {"type":"string","enum":["AUDIO","IMAGE"],"description":"AUDIO for a track master, IMAGE for cover art"},
+                    "kind": {"type":"string","enum":["AUDIO","IMAGE","DOCUMENT"],"description":"AUDIO for a track master, IMAGE for cover art, DOCUMENT for a rights proof (PDF, JPG or PNG; attach with attach_rights_proof)"},
                     "url": {"type":"string","maxLength":2048,"pattern":"^https://","description":"Public direct download link"},
-                    "content_type": {"type":"string","enum":["audio/wav","audio/flac","audio/mp4","audio/aiff","audio/wavpack","audio/tta","image/jpeg","image/png"],"description":"File type when the link does not show it"}}}),
+                    "content_type": {"type":"string","enum":["audio/wav","audio/flac","audio/mp4","audio/aiff","audio/wavpack","audio/tta","image/jpeg","image/png","application/pdf"],"description":"File type when the link does not show it"}}}),
             },
             ToolDef {
                 name: "get_upload_status",
@@ -500,6 +500,116 @@ fn defs() -> &'static [ToolDef] {
                 scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["upload_session_id"],"properties":{
                     "upload_session_id": uuid_schema("From start_upload or import_file_from_url")}}),
+            },
+            ToolDef {
+                name: "mark_notifications_read",
+                title: "Mark notifications read",
+                description: "Mark notifications as read: the given notification_ids (from list_notifications) or all of them.",
+                scope: SCOPE_READ, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"properties":{
+                    "notification_ids": {"type":"array","maxItems":100,"uniqueItems":true,"items": uuid_schema("Notification")},
+                    "all": {"type":"boolean","description":"Mark every notification read"}}}),
+            },
+            ToolDef {
+                name: "close_inquiry",
+                title: "Close an inquiry",
+                description: "Close a support inquiry the artist says is resolved. Only when the artist asks to close it.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["inquiry_id"],"properties":{
+                    "inquiry_id": uuid_schema("The inquiry (from list_inquiries)")}}),
+            },
+            ToolDef {
+                name: "attach_rights_proof",
+                title: "Attach a rights proof",
+                description: "Attach a rights proof file (licence, consent letter; a DOCUMENT or IMAGE asset from start_upload/complete_upload or import_file_from_url) to a rights document waiting for one (document_id from list_documents), or add a new proof to a release (release_id and title instead of document_id). AUDENIQ then reviews it. Use only files the artist provided.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: false, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["asset_id","file_name"],"properties":{
+                    "document_id": uuid_schema("The rights document waiting for a file (from list_documents)"),
+                    "release_id": uuid_schema("New proof: the release it belongs to"),
+                    "title": {"type":"string","minLength":1,"maxLength":200,"description":"New proof: what it is, e.g. 'Sample licence from X'"},
+                    "asset_id": uuid_schema("The uploaded proof file"),
+                    "file_name": {"type":"string","minLength":1,"maxLength":200,"description":"File name shown to reviewers"}}}),
+            },
+            ToolDef {
+                name: "get_file_checks",
+                title: "File check results",
+                description: "Detailed check results of one uploaded audio or image file (format, sample rate, bit depth, loudness, clipping, image size and so on).",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["asset_id"],"properties":{
+                    "asset_id": uuid_schema("The file (asset_id from get_release or an upload)")}}),
+            },
+            ToolDef {
+                name: "get_delivery_status",
+                title: "Delivery by platform",
+                description: "Where a submitted release stands at each platform: sent, accepted, live or failed, with dates.",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: release_id_schema,
+            },
+            ToolDef {
+                name: "get_content_id_status",
+                title: "Content ID status",
+                description: "YouTube Content ID state of a release: whether it is registered and any claims or requests in progress.",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: release_id_schema,
+            },
+            ToolDef {
+                name: "check_smart_link",
+                title: "Check smart link links",
+                description: "Check platform links for a release's smart link without saving them: one verdict per platform (invalid host, other release, matches).",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","links"],"properties":{
+                    "release_id": uuid_schema("The release"),
+                    "links": {"type":"object","minProperties":1,"maxProperties":20,"additionalProperties":{"type":"string","maxLength":500,"pattern":"^https://"},"description":"Platform key to link, as in save_smart_link"}}}),
+            },
+            ToolDef {
+                name: "list_signing_requests",
+                title: "Signing requests",
+                description: "Electronic signing requests sent for this workspace's releases (rights holder, signer, status, expiry). Signing itself happens only in the signer's own link.",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"properties":{
+                    "release_id": uuid_schema("Only this release's requests")}}),
+            },
+            ToolDef {
+                name: "list_members",
+                title: "Workspace members",
+                description: "Members of this workspace with role and status. E-mails are masked unless the artist owns the workspace.",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: empty_schema,
+            },
+            ToolDef {
+                name: "list_infringement_claims",
+                title: "Infringement claims",
+                description: "Rights claims filed against a release, their status, AUDENIQ's note and whether the artist can still answer (counter deadline).",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: release_id_schema,
+            },
+            ToolDef {
+                name: "resend_split_invite",
+                title: "Resend a split invite",
+                description: "E-mail a collaborator's revenue split invite again (share_id from get_release_splits). Limited to a few resends.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: false, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","share_id"],"properties":{
+                    "release_id": uuid_schema("The release"),
+                    "share_id": uuid_schema("The collaborator's share (from get_release_splits)")}}),
+            },
+            ToolDef {
+                name: "export_csv",
+                title: "Export CSV",
+                description: "Settlement statements or royalty reports as CSV text (up to 256 KB; larger exports are downloaded in AUDENIQ Studio).",
+                scope: SCOPE_SETTLEMENT, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["kind"],"properties":{
+                    "kind": {"type":"string","enum":["statements","royalty_reports"]},
+                    "from": {"type":"string","pattern":"^[0-9]{4}-[0-9]{2}$","description":"royalty_reports: first month YYYY-MM"},
+                    "to": {"type":"string","pattern":"^[0-9]{4}-[0-9]{2}$","description":"royalty_reports: last month YYYY-MM"}}}),
+            },
+            ToolDef {
+                name: "delete_release_draft",
+                title: "Delete a release draft",
+                description: "Delete a draft that was never submitted. Only after the artist explicitly asked to delete this draft. Submitted releases cannot be deleted.",
+                scope: SCOPE_WRITE, read_only: false, destructive: true, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","artist_confirmed"],"properties":{
+                    "release_id": uuid_schema("The draft"),
+                    "artist_confirmed": {"type":"boolean","const":true,"description":"The artist explicitly asked to delete this draft"}}}),
             },
             ToolDef {
                 name: "list_artist_pages",
@@ -1288,6 +1398,11 @@ async fn run(
             v["view"] = json!("received_splits");
             Ok(v)
         }),
+        // One arm for the workspace tools keeps this (non-async) match's
+        // stack frame small in debug builds.
+        n if super::workspace::TOOLS.contains(&n) => {
+            Box::pin(super::workspace::call(s, p, n, args))
+        }
         _ => return Err(tool_error("UNKNOWN_TOOL", "Unknown tool.")),
     };
     fut.await

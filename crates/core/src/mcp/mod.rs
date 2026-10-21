@@ -30,6 +30,7 @@ pub mod protocol;
 pub mod public;
 pub mod safety;
 pub mod tools;
+pub mod workspace;
 
 use crate::api::AppState;
 use axum::{
