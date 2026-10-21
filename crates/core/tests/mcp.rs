@@ -393,7 +393,26 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
     // account endpoint lists them all, and answers nothing without a token.
     let (s, _, v) = rpc(&app, None, "tools/list", json!({})).await;
     assert_eq!(s, StatusCode::OK);
-    assert_eq!(v["result"]["tools"].as_array().unwrap().len(), 4);
+    let names: Vec<&str> = v["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["get_release_requirements", "get_announcements"]);
+    // One public tool covers notices, events and the service status.
+    let (s, _, v) = rpc(
+        &app,
+        None,
+        "tools/call",
+        json!({"name":"get_announcements","arguments":{"view":"service_status"}}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(
+        v["result"]["structuredContent"]["view"], "service_status",
+        "{v}"
+    );
     let (s, h, _) = rpc_at(&app, "/api/mcp", None, "tools/list", json!({})).await;
     assert_eq!(s, StatusCode::UNAUTHORIZED);
     assert!(h.contains_key("www-authenticate"));
@@ -417,13 +436,25 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
     let (s, _, v) = rpc(&app, Some(&c.access), "tools/list", json!({})).await;
     assert_eq!(s, StatusCode::OK);
     let tools = v["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 78);
-    let public = [
-        "get_release_requirements",
-        "list_announcements",
-        "get_announcement",
-        "get_service_status",
-    ];
+    // Operations of the same kind are published as one tool (78 → 39).
+    assert_eq!(tools.len(), 39);
+    let public = ["get_release_requirements", "get_announcements"];
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "get_release",
+        json!({"view": "everything"}),
+    )
+    .await;
+    assert!(err && v["error"]["code"] == "INVALID_ARGUMENTS", "{v}");
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "get_account_context",
+        json!({"view": "members"}),
+    )
+    .await;
+    assert!(!err && v["view"] == "members", "{v}");
     for t in tools {
         assert_eq!(
             t["inputSchema"]["additionalProperties"], false,
@@ -1321,8 +1352,8 @@ async fn conversational_release_preparation_to_confirmed_submission(pool: PgPool
     let (err, v) = tool(
         &app,
         &c.access,
-        "preview_submission",
-        json!({"release_id": release, "declarations": declarations(true)}),
+        "validate_release",
+        json!({"view": "preview", "release_id": release, "declarations": declarations(true)}),
     )
     .await;
     assert!(!err);
@@ -3978,34 +4009,34 @@ async fn assistants_send_and_import_files(pool: PgPool) {
     let (err, up) = tool(
         &app,
         &c.access,
-        "start_upload",
-        json!({"kind":"IMAGE","size_bytes":cover.len(),"content_type":"image/png"}),
+        "upload_file",
+        json!({"action":"start","kind":"IMAGE","size_bytes":cover.len(),"content_type":"image/png"}),
     )
     .await;
     assert!(!err, "{up}");
     let key = up["expected_key"].as_str().unwrap().to_string();
     assert_eq!(up["upload"]["method"], "PUT");
-    let done = json!({"upload_session_id": up["upload_session_id"], "asset_id": up["asset_id"], "expected_key": key});
+    let done = json!({"action": "complete", "upload_session_id": up["upload_session_id"], "asset_id": up["asset_id"], "expected_key": key});
     let (_, v) = tool(
         &app,
         &c.access,
-        "get_upload_status",
-        json!({"upload_session_id": up["upload_session_id"]}),
+        "get_file_status",
+        json!({"view": "upload", "upload_session_id": up["upload_session_id"]}),
     )
     .await;
     assert_eq!(v["state"], "WAITING_FOR_FILE", "{v}");
     store.put_signed(&up["upload"], &key, cover).await;
-    let (err, v) = tool(&app, &c.access, "complete_upload", done.clone()).await;
+    let (err, v) = tool(&app, &c.access, "upload_file", done.clone()).await;
     assert!(!err, "{v}");
     assert_eq!(v["state"], "READY", "{v}");
     assert_eq!(v["asset_id"], up["asset_id"]);
-    let (err, again) = tool(&app, &c.access, "complete_upload", done).await;
+    let (err, again) = tool(&app, &c.access, "upload_file", done).await;
     assert!(!err && again["state"] == "READY", "{again}");
     let (_, v) = tool(
         &app,
         &c.access,
-        "get_upload_status",
-        json!({"upload_session_id": up["upload_session_id"]}),
+        "get_file_status",
+        json!({"view": "upload", "upload_session_id": up["upload_session_id"]}),
     )
     .await;
     assert_eq!(v["state"], "READY", "{v}");
@@ -4508,8 +4539,8 @@ async fn risky_actions_wait_for_one_studio_approval(pool: PgPool) {
     let (_, v) = tool(
         &app,
         &c.access,
-        "get_action_request",
-        json!({"request_id": id}),
+        "get_approval_status",
+        json!({"kind": "action", "request_id": id}),
     )
     .await;
     assert_eq!(v["status"], "DONE", "{v}");

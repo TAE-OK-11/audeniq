@@ -151,7 +151,7 @@ pub(super) async fn request(
 
 fn with_instruction(mut v: Value) -> Value {
     v["instruction"] = json!(
-        "Show approve_url to the artist and ask them to open it in AUDENIQ Studio and approve. Call get_permission_request (or retry the tool) after they say they approved. Nothing changes until they do."
+        "Show approve_url to the artist and ask them to open it in AUDENIQ Studio and approve. Call get_approval_status with kind permission (or retry the tool) after they say they approved. Nothing changes until they do."
     );
     v
 }

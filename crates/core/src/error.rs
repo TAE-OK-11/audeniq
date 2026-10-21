@@ -219,10 +219,10 @@ pub fn message(code: &str) -> Option<&'static str> {
             "The file could not be downloaded from the link. Check that it is public and leads straight to the file."
         }
         "IMPORT_SIZE_MISMATCH" => {
-            "The download did not match the size the link reported. Try again, or send the file with start_upload."
+            "The download did not match the size the link reported. Try again, or send the file with upload_file (action start)."
         }
         "IMPORT_TIMEOUT" => {
-            "The download took too long. Use a faster link, or send the file with start_upload."
+            "The download took too long. Use a faster link, or send the file with upload_file (action start)."
         }
         "RELEASE_NOT_SUBMITTABLE" => "This release cannot be submitted in its current state.",
         "AUDIO_NOT_VERIFIED" => {

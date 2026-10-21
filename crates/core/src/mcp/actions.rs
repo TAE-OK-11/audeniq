@@ -524,7 +524,7 @@ async fn file(
 
 fn with_instruction(mut v: Value) -> Value {
     v["instruction"] = json!(
-        "Nothing has happened yet. Show approve_url to the artist and ask them to check the details in AUDENIQ Studio and approve. Call get_action_request after they say they did."
+        "Nothing has happened yet. Show approve_url to the artist and ask them to check the details in AUDENIQ Studio and approve. Call get_approval_status after they say they did."
     );
     v
 }
