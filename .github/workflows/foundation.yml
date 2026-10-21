@@ -65,8 +65,15 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo build --locked -p audeniq-core --bins
       - name: Build the pinned AUDENIQ media engine (audeniq-music)
+        env:
+          # Read-only token for the private engine repository (audeniq-media).
+          AUDENIQ_GITHUB_TOKEN: ${{ secrets.AUDENIQ_GITHUB_TOKEN }}
         run: |
-          sh deploy/install-audeniq-music.sh "$HOME/.local/audeniq-music"
+          token=$(mktemp)
+          trap 'rm -f "$token"' EXIT
+          printf '%s' "$AUDENIQ_GITHUB_TOKEN" > "$token"
+          GITHUB_TOKEN_FILE=$token sh deploy/with-github-token.sh \
+            sh deploy/install-audeniq-music.sh "$HOME/.local/audeniq-music"
           echo "AUDENIQ_MUSIC_BIN=$HOME/.local/audeniq-music/bin/audeniq-music" >> "$GITHUB_ENV"
       - name: Install FFmpeg (test fixtures and oracle only) and xmllint (DDEX XSD validation)
         run: |
@@ -252,7 +259,14 @@ jobs:
           jq -e '(.services.migrate.environment.DATABASE_URL | test("@postgres/"))' /tmp/production.json
       - name: Deploy script lint
         run: shellcheck deploy/deploy.sh deploy/build-target.sh deploy/check-cpu.sh
-      - run: docker compose up --build -d postgres migrate grants pgbouncer api worker
+      - name: Build and start the stack
+        env:
+          AUDENIQ_GITHUB_TOKEN: ${{ secrets.AUDENIQ_GITHUB_TOKEN }}
+        run: |
+          token=$(mktemp)
+          trap 'rm -f "$token"' EXIT
+          printf '%s' "$AUDENIQ_GITHUB_TOKEN" > "$token"
+          AUDENIQ_GITHUB_TOKEN_FILE=$token docker compose up --build -d postgres migrate grants pgbouncer api worker
       - name: Check API readiness
         run: curl --fail --retry 15 --retry-all-errors --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
       - name: Production boots without cloud KMS or an antivirus engine
