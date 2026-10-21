@@ -7,10 +7,11 @@ import { CopyButton } from './CopyButton';
 import { ApiError, errorMessage } from '../api/errors';
 import { orgId } from '../api/http';
 import {
-  aiConnections, aiSettings, aiSubmissions, approveAiSubmission, clientHost, createConnectionToken, DECLARATION_LABEL,
+  aiConnections, aiPermissionRequests, aiSettings, aiSubmissions, approveAiSubmission, clientHost, createConnectionToken, DECLARATION_LABEL,
   rejectAiSubmission, revokeAiConnection, saveAiSettings, SCOPE_HELP, SCOPE_LABEL,
-  type AiConnection, type AiSettings, type AiSubmission, type NewConnectionToken,
+  type AiConnection, type AiPermissionRequest, type AiSettings, type AiSubmission, type NewConnectionToken,
 } from '../api/aiConnections';
+import { Link } from '../lib/router';
 import { relativeTime } from '../lib/date';
 
 const workspaceName = (name: string) => (name === 'Personal workspace' ? '내 작업 공간' : name);
@@ -265,8 +266,10 @@ export function AiConnections() {
   const [made, setMade] = useState<NewConnectionToken | null>(null);
   const [pending, setPending] = useState<AiSubmission[]>([]);
   const [settings, setSettings] = useState<AiSettings | null>(null);
+  const [asks, setAsks] = useState<AiPermissionRequest[]>([]);
   useEffect(() => {
     aiSubmissions().then(setPending).catch(() => setPending([]));
+    aiPermissionRequests().then(setAsks).catch(() => setAsks([]));
     aiSettings().then(setSettings).catch(() => setSettings(null));
   }, []);
 
@@ -304,6 +307,22 @@ export function AiConnections() {
 
   return (
     <div className="aq-passkeys">
+      {asks.length > 0 && (
+        <section className="aq-token-section" aria-labelledby="aqAiAsks">
+          <h3 id="aqAiAsks" className="ui-field-label">권한 추가 요청</h3>
+          <ul className="aq-passkey-list">
+            {asks.map(q => (
+              <li key={q.id}>
+                <span className="min-0">
+                  <strong>{q.client_name}</strong>
+                  <small>{[q.scopes.map(s => SCOPE_LABEL[s] ?? s).join('·'), workspaceName(q.org_name)].join(' · ')}</small>
+                </span>
+                <span className="aq-row-actions"><Link className="ui-btn is-primary is-sm" to={`/ai/approve/${q.id}`}>확인하기</Link></span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {pending.length > 0 && <PendingSubmissions items={pending} onDone={id => setPending(list => list.filter(p => p.id !== id))} />}
       <p className="aq-muted">
         ChatGPT·Claude 같은 AI 앱에서 어데닉을 연결하면 여기에 나와요. 앱마다 승인한 일만 할 수 있어요.

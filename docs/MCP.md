@@ -173,7 +173,32 @@ the login limits) and are deleted after a day; per-user limits in
 | `settlement:read` | Opt-in: balance, statement, royalty reports, payout requests (bank and last 4 digits only, no holder name or number) |
 | `payouts:request` | Opt-in, owners only: small payouts to the account registered in Studio, within `AUDENIQ_MCP_PAYOUT_LIMIT_KRW` (default 300,000원 per 24 h); cancel unsent payouts |
 
-Insufficient scope → HTTP 403 with `WWW-Authenticate: Bearer error="insufficient_scope", scope="…"`.
+Insufficient scope → HTTP 403 with `WWW-Authenticate: Bearer error="insufficient_scope", scope="…"`;
+the message points the assistant at `request_permission`.
+
+### Asking for more permissions (migration 0141)
+
+A connection does not have to be made again to gain a permission:
+
+1. The assistant calls `request_permission(scopes, reason)` (any connection;
+   only the scopes it lacks are asked for; the same open request is returned
+   if asked again; 10 per connection per 15 min). It gets `request_id` and
+   `approve_url` = `{origin}/ai/approve/{id}` to show the artist, who also gets
+   a Studio notice with the link.
+2. The artist opens the link signed in to the Studio (only their own requests;
+   `GET /api/auth/ai-permission-requests[/{id}]`) and sees the app, workspace,
+   current permissions, the requested ones and the reason. Submit and payout
+   permissions ask once more before approving.
+3. `POST …/{id}/approve` (session + CSRF) adds the scopes to the grant
+   (`identity.mcp_grants.scopes`) and audits `mcp.scopes_added`; they stay until
+   the connection is revoked, and tokens the assistant already holds get them
+   on the next call (scopes are read from the grant). `…/reject` changes
+   nothing (`mcp.scopes_rejected`).
+4. A request lapses after 60 minutes (`AI_REQUEST_EXPIRED`); a decided one
+   answers `AI_REQUEST_DECIDED`; a revoked connection's request
+   `AI_CONNECTION_REVOKED`. `payouts:request` cannot be asked for while the
+   assistant payout limit is 0. `get_permission_request(request_id)` reports
+   the outcome and the connection's permissions.
 No scope reaches payout account changes, larger payouts, contracts/signatures,
 withdrawals, takedowns, members or account settings.
 
@@ -275,8 +300,14 @@ preview the server produced for this user's grant, that the user opted into
 cannot prove the human read the preview in the chat; that rests on the
 assistant (server instructions, tool descriptions) and the client's own tool
 confirmation UI. Declarations are recorded as the user's, exactly as in the
-Studio. A stronger option, if required, is a Studio-side "approve pending
-submission" step (not implemented; needs a frontend change).
+Studio.
+
+**One-time approval.** A connection with `releases:write` but not
+`releases:submit` may also preview and call `submit_release`; the application
+then always waits for the artist's approval of exactly that content in the
+Studio (the pending submissions below, whatever the Studio approval setting),
+so the assistant can send one release without being given the submit
+permission for good. `get_account_context` reports `can_submit_with_approval`.
 
 After submission the artist still signs the release application and the
 distribution agreement in AUDENIQ Studio; delivery waits for the signed,
