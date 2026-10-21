@@ -204,8 +204,8 @@ export function IdentityDesk() {
               <h2 className="ui-group-title">직원 확인 기록</h2>
               <ul className="ui-list">
                 {account.checks.map(c => (
-                  <li key={c.id} className="ui-row">
-                    <div>
+                  <li key={c.id} className="ui-row is-flat">
+                    <div className="ui-row-body">
                       <div className="ui-row-title">{CHANNEL_LABEL[c.channel] ?? c.channel} · {DOCUMENT_LABEL[c.document_type] ?? c.document_type}{c.guardian_relation ? ` · 법정대리인(${GUARDIAN_LABEL[c.guardian_relation] ?? c.guardian_relation}) 동행` : ''}{c.correction ? ' · 바로잡음' : ''}</div>
                       <div className="ui-row-meta">{when(c.created_at)} · 담당 {c.staff_user_id === me.user_id ? '나' : c.staff_user_id.slice(0, 8)}{c.note ? ` · ${c.note}` : ''}</div>
                     </div>
