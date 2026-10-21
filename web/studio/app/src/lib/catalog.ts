@@ -49,10 +49,12 @@ export const kindLabel = (v?: string) => KINDS.find(k => k[0] === v)?.[1] || v |
 export const MOCK_DSP: readonly [string, string] = ['mockdsp-studio', 'MockDSP (테스트)'];
 export const dspLabel = (v: string) => {
   if (v === MOCK_DSP[0]) return MOCK_DSP[1];
-  const bySlug = DSP.find(d => d[0] === v);
+  // 운영팀이 정산 리포트를 넣을 때 적은 값이라 대소문자·표기가 섞여 온다 (SPOTIFY, Melon)
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const bySlug = DSP.find(d => d[0] === v) ?? DSP.find(d => norm(d[0]) === norm(v) || norm(d[1]) === norm(v));
   if (bySlug) return bySlug[1];
-  const code = /^D-(\d+)$/.exec(v);
-  return code ? DSP[Number(code[1]) - 1]?.[1] ?? '알 수 없는 플랫폼' : v;
+  const code = /^D-(\d+)$/i.exec(v);
+  return code ? DSP[Number(code[1]) - 1]?.[1] ?? '기타 플랫폼' : '기타 플랫폼';
 };
 export const languageLabel = (v?: string) => LANGUAGES.find(l => l[0] === v)?.[1] || v || '';
 export const genreLabel = (v?: string) => {

@@ -5997,6 +5997,21 @@ async fn revenue_splits_from_application_to_collaborator_balances(pool: PgPool) 
     .unwrap();
     // 9.00 × 1,300 = 11,700 won; fee 936; net 10,764; 가 30% = 3,229; 나 20% = 2,152; applicant 5,383.
     assert_eq!(posted["gross_krw"], "11700", "{posted}");
+    // The statement line names the platform as artists know it, not its id.
+    let descriptions: Vec<String> = sqlx::query_scalar(
+        "SELECT description FROM finance.ledger_transactions WHERE org_id=$1 AND description LIKE '%정산'",
+    )
+    .bind(ctx.org)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert!(
+        !descriptions.is_empty()
+            && descriptions
+                .iter()
+                .all(|d| d.contains(" · Spotify 2026-09 정산")),
+        "{descriptions:?}"
+    );
     let r = audeniq_core::royalty_posting::post_report(
         &pool,
         ctx.org,

@@ -42,7 +42,6 @@ export function TrackChecks({ assetId }: { assetId: string }) {
         <li key={c.code} className={BAD.has(c.status) ? 'is-bad' : 'is-warn'}>
           <strong>{BAD.has(c.status) ? '고쳐야 해요' : '확인해 주세요'}</strong>
           <span>{correctionTarget(c.code).hint}</span>
-          {c.detail && <small>{c.detail}</small>}
         </li>
       ))}
     </ul>
