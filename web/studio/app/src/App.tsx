@@ -70,6 +70,7 @@ const NotFound = lazyPage(pageLoaders.NotFound, m => m.NotFound);
 const Profile = lazyPage(pageLoaders.Profile, m => m.Profile);
 const AiApprove = lazyPage(pageLoaders.AiApprove, m => m.AiApprove);
 const AiAction = lazyPage(pageLoaders.AiAction, m => m.AiAction);
+const AiConnect = lazyPage(pageLoaders.AiConnect, m => m.AiConnect);
 const AdminApp = lazyPage(pageLoaders.Admin, m => m.AdminApp);
 
 function BootScreen() {
@@ -200,6 +201,8 @@ export function App() {
                     <Route path="/content-admin" element={<Navigate to="/admin/content" replace />} />
                     {/* 스태프 관리자 — 같은 로그인 세션 + 서버의 스태프 역할(/api/staff/me)로 접근 */}
                     <Route path="/admin/*" element={<Protected><AdminApp /></Protected>} />
+                    {/* AI 앱 연결 승인 — 스튜디오 메뉴 없이 한 화면으로 (AI 앱의 앱 안 브라우저에서 열린다) */}
+                    <Route path="/ai/connect" element={<Protected><AiConnect /></Protected>} />
                     <Route path="/*" element={<Protected><PortalRoutes /></Protected>} />
                   </Routes>
                 </Suspense>
