@@ -445,12 +445,14 @@ Approving a connection happens on a Studio page, not a server-rendered form
 - The page reads `GET /api/auth/ai-connect?request=` (app name, verified host
   of its metadata document or "registered agent", where it returns, device
   code, offered scopes with their defaults and risk, workspaces) and shows it
-  in the release application's frame (`#view-new .wizard`: top bar, progress,
-  "01 / 02" step titles, choice and option cards, bottom actions): step 1 the
-  requesting app and the workspace to connect, step 2 what to allow (option
-  cards and quick picks: view only, drafts — suggested — or all) and what no
-  permission can do. Submitting or payout permission, and denying, ask once
-  more in the Studio's confirm dialog.
+  on one page in the release application's frame (`#view-new .wizard`: top
+  bar, step title, choice and option cards, bottom actions): the requesting
+  app (and device code), the workspace to connect (picked only when there is
+  more than one), what to allow (a line for the always-included read scope,
+  option cards for the rest and quick picks: view only, drafts — suggested —
+  or all), what no permission can do, the technical details (return host,
+  metadata URL) folded away, and one "allow and connect" button. Submitting or payout permission, and
+  denying, ask once more in the Studio's confirm dialog.
 - `POST /api/auth/ai-connect` (CSRF) approves or denies with the chosen
   workspace and scopes (read plus offered ones only). A browser connection
   answers with the client's redirect URL and the page navigates there (the
