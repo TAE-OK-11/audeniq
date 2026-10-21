@@ -82,9 +82,9 @@ describe('AiConnections', () => {
     expect(rows).toEqual(['Claude']);
   });
 
-  it('makes a connection token, shows it once and lists it by its name', async () => {
+  it('makes an agent key, shows it once and lists it by its name', async () => {
     const token = { id: 'g3', token: 'a'.repeat(64), expires_at: '2026-11-17T00:00:00Z', scopes: ['releases:read', 'releases:write'], mcp_url: 'https://studio.audeniq.com/api/mcp' };
-    const listed = { id: 'g3', client_name: '연결 토큰', client_id: 'audeniq-connection-token', org_id: 'o1', org_name: 'Personal workspace',
+    const listed = { id: 'g3', client_name: '에이전트 키', client_id: 'audeniq-connection-token', org_id: 'o1', org_name: 'Personal workspace',
       scopes: token.scopes, created_at: '2026-10-18T00:00:00Z', last_used_at: null, method: 'TOKEN', label: '작업실 에이전트', expires_at: token.expires_at };
     let made = false;
     http.req.mockImplementation((url: string) => {
@@ -92,7 +92,7 @@ describe('AiConnections', () => {
       return Promise.resolve({ items: made ? [listed] : [] });
     });
     await render();
-    await act(async () => { buttons('연결 토큰 만들기')[0].click(); });
+    await act(async () => { buttons('에이전트 키 만들기')[0].click(); });
     const input = el.querySelector<HTMLInputElement>('#aqTokenLabel')!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '작업실 에이전트');
@@ -103,9 +103,9 @@ describe('AiConnections', () => {
       method: 'POST', body: { label: '작업실 에이전트', org_id: 'o1', scopes: ['releases:write'], days: 30 },
     });
     expect(el.textContent).toContain('a'.repeat(64));
-    expect(el.textContent).toContain('토큰을 다시 볼 수 없어요');
+    expect(el.textContent).toContain('키를 다시 볼 수 없어요');
     expect([...el.querySelectorAll('li strong')].map(s => s.textContent)).toEqual(['작업실 에이전트']);
-    expect(el.textContent).toContain('연결 토큰 · 내 작업 공간');
+    expect(el.textContent).toContain('에이전트 키 · 내 작업 공간');
     // Closing the notice hides the token for good.
     await act(async () => { buttons('닫기')[0].click(); });
     expect(el.textContent).not.toContain('a'.repeat(64));
@@ -115,7 +115,7 @@ describe('AiConnections', () => {
     const token = { id: 'g4', token: 'b'.repeat(64), expires_at: null, no_expiry: true, scopes: [], mcp_url: 'https://studio.audeniq.com/api/mcp' };
     http.req.mockImplementation((url: string) => Promise.resolve(url.endsWith('/tokens') ? token : { items: [] }));
     await render();
-    await act(async () => { buttons('연결 토큰 만들기')[0].click(); });
+    await act(async () => { buttons('에이전트 키 만들기')[0].click(); });
     const input = el.querySelector<HTMLInputElement>('#aqTokenLabel')!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '서버 에이전트');
@@ -185,7 +185,7 @@ describe('AiConnections', () => {
       return calls === 1 ? Promise.resolve({ items: [] }) : Promise.reject(new Error('network'));
     });
     await render();
-    await act(async () => { buttons('연결 토큰 만들기')[0].click(); });
+    await act(async () => { buttons('에이전트 키 만들기')[0].click(); });
     const input = el.querySelector<HTMLInputElement>('#aqTokenLabel')!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '에이전트');
@@ -201,13 +201,13 @@ describe('AiConnections', () => {
     http.side.mockImplementation((url: string) => Promise.resolve(url.includes('/ai-settings')
       ? { studio_approval: false, mcp_enabled: false, payout_scope: false } : { items: [] }));
     await render();
-    expect(buttons('연결 토큰 만들기')).toHaveLength(0);
+    expect(buttons('에이전트 키 만들기')).toHaveLength(0);
     act(() => root.unmount());
     root = createRoot(el);
     http.side.mockImplementation((url: string) => Promise.resolve(url.includes('/ai-settings')
       ? { studio_approval: false, mcp_enabled: true, payout_scope: false } : { items: [] }));
     await render();
-    await act(async () => { buttons('연결 토큰 만들기')[0].click(); });
+    await act(async () => { buttons('에이전트 키 만들기')[0].click(); });
     expect(el.textContent).not.toContain('소액 지급 신청');
     // The period chips are one radio group: only the chosen one is a tab stop, arrows move it.
     const chips = [...el.querySelectorAll<HTMLButtonElement>('[role="radio"]')];

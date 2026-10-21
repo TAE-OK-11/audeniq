@@ -627,6 +627,121 @@ pub async fn create_connection_token(
 }
 
 // ---------------------------------------------------------------------------
+// Agent keys → work tokens (RFC 8693 token exchange)
+// ---------------------------------------------------------------------------
+
+pub const TOKEN_EXCHANGE: &str = "urn:ietf:params:oauth:grant-type:token-exchange";
+const ACCESS_TOKEN_TYPE: &str = "urn:ietf:params:oauth:token-type:access_token";
+/// A work token lasts this long; the agent asks for a new one with its key.
+pub const WORK_TOKEN_SECONDS: i64 = 3600;
+/// Work tokens one key may take per 15 minutes.
+const WORK_TOKENS_PER_KEY: i32 = 600;
+
+/// `grant_type=urn:ietf:params:oauth:grant-type:token-exchange`: an agent key
+/// (a Studio connection token, `subject_token`) is exchanged for a work
+/// token limited to `scope` (default: everything the connection has). No
+/// client authentication: the key is the credential. Work tokens cannot be
+/// exchanged again, and never carry a scope the connection lacks.
+pub(super) async fn exchange_agent_key(
+    s: &AppState,
+    form: &BTreeMap<String, String>,
+) -> std::result::Result<Value, TokenError> {
+    if form.get("subject_token_type").map(String::as_str) != Some(ACCESS_TOKEN_TYPE) {
+        return Err(TokenError::Oauth(
+            "invalid_request",
+            "subject_token_type must be urn:ietf:params:oauth:token-type:access_token.",
+        ));
+    }
+    if form
+        .get("requested_token_type")
+        .is_some_and(|t| t != ACCESS_TOKEN_TYPE)
+    {
+        return Err(TokenError::Oauth(
+            "invalid_request",
+            "Only access tokens are issued.",
+        ));
+    }
+    if form
+        .get("audience")
+        .is_some_and(|a| !super::oauth::resource_ok(s, Some(a)))
+    {
+        return Err(TokenError::Oauth("invalid_target", "Unknown audience."));
+    }
+    let key = form.get("subject_token").map(String::as_str).unwrap_or("");
+    let unknown = TokenError::Oauth(
+        "invalid_grant",
+        "The agent key is unknown, expired or revoked.",
+    );
+    if key.len() != 64 || !key.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(unknown);
+    }
+    let row = sqlx::query(
+        "SELECT g.id, g.scopes FROM identity.mcp_tokens t
+           JOIN identity.mcp_grants g ON g.id=t.grant_id
+           JOIN identity.users u ON u.id=g.user_id
+           JOIN identity.mcp_clients c ON c.id=g.client_pk
+          WHERE t.token_hash=$1 AND t.kind='ACCESS' AND NOT t.exchanged
+            AND (t.expires_at IS NULL OR t.expires_at > now()) AND g.method='TOKEN'
+            AND g.revoked_at IS NULL AND u.status='ACTIVE' AND c.disabled_at IS NULL AND g.resource=$2",
+    )
+    .bind(auth::hash_token(key))
+    .bind(super::resource(s))
+    .fetch_optional(&s.pool)
+    .await
+    .map_err(|e| TokenError::Api(e.into()))?
+    .ok_or(unknown)?;
+    let grant: Uuid = row.get("id");
+    let have: Vec<String> = row.get("scopes");
+    let scopes: Vec<String> = match form
+        .get("scope")
+        .map(|v| v.trim())
+        .filter(|v| !v.is_empty())
+    {
+        None => have.clone(),
+        Some(asked) => {
+            let mut out: Vec<String> = Vec::new();
+            for v in asked.split(' ').filter(|v| !v.is_empty()) {
+                if !have.iter().any(|h| h == v) {
+                    return Err(TokenError::Oauth(
+                        "invalid_scope",
+                        "A work token cannot carry a permission the connection does not have. Ask the artist with the request_permission tool.",
+                    ));
+                }
+                if !out.iter().any(|o| o == v) {
+                    out.push(v.to_string());
+                }
+            }
+            out
+        }
+    };
+    auth::rate(
+        &s.pool,
+        &format!("mcp-work-token:{grant}"),
+        WORK_TOKENS_PER_KEY,
+    )
+    .await?;
+    let token = auth::random_token();
+    sqlx::query(
+        "INSERT INTO identity.mcp_tokens(token_hash,grant_id,kind,expires_at,scopes,exchanged)
+         VALUES($1,$2,'ACCESS',now()+make_interval(secs=>$3),$4,true)",
+    )
+    .bind(auth::hash_token(&token))
+    .bind(grant)
+    .bind(WORK_TOKEN_SECONDS as f64)
+    .bind(&scopes)
+    .execute(&s.pool)
+    .await
+    .map_err(|e| TokenError::Api(e.into()))?;
+    Ok(json!({
+        "access_token": token,
+        "issued_token_type": ACCESS_TOKEN_TYPE,
+        "token_type": "Bearer",
+        "expires_in": WORK_TOKEN_SECONDS,
+        "scope": scopes.join(" "),
+    }))
+}
+
+// ---------------------------------------------------------------------------
 // Operator commands (audeniq-admin mcp-client)
 // ---------------------------------------------------------------------------
 
