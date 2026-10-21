@@ -56,8 +56,15 @@ jobs:
           restore-keys: |
             backend-native-1.98.1-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}-
       - name: Build the pinned AUDENIQ media engine (audeniq-music)
+        env:
+          # Read-only token for the private engine repository (audeniq-media).
+          AUDENIQ_GITHUB_TOKEN: ${{ secrets.AUDENIQ_GITHUB_TOKEN }}
         run: |
-          sh deploy/install-audeniq-music.sh "$HOME/.local/audeniq-music"
+          token=$(mktemp)
+          trap 'rm -f "$token"' EXIT
+          printf '%s' "$AUDENIQ_GITHUB_TOKEN" > "$token"
+          GITHUB_TOKEN_FILE=$token sh deploy/with-github-token.sh \
+            sh deploy/install-audeniq-music.sh "$HOME/.local/audeniq-music"
           echo "AUDENIQ_MUSIC_BIN=$HOME/.local/audeniq-music/bin/audeniq-music" >> "$GITHUB_ENV"
       - name: Install native analyzers and disposable antivirus
         run: |
