@@ -3974,7 +3974,10 @@ async fn assistants_send_and_import_files(pool: PgPool) {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(artwork.map(|a| a.to_string()).as_deref(), up["asset_id"].as_str());
+    assert_eq!(
+        artwork.map(|a| a.to_string()).as_deref(),
+        up["asset_id"].as_str()
+    );
     assert_eq!(draft_cover.as_deref(), up["asset_id"].as_str());
 
     // A file whose bytes are not what was declared is refused and recorded.
@@ -3996,7 +3999,10 @@ async fn assistants_send_and_import_files(pool: PgPool) {
         json!({"upload_session_id": up["upload_session_id"], "asset_id": up["asset_id"], "expected_key": key}),
     )
     .await;
-    assert!(err && v["error"]["code"] == "UPLOAD_CONTENT_MISMATCH", "{v}");
+    assert!(
+        err && v["error"]["code"] == "UPLOAD_CONTENT_MISMATCH",
+        "{v}"
+    );
     let (_, v) = tool(
         &app,
         &c.access,
@@ -4022,7 +4028,10 @@ async fn assistants_send_and_import_files(pool: PgPool) {
             json!({"kind":"IMAGE","url":url}),
         )
         .await;
-        assert!(err && v["error"]["code"] == "IMPORT_URL_INVALID", "{url}: {v}");
+        assert!(
+            err && v["error"]["code"] == "IMPORT_URL_INVALID",
+            "{url}: {v}"
+        );
     }
     let (err, v) = tool(
         &app,

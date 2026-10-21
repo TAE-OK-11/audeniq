@@ -386,7 +386,10 @@ impl MemStore {
         let h = &grant["headers"];
         self.files.lock().await.insert(
             key.to_owned(),
-            (bytes.to_vec(), h["content-type"].as_str().unwrap().to_owned()),
+            (
+                bytes.to_vec(),
+                h["content-type"].as_str().unwrap().to_owned(),
+            ),
         );
         self.nonces.lock().await.insert(
             key.to_owned(),
@@ -416,7 +419,13 @@ impl ObjectStore for MemStore {
         })
     }
     async fn head(&self, key: &str) -> Result<Option<ObjectMeta>> {
-        let nonce = self.nonces.lock().await.get(key).cloned().unwrap_or_default();
+        let nonce = self
+            .nonces
+            .lock()
+            .await
+            .get(key)
+            .cloned()
+            .unwrap_or_default();
         Ok(self.files.lock().await.get(key).map(|(b, ct)| ObjectMeta {
             size: b.len() as i64,
             content_type: ct.clone(),
