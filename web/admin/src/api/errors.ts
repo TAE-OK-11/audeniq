@@ -73,6 +73,8 @@ const CODE_MESSAGES: Record<string, string> = {
   AGREEMENT_CONFIRMATION_REQUIRED: '계약서의 필수 확인 항목에 모두 체크해 주세요.',
   RELEASE_NOT_IN_REVIEW: '이미 심사 대기 상태가 아닌 발매예요. 새로고침해 최신 상태를 확인해 주세요.',
   SECOND_APPROVAL_ALREADY_PENDING: '이 수정본에는 이미 2차 승인 요청이 올라가 있어요.',
+  IDENTITY_MINORS_ONLY: '청소년증·가족관계증명서와 법정대리인 동행은 미성년자(만 19세 미만)만 쓸 수 있어요.',
+  GUARDIAN_REQUIRED: '가족관계증명서로 확인할 때는 함께 온 법정대리인을 골라 주세요.',
   NOTHING_TO_CORRECT: '보완 요청할 미해결 검사 항목이 없어요.',
   APPROVAL_NOT_PENDING: '이미 처리됐거나 만료된 승인 요청이에요.',
   SECOND_APPROVER_MUST_DIFFER: '요청한 본인은 승인할 수 없어요. 다른 심사 담당자가 승인해야 해요.',

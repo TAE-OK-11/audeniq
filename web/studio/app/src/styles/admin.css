@@ -812,3 +812,20 @@
 .adm-note>small{display:block;margin-top:14px;font-size:var(--aq-fs-xs);font-weight:700;color:var(--aq-text-3)}
 .adm-note>small:first-child{margin-top:0}
 .adm-note>small+p{margin-top:3px;font-size:14px;line-height:1.6;color:var(--aq-text)}
+
+/* 실명인증 (직원) — web/admin과 같은 모양 */
+.adm-print-detail{display:grid;grid-template-columns:max-content 1fr;gap:8px 18px;padding:18px 20px;border-radius:var(--aq-r-xl,16px);background:var(--aq-surface,#fff);max-width:860px}
+.adm-print-detail dt{color:var(--aq-text-3,#667);font-weight:600}
+.adm-print-detail dd{margin:0;word-break:break-all;font-variant-numeric:tabular-nums}
+.adm-id-find{display:flex;gap:8px;margin:0 0 16px;max-width:560px}
+.adm-id-find .ui-input{flex:1;min-width:0}
+.adm-id-form,.adm-print-detail+.ui-callout{max-width:860px;margin-top:16px}
+.adm-id-grid{clear:both;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0 16px}
+.adm-id-form .ui-field{margin-bottom:16px}
+.adm-id-form .ui-field>label{display:block;margin:0 0 8px}
+.adm-id-form .ui-field :is(.ui-input,.ui-select,.ui-textarea){width:100%}
+.adm-id-minor{margin:0 0 16px;line-height:1.6}
+.adm-id-seen{display:flex;gap:10px;align-items:flex-start;margin:4px 0 16px;line-height:1.5}
+.adm-id-seen input{margin-top:3px;flex:none}
+.adm-id-actions{display:flex;flex-wrap:wrap;gap:8px}
+.adm-id-page>.ui-card{max-width:860px;margin-top:16px}
