@@ -162,9 +162,9 @@ audited as `mcp.client_registered` / `mcp.client_disabled` with the operator.
 
 ### Public tools (no account)
 
-`get_release_requirements`, `list_announcements`, `get_announcement` (published
-notices and events, as on `/api/notices` and `/api/events`) and
-`get_service_status` (maintenance, as on `/api/status`) need no token on
+`get_release_requirements` and `get_announcements` (published notices and
+events, as on `/api/notices` and `/api/events`, and with `view: service_status`
+maintenance, as on `/api/status`) need no token on
 `/api/mcp/public` (on `/api/mcp` they are called with the connection's token
 like the rest). Their `securitySchemes` list `noauth` first, then `oauth2`.
 
@@ -233,7 +233,43 @@ field) plus a text rendering. Failures are tool results with `isError: true`
 and `{code, message}` (stable API codes, human messages from
 `error::message`); internal details are never returned.
 
-| Tool | Scope | Backed by | What it does |
+### Published tools and operations
+
+`tools/list` shows 39 tools. The 78 operations below are the units of scope,
+schema, rate limit, audit (`mcp.<operation>`) and handler; operations of the
+same kind are published as one tool, and one argument picks the operation
+(`view` for reads, `action` or `kind` for writes). The other arguments are the
+operation's own and each call is checked against the operation's own schema.
+A grouped tool's annotations are the most careful of its operations' (read
+only if all are, destructive if any is, idempotent if all are). Every group
+stays within one scope, so the consent screen and `request_permission` work
+as before. Clients that kept the earlier list can still call an operation by
+its own name.
+
+| Tool | Argument | Operations |
+|---|---|---|
+| `get_account_context` | `view`: `account` (default), `members` | `get_account_context`, `list_members` |
+| `get_announcements` (public) | `view`: `list` (default), `detail`, `service_status` | `list_announcements`, `get_announcement`, `get_service_status` |
+| `list_releases` | `view`: `releases` (default), `codes` | `list_releases`, `list_release_codes` |
+| `get_release` | `view`: `details` (default), `status`, `delivery`, `content_id`, `corrections`, `playlist_pitch`, `smart_link`, `claims`, `missing_files` | `get_release`, `get_submission_status`, `get_delivery_status`, `get_content_id_status`, `get_release_corrections`, `get_playlist_pitch`, `get_smart_link`, `list_infringement_claims`, `get_upload_link` |
+| `validate_release` | `view`: `checks` (default), `preview` | `validate_release`, `preview_submission` |
+| `list_documents` | `view`: `documents` (default), `signing_requests` | `list_documents`, `list_signing_requests` |
+| `get_file_status` | `view`: `upload`, `checks` | `get_upload_status`, `get_file_checks` |
+| `get_inquiries` | `view`: `list` (default), `detail` | `list_inquiries`, `get_inquiry` |
+| `get_approval_status` | `kind`: `action` (default), `permission` | `get_action_request`, `get_permission_request` |
+| `get_settlement` (settlement) | `view`: `summary` (default), `statements`, `royalty_reports`, `payouts`, `splits`, `received_splits`, `csv` | `get_settlement_summary`, `list_settlement_statements`, `get_royalty_reports`, `list_payouts`, `get_release_splits`, `list_received_splits`, `export_csv` |
+| `upsert_track` | `action`: `save` (default), `credits` | `upsert_track`, `set_track_credits` |
+| `upload_file` | `action`: `start`, `complete`, `import` | `start_upload`, `complete_upload`, `import_file_from_url` |
+| `manage_inquiry` | `action`: `create`, `reply`, `close` | `create_inquiry`, `reply_inquiry`, `close_inquiry` |
+| `request_approval` | `action`: `withdrawal`, `takedown`, `split_change`, `release_end`, `contract_end`, `counter_notice`, `member_invite` | `request_release_withdrawal`, `request_takedown`, `request_split_change`, `request_release_end`, `request_contract_end`, `request_counter_notice`, `request_member_invite` |
+| `cancel_request` | `kind`: `correction`, `playlist_pitch`, `takedown`, `release_end`, `contract_end`, `platform_request` | `cancel_release_correction`, `withdraw_playlist_pitch`, `cancel_takedown`, `cancel_release_end`, `cancel_contract_end`, `cancel_platform_request` |
+
+The other 24 operations are published under their own name. Payout
+operations (`preview_payout`, `request_payout`, `request_large_payout`,
+`cancel_payout`), `submit_release` and `delete_release_draft` stay separate on
+purpose: each needs its own confirmation step or scope.
+
+| Operation | Scope | Backed by | What it does |
 |---|---|---|---|
 | `get_account_context` | read | `catalog::workspace` | Workspace, role, connection scopes, `can_submit` |
 | `list_distribution_platforms` | read | `api::dsp_availability`, `dsp_registry` | Platforms, availability now, per-platform requirements (artwork px, sample rate/bit depth, lossless, lead days, required credits, loudness) |
@@ -298,12 +334,13 @@ same checks apply: the declared type must match the bytes, the antivirus scan
 runs when enabled, lossless audio becomes a FLAC master, images are re-encoded
 without metadata.
 
-- **Signed PUT** (agents that can send HTTP): `start_upload {kind, size_bytes,
-  content_type}` returns `upload.url`, `upload.method` and the exact
+- **Signed PUT** (agents that can send HTTP): `upload_file {action: start, kind,
+  size_bytes, content_type}` (`start_upload`) returns `upload.url`, `upload.method` and the exact
   `upload.headers` (10 minutes, single use). The agent PUTs the bytes, then
-  calls `complete_upload {upload_session_id, asset_id, expected_key}`.
-- **Import from a link** (chat assistants): `import_file_from_url {kind, url,
-  content_type?}`. The server fetches the file with the public-only client:
+  calls `upload_file {action: complete, upload_session_id, asset_id,
+  expected_key}` (`complete_upload`).
+- **Import from a link** (chat assistants): `upload_file {action: import, kind,
+  url, content_type?}` (`import_file_from_url`). The server fetches the file with the public-only client:
   https only, a domain name (IP literals are refused so the address check
   cannot be skipped), no user info, every redirect checked again (at most 5),
   only public addresses. The response must state `Content-Length` (within the
@@ -335,7 +372,7 @@ ask for them (`mcp::actions`); the artist approves each one in the Studio.
   RUNNING and runs the action with the approving artist's own session, the
   same service call the Studio makes. The outcome is stored (DONE with the
   result, or FAILED with the error code) and shown on the page; the
-  assistant reads it with `get_action_request`.
+  assistant reads it with `get_approval_status` (`get_action_request`).
 - Payouts approved this way use the idempotency key `mcp-approval:{id}`.
 - Undoing a pending takedown or a scheduled end, and a draft's special
   options, need only the artist's explicit word in the conversation
@@ -373,7 +410,8 @@ a release prepared through MCP opens and re-saves correctly in the Studio.
 
 ### Submission confirmation
 
-1. `preview_submission(release_id, declarations)` runs every check, including
+1. `validate_release {view: preview, release_id, declarations}`
+   (`preview_submission`) runs every check, including
    the exact draft checks `submit` applies (platform selection/routability,
    territories, release time, pre-order, special options, text policy,
    protected names) and the Stage 1 field rules.
@@ -406,7 +444,8 @@ permission for good. `get_account_context` reports `can_submit_with_approval`.
 After submission the artist still signs the release application and the
 distribution agreement in AUDENIQ Studio; delivery waits for the signed,
 approved agreement (`execution::enqueue_delivery_jobs`). The MCP server cannot
-sign. `get_submission_status` says so in `follow_up`.
+sign. `get_release {view: status}` (`get_submission_status`) says so in
+`follow_up`.
 
 ## Name and voice
 

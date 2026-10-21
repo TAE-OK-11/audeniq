@@ -123,7 +123,7 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "list_announcements",
                 title: "AUDENIQ notices and events",
-                description: "AUDENIQ's published notices (service news, policy changes, holiday schedules) or events, newest first, with a short excerpt and a link. Works without connecting an account (a few calls a day); call get_announcement for the full text.",
+                description: "AUDENIQ's published notices (service news, policy changes, holiday schedules) or events, newest first, with a short excerpt and a link. Works without connecting an account (a few calls a day); call get_announcements (view detail) for the full text.",
                 scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"properties":{
                     "kind": {"type":"string","enum":["notices","events"],"default":"notices"},
@@ -132,7 +132,7 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "get_announcement",
                 title: "AUDENIQ notice or event",
-                description: "The full text of one published AUDENIQ notice or event (id from list_announcements). Works without connecting an account.",
+                description: "The full text of one published AUDENIQ notice or event (id from get_announcements). Works without connecting an account.",
                 scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["kind","id"],"properties":{
                     "kind": {"type":"string","enum":["notices","events"]},
@@ -182,7 +182,7 @@ fn defs() -> &'static [ToolDef] {
                 schema: || {
                     let mut s = draft_fields_schema();
                     s["properties"]["release_id"] = uuid_schema("The release to change");
-                    s["properties"]["artwork_asset_id"] = uuid_schema("Cover art: an IMAGE asset from start_upload/complete_upload or import_file_from_url (state READY)");
+                    s["properties"]["artwork_asset_id"] = uuid_schema("Cover art: an IMAGE asset from upload_file (state READY)");
                     s["properties"]["title"] = title_schema();
                     s["properties"]["release_type"] = release_type_schema();
                     s["required"] = json!(["release_id"]);
@@ -192,7 +192,7 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "upsert_track",
                 title: "Add or edit a track",
-                description: "Add a track to a draft, or change one (pass track_id). The track's artist is the release's artist_name. Audio is attached with asset_id: a file sent with start_upload/complete_upload or import_file_from_url, or uploaded in AUDENIQ Studio. Omitted fields keep their current value when editing.",
+                description: "Add a track to a draft, or change one (pass track_id). The track's artist is the release's artist_name. Audio is attached with asset_id: a file sent with upload_file, or uploaded in AUDENIQ Studio. Omitted fields keep their current value when editing.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: false, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","title","track_number"],"properties":{
                     "release_id": uuid_schema("The release"),
@@ -204,7 +204,7 @@ fn defs() -> &'static [ToolDef] {
                     "isrc": {"type":"string","pattern":"^$|^[A-Za-z]{2}-?[A-Za-z0-9]{3}-?[0-9]{2}-?[0-9]{5}$","description":"Existing ISRC if the recording has one; AUDENIQ issues one otherwise"},
                     "explicit": {"type":"boolean","description":"Explicit lyrics/content (parental advisory)"},
                     "lyrics": {"type":"string","maxLength":20000},
-                    "asset_id": uuid_schema("Registered audio file (start_upload/complete_upload, import_file_from_url or AUDENIQ Studio)")}}),
+                    "asset_id": uuid_schema("Registered audio file (upload_file or AUDENIQ Studio)")}}),
             },
             ToolDef {
                 name: "set_track_credits",
@@ -255,7 +255,7 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "submit_release",
                 title: "Submit application",
-                description: "Submit the previewed distribution application to AUDENIQ review. Only after the artist explicitly confirmed the preview in this conversation. Requires the confirmation_token from preview_submission and the same declarations. Fails if the release changed since the preview. Safe to retry with the same token (no duplicate application).",
+                description: "Submit the previewed distribution application to AUDENIQ review. Only after the artist explicitly confirmed the preview in this conversation. Requires the confirmation_token from validate_release (view preview) and the same declarations. Fails if the release changed since the preview. Safe to retry with the same token (no duplicate application).",
                 scope: SCOPE_SUBMIT, read_only: false, destructive: true, idempotent: true, widget: true,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","confirmation_token","declarations","artist_confirmed"],"properties":{
                     "release_id": uuid_schema("The release"),
@@ -459,14 +459,14 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "get_upload_link",
                 title: "Upload files in AUDENIQ Studio",
-                description: "Which of this release's files are still missing, and the AUDENIQ Studio page where the artist can upload them. Files can also be sent with start_upload or import_file_from_url.",
+                description: "Which of this release's files are still missing, and the AUDENIQ Studio page where the artist can upload them. Files can also be sent with upload_file.",
                 scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
                 schema: release_id_schema,
             },
             ToolDef {
                 name: "start_upload",
                 title: "Start a file upload",
-                description: "Get a signed URL to upload one audio master or cover image directly (for agents that can send HTTP requests with a file body). PUT the bytes to the returned url with exactly its headers within 10 minutes, then call complete_upload. Audio: WAV, FLAC, AIFF, ALAC (.m4a), WavPack or TTA up to 512 MiB; cover: square JPG or PNG up to 20 MiB (see get_release_requirements). When you only have a link to the file, use import_file_from_url instead.",
+                description: "Get a signed URL to upload one audio master or cover image directly (for agents that can send HTTP requests with a file body). PUT the bytes to the returned url with exactly its headers within 10 minutes, then call upload_file with action complete. Audio: WAV, FLAC, AIFF, ALAC (.m4a), WavPack or TTA up to 512 MiB; cover: square JPG or PNG up to 20 MiB (see get_release_requirements). When you only have a link to the file, use action import instead.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: false, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["kind","size_bytes","content_type"],"properties":{
                     "kind": {"type":"string","enum":["AUDIO","IMAGE","DOCUMENT"],"description":"AUDIO for a track master, IMAGE for cover art, DOCUMENT for a rights proof (PDF, JPG or PNG; attach with attach_rights_proof)"},
@@ -476,17 +476,17 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "complete_upload",
                 title: "Finish a file upload",
-                description: "Register a file uploaded to a start_upload URL. AUDENIQ checks the bytes (real format, malware scan, lossless audio). Returns state READY with the asset_id to attach, or PROCESSING for a long master: then poll get_upload_status instead of uploading again.",
+                description: "Register a file uploaded to the URL from action start. AUDENIQ checks the bytes (real format, malware scan, lossless audio). Returns state READY with the asset_id to attach, or PROCESSING for a long master: then poll get_file_status (view upload) instead of uploading again.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["upload_session_id","asset_id","expected_key"],"properties":{
-                    "upload_session_id": uuid_schema("From start_upload"),
-                    "asset_id": uuid_schema("From start_upload"),
-                    "expected_key": {"type":"string","minLength":1,"maxLength":300,"description":"From start_upload"}}}),
+                    "upload_session_id": uuid_schema("From action start"),
+                    "asset_id": uuid_schema("From action start"),
+                    "expected_key": {"type":"string","minLength":1,"maxLength":300,"description":"From action start"}}}),
             },
             ToolDef {
                 name: "import_file_from_url",
                 title: "Import a file from a link",
-                description: "Fetch an audio master or cover image from a public https:// download link the artist gave you (cloud drive share link set to anyone with the link, file host) and register it like an upload. Use only links the artist provided. The link must lead straight to the file and report its size. Returns state READY with the asset_id to attach, or PROCESSING: then poll get_upload_status.",
+                description: "Fetch an audio master or cover image from a public https:// download link the artist gave you (cloud drive share link set to anyone with the link, file host) and register it like an upload. Use only links the artist provided. The link must lead straight to the file and report its size. Returns state READY with the asset_id to attach, or PROCESSING: then poll get_file_status (view upload).",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: false, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["kind","url"],"properties":{
                     "kind": {"type":"string","enum":["AUDIO","IMAGE","DOCUMENT"],"description":"AUDIO for a track master, IMAGE for cover art, DOCUMENT for a rights proof (PDF, JPG or PNG; attach with attach_rights_proof)"},
@@ -499,7 +499,7 @@ fn defs() -> &'static [ToolDef] {
                 description: "How an upload or import is going: READY (asset_id can be attached), PROCESSING, WAITING_FOR_FILE, EXPIRED or FAILED with an error_code.",
                 scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["upload_session_id"],"properties":{
-                    "upload_session_id": uuid_schema("From start_upload or import_file_from_url")}}),
+                    "upload_session_id": uuid_schema("From upload_file (action start or import)")}}),
             },
             ToolDef {
                 name: "mark_notifications_read",
@@ -516,12 +516,12 @@ fn defs() -> &'static [ToolDef] {
                 description: "Close a support inquiry the artist says is resolved. Only when the artist asks to close it.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["inquiry_id"],"properties":{
-                    "inquiry_id": uuid_schema("The inquiry (from list_inquiries)")}}),
+                    "inquiry_id": uuid_schema("The inquiry (from get_inquiries)")}}),
             },
             ToolDef {
                 name: "attach_rights_proof",
                 title: "Attach a rights proof",
-                description: "Attach a rights proof file (licence, consent letter; a DOCUMENT or IMAGE asset from start_upload/complete_upload or import_file_from_url) to a rights document waiting for one (document_id from list_documents), or add a new proof to a release (release_id and title instead of document_id). AUDENIQ then reviews it. Use only files the artist provided.",
+                description: "Attach a rights proof file (licence, consent letter; a DOCUMENT or IMAGE asset from upload_file) to a rights document waiting for one (document_id from list_documents), or add a new proof to a release (release_id and title instead of document_id). AUDENIQ then reviews it. Use only files the artist provided.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: false, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["asset_id","file_name"],"properties":{
                     "document_id": uuid_schema("The rights document waiting for a file (from list_documents)"),
@@ -586,11 +586,11 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "resend_split_invite",
                 title: "Resend a split invite",
-                description: "E-mail a collaborator's revenue split invite again (share_id from get_release_splits). Limited to a few resends.",
+                description: "E-mail a collaborator's revenue split invite again (share_id from get_settlement (view splits)). Limited to a few resends.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: false, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","share_id"],"properties":{
                     "release_id": uuid_schema("The release"),
-                    "share_id": uuid_schema("The collaborator's share (from get_release_splits)")}}),
+                    "share_id": uuid_schema("The collaborator's share (from get_settlement (view splits))")}}),
             },
             ToolDef {
                 name: "export_csv",
@@ -614,7 +614,7 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "request_release_withdrawal",
                 title: "Ask to withdraw an application",
-                description: "Ask the artist to approve withdrawing a submitted release's application (it stops the review; limited per month; impossible once delivery started). Only when the artist asked for it. The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_action_request.",
+                description: "Ask the artist to approve withdrawing a submitted release's application (it stops the review; limited per month; impossible once delivery started). Only when the artist asked for it. The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_approval_status.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["release_id"],"properties":{
                     "release_id": uuid_schema("The submitted release"),
@@ -623,7 +623,7 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "request_takedown",
                 title: "Ask to take a release down",
-                description: "Ask the artist to approve a takedown of a release that is on platforms; AUDENIQ reviews it and removes it everywhere. Only when the artist asked for it. The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_action_request.",
+                description: "Ask the artist to approve a takedown of a release that is on platforms; AUDENIQ reviews it and removes it everywhere. Only when the artist asked for it. The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_approval_status.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","reason"],"properties":{
                     "release_id": uuid_schema("The delivered release"),
@@ -641,14 +641,14 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "request_split_change",
                 title: "Ask to change revenue splits",
-                description: "Ask the artist to approve the collaborators and percentages of the listed tracks (replaces those tracks' splits; share_bps 2550 = 25.5%; existing collaborators by id from get_release_splits, new ones with name and email). New people get an invite to accept. The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_action_request.",
+                description: "Ask the artist to approve the collaborators and percentages of the listed tracks (replaces those tracks' splits; share_bps 2550 = 25.5%; existing collaborators by id from get_settlement (view splits), new ones with name and email). New people get an invite to accept. The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_approval_status.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","tracks"],"properties":{
                     "release_id": uuid_schema("The release"),
                     "tracks": {"type":"array","minItems":1,"maxItems":99,"items":{"type":"object","additionalProperties":false,"required":["track_id","shares"],"properties":{
                         "track_id": uuid_schema("The track"),
                         "shares": {"type":"array","maxItems":20,"items":{"type":"object","additionalProperties":false,"required":["name","share_bps"],"properties":{
-                            "id": uuid_schema("An existing collaborator (from get_release_splits)"),
+                            "id": uuid_schema("An existing collaborator (from get_settlement (view splits))"),
                             "name": {"type":"string","minLength":1,"maxLength":120},
                             "email": {"type":"string","maxLength":320,"description":"Needed for a new collaborator"},
                             "share_bps": {"type":"integer","minimum":1,"maximum":10000}}}}}}}}}),
@@ -656,7 +656,7 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "request_release_end",
                 title: "Ask to end a release",
-                description: "Ask the artist to approve ending a delivered release's service on a date (contract end, licence expiry, or transfer to another distributor named in transfer_to). The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_action_request.",
+                description: "Ask the artist to approve ending a delivered release's service on a date (contract end, licence expiry, or transfer to another distributor named in transfer_to). The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_approval_status.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","end_date","reason"],"properties":{
                     "release_id": uuid_schema("The release"),
@@ -677,7 +677,7 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "request_contract_end",
                 title: "Ask to end the AUDENIQ contract",
-                description: "Ask the workspace owner to approve ending this workspace's AUDENIQ contract on a date (no new releases after that; all releases end on the date). The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_action_request.",
+                description: "Ask the workspace owner to approve ending this workspace's AUDENIQ contract on a date (no new releases after that; all releases end on the date). The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_approval_status.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["end_date"],"properties":{
                     "end_date": {"type":"string","pattern":"^[0-9]{4}-[0-9]{2}-[0-9]{2}$","description":"YYYY-MM-DD"},
@@ -694,7 +694,7 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "request_counter_notice",
                 title: "Ask to answer an infringement claim",
-                description: "Ask the artist to approve a counter notice to a rights claim that suspended their release (claim_id from list_infringement_claims, while can_answer is true). The statement is a legal statement in the artist's own words; never write claims for them. The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_action_request.",
+                description: "Ask the artist to approve a counter notice to a rights claim that suspended their release (claim_id from get_release (view claims), while can_answer is true). The statement is a legal statement in the artist's own words; never write claims for them. The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_approval_status.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["claim_id","statement"],"properties":{
                     "claim_id": uuid_schema("The claim"),
@@ -703,7 +703,7 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "request_member_invite",
                 title: "Ask to invite a member",
-                description: "Ask the workspace owner to approve inviting an existing AUDENIQ account by e-mail as EDITOR or VIEWER. The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_action_request.",
+                description: "Ask the workspace owner to approve inviting an existing AUDENIQ account by e-mail as EDITOR or VIEWER. The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_approval_status.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["email","role"],"properties":{
                     "email": {"type":"string","minLength":3,"maxLength":320},
@@ -712,7 +712,7 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "request_large_payout",
                 title: "Ask for a payout above the assistant limit",
-                description: "Ask the workspace owner to approve a payout to the registered account (any amount up to the available balance; amount, fee and net shown on the approval page). Never on your own initiative. The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_action_request.",
+                description: "Ask the workspace owner to approve a payout to the registered account (any amount up to the available balance; amount, fee and net shown on the approval page). Never on your own initiative. The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_approval_status.",
                 scope: SCOPE_PAYOUT, read_only: false, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["amount"],"properties":{
                     "amount": {"type":"integer","minimum":1,"maximum":1000000000,"description":"KRW before the fee"}}}),
@@ -723,7 +723,7 @@ fn defs() -> &'static [ToolDef] {
                 description: "The state of an action the artist was asked to approve: PENDING, DONE (with result), FAILED (error_code), REJECTED, EXPIRED or REVOKED.",
                 scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["request_id"],"properties":{
-                    "request_id": uuid_schema("From a request_* tool")}}),
+                    "request_id": uuid_schema("From a request_approval")}}),
             },
             ToolDef {
                 name: "set_special_options",
@@ -882,8 +882,391 @@ fn draft_fields_schema() -> Value {
         "upc": {"type":"string","pattern":"^$|^[0-9]{12}$","description":"Existing UPC-A if the release has one; AUDENIQ issues one otherwise"}}})
 }
 
+/// The operation itself, by its own name. Operations that are part of a
+/// [`Group`] are not listed under their own name any more, but clients
+/// that kept an older tool list can still call them by it.
 pub fn find(name: &str) -> Option<&'static ToolDef> {
     defs().iter().find(|d| d.name == name)
+}
+
+/// Operations of the same kind published as one tool: `key` picks the
+/// operation (`view` for reads, `action` or `kind` for writes), every other
+/// argument is the operation's own. Each operation keeps its scope, schema,
+/// rate limits, audit name and handler; only the listing is shorter, so
+/// clients with a tool limit and models choosing a tool see fewer, clearer
+/// tools. All operations of a group share one scope.
+struct Group {
+    name: &'static str,
+    title: &'static str,
+    intro: &'static str,
+    key: &'static str,
+    /// The first operation runs when `key` is omitted.
+    has_default: bool,
+    /// (value of `key`, operation name)
+    ops: &'static [(&'static str, &'static str)],
+}
+
+const GROUPS: &[Group] = &[
+    Group {
+        name: "get_account_context",
+        title: "AUDENIQ account",
+        intro: "The connected workspace and its members. Call first (view account).",
+        key: "view",
+        has_default: true,
+        ops: &[
+            ("account", "get_account_context"),
+            ("members", "list_members"),
+        ],
+    },
+    Group {
+        name: "get_announcements",
+        title: "AUDENIQ notices, events and service status",
+        intro: "AUDENIQ's published notices and events, and whether the service is under maintenance. Works without connecting an account (a few calls a day).",
+        key: "view",
+        has_default: true,
+        ops: &[
+            ("list", "list_announcements"),
+            ("detail", "get_announcement"),
+            ("service_status", "get_service_status"),
+        ],
+    },
+    Group {
+        name: "list_releases",
+        title: "List releases",
+        intro: "The workspace's releases, or the codes (UPC, ISRC) of the submitted ones.",
+        key: "view",
+        has_default: true,
+        ops: &[
+            ("releases", "list_releases"),
+            ("codes", "list_release_codes"),
+        ],
+    },
+    Group {
+        name: "get_release",
+        title: "Release details",
+        intro: "Everything about one release, one view at a time (release_id for every view).",
+        key: "view",
+        has_default: true,
+        ops: &[
+            ("details", "get_release"),
+            ("status", "get_submission_status"),
+            ("delivery", "get_delivery_status"),
+            ("content_id", "get_content_id_status"),
+            ("corrections", "get_release_corrections"),
+            ("playlist_pitch", "get_playlist_pitch"),
+            ("smart_link", "get_smart_link"),
+            ("claims", "list_infringement_claims"),
+            ("missing_files", "get_upload_link"),
+        ],
+    },
+    Group {
+        name: "validate_release",
+        title: "Check release",
+        intro: "Pre-submission checks of a draft, or the complete application preview that submit_release needs.",
+        key: "view",
+        has_default: true,
+        ops: &[
+            ("checks", "validate_release"),
+            ("preview", "preview_submission"),
+        ],
+    },
+    Group {
+        name: "list_documents",
+        title: "Agreements, rights documents and signing requests",
+        intro: "The workspace's agreements and rights documents, or the electronic signing requests sent for its releases.",
+        key: "view",
+        has_default: true,
+        ops: &[
+            ("documents", "list_documents"),
+            ("signing_requests", "list_signing_requests"),
+        ],
+    },
+    Group {
+        name: "get_file_status",
+        title: "File status",
+        intro: "How an upload or import is going, or the detailed check results of a registered file.",
+        key: "view",
+        has_default: false,
+        ops: &[
+            ("upload", "get_upload_status"),
+            ("checks", "get_file_checks"),
+        ],
+    },
+    Group {
+        name: "get_inquiries",
+        title: "Support inquiries",
+        intro: "The workspace's inquiries to AUDENIQ support, or one conversation.",
+        key: "view",
+        has_default: true,
+        ops: &[("list", "list_inquiries"), ("detail", "get_inquiry")],
+    },
+    Group {
+        name: "get_approval_status",
+        title: "Approval request status",
+        intro: "The state of something the artist was asked to approve in AUDENIQ Studio: an action from request_approval or request_large_payout (kind action), or more permissions from request_permission (kind permission).",
+        key: "kind",
+        has_default: true,
+        ops: &[
+            ("action", "get_action_request"),
+            ("permission", "get_permission_request"),
+        ],
+    },
+    Group {
+        name: "get_settlement",
+        title: "Settlement",
+        intro: "Royalties and payouts, one view at a time.",
+        key: "view",
+        has_default: true,
+        ops: &[
+            ("summary", "get_settlement_summary"),
+            ("statements", "list_settlement_statements"),
+            ("royalty_reports", "get_royalty_reports"),
+            ("payouts", "list_payouts"),
+            ("splits", "get_release_splits"),
+            ("received_splits", "list_received_splits"),
+            ("csv", "export_csv"),
+        ],
+    },
+    Group {
+        name: "upsert_track",
+        title: "Add or edit a track",
+        intro: "A draft's tracks: add or edit one (action save), or replace its credits (action credits).",
+        key: "action",
+        has_default: true,
+        ops: &[("save", "upsert_track"), ("credits", "set_track_credits")],
+    },
+    Group {
+        name: "upload_file",
+        title: "Upload a file",
+        intro: "Send an audio master, cover image or rights proof to AUDENIQ: action start then complete for the bytes themselves, or action import for a public link the artist gave you.",
+        key: "action",
+        has_default: false,
+        ops: &[
+            ("start", "start_upload"),
+            ("complete", "complete_upload"),
+            ("import", "import_file_from_url"),
+        ],
+    },
+    Group {
+        name: "manage_inquiry",
+        title: "Write to AUDENIQ support",
+        intro: "Send a new inquiry to AUDENIQ support, reply to one or close one. Everything is sent in the artist's name: only text and actions the artist agreed to.",
+        key: "action",
+        has_default: false,
+        ops: &[
+            ("create", "create_inquiry"),
+            ("reply", "reply_inquiry"),
+            ("close", "close_inquiry"),
+        ],
+    },
+    Group {
+        name: "request_approval",
+        title: "Ask the artist to approve an action",
+        intro: "Withdrawals, takedowns, revenue splits, release or contract end dates, counter notices and member invites: only when the artist asked for it. This files a request the artist approves once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_approval_status.",
+        key: "action",
+        has_default: false,
+        ops: &[
+            ("withdrawal", "request_release_withdrawal"),
+            ("takedown", "request_takedown"),
+            ("split_change", "request_split_change"),
+            ("release_end", "request_release_end"),
+            ("contract_end", "request_contract_end"),
+            ("counter_notice", "request_counter_notice"),
+            ("member_invite", "request_member_invite"),
+        ],
+    },
+    Group {
+        name: "cancel_request",
+        title: "Cancel or withdraw a request",
+        intro: "Cancel something the artist asked for that AUDENIQ has not finished yet. Only when the artist asks.",
+        key: "kind",
+        has_default: false,
+        ops: &[
+            ("correction", "cancel_release_correction"),
+            ("playlist_pitch", "withdraw_playlist_pitch"),
+            ("takedown", "cancel_takedown"),
+            ("release_end", "cancel_release_end"),
+            ("contract_end", "cancel_contract_end"),
+            ("platform_request", "cancel_platform_request"),
+        ],
+    },
+];
+
+fn group_of(op: &str) -> Option<&'static Group> {
+    GROUPS.iter().find(|g| g.ops.iter().any(|(_, o)| *o == op))
+}
+
+fn op(name: &str) -> &'static ToolDef {
+    find(name).unwrap_or_else(|| panic!("grouped operation {name} exists"))
+}
+
+/// A tool as clients see it: one operation, or a [`Group`].
+pub struct Published {
+    pub name: &'static str,
+    pub title: &'static str,
+    pub description: String,
+    pub scope: &'static str,
+    pub public: bool,
+    read_only: bool,
+    destructive: bool,
+    idempotent: bool,
+    widget: bool,
+    pub input_schema: Value,
+}
+
+impl Published {
+    fn single(d: &'static ToolDef) -> Self {
+        Published {
+            name: d.name,
+            title: d.title,
+            description: d.description.to_string(),
+            scope: d.scope,
+            public: d.public(),
+            read_only: d.read_only,
+            destructive: d.destructive,
+            idempotent: d.idempotent,
+            widget: d.widget,
+            input_schema: d.input_schema(),
+        }
+    }
+    /// The group's hints are the most careful of its operations'.
+    fn group(g: &'static Group) -> Self {
+        let ops: Vec<&ToolDef> = g.ops.iter().map(|(_, o)| op(o)).collect();
+        let mut description = g.intro.to_string();
+        for (i, ((value, _), d)) in g.ops.iter().zip(&ops).enumerate() {
+            let default = if i == 0 && g.has_default {
+                " (default)"
+            } else {
+                ""
+            };
+            description.push_str(&format!(
+                "\n- {}={value}{default}: {}",
+                g.key, d.description
+            ));
+        }
+        Published {
+            name: g.name,
+            title: g.title,
+            description,
+            scope: ops[0].scope,
+            public: ops.iter().all(|d| d.public()),
+            read_only: ops.iter().all(|d| d.read_only),
+            destructive: ops.iter().any(|d| d.destructive),
+            idempotent: ops.iter().all(|d| d.idempotent),
+            widget: ops.iter().any(|d| d.widget),
+            input_schema: group_schema(g, &ops),
+        }
+    }
+}
+
+/// The union of the operations' arguments plus `key`. A field required by
+/// every operation stays required; one that differs between operations
+/// lists each form (`anyOf`). Each call is still checked against its own
+/// operation's schema.
+fn group_schema(g: &Group, ops: &[&ToolDef]) -> Value {
+    let bare = |v: &Value| {
+        let mut v = v.clone();
+        if let Some(o) = v.as_object_mut() {
+            o.remove("description");
+        }
+        v
+    };
+    let mut props = serde_json::Map::new();
+    let mut required: Option<Vec<Value>> = None;
+    for d in ops {
+        let s = d.input_schema();
+        for (k, v) in s["properties"].as_object().into_iter().flatten() {
+            match props.get_mut(k) {
+                None => {
+                    props.insert(k.clone(), v.clone());
+                }
+                Some(seen) if bare(seen) == bare(v) => {}
+                Some(seen) => {
+                    let mut forms = match seen.get("anyOf").and_then(Value::as_array) {
+                        Some(f) => f.clone(),
+                        None => vec![bare(seen)],
+                    };
+                    if !forms.contains(&bare(v)) {
+                        forms.push(bare(v));
+                    }
+                    let mut merged = json!({"anyOf": forms});
+                    if let Some(desc) = seen.get("description") {
+                        merged["description"] = desc.clone();
+                    }
+                    *seen = merged;
+                }
+            }
+        }
+        let own = s["required"].as_array().cloned().unwrap_or_default();
+        required = Some(match required {
+            None => own,
+            Some(r) => r.into_iter().filter(|k| own.contains(k)).collect(),
+        });
+    }
+    let values: Vec<&str> = g.ops.iter().map(|(v, _)| *v).collect();
+    let mut key =
+        json!({"type":"string","enum":values,"description":"Which one (see the tool description)"});
+    let mut required = required.unwrap_or_default();
+    if g.has_default {
+        key["default"] = json!(values[0]);
+    } else {
+        required.insert(0, json!(g.key));
+    }
+    props.insert(g.key.to_string(), key);
+    json!({"type":"object","additionalProperties":false,"required":required,"properties":props})
+}
+
+/// Every published tool, in the order of their operations.
+pub fn published() -> &'static [Published] {
+    static PUBLISHED: OnceLock<Vec<Published>> = OnceLock::new();
+    PUBLISHED.get_or_init(|| {
+        let mut out: Vec<Published> = Vec::new();
+        for d in defs() {
+            match group_of(d.name) {
+                None => out.push(Published::single(d)),
+                Some(g) if !out.iter().any(|p| p.name == g.name) => out.push(Published::group(g)),
+                Some(_) => {}
+            }
+        }
+        out
+    })
+}
+
+/// What a `tools/call` name and its arguments run.
+pub enum Resolved {
+    /// The operation and its own arguments (`key` removed).
+    Op(&'static ToolDef, Value),
+    /// The tool exists but `key` names no operation: the tool error result.
+    Invalid(Value),
+    Unknown,
+}
+
+/// A published tool name (with its `key`), or an operation's own name.
+pub fn resolve(name: &str, mut args: Value) -> Resolved {
+    let Some(g) = GROUPS.iter().find(|g| g.name == name) else {
+        return match find(name) {
+            Some(d) => Resolved::Op(d, args),
+            None => Resolved::Unknown,
+        };
+    };
+    let chosen = match args.get(g.key) {
+        None if g.has_default => g.ops.first(),
+        Some(Value::String(v)) => g.ops.iter().find(|(value, _)| value == v),
+        _ => None,
+    };
+    let Some((_, name)) = chosen else {
+        let values: Vec<&str> = g.ops.iter().map(|(v, _)| *v).collect();
+        let mut e = tool_error(
+            "INVALID_ARGUMENTS",
+            &format!("{} must be one of: {}.", g.key, values.join(", ")),
+        );
+        e.details = Some(json!({"field": g.key, "allowed": values}));
+        return Resolved::Invalid(err_result(e));
+    };
+    if let Some(o) = args.as_object_mut() {
+        o.remove(g.key);
+    }
+    Resolved::Op(op(name), args)
 }
 
 /// Tool listing; `public_only` for the endpoint without an account.
@@ -895,11 +1278,11 @@ pub fn permitted(def: &ToolDef, p: &Principal) -> bool {
 }
 
 pub fn list_json(public_only: bool) -> Vec<Value> {
-    defs()
+    published()
         .iter()
-        .filter(|d| !public_only || d.public())
+        .filter(|d| !public_only || d.public)
         .map(|d| {
-            let security = if d.public() {
+            let security = if d.public {
                 json!([{"type":"noauth"}, {"type":"oauth2","scopes":[d.scope]}])
             } else {
                 json!([{"type":"oauth2","scopes":[d.scope]}])
@@ -917,7 +1300,7 @@ pub fn list_json(public_only: bool) -> Vec<Value> {
                 "name": d.name,
                 "title": d.title,
                 "description": d.description,
-                "inputSchema": d.input_schema(),
+                "inputSchema": d.input_schema,
                 "annotations": {
                     "title": d.title,
                     "readOnlyHint": d.read_only,
@@ -1130,7 +1513,7 @@ pub async fn call(s: &AppState, p: &Principal, def: &ToolDef, args: Value) -> Va
             Ok(super::safety::Reserved::Done(id)) => Box::pin(replay(s, p, def, id)).await,
             Ok(super::safety::Reserved::Running) => Err(tool_error(
                 "REQUEST_IN_PROGRESS",
-                "The first request with this client_request_id is still running. Wait a moment and check the result (list_releases, list_inquiries, list_platform_requests) instead of sending it again.",
+                "The first request with this client_request_id is still running. Wait a moment and check the result (list_releases, get_inquiries, list_platform_requests) instead of sending it again.",
             )),
             Err(e) => Err(e.into()),
         },
@@ -1200,7 +1583,7 @@ async fn run_with_deadline(
         Ok(v) => v,
         Err(_) => Err(tool_error(
             "TOOL_TIMEOUT",
-            "This took too long and was stopped. It may have partly completed: check the current state (get_release, get_submission_status, list_payouts) before trying again.",
+            "This took too long and was stopped. It may have partly completed: check the current state (get_release, get_settlement with view payouts) before trying again.",
         )),
     }
 }
@@ -2181,9 +2564,9 @@ async fn create_draft(
     record_created(s, grant, "create_release_draft", args, id).await;
     let mut v = release_view(s, a, org, id).await?;
     v["next_steps"] = json!([
-        "Add tracks with upsert_track and credits with set_track_credits.",
+        "Add tracks with upsert_track and credits with upsert_track (action credits).",
         format!(
-            "Add the audio for each track and the cover art: start_upload or import_file_from_url, or upload in AUDENIQ Studio: {}",
+            "Add the audio for each track and the cover art: upload_file, or upload in AUDENIQ Studio: {}",
             studio_edit_url(s, id)
         ),
         "Run validate_release to see what is still missing.",
@@ -2202,7 +2585,7 @@ async fn update_draft(
     if !submission::is_editable_status(r["status"].as_str().unwrap_or("")) {
         return Err(tool_error(
             "RELEASE_NOT_EDITABLE",
-            "This release is under review and cannot be edited. Use get_submission_status.",
+            "This release is under review and cannot be edited. Use get_release (view status).",
         ));
     }
     let mut draft = r["draft"].clone();
@@ -2454,7 +2837,7 @@ fn check_hint(code: &str) -> Option<&'static str> {
         "CLINE_MISSING" => "Set c_line (year and composition/artwork owner).",
         "FIELD_LANGUAGE_INVALID" => "language must be an ISO 639 code such as ko or en.",
         "TRACK_WRITER_CREDIT_MISSING" | "CREDIT_MISSING" => {
-            "Add at least one composer or lyricist (set_track_credits)."
+            "Add at least one composer or lyricist (upsert_track (action credits))."
         }
         "FIELD_RELEASE_TYPE_MISMATCH" => {
             "The track count does not fit the release type (SINGLE 1, EP 2-6, ALBUM 7+)."
@@ -2671,7 +3054,7 @@ async fn submit(
     let stale = || {
         tool_error(
             "CONFIRMATION_INVALID",
-            "The confirmation is missing, expired, for another release or for different declarations. Call preview_submission again and have the artist confirm the new preview.",
+            "The confirmation is missing, expired, for another release or for different declarations. Call validate_release (view preview) again and have the artist confirm the new preview.",
         )
     };
     let token = super::open(
@@ -2708,7 +3091,7 @@ async fn submit(
     if review["scope_hash"] != token["h"] {
         return Err(tool_error(
             "RELEASE_CHANGED",
-            "The release changed after the preview. Call preview_submission again and have the artist confirm the new preview.",
+            "The release changed after the preview. Call validate_release (view preview) again and have the artist confirm the new preview.",
         ));
     }
     let title = super::safety::release_title(&s.pool, p.org, release).await;
@@ -2753,7 +3136,7 @@ async fn submit(
         Err(Error::PolicyGate("RELEASE_CHANGED" | "CONSENT_SCOPE_MISMATCH")) => {
             return Err(tool_error(
                 "RELEASE_CHANGED",
-                "The release changed after the preview. Call preview_submission again and have the artist confirm the new preview.",
+                "The release changed after the preview. Call validate_release (view preview) again and have the artist confirm the new preview.",
             ));
         }
         other => other?,
@@ -2836,7 +3219,7 @@ fn submitted_view(s: &AppState, release: Uuid, result: &Value) -> Value {
         "duplicate_request": result["deduped"],
         "next_steps": [
             format!("Sign the release application and distribution agreement in AUDENIQ Studio: {}", studio_url(s, release)),
-            "AUDENIQ runs automatic checks and staff review; use get_submission_status to follow it.",
+            "AUDENIQ runs automatic checks and staff review; use get_release (view status) to follow it.",
         ],
         "studio_url": studio_url(s, release),
     })
@@ -3389,6 +3772,107 @@ mod tests {
                 d.name
             );
         }
+    }
+    #[test]
+    fn groups_publish_fewer_tools_and_keep_every_operation() {
+        let mut grouped = std::collections::BTreeSet::new();
+        for g in GROUPS {
+            let first = op(g.ops[0].1);
+            for (value, name) in g.ops {
+                let d = op(name);
+                assert!(grouped.insert(*name), "{name} is in one group only");
+                assert_eq!(d.scope, first.scope, "{}: one scope per group", g.name);
+                assert_eq!(d.public(), first.public(), "{}", g.name);
+                assert!(
+                    d.input_schema()["properties"].get(g.key).is_none(),
+                    "{}: {} is not also an argument of {name}",
+                    g.name,
+                    g.key
+                );
+                assert!(!value.is_empty());
+            }
+            // A group may only take the name of its own default operation.
+            if let Some(d) = find(g.name) {
+                assert!(g.has_default && g.ops[0].1 == d.name, "{}", g.name);
+            }
+        }
+        let names: std::collections::BTreeSet<_> = published().iter().map(|p| p.name).collect();
+        assert_eq!(names.len(), published().len(), "published names are unique");
+        assert_eq!(published().len(), 39);
+        assert_eq!(
+            published().len() + grouped.len() - GROUPS.len(),
+            defs().len(),
+            "every operation is published once"
+        );
+        for p in published() {
+            jsonschema::validator_for(&p.input_schema)
+                .unwrap_or_else(|e| panic!("{}: {e}", p.name));
+            assert_eq!(p.input_schema["additionalProperties"], false, "{}", p.name);
+        }
+        let submit = published()
+            .iter()
+            .find(|p| p.name == "submit_release")
+            .unwrap();
+        assert!(submit.destructive);
+        let settlement = published()
+            .iter()
+            .find(|p| p.name == "get_settlement")
+            .unwrap();
+        assert!(settlement.read_only && settlement.scope == SCOPE_SETTLEMENT);
+        let track = published()
+            .iter()
+            .find(|p| p.name == "upsert_track")
+            .unwrap();
+        assert!(!track.idempotent, "the most careful hint of the group");
+    }
+    #[test]
+    fn published_names_and_old_names_resolve_to_operations() {
+        let id = Uuid::new_v4().to_string();
+        let target = |name: &str, args: Value| match resolve(name, args) {
+            Resolved::Op(d, args) => Some((d.name, args)),
+            _ => None,
+        };
+        assert_eq!(
+            target("get_release", json!({"release_id": id})).unwrap().0,
+            "get_release"
+        );
+        let (name, args) =
+            target("get_release", json!({"view": "delivery", "release_id": id})).unwrap();
+        assert_eq!(name, "get_delivery_status");
+        assert_eq!(args, json!({"release_id": id}), "the key is not passed on");
+        assert_eq!(
+            target("cancel_request", json!({"kind": "takedown"}))
+                .unwrap()
+                .0,
+            "cancel_takedown"
+        );
+        // Clients that kept the old list still reach the same operation.
+        assert_eq!(
+            target("get_delivery_status", json!({"release_id": id}))
+                .unwrap()
+                .0,
+            "get_delivery_status"
+        );
+        assert!(matches!(
+            resolve("upload_file", json!({"kind": "AUDIO"})),
+            Resolved::Invalid(_)
+        ));
+        assert!(matches!(
+            resolve("get_release", json!({"view": "everything"})),
+            Resolved::Invalid(_)
+        ));
+        assert!(matches!(
+            resolve("no_such_tool", json!({})),
+            Resolved::Unknown
+        ));
+        let public: Vec<_> = list_json(true).iter().map(|t| t["name"].clone()).collect();
+        assert_eq!(
+            public,
+            json!(["get_release_requirements", "get_announcements"])
+                .as_array()
+                .unwrap()
+                .clone()
+        );
     }
     #[test]
     fn schemas_reject_unknown_fields_and_bad_values() {

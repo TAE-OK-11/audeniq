@@ -268,6 +268,19 @@ async fn content_maintenance_and_site_rules(pool: PgPool) {
         StatusCode::SERVICE_UNAVAILABLE,
         "the status tool explains the maintenance"
     );
+    let (s, _) = raw(
+        &app,
+        "POST",
+        "/api/mcp",
+        &[],
+        json!({"jsonrpc":"2.0","id":44,"method":"tools/call","params":{"name":"get_announcements","arguments":{"view":"service_status"}}}),
+    )
+    .await;
+    assert_ne!(
+        s,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "also under the published tool name"
+    );
     let (s, v) = raw(&app, "POST", "/api/oauth/token", &[], json!(null)).await;
     assert_eq!(s, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(v["error"], "temporarily_unavailable");
