@@ -257,7 +257,14 @@ pub async fn post_report(
         if gross_sum == Decimal::ZERO {
             continue;
         }
-        let description = format!("{title} · {dsp} {} 정산", &period[..7.min(period.len())]);
+        // Artists read this line in their statement: the platform's name, not its id.
+        let platform = crate::dsp_registry::Dsp::from_code(&dsp)
+            .or_else(|| crate::dsp_registry::Dsp::from_slug(&dsp.to_ascii_lowercase()))
+            .map_or(dsp.as_str(), |d| d.display_name());
+        let description = format!(
+            "{title} · {platform} {} 정산",
+            &period[..7.min(period.len())]
+        );
         let entry_inputs: Vec<LedgerEntryInput> = entries
             .iter()
             .map(|(account, side, amount, isrc)| LedgerEntryInput {
