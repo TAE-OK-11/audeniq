@@ -182,6 +182,36 @@ pub(super) async fn status(
     Ok(v)
 }
 
+/// `withdraw_permission_request`: this connection no longer needs what it
+/// asked for, and the artist has not answered yet.
+pub(super) async fn withdraw(
+    s: &AppState,
+    p: &Principal,
+    args: &Value,
+) -> std::result::Result<Value, ToolError> {
+    let id = args
+        .get("request_id")
+        .and_then(Value::as_str)
+        .and_then(|v| v.parse::<Uuid>().ok())
+        .ok_or_else(|| tool_error("INVALID_INPUT", "request_id must be a UUID."))?;
+    expire(s).await?;
+    let done = sqlx::query(
+        "UPDATE identity.mcp_permission_requests SET status='WITHDRAWN', decided_at=now()
+          WHERE id=$1 AND grant_id=$2 AND status='PENDING'",
+    )
+    .bind(id)
+    .bind(p.grant)
+    .execute(&s.pool)
+    .await
+    .map_err(Error::from)?
+    .rows_affected();
+    let v = status(s, p, args).await?;
+    if done == 0 {
+        return Err(super::actions::not_pending(&v["status"]));
+    }
+    Ok(v)
+}
+
 async fn expire(s: &AppState) -> Result<()> {
     sqlx::query("UPDATE identity.mcp_permission_requests SET status='EXPIRED', decided_at=now() WHERE status='PENDING' AND expires_at < now()")
         .execute(&s.pool)
@@ -280,8 +310,10 @@ async fn decide(s: &AppState, h: &HeaderMap, id: Uuid, approve: bool) -> Result<
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(Error::NotFound)?;
-    if row.get::<String, _>("status") != "PENDING" {
-        return Err(Error::InvalidCode("AI_REQUEST_DECIDED"));
+    match row.get::<String, _>("status").as_str() {
+        "PENDING" => {}
+        "WITHDRAWN" => return Err(Error::InvalidCode("AI_REQUEST_WITHDRAWN")),
+        _ => return Err(Error::InvalidCode("AI_REQUEST_DECIDED")),
     }
     if row.get::<bool, _>("expired") {
         sqlx::query("UPDATE identity.mcp_permission_requests SET status='EXPIRED', decided_at=now() WHERE id=$1")

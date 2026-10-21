@@ -38,7 +38,7 @@ pub const REQUEST_HOURS: i32 = 24;
 const REQUESTS_PER_WINDOW: i32 = 20;
 
 /// The tools this module answers ([`call`]).
-pub(super) const TOOLS: [&str; 13] = [
+pub(super) const TOOLS: [&str; 15] = [
     "request_release_withdrawal",
     "request_takedown",
     "request_split_change",
@@ -52,6 +52,8 @@ pub(super) const TOOLS: [&str; 13] = [
     "cancel_release_end",
     "cancel_contract_end",
     "set_special_options",
+    "withdraw_action_request",
+    "withdraw_pending_submission",
 ];
 
 pub(super) async fn call(s: &AppState, p: &Principal, name: &str, args: &Value) -> ToolResult {
@@ -75,6 +77,8 @@ pub(super) async fn call(s: &AppState, p: &Principal, name: &str, args: &Value) 
             Ok(view(v, "contract_end"))
         }
         "set_special_options" => Box::pin(special_options(s, p, args)).await,
+        "withdraw_action_request" => withdraw(s, p, args).await,
+        "withdraw_pending_submission" => withdraw_submission(s, p, args).await,
         _ => {
             let (action, release, payload, summary) = Box::pin(prepare(s, p, name, args)).await?;
             file(s, p, action, release, payload, summary).await
@@ -545,6 +549,68 @@ async fn status(s: &AppState, p: &Principal, args: &Value) -> ToolResult {
     Ok(request_view(s, &r))
 }
 
+/// `withdraw_action_request`: this connection takes back a request the
+/// artist has not answered yet. Approval claims a request (RUNNING) under a
+/// row lock, so a withdrawal and an approval never both win.
+async fn withdraw(s: &AppState, p: &Principal, args: &Value) -> ToolResult {
+    let id = uuid_arg(args, "request_id")?;
+    expire(s).await?;
+    let done = sqlx::query(
+        "UPDATE identity.mcp_action_requests SET status='WITHDRAWN', decided_at=now()
+          WHERE id=$1 AND grant_id=$2 AND status='PENDING'",
+    )
+    .bind(id)
+    .bind(p.grant)
+    .execute(&s.pool)
+    .await
+    .map_err(Error::from)?
+    .rows_affected();
+    let v = status(s, p, args).await?;
+    if done == 0 {
+        return Err(not_pending(&v["status"]));
+    }
+    Ok(v)
+}
+
+/// The error for a request that is no longer waiting for the artist.
+pub(super) fn not_pending(status: &Value) -> ToolError {
+    let mut e = tool_error(
+        "AI_REQUEST_DECIDED",
+        "This request is no longer waiting for the artist (already approved, rejected, expired or withdrawn), so it cannot be withdrawn. If it was carried out, undo it with cancel_request or ask the artist to do it in AUDENIQ Studio.",
+    );
+    e.details = Some(json!({"status": status}));
+    e
+}
+
+/// `withdraw_pending_submission`: this connection's application for the
+/// release that still waits for the artist's approval in the Studio. The
+/// Studio's approval claims it first (`safety::take`), so it is either
+/// submitted or withdrawn, never both.
+async fn withdraw_submission(s: &AppState, p: &Principal, args: &Value) -> ToolResult {
+    let release = uuid_arg(args, "release_id")?;
+    let id: Option<Uuid> = sqlx::query_scalar(
+        "UPDATE identity.mcp_pending_submissions SET status='WITHDRAWN', decided_at=now()
+          WHERE org_id=$1 AND release_id=$2 AND grant_id=$3 AND status='PENDING' AND decided_at IS NULL
+          RETURNING id",
+    )
+    .bind(p.org)
+    .bind(release)
+    .bind(p.grant)
+    .fetch_optional(&s.pool)
+    .await
+    .map_err(Error::from)?;
+    let Some(id) = id else {
+        return Err(tool_error(
+            "NOT_FOUND",
+            "No application from this connection is waiting for the artist's approval for this release. A submitted application is withdrawn with request_approval (action withdrawal).",
+        ));
+    };
+    Ok(
+        json!({"view": "pending_approval", "release_id": release, "approval_id": id, "approval_status": "WITHDRAWN",
+        "next_steps": ["The application was withdrawn before the artist approved it; nothing was submitted."]}),
+    )
+}
+
 async fn expire(s: &AppState) -> Result<()> {
     sqlx::query("UPDATE identity.mcp_action_requests SET status='EXPIRED', decided_at=now() WHERE status='PENDING' AND expires_at < now()")
         .execute(&s.pool)
@@ -752,8 +818,10 @@ async fn decide(s: &AppState, h: &HeaderMap, id: Uuid, approve: bool) -> Result<
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(Error::NotFound)?;
-    if row.get::<String, _>("status") != "PENDING" {
-        return Err(Error::InvalidCode("AI_REQUEST_DECIDED"));
+    match row.get::<String, _>("status").as_str() {
+        "PENDING" => {}
+        "WITHDRAWN" => return Err(Error::InvalidCode("AI_REQUEST_WITHDRAWN")),
+        _ => return Err(Error::InvalidCode("AI_REQUEST_DECIDED")),
     }
     let close = |status: &'static str| {
         sqlx::query(

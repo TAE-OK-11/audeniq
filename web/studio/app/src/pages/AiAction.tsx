@@ -22,6 +22,7 @@ const STATUS_TEXT: Record<AiActionRequest['status'], string> = {
   REJECTED: '거절했어요. 아무것도 바뀌지 않았어요.',
   EXPIRED: '요청 시간(24시간)이 지났어요. 필요하면 AI 앱에서 다시 요청해 주세요.',
   REVOKED: '이 연결은 이미 끊겼어요.',
+  WITHDRAWN: 'AI 앱에서 요청을 거둬들였어요. 아무것도 바뀌지 않았어요.',
 };
 
 const demo = (id: string): AiActionRequest => ({

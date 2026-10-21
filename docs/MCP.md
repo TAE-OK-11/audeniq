@@ -235,7 +235,7 @@ and `{code, message}` (stable API codes, human messages from
 
 ### Published tools and operations
 
-`tools/list` shows 25 tools. The 78 operations below are the units of scope,
+`tools/list` shows 25 tools. The 81 operations below are the units of scope,
 schema, rate limit, audit (`mcp.<operation>`) and handler; operations of the
 same kind are published as one tool, and one argument picks the operation
 (`view` for reads, `action` or `kind` for writes). The other arguments are the
@@ -263,11 +263,12 @@ its own name.
 | `manage_artist_pages` | `action`: `links`, `platform_request` | `set_artist_pages`, `create_platform_request` |
 | `manage_inquiry` | `action`: `create`, `reply`, `close` | `create_inquiry`, `reply_inquiry`, `close_inquiry` |
 | `request_approval` | `action`: `withdrawal`, `takedown`, `split_change`, `release_end`, `contract_end`, `counter_notice`, `member_invite` | `request_release_withdrawal`, `request_takedown`, `request_split_change`, `request_release_end`, `request_contract_end`, `request_counter_notice`, `request_member_invite` |
-| `cancel_request` | `kind`: `correction`, `playlist_pitch`, `takedown`, `release_end`, `contract_end`, `platform_request` | `cancel_release_correction`, `withdraw_playlist_pitch`, `cancel_takedown`, `cancel_release_end`, `cancel_contract_end`, `cancel_platform_request` |
+| `cancel_request` | `kind`: `correction`, `playlist_pitch`, `takedown`, `release_end`, `contract_end`, `platform_request`, `approval`, `submission` | `cancel_release_correction`, `withdraw_playlist_pitch`, `cancel_takedown`, `cancel_release_end`, `cancel_contract_end`, `cancel_platform_request`, `withdraw_action_request`, `withdraw_pending_submission` |
+| `request_permission` | `action`: `request` (default), `withdraw` | `request_permission`, `withdraw_permission_request` |
 | `request_payout` (payout, destructive) | `action`: `small` (default), `large`, `cancel` | `request_payout`, `request_large_payout`, `cancel_payout` |
 
-The other 8 operations are published under their own name:
-`request_permission`, `mark_notifications_read`, `delete_release_draft`,
+The other 7 operations are published under their own name:
+`mark_notifications_read`, `delete_release_draft`,
 `attach_rights_proof`, `request_release_correction`, `resend_split_invite`,
 `preview_payout` and `submit_release`. They stay separate on purpose: a
 different scope, a confirmation step that must stay its own call
@@ -325,7 +326,8 @@ otherwise spread to safe operations in the same tool.
 | `delete_release_draft` | write | `catalog::archive` | Never-submitted drafts only, with `artist_confirmed` |
 | `request_release_withdrawal` / `request_takedown` / `request_split_change` / `request_release_end` / `request_contract_end` / `request_counter_notice` / `request_member_invite` | write | `mcp::actions` → `withdraw`, `takedown`, `splits::save`, `contract_terms`, `infringement::counter`, `members::invite` | Filed for one Studio approval (see Actions approved once) |
 | `request_large_payout` | payout | `mcp::actions` → `portal::request_payout` | Any amount up to the balance, approved once in the Studio |
-| `get_action_request` | read | `identity.mcp_action_requests` | PENDING / DONE (result) / FAILED (error code) / REJECTED / EXPIRED / REVOKED |
+| `get_action_request` | read | `identity.mcp_action_requests` | PENDING / DONE (result) / FAILED (error code) / REJECTED / EXPIRED / REVOKED / WITHDRAWN |
+| `withdraw_action_request` / `withdraw_permission_request` / `withdraw_pending_submission` | write (or the scope that sent it) / read / write (or submit) | `mcp::actions`, `mcp::approvals` (migration 0145) | Take back this connection's own request or application before the artist answers; the Studio then refuses it (`AI_REQUEST_WITHDRAWN`, `AI_SUBMISSION_WITHDRAWN`) |
 | `cancel_takedown` / `cancel_release_end` / `cancel_contract_end` | write | `takedown::cancel`, `contract_terms::cancel_*` | Undo a pending request or scheduled end; `artist_confirmed` |
 | `set_special_options` | write | `draft.options` via `catalog::update` | Cover (original work, rights, licence file), samples, AI use, express release; `artist_confirmed` |
 | `list_artist_pages` / `set_artist_pages` | read / write | `artist_pages::list/set_pages` | Each artist's own page per platform (Spotify, Apple Music, Melon, …), so deliveries never land on a same-name stranger's page |
@@ -380,6 +382,14 @@ ask for them (`mcp::actions`); the artist approves each one in the Studio.
   result, or FAILED with the error code) and shown on the page; the
   assistant reads it with `get_approval_status` (`get_action_request`).
 - Payouts approved this way use the idempotency key `mcp-approval:{id}`.
+- Until the artist answers, the connection that filed a request can take it
+  back (`cancel_request` kind `approval`, `request_permission` action
+  `withdraw`, and kind `submission` for an application waiting for Studio
+  approval). The row becomes WITHDRAWN under the same compare-and-set the
+  approval uses (migration 0145), so a request is either run or withdrawn,
+  never both; the Studio shows it as withdrawn and refuses to approve it.
+  Another connection's requests are not found. What was already carried out
+  is undone with the matching `cancel_request` kind or in the Studio.
 - Undoing a pending takedown or a scheduled end, and a draft's special
   options, need only the artist's explicit word in the conversation
   (`artist_confirmed`); `set_special_options` writes `draft.options` exactly
