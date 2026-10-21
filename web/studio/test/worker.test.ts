@@ -166,4 +166,16 @@ test('other paths go to assets; screen paths fall back to index.html when assets
   for (const path of ['/.well-known/openid-configuration', '/.well-known/oauth-authorization-server/api/mcp']) {
     assert.equal((await worker.fetch(new Request(`https://studio.audeniq.com${path}`), e)).status, 404, path);
   }
+  // Workers Static Assets with single-page-application fallback answer missing files with index.html (200):
+  // under /.well-known that is still a JSON 404, and a real file there is served.
+  const spa = { fetch: async (req: Request) => new URL(req.url).pathname === '/.well-known/security.txt'
+    ? new Response('Contact: mailto:security@audeniq.com', { headers: { 'content-type': 'text/plain' } })
+    : new Response('<html>', { headers: { 'content-type': 'text/html; charset=utf-8' } }) };
+  const s = { ...env(), ASSETS: spa };
+  for (const path of ['/.well-known/openid-configuration', '/.well-known/oauth-authorization-server/api/mcp', '/.well-known/openid-configuration/api/mcp']) {
+    const res = await worker.fetch(new Request(`https://studio.audeniq.com${path}`), s);
+    assert.equal(res.status, 404, path);
+    assert.equal((await res.json()).error.code, 'NOT_FOUND');
+  }
+  assert.equal(await (await worker.fetch(new Request('https://studio.audeniq.com/.well-known/security.txt'), s)).text(), 'Contact: mailto:security@audeniq.com');
 });

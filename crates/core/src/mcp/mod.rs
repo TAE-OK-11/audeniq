@@ -55,6 +55,8 @@ pub const SCOPES: [&str; 5] = [
 
 /// Path of the MCP endpoint (behind the edge at the Studio origin).
 pub const MCP_PATH: &str = "/api/mcp";
+/// The same endpoint as people paste it with a trailing slash.
+pub const MCP_PATH_SLASH: &str = "/api/mcp/";
 
 /// Public tools (notices, events, service status, release requirements)
 /// need no account and are not counted without one. For a signed-in user:
@@ -68,10 +70,11 @@ pub const DEFAULT_PAYOUT_LIMIT_KRW: i64 = 300_000;
 #[derive(Clone, Debug)]
 pub struct Settings {
     pub enabled: bool,
-    /// Hosts (any document path on them) or exact `https://` document URLs
-    /// whose Client ID Metadata Documents the server fetches. Only these are
-    /// ever contacted (no server-side request to an arbitrary URL a caller
-    /// names).
+    /// Hosts (any document path on them), exact `https://` document URLs, or
+    /// `*` (any host) whose Client ID Metadata Documents the server fetches.
+    /// Documents are fetched over HTTPS from public addresses only
+    /// ([`crate::external_http::PublicOnlyResolver`]), never from this host's
+    /// network.
     pub cimd_hosts: Vec<String>,
     /// RFC 7591 registration (deprecated by MCP, still used by clients).
     pub dynamic_registration: bool,
@@ -106,7 +109,7 @@ impl Settings {
                 .unwrap_or(default)
         };
         let cimd_hosts = std::env::var("AUDENIQ_MCP_CIMD_HOSTS")
-            .unwrap_or_else(|_| "chatgpt.com,claude.ai".into())
+            .unwrap_or_else(|_| "*".into())
             .split(',')
             // Hosts compare case-insensitively; exact document URLs as given.
             .map(|h| {
@@ -137,6 +140,12 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route(
             MCP_PATH,
+            post(protocol::post)
+                .get(protocol::not_allowed)
+                .delete(protocol::not_allowed),
+        )
+        .route(
+            MCP_PATH_SLASH,
             post(protocol::post)
                 .get(protocol::not_allowed)
                 .delete(protocol::not_allowed),
@@ -198,6 +207,7 @@ pub fn origin_exempt(method: &axum::http::Method, path: &str) -> bool {
         && matches!(
             path,
             MCP_PATH
+                | MCP_PATH_SLASH
                 | "/api/oauth/register"
                 | "/api/oauth/token"
                 | "/api/oauth/revoke"
