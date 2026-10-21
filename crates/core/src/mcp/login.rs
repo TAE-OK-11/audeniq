@@ -692,7 +692,11 @@ pub(super) async fn exchange_agent_key(
     .ok_or(unknown)?;
     let grant: Uuid = row.get("id");
     let have: Vec<String> = row.get("scopes");
-    let scopes: Vec<String> = match form.get("scope").map(|v| v.trim()).filter(|v| !v.is_empty()) {
+    let scopes: Vec<String> = match form
+        .get("scope")
+        .map(|v| v.trim())
+        .filter(|v| !v.is_empty())
+    {
         None => have.clone(),
         Some(asked) => {
             let mut out: Vec<String> = Vec::new();

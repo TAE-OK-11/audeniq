@@ -3698,13 +3698,25 @@ async fn agent_keys_exchange_for_scoped_work_tokens(pool: PgPool) {
         let app = app.clone();
         async move {
             let mut pairs = vec![
-                ("grant_type", "urn:ietf:params:oauth:grant-type:token-exchange"),
+                (
+                    "grant_type",
+                    "urn:ietf:params:oauth:grant-type:token-exchange",
+                ),
                 ("subject_token", subject.as_str()),
-                ("subject_token_type", "urn:ietf:params:oauth:token-type:access_token"),
+                (
+                    "subject_token_type",
+                    "urn:ietf:params:oauth:token-type:access_token",
+                ),
             ];
             pairs.extend(extra);
-            let (s, _, b) = raw(&app, "POST", "/api/oauth/token",
-                &[("content-type", "application/x-www-form-urlencoded")], form(&pairs)).await;
+            let (s, _, b) = raw(
+                &app,
+                "POST",
+                "/api/oauth/token",
+                &[("content-type", "application/x-www-form-urlencoded")],
+                form(&pairs),
+            )
+            .await;
             (s, serde_json::from_str::<Value>(&b).unwrap())
         }
     };
@@ -3712,16 +3724,26 @@ async fn agent_keys_exchange_for_scoped_work_tokens(pool: PgPool) {
     let (err, acct) = tool(&app, &key, "get_account_context", json!({})).await;
     assert!(!err, "{acct}");
     // A work token carries only what was asked for, for an hour.
-    let (s, w) = exchange(key.clone(), vec![("scope", "releases:read settlement:read")]).await;
+    let (s, w) = exchange(
+        key.clone(),
+        vec![("scope", "releases:read settlement:read")],
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "{w}");
     assert_eq!(w["token_type"], "Bearer");
     assert_eq!(w["expires_in"], 3600);
-    assert_eq!(w["issued_token_type"], "urn:ietf:params:oauth:token-type:access_token");
+    assert_eq!(
+        w["issued_token_type"],
+        "urn:ietf:params:oauth:token-type:access_token"
+    );
     assert_eq!(w["scope"], "releases:read settlement:read");
     let work = w["access_token"].as_str().unwrap().to_string();
     let (err, acct) = tool(&app, &work, "get_account_context", json!({})).await;
     assert!(!err);
-    assert_eq!(acct["connection"]["scopes"], json!(["releases:read", "settlement:read"]));
+    assert_eq!(
+        acct["connection"]["scopes"],
+        json!(["releases:read", "settlement:read"])
+    );
     let (s, _, v) = rpc(&app, Some(&work), "tools/call", json!({"name":"create_release_draft","arguments":{
         "title":"T","release_type":"SINGLE","artist_name":"A","release_date":"2027-03-01","p_line":"2026 A","c_line":"2026 A"}})).await;
     assert_eq!(s, StatusCode::FORBIDDEN, "{v}");
@@ -3730,22 +3752,51 @@ async fn agent_keys_exchange_for_scoped_work_tokens(pool: PgPool) {
     assert_eq!(w["scope"], "releases:read releases:write settlement:read");
     // Never more than the connection has, never from a work token, only the right type.
     let (s, v) = exchange(key.clone(), vec![("scope", "payouts:request")]).await;
-    assert_eq!((s, v["error"].as_str()), (StatusCode::BAD_REQUEST, Some("invalid_scope")));
+    assert_eq!(
+        (s, v["error"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("invalid_scope"))
+    );
     let (s, v) = exchange(work.clone(), vec![]).await;
-    assert_eq!((s, v["error"].as_str()), (StatusCode::BAD_REQUEST, Some("invalid_grant")));
-    let (s, v) = exchange(key.clone(), vec![("subject_token_type", "urn:ietf:params:oauth:token-type:refresh_token")]).await;
+    assert_eq!(
+        (s, v["error"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("invalid_grant"))
+    );
+    let (s, v) = exchange(
+        key.clone(),
+        vec![(
+            "subject_token_type",
+            "urn:ietf:params:oauth:token-type:refresh_token",
+        )],
+    )
+    .await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "{v}");
     let (s, v) = exchange("0".repeat(64), vec![]).await;
-    assert_eq!((s, v["error"].as_str()), (StatusCode::BAD_REQUEST, Some("invalid_grant")));
+    assert_eq!(
+        (s, v["error"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("invalid_grant"))
+    );
     // OAuth (consent) connections exchange nothing: they refresh.
     let c = connect(&app, &u, &["scope_write"]).await;
     let (_, v) = exchange(c.access.clone(), vec![]).await;
     assert_eq!(v["error"], "invalid_grant");
     // Revoking the connection ends the key and its work tokens.
-    let (s, _) = call(&app, "POST", &format!("/api/auth/ai-connections/{grant}/revoke"), json!({}), Some(&u)).await;
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("/api/auth/ai-connections/{grant}/revoke"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK);
     for t in [&key, &work] {
-        let (s, _, _) = rpc(&app, Some(t), "tools/call", json!({"name":"get_account_context","arguments":{}})).await;
+        let (s, _, _) = rpc(
+            &app,
+            Some(t),
+            "tools/call",
+            json!({"name":"get_account_context","arguments":{}}),
+        )
+        .await;
         assert_eq!(s, StatusCode::UNAUTHORIZED);
     }
 }
