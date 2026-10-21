@@ -432,17 +432,21 @@ export const mockStaff = {
   identityVerify: (_uid: string, b: IdentityVerifyInput) => {
     identityAccount.identity = {
       provider: 'OFFLINE', method: b.channel, offline: true, verified_at: iso(0),
-      name_masked: `${b.real_name.slice(0, 1)}**`, adult: true,
+      name_masked: `${b.real_name.slice(0, 1)}**`, adult: ageOn(b.birth_date) >= 19,
     };
     identityAccount.checks.unshift({
       id: `chk-${identityAccount.checks.length + 1}`, staff_user_id: ME, channel: b.channel,
-      document_type: b.document_type, correction: b.correction, note: b.note, created_at: iso(0),
+      document_type: b.document_type, guardian_relation: b.guardian_relation ?? null, correction: b.correction, note: b.note, created_at: iso(0),
     });
     return wait(identityAccount);
   },
 };
 
 // 실명인증 체험: 아무개@example.com 으로 찾을 수 있는 계정 하나
+const ageOn = (birth: string) => {
+  const t = new Date(), [y, m, d] = birth.split('-').map(Number);
+  return t.getFullYear() - y - (t.getMonth() + 1 < m || (t.getMonth() + 1 === m && t.getDate() < d) ? 1 : 0);
+};
 const identityAccount: IdentityAccount = {
   user_id: '7f1c2a90-5b3e-4d21-9a6f-0c8e1d2b3a45', email_masked: 'h***@e****.com', status: 'ACTIVE', joined_at: iso(4000),
   identity: null, checks: [],

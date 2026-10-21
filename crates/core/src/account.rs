@@ -38,7 +38,7 @@ pub const TAX_COUNTRIES: [&str; 10] = [
     "US", "JP", "CN", "GB", "CA", "AU", "DE", "FR", "SG", "OTHER",
 ];
 /// 민법상 성년.
-const ADULT_AGE: i32 = 19;
+pub(crate) const ADULT_AGE: i32 = 19;
 
 /// 만 나이 (생일이 지나야 한 살 더한다).
 pub fn age_on(birth: NaiveDate, today: NaiveDate) -> i32 {

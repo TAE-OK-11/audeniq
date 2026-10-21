@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { useConfirm } from '../components/Confirm';
 import { useToast } from '../components/Toast';
 import { errorMessage } from '../api/errors';
-import { staffApi, type IdentityAccount, type IdentityChannel, type IdentityDocument } from '../api/staff';
+import { staffApi, type GuardianRelation, type IdentityAccount, type IdentityChannel, type IdentityDocument } from '../api/staff';
 import { NoDuty, useStaff } from '../staffUi';
 import { when } from '../labels';
 
@@ -13,7 +13,13 @@ export const CHANNEL_LABEL: Record<IdentityChannel, string> = { IN_PERSON: '현�
 export const DOCUMENT_LABEL: Record<IdentityDocument, string> = {
   RESIDENT_CARD: '주민등록증', DRIVER_LICENSE: '운전면허증', PASSPORT: '여권',
   ALIEN_REGISTRATION: '외국인등록증', DISABILITY_CARD: '장애인등록증', VETERAN_CARD: '국가보훈등록증',
+  YOUTH_CARD: '청소년증', FAMILY_RELATION_CERT: '가족관계증명서 + 법정대리인 신분증',
 };
+/** 미성년자만 고를 수 있는 서류 (서버 identity_desk::MINOR_DOCUMENT_TYPES) */
+const MINOR_DOCUMENTS: IdentityDocument[] = ['YOUTH_CARD', 'FAMILY_RELATION_CERT'];
+export const GUARDIAN_LABEL: Record<GuardianRelation, string> = { PARENT: '부모', GUARDIAN: '후견인' };
+/** 성인 나이 (서버 account::ADULT_AGE, 만 19세) */
+const ADULT_AGE = 19;
 const METHOD_LABEL: Record<string, string> = { ...CHANNEL_LABEL, pass: 'PASS', sms: '휴대폰', ipin: '아이핀', card: '카드사' };
 
 /** 숫자 8자리 → YYYY-MM-DD (입력하면서 하이픈을 넣는다) */
@@ -26,8 +32,14 @@ export const validBirth = (v: string) => {
   const d = new Date(`${v}T00:00:00Z`);
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v && d.getTime() < Date.now();
 };
+/** 오늘 기준 만 나이 (YYYY-MM-DD) */
+export function ageOn(birth: string, today = new Date()): number {
+  const [y, m, d] = birth.split('-').map(Number);
+  const before = today.getMonth() + 1 < m || (today.getMonth() + 1 === m && today.getDate() < d);
+  return today.getFullYear() - y - (before ? 1 : 0);
+}
 
-const EMPTY = { name: '', birth: '', channel: 'CUSTOMER_CENTER' as IdentityChannel, document: 'RESIDENT_CARD' as IdentityDocument, note: '', seen: false };
+const EMPTY = { name: '', birth: '', channel: 'CUSTOMER_CENTER' as IdentityChannel, document: 'RESIDENT_CARD' as IdentityDocument, guardian: '' as GuardianRelation | '', note: '', seen: false };
 
 export function IdentityDesk() {
   const { me, can } = useStaff();
@@ -39,6 +51,13 @@ export function IdentityDesk() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const set = <K extends keyof typeof EMPTY>(k: K, v: (typeof EMPTY)[K]) => { setF(p => ({ ...p, [k]: v })); setError(''); };
+  // 생년월일이 성인이면 미성년자 서류·법정대리인을 비운다
+  const setBirth = (v: string) => {
+    setError('');
+    setF(p => validBirth(v) && ageOn(v) >= ADULT_AGE
+      ? { ...p, birth: v, guardian: '', document: MINOR_DOCUMENTS.includes(p.document) ? 'RESIDENT_CARD' : p.document }
+      : { ...p, birth: v });
+  };
 
   if (!can('IDENTITY')) return <div className="adm-page"><NoDuty duty="실명인증" /></div>;
 
@@ -46,6 +65,9 @@ export function IdentityDesk() {
   const current = account?.identity ?? null;
   // 직원 인증을 다른 사람으로 바로잡을 수 있는 경우 (ADMIN만, 사유 필수)
   const canCorrect = isAdmin && !!current?.offline;
+  const age = validBirth(f.birth) ? ageOn(f.birth) : null;
+  const minor = age !== null && age < ADULT_AGE;
+  const documents = (Object.keys(DOCUMENT_LABEL) as IdentityDocument[]).filter(d => minor || !MINOR_DOCUMENTS.includes(d) || d === f.document);
 
   async function find(e: React.FormEvent) {
     e.preventDefault();
@@ -65,10 +87,12 @@ export function IdentityDesk() {
     if (!f.name.trim()) { setError('신분증에 적힌 실명을 입력해 주세요.'); return; }
     if (!validBirth(f.birth)) { setError('생년월일을 YYYY-MM-DD로 확인해 주세요.'); return; }
     if (!f.seen) { setError('신분증 사진과 본인 얼굴을 대조했는지 확인해 주세요.'); return; }
+    if (!minor && MINOR_DOCUMENTS.includes(f.document)) { setError('청소년증·가족관계증명서는 미성년자만 쓸 수 있어요.'); return; }
+    if (f.document === 'FAMILY_RELATION_CERT' && !f.guardian) { setError('가족관계증명서로 확인할 때는 함께 온 법정대리인을 골라 주세요.'); return; }
     if (correction && !f.note.trim()) { setError('바로잡는 사유를 적어 주세요.'); return; }
     const ok = await confirm({
       title: correction ? '실명 정보를 바로잡을까요?' : '실명인증을 저장할까요?',
-      message: `${account.email_masked} 계정을 ${f.name.trim()} (${f.birth})으로 ${correction ? '바로잡아요' : '인증해요'}. ${CHANNEL_LABEL[f.channel]} · ${DOCUMENT_LABEL[f.document]}. 처리 기록이 내 계정으로 남고, 사용자에게 알림이 가요.`,
+      message: `${account.email_masked} 계정을 ${f.name.trim()} (${f.birth})으로 ${correction ? '바로잡아요' : '인증해요'}. ${CHANNEL_LABEL[f.channel]} · ${DOCUMENT_LABEL[f.document]}${minor ? ` · 미성년(만 ${age}세)${f.guardian ? ` · 법정대리인(${GUARDIAN_LABEL[f.guardian]}) 동행` : ''}` : ''}. 처리 기록이 내 계정으로 남고, 사용자에게 알림이 가요.`,
       confirmLabel: correction ? '바로잡기' : '인증 저장',
     });
     if (!ok) return;
@@ -76,6 +100,7 @@ export function IdentityDesk() {
     try {
       const next = await staffApi.identityVerify(account.user_id, {
         real_name: f.name.trim(), birth_date: f.birth, channel: f.channel, document_type: f.document,
+        guardian_relation: minor && f.guardian ? f.guardian : null,
         note: f.note.trim(), correction,
       });
       setAccount(next);
@@ -126,8 +151,15 @@ export function IdentityDesk() {
                 <div className="ui-field"><label htmlFor="idName">실명 <span className="required">*</span></label>
                   <input id="idName" className="ui-input" maxLength={120} value={f.name} onChange={e => set('name', e.target.value)} placeholder="신분증에 적힌 그대로" autoComplete="off" /></div>
                 <div className="ui-field"><label htmlFor="idBirth">생년월일 <span className="required">*</span></label>
-                  <input id="idBirth" className="ui-input" inputMode="numeric" value={f.birth} onChange={e => set('birth', formatBirth(e.target.value))} placeholder="YYYY-MM-DD" autoComplete="off" /></div>
+                  <input id="idBirth" className="ui-input" inputMode="numeric" value={f.birth} onChange={e => setBirth(formatBirth(e.target.value))} placeholder="YYYY-MM-DD" autoComplete="off" /></div>
               </div>
+              {minor && (
+                <div className="ui-callout adm-id-minor">
+                  만 {age}세 미성년자예요. 주민등록증이 없으면 <b>청소년증</b>이나, 함께 온 법정대리인의 신분증과
+                  <b> 가족관계증명서</b>로 확인해요. 법정대리인의 이름·신분증 번호는 적지 않아요.
+                  발매·계약에는 따로 법정대리인 동의가 필요해요.
+                </div>
+              )}
               <div className="adm-id-grid">
                 <div className="ui-field"><label htmlFor="idChannel">확인한 곳</label>
                   <select id="idChannel" className="ui-select" value={f.channel} onChange={e => set('channel', e.target.value as IdentityChannel)}>
@@ -135,14 +167,23 @@ export function IdentityDesk() {
                   </select></div>
                 <div className="ui-field"><label htmlFor="idDoc">신분증</label>
                   <select id="idDoc" className="ui-select" value={f.document} onChange={e => set('document', e.target.value as IdentityDocument)}>
-                    {Object.entries(DOCUMENT_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    {documents.map(v => <option key={v} value={v}>{DOCUMENT_LABEL[v]}</option>)}
                   </select></div>
               </div>
+              {minor && (
+                <div className="ui-field"><label htmlFor="idGuardian">함께 온 법정대리인{f.document === 'FAMILY_RELATION_CERT' ? <> <span className="required">*</span></> : ''}</label>
+                  <select id="idGuardian" className="ui-select" value={f.guardian} onChange={e => set('guardian', e.target.value as GuardianRelation | '')}>
+                    <option value="">{f.document === 'FAMILY_RELATION_CERT' ? '골라 주세요' : '본인만 왔어요'}</option>
+                    {Object.entries(GUARDIAN_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select></div>
+              )}
               <div className="ui-field"><label htmlFor="idNote">메모{canCorrect ? ' (바로잡을 때는 사유 필수)' : ''}</label>
                 <textarea id="idNote" className="ui-textarea" maxLength={500} rows={2} value={f.note} onChange={e => set('note', e.target.value)} placeholder="예: 대리인 없이 본인 방문" /></div>
               <label className="adm-id-seen">
                 <input type="checkbox" checked={f.seen} onChange={e => set('seen', e.target.checked)} />
-                <span>신분증 원본의 사진과 본인 얼굴을 대조했고, 유효한 신분증이에요.</span>
+                <span>{f.document === 'FAMILY_RELATION_CERT'
+                  ? '법정대리인 신분증 원본의 사진과 얼굴을 대조했고, 가족관계증명서(발급 3개월 이내)로 본인과의 관계를 확인했어요.'
+                  : '신분증 원본의 사진과 본인 얼굴을 대조했고, 유효한 신분증이에요.'}</span>
               </label>
               <div className="adm-id-actions">
                 <button type="button" className={`ui-btn is-primary${busy ? ' is-busy' : ''}`} disabled={busy} onClick={() => void save(false)}>인증 저장</button>
@@ -158,7 +199,7 @@ export function IdentityDesk() {
                 {account.checks.map(c => (
                   <li key={c.id} className="ui-row">
                     <div>
-                      <div className="ui-row-title">{CHANNEL_LABEL[c.channel] ?? c.channel} · {DOCUMENT_LABEL[c.document_type] ?? c.document_type}{c.correction ? ' · 바로잡음' : ''}</div>
+                      <div className="ui-row-title">{CHANNEL_LABEL[c.channel] ?? c.channel} · {DOCUMENT_LABEL[c.document_type] ?? c.document_type}{c.guardian_relation ? ` · 법정대리인(${GUARDIAN_LABEL[c.guardian_relation] ?? c.guardian_relation}) 동행` : ''}{c.correction ? ' · 바로잡음' : ''}</div>
                       <div className="ui-row-meta">{when(c.created_at)} · 담당 {c.staff_user_id === me.user_id ? '나' : c.staff_user_id.slice(0, 8)}{c.note ? ` · ${c.note}` : ''}</div>
                     </div>
                   </li>

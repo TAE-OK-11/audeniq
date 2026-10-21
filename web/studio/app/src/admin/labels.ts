@@ -11,7 +11,7 @@ export const ROLE_LABEL: Record<StaffRole, string> = {
 };
 
 export const DUTY_LABEL: Record<Duty, string> = {
-  REVIEW: '발매 심사', DOCUMENTS: '서류 검토', INQUIRIES: '문의 답변', DELIVERY: '배급 승인',
+  REVIEW: '발매 심사', DOCUMENTS: '서류 검토', INQUIRIES: '문의 답변', DELIVERY: '배급 승인', IDENTITY: '실명인증',
 };
 
 export const RELEASE_STATUS: Record<string, [string, Tone]> = {
