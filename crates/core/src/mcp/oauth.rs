@@ -286,7 +286,13 @@ fn cimd_allowed(settings: &Settings, client_id: &str) -> bool {
     let Ok(u) = url::Url::parse(client_id) else {
         return false;
     };
+    // A domain name (never an address literal, which would skip the
+    // public-address check when fetched).
+    let Some(url::Host::Domain(domain)) = u.host() else {
+        return false;
+    };
     u.scheme() == "https"
+        && domain.contains('.')
         && u.port().is_none()
         && u.path().len() > 1
         && u.query().is_none()
@@ -295,7 +301,9 @@ fn cimd_allowed(settings: &Settings, client_id: &str) -> bool {
         && settings.cimd_hosts.iter().any(|allowed| {
             // An exact document URL pins one client; a bare host allows any
             // document path on it.
-            if allowed.starts_with("https://") {
+            if allowed == "*" {
+                true
+            } else if allowed.starts_with("https://") {
                 allowed == client_id
             } else {
                 u.host_str() == Some(allowed.as_str())
@@ -304,7 +312,8 @@ fn cimd_allowed(settings: &Settings, client_id: &str) -> bool {
 }
 
 async fn fetch_cimd(url: &str) -> anyhow::Result<Value> {
-    let client = crate::external_http::client_builder(false)
+    // Any host may be named (`*`): fetch only from public addresses.
+    let client = crate::external_http::public_client_builder()
         .timeout(std::time::Duration::from_secs(5))
         .build()?;
     let mut res = client
@@ -440,19 +449,21 @@ async fn register_inner(
             "token_endpoint_auth_method must be none, client_secret_post or client_secret_basic.",
         ));
     }
-    for (field, allowed) in [
-        ("grant_types", &["authorization_code", "refresh_token"][..]),
-        ("response_types", &["code"][..]),
+    // Clients list grants by habit (client_credentials, implicit, ...): the
+    // registration answers with what this server grants (RFC 7591 §3.2.1)
+    // and refuses only a client that cannot use the code flow at all.
+    for (field, needed) in [
+        ("grant_types", "authorization_code"),
+        ("response_types", "code"),
     ] {
         if let Some(list) = meta.get(field) {
             let ok = list.as_array().is_some_and(|a| {
-                a.iter()
-                    .all(|v| v.as_str().is_some_and(|v| allowed.contains(&v)))
+                a.iter().all(Value::is_string) && a.iter().any(|v| v.as_str() == Some(needed))
             });
             if !ok {
                 return Err(Reg::Oauth(
                     "invalid_client_metadata",
-                    "Only the authorization_code and refresh_token grants with response type code are supported.",
+                    "The authorization_code grant with response type code is required.",
                 ));
             }
         }
@@ -1872,6 +1883,23 @@ mod tests {
             &pinned,
             "https://chatgpt.com/oauth/client.json"
         ));
+        // `*`: any public HTTPS host, but never an address literal or a bare name.
+        let any = Settings {
+            cimd_hosts: vec!["*".into()],
+            ..pinned
+        };
+        assert!(cimd_allowed(&any, "https://manus.im/oauth/client.json"));
+        assert!(cimd_allowed(&any, "https://x.ai/mcp/client-metadata.json"));
+        for bad in [
+            "https://169.254.169.254/latest",
+            "https://[::1]/client.json",
+            "https://localhost/client.json",
+            "http://manus.im/client.json",
+            "https://manus.im:8443/client.json",
+            "https://manus.im/client.json?x=1",
+        ] {
+            assert!(!cimd_allowed(&any, bad), "{bad}");
+        }
     }
     #[test]
     fn escape_neutralizes_markup() {

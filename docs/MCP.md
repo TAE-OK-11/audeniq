@@ -76,7 +76,12 @@ permissions. `releases:submit` is never pre-selected. Approval redirects with
 `code`, `state` and `iss`.
 
 - **Clients.** Client ID Metadata Documents are fetched only from hosts in
-  `AUDENIQ_MCP_CIMD_HOSTS` (default `chatgpt.com,claude.ai`; HTTPS, no port,
+  `AUDENIQ_MCP_CIMD_HOSTS` (default `*`: any host, since the server advertises
+  `client_id_metadata_document_supported` and a client that sees it uses a URL
+  client id instead of DCR; entries can narrow it to hosts or exact document
+  URLs). Fetches go to public addresses only (DNS answers that are loopback,
+  private, link-local, CGNAT or reserved are dropped before connecting; no
+  address literals, no proxy; HTTPS, no port,
   5 s timeout, 64 KiB, no redirects, re-fetched after 24 h, cached copy used up
   to 7 days when the host is down). The document's `client_id` must equal its
   URL and it must allow `none` authentication. DCR clients get a random
@@ -386,7 +391,7 @@ requests about language, tone and format come first; otherwise:
 | Variable | Default | |
 |---|---|---|
 | `AUDENIQ_MCP_ENABLED` | `false` | Everything above answers 404 when off |
-| `AUDENIQ_MCP_CIMD_HOSTS` | `chatgpt.com,claude.ai` | Hosts whose client metadata documents may be fetched |
+| `AUDENIQ_MCP_CIMD_HOSTS` | `*` | Hosts (or exact document URLs, or `*` for any public host) whose client metadata documents may be fetched |
 | `AUDENIQ_MCP_DYNAMIC_REGISTRATION` | `true` | RFC 7591 endpoint |
 | `AUDENIQ_MCP_PUBLIC_DAILY_USER` | `150` | Public tools per signed-in user per day (per-user override: `mcp-limit`) |
 | `AUDENIQ_MCP_PAYOUT_LIMIT_KRW` | `300000` | Assistant payout limit per request and per 24 h; `0` = off |
@@ -499,8 +504,14 @@ requirements. Claude Code / desktop clients with loopback redirect URIs work
 via DCR.
 
 **Other MCP clients.** Any client implementing MCP authorization (PRM
-discovery, PKCE, DCR or CIMD from an allowlisted host) can connect. To accept
-another CIMD host, add it to `AUDENIQ_MCP_CIMD_HOSTS`.
+discovery, PKCE, DCR or CIMD) can connect: Grok, Manus and other clients that
+prefer CIMD use their own metadata URL, and older SDK clients may speak
+`2024-11-05`. A missing token gets `401` with
+`WWW-Authenticate: Bearer resource_metadata=…, scope="releases:read releases:write"`
+(no `error`, so clients start authorization); an expired or revoked one adds
+`error="invalid_token"`. Unknown `/.well-known/*` paths (e.g.
+`openid-configuration`) are a JSON 404, never the Studio page. To limit CIMD
+to known clients, list them in `AUDENIQ_MCP_CIMD_HOSTS`.
 
 Implementing MCP does not publish an app, guarantee directory approval, or make
 an assistant recommend AUDENIQ; listing and discovery are separate tasks.
