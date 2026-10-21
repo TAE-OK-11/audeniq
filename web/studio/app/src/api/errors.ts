@@ -271,6 +271,28 @@ const CODE_MESSAGES: Record<string, string> = {
   AI_REQUEST_EXPIRED: '요청 시간(60분)이 지났어요. 필요하면 AI 앱에서 다시 요청해 주세요.',
   AI_CONNECTION_REVOKED: '이 AI 앱 연결은 이미 끊겼어요.',
   AI_PAYOUT_SCOPE_OFF: 'AI 앱으로 하는 지급 신청은 지금 쓸 수 없어요.',
+  CORRECTION_ALREADY_REQUESTED: '이미 확인 중인 수정 요청이 있어요.',
+  CORRECTION_EMPTY: '바꿀 내용을 하나 이상 적어 주세요.',
+  CORRECTION_REASON_REQUIRED: '수정 이유를 적어 주세요.',
+  CORRECTION_ARTIST_LOCKED: '아티스트 표기는 여기서 바꿀 수 없어요. 문의로 요청해 주세요.',
+  CORRECTION_NOTHING_SENT: '아직 플랫폼에 보낸 발매가 아니에요.',
+  CORRECTION_INVALID: '수정 내용을 다시 확인해 주세요.',
+  TAKEDOWN_ALREADY_REQUESTED: '이미 확인 중인 중단 요청이 있어요.',
+  TAKEDOWN_REASON_REQUIRED: '중단 이유를 적어 주세요.',
+  TAKEDOWN_ALREADY_DONE: '이미 플랫폼에서 내려간 발매예요.',
+  TAKEDOWN_NOTHING_SENT: '아직 플랫폼에 보낸 적 없는 발매예요.',
+  CLAIM_COUNTER_CLOSED: '소명 기한이 지났거나 이미 소명했어요.',
+  CLAIM_COUNTER_INVALID: '소명 내용을 3,000자 안으로 적어 주세요.',
+  PAYOUT_BELOW_MINIMUM: '최소 지급 금액보다 적어요.',
+  PAYOUT_NET_NOT_POSITIVE: '수수료를 빼면 받을 금액이 없어요. 금액을 늘려 주세요.',
+  PAYOUT_EXCEEDS_UNHELD_BALANCE: '보류된 금액을 뺀 요청 가능 금액 안에서 입력해 주세요.',
+  MEMBER_IS_SELF: '나 자신은 초대할 수 없어요.',
+  MEMBER_EMAIL_INVALID: '초대할 이메일을 다시 확인해 주세요.',
+  TERMS_ACCEPTANCE_REQUIRED: '이용약관에 동의해 주세요.',
+  UPLOAD_MULTIPART_GONE: '업로드 시간이 지났어요. 파일을 다시 선택해 주세요.',
+  IDENTITY_SELF_VERIFY: '내 계정은 직접 실명인증할 수 없어요. 다른 직원에게 신분증 확인을 요청해 주세요.',
+  REAL_NAME_INVALID: '실명을 신분증에 적힌 그대로 입력해 주세요. (공백 두 칸·특수 문자 없이, 120자 이내)',
+  BIRTH_DATE_INVALID: '생년월일을 YYYY-MM-DD로 확인해 주세요. 오늘 이전 날짜여야 해요.',
   IDENTITY_MINORS_ONLY: '청소년증·가족관계증명서와 법정대리인 동행은 미성년자(만 19세 미만)만 쓸 수 있어요.',
   GUARDIAN_REQUIRED: '가족관계증명서로 확인할 때는 함께 온 법정대리인을 골라 주세요.',
   NOTHING_TO_CORRECT: '보완 요청할 미해결 검사 항목이 없어요.',
@@ -289,7 +311,7 @@ const CODE_MESSAGES: Record<string, string> = {
 };
 
 export function messageForCode(code: string, status = 0): string {
-  return CODE_MESSAGES[code] ?? (status >= 500 ? CODE_MESSAGES.INTERNAL_ERROR : `요청을 처리하지 못했어요. (${code || status})`);
+  return CODE_MESSAGES[code] ?? (status >= 500 ? CODE_MESSAGES.INTERNAL_ERROR : `요청을 처리하지 못했어요. 계속되면 고객센터에 알려 주세요. (오류 코드 ${code || status})`);
 }
 
 /** 사용자에게 보여줄 오류 문구 */

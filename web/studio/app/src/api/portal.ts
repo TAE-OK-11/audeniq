@@ -284,12 +284,14 @@ export async function submitProof(id: string, file: File, rowVersion: number, on
 export interface FinanceSummary { payable: number; pending: number; available: number; minimum: number; accountRegistered: boolean; held: number }
 
 type ServerStatement = { id: string; description: string; source: Record<string, unknown>; created_at: string; amount: string };
+/** 서버가 원장에 영어로 남기는 설명 (crates/core/src/finance.rs) */
+const LEDGER_NOTE: Record<string, string> = { 'payout settled': '수익 지급', 'confirmed payout return': '지급 반환' };
 const toStatement = (t: ServerStatement): Statement => ({
   id: t.id,
   // 정산금은 대부분 운영팀이 직접 넣은 줄이라 기간·플랫폼이 없다 — 원천이 밝혀진 줄에만 (지어내지 않는다)
   period: typeof t.source?.period === 'string' ? t.source.period : typeof t.source?.period_start === 'string' ? t.source.period_start.slice(0, 7) : '',
   platform: typeof t.source?.dsp === 'string' ? dspLabel(t.source.dsp) : '',
-  amount: Number(t.amount), note: t.description, created: stamp(t.created_at).slice(0, 10),
+  amount: Number(t.amount), note: LEDGER_NOTE[t.description] ?? t.description, created: stamp(t.created_at).slice(0, 10),
 });
 
 /** 정산 내역 다음 쪽 (전체 기간을 차례로) — next가 없으면 마지막 쪽 */

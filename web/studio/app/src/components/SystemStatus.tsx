@@ -318,7 +318,7 @@ export function SystemStatus({ children }: { children: ReactNode }) {
                 {deviceIssues.map(d => <li key={d.code}><strong>{d.title}</strong><span>{d.body}</span></li>)}
               </ul>
             ) : <p>{deviceIssues[0].body}</p>}
-            meta={deviceIssues.map(d => d.code)}
+            meta={deviceIssues.map(d => `오류 코드 ${d.code}`)}
             actions={[{ label: '확인', onClick: () => { safeSet('session', DEVICE_KEY, '1'); setDeviceIssues([]); } }]}
           />
         </Modal>
