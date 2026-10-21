@@ -612,6 +612,151 @@ fn defs() -> &'static [ToolDef] {
                     "artist_confirmed": {"type":"boolean","const":true,"description":"The artist explicitly asked to delete this draft"}}}),
             },
             ToolDef {
+                name: "request_release_withdrawal",
+                title: "Ask to withdraw an application",
+                description: "Ask the artist to approve withdrawing a submitted release's application (it stops the review; limited per month; impossible once delivery started). Only when the artist asked for it. The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_action_request.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["release_id"],"properties":{
+                    "release_id": uuid_schema("The submitted release"),
+                    "reason": {"type":"string","maxLength":500,"description":"Why, in the artist's words"}}}),
+            },
+            ToolDef {
+                name: "request_takedown",
+                title: "Ask to take a release down",
+                description: "Ask the artist to approve a takedown of a release that is on platforms; AUDENIQ reviews it and removes it everywhere. Only when the artist asked for it. The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_action_request.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","reason"],"properties":{
+                    "release_id": uuid_schema("The delivered release"),
+                    "reason": {"type":"string","minLength":2,"maxLength":1000,"description":"Why, in the artist's words"}}}),
+            },
+            ToolDef {
+                name: "cancel_takedown",
+                title: "Cancel a takedown request",
+                description: "Cancel the artist's pending takedown request, so the release stays on platforms. Only after the artist explicitly asked.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","artist_confirmed"],"properties":{
+                    "release_id": uuid_schema("The release"),
+                    "artist_confirmed": {"type":"boolean","const":true}}}),
+            },
+            ToolDef {
+                name: "request_split_change",
+                title: "Ask to change revenue splits",
+                description: "Ask the artist to approve the collaborators and percentages of the listed tracks (replaces those tracks' splits; share_bps 2550 = 25.5%; existing collaborators by id from get_release_splits, new ones with name and email). New people get an invite to accept. The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_action_request.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","tracks"],"properties":{
+                    "release_id": uuid_schema("The release"),
+                    "tracks": {"type":"array","minItems":1,"maxItems":99,"items":{"type":"object","additionalProperties":false,"required":["track_id","shares"],"properties":{
+                        "track_id": uuid_schema("The track"),
+                        "shares": {"type":"array","maxItems":20,"items":{"type":"object","additionalProperties":false,"required":["name","share_bps"],"properties":{
+                            "id": uuid_schema("An existing collaborator (from get_release_splits)"),
+                            "name": {"type":"string","minLength":1,"maxLength":120},
+                            "email": {"type":"string","maxLength":320,"description":"Needed for a new collaborator"},
+                            "share_bps": {"type":"integer","minimum":1,"maximum":10000}}}}}}}}}),
+            },
+            ToolDef {
+                name: "request_release_end",
+                title: "Ask to end a release",
+                description: "Ask the artist to approve ending a delivered release's service on a date (contract end, licence expiry, or transfer to another distributor named in transfer_to). The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_action_request.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","end_date","reason"],"properties":{
+                    "release_id": uuid_schema("The release"),
+                    "end_date": {"type":"string","pattern":"^[0-9]{4}-[0-9]{2}-[0-9]{2}$","description":"YYYY-MM-DD"},
+                    "reason": {"type":"string","enum":["CONTRACT_END","LICENSE_EXPIRY","TRANSFER"]},
+                    "note": {"type":"string","maxLength":1000},
+                    "transfer_to": {"type":"string","maxLength":200,"description":"TRANSFER: the distributor taking it over"}}}),
+            },
+            ToolDef {
+                name: "cancel_release_end",
+                title: "Cancel a scheduled release end",
+                description: "Cancel a release's scheduled end date before it arrives. Only after the artist explicitly asked.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","artist_confirmed"],"properties":{
+                    "release_id": uuid_schema("The release"),
+                    "artist_confirmed": {"type":"boolean","const":true}}}),
+            },
+            ToolDef {
+                name: "request_contract_end",
+                title: "Ask to end the AUDENIQ contract",
+                description: "Ask the workspace owner to approve ending this workspace's AUDENIQ contract on a date (no new releases after that; all releases end on the date). The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_action_request.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["end_date"],"properties":{
+                    "end_date": {"type":"string","pattern":"^[0-9]{4}-[0-9]{2}-[0-9]{2}$","description":"YYYY-MM-DD"},
+                    "note": {"type":"string","maxLength":1000}}}),
+            },
+            ToolDef {
+                name: "cancel_contract_end",
+                title: "Cancel a scheduled contract end",
+                description: "Cancel the workspace's scheduled contract end before it arrives. Only after the artist explicitly asked.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["artist_confirmed"],"properties":{
+                    "artist_confirmed": {"type":"boolean","const":true}}}),
+            },
+            ToolDef {
+                name: "request_counter_notice",
+                title: "Ask to answer an infringement claim",
+                description: "Ask the artist to approve a counter notice to a rights claim that suspended their release (claim_id from list_infringement_claims, while can_answer is true). The statement is a legal statement in the artist's own words; never write claims for them. The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_action_request.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["claim_id","statement"],"properties":{
+                    "claim_id": uuid_schema("The claim"),
+                    "statement": {"type":"string","minLength":1,"maxLength":3000}}}),
+            },
+            ToolDef {
+                name: "request_member_invite",
+                title: "Ask to invite a member",
+                description: "Ask the workspace owner to approve inviting an existing AUDENIQ account by e-mail as EDITOR or VIEWER. The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_action_request.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["email","role"],"properties":{
+                    "email": {"type":"string","minLength":3,"maxLength":320},
+                    "role": {"type":"string","enum":["EDITOR","VIEWER"]}}}),
+            },
+            ToolDef {
+                name: "request_large_payout",
+                title: "Ask for a payout above the assistant limit",
+                description: "Ask the workspace owner to approve a payout to the registered account (any amount up to the available balance; amount, fee and net shown on the approval page). Never on your own initiative. The artist must approve it once in AUDENIQ Studio (approve_url); nothing happens until then. Then call get_action_request.",
+                scope: SCOPE_PAYOUT, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["amount"],"properties":{
+                    "amount": {"type":"integer","minimum":1,"maximum":1000000000,"description":"KRW before the fee"}}}),
+            },
+            ToolDef {
+                name: "get_action_request",
+                title: "Approval request status",
+                description: "The state of an action the artist was asked to approve: PENDING, DONE (with result), FAILED (error_code), REJECTED, EXPIRED or REVOKED.",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["request_id"],"properties":{
+                    "request_id": uuid_schema("From a request_* tool")}}),
+            },
+            ToolDef {
+                name: "set_special_options",
+                title: "Set special-content details",
+                description: "Set a draft's special-content details as the artist states them: cover song (original title, artist and writers per track, rights confirmation, licence file), samples (licence file), AI use (what for, which tools) and express release (reason, terms). Only facts the artist told you, after they confirmed the exact content; declarations at submission must match.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","artist_confirmed"],"properties":{
+                    "release_id": uuid_schema("The draft"),
+                    "artist_confirmed": {"type":"boolean","const":true,"description":"The artist confirmed these details"},
+                    "cover": {"type":"object","additionalProperties":false,"required":["is_cover"],"properties":{
+                        "is_cover": {"type":"boolean"},
+                        "tracks": {"type":"array","maxItems":99,"items":{"type":"object","additionalProperties":false,"required":["track_id","original_title","original_artist"],"properties":{
+                            "track_id": uuid_schema("The cover track"),
+                            "original_title": {"type":"string","minLength":1,"maxLength":200},
+                            "original_artist": {"type":"string","minLength":1,"maxLength":200},
+                            "original_writers": {"type":"string","maxLength":300}}}},
+                        "rights_confirmed": {"type":"boolean","description":"The artist confirmed they secured the cover licence"},
+                        "license_asset_id": uuid_schema("Licence file (DOCUMENT upload)"),
+                        "license_file_name": {"type":"string","maxLength":200}}},
+                    "sample": {"type":"object","additionalProperties":false,"required":["contains_samples"],"properties":{
+                        "contains_samples": {"type":"boolean"},
+                        "license_asset_id": uuid_schema("Sample clearance file (DOCUMENT upload)"),
+                        "license_file_name": {"type":"string","maxLength":200}}},
+                    "ai": {"type":"object","additionalProperties":false,"required":["involved"],"properties":{
+                        "involved": {"type":"boolean"},
+                        "uses": {"type":"array","maxItems":10,"items":{"type":"string","maxLength":200},"description":"What AI was used for, e.g. '작곡(멜로디)에 AI 도움을 받았어요'"},
+                        "tools": {"type":"array","maxItems":10,"items":{"type":"string","maxLength":100},"description":"e.g. Suno, Udio"}}},
+                    "express": {"type":"object","additionalProperties":false,"required":["requested"],"properties":{
+                        "requested": {"type":"boolean"},
+                        "reason": {"type":"string","maxLength":300},
+                        "terms_accepted": {"type":"boolean","description":"The artist accepted that schedule and costs are confirmed separately"}}}}}),
+            },
+            ToolDef {
                 name: "list_artist_pages",
                 title: "Artist platform pages",
                 description: "Each artist in this workspace with their own page on Spotify, Apple Music, Melon and other platforms (link and status). AUDENIQ delivers new releases to these pages so they never land on a same-name stranger's page; PENDING means a first release is waiting for the new page's link.",
@@ -922,7 +1067,7 @@ fn mcp_message(code: &str) -> Option<&'static str> {
             "This payout was already sent to the bank and can no longer be cancelled."
         }
         "COVER_DETAILS_REQUIRED" | "AI_DETAILS_REQUIRED" | "EXPRESS_ACK_REQUIRED" => {
-            "This release's special options need details that are entered in AUDENIQ Studio."
+            "This release's special options need details: set them with set_special_options (or in AUDENIQ Studio)."
         }
         _ => return None,
     })
@@ -1403,6 +1548,7 @@ async fn run(
         n if super::workspace::TOOLS.contains(&n) => {
             Box::pin(super::workspace::call(s, p, n, args))
         }
+        n if super::actions::TOOLS.contains(&n) => Box::pin(super::actions::call(s, p, n, args)),
         _ => return Err(tool_error("UNKNOWN_TOOL", "Unknown tool.")),
     };
     fut.await
@@ -1613,7 +1759,7 @@ async fn list_releases(
 }
 
 /// The release as catalog::get returns it, plus credit names.
-async fn load(
+pub(super) async fn load(
     s: &AppState,
     a: &Actor,
     org: Uuid,
@@ -1793,7 +1939,7 @@ fn apply_fields(draft: &mut Value, args: &Value) {
 
 /// Same release, new draft/title/type/UPC. Keeps cover art and UPC unless
 /// changed; optimistic locking on the version just read.
-async fn write_release(
+pub(super) async fn write_release(
     s: &AppState,
     a: &Actor,
     org: Uuid,
