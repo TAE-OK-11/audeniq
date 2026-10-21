@@ -280,7 +280,7 @@ export function Profile() {
         {account.realName && <SetRow id="accountRowName" label="실명" value={account.realName} onClick={() => setAccountEdit('verify')} />}
         <SetRow
           id="accountRowVerify" label="본인인증"
-          value={account.verified ? `${verifyLabel(account.verified.method)} 인증 완료` : undefined}
+          value={account.verified ? `${verifyLabel(account.verified.method)} 완료` : undefined}
           empty="인증하기" onClick={() => setAccountEdit('verify')}
         />
       </section>

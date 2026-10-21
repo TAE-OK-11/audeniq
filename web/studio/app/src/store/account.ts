@@ -65,12 +65,16 @@ export const TAX_COUNTRIES: { code: string; label: string }[] = [
   { code: 'OTHER', label: '기타' },
 ];
 
-/** 직원이 신분증으로 확인한 실명인증 (crates/core/src/identity_desk.rs) */
-const OFFLINE_LABEL: Record<string, string> = { IN_PERSON: '현장 신분증 확인', CUSTOMER_CENTER: '고객센터 신분증 확인' };
+/** 인증을 마친 방법 — 본인인증 기관 방법과 직원 신분증 확인(crates/core/src/identity_desk.rs).
+ *  서버 값은 소문자로 바뀌어 온다(api/portal.ts): IN_PERSON → in_person */
+const VERIFIED_BY: Record<string, string> = {
+  pass: 'PASS로 인증', sms: '문자로 인증', ipin: '아이핀으로 인증', card: '카드사로 인증',
+  in_person: '대면 인증', customer_center: '고객센터를 통한 인증',
+};
 
-/** 인증 방법 표시 이름 — 서버가 돌려준 인증 기관 방법(예: TEST)도 그대로 보여 준다 */
+/** 인증 방법 표시 문구 — 모르는 방법(예: TEST)은 이름 그대로 */
 export function verifyLabel(method: string): string {
-  return VERIFY_LABEL[method as VerifyMethod] ?? OFFLINE_LABEL[method] ?? method;
+  return VERIFIED_BY[method.toLowerCase()] ?? `${method} 인증`;
 }
 
 export function taxCountryLabel(code: string): string {
