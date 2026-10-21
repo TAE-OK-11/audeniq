@@ -722,7 +722,12 @@ pub async fn authorize(State(s): State<AppState>, h: HeaderMap, RawQuery(q): Raw
         &client,
         &ConsentTarget {
             action: "/api/oauth/authorize",
-            note: format!("승인 후 돌아갈 곳: <code>{}</code>", escape(&host)),
+            origin: format!("{host}에서 요청했어요"),
+            facts: vec![(
+                "승인 후 돌아갈 곳",
+                format!("<code>{}</code>", escape(&host)),
+            )],
+            caution: None,
             form_origin: redirect.map(|u| u.origin().ascii_serialization()),
         },
         &scopes,
@@ -1587,21 +1592,52 @@ pub fn escape(v: &str) -> String {
     out
 }
 
-const STYLE: &str = "body{margin:0;background:#f6f6f4;color:#151515;font:16px/1.55 -apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif}
-main{max-width:480px;margin:0 auto;padding:32px 16px}h1{font-size:22px;margin:0 0 8px}.card{background:#fff;border:1px solid #e3e3df;border-radius:14px;padding:20px;margin:16px 0}
-.muted{color:#5c5c58;font-size:14px}label{display:flex;gap:10px;align-items:flex-start;padding:8px 0}select{width:100%;padding:10px;font:inherit;border-radius:10px;border:1px solid #ccc}
-.row{display:flex;gap:10px;margin-top:20px}button,a.btn{flex:1;padding:12px;border-radius:10px;border:1px solid #151515;font:inherit;font-weight:600;text-align:center;text-decoration:none;cursor:pointer}
-.primary{background:#151515;color:#fff}.secondary{background:#fff;color:#151515}code{word-break:break-all;font-size:13px}.warn{background:#fff7e6;border-color:#f0d9a8}
-@media (prefers-color-scheme:dark){body{background:#111;color:#eee}.card{background:#1b1b1b;border-color:#333}.muted{color:#aaa}.primary{background:#eee;color:#111}.secondary{background:#1b1b1b;color:#eee;border-color:#eee}.warn{background:#2a2316;border-color:#5a4a26}select{background:#1b1b1b;color:#eee}}";
+/// AUDENIQ design tokens (web/studio/app/src/styles/tokens.css) for the
+/// pages this server renders itself: sign-in, consent, device code, errors.
+/// System fonts only: the page loads nothing from elsewhere (CSP).
+const STYLE: &str = ":root{--blue:#3B63F3;--blue-600:#2C56E0;--blue-50:#F5F8FF;--blue-100:#EEF3FF;--blue-300:#CFDBFF;--ink:#171B29;--ink-2:#4D5970;--ink-3:#5D687E;--line:#E8EDF5;--gray-50:#F5F7FA;--amber-50:#FFF3E6;--amber-700:#8A4F12;--red-50:#FFF1F2;--red-700:#9A2C38;--green-50:#E8F6F0;--green-700:#1D6B4C}
+*{box-sizing:border-box}
+body{margin:0;background:#fff;color:var(--ink);font:16px/1.6 -apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',sans-serif;-webkit-font-smoothing:antialiased;word-break:keep-all;overflow-wrap:anywhere}
+main{max-width:520px;margin:0 auto;padding:16px 20px 0}
+.top{display:flex;align-items:center;gap:10px;height:56px;margin-bottom:12px}.top svg{height:20px;width:auto}
+.chip{display:inline-flex;align-items:center;height:26px;padding:0 10px;border-radius:999px;background:var(--blue-100);color:#2F55D4;font-size:12px;font-weight:700;letter-spacing:.02em}
+h1{font-size:24px;line-height:1.35;letter-spacing:-.02em;margin:12px 0 8px}h2{font-size:15px;margin:0 0 12px}
+.lead{color:var(--ink-2);margin:0 0 20px}.muted{color:var(--ink-3);font-size:14px}
+.app{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:18px;background:var(--gray-50)}
+.app-icon{flex:none;display:grid;place-items:center;width:44px;height:44px;border-radius:14px;background:var(--blue);color:#fff;font-weight:800;font-size:20px}
+.app b{display:block;font-size:16px}.app small{display:block;color:var(--ink-3);font-size:13px}
+.card{background:var(--blue-50);border-radius:22px;padding:20px;margin:12px 0}
+.card.soft{background:var(--gray-50)}.card.warn{background:var(--amber-50);color:var(--amber-700)}.card.danger{background:var(--red-50);color:var(--red-700)}.card.ok{background:var(--green-50);color:var(--green-700)}
+select,input[type=text],input:not([type]){width:100%;height:52px;padding:0 14px;font:inherit;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:16px}
+select:focus,input:focus{outline:3px solid #6F91FF55;border-color:#7F99EF}
+.perm{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-top:1px solid #E1E8F6;cursor:pointer}.perm:first-of-type{border-top:0;padding-top:0}
+.perm input{appearance:none;-webkit-appearance:none;flex:none;width:24px;height:24px;margin:1px 0 0;border-radius:8px;border:2px solid #C2C9D6;background:#fff;display:grid;place-items:center}
+.perm input:checked{background:var(--blue);border-color:var(--blue)}.perm input:checked::after{content:'';width:14px;height:14px;background:#fff;-webkit-mask:var(--check) center/contain no-repeat;mask:var(--check) center/contain no-repeat}
+.perm input:disabled{opacity:.55}
+:root{--check:url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5 9.5 17 19 7.5'/%3E%3C/svg%3E\")}
+.perm b{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.perm small{display:block;color:var(--ink-3);font-size:14px;margin-top:2px}
+.tag{font-size:11px;font-weight:700;padding:2px 7px;border-radius:7px;background:#fff;color:var(--ink-3)}.tag.strong{background:var(--amber-50);color:var(--amber-700)}
+.never{margin:0;padding:0;list-style:none;display:grid;gap:8px}.never li{position:relative;padding-left:22px;color:var(--ink-2);font-size:14px}.never li::before{content:'';position:absolute;left:2px;top:9px;width:10px;height:2px;border-radius:2px;background:#9AA3B2}
+.facts{display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;margin:16px 4px;font-size:14px}.facts dt{color:var(--ink-3)}.facts dd{margin:0;min-width:0}
+code{font:13px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--gray-50);padding:2px 6px;border-radius:7px;word-break:break-all}
+.fine{color:var(--ink-3);font-size:13px;margin:8px 4px 0}
+.actions{position:sticky;bottom:0;display:flex;gap:10px;margin:20px -20px 0;padding:14px 20px calc(14px + env(safe-area-inset-bottom));background:linear-gradient(to bottom,#fff0,#fff 18px)}
+.row{display:flex;gap:10px;margin-top:16px}
+button,a.btn{flex:1;display:inline-flex;align-items:center;justify-content:center;height:56px;padding:0 16px;border:0;border-radius:18px;font:inherit;font-weight:700;text-align:center;text-decoration:none;cursor:pointer}
+.primary{background:var(--blue);color:#fff}.primary:active{background:var(--blue-600)}.secondary{background:var(--gray-50);color:var(--ink)}
+.status{display:grid;place-items:center;width:56px;height:56px;border-radius:20px;margin:24px 0 4px;font-size:26px;font-weight:800}.status.ok{background:var(--green-50);color:var(--green-700)}.status.bad{background:var(--red-50);color:var(--red-700)}
+.code-input{font-size:22px;letter-spacing:4px;text-align:center;text-transform:uppercase}";
+
+const LOGO: &str = include_str!("logo.svg");
 
 pub(super) fn page(title: &str, body: &str, form_action_extra: Option<&str>) -> Response {
     let html = format!(
-        "<!doctype html><html lang=\"ko\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"robots\" content=\"noindex\"><title>{}</title><style>{STYLE}</style></head><body><main>{body}</main></body></html>",
+        "<!doctype html><html lang=\"ko\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1,viewport-fit=cover\"><meta name=\"robots\" content=\"noindex\"><meta name=\"color-scheme\" content=\"light\"><title>{}</title><style>{STYLE}</style></head><body><main><header class=\"top\">{LOGO}<span class=\"chip\">AI 앱 연결</span></header>{body}</main></body></html>",
         escape(title)
     );
     let mut r = (StatusCode::OK, html).into_response();
     let csp = format!(
-        "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'{}; frame-ancestors 'none'; base-uri 'none'",
+        "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self'{}; frame-ancestors 'none'; base-uri 'none'",
         form_action_extra
             .map(|o| format!(" {o}"))
             .unwrap_or_default()
@@ -1629,7 +1665,7 @@ pub(super) fn page_error(message: &str) -> Response {
     let mut r = page(
         "어데닉 연결",
         &format!(
-            "<h1>AI 앱을 연결할 수 없어요</h1><div class=\"card\">{}</div><p class=\"muted\">이 창을 닫고 AI 앱에서 연결을 다시 시작해 주세요.</p>",
+            "<div class=\"status bad\" aria-hidden=\"true\">!</div><h1>AI 앱을 연결하지 못했어요</h1><div class=\"card danger\">{}</div><p class=\"lead\">이 창을 닫고 AI 앱에서 연결을 처음부터 다시 시작해 주세요.</p>",
             escape(message)
         ),
         None,
@@ -1664,8 +1700,9 @@ pub(super) fn page_sign_in(
     page(
         "어데닉 로그인 필요",
         &format!(
-            "<h1>먼저 어데닉에 로그인해 주세요</h1><div class=\"card\"><p>AI 앱 연결은 어데닉 계정으로 승인해요. 로그인하면 이 화면으로 돌아와요. 비밀번호는 AI 앱에 전달되지 않아요.</p>\
-             <div class=\"row\"><a class=\"btn secondary\" href=\"\">로그인했어요 · 계속</a><a class=\"btn primary\" href=\"{}\">로그인하기</a></div></div>",
+            "<h1>먼저 어데닉에 로그인해 주세요</h1><p class=\"lead\">AI 앱 연결은 어데닉 계정으로 승인해요. 로그인하면 이 화면으로 돌아와요.</p>\
+             <div class=\"card soft\"><ul class=\"never\"><li>비밀번호는 AI 앱에 전달되지 않아요.</li><li>AI 앱을 쓰는 계정과 같은 어데닉 계정으로 로그인해 주세요.</li></ul></div>\
+             <div class=\"actions\"><a class=\"btn secondary\" href=\"\">로그인했어요</a><a class=\"btn primary\" href=\"{}\">로그인하기</a></div>",
             escape(&login)
         ),
         None,
@@ -1714,13 +1751,26 @@ pub(super) fn won(v: i64) -> String {
 }
 
 /// Where a consent form posts and what it tells the artist about the
-/// destination.
+/// request.
 pub(super) struct ConsentTarget {
     pub action: &'static str,
-    /// HTML (escaped by the caller): where the approval goes.
-    pub note: String,
+    /// Plain text under the app's name: where the request came from.
+    pub origin: String,
+    /// Label and HTML (escaped by the caller) rows: where the approval goes,
+    /// the connection code.
+    pub facts: Vec<(&'static str, String)>,
+    /// An extra warning before approving (plain text).
+    pub caution: Option<&'static str>,
     /// An extra origin the form may navigate to (the client's redirect).
     pub form_origin: Option<String>,
+}
+
+/// Initial for the app's badge (its first letter or digit).
+fn initial(name: &str) -> String {
+    name.chars()
+        .find(|c| c.is_alphanumeric())
+        .map(|c| c.to_uppercase().collect())
+        .unwrap_or_else(|| "AI".into())
 }
 
 pub(super) fn page_consent(
@@ -1751,39 +1801,64 @@ pub(super) fn page_consent(
     let mut scope_rows = String::new();
     for scope in scopes {
         let (title, desc) = scope_label(scope, payout_limit);
-        let control = match *scope {
-            SCOPE_READ => "<input type=\"checkbox\" checked disabled>",
-            SCOPE_WRITE => "<input type=\"checkbox\" name=\"scope_write\" checked>",
+        let (control, tag) = match *scope {
+            SCOPE_READ => (
+                "<input type=\"checkbox\" checked disabled>",
+                "<span class=\"tag\">기본</span>",
+            ),
+            SCOPE_WRITE => ("<input type=\"checkbox\" name=\"scope_write\" checked>", ""),
             // Submitting, settlement and payouts are never pre-selected.
-            SCOPE_SUBMIT => "<input type=\"checkbox\" name=\"scope_submit\">",
-            SCOPE_SETTLEMENT => "<input type=\"checkbox\" name=\"scope_settlement\">",
-            _ => "<input type=\"checkbox\" name=\"scope_payout\">",
+            SCOPE_SUBMIT => (
+                "<input type=\"checkbox\" name=\"scope_submit\">",
+                "<span class=\"tag strong\">내 이름으로 접수</span>",
+            ),
+            SCOPE_SETTLEMENT => ("<input type=\"checkbox\" name=\"scope_settlement\">", ""),
+            _ => (
+                "<input type=\"checkbox\" name=\"scope_payout\">",
+                "<span class=\"tag strong\">돈이 움직여요</span>",
+            ),
         };
         let desc = escape(&desc);
-        scope_rows.push_str(&format!("<label>{control}<span><b>{title}</b><br><span class=\"muted\">{desc}</span></span></label>"));
+        scope_rows.push_str(&format!(
+            "<label class=\"perm\">{control}<span><b>{title}{tag}</b><small>{desc}</small></span></label>"
+        ));
     }
-    let cimd = client.client_id.starts_with("https://");
+    let mut facts = String::new();
+    for (label, value) in &target.facts {
+        facts.push_str(&format!("<dt>{label}</dt><dd>{value}</dd>"));
+    }
+    if client.client_id.starts_with("https://") {
+        facts.push_str(&format!(
+            "<dt>앱 확인 주소</dt><dd><code>{}</code></dd>",
+            escape(&client.client_id)
+        ));
+    }
+    let caution = target
+        .caution
+        .map(|c| format!("<div class=\"card warn\">{}</div>", escape(c)))
+        .unwrap_or_default();
     let body = format!(
-        "<h1>{name}이(가) 어데닉 계정에 연결하려고 해요</h1>\
-         <p class=\"muted\">승인하면 이 AI 앱이 아래 작업 공간에서 선택한 일만 할 수 있어요. 지급 계좌 변경, 계약 서명, 계정 설정과 고액 지급은 어떤 경우에도 할 수 없어요.</p>\
+        "<div class=\"app\"><span class=\"app-icon\" aria-hidden=\"true\">{initial}</span><div><b>{name}</b><small>{origin}</small></div></div>\
+         <h1>{name}에서 어데닉을 쓸 수 있게 할까요?</h1>\
+         <p class=\"lead\">허용한 일만 할 수 있어요. 연결은 언제든 끊을 수 있어요.</p>\
          <form method=\"post\" action=\"{action}\">\
-         <div class=\"card\"><b>작업 공간</b><select name=\"org\" required>{org_options}</select></div>\
-         <div class=\"card\">{scope_rows}</div>\
-         <div class=\"card warn muted\">{note}{cimd_note}<br>연결은 언제든 끊을 수 있고, 비밀번호를 바꾸거나 모든 기기에서 로그아웃하면 함께 끊겨요.</div>\
+         <section class=\"card\"><h2>연결할 작업 공간</h2><select name=\"org\" required aria-label=\"연결할 작업 공간\">{org_options}</select></section>\
+         <section class=\"card\"><h2>허용할 일</h2>{scope_rows}</section>\
+         <section class=\"card soft\"><h2>이 앱이 할 수 없는 일</h2><ul class=\"never\">\
+         <li>지급 계좌를 바꾸거나 계약서·신청서에 서명하는 일</li>\
+         <li>비밀번호·로그인 같은 계정 설정</li>\
+         <li>발매 취소·서비스 중단·큰 금액 지급은 요청만 할 수 있어요. 매번 스튜디오에서 내가 승인해야 해요.</li>\
+         </ul></section>\
+         {caution}\
+         <dl class=\"facts\">{facts}</dl>\
+         <p class=\"fine\">연결은 어데닉 스튜디오의 프로필 → 연결된 AI 앱에서 끊을 수 있어요. 비밀번호를 바꾸거나 모든 기기에서 로그아웃해도 끊겨요.</p>\
          <input type=\"hidden\" name=\"request\" value=\"{request}\">\
-         <div class=\"row\"><button class=\"secondary\" name=\"decision\" value=\"deny\">거부</button><button class=\"primary\" name=\"decision\" value=\"approve\">승인</button></div>\
+         <div class=\"actions\"><button class=\"secondary\" name=\"decision\" value=\"deny\">거절</button><button class=\"primary\" name=\"decision\" value=\"approve\">허용하고 연결</button></div>\
          </form>",
+        initial = escape(&initial(&client.name)),
         name = escape(&client.name),
+        origin = escape(&target.origin),
         action = target.action,
-        note = target.note,
-        cimd_note = if cimd {
-            format!(
-                "<br>앱 확인 주소: <code>{}</code>",
-                escape(&client.client_id)
-            )
-        } else {
-            String::new()
-        },
         request = escape(request),
     );
     page("어데닉에 AI 앱 연결", &body, target.form_origin.as_deref())
@@ -1792,6 +1867,57 @@ pub(super) fn page_consent(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn consent_page_shows_the_app_its_limits_and_the_decision() {
+        let client = Client {
+            pk: Uuid::nil(),
+            client_id: "https://claude.ai/oauth/mcp-oauth-client-metadata".into(),
+            name: "Claude".into(),
+            redirect_uris: vec![],
+            auth_method: "none".into(),
+            secret_hash: None,
+            kind: "CIMD".into(),
+            password_grant: false,
+        };
+        let target = ConsentTarget {
+            action: "/api/oauth/authorize",
+            origin: "claude.ai에서 요청했어요".into(),
+            facts: vec![("승인 후 돌아갈 곳", "<code>claude.ai</code>".into())],
+            caution: None,
+            form_origin: None,
+        };
+        let orgs = [(
+            Uuid::nil(),
+            "Personal workspace".to_string(),
+            "OWNER".to_string(),
+        )];
+        let scopes = [
+            SCOPE_READ,
+            SCOPE_WRITE,
+            SCOPE_SUBMIT,
+            SCOPE_SETTLEMENT,
+            SCOPE_PAYOUT,
+        ];
+        let r = page_consent(&client, &target, &scopes, &orgs, "req", 300_000);
+        let body = axum::body::to_bytes(r.into_body(), 1 << 20).await.unwrap();
+        let html = String::from_utf8(body.to_vec()).unwrap();
+        if let Ok(path) = std::env::var("AUDENIQ_CONSENT_DUMP") {
+            std::fs::write(path, &html).unwrap();
+        }
+        for text in [
+            "Claude에서 어데닉을 쓸 수 있게 할까요?",
+            "claude.ai에서 요청했어요",
+            "이 앱이 할 수 없는 일",
+            "내 작업 공간 · 소유자",
+            "허용하고 연결",
+            "AUDENIQ",
+        ] {
+            assert!(html.contains(text), "{text}");
+        }
+        // Submitting, settlement and payouts start unticked.
+        assert!(html.contains("<input type=\"checkbox\" name=\"scope_submit\">"));
+        assert!(html.contains("<input type=\"checkbox\" name=\"scope_payout\">"));
+    }
     #[test]
     fn consent_page_keeps_the_form_origin() {
         let r = page("t", "", None);
