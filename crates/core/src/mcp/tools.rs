@@ -224,6 +224,23 @@ fn defs() -> &'static [ToolDef] {
                 schema: release_id_schema,
             },
             ToolDef {
+                name: "request_permission",
+                title: "Ask for more permissions",
+                description: "Ask the artist to give this connection more permissions (releases:write, releases:submit, settlement:read, payouts:request) instead of reconnecting. Returns an approve_url: show it to the artist, who approves in AUDENIQ Studio within 60 minutes. Approved permissions stay until the connection is disconnected and apply to the tokens you already hold. Only ask for what the current task needs and say why in reason.",
+                scope: SCOPE_READ, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["scopes","reason"],"properties":{
+                    "scopes": {"type":"array","minItems":1,"maxItems":5,"uniqueItems":true,"items":{"type":"string","enum":["releases:read","releases:write","releases:submit","settlement:read","payouts:request"]}},
+                    "reason": {"type":"string","minLength":1,"maxLength":500,"description":"Shown to the artist: what you need it for"}}}),
+            },
+            ToolDef {
+                name: "get_permission_request",
+                title: "Permission request status",
+                description: "Whether the artist approved, rejected or let expire a request from request_permission, and the permissions this connection has now.",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["request_id"],"properties":{
+                    "request_id": uuid_schema("From request_permission")}}),
+            },
+            ToolDef {
                 name: "preview_submission",
                 title: "Preview application",
                 description: "The complete distribution application exactly as it would be submitted, with the declarations the artist made, and the checks result. When everything passes and this connection may submit, it returns a confirmation_token for submit_release, valid 15 minutes and only for this exact content. Show the whole preview to the artist before asking them to confirm.",
@@ -574,6 +591,13 @@ pub fn find(name: &str) -> Option<&'static ToolDef> {
 }
 
 /// Tool listing; `public_only` for the endpoint without an account.
+/// Whether the connection may call the tool: its scope, or for
+/// submit_release a write connection (the application then waits for the
+/// artist's one-time approval).
+pub fn permitted(def: &ToolDef, p: &Principal) -> bool {
+    p.has(def.scope) || (def.name == "submit_release" && p.has(SCOPE_WRITE))
+}
+
 pub fn list_json(public_only: bool) -> Vec<Value> {
     defs()
         .iter()
@@ -997,6 +1021,8 @@ async fn run(
     // state machine (deep stacks in debug builds).
     let fut: ToolFuture<'_> = match def.name {
         "get_account_context" => Box::pin(account(s, p)),
+        "request_permission" => Box::pin(super::approvals::request(s, p, args)),
+        "get_permission_request" => Box::pin(super::approvals::status(s, p, args)),
         "list_distribution_platforms" => Box::pin(platforms(s, a, org)),
         "get_release_requirements" => Box::pin(async { Ok(requirements()) }),
         "list_releases" => Box::pin(list_releases(s, a, org, args)),
@@ -1279,6 +1305,10 @@ async fn account(s: &AppState, p: &Principal) -> std::result::Result<Value, Tool
     let role = ws["role"].as_str().unwrap_or("");
     let can_edit = role != "VIEWER" && p.has(SCOPE_WRITE);
     let can_submit = matches!(role, "OWNER" | "EDITOR") && p.has(SCOPE_SUBMIT);
+    // Without the submit permission a write connection can still send an
+    // application, which then waits for the artist's one-time approval.
+    let can_submit_with_approval =
+        matches!(role, "OWNER" | "EDITOR") && !can_submit && p.has(SCOPE_WRITE);
     let payout_limit = s.mcp.payout_limit_krw;
     let can_request_payouts = role == "OWNER" && p.has(SCOPE_PAYOUT) && payout_limit > 0;
     Ok(json!({
@@ -1287,6 +1317,7 @@ async fn account(s: &AppState, p: &Principal) -> std::result::Result<Value, Tool
         "connection": {"client": p.client_name, "scopes": p.scopes},
         "can_edit_drafts": can_edit,
         "can_submit": can_submit,
+        "can_submit_with_approval": can_submit_with_approval,
         "can_view_settlement": p.has(SCOPE_SETTLEMENT),
         "can_request_payouts": can_request_payouts,
         "assistant_payout_limit_krw": payout_limit,
@@ -2279,7 +2310,7 @@ async fn preview(
         "Staff review the application; flagged items (cover, samples, AI, explicit) get a human review.",
         "The artist signs the release application and distribution agreement in AUDENIQ Studio. Delivery to platforms starts only after the signed agreement is approved.",
     ]);
-    if ready && p.has(SCOPE_SUBMIT) {
+    if ready && (p.has(SCOPE_SUBMIT) || p.has(SCOPE_WRITE)) {
         let exp = chrono::Utc::now().timestamp() + CONFIRM_SECONDS;
         let token = super::seal(
             s,
@@ -2292,12 +2323,14 @@ async fn preview(
         v["confirmation_token"] = json!(token);
         v["confirmation_expires_at"] =
             json!(chrono::DateTime::from_timestamp(exp, 0).map(|t| t.to_rfc3339()));
-        v["instruction"] = json!(
+        v["instruction"] = json!(if p.has(SCOPE_SUBMIT) {
             "Show this preview to the artist. Call submit_release only after they explicitly confirm this exact content and these declarations."
-        );
+        } else {
+            "Show this preview to the artist. Call submit_release only after they explicitly confirm this exact content and these declarations. This connection has no submit permission, so the application then waits for the artist's one-time approval in AUDENIQ Studio (or ask for releases:submit with request_permission)."
+        });
     } else if ready {
         v["instruction"] = json!(format!(
-            "Ready, but this connection may not submit. The artist can submit in AUDENIQ Studio ({}) or reconnect AUDENIQ allowing submission.",
+            "Ready, but this connection may not submit. The artist can submit in AUDENIQ Studio ({}), or ask for releases:write or releases:submit with request_permission.",
             studio_url(s, release)
         ));
     }
@@ -2357,7 +2390,10 @@ async fn submit(
         ));
     }
     let title = super::safety::release_title(&s.pool, p.org, release).await;
-    if super::safety::studio_approval(&s.pool, p.actor.user).await? {
+    // No submit permission: this one application waits for the artist's
+    // approval in the Studio (one-time approval of exactly this content).
+    let one_time = !p.has(SCOPE_SUBMIT);
+    if one_time || super::safety::studio_approval(&s.pool, p.actor.user).await? {
         let (id, new) = super::safety::hold(
             &s.pool,
             super::safety::Pending {
@@ -2379,8 +2415,9 @@ async fn submit(
                 p.actor.user,
                 "AI 앱이 보낸 발매 신청을 승인해 주세요",
                 &format!(
-                    "{}에서 ‘{title}’ 발매 신청을 보냈어요. 프로필 → 연결된 AI 앱에서 승인하면 접수돼요. 7일 안에 승인하지 않으면 취소돼요.",
-                    p.client_name
+                    "{}에서 ‘{title}’ 발매 신청을 보냈어요.{} 프로필 → 연결된 AI 앱에서 승인하면 접수돼요. 7일 안에 승인하지 않으면 취소돼요.",
+                    p.client_name,
+                    if one_time { " 이 연결에는 발매 신청 권한이 없어서 이번 한 번만 승인을 요청했어요." } else { "" }
                 ),
                 "/profile?open=ai",
             )
@@ -3007,7 +3044,11 @@ mod tests {
             );
             // Only reads under the release/settlement read scopes; every
             // write needs a write-type scope.
-            if d.scope == SCOPE_READ || d.scope == SCOPE_SETTLEMENT {
+            // request_permission only files a request the artist answers
+            // in the Studio; every connection may make one.
+            if (d.scope == SCOPE_READ || d.scope == SCOPE_SETTLEMENT)
+                && d.name != "request_permission"
+            {
                 assert!(d.read_only, "{}", d.name);
             }
             if d.scope == SCOPE_WRITE || d.scope == SCOPE_SUBMIT {
