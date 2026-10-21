@@ -4,8 +4,10 @@
 //! submission rules are exactly the Studio's. Nothing here writes the
 //! database directly.
 //!
-//! What is deliberately not exposed: file uploads (done in Studio, where the
-//! bytes go straight to storage), signing the application or agreement,
+//! Files go through [`super::files`]: the bytes go straight to storage (or
+//! are fetched from a public link) and take the Studio's upload completion.
+//!
+//! What is deliberately not exposed: signing the application or agreement,
 //! withdrawals, takedowns, payouts, payout accounts, members and contracts.
 use super::{
     SCOPE_PAYOUT, SCOPE_READ, SCOPE_SETTLEMENT, SCOPE_SUBMIT, SCOPE_WRITE, oauth::Principal,
@@ -180,6 +182,7 @@ fn defs() -> &'static [ToolDef] {
                 schema: || {
                     let mut s = draft_fields_schema();
                     s["properties"]["release_id"] = uuid_schema("The release to change");
+                    s["properties"]["artwork_asset_id"] = uuid_schema("Cover art: an IMAGE asset from start_upload/complete_upload or import_file_from_url (state READY)");
                     s["properties"]["title"] = title_schema();
                     s["properties"]["release_type"] = release_type_schema();
                     s["required"] = json!(["release_id"]);
@@ -189,7 +192,7 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "upsert_track",
                 title: "Add or edit a track",
-                description: "Add a track to a draft, or change one (pass track_id). The track's artist is the release's artist_name. Audio is attached by uploading in AUDENIQ Studio; asset_id only accepts a file already uploaded there. Omitted fields keep their current value when editing.",
+                description: "Add a track to a draft, or change one (pass track_id). The track's artist is the release's artist_name. Audio is attached with asset_id: a file sent with start_upload/complete_upload or import_file_from_url, or uploaded in AUDENIQ Studio. Omitted fields keep their current value when editing.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: false, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","title","track_number"],"properties":{
                     "release_id": uuid_schema("The release"),
@@ -201,7 +204,7 @@ fn defs() -> &'static [ToolDef] {
                     "isrc": {"type":"string","pattern":"^$|^[A-Za-z]{2}-?[A-Za-z0-9]{3}-?[0-9]{2}-?[0-9]{5}$","description":"Existing ISRC if the recording has one; AUDENIQ issues one otherwise"},
                     "explicit": {"type":"boolean","description":"Explicit lyrics/content (parental advisory)"},
                     "lyrics": {"type":"string","maxLength":20000},
-                    "asset_id": uuid_schema("Audio file already uploaded in AUDENIQ Studio")}}),
+                    "asset_id": uuid_schema("Registered audio file (start_upload/complete_upload, import_file_from_url or AUDENIQ Studio)")}}),
             },
             ToolDef {
                 name: "set_track_credits",
@@ -456,9 +459,47 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "get_upload_link",
                 title: "Upload files in AUDENIQ Studio",
-                description: "The AUDENIQ Studio page where the artist uploads this release's audio and cover art, and which files are still missing. Files are never sent through chat; the artist opens the link while signed in to AUDENIQ Studio.",
+                description: "Which of this release's files are still missing, and the AUDENIQ Studio page where the artist can upload them. Files can also be sent with start_upload or import_file_from_url.",
                 scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
                 schema: release_id_schema,
+            },
+            ToolDef {
+                name: "start_upload",
+                title: "Start a file upload",
+                description: "Get a signed URL to upload one audio master or cover image directly (for agents that can send HTTP requests with a file body). PUT the bytes to the returned url with exactly its headers within 10 minutes, then call complete_upload. Audio: WAV, FLAC, AIFF, ALAC (.m4a), WavPack or TTA up to 512 MiB; cover: square JPG or PNG up to 20 MiB (see get_release_requirements). When you only have a link to the file, use import_file_from_url instead.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: false, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["kind","size_bytes","content_type"],"properties":{
+                    "kind": {"type":"string","enum":["AUDIO","IMAGE"],"description":"AUDIO for a track master, IMAGE for cover art"},
+                    "size_bytes": {"type":"integer","minimum":1,"maximum":536870912,"description":"Exact file size in bytes"},
+                    "content_type": {"type":"string","enum":["audio/wav","audio/x-wav","audio/flac","audio/mp4","audio/x-m4a","audio/aiff","audio/x-aiff","audio/wavpack","audio/x-wavpack","audio/tta","audio/x-tta","image/jpeg","image/png"]}}}),
+            },
+            ToolDef {
+                name: "complete_upload",
+                title: "Finish a file upload",
+                description: "Register a file uploaded to a start_upload URL. AUDENIQ checks the bytes (real format, malware scan, lossless audio). Returns state READY with the asset_id to attach, or PROCESSING for a long master: then poll get_upload_status instead of uploading again.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["upload_session_id","asset_id","expected_key"],"properties":{
+                    "upload_session_id": uuid_schema("From start_upload"),
+                    "asset_id": uuid_schema("From start_upload"),
+                    "expected_key": {"type":"string","minLength":1,"maxLength":300,"description":"From start_upload"}}}),
+            },
+            ToolDef {
+                name: "import_file_from_url",
+                title: "Import a file from a link",
+                description: "Fetch an audio master or cover image from a public https:// download link the artist gave you (cloud drive share link set to anyone with the link, file host) and register it like an upload. Use only links the artist provided. The link must lead straight to the file and report its size. Returns state READY with the asset_id to attach, or PROCESSING: then poll get_upload_status.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: false, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["kind","url"],"properties":{
+                    "kind": {"type":"string","enum":["AUDIO","IMAGE"],"description":"AUDIO for a track master, IMAGE for cover art"},
+                    "url": {"type":"string","maxLength":2048,"pattern":"^https://","description":"Public direct download link"},
+                    "content_type": {"type":"string","enum":["audio/wav","audio/flac","audio/mp4","audio/aiff","audio/wavpack","audio/tta","image/jpeg","image/png"],"description":"File type when the link does not show it"}}}),
+            },
+            ToolDef {
+                name: "get_upload_status",
+                title: "File upload status",
+                description: "How an upload or import is going: READY (asset_id can be attached), PROCESSING, WAITING_FOR_FILE, EXPIRED or FAILED with an error_code.",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["upload_session_id"],"properties":{
+                    "upload_session_id": uuid_schema("From start_upload or import_file_from_url")}}),
             },
             ToolDef {
                 name: "list_artist_pages",
@@ -1023,6 +1064,10 @@ async fn run(
         "get_account_context" => Box::pin(account(s, p)),
         "request_permission" => Box::pin(super::approvals::request(s, p, args)),
         "get_permission_request" => Box::pin(super::approvals::status(s, p, args)),
+        "start_upload" => Box::pin(super::files::start(s, p, args)),
+        "complete_upload" => Box::pin(super::files::complete(s, p, args)),
+        "import_file_from_url" => Box::pin(super::files::import(s, p, args)),
+        "get_upload_status" => Box::pin(super::files::status(s, p, args)),
         "list_distribution_platforms" => Box::pin(platforms(s, a, org)),
         "get_release_requirements" => Box::pin(async { Ok(requirements()) }),
         "list_releases" => Box::pin(list_releases(s, a, org, args)),
@@ -1324,7 +1369,7 @@ async fn account(s: &AppState, p: &Principal) -> std::result::Result<Value, Tool
         "studio_url": super::issuer(s),
         // For clients that drop server instructions: the Korean name is 어데닉, never 오디닉/오데닉.
         "brand": {"name": "AUDENIQ", "name_ko": "어데닉", "studio_ko": "어데닉 스튜디오"},
-        "not_available_here": ["file uploads", "signing the application or agreement", "withdrawals and takedowns", "payout account changes", "payouts above the assistant limit", "contracts", "account and member settings"],
+        "not_available_here": ["signing the application or agreement", "withdrawals and takedowns", "payout account changes", "payouts above the assistant limit", "contracts", "account and member settings"],
     }))
 }
 
@@ -1661,7 +1706,9 @@ async fn write_release(
         ),
         row_version: r["row_version"].as_i64(),
         upc,
-        artwork_asset_id: r["artwork_asset_id"].as_str().and_then(|v| v.parse().ok()),
+        artwork_asset_id: str_arg(args, "artwork_asset_id")
+            .or(r["artwork_asset_id"].as_str())
+            .and_then(|v| v.parse().ok()),
     };
     catalog::update(s, a, org, Kind::Release, release, input).await
 }
@@ -1872,7 +1919,7 @@ async fn create_draft(
     v["next_steps"] = json!([
         "Add tracks with upsert_track and credits with set_track_credits.",
         format!(
-            "Upload the audio for each track and the cover art in AUDENIQ Studio: {}",
+            "Add the audio for each track and the cover art: start_upload or import_file_from_url, or upload in AUDENIQ Studio: {}",
             studio_edit_url(s, id)
         ),
         "Run validate_release to see what is still missing.",
@@ -1896,6 +1943,17 @@ async fn update_draft(
     }
     let mut draft = r["draft"].clone();
     apply_fields(&mut draft, args);
+    if let Some(cover) = str_arg(args, "artwork_asset_id") {
+        // The Studio editor keeps the cover in its working copy; point it
+        // at the new image and drop the old preview, or its next save
+        // would put the previous cover back.
+        draft["coverAssetId"] = json!(cover);
+        draft["coverData"] = json!("");
+        if let Some(d) = draft.as_object_mut() {
+            d.remove("coverThumbAssetId");
+            d.remove("coverPreviewAssetId");
+        }
+    }
     write_release(s, a, org, release, &r, draft, args).await?;
     if let Some(name) = str_arg(args, "artist_name") {
         ensure_artist(s, a, org, name).await?;

@@ -220,8 +220,8 @@ and `{code, message}` (stable API codes, human messages from
 | `list_releases` | read | `catalog::list` | Releases with status, paged |
 | `get_release` | read | `catalog::get`, `catalog::party_names` | Release, tracks, credits (names), audio attached, agreement/delivery/live state |
 | `create_release_draft` | write | `catalog::create` (artist via find-or-create) | New draft (title, type, artist + optional fields) |
-| `update_release_draft` | write | `catalog::update` (optimistic lock) | Change given fields only; refused once under review |
-| `upsert_track` | write | `catalog::track`, `drafts::replace_track` | Add/edit a track; omitted fields keep their values; `asset_id` only for an already uploaded file |
+| `update_release_draft` | write | `catalog::update` (optimistic lock) | Change given fields only (`artwork_asset_id` attaches a registered cover, also in the Studio editor's working copy); refused once under review |
+| `upsert_track` | write | `catalog::track`, `drafts::replace_track` | Add/edit a track; omitted fields keep their values; `asset_id` attaches a registered audio file |
 | `set_track_credits` | write | `catalog::ensure_party`, `drafts::replace_credits` | Composers, lyricists, arrangers, producers (Studio roles) |
 | `validate_release` | read | `drafts::preflight`, `submission::presubmit`, `submission::draft_review`, `uploads::checks` | Blocking findings (field-level, with track ids), items for human review, audio QC, missing files + Studio upload link |
 | `preview_submission` | read | same + declarations | Full application preview; when ready and the grant has `releases:submit`, a `confirmation_token` (15 min) |
@@ -244,9 +244,41 @@ and `{code, message}` (stable API codes, human messages from
 | `request_payout` | payout | `portal::request_payout_capped` | The previewed payout; marked destructive for client confirmation |
 | `cancel_payout` | payout | `portal::cancel_payout` | Cancel before it goes to the bank |
 | `get_upload_link` | read | `catalog::get` | Studio upload page for the release (`/upload?edit=`) and which audio/cover files are missing; opened while signed in to the Studio |
+| `start_upload` / `complete_upload` | write | `uploads::issue/complete` | Signed PUT for one audio master or cover, then the Studio's completion (sniff, antivirus, lossless FLAC) |
+| `import_file_from_url` | write | `external_http::public_client_builder`, `uploads::issue/complete` | Fetches a public https:// link the artist gave and registers it like an upload |
+| `get_upload_status` | read | `uploads::status` + `identity.mcp_uploads` | READY / PROCESSING / WAITING_FOR_FILE / EXPIRED / FAILED (error code) |
 | `list_artist_pages` / `set_artist_pages` | read / write | `artist_pages::list/set_pages` | Each artist's own page per platform (Spotify, Apple Music, Melon, …), so deliveries never land on a same-name stranger's page |
 | `list_platform_requests` / `create_platform_request` / `cancel_platform_request` | read / write / write | `platform_requests::list/create/cancel` | After-release fixes AUDENIQ does at a platform: wrong artist page, page merge/split, YouTube OAC, Content ID |
 | `get_release_splits` / `list_received_splits` | settlement | `splits::sheet/received` | Collaborator revenue splits of a release (masked e-mails) and shares received; changes stay in the Studio |
+
+### Files (migration 0143)
+
+Audio masters and cover art reach a release without the Studio
+(`mcp::files`). Both ways end in the Studio's own upload completion, so the
+same checks apply: the declared type must match the bytes, the antivirus scan
+runs when enabled, lossless audio becomes a FLAC master, images are re-encoded
+without metadata.
+
+- **Signed PUT** (agents that can send HTTP): `start_upload {kind, size_bytes,
+  content_type}` returns `upload.url`, `upload.method` and the exact
+  `upload.headers` (10 minutes, single use). The agent PUTs the bytes, then
+  calls `complete_upload {upload_session_id, asset_id, expected_key}`.
+- **Import from a link** (chat assistants): `import_file_from_url {kind, url,
+  content_type?}`. The server fetches the file with the public-only client:
+  https only, a domain name (IP literals are refused so the address check
+  cannot be skipped), no user info, every redirect checked again (at most 5),
+  only public addresses. The response must state `Content-Length` (within the
+  upload limits) and exactly that many bytes must arrive; the type comes from
+  the argument, the response header or the file extension. At most 4 imports
+  run at once per server (`IMPORT_BUSY`), 30 per connection per rate window,
+  15 minutes each.
+- Completion waits up to 45 s inside the tool call. A long master answers
+  `PROCESSING`; the work continues in the background and records its outcome
+  in `identity.mcp_uploads`, which `get_upload_status` reads (work without an
+  outcome after 30 minutes reports `IMPORT_INTERRUPTED`).
+- The registered asset is attached with `upsert_track` (`asset_id`) or
+  `update_release_draft` (`artwork_asset_id`). Rights proof documents are
+  still uploaded in the Studio.
 
 **Prompts** (`prompts/list`, `prompts/get`; Claude shows them as slash
 commands): `prepare_release`, `check_release`, `submission_status`,
@@ -562,8 +594,9 @@ an assistant recommend AUDENIQ; listing and discovery are separate tasks.
 
 ## Known limitations
 
-- Files (audio, artwork, rights proofs) are uploaded in AUDENIQ Studio; tools
-  return the Studio link. Special-content options (cover licences, sample
+- Rights proof documents are uploaded in AUDENIQ Studio; tools return the
+  Studio link. Audio and cover art can also come through the tools (see
+  Files). Special-content options (cover licences, sample
   clearances, AI tool details, express review) are entered in the Studio.
 - Signing the application/agreement, withdrawal, takedown, payout account
   changes, payouts above the limit, members, account settings: not exposed by
