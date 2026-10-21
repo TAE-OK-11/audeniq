@@ -187,7 +187,7 @@ fn insufficient_scope(s: &AppState, id: &Value, scope: &str) -> Response {
         id,
         -32003,
         &format!(
-            "This connection was not given the '{scope}' permission. Reconnect AUDENIQ and allow it on the consent screen."
+            "This connection was not given the '{scope}' permission. Ask the artist for it with request_permission (they approve in AUDENIQ Studio), or reconnect AUDENIQ and allow it on the consent screen."
         ),
         Some(json!({"required_scope": scope})),
     );
@@ -525,7 +525,7 @@ async fn serve(s: AppState, h: HeaderMap, body: Bytes, endpoint: Endpoint) -> Re
                     Err(BearerError::Api(e)) => return server_error(&id, e),
                 },
             };
-            if !principal.has(def.scope) {
+            if !tools::permitted(def, &principal) {
                 return insufficient_scope(&s, &id, def.scope);
             }
             let result = Box::pin(tools::call(&s, &principal, def, args)).await;
