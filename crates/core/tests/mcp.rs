@@ -261,6 +261,22 @@ async fn rpc(
     method: &str,
     params: Value,
 ) -> (StatusCode, axum::http::HeaderMap, Value) {
+    // Without a token: the public endpoint (the account one answers 401).
+    let path = if token.is_some() {
+        "/api/mcp"
+    } else {
+        "/api/mcp/public"
+    };
+    rpc_at(app, path, token, method, params).await
+}
+
+async fn rpc_at(
+    app: &Router,
+    path: &str,
+    token: Option<&str>,
+    method: &str,
+    params: Value,
+) -> (StatusCode, axum::http::HeaderMap, Value) {
     let auth = token.map(|t| format!("Bearer {t}"));
     let mut headers = vec![
         ("content-type", "application/json"),
@@ -273,7 +289,7 @@ async fn rpc(
     let (s, h, body) = raw(
         app,
         "POST",
-        "/api/mcp",
+        path,
         &headers,
         json!({"jsonrpc":"2.0","id":7,"method":method,"params":params}).to_string(),
     )
@@ -359,7 +375,32 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
     .await;
     assert_eq!(s, StatusCode::OK);
     assert_eq!(v["result"]["protocolVersion"], "2025-11-25");
+    // The public endpoint lists only the tools that need no account; the
+    // account endpoint lists them all, and answers nothing without a token.
     let (s, _, v) = rpc(&app, None, "tools/list", json!({})).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(v["result"]["tools"].as_array().unwrap().len(), 4);
+    let (s, h, _) = rpc_at(&app, "/api/mcp", None, "tools/list", json!({})).await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+    assert!(h.contains_key("www-authenticate"));
+    let (s, _, v) = rpc_at(
+        &app,
+        "/api/mcp/public",
+        None,
+        "tools/call",
+        json!({"name":"get_account_context","arguments":{}}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("needs an AUDENIQ account")
+    );
+    let owner = user(&app).await;
+    let c = connect(&app, &owner, &[]).await;
+    let (s, _, v) = rpc(&app, Some(&c.access), "tools/list", json!({})).await;
     assert_eq!(s, StatusCode::OK);
     let tools = v["result"]["tools"].as_array().unwrap();
     assert_eq!(tools.len(), 46);
@@ -416,7 +457,7 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
         let app = app.clone();
         async move {
             let h: Vec<(&str, &str)> = headers.iter().map(|(k, v)| (*k, v.as_str())).collect();
-            let (s, _, b) = raw(&app, "POST", "/api/mcp", &h, body).await;
+            let (s, _, b) = raw(&app, "POST", "/api/mcp/public", &h, body).await;
             (s, serde_json::from_str::<Value>(&b).unwrap_or(Value::Null))
         }
     };
@@ -466,10 +507,20 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
 
     // Older SDK clients: 2024-11-05 negotiates as itself and is accepted in
     // the header; the endpoint also answers with a trailing slash.
-    let (s, _, b) = raw(
+    let (s, h, _) = raw(
         &app,
         "POST",
         "/api/mcp/",
+        &[("content-type", "application/json")],
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"old","version":"1"}}}).to_string(),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+    assert!(h.contains_key("www-authenticate"));
+    let (s, _, b) = raw(
+        &app,
+        "POST",
+        "/api/mcp/public",
         &[("content-type", "application/json")],
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"old","version":"1"}}}).to_string(),
     )
@@ -482,7 +533,7 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
     let (s, _, b) = raw(
         &app,
         "POST",
-        "/api/mcp",
+        "/api/mcp/public",
         &[
             ("content-type", "application/json"),
             ("mcp-protocol-version", "2024-11-05"),
@@ -558,8 +609,9 @@ async fn tools_require_a_valid_token_and_logout_everywhere_revokes_it(pool: PgPo
     let (app, _) = app(pool.clone()).await;
     let u = user(&app).await;
     let c = connect(&app, &u, &["scope_write"]).await;
-    let (s, h, v) = rpc(
+    let (s, h, v) = rpc_at(
         &app,
+        "/api/mcp",
         None,
         "tools/call",
         json!({"name":"get_account_context","arguments":{}}),
@@ -2695,7 +2747,7 @@ async fn anon_tool(
     let (s, h, body) = raw(
         app,
         "POST",
-        "/api/mcp",
+        "/api/mcp/public",
         &[
             ("content-type", "application/json"),
             ("accept", "application/json, text/event-stream"),
@@ -2760,9 +2812,16 @@ async fn public_tools_need_no_account_within_daily_limits(pool: PgPool) {
     assert_eq!(v["result"]["structuredContent"]["items"], json!([]));
     let (_, _, v) = anon_tool(&app, ip, "get_release_requirements", json!({})).await;
     assert_eq!(v["result"]["isError"], false);
-    // Other tools still need an account.
-    let (s, _, _) = anon_tool(&app, ip, "list_releases", json!({})).await;
-    assert_eq!(s, StatusCode::UNAUTHORIZED);
+    // Other tools still need an account (the public endpoint points to it).
+    let (s, _, v) = anon_tool(&app, ip, "list_releases", json!({})).await;
+    assert_eq!(s, StatusCode::OK);
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains(&format!("connect {ORIGIN}/api/mcp")),
+        "{v}"
+    );
 
     // Without an account nothing is counted: no daily cap.
     for _ in 0..30 {
@@ -2903,7 +2962,9 @@ async fn token_endpoint_limits_only_failures_and_answers_in_oauth_shape(pool: Pg
 #[sqlx::test]
 async fn submit_release_is_marked_destructive(pool: PgPool) {
     let (app, _) = app(pool).await;
-    let (_, _, v) = rpc(&app, None, "tools/list", json!({})).await;
+    let u = user(&app).await;
+    let c = connect(&app, &u, &[]).await;
+    let (_, _, v) = rpc(&app, Some(&c.access), "tools/list", json!({})).await;
     let submit = v["result"]["tools"]
         .as_array()
         .unwrap()
@@ -3138,7 +3199,7 @@ async fn activity_notices_retry_safe_creates_and_studio_approval(pool: PgPool) {
     .await
     .unwrap();
     assert_eq!(drafts, 1);
-    let (_, _, v) = rpc(&app, None, "tools/list", json!({})).await;
+    let (_, _, v) = rpc(&app, Some(&c.access), "tools/list", json!({})).await;
     let create = v["result"]["tools"]
         .as_array()
         .unwrap()

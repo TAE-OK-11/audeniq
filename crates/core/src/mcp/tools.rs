@@ -573,9 +573,11 @@ pub fn find(name: &str) -> Option<&'static ToolDef> {
     defs().iter().find(|d| d.name == name)
 }
 
-pub fn list_json() -> Vec<Value> {
+/// Tool listing; `public_only` for the endpoint without an account.
+pub fn list_json(public_only: bool) -> Vec<Value> {
     defs()
         .iter()
+        .filter(|d| !public_only || d.public())
         .map(|d| {
             let security = if d.public() {
                 json!([{"type":"noauth"}, {"type":"oauth2","scopes":[d.scope]}])
