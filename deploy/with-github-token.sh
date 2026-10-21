@@ -1,7 +1,7 @@
 #!/bin/sh
-# Run a command that fetches the private AUDENIQ engine repositories
-# (audeniq-qc, audeniq-photo). With the BuildKit secret `github_token` (CI:
-# AUDENIQ_GITHUB_TOKEN, a read-only token for those repositories) git asks a
+# Run a command that fetches the AUDENIQ engine repository (audeniq-media,
+# which builds audeniq-music). With the BuildKit secret `github_token` (CI:
+# AUDENIQ_GITHUB_TOKEN, a read-only token for that repository) git asks a
 # credential helper that reads the secret file at fetch time: the token is
 # never written to a layer, and the helper's config lives in a temporary HOME
 # removed afterwards. Without the secret the command runs unchanged.

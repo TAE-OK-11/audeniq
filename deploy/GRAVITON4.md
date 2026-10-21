@@ -42,7 +42,7 @@ Cargo의 target triple을 명시해 빌드 스크립트와 proc macro는 러너�
 CPU로 컴파일한다. Graviton4가 아닌 ARM 러너에서도 최적화 코드를 빌드할 수 있다.
 
 기존 RustFFT의 기본 NEON 기능과 `FftPlanner`를 유지한다. FFT 알고리즘,
-저장 지문 포맷, QC 임계값을 변경하지 않는다. 미디어 처리는 `audeniq-qc`가 맡으며
+저장 지문 포맷, QC 임계값을 변경하지 않는다. 미디어 처리는 `audeniq-music`이 맡으며
 같은 `TARGET_CPU`로 빌드되고, AVX2/NEON 커널은 실행 시 CPU 검출로 선택한다.
 
 참고: [AWS Rust/LSE 가이드](https://github.com/aws/aws-graviton-getting-started/blob/main/rust.md),
@@ -76,7 +76,7 @@ AUDENIQ_AUDIO_PARSER_MEMORY_MIB=768
 슬롯(1–8)이다. 빈 값은 사용 가능한 CPU 수를 사용한다. 앨범별 병렬 처리를
 늘려도 프로세스 전체 슬롯을 공유하므로 디코더가 무제한으로 늘지 않는다.
 `QUEUE_QC_CONCURRENCY`는 동시에 처리할 큐 작업 수이며 미디어 슬롯과 구분한다.
-`WORKER_MAX_IN_FLIGHT`는 QC 이외의 큐 작업까지 포함한다. audeniq-qc 작업은
+`WORKER_MAX_IN_FLIGHT`는 QC 이외의 큐 작업까지 포함한다. audeniq-music qc 작업은
 단일 스레드이며, 서로 다른 음원 작업을 병렬 실행한다.
 parser의 주소 공간 상한은 RAM/RSS와 다르다.
 

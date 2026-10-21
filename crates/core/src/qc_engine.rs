@@ -1,5 +1,5 @@
-//! AUDENIQ's own lossless audio engine (`audeniq-qc`), run as a sandboxed
-//! child process. It replaces FFmpeg/FFprobe for every production media path:
+//! AUDENIQ's own lossless audio engine (`audeniq-music qc`), run as a
+//! sandboxed child process. It replaces FFmpeg/FFprobe for every production media path:
 //! probing, lossless FLAC normalization, the Stage 1 QC decode with its
 //! fingerprint windows, cover-image probing and the audio tag fallback.
 //!
@@ -7,7 +7,7 @@
 //! parsed only inside [`crate::parser_sandbox::restrict_audio`] (Landlock,
 //! seccomp, cleared environment, RLIMIT_AS), with the parent enforcing the
 //! wall deadline, kill/reap and bounded output. Integration contract:
-//! <https://github.com/TAE-OK-11/audeniq-qc/blob/main/docs/INTEGRATION.md>.
+//! <https://github.com/TAE-OK-11/audeniq-media/blob/main/docs/audio/INTEGRATION.md>.
 use serde::Deserialize;
 use std::{
     io::Read,
@@ -31,9 +31,12 @@ const SMALL_REPORT_MAX: u64 = 1024 * 1024;
 const ANALYSIS_REPORT_MAX: u64 = 32 * 1024 * 1024;
 const STDERR_MAX: u64 = 4096;
 
-/// Engine executable: `AUDENIQ_QC_BIN`, else `audeniq-qc` on PATH.
+/// The AUDENIQ media engine executable (`audeniq-music`, built at the commit
+/// pinned in deploy/audeniq-music.rev): audio commands run as
+/// `audeniq-music qc ...`, image/PDF commands as `audeniq-music photo ...`
+/// ([`crate::photo`]). The sandbox replaces `PATH`, so the default is absolute.
 pub fn bin() -> String {
-    std::env::var("AUDENIQ_QC_BIN").unwrap_or_else(|_| "audeniq-qc".into())
+    std::env::var("AUDENIQ_MUSIC_BIN").unwrap_or_else(|_| "/usr/local/bin/audeniq-music".into())
 }
 
 /// Why the engine refused the input (its stable `error` code).
@@ -184,6 +187,7 @@ fn run_bin(
     // The engine checks its own deadline between packets; the parent still
     // enforces the wall clock and kills a stuck child.
     command
+        .arg("qc")
         .arg("--timeout-secs")
         .arg(timeout.as_secs().clamp(1, 3600).to_string())
         .args(args);
@@ -339,7 +343,7 @@ fn check_versions(
         tracing::error!(
             metric,
             resampler,
-            "audeniq-qc engine version does not match the QC rule/fingerprint version"
+            "audeniq-music qc engine version does not match the QC rule/fingerprint version"
         );
         return Err(EngineError::Unavailable);
     }

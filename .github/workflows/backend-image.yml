@@ -17,8 +17,9 @@ on:
       - deploy/build-target.sh
       - deploy/check-cpu.sh
       - deploy/deploy.sh
-      - deploy/audeniq-photo.rev
-      - deploy/install-audeniq-photo.sh
+      - deploy/audeniq-music.rev
+      - deploy/install-audeniq-music.sh
+      - deploy/with-github-token.sh
       - deploy/clamd.conf
       - deploy/freshclam.conf
       - deploy/pgbouncer/**
@@ -127,14 +128,14 @@ jobs:
           test "$(docker image inspect --format '{{.Architecture}}' "$REF")" = "$ARCH"
           docker run --rm --entrypoint sh -e EXPECTED_ARCH="$ARCH" -e EXPECTED_CPU="$CPU" "$REF" -c '
             set -e
-            for b in audeniq-api audeniq-worker audeniq-migrate audeniq-admin audeniq-secrets audeniq-qc audeniq-photo sftp xmllint clamd; do command -v "$b"; done
+            for b in audeniq-api audeniq-worker audeniq-migrate audeniq-admin audeniq-secrets audeniq-music sftp xmllint clamd; do command -v "$b"; done
             for b in exiftool tesseract zbarimg pdftoppm python3; do if command -v "$b"; then echo "$b must not ship in the runtime image"; exit 1; fi; done
             if command -v ffmpeg; then echo "ffmpeg must not ship in the runtime image"; exit 1; fi
             test "$(cat /usr/local/share/audeniq/target-arch)" = "$EXPECTED_ARCH"
             test "$(cat /usr/local/share/audeniq/target-cpu)" = "$EXPECTED_CPU"
             test "$(id -u)" = 10001
-            audeniq-qc capabilities
-            audeniq-photo --version'
+            audeniq-music qc capabilities
+            audeniq-music photo --version'
       - name: Verify portable binary execution and parser sandbox on native CPU
         if: matrix.variant == 'amd64' || matrix.variant == 'arm64'
         env:

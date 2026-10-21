@@ -144,5 +144,5 @@ Graviton4에서는 같은 입력·같은 자원 제한으로 공용 ARM 빌드�
 
 검증: `cargo clippy -p audeniq-core --all-targets -D warnings`, lib 테스트 238개,
 `foundation`·`distribution`·`portal`·`partner_onboarding`·`stage2`·
-`sandbox_regressions` 통합 테스트(PostgreSQL, audeniq-qc/photo 포함)를 변경 전후로
+`sandbox_regressions` 통합 테스트(PostgreSQL, audeniq-music 포함)를 변경 전후로
 돌려 실패 목록이 동일함(ClamAV가 필요한 업로드 VERIFIED 테스트만 이 환경에서 실패)을 확인했다.

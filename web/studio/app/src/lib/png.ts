@@ -1,4 +1,4 @@
-// 전자서명 PNG — 서버(audeniq-photo validate_signature)는 IHDR·IDAT·IEND와 몇 가지 정적 청크만
+// 전자서명 PNG — 서버(audeniq-music photo, validate_signature)는 IHDR·IDAT·IEND와 몇 가지 정적 청크만
 // 받는다. 브라우저 인코더는 iCCP·iDOT·eXIf 같은 청크를 붙이기도 해서(iOS Safari 등) 같은 서명이
 // 기기에 따라 SIGNATURE_INVALID가 됐다. 그래서 픽셀로 직접 최소 PNG를 만들고, 그럴 수 없으면
 // 허용되지 않는 부가 청크만 떼어 낸다.

@@ -315,8 +315,9 @@ async fn scan_on(path: &Path, expected_size: u64, socket: &Path) -> Result<()> {
     .map_err(|_| Error::UploadBusy)?
 }
 
-/// Rasterize PDFs / decode and re-encode images with audeniq-photo. Each child
-/// cannot read secrets, make network connections or write outside its outputs.
+/// Rasterize PDFs / decode and re-encode images with `audeniq-music photo`.
+/// Each child cannot read secrets, make network connections or write outside
+/// its outputs.
 pub fn sanitize(src: &Path, dst: &Path, mime: &str, workspace: &Path) -> Result<()> {
     let deadline = std::time::Instant::now() + Duration::from_secs(120);
     if mime == "application/pdf" {
