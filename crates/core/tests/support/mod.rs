@@ -376,27 +376,80 @@ pub fn cover_png() -> &'static [u8] {
 #[derive(Default)]
 pub struct MemStore {
     pub files: Mutex<BTreeMap<String, (Vec<u8>, String)>>,
+    /// Upload nonce of objects written through a signed PUT or `put_file`.
+    pub nonces: Mutex<BTreeMap<String, String>>,
     pub get_calls: AtomicUsize,
+}
+impl MemStore {
+    /// What a client's PUT to a [`UploadGrant`] stores.
+    pub async fn put_signed(&self, grant: &serde_json::Value, key: &str, bytes: &[u8]) {
+        let h = &grant["headers"];
+        self.files.lock().await.insert(
+            key.to_owned(),
+            (
+                bytes.to_vec(),
+                h["content-type"].as_str().unwrap().to_owned(),
+            ),
+        );
+        self.nonces.lock().await.insert(
+            key.to_owned(),
+            h["x-amz-meta-upload-nonce"].as_str().unwrap().to_owned(),
+        );
+    }
 }
 #[async_trait]
 impl ObjectStore for MemStore {
     async fn presign_put(
         &self,
-        _key: &str,
-        _size: i64,
-        _mime: &str,
-        _nonce: &str,
-        _expires: DateTime<Utc>,
+        key: &str,
+        size: i64,
+        mime: &str,
+        nonce: &str,
+        expires: DateTime<Utc>,
     ) -> Result<UploadGrant> {
-        Err(Error::Storage)
+        Ok(UploadGrant {
+            url: format!("https://store.invalid/{key}"),
+            method: "PUT",
+            headers: BTreeMap::from([
+                ("content-length".into(), size.to_string()),
+                ("content-type".into(), mime.into()),
+                ("x-amz-meta-upload-nonce".into(), nonce.into()),
+            ]),
+            expires_at: expires,
+        })
     }
     async fn head(&self, key: &str) -> Result<Option<ObjectMeta>> {
+        let nonce = self
+            .nonces
+            .lock()
+            .await
+            .get(key)
+            .cloned()
+            .unwrap_or_default();
         Ok(self.files.lock().await.get(key).map(|(b, ct)| ObjectMeta {
             size: b.len() as i64,
             content_type: ct.clone(),
-            nonce: String::new(),
+            nonce,
             etag: String::new(),
         }))
+    }
+    async fn put_file(
+        &self,
+        key: &str,
+        path: &std::path::Path,
+        mime: &str,
+        nonce: &str,
+    ) -> Result<()> {
+        let bytes = std::fs::read(path).map_err(|_| Error::Storage)?;
+        self.files
+            .lock()
+            .await
+            .insert(key.to_owned(), (bytes, mime.to_owned()));
+        self.nonces
+            .lock()
+            .await
+            .insert(key.to_owned(), nonce.to_owned());
+        Ok(())
     }
     async fn freeze(&self, _source: &str, _target: &str, _etag: &str) -> Result<()> {
         Err(Error::Storage)
