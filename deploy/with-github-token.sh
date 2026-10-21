@@ -10,6 +10,8 @@ secret=${GITHUB_TOKEN_FILE:-/run/secrets/github_token}
 if [ ! -s "$secret" ]; then
   exec "$@"
 fi
+# The temporary HOME must not move the toolchain: keep rustup/cargo where they are.
+export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
 home=$(mktemp -d)
 trap 'rm -rf "$home"' EXIT
 cat > "$home/.gitconfig" <<EOF

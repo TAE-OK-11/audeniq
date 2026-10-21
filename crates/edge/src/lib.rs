@@ -176,6 +176,8 @@ fn is_mcp_client_call(method: &Method, path: &str) -> bool {
         && matches!(
             path,
             "/api/mcp"
+                | "/api/mcp/"
+                | "/api/mcp/public"
                 | "/api/oauth/token"
                 | "/api/oauth/register"
                 | "/api/oauth/revoke"

@@ -140,7 +140,7 @@ const FORWARD_HEADERS = ['cookie', 'origin', 'content-type', 'accept', 'x-csrf-t
 const PARTNER_HOOK = /^\/api\/partner-hooks\//;
 // AI 어시스턴트(MCP, crates/core/src/mcp)의 서버 간 호출: 이 경로에만 Authorization(베어러 토큰·클라이언트 인증)과
 // MCP 요청 메타데이터 헤더를 넘긴다. 그 밖의 /api는 지금처럼 쿠키만 쓴다.
-const MCP_CLIENT_PATHS = new Set(['/api/mcp', '/api/oauth/token', '/api/oauth/register', '/api/oauth/revoke', '/api/oauth/device_authorization']);
+const MCP_CLIENT_PATHS = new Set(['/api/mcp', '/api/mcp/', '/api/mcp/public', '/api/oauth/token', '/api/oauth/register', '/api/oauth/revoke', '/api/oauth/device_authorization']);
 const MCP_HEADERS = ['authorization', 'mcp-protocol-version', 'mcp-method', 'mcp-name'];
 /** OAuth 발견 문서 (RFC 8414·9728): 사이트 루트의 /.well-known에 있어야 하고 백엔드가 답한다 */
 export const MCP_DISCOVERY_PATHS = new Set([

@@ -13,7 +13,7 @@ directory, not verified with a real ChatGPT or Claude client.**
 
 ```
 AI client ──HTTPS──▶ audeniq-studio Worker (web/studio) ──tunnel + service secret──▶ audeniq-api
-  POST /api/mcp                 forwards Authorization + MCP headers           crate::mcp::protocol  (JSON-RPC)
+  POST /api/mcp[/|/public]      forwards Authorization + MCP headers           crate::mcp::protocol  (JSON-RPC)
   /api/oauth/*                  only for these paths; no Origin needed         crate::mcp::oauth     (authorization server)
   /.well-known/oauth-*          for server-to-server calls                     crate::mcp::tools     (tool handlers)
                                                                                     │ Actor (user, party) + token's org
@@ -76,7 +76,12 @@ permissions. `releases:submit` is never pre-selected. Approval redirects with
 `code`, `state` and `iss`.
 
 - **Clients.** Client ID Metadata Documents are fetched only from hosts in
-  `AUDENIQ_MCP_CIMD_HOSTS` (default `chatgpt.com,claude.ai`; HTTPS, no port,
+  `AUDENIQ_MCP_CIMD_HOSTS` (default `*`: any host, since the server advertises
+  `client_id_metadata_document_supported` and a client that sees it uses a URL
+  client id instead of DCR; entries can narrow it to hosts or exact document
+  URLs). Fetches go to public addresses only (DNS answers that are loopback,
+  private, link-local, CGNAT or reserved are dropped before connecting; no
+  address literals, no proxy; HTTPS, no port,
   5 s timeout, 64 KiB, no redirects, re-fetched after 24 h, cached copy used up
   to 7 days when the host is down). The document's `client_id` must equal its
   URL and it must allow `none` authentication. DCR clients get a random
@@ -123,12 +128,24 @@ agent cannot use the browser redirect), `audeniq-admin --operator NAME
 mcp-client disable CLIENT_ID` (ends all of its connections). Changes are
 audited as `mcp.client_registered` / `mcp.client_disabled` with the operator.
 
+### Two endpoints
+
+- `POST /api/mcp` (also `/api/mcp/`): the account endpoint, the URL to add as
+  a connector. Every request but `server/discover` needs a token; without one
+  (including `initialize` and `tools/list`) it answers `401` with
+  `WWW-Authenticate: Bearer resource_metadata=…`, which is what makes Grok,
+  Manus, Cursor, VS Code, ChatGPT and Claude start OAuth when they connect
+  (most clients only do so on a 401, never mid-session).
+- `POST /api/mcp/public`: no account. `tools/list` shows only the public tools
+  below; any other tool answers a JSON-RPC error naming `/api/mcp`.
+
 ### Public tools (no account)
 
 `get_release_requirements`, `list_announcements`, `get_announcement` (published
 notices and events, as on `/api/notices` and `/api/events`) and
-`get_service_status` (maintenance, as on `/api/status`) need no token. Their
-`securitySchemes` list `noauth` first, then `oauth2`.
+`get_service_status` (maintenance, as on `/api/status`) need no token on
+`/api/mcp/public` (on `/api/mcp` they are called with the connection's token
+like the rest). Their `securitySchemes` list `noauth` first, then `oauth2`.
 
 | Caller | Daily limit (KST day) | Over the limit |
 |---|---|---|
@@ -386,7 +403,7 @@ requests about language, tone and format come first; otherwise:
 | Variable | Default | |
 |---|---|---|
 | `AUDENIQ_MCP_ENABLED` | `false` | Everything above answers 404 when off |
-| `AUDENIQ_MCP_CIMD_HOSTS` | `chatgpt.com,claude.ai` | Hosts whose client metadata documents may be fetched |
+| `AUDENIQ_MCP_CIMD_HOSTS` | `*` | Hosts (or exact document URLs, or `*` for any public host) whose client metadata documents may be fetched |
 | `AUDENIQ_MCP_DYNAMIC_REGISTRATION` | `true` | RFC 7591 endpoint |
 | `AUDENIQ_MCP_PUBLIC_DAILY_USER` | `150` | Public tools per signed-in user per day (per-user override: `mcp-limit`) |
 | `AUDENIQ_MCP_PAYOUT_LIMIT_KRW` | `300000` | Assistant payout limit per request and per 24 h; `0` = off |
@@ -433,8 +450,9 @@ Turning it on in production (after the deploy above):
    the API reads it.
 3. Check: `curl https://studio.audeniq.com/.well-known/oauth-authorization-server`
    returns JSON with `"issuer": "https://studio.audeniq.com"`, and
-   `curl -X POST https://studio.audeniq.com/api/mcp -H 'content-type: application/json'
-   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'` lists 13 tools.
+   `curl -X POST https://studio.audeniq.com/api/mcp/public -H 'content-type: application/json'
+   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'` lists the 4 public tools, and the
+   same request to `/api/mcp` answers 401 with a `WWW-Authenticate` challenge.
 4. Add `https://studio.audeniq.com/api/mcp` as a connector in ChatGPT
    (developer mode) or Claude and connect with a test account.
 
@@ -499,8 +517,14 @@ requirements. Claude Code / desktop clients with loopback redirect URIs work
 via DCR.
 
 **Other MCP clients.** Any client implementing MCP authorization (PRM
-discovery, PKCE, DCR or CIMD from an allowlisted host) can connect. To accept
-another CIMD host, add it to `AUDENIQ_MCP_CIMD_HOSTS`.
+discovery, PKCE, DCR or CIMD) can connect: Grok, Manus and other clients that
+prefer CIMD use their own metadata URL, and older SDK clients may speak
+`2024-11-05`. A missing token gets `401` with
+`WWW-Authenticate: Bearer resource_metadata=…, scope="releases:read releases:write"`
+(no `error`, so clients start authorization); an expired or revoked one adds
+`error="invalid_token"`. Unknown `/.well-known/*` paths (e.g.
+`openid-configuration`) are a JSON 404, never the Studio page. To limit CIMD
+to known clients, list them in `AUDENIQ_MCP_CIMD_HOSTS`.
 
 Implementing MCP does not publish an app, guarantee directory approval, or make
 an assistant recommend AUDENIQ; listing and discovery are separate tasks.

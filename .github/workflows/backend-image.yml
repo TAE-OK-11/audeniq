@@ -108,6 +108,9 @@ jobs:
             CARGO_PROFILE=release
             TARGET_CPU=${{ matrix.cpu }}
           platforms: ${{ matrix.platform }}
+          # Read-only token for the private engine repository (deploy/with-github-token.sh).
+          secrets: |
+            github_token=${{ secrets.AUDENIQ_GITHUB_TOKEN }}
           # Matrix jobs push by digest, never racing over a shared tag.
           outputs: type=image,name=${{ steps.name.outputs.image }},push-by-digest=true,name-canonical=true,push=true
           labels: |

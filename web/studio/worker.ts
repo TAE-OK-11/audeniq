@@ -26,6 +26,16 @@ const studioWorker = {
     if (MCP_DISCOVERY_PATHS.has(url.pathname) && ['GET', 'HEAD'].includes(request.method)) {
       return proxyToBackend(request, env, { site: 'studio' });
     }
+    if (url.pathname.startsWith('/.well-known/')) {
+      // 정적 에셋 설정(not_found_handling: single-page-application)은 없는 파일에도 화면 HTML을 200으로 준다.
+      // AI 클라이언트가 찾아보는 다른 발견 문서(openid-configuration, 경로를 붙인 주소 등)가 HTML을 받으면
+      // 404로 넘어가지 못하고 연결에 실패하므로, 실제 파일이 아니면 JSON 404로 답한다.
+      const res = await serveAssets(request, env);
+      if (res.status === 404 || res.headers.get('content-type')?.startsWith('text/html')) {
+        return Response.json({ error: { code: 'NOT_FOUND' } }, { status: 404, headers: { 'Cache-Control': 'no-store' } });
+      }
+      return res;
+    }
     // 그 외는 정적 에셋 (없는 화면 경로는 index.html로 SPA 폴백)
     const assetRes = await serveAssets(request, env);
     if (assetRes.status === 404) {
