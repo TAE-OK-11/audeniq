@@ -235,7 +235,7 @@ and `{code, message}` (stable API codes, human messages from
 
 ### Published tools and operations
 
-`tools/list` shows 25 tools. The 81 operations below are the units of scope,
+`tools/list` shows 25 tools. The 85 operations below are the units of scope,
 schema, rate limit, audit (`mcp.<operation>`) and handler; operations of the
 same kind are published as one tool, and one argument picks the operation
 (`view` for reads, `action` or `kind` for writes). The other arguments are the
@@ -248,10 +248,10 @@ its own name.
 
 | Tool | Argument | Operations |
 |---|---|---|
-| `get_account_context` | `view`: `account` (default), `members`, `platforms`, `notifications`, `documents`, `signing_requests`, `inquiries`, `inquiry`, `artist_pages`, `platform_requests` | `get_account_context`, `list_members`, `list_distribution_platforms`, `list_notifications`, `list_documents`, `list_signing_requests`, `list_inquiries`, `get_inquiry`, `list_artist_pages`, `list_platform_requests` |
+| `get_account_context` | `view`: `account` (default), `members`, `platforms`, `notifications`, `documents`, `signing_requests`, `inquiries`, `inquiry`, `artist_pages`, `platform_requests`, `withdrawal_quota` | `get_account_context`, `list_members`, `list_distribution_platforms`, `list_notifications`, `list_documents`, `list_signing_requests`, `list_inquiries`, `get_inquiry`, `list_artist_pages`, `list_platform_requests`, `get_withdrawal_quota` |
 | `get_audeniq_info` (public) | `view`: `list` (default), `detail`, `service_status`, `requirements` | `list_announcements`, `get_announcement`, `get_service_status`, `get_release_requirements` |
 | `list_releases` | `view`: `releases` (default), `codes` | `list_releases`, `list_release_codes` |
-| `get_release` | `view`: `details` (default), `status`, `delivery`, `content_id`, `corrections`, `playlist_pitch`, `smart_link`, `smart_link_check`, `claims`, `missing_files` | `get_release`, `get_submission_status`, `get_delivery_status`, `get_content_id_status`, `get_release_corrections`, `get_playlist_pitch`, `get_smart_link`, `check_smart_link`, `list_infringement_claims`, `get_upload_link` |
+| `get_release` | `view`: `details` (default), `status`, `delivery`, `content_id`, `corrections`, `playlist_pitch`, `smart_link`, `smart_link_check`, `claims`, `missing_files`, `handover` | `get_release`, `get_submission_status`, `get_delivery_status`, `get_content_id_status`, `get_release_corrections`, `get_playlist_pitch`, `get_smart_link`, `check_smart_link`, `list_infringement_claims`, `get_upload_link`, `get_release_handover` |
 | `validate_release` | `view`: `checks` (default), `preview` | `validate_release`, `preview_submission` |
 | `get_file_status` | `view`: `upload`, `checks` | `get_upload_status`, `get_file_checks` |
 | `get_approval_status` | `kind`: `action` (default), `permission` | `get_action_request`, `get_permission_request` |
@@ -263,13 +263,13 @@ its own name.
 | `manage_artist_pages` | `action`: `links`, `platform_request` | `set_artist_pages`, `create_platform_request` |
 | `manage_inquiry` | `action`: `create`, `reply`, `close` | `create_inquiry`, `reply_inquiry`, `close_inquiry` |
 | `request_approval` | `action`: `withdrawal`, `takedown`, `split_change`, `release_end`, `contract_end`, `counter_notice`, `member_invite` | `request_release_withdrawal`, `request_takedown`, `request_split_change`, `request_release_end`, `request_contract_end`, `request_counter_notice`, `request_member_invite` |
-| `cancel_request` | `kind`: `correction`, `playlist_pitch`, `takedown`, `release_end`, `contract_end`, `platform_request`, `approval`, `submission` | `cancel_release_correction`, `withdraw_playlist_pitch`, `cancel_takedown`, `cancel_release_end`, `cancel_contract_end`, `cancel_platform_request`, `withdraw_action_request`, `withdraw_pending_submission` |
+| `cancel_request` | `kind`: `correction`, `playlist_pitch`, `takedown`, `release_end`, `contract_end`, `platform_request`, `approval`, `submission`, `signing_request` | `cancel_release_correction`, `withdraw_playlist_pitch`, `cancel_takedown`, `cancel_release_end`, `cancel_contract_end`, `cancel_platform_request`, `withdraw_action_request`, `withdraw_pending_submission`, `cancel_signing_request` |
+| `delete_release_draft` (destructive) | `action`: `draft` (default), `track` | `delete_release_draft`, `remove_track` |
 | `request_permission` | `action`: `request` (default), `withdraw` | `request_permission`, `withdraw_permission_request` |
 | `request_payout` (payout, destructive) | `action`: `small` (default), `large`, `cancel` | `request_payout`, `request_large_payout`, `cancel_payout` |
 
-The other 7 operations are published under their own name:
-`mark_notifications_read`, `delete_release_draft`,
-`attach_rights_proof`, `request_release_correction`, `resend_split_invite`,
+The other 6 operations are published under their own name:
+`mark_notifications_read`, `attach_rights_proof`, `request_release_correction`, `resend_split_invite`,
 `preview_payout` and `submit_release`. They stay separate on purpose: a
 different scope, a confirmation step that must stay its own call
 (`preview_payout` before `request_payout`, `validate_release` preview before
@@ -324,6 +324,10 @@ otherwise spread to safe operations in the same tool.
 | `resend_split_invite` | write | `splits::resend` | E-mail a collaborator's split invite again (rate limited) |
 | `export_csv` | settlement | `portal::statements_csv/reports_csv` | Statements or royalty reports as CSV text (≤ 256 KB) |
 | `delete_release_draft` | write | `catalog::archive` | Never-submitted drafts only, with `artist_confirmed` |
+| `remove_track` | write | `drafts::archive_track` | One track of an editable draft, with `artist_confirmed`; the editor's working copy follows; destructive |
+| `get_withdrawal_quota` | read | `withdraw::quota` | Withdrawals used and left this month |
+| `get_release_handover` | read | `contract_terms::handover` | Transfer to another distributor: UPC, ISRCs and platform ids as delivered |
+| `cancel_signing_request` | write | `signing::cancel` | An unsigned signing request; its link stops working |
 | `request_release_withdrawal` / `request_takedown` / `request_split_change` / `request_release_end` / `request_contract_end` / `request_counter_notice` / `request_member_invite` | write | `mcp::actions` → `withdraw`, `takedown`, `splits::save`, `contract_terms`, `infringement::counter`, `members::invite` | Filed for one Studio approval (see Actions approved once) |
 | `request_large_payout` | payout | `mcp::actions` → `portal::request_payout` | Any amount up to the balance, approved once in the Studio |
 | `get_action_request` | read | `identity.mcp_action_requests` | PENDING / DONE (result) / FAILED (error code) / REJECTED / EXPIRED / REVOKED / WITHDRAWN |

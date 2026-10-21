@@ -825,6 +825,38 @@ fn defs() -> &'static [ToolDef] {
                     "payout_id": uuid_schema("The payout request")}}),
             },
             ToolDef {
+                name: "remove_track",
+                title: "Remove a track from a draft",
+                description: "Remove one track from a draft (or a release returned for correction). Only after the artist explicitly asked to remove this track; its title, credits and audio link go with it.",
+                scope: SCOPE_WRITE, read_only: false, destructive: true, idempotent: true, widget: true,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","track_id","artist_confirmed"],"properties":{
+                    "release_id": uuid_schema("The draft"),
+                    "track_id": uuid_schema("The track to remove"),
+                    "artist_confirmed": {"type":"boolean","const":true,"description":"The artist explicitly asked to remove this track"}}}),
+            },
+            ToolDef {
+                name: "get_withdrawal_quota",
+                title: "Withdrawal quota",
+                description: "How many application withdrawals this workspace has used this month and how many remain (check before request_approval action withdrawal).",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: empty_schema,
+            },
+            ToolDef {
+                name: "get_release_handover",
+                title: "Handover to another distributor",
+                description: "For a release moving to another distributor (a scheduled or finished TRANSFER end): what the new distributor needs to deliver the same release under the same codes, i.e. the UPC and ISRCs as delivered and each platform's own id.",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: release_id_schema,
+            },
+            ToolDef {
+                name: "cancel_signing_request",
+                title: "Cancel a signing request",
+                description: "Cancel an electronic signing request that has not been signed yet (request_id from get_account_context with view signing_requests); its link stops working. Only when the artist asks.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["request_id"],"properties":{
+                    "request_id": uuid_schema("The signing request")}}),
+            },
+            ToolDef {
                 name: "withdraw_action_request",
                 title: "Withdraw an approval request",
                 description: "Take back a request this connection filed for the artist's approval (request_approval, request_payout with action large) while the artist has not answered it yet; nothing is done. Only when the artist asks, or when the request is no longer wanted. Once approved, undo the result with cancel_request instead.",
@@ -947,6 +979,7 @@ const GROUPS: &[Group] = &[
             ("inquiry", "get_inquiry"),
             ("artist_pages", "list_artist_pages"),
             ("platform_requests", "list_platform_requests"),
+            ("withdrawal_quota", "get_withdrawal_quota"),
         ],
     },
     Group {
@@ -990,6 +1023,7 @@ const GROUPS: &[Group] = &[
             ("smart_link_check", "check_smart_link"),
             ("claims", "list_infringement_claims"),
             ("missing_files", "get_upload_link"),
+            ("handover", "get_release_handover"),
         ],
     },
     Group {
@@ -1138,7 +1172,16 @@ const GROUPS: &[Group] = &[
             ("platform_request", "cancel_platform_request"),
             ("approval", "withdraw_action_request"),
             ("submission", "withdraw_pending_submission"),
+            ("signing_request", "cancel_signing_request"),
         ],
+    },
+    Group {
+        name: "delete_release_draft",
+        title: "Delete a draft or one of its tracks",
+        intro: "Deletes cannot be undone: only after the artist explicitly asked for exactly this.",
+        key: "action",
+        has_default: true,
+        ops: &[("draft", "delete_release_draft"), ("track", "remove_track")],
     },
     Group {
         name: "request_permission",
@@ -1786,7 +1829,6 @@ async fn run(
         "get_account_context" => Box::pin(account(s, p)),
         "request_permission" => Box::pin(super::approvals::request(s, p, args)),
         "get_permission_request" => Box::pin(super::approvals::status(s, p, args)),
-        "withdraw_permission_request" => Box::pin(super::approvals::withdraw(s, p, args)),
         "start_upload" => Box::pin(super::files::start(s, p, args)),
         "complete_upload" => Box::pin(super::files::complete(s, p, args)),
         "import_file_from_url" => Box::pin(super::files::import(s, p, args)),
@@ -2017,9 +2059,55 @@ async fn run(
             Box::pin(super::workspace::call(s, p, n, args))
         }
         n if super::actions::TOOLS.contains(&n) => Box::pin(super::actions::call(s, p, n, args)),
+        n if LATER_TOOLS.contains(&n) => Box::pin(later(s, p, n, args)),
         _ => return Err(tool_error("UNKNOWN_TOOL", "Unknown tool.")),
     };
     fut.await
+}
+
+/// Newer operations, answered in their own (boxed) function
+/// so the dispatch in [`run`] keeps a small stack frame in debug builds.
+const LATER_TOOLS: [&str; 5] = [
+    "withdraw_permission_request",
+    "remove_track",
+    "get_withdrawal_quota",
+    "get_release_handover",
+    "cancel_signing_request",
+];
+
+async fn later(
+    s: &AppState,
+    p: &Principal,
+    name: &str,
+    args: &Value,
+) -> std::result::Result<Value, ToolError> {
+    let (a, org) = (&p.actor, p.org);
+    match name {
+        "withdraw_permission_request" => super::approvals::withdraw(s, p, args).await,
+        "remove_track" => Box::pin(remove_track(s, a, org, args)).await,
+        "get_withdrawal_quota" => {
+            let mut v = crate::withdraw::quota(&s.pool, a, org).await?;
+            v["view"] = json!("withdrawal_quota");
+            Ok(v)
+        }
+        "get_release_handover" => {
+            let release = release_arg(args)?;
+            let mut v = Box::pin(crate::contract_terms::handover(s, a, org, release)).await?;
+            v["view"] = json!("handover");
+            v["release_id"] = json!(release);
+            Ok(v)
+        }
+        "cancel_signing_request" => {
+            let id = uuid_arg(args, "request_id")?;
+            // No client address to record: the call comes from the AI
+            // platform's servers, not the artist's browser.
+            let h = axum::http::HeaderMap::new();
+            let mut v = Box::pin(crate::signing::cancel(s, a, &h, org, id)).await?;
+            v["view"] = json!("signing_request");
+            Ok(v)
+        }
+        _ => Err(tool_error("UNKNOWN_TOOL", "Unknown tool.")),
+    }
 }
 
 fn uuid_arg(args: &Value, key: &str) -> std::result::Result<Uuid, ToolError> {
@@ -2536,10 +2624,11 @@ async fn resync(
     // Parallel track calls on one release (assistants issue them together)
     // each bump the release version; retry on the latest one a few times.
     for attempt in 0..RESYNC_ATTEMPTS {
-        let (r, names) = load(s, a, org, release).await?;
+        // Boxed: callers sit deep in the request's stack (debug builds).
+        let (r, names) = Box::pin(load(s, a, org, release)).await?;
         let mut draft = r["draft"].clone();
         sync_draft_tracks(&mut draft, &r, &names, given);
-        match write_release(s, a, org, release, &r, draft, &json!({})).await {
+        match Box::pin(write_release(s, a, org, release, &r, draft, &json!({}))).await {
             Err(Error::Conflict) if attempt + 1 < RESYNC_ATTEMPTS => {
                 backoff(attempt + 1).await;
                 continue;
@@ -2688,6 +2777,39 @@ async fn update_draft(
         ensure_artist(s, a, org, name).await?;
     }
     release_view(s, a, org, release).await
+}
+
+/// `remove_track`: the Studio's track removal on the current version (retried
+/// on parallel writes), then the editor's working copy follows.
+async fn remove_track(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    args: &Value,
+) -> std::result::Result<Value, ToolError> {
+    let release = release_arg(args)?;
+    let track = uuid_arg(args, "track_id")?;
+    for attempt in 0..RESYNC_ATTEMPTS {
+        let (r, _) = Box::pin(load(s, a, org, release)).await?;
+        if !submission::is_editable_status(r["status"].as_str().unwrap_or("")) {
+            return Err(tool_error(
+                "RELEASE_NOT_EDITABLE",
+                "This release is under review and cannot be edited. Use get_release (view status).",
+            ));
+        }
+        let version = r["row_version"].as_i64().unwrap_or(0);
+        match Box::pin(drafts::archive_track(s, a, org, release, track, version)).await {
+            Err(Error::Conflict) if attempt + 1 < RESYNC_ATTEMPTS => backoff(attempt + 1).await,
+            done => {
+                done?;
+                break;
+            }
+        }
+    }
+    Box::pin(resync_after_write(s, a, org, release, None)).await?;
+    let mut v = Box::pin(release_view(s, a, org, release)).await?;
+    v["removed_track_id"] = json!(track);
+    Ok(v)
 }
 
 async fn upsert_track(
@@ -3843,12 +3965,12 @@ mod tests {
             }
             // Moving money, submitting a release (declarations recorded
             // as the artist's) and deleting a draft (cannot be undone) are
-            // what clients must confirm with the user.
+            // what clients must confirm with the user, as is removing a track.
             assert_eq!(
                 d.destructive,
                 matches!(
                     d.name,
-                    "request_payout" | "submit_release" | "delete_release_draft"
+                    "request_payout" | "submit_release" | "delete_release_draft" | "remove_track"
                 ),
                 "{}",
                 d.name
