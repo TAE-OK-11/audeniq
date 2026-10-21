@@ -306,11 +306,13 @@ async fn decide(s: &AppState, h: &HeaderMap, id: Uuid, approve: bool) -> Result<
         return Err(Error::PolicyGate("AI_PAYOUT_SCOPE_OFF"));
     }
     let status = if approve { "APPROVED" } else { "REJECTED" };
-    sqlx::query("UPDATE identity.mcp_permission_requests SET status=$2, decided_at=now() WHERE id=$1")
-        .bind(id)
-        .bind(status)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "UPDATE identity.mcp_permission_requests SET status=$2, decided_at=now() WHERE id=$1",
+    )
+    .bind(id)
+    .bind(status)
+    .execute(&mut *tx)
+    .await?;
     let now: Vec<String> = if approve {
         sqlx::query_scalar(
             "UPDATE identity.mcp_grants SET scopes=ARRAY(SELECT DISTINCT unnest(scopes || $2::text[]) ORDER BY 1)
