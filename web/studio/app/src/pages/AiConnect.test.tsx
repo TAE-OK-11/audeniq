@@ -55,15 +55,18 @@ describe('AI app connection page', () => {
       : Promise.resolve({ kind: 'browser', status: 'APPROVED', redirect: 'https://claude.ai/cb?code=x', scopes: ['releases:read'] })));
     await render('?request=abc');
     expect(h.req.mock.calls[0][0]).toBe('/api/auth/ai-connect?request=abc');
-    expect(el.textContent).toContain('01 / 02 · 연결 확인');
+    // 한 화면에 요청한 앱·작업 공간·권한·지켜지는 것이 다 있어요
     expect(el.textContent).toContain('어데닉을 쓰려고 해요');
-    expect(el.textContent).toContain('claude.ai에서 확인된 앱이에요');
+    expect(el.textContent).toContain('claude.ai에서 확인된 앱');
     expect(el.textContent).toContain('hana@example.com');
-    await click(el.querySelectorAll('input[name=aqConnectOrg]')[1]);
-    await click(el.querySelector('#wizardNext'));
-    expect(el.textContent).toContain('02 / 02 · 권한');
     expect(el.textContent).toContain('어떤 권한을 줘도 지켜져요');
+    expect(el.querySelector('.aq-wiz-progress, .wizard-progress')).toBeNull();
+    await click(el.querySelectorAll('input[name=aqConnectOrg]')[1]);
+    // 항상 포함되는 보기 권한은 고르는 칸이 아니라 안내 한 줄
+    expect(el.querySelectorAll('.aq-option input[type=checkbox]')).toHaveLength(2);
+    expect(el.textContent).toContain('발매 정보 보기는 항상 포함돼요.');
     await click(button('보기만'));
+    expect(el.querySelector('#wizardNext')?.textContent).toBe('보기만 허용하고 연결');
     await click(el.querySelector('#wizardNext'));
     const [url, opts] = h.req.mock.calls[1];
     expect(url).toBe('/api/auth/ai-connect');
@@ -75,7 +78,6 @@ describe('AI app connection page', () => {
   it('asks once more before giving payout permission', async () => {
     h.req.mockResolvedValueOnce(details).mockResolvedValueOnce({ kind: 'browser', status: 'APPROVED', scopes: [] });
     await render('?request=abc');
-    await click(el.querySelector('#wizardNext'));
     await click(button('모두'));
     await click(el.querySelector('#wizardNext'));
     expect(h.req).toHaveBeenCalledTimes(1);
