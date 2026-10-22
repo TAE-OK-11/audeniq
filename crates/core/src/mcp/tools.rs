@@ -7,8 +7,11 @@
 //! Files go through [`super::files`]: the bytes go straight to storage (or
 //! are fetched from a public link) and take the Studio's upload completion.
 //!
-//! What is deliberately not exposed: signing the application or agreement,
-//! withdrawals, takedowns, payouts, payout accounts, members and contracts.
+//! Withdrawals, takedowns, splits, end dates, counter notices, member invites
+//! and payouts above the assistant limit are only filed here: the artist
+//! approves each once in the Studio ([`super::actions`]). Not exposed at all:
+//! signing the application or agreement, payout accounts and account
+//! settings.
 use super::{
     SCOPE_PAYOUT, SCOPE_READ, SCOPE_SETTLEMENT, SCOPE_SUBMIT, SCOPE_WRITE, oauth::Principal,
     protocol::error_code,
@@ -441,7 +444,7 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "preview_payout",
                 title: "Preview a payout",
-                description: "Quote a payout to the registered account: fee, net amount, available balance and the assistant limit. Larger amounts must be requested in AUDENIQ Studio. When the payout is allowed, returns a confirmation_token for request_payout (10 minutes, this amount and account only). Only workspace owners can request payouts.",
+                description: "Quote a payout to the registered account: fee, net amount, available balance and the assistant limit. Larger amounts go through request_payout with action large. When the payout is allowed, returns a confirmation_token for request_payout (10 minutes, this amount and account only). Only workspace owners can request payouts.",
                 scope: SCOPE_PAYOUT, read_only: true, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["amount"],"properties":{
                     "amount":{"type":"integer","minimum":1,"maximum":1000000000,"description":"Requested amount in KRW (before the fee)"}}}),
@@ -466,7 +469,7 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "start_upload",
                 title: "Start a file upload",
-                description: "Get a signed URL to upload one audio master or cover image directly (for agents that can send HTTP requests with a file body). PUT the bytes to the returned url with exactly its headers within 10 minutes, then call upload_file with action complete. Audio: WAV, FLAC, AIFF, ALAC (.m4a), WavPack or TTA up to 512 MiB; cover: square JPG or PNG up to 20 MiB (see get_audeniq_info with view requirements). When you only have a link to the file, use action import instead.",
+                description: "Get a signed URL to upload one audio master, cover image or rights proof directly (for agents that can send HTTP requests with a file body). PUT the bytes to the returned url with exactly its headers within 10 minutes, then call upload_file with action complete. Audio: WAV, FLAC, AIFF, ALAC (.m4a), WavPack or TTA up to 512 MiB; cover: square JPG or PNG up to 20 MiB (see get_audeniq_info with view requirements). When you only have a link to the file, use action import instead.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: false, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["kind","size_bytes","content_type"],"properties":{
                     "kind": {"type":"string","enum":["AUDIO","IMAGE","DOCUMENT"],"description":"AUDIO for a track master, IMAGE for cover art, DOCUMENT for a rights proof (PDF, JPG or PNG; attach with attach_rights_proof)"},
@@ -486,7 +489,7 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "import_file_from_url",
                 title: "Import a file from a link",
-                description: "Fetch an audio master or cover image from a public https:// download link the artist gave you (cloud drive share link set to anyone with the link, file host) and register it like an upload. Use only links the artist provided. The link must lead straight to the file and report its size. Returns state READY with the asset_id to attach, or PROCESSING: then poll get_file_status (view upload).",
+                description: "Fetch an audio master, cover image or rights proof from a public https:// download link the artist gave you (cloud drive share link set to anyone with the link, file host) and register it like an upload. Use only links the artist provided. The link must lead straight to the file and report its size. Returns state READY with the asset_id to attach, or PROCESSING: then poll get_file_status (view upload).",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: false, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["kind","url"],"properties":{
                     "kind": {"type":"string","enum":["AUDIO","IMAGE","DOCUMENT"],"description":"AUDIO for a track master, IMAGE for cover art, DOCUMENT for a rights proof (PDF, JPG or PNG; attach with attach_rights_proof)"},
@@ -805,7 +808,7 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "get_release_splits",
                 title: "Revenue splits of a release",
-                description: "Per track, the collaborators who share its net royalty, their percentage (share_bps / 100), whether they accepted, and what was held or transferred to them; owner_bps is what the artist keeps. Read only: splits are changed in AUDENIQ Studio.",
+                description: "Per track, the collaborators who share its net royalty, their percentage (share_bps / 100), whether they accepted, and what was held or transferred to them; owner_bps is what the artist keeps. Changes go through request_approval with action split_change.",
                 scope: SCOPE_SETTLEMENT, read_only: true, destructive: false, idempotent: true, widget: false,
                 schema: release_id_schema,
             },
@@ -969,7 +972,7 @@ const GROUPS: &[Group] = &[
     Group {
         name: "get_account_context",
         title: "AUDENIQ workspace",
-        intro: "The connected workspace and what is in it, one view at a time. Call first (view account).",
+        intro: "Start here: the connected workspace, the artist's role and what this connection may do (view account). The other views list what is in the workspace.",
         key: "view",
         has_default: true,
         ops: &[
@@ -1013,7 +1016,7 @@ const GROUPS: &[Group] = &[
     Group {
         name: "get_release",
         title: "Release details",
-        intro: "Everything about one release, one view at a time (release_id for every view).",
+        intro: "Everything about one release, one view at a time; every view takes release_id. Follow a submitted application with view status.",
         key: "view",
         has_default: true,
         ops: &[
@@ -1033,7 +1036,7 @@ const GROUPS: &[Group] = &[
     Group {
         name: "validate_release",
         title: "Check release",
-        intro: "Pre-submission checks of a draft, or the complete application preview that submit_release needs.",
+        intro: "What still blocks a draft (view checks), or the complete application to show the artist before submit_release (view preview).",
         key: "view",
         has_default: true,
         ops: &[
@@ -1066,7 +1069,7 @@ const GROUPS: &[Group] = &[
     Group {
         name: "get_settlement",
         title: "Settlement",
-        intro: "Royalties and payouts, one view at a time.",
+        intro: "The workspace's royalties and payouts, one view at a time. Amounts are KRW: quote them exactly as returned.",
         key: "view",
         has_default: true,
         ops: &[
@@ -1082,7 +1085,7 @@ const GROUPS: &[Group] = &[
     Group {
         name: "save_release_draft",
         title: "Create or edit a release draft",
-        intro: "A release draft: create one, change its fields, or set its special-content details.",
+        intro: "Create a release draft or change it. Check list_releases before creating, so the artist does not end up with two drafts of one release.",
         key: "action",
         has_default: false,
         ops: &[
@@ -1182,7 +1185,7 @@ const GROUPS: &[Group] = &[
     Group {
         name: "delete_release_draft",
         title: "Delete a draft or one of its tracks",
-        intro: "Deletes cannot be undone: only after the artist explicitly asked for exactly this.",
+        intro: "Delete a never-submitted draft or one of its tracks. This cannot be undone: only after the artist explicitly asked for exactly this.",
         key: "action",
         has_default: true,
         ops: &[("draft", "delete_release_draft"), ("track", "remove_track")],
@@ -1201,7 +1204,7 @@ const GROUPS: &[Group] = &[
     Group {
         name: "request_payout",
         title: "Request or cancel a payout",
-        intro: "Payouts to the payout account registered in AUDENIQ Studio. Never suggest or request a payout on your own initiative.",
+        intro: "Payouts to the account registered in AUDENIQ Studio: action small after preview_payout and the artist's confirmation, action large above the assistant limit (the artist approves it in the Studio), action cancel before it reaches the bank. Never suggest or request a payout on your own initiative.",
         key: "action",
         has_default: true,
         ops: &[
