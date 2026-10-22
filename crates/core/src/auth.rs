@@ -225,6 +225,9 @@ pub async fn rate(pool: &PgPool, key: &str, limit: i32) -> Result<()> {
 /// [`rate`] for several buckets in one round trip: each is counted, and the
 /// call is refused when any of them is over its limit.
 pub async fn rate_all(pool: &PgPool, buckets: &[(&str, i32)]) -> Result<()> {
+    if let [(key, limit)] = buckets {
+        return rate(pool, key, *limit).await;
+    }
     let hashes: Vec<Vec<u8>> = buckets.iter().map(|(k, _)| bucket_hash(k)).collect();
     let rows: Vec<(Vec<u8>, i32)> = sqlx::query_as("INSERT INTO identity.auth_limits(bucket_hash,attempts) SELECT h,1 FROM unnest($1::bytea[]) AS h ON CONFLICT(bucket_hash) DO UPDATE SET attempts=CASE WHEN identity.auth_limits.window_start<now()-interval '15 minutes' THEN 1 ELSE identity.auth_limits.attempts+1 END,window_start=CASE WHEN identity.auth_limits.window_start<now()-interval '15 minutes' THEN now() ELSE identity.auth_limits.window_start END RETURNING bucket_hash,attempts")
         .bind(&hashes).fetch_all(pool).await?;
