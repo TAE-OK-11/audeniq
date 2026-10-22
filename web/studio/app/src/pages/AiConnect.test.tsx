@@ -57,7 +57,8 @@ describe('AI app connection page', () => {
     expect(h.req.mock.calls[0][0]).toBe('/api/auth/ai-connect?request=abc');
     // 한 화면에 요청한 앱·작업 공간·권한·지켜지는 것이 다 있어요
     expect(el.textContent).toContain('AUDENIQ을 쓰려고 해요');
-    expect(el.textContent).toContain('claude.ai에서 확인된 앱');
+    expect(el.textContent).toContain('Claude 공식 앱');
+    expect(el.textContent).not.toContain('claude.ai에서');
     expect(el.textContent).toContain('hana@example.com');
     expect(el.textContent).toContain('어떤 권한을 줘도 지켜져요');
     expect(el.querySelector('.aq-wiz-progress, .wizard-progress')).toBeNull();

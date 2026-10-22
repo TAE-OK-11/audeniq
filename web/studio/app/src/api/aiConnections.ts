@@ -59,6 +59,23 @@ export const SCOPE_HELP: Record<string, string> = {
   'payouts:request': '등록한 계좌로 한도 안의 소액 지급을 신청해요.',
 };
 
+/** 잘 알려진 AI 앱의 주소 → 사람이 아는 이름. 주소 자체이거나 그 하위 주소일 때만 (claude.ai.evil.com은 아님) */
+const KNOWN_APPS: [string, string][] = [
+  ['claude.ai', 'Claude'], ['claude.com', 'Claude'], ['anthropic.com', 'Claude'],
+  ['chatgpt.com', 'ChatGPT'], ['openai.com', 'ChatGPT'],
+  ['perplexity.ai', 'Perplexity'],
+  ['grok.com', 'Grok'], ['x.ai', 'Grok'],
+  ['gemini.google.com', 'Gemini'],
+  ['copilot.microsoft.com', 'Copilot'],
+];
+
+/** 주소를 화면에 보일 이름으로 — 아는 앱이면 'Claude'·'ChatGPT', 모르는 주소는 그대로 (확인할 수 있게) */
+export function appName(host: string): string {
+  const h = host.toLowerCase().replace(/:\d+$/, '');
+  return KNOWN_APPS.find(([d]) => h === d || h.endsWith(`.${d}`))?.[1] ?? host;
+}
+export const isKnownApp = (host: string) => appName(host) !== host;
+
 /** 앱 확인용 주소의 호스트 (CIMD). 임의 ID면 없음. */
 export function clientHost(clientId: string): string | null {
   if (!clientId.startsWith('https://')) return null;

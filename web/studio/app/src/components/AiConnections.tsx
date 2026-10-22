@@ -8,7 +8,7 @@ import { CopyButton } from './CopyButton';
 import { ApiError, errorMessage } from '../api/errors';
 import { orgId } from '../api/http';
 import {
-  aiActionRequests, aiConnections, aiPermissionRequests, aiSettings, aiSubmissions, approveAiSubmission, clientHost, createConnectionToken, DECLARATION_LABEL,
+  aiActionRequests, aiConnections, aiPermissionRequests, aiSettings, aiSubmissions, appName, approveAiSubmission, clientHost, createConnectionToken, DECLARATION_LABEL,
   rejectAiSubmission, revokeAiConnection, saveAiSettings, SCOPE_HELP, SCOPE_LABEL,
   type AiActionRequest, type AiConnection, type AiPermissionRequest, type AiSettings, type AiSubmission, type NewConnectionToken,
 } from '../api/aiConnections';
@@ -371,12 +371,14 @@ export function AiConnections() {
         <ul className="aq-passkey-list">
           {items.map(c => {
             const host = clientHost(c.client_id);
+            // 이름과 같은 앱(Claude · Claude)은 한 번만, 모르는 주소는 그대로
+            const from = host && appName(host) !== c.client_name ? appName(host) : null;
             const used = c.last_used_at ? `마지막 사용 ${relativeTime(c.last_used_at)}` : '아직 사용 안 함';
             const token = c.method === 'TOKEN';
             const until = c.no_expiry || !c.expires_at ? '무기한' : `${day(c.expires_at)}까지`;
             const meta = token
               ? ['에이전트 키', workspaceName(c.org_name), until, used]
-              : [host, workspaceName(c.org_name), `연결 ${relativeTime(c.created_at)}`, used];
+              : [from, workspaceName(c.org_name), `연결 ${relativeTime(c.created_at)}`, used];
             return (
               <li key={c.id}>
                 <span className="min-0">

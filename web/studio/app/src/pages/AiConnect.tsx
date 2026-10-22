@@ -12,6 +12,7 @@ import { Link, useLocation } from '../lib/router';
 import { useAuth } from '../api/auth';
 import { ApiError, errorMessage } from '../api/errors';
 import { aiConnectByCode, aiConnectDetails, decideAiConnect, type AiConnectDetails } from '../api/aiConnect';
+import { appName, isKnownApp } from '../api/aiConnections';
 import { useConfirm } from '../components/Confirm';
 import { MOCK } from '../lib/mode';
 import { AiAppRow, AiFlowFrame as Frame, AiFlowHeader as Header, AiFlowLoading, AiFlowPage, workspaceName } from '../components/AiFlow';
@@ -171,12 +172,13 @@ function Review({ request, d, onDone, onFailed }: {
   }
 
   const ws = d.workspaces.find(w => w.id === org);
+  // claude.ai 같은 주소 대신 사람이 아는 이름으로 — 모르는 주소는 그대로 보여 준다
   const verified = d.client.verified_host
-    ? `${d.client.verified_host}에서 확인된 앱`
+    ? (isKnownApp(d.client.verified_host) ? `${appName(d.client.verified_host)} 공식 앱` : `${d.client.verified_host}에서 확인된 앱`)
     : d.client.registered ? 'AUDENIQ에 등록된 에이전트' : null;
   // 확인된 곳과 요청한 곳이 같으면 한 번만 말한다
   const from = d.requested_from && d.requested_from === d.client.verified_host ? null
-    : d.requested_from ? `${d.requested_from}에서 요청` : '연결 코드로 요청';
+    : d.requested_from ? `${appName(d.requested_from)}에서 요청` : '연결 코드로 요청';
   const always = d.scopes.filter(s => s.locked);
   const extra = d.scopes.filter(s => !s.locked && on.has(s.scope)).length;
 
@@ -263,7 +265,7 @@ function Review({ request, d, onDone, onFailed }: {
         <details className="aq-connect-more">
           <summary>연결 정보 자세히</summary>
           <dl className="aq-connect-facts">
-            {d.return_to && <><dt>승인 후 돌아갈 곳</dt><dd>{d.return_to}</dd></>}
+            {d.return_to && <><dt>승인 후 돌아갈 곳</dt><dd>{appName(d.return_to)}</dd></>}
             {d.client.client_id.startsWith('https://') && <><dt>앱 확인 주소</dt><dd>{d.client.client_id}</dd></>}
           </dl>
         </details>
