@@ -235,7 +235,7 @@ and `{code, message}` (stable API codes, human messages from
 
 ### Published tools and operations
 
-`tools/list` shows 25 tools. The 88 operations below are the units of scope,
+`tools/list` shows 25 tools. The 89 operations below are the units of scope,
 schema, rate limit, audit (`mcp.<operation>`) and handler; operations of the
 same kind are published as one tool, and one argument picks the operation
 (`view` for reads, `action` or `kind` for writes). The other arguments are the
@@ -251,7 +251,7 @@ its own name.
 | `get_account_context` | `view`: `account` (default), `members`, `platforms`, `notifications`, `documents`, `signing_requests`, `inquiries`, `inquiry`, `artist_pages`, `platform_requests`, `withdrawal_quota` | `get_account_context`, `list_members`, `list_distribution_platforms`, `list_notifications`, `list_documents`, `list_signing_requests`, `list_inquiries`, `get_inquiry`, `list_artist_pages`, `list_platform_requests`, `get_withdrawal_quota` |
 | `get_audeniq_info` (public) | `view`: `list` (default), `detail`, `service_status`, `requirements` | `list_announcements`, `get_announcement`, `get_service_status`, `get_release_requirements` |
 | `list_releases` | `view`: `releases` (default), `codes` | `list_releases`, `list_release_codes` |
-| `get_release` | `view`: `details` (default), `status`, `delivery`, `content_id`, `corrections`, `playlist_pitch`, `smart_link`, `smart_link_check`, `claims`, `missing_files`, `handover` | `get_release`, `get_submission_status`, `get_delivery_status`, `get_content_id_status`, `get_release_corrections`, `get_playlist_pitch`, `get_smart_link`, `check_smart_link`, `list_infringement_claims`, `get_upload_link`, `get_release_handover` |
+| `get_release` | `view`: `details` (default), `status`, `delivery`, `content_id`, `corrections`, `playlist_pitch`, `smart_link`, `smart_link_check`, `claims`, `missing_files`, `handover`, `guardian_consent` | `get_release`, `get_submission_status`, `get_delivery_status`, `get_content_id_status`, `get_release_corrections`, `get_playlist_pitch`, `get_smart_link`, `check_smart_link`, `list_infringement_claims`, `get_upload_link`, `get_release_handover`, `get_guardian_consent` |
 | `validate_release` | `view`: `checks` (default), `preview` | `validate_release`, `preview_submission` |
 | `get_file_status` | `view`: `upload`, `checks` | `get_upload_status`, `get_file_checks` |
 | `get_approval_status` | `kind`: `action` (default), `permission` | `get_action_request`, `get_permission_request` |
@@ -477,6 +477,24 @@ then always waits for the artist's approval of exactly that content in the
 Studio (the pending submissions below, whatever the Studio approval setting),
 so the assistant can send one release without being given the submit
 permission for good. `get_account_context` reports `can_submit_with_approval`.
+
+**Minor artists (under 19).** The assistant sets the guardian with
+`save_release_draft {action: special_options, minor: {is_minor, guardian_name,
+guardian_relation, guardian_contact}}` and declares `adult_confirmed: false`.
+The preview then needs the guardian named (`GUARDIAN_DETAILS_REQUIRED`) and
+lists the guardian step under review. `submit_release` always holds a minor's
+application for the Studio, whatever the connection's permissions; there the
+artist opens the guardian consent (`POST /api/orgs/{org}/releases/{id}/guardian-consent`,
+`crate::signing::guardian_consent`): the guardian verifies their identity
+(the verified name must be the one named, and an adult, 19+) and signs
+AUDENIQ's own consent text themselves, on the artist's device or at a link
+sent to them. A family relation certificate document waits for a file
+(`attach_rights_proof`, or the Studio's rights documents). Approval submits
+with `minority_declared` only when both are ready (`GUARDIAN_CONSENT_REQUIRED`,
+`GUARDIAN_RELATION_DOCUMENT_REQUIRED` otherwise); the consent package records
+the `GUARDIAN` path with the signature and document ids, and staff confirm the
+relation in review. `get_release {view: guardian_consent}` shows the state.
+The assistant never signs, verifies or answers for the guardian.
 
 After submission the artist still signs the release application and the
 distribution agreement in AUDENIQ Studio; delivery waits for the signed,
@@ -846,7 +864,6 @@ an assistant recommend AUDENIQ; listing and discovery are separate tasks.
 - No progress notifications or server-initiated messages (every tool
   finishes within the deadline); an SSE-only client gets one event per
   answer.
-- Minors: submission is refused (`MINORITY_REVIEW_REQUIRED`), as in the Studio.
 - Not run here: real ChatGPT/Claude/Grok/Manus clients, the deployed Worker,
   and the native QC/photo binaries (tests that need them fail in an
   environment without them).

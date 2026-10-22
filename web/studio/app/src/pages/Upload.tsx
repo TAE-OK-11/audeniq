@@ -12,6 +12,8 @@ import { ApiError, MOCK, api, type ArtistProfileLinks, type DspAvailability, typ
 import { PartialSaveError, errorMessage } from '../api/errors';
 import { addDoc, docsForRelease, getDocsSnapshot, useDocs, type DocRecord } from '../store/docs';
 import { RightsDocumentModal } from '../components/RightsDocumentModal';
+import { GuardianConsentPanel } from '../components/GuardianConsent';
+import { orgId } from '../api/http';
 import { DocumentModal } from '../components/DocumentModal';
 import { RIGHTS_DOCUMENTS, type RightsDocumentContext, type RightsDocumentKind } from '../lib/rightsDocument';
 import { RERELEASE_KINDS, RERELEASE_AVAILABILITY, rereleaseIssue, rereleaseSummary, type RereleaseData } from '../lib/rerelease';
@@ -582,13 +584,15 @@ function aiSummary(o: Pick<ReleaseOptions, 'aiUses' | 'aiTools' | 'aiUseOther' |
   return [uses.join(' · '), tools.length ? `도구: ${tools.join(', ')}` : ''].filter(Boolean).join(' / ');
 }
 
-function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, onOpenDoc, releaseId }: {
+function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, onOpenDoc, releaseId, onGuardian }: {
   form: WizardForm;
   group: 'service' | 'rights';
   set: <K extends keyof WizardForm>(key: K, value: WizardForm[K]) => void;
   onDocument: (name: keyof ReleaseOptions, asset: keyof ReleaseOptions, file: File) => void;
   uploads: Record<string, UploadState>;
   onElectronic: (kind: RightsDocumentKind) => void; onOpenDoc: (id: string) => void; releaseId?: string;
+  /** 실서버: 법정대리인 동의 창 (임시 저장 후 서명 요청) */
+  onGuardian: () => void;
 }) {
   const o = form.options;
   const setOpt = <K extends keyof ReleaseOptions>(key: K, value: ReleaseOptions[K]) =>
@@ -697,17 +701,20 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
           <label>법정대리인 동의</label>
           <button
             type="button" className="ui-btn is-soft" style={{ width: '100%' }}
-            onClick={() => setShowGuardianModal(true)}
+            onClick={() => (MOCK ? setShowGuardianModal(true) : onGuardian())}
           >
-            {o.guardianConsentDone ? '법정대리인 동의를 마쳤어요 · 다시 받기' : '법정대리인 동의 받기'}
+            {o.guardianConsentDone ? '법정대리인 동의를 마쳤어요 · 다시 확인하기' : '법정대리인 동의 받기'}
           </button>
           <p className="ui-field-help">
             {o.guardianConsentDone
               ? `동의 완료${o.familyCertName ? ` · 가족관계증명서: ${o.familyCertName}` : ''}`
-              : '동의창에서 법정대리인 서명과 가족관계증명서를 제출해요.'}
+              : MOCK ? '동의창에서 법정대리인 서명과 가족관계증명서를 제출해요.'
+                : '법정대리인이 직접 본인확인 후 서명하고, 가족관계증명서를 올려요.'}
           </p>
         </div>
-        <p className="aq-option-note">법정대리인 정보 입력만으로 본인 확인이나 동의 검증이 완료되지는 않아요. 담당자 확인 후 서명 단계를 안내해요.</p>
+        <p className="aq-option-note">{MOCK
+          ? '법정대리인 정보 입력만으로 본인 확인이나 동의 검증이 완료되지는 않아요. 담당자 확인 후 서명 단계를 안내해요.'
+          : '서명은 법정대리인 본인만 할 수 있어요. 어데닉이 가족관계증명서로 관계를 확인한 뒤 심사를 진행해요.'}</p>
       </div>
     ),
     cover: (
@@ -945,12 +952,11 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
       {showList && <div className="aq-options aq-reveal">
         {list.map(([id, title, sub]) => (
           <Fragment key={id}>
-            <label className={`aq-option${o[id] ? ' is-on' : ''}${!MOCK && id === 'minor' ? ' is-unavailable' : ''}`}>
-              <span className="aq-option-text"><strong>{title}</strong><small>{!MOCK && id === 'minor' ? '현재 온라인 접수가 준비되지 않았어요. 기존 선택은 해제할 수 있어요.' : sub}</small></span>
+            <label className={`aq-option${o[id] ? ' is-on' : ''}`}>
+              <span className="aq-option-text"><strong>{title}</strong><small>{sub}</small></span>
               <input
                 type="checkbox" aria-label={title}
                 checked={!!o[id]}
-                disabled={!MOCK && id === 'minor' && !o.minor}
                 onChange={e => setOpt(id, e.target.checked as ReleaseOptions[typeof id])}
               />
             </label>
@@ -1676,6 +1682,20 @@ export function Upload() {
     saveChain.current = p;
     return p;
   }, [canAutoSave, adoptTrackIds, adoptPartialSave]);
+
+  const [guardianOpen, setGuardianOpen] = useState(false);
+  /** 법정대리인 동의 — 동의서에 들어갈 발매와 법정대리인이 서버에 저장된 뒤 열어요 */
+  const openGuardian = async () => {
+    await autoSave();
+    const f = formRef.current;
+    if (!draftIdRef.current || !f.title.trim() || !f.artist.trim()) {
+      toast('발매명과 아티스트를 입력하고 임시 저장한 뒤 동의를 받아 주세요.'); return;
+    }
+    if (!f.options.guardian.trim() || !f.options.guardianRelation) {
+      toast('법정대리인 성명과 관계를 먼저 입력해 주세요.'); return;
+    }
+    setGuardianOpen(true);
+  };
 
   const openElectronic = async (kind: RightsDocumentKind) => {
     await autoSave();
@@ -2640,7 +2660,7 @@ export function Upload() {
             </div>
             )}
             {!dsps && <p className="ui-field-help" role="status">{dspError || '플랫폼 목록을 서버에서 불러오는 중이에요.'}</p>}
-            <div className="aq-fix-zone"><OptionsSection form={form} set={set} group="service" onDocument={attachOptionDocument} uploads={uploads} onElectronic={kind => void openElectronic(kind)} onOpenDoc={setOpenDocId} releaseId={draftIdRef.current ?? undefined} /></div>
+            <div className="aq-fix-zone"><OptionsSection form={form} set={set} group="service" onDocument={attachOptionDocument} uploads={uploads} onElectronic={kind => void openElectronic(kind)} onOpenDoc={setOpenDocId} releaseId={draftIdRef.current ?? undefined} onGuardian={() => void openGuardian()} /></div>
           </section>
         )}
 
@@ -2690,7 +2710,7 @@ export function Upload() {
                 <span className="aq-autofill-text">‘{form.label.trim() || form.artist.trim()}’(으)로 권리자 정보 채우기</span>
               </button>
             )}
-            <div id="aqSpecialOptions" className="aq-fix-zone"><OptionsSection form={form} set={set} group="rights" onDocument={attachOptionDocument} uploads={uploads} onElectronic={kind => void openElectronic(kind)} onOpenDoc={setOpenDocId} releaseId={draftIdRef.current ?? undefined} /></div>
+            <div id="aqSpecialOptions" className="aq-fix-zone"><OptionsSection form={form} set={set} group="rights" onDocument={attachOptionDocument} uploads={uploads} onElectronic={kind => void openElectronic(kind)} onOpenDoc={setOpenDocId} releaseId={draftIdRef.current ?? undefined} onGuardian={() => void openGuardian()} /></div>
             <h2 className="subhead">필수 확인 항목</h2>
             <div className="field-group">
               {RIGHTS_CHECKS.map(([k, label]) => (
@@ -2834,6 +2854,18 @@ export function Upload() {
           {nextLabel}
         </button>
       </div>
+      {guardianOpen && draftIdRef.current && orgId() && (
+        <GuardianConsentPanel
+          org={orgId() as string}
+          releaseId={draftIdRef.current}
+          onClose={() => setGuardianOpen(false)}
+          onReady={() => {
+            set('options', { ...formRef.current.options, guardianConsentDone: true });
+            setGuardianOpen(false);
+            toast('법정대리인 동의를 확인했어요.', 'success');
+          }}
+        />
+      )}
       {electronic && <RightsDocumentModal kind={electronic.kind} context={electronic.context} onClose={() => setElectronic(null)} onRequested={() => toast('서명 요청을 만들었어요. 권리자가 서명하면 권리·보완 서류에 문서가 생겨요.', 'success')} />}
       {openDoc && <DocumentModal doc={openDoc} onClose={() => setOpenDocId(null)} onOpenSignature={() => {}} />}
     </div>

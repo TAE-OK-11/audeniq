@@ -7,6 +7,7 @@ import { useConfirm } from './Confirm';
 import { CopyButton } from './CopyButton';
 import { ApiError, errorMessage } from '../api/errors';
 import { orgId } from '../api/http';
+import { GuardianConsentPanel } from './GuardianConsent';
 import {
   aiActionRequests, aiConnections, aiPermissionRequests, aiSettings, aiSubmissions, approveAiSubmission, clientHost, createConnectionToken, DECLARATION_LABEL,
   rejectAiSubmission, revokeAiConnection, saveAiSettings, SCOPE_HELP, SCOPE_LABEL,
@@ -189,6 +190,9 @@ function PendingSubmissions({ items, onDone }: { items: AiSubmission[]; onDone: 
   const toast = useToast();
   const confirm = useConfirm();
   const [busy, setBusy] = useState<string | null>(null);
+  /** 미성년 아티스트의 신청: 승인 전에 법정대리인 동의를 받는 창 */
+  const [guardianFor, setGuardianFor] = useState<AiSubmission | null>(null);
+  const isMinor = (p: AiSubmission) => p.declarations.adult_confirmed === false;
 
   async function decide(p: AiSubmission, approve: boolean) {
     const declared = Object.entries(p.declarations).filter(([, v]) => v).map(([k]) => DECLARATION_LABEL[k] ?? k);
@@ -199,6 +203,7 @@ function PendingSubmissions({ items, onDone }: { items: AiSubmission[]; onDone: 
           <>
             <p>{p.client_name}에서 대화로 확인한 내용 그대로 접수해요. 아래 선언은 내 이름으로 기록돼요.</p>
             <ul>{(declared.length ? declared : ['선언 없음']).map(d => <li key={d}>{d}</li>)}</ul>
+            {isMinor(p) && <p>미성년 아티스트의 발매로 접수하고, 법정대리인 동의서와 가족관계증명서를 함께 보내요.</p>}
           </>
         ),
         confirmLabel: '승인하고 신청하기',
@@ -212,6 +217,8 @@ function PendingSubmissions({ items, onDone }: { items: AiSubmission[]; onDone: 
       toast(approve ? '발매 신청을 접수했어요.' : '신청을 거절했어요.', approve ? 'success' : 'info');
     } catch (err) {
       toast(errorMessage(err, approve ? '신청하지 못했어요.' : '거절하지 못했어요.'), 'error');
+      // 법정대리인 동의가 아직이면 바로 그 창을 열어 줘요
+      if (err instanceof ApiError && ['GUARDIAN_CONSENT_REQUIRED', 'GUARDIAN_RELATION_DOCUMENT_REQUIRED'].includes(err.code)) setGuardianFor(p);
       // 서버가 이미 정리한 신청(내용 바뀜·기한 지남·이미 처리)은 목록에서 뺀다
       if (err instanceof ApiError && ['AI_SUBMISSION_STALE', 'AI_SUBMISSION_EXPIRED', 'AI_SUBMISSION_DECIDED', 'AI_SUBMISSION_WITHDRAWN'].includes(err.code)) onDone(p.id);
     } finally {
@@ -227,9 +234,12 @@ function PendingSubmissions({ items, onDone }: { items: AiSubmission[]; onDone: 
           <li key={p.id}>
             <span className="min-0">
               <strong>{p.title}</strong>
-              <small>{[p.client_name, workspaceName(p.org_name), `${day(p.expires_at)}까지 승인`].join(' · ')}</small>
+              <small>{[p.client_name, workspaceName(p.org_name), `${day(p.expires_at)}까지 승인`, ...(isMinor(p) ? ['법정대리인 동의 필요'] : [])].join(' · ')}</small>
             </span>
             <span className="aq-row-actions">
+              {isMinor(p) && (
+                <button type="button" className="ui-btn is-soft is-sm" disabled={busy !== null} onClick={() => setGuardianFor(p)}>법정대리인 동의</button>
+              )}
               <button type="button" className="ui-btn is-soft is-sm" disabled={busy !== null} onClick={() => void decide(p, false)}>거절</button>
               <button type="button" className="ui-btn is-primary is-sm" disabled={busy !== null} onClick={() => void decide(p, true)}>
                 {busy === p.id ? '처리 중' : '승인'}
@@ -238,6 +248,18 @@ function PendingSubmissions({ items, onDone }: { items: AiSubmission[]; onDone: 
           </li>
         ))}
       </ul>
+      {guardianFor && (
+        <GuardianConsentPanel
+          org={guardianFor.org_id}
+          releaseId={guardianFor.release_id}
+          onClose={() => setGuardianFor(null)}
+          onReady={() => {
+            const p = guardianFor;
+            setGuardianFor(null);
+            void decide(p, true);
+          }}
+        />
+      )}
     </section>
   );
 }

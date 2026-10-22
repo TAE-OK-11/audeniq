@@ -720,8 +720,18 @@ pub async fn guardian_status(s: &AppState, a: &Actor, org: Uuid, release: Uuid) 
     .fetch_optional(&mut *c)
     .await?;
     let ready = guardian_ready(&mut c, org, release).await.is_ok();
+    // The guardian named on the draft (the Studio's and the MCP's keys).
+    let named: Option<(String, String)> = sqlx::query_as(
+        "SELECT coalesce(draft->'options'->>'guardian',''), coalesce(draft->'options'->>'guardianRelation','') FROM catalog.releases WHERE org_id=$1 AND id=$2",
+    )
+    .bind(org)
+    .bind(release)
+    .fetch_optional(&mut *c)
+    .await?;
+    let (name, relation) = named.unwrap_or_default();
     Ok(json!({
         "release_id": release,
+        "guardian": {"name": name.trim(), "relation": relation},
         "requests": rows.iter().map(summary).collect::<Vec<_>>(),
         "relation_document": certificate.map(|(id, status, file)| json!({"id": id, "status": status, "has_file": file})),
         "ready": ready,
