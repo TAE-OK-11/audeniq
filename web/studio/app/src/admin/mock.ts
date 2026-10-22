@@ -243,7 +243,7 @@ const audit = (r: MockRelease, action: string, reason: string) =>
   r.sheet.timeline.unshift({ action, reason, actor_user_id: ME, actor_service: null, at: new Date().toISOString() });
 
 export const mockStaff = {
-  me: () => wait<StaffMe>({ user_id: ME, role: 'ADMIN', duties: ['REVIEW', 'DOCUMENTS', 'INQUIRIES', 'DELIVERY', 'IDENTITY'], dual_approval: false }),
+  me: () => wait<StaffMe>({ user_id: ME, role: 'OWNER', level: 4, duties: ['REVIEW', 'DOCUMENTS', 'INQUIRIES', 'DELIVERY', 'IDENTITY', 'FINANCE'], dual_approval: false }),
   overview: () => wait<Overview>({
     review: releases.filter(awaiting).length,
     correction: releases.filter(r => r.q.status.endsWith('_CORRECTION')).length,

@@ -9,7 +9,7 @@ import { useConfirm } from './components/Confirm';
 import { useToast } from './components/Toast';
 import { MfaGate } from './components/MfaGate';
 import { MFA_CODES } from './api/mfa';
-import { staffApi, type Duty, type Overview, type StaffMe } from './api/staff';
+import { isAdmin, levelOf, staffApi, type Duty, type Overview, type StaffMe } from './api/staff';
 import { ROLE_LABEL } from './labels';
 import { SkeletonList, StaffContext } from './staffUi';
 import { OverviewPage } from './pages/Overview';
@@ -27,6 +27,11 @@ const PAGE_LOADERS = {
   Deliveries: () => import('./pages/Deliveries'),
   Dsps: () => import('./pages/Dsps'),
   Payouts: () => import('./pages/Payouts'),
+  OpsStaff: () => import('./pages/Ops'),
+  OpsProtected: () => import('./pages/Ops'),
+  OpsAi: () => import('./pages/Ops'),
+  OpsPartners: () => import('./pages/Ops'),
+  OpsFinance: () => import('./pages/Ops'),
   ContentAdmin: () => import('./pages/ContentAdmin'),
 } satisfies Record<string, () => Promise<unknown>>;
 const page = (name: keyof typeof PAGE_LOADERS) =>
@@ -41,6 +46,11 @@ const Inquiries = page('Inquiries');
 const Deliveries = page('Deliveries');
 const Dsps = page('Dsps');
 const Payouts = page('Payouts');
+const OpsStaff = page('OpsStaff');
+const OpsProtected = page('OpsProtected');
+const OpsAi = page('OpsAi');
+const OpsPartners = page('OpsPartners');
+const OpsFinance = page('OpsFinance');
 const ContentAdmin = page('ContentAdmin');
 function prefetchPages() {
   const run = () => { for (const load of Object.values(PAGE_LOADERS)) void load().catch(() => {}); };
@@ -64,7 +74,7 @@ export function Icon({ name }: { name: string }) {
   return <Glyph name={ICONS[name] ?? name} size={18} />;
 }
 
-interface NavItem { to: string; label: string; icon: string; count?: (o: Overview) => number; hot?: boolean; adminOnly?: boolean; duty?: Duty; also?: string[] }
+interface NavItem { to: string; label: string; icon: string; count?: (o: Overview) => number; hot?: boolean; adminOnly?: boolean; duty?: Duty; also?: string[]; /** 이 레벨 이상에게만 (운영 도구) */ minLevel?: number }
 const NAV: { group: string; items: NavItem[] }[] = [
   { group: '한눈에', items: [{ to: '/', label: '오늘의 업무', icon: 'home' }] },
   {
@@ -91,6 +101,17 @@ const NAV: { group: string; items: NavItem[] }[] = [
       // 배급은 최종 승인 + 아티스트 서명 후 자동 — 여기서는 현황과 문제만 본다 (플랫폼 조건은 탭)
       { to: '/deliveries', label: '배급 현황', icon: 'delivery', count: o => o.deliveries_blocked, hot: true, also: ['/dsps'] },
       { to: '/payouts', label: '지급 요청', icon: 'payout', count: o => o.payout_requests, adminOnly: true },
+    ],
+  },
+  {
+    // 예전에는 audeniq-admin CLI로만 하던 일 — 레벨에 맞는 메뉴만 보인다 (서버도 다시 확인)
+    group: '운영 도구',
+    items: [
+      { to: '/ops/finance', label: '정산·지급 처리', icon: 'payout', duty: 'FINANCE' },
+      { to: '/ops/protected', label: '보호 아티스트', icon: 'lock', minLevel: 2 },
+      { to: '/ops/ai', label: 'AI·개발자 앱', icon: 'antenna', minLevel: 2 },
+      { to: '/ops/partners', label: '파트너·식별코드', icon: 'dsp', minLevel: 2 },
+      { to: '/ops/staff', label: '직원·권한', icon: 'users', minLevel: 3 },
     ],
   },
 ];
@@ -208,7 +229,7 @@ export function AdminApp() {
             {NAV.map(g => (
               <div className="adm-side-group" key={g.group}>
                 <div className="adm-side-label">{g.group}</div>
-                {g.items.filter(i => (!i.adminOnly || me.role === 'ADMIN') && (!i.duty || me.duties.includes(i.duty))).map(i => {
+                {g.items.filter(i => (!i.adminOnly || isAdmin(me)) && (!i.duty || me.duties.includes(i.duty)) && (!i.minLevel || levelOf(me) >= i.minLevel)).map(i => {
                   const n = counts && i.count ? i.count(counts) : 0;
                   const cur = active(loc.pathname, i.to) || !!i.also?.some(a => active(loc.pathname, a));
                   return (
@@ -221,7 +242,7 @@ export function AdminApp() {
               </div>
             ))}
             <div className="adm-side-foot">
-              {ROLE_LABEL[me.role]} 권한<br />모든 처리는 담당자 계정으로 감사 기록에 남아요.
+              {ROLE_LABEL[me.role]} · 레벨 {levelOf(me)}<br />모든 처리는 담당자 계정으로 감사 기록에 남아요.
             </div>
           </nav>
 
@@ -239,8 +260,13 @@ export function AdminApp() {
               <Route path="/inquiries/:id" element={<Inquiries />} />
               <Route path="/deliveries" element={<Deliveries />} />
               <Route path="/dsps" element={<Dsps />} />
-              <Route path="/payouts" element={me.role === 'ADMIN' ? <Payouts /> : <Navigate to="/" replace />} />
-              <Route path="/admin/content" element={me.role === 'ADMIN' ? <ContentAdmin /> : <Navigate to="/" replace />} />
+              <Route path="/payouts" element={isAdmin(me) ? <Payouts /> : <Navigate to="/" replace />} />
+              <Route path="/ops/staff" element={levelOf(me) >= 3 ? <OpsStaff /> : <Navigate to="/" replace />} />
+              <Route path="/ops/protected" element={levelOf(me) >= 2 ? <OpsProtected /> : <Navigate to="/" replace />} />
+              <Route path="/ops/ai" element={levelOf(me) >= 2 ? <OpsAi /> : <Navigate to="/" replace />} />
+              <Route path="/ops/partners" element={levelOf(me) >= 2 ? <OpsPartners /> : <Navigate to="/" replace />} />
+              <Route path="/ops/finance" element={me.duties.includes('FINANCE') ? <OpsFinance /> : <Navigate to="/" replace />} />
+              <Route path="/admin/content" element={isAdmin(me) ? <ContentAdmin /> : <Navigate to="/" replace />} />
               <Route path="/content-admin" element={<Navigate to="/admin/content" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

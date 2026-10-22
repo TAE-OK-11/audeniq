@@ -746,7 +746,7 @@ async fn authorize(s: &AppState, h: &HeaderMap, write: bool) -> Option<Response>
             .then(|| fail(StatusCode::UNAUTHORIZED, "UNAUTHENTICATED"));
     }
     match staff::staff(s, h, write).await {
-        Ok(st) if st.role == staff::StaffRole::Admin => None,
+        Ok(st) if st.role.is_admin() => None,
         Ok(_) => Some(fail(StatusCode::FORBIDDEN, "FORBIDDEN")),
         Err(e) => Some(from_error(e)),
     }

@@ -16,7 +16,7 @@ use super::{active_staff, audit, entities, line, one_of, text};
 use crate::{
     api::AppState,
     error::{Error, Result},
-    staff::{self, Duty, Staff, StaffRole},
+    staff::{self, Duty, Staff},
 };
 use axum::{
     Json, Router,
@@ -61,7 +61,7 @@ pub fn may(st: &Staff, kind: &str) -> bool {
         "METADATA_CONFLICT" | "DSP_REJECTION" | "DISTRIBUTION_FAILURE" => {
             st.role.may(Duty::Delivery)
         }
-        _ => st.role == StaffRole::Admin,
+        _ => st.role.is_admin(),
     }
 }
 

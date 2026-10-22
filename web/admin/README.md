@@ -16,8 +16,9 @@ AUDENIQ 디자인 시스템(`docs/DESIGN_SYSTEM.md`)을 스튜디오와 같이 �
 - `src/pages/` — 오늘의 업무 · 발매 심사 · 심사 상세 · 2차 승인 · 서류 · 문의 · 배급 · DSP · 지급 요청
 
 ## 권한
-로그인은 스튜디오 계정과 같고, 스태프 역할은 `audeniq-admin staff grant EMAIL ROLE`로만 부여됩니다.
-ADMIN(전부) · REVIEWER(심사·2차 승인·서류·문의) · OPERATOR(배급) · SUPPORT(문의). 역할에 없는 작업은 조회만 됩니다.
+로그인은 스튜디오 계정과 같아요. 레벨은 고객 지원(SUPPORT) 1 < 심사 담당(REVIEWER)·배급 운영(OPERATOR) 2 < 관리자(ADMIN) 3 < 최고 관리자(OWNER) 4이고,
+위 레벨은 아래 레벨 일을 모두 해요. 최고 관리자는 `audeniq-admin staff grant EMAIL OWNER`로만 정하고, 나머지 레벨은 최고 관리자가 콘솔의 운영 도구 → 직원·권한에서 줘요.
+운영 도구(`/ops/*`)는 예전에 CLI로만 하던 일(직원·권한, 보호 아티스트, AI·개발자 앱, 파트너·식별코드, 정산·지급)이에요 — docs/STAFF_LEVELS.md.
 공지·이벤트 관리는 ADMIN만 접근합니다. 서명된 전자 권리 문서는 서류 화면에서 원문·서명·문서 해시를 확인한 뒤 기존 검토 절차로 승인하거나 보완 요청합니다.
 
 ## 배포

@@ -41,8 +41,13 @@ use sqlx::{PgConnection, Row};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
+/// Staff roles on a four-level ladder: SUPPORT (1) < REVIEWER, OPERATOR (2,
+/// the same level, different work) < ADMIN (3) < OWNER (4). A higher level
+/// can do everything below it; OWNER adds staff management and the riskiest
+/// operations (crate::staff_ops).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StaffRole {
+    Owner,
     Admin,
     Reviewer,
     Operator,
@@ -59,11 +64,14 @@ pub enum Duty {
     /// Real-name verification from an ID shown in person or at the customer
     /// center (crate::identity_desk).
     Identity,
+    /// Payouts and royalty reports (what the CLI allowed ADMIN/OPERATOR).
+    Finance,
 }
 
 impl StaffRole {
-    fn parse(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         Some(match s {
+            "OWNER" => Self::Owner,
             "ADMIN" => Self::Admin,
             "REVIEWER" => Self::Reviewer,
             "OPERATOR" => Self::Operator,
@@ -73,18 +81,40 @@ impl StaffRole {
     }
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Owner => "OWNER",
             Self::Admin => "ADMIN",
             Self::Reviewer => "REVIEWER",
             Self::Operator => "OPERATOR",
             Self::Support => "SUPPORT",
         }
     }
+    /// 1 (SUPPORT) to 4 (OWNER).
+    pub fn level(self) -> u8 {
+        match self {
+            Self::Owner => 4,
+            Self::Admin => 3,
+            Self::Reviewer | Self::Operator => 2,
+            Self::Support => 1,
+        }
+    }
+    /// ADMIN or above: the console's administrator powers.
+    pub fn is_admin(self) -> bool {
+        self.level() >= 3
+    }
+    /// The role work management (teams, documents, SLA routing) knows: an
+    /// OWNER works there as an ADMIN.
+    pub fn team(self) -> &'static str {
+        match self {
+            Self::Owner => "ADMIN",
+            r => r.as_str(),
+        }
+    }
     pub fn may(self, duty: Duty) -> bool {
         use Duty::*;
         match self {
-            Self::Admin => true,
+            Self::Owner | Self::Admin => true,
             Self::Reviewer => matches!(duty, Review | Documents | Inquiries),
-            Self::Operator => matches!(duty, Delivery),
+            Self::Operator => matches!(duty, Delivery | Finance),
             Self::Support => matches!(duty, Inquiries | Identity),
         }
     }
@@ -210,13 +240,14 @@ pub async fn me(s: &AppState, h: &HeaderMap) -> Result<Value> {
         (Duty::Inquiries, "INQUIRIES"),
         (Duty::Delivery, "DELIVERY"),
         (Duty::Identity, "IDENTITY"),
+        (Duty::Finance, "FINANCE"),
     ]
     .into_iter()
     .filter(|(d, _)| st.role.may(*d))
     .map(|(_, n)| n)
     .collect();
     Ok(json!({
-        "user_id": st.actor.user, "role": st.role.as_str(), "duties": duties,
+        "user_id": st.actor.user, "role": st.role.as_str(), "level": st.role.level(), "duties": duties,
         "dual_approval": crate::config::dual_approval_enabled(),
     }))
 }
@@ -765,7 +796,7 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
             "check_counts": check_counts,
             "claim": claim.as_ref().map(|c| json!({"user_id": c.user, "email": c.email, "at": c.at, "mine": c.user == st.actor.user})),
             "can_claim": st.role.may(Duty::Review) && kind.is_some() && claim.is_none(),
-            "can_take_over": st.role == StaffRole::Admin && kind.is_some() && claim.as_ref().is_some_and(|c| c.user != st.actor.user),
+            "can_take_over": st.role.is_admin() && kind.is_some() && claim.as_ref().is_some_and(|c| c.user != st.actor.user),
         },
         "release": {
             "id": release, "org_id": org, "org_name": r.get::<String,_>("org_name"),
@@ -924,7 +955,7 @@ pub async fn claim_review(
     .await?;
     let action = match current {
         Some(u) if u == me => None,
-        Some(_) if !(i.take_over && st.role == StaffRole::Admin) => {
+        Some(_) if !(i.take_over && st.role.is_admin()) => {
             return Err(Error::PolicyGate("REVIEW_CLAIMED_BY_OTHER"));
         }
         Some(prev) => {
@@ -974,7 +1005,7 @@ pub async fn release_review_claim(s: &AppState, h: &HeaderMap, release: Uuid) ->
     )
     .bind(release)
     .bind(st.actor.user)
-    .bind(st.role == StaffRole::Admin)
+    .bind(st.role.is_admin())
     .fetch_optional(&mut *tx)
     .await?;
     let Some(row) = row else {
@@ -2691,7 +2722,7 @@ pub async fn set_contract_route(
     i: RouteChoice,
 ) -> Result<Value> {
     let st = staff(s, h, true).await?;
-    if st.role != StaffRole::Admin {
+    if !st.role.is_admin() {
         return Err(Error::Forbidden);
     }
     let dsp = Dsp::from_code(code).ok_or(Error::NotFound)?;
@@ -2745,7 +2776,7 @@ pub async fn set_contract_route(
 
 pub async fn payout_requests(s: &AppState, h: &HeaderMap, p: Page) -> Result<Value> {
     let st = staff(s, h, false).await?;
-    if st.role != StaffRole::Admin {
+    if !st.role.is_admin() {
         return Err(Error::Forbidden);
     }
     let status = p.status.as_deref().unwrap_or("REQUESTED");
@@ -2810,7 +2841,7 @@ async fn h_content_access(
     method: axum::http::Method,
 ) -> Result<Json<Value>> {
     let st = staff(&s, &h, method != axum::http::Method::GET).await?;
-    if st.role != StaffRole::Admin {
+    if !st.role.is_admin() {
         return Err(Error::Forbidden);
     }
     Ok(Json(
@@ -3181,6 +3212,21 @@ mod tests {
         assert!(StaffRole::Admin.may(Duty::Identity));
         assert!(!StaffRole::Reviewer.may(Duty::Identity));
         assert!(!StaffRole::Operator.may(Duty::Identity));
+        assert!(StaffRole::Operator.may(Duty::Finance));
+        assert!(!StaffRole::Reviewer.may(Duty::Finance));
+        assert!(StaffRole::Owner.may(Duty::Finance));
+    }
+
+    #[test]
+    fn levels_form_a_ladder() {
+        assert_eq!(StaffRole::Owner.level(), 4);
+        assert_eq!(StaffRole::Admin.level(), 3);
+        assert_eq!(StaffRole::Reviewer.level(), StaffRole::Operator.level());
+        assert_eq!(StaffRole::Support.level(), 1);
+        assert!(StaffRole::Owner.is_admin() && StaffRole::Admin.is_admin());
+        assert!(!StaffRole::Operator.is_admin());
+        assert_eq!(StaffRole::Owner.team(), "ADMIN");
+        assert_eq!(StaffRole::parse("OWNER"), Some(StaffRole::Owner));
     }
 
     #[test]

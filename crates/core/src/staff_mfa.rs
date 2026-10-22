@@ -229,52 +229,10 @@ pub struct VerifyInput {
 /// Confirms a code: finishes enrollment and marks this session verified.
 pub async fn verify(s: &AppState, h: &HeaderMap, i: VerifyInput) -> Result<Value> {
     let a = pre_mfa(s, h, true).await?;
-    // 5 tries per 15 minutes per staff account (10^6 codes: ~0.0015% a window).
-    auth::rate(&s.pool, &format!("staff-mfa-verify:{}", a.user), 5).await?;
-    let code: String = i.code.chars().filter(|c| !c.is_whitespace()).collect();
     let mut tx = s.pool.begin().await?;
-    let row = sqlx::query(
-        "SELECT totp_cipher, enrolled_at, last_step FROM identity.staff_mfa WHERE user_id=$1 FOR UPDATE",
-    )
-    .bind(a.user)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or(Error::PolicyGate("STAFF_MFA_ENROLL_REQUIRED"))?;
-    let secret = s.payout_keys.open_field(
-        Field::StaffTotpSecret,
-        a.user,
-        row.get::<&[u8], _>("totp_cipher"),
-    )?;
-    let raw = zeroize::Zeroizing::new(base32_decode(&secret).ok_or(Error::Internal)?);
-    let enrolling = row
-        .get::<Option<chrono::DateTime<chrono::Utc>>, _>("enrolled_at")
-        .is_none();
-    let Some(step) = matching_step(
-        &raw,
-        &code,
-        chrono::Utc::now().timestamp(),
-        row.get("last_step"),
-    ) else {
-        operations::audit(
-            &mut tx,
-            Some(a.user),
-            None,
-            Some(a.user),
-            "staff.mfa.failed",
-            "TOTP_MISMATCH",
-            a.request,
-        )
-        .await?;
-        tx.commit().await?;
-        return Err(Error::InvalidCode("STAFF_MFA_CODE_INVALID"));
-    };
-    sqlx::query(
-        "UPDATE identity.staff_mfa SET last_step=$2, enrolled_at=COALESCE(enrolled_at, now()), updated_at=now() WHERE user_id=$1",
-    )
-    .bind(a.user)
-    .bind(step)
-    .execute(&mut *tx)
-    .await?;
+    let enrolling = consume_code(s, &mut tx, &a, &i.code)
+        .await?
+        .ok_or(Error::PolicyGate("STAFF_MFA_ENROLL_REQUIRED"))?;
     sqlx::query(
         "UPDATE identity.sessions SET mfa_at=now(), last_seen_at=now() WHERE token_hash=$1",
     )
@@ -297,6 +255,104 @@ pub async fn verify(s: &AppState, h: &HeaderMap, i: VerifyInput) -> Result<Value
     .await?;
     tx.commit().await?;
     Ok(json!({"verified": true}))
+}
+
+/// Checks and uses up one code. `Ok(None)`: no authenticator on file;
+/// `Ok(Some(enrolling))`: accepted (true when it completed enrollment). A
+/// wrong code is audited (committed here) and answers STAFF_MFA_CODE_INVALID.
+async fn consume_code(
+    s: &AppState,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    a: &Actor,
+    code: &str,
+) -> Result<Option<bool>> {
+    // 5 tries per 15 minutes per staff account (10^6 codes: ~0.0015% a window).
+    auth::rate(&s.pool, &format!("staff-mfa-verify:{}", a.user), 5).await?;
+    let code: String = code.chars().filter(|c| !c.is_whitespace()).collect();
+    let Some(row) = sqlx::query(
+        "SELECT totp_cipher, enrolled_at, last_step FROM identity.staff_mfa WHERE user_id=$1 FOR UPDATE",
+    )
+    .bind(a.user)
+    .fetch_optional(&mut **tx)
+    .await?
+    else {
+        return Ok(None);
+    };
+    let secret = s.payout_keys.open_field(
+        Field::StaffTotpSecret,
+        a.user,
+        row.get::<&[u8], _>("totp_cipher"),
+    )?;
+    let raw = zeroize::Zeroizing::new(base32_decode(&secret).ok_or(Error::Internal)?);
+    let enrolling = row
+        .get::<Option<chrono::DateTime<chrono::Utc>>, _>("enrolled_at")
+        .is_none();
+    let Some(step) = matching_step(
+        &raw,
+        &code,
+        chrono::Utc::now().timestamp(),
+        row.get("last_step"),
+    ) else {
+        // The failure is recorded even though the caller's work is refused.
+        let mut log = s.pool.begin().await?;
+        operations::audit(
+            &mut log,
+            Some(a.user),
+            None,
+            Some(a.user),
+            "staff.mfa.failed",
+            "TOTP_MISMATCH",
+            a.request,
+        )
+        .await?;
+        log.commit().await?;
+        return Err(Error::InvalidCode("STAFF_MFA_CODE_INVALID"));
+    };
+    sqlx::query(
+        "UPDATE identity.staff_mfa SET last_step=$2, enrolled_at=COALESCE(enrolled_at, now()), updated_at=now() WHERE user_id=$1",
+    )
+    .bind(a.user)
+    .bind(step)
+    .execute(&mut **tx)
+    .await?;
+    Ok(Some(enrolling))
+}
+
+/// Step-up for the admin console's riskiest operations (staff changes,
+/// money, identifier ranges, partner go-live): a fresh authenticator code on
+/// the request itself, even though the session already passed the second
+/// factor. Without an enrolled authenticator there is nothing to check,
+/// which only happens where MFA is not required (development).
+pub async fn step_up(s: &AppState, a: &Actor, code: Option<&str>) -> Result<()> {
+    let enrolled: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM identity.staff_mfa WHERE user_id=$1 AND enrolled_at IS NOT NULL)",
+    )
+    .bind(a.user)
+    .fetch_one(&s.pool)
+    .await?;
+    if !enrolled {
+        if crate::config::staff_mfa_required()? {
+            return Err(Error::PolicyGate("STAFF_MFA_ENROLL_REQUIRED"));
+        }
+        return Ok(());
+    }
+    let code = code
+        .filter(|c| !c.trim().is_empty())
+        .ok_or(Error::PolicyGate("STAFF_STEP_UP_REQUIRED"))?;
+    let mut tx = s.pool.begin().await?;
+    consume_code(s, &mut tx, a, code).await?;
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        None,
+        Some(a.user),
+        "staff.mfa.step_up",
+        "TOTP",
+        a.request,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
 }
 
 pub fn base32_decode(s: &str) -> Option<Vec<u8>> {

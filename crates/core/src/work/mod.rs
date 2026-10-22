@@ -13,7 +13,7 @@ use crate::{
     api::AppState,
     error::{Error, Result},
     operations,
-    staff::{self, Staff, StaffRole},
+    staff::{self, Staff},
     text_policy,
 };
 use axum::{Json, Router, extract::State, http::HeaderMap, routing::get};
@@ -55,7 +55,7 @@ pub(crate) enum Act {
 
 pub(crate) fn permit(st: &Staff, act: Act) -> Result<()> {
     let me = st.actor.user;
-    let admin = st.role == StaffRole::Admin;
+    let admin = st.role.is_admin();
     let ok = match act {
         Act::ArchiveTask {
             created_by,
@@ -137,7 +137,8 @@ pub(crate) async fn audit(
 pub async fn people(s: &AppState, h: &HeaderMap) -> Result<Value> {
     staff::staff(s, h, false).await?;
     let rows = sqlx::query(
-        "SELECT sm.user_id, u.email, u.email_cipher, sm.role FROM identity.staff_members sm JOIN identity.users u ON u.id=sm.user_id
+        // Work management knows teams, where an OWNER works as an ADMIN.
+        "SELECT sm.user_id, u.email, u.email_cipher, CASE sm.role WHEN 'OWNER' THEN 'ADMIN' ELSE sm.role END AS role FROM identity.staff_members sm JOIN identity.users u ON u.id=sm.user_id
           WHERE sm.status='ACTIVE' AND u.status='ACTIVE'",
     )
     .fetch_all(&s.pool)

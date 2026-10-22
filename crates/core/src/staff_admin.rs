@@ -6,9 +6,14 @@ use serde_json::{Value, json};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-const ROLES: &[&str] = &["ADMIN", "REVIEWER", "OPERATOR", "SUPPORT"];
+const ROLES: &[&str] = &["OWNER", "ADMIN", "REVIEWER", "OPERATOR", "SUPPORT"];
 
 pub async fn list(pool: &PgPool) -> Result<Value> {
+    list_with(pool, &crate::pii::cli_keys()?).await
+}
+
+/// Every staff row, highest level first (the CLI and the admin console).
+pub async fn list_with(pool: &PgPool, keys: &crate::payout_keys::KeyRing) -> Result<Value> {
     let mut rows: Vec<Value> = sqlx::query_scalar(concat!(
         "SELECT jsonb_build_object('email',",
         crate::email_ref!("u"),
@@ -18,11 +23,20 @@ pub async fn list(pool: &PgPool) -> Result<Value> {
     ))
     .fetch_all(pool)
     .await?;
-    let keys = crate::pii::cli_keys()?;
     for row in &mut rows {
-        crate::pii::reveal(&keys, row)?;
+        crate::pii::reveal(keys, row)?;
     }
-    rows.sort_by(|a, b| a["email"].as_str().cmp(&b["email"].as_str()));
+    let level = |v: &Value| {
+        v["role"]
+            .as_str()
+            .and_then(crate::staff::StaffRole::parse)
+            .map_or(0, |r| r.level())
+    };
+    rows.sort_by(|a, b| {
+        (b["status"] == "ACTIVE", level(b))
+            .cmp(&(a["status"] == "ACTIVE", level(a)))
+            .then(a["email"].as_str().cmp(&b["email"].as_str()))
+    });
     Ok(Value::Array(rows))
 }
 

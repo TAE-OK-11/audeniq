@@ -24,6 +24,7 @@ import { CommentsPanel, InfoPanel, VersionsPanel } from '../docs/DocPanels';
 import { MoveDialog, NewDocDialog, ReasonDialog, ShareDialog, TemplateDialog } from '../docs/DocDialogs';
 import '../../../styles/docs.css';
 import { josa } from '../../../lib/josa';
+import { isAdmin } from '../../api';
 
 type Panel = 'comments' | 'info' | 'versions' | null;
 const LEVEL_RANK = { NONE: 0, VIEWER: 1, EDITOR: 2, MANAGER: 3, OWNER: 4 } as const;
@@ -149,7 +150,7 @@ function DocView({ id, people, onTreeChange, onAncestors }: { id: string; people
   const archived = !!detail?.doc.archived_at;
   const canEdit = LEVEL_RANK[level] >= 2 && !archived;
   const canManage = LEVEL_RANK[level] >= 3;
-  const isOwner = level === 'OWNER' || me.role === 'ADMIN';
+  const isOwner = level === 'OWNER' || isAdmin(me);
 
   /** 저장을 끝내고 하는 일 (상태 변경·복원 전) */
   const settle = async () => { await ctrlRef.current?.flush(); };
@@ -255,7 +256,7 @@ function DocView({ id, people, onTreeChange, onAncestors }: { id: string; people
                   { label: '위로', hidden: !canManage || archived, run: () => void reorder(-1) },
                   { label: '아래로', hidden: !canManage || archived, run: () => void reorder(1) },
                   { label: '지금 버전 저장', hidden: !canEdit, run: () => void act(async () => { await settle(); await workApi.saveDocVersion(id); }, '버전을 저장했어요.') },
-                  { label: '템플릿으로 저장', hidden: me.role !== 'ADMIN' || archived, run: () => setDialog('template') },
+                  { label: '템플릿으로 저장', hidden: !isAdmin(me) || archived, run: () => setDialog('template') },
                   { label: '보관', hidden: !canManage || archived, danger: true, run: () => void (async () => {
                     if (await confirm({ title: '문서를 보관할까요?', message: '하위 문서도 함께 보관돼요. 보관함에서 복원할 수 있어요.', confirmLabel: '보관', danger: true })) {
                       await act(async () => { await settle(); await workApi.archiveDoc(id); onTreeChange(); await load(); }, '보관했어요.');

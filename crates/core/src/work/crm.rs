@@ -12,7 +12,7 @@ use super::{active_staff, audit, entities, line, one_of, text};
 use crate::{
     api::AppState,
     error::{Error, Result},
-    staff::{self, StaffRole},
+    staff,
 };
 use axum::{
     Json, Router,
@@ -603,7 +603,7 @@ pub async fn update(s: &AppState, h: &HeaderMap, id: Uuid, i: UpdateInput) -> Re
 
 pub async fn archive(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<Value> {
     let st = staff::staff(s, h, true).await?;
-    if st.role != StaffRole::Admin {
+    if !st.role.is_admin() {
         return Err(Error::Forbidden);
     }
     let mut tx = s.pool.begin().await?;

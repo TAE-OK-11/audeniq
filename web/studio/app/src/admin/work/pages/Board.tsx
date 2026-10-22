@@ -25,6 +25,7 @@ import {
   EMPTY_FILTERS, activeFilters, applyMove, boardError, cardSelector, filtersFromParams, filtersToParams, groupCards, moveTarget, needsReload, shiftCount, toQuery,
   type BoardFilters, type MoveDir,
 } from '../board/logic';
+import { isAdmin } from '../../api';
 
 const LAST_BOARD = 'adm.board.last';
 const KIND_ORDER = ['PERSONAL', 'TEAM', 'OPERATIONS'] as const;
@@ -43,7 +44,7 @@ export function Board() {
   const confirm = useConfirm();
   const { me } = useStaff();
   const people = usePeople();
-  const admin = me.role === 'ADMIN';
+  const admin = isAdmin(me);
 
   const filters = useMemo(() => filtersFromParams(params), [params]);
   const queryKey = JSON.stringify(toQuery(filters));

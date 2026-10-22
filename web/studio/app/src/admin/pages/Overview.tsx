@@ -13,6 +13,7 @@ import { DUTY_LABEL, ROLE_LABEL } from '../labels';
 import { CountUp, PageHeader, Section, useDualApproval, useStaff } from '../ui';
 import { IconTile, StatGrid, StatTile } from '../../ui';
 import type { Overview } from '../api';
+import { isAdmin } from '../api';
 
 interface Tile { key: keyof Overview; label: string; hint: string; to: string; icon: string; alert?: boolean }
 
@@ -70,7 +71,7 @@ export function OverviewPage() {
       {/* 업무함은 늦게 불러와지므로 숫자 칸 아래에 둔다 — 위에 끼어들며 이미 보이는 칸들을 밀어내지 않게 */}
       <InboxPeek />
 
-      {me.role === 'ADMIN' && counts && counts.payout_requests > 0 && (
+      {isAdmin(me) && counts && counts.payout_requests > 0 && (
         <div className="ui-callout is-row">
           <span>지급 요청 <b>{counts.payout_requests}건</b>이 운영 처리를 기다리고 있어요. (지급 실행은 운영 도구에서만 할 수 있어요)</span>
           <button type="button" className="ui-btn is-soft is-sm" onClick={() => nav('/admin/payouts')}>지급 요청 보기</button>

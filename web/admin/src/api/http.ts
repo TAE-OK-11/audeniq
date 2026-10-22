@@ -74,7 +74,8 @@ export async function req<T>(path: string, opts: ReqOptions = {}): Promise<T> {
     const msg = code === 'MAINTENANCE'
       ? ((data as { error?: { message?: string } } | null)?.error?.message || messageForCode(code, res.status))
       : messageForCode(code, res.status);
-    throw new ApiError(msg, res.status, code);
+    const server = (data as { error?: ApiError['server'] } | null)?.error;
+    throw new ApiError(msg, res.status, code, server ? { message: server.message, details: server.details } : undefined);
   }
   return (data ?? {}) as T;
 }

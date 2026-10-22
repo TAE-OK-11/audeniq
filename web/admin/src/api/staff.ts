@@ -6,8 +6,14 @@ import { ApiError, messageForCode } from './errors';
 import { req } from './http';
 import { MOCK } from '../lib/mode';
 
-export type StaffRole = 'ADMIN' | 'REVIEWER' | 'OPERATOR' | 'SUPPORT';
-export type Duty = 'REVIEW' | 'DOCUMENTS' | 'INQUIRIES' | 'DELIVERY' | 'IDENTITY';
+// 레벨: 고객 지원 1 < 심사 담당·배급 운영 2 < 관리자 3 < 최고 관리자 4 (위 레벨은 아래 레벨 일을 모두 해요)
+export type StaffRole = 'OWNER' | 'ADMIN' | 'REVIEWER' | 'OPERATOR' | 'SUPPORT';
+export type Duty = 'REVIEW' | 'DOCUMENTS' | 'INQUIRIES' | 'DELIVERY' | 'IDENTITY' | 'FINANCE';
+
+export const ROLE_LEVEL: Record<StaffRole, number> = { OWNER: 4, ADMIN: 3, REVIEWER: 2, OPERATOR: 2, SUPPORT: 1 };
+/** 관리자(레벨 3) 이상 — 최고 관리자도 관리자 권한을 모두 가져요 */
+export const isAdmin = (me: Pick<StaffMe, 'role'>) => ROLE_LEVEL[me.role] >= 3;
+export const levelOf = (me: Pick<StaffMe, 'role' | 'level'>) => me.level ?? ROLE_LEVEL[me.role] ?? 1;
 
 /** 직원 실명인증 (crates/core/src/identity_desk.rs) */
 export type IdentityChannel = 'IN_PERSON' | 'CUSTOMER_CENTER';
@@ -26,7 +32,7 @@ export interface IdentityVerifyInput {
   guardian_relation?: GuardianRelation | null; note: string; correction: boolean;
 }
 
-export interface StaffMe { user_id: string; role: StaffRole; duties: Duty[]; /** 서버 DUAL_APPROVAL_ENABLED — 꺼져 있으면 2차 승인 없이 한 사람이 처리 */ dual_approval?: boolean }
+export interface StaffMe { user_id: string; role: StaffRole; /** 1~4 */ level?: number; duties: Duty[]; /** 서버 DUAL_APPROVAL_ENABLED — 꺼져 있으면 2차 승인 없이 한 사람이 처리 */ dual_approval?: boolean }
 
 export interface Overview {
   review: number; correction: number; in_pipeline: number; second_approvals: number;
