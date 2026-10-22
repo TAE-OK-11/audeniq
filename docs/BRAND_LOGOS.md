@@ -72,7 +72,7 @@ AI 앱 연결·승인 화면과 프로필의 연결된 AI 앱 목록은 잘 알�
 | `chatgpt` | ChatGPT | OpenAI 공식 브랜드 키트의 Blossom 심볼(`OAI_OpenAI-Blossom_Black.svg`) — https://cdn.openai.com/brand/openai-logos.zip · 여백만 잘라 viewBox를 심볼 크기로 맞춤 |
 | `perplexity` | Perplexity | 공식 브랜드 기반 SVG(simple-icons 16.35.0, `perplexity`) — https://www.perplexity.ai · 브랜드 색 True Turquoise(#20808D)로 칠해 흰 칸에(`kind: 'image'`) |
 | `grok` | Grok | grok.com 공식 파비콘 SVG(https://grok.com/images/favicon.svg)의 심볼 경로 두 개만 꺼냄(앱 아이콘 바탕·흐림 효과 제외) |
-| `gemini` | Gemini | Google 공식 스파클 벡터(그라데이션) — https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg · 흰 칸에 원래 색 그대로(`kind: 'image'`). 지금의 4색 스파클은 공식 PNG만 있어 쓰지 않았다 |
+| `gemini` | Gemini | 지금 앱 아이콘과 같은 4색 스파클, Google 공식 512px PNG(투명 바탕) — https://www.gstatic.com/lamda/images/gemini_sparkle_4g_512_lt_f94943af3be039176192d.png · 다른 로고와 같은 크기가 되게 투명 여백만 맞춤, 흰 칸에(`kind: 'image'`). 4색 스파클은 공식 벡터가 공개되지 않아 PNG를 쓴다(이전 그라데이션 스파클만 벡터로 있음) |
 
 Microsoft Copilot은 공식 벡터를 확보하지 못해 이름 바꾸기 목록에서 뺐다(주소 그대로 보인다). 새 AI 앱은 공식 벡터를 `public/static/brands/`에 넣고 `brands.ts`와 `KNOWN_APPS`에 함께 등록한다.
 

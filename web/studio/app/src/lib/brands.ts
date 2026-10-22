@@ -81,5 +81,5 @@ export const BRAND_ASSETS: Record<string, BrandAsset> = {
   'chatgpt': { kind: 'glyph', file: 'chatgpt.svg', color: '#000000' },
   'perplexity': { kind: 'image', file: 'perplexity.svg' },  // 브랜드 색(True Turquoise) 표시를 흰 칸에
   'grok': { kind: 'glyph', file: 'grok.svg', color: '#000000' },
-  'gemini': { kind: 'image', file: 'gemini.svg' },          // Google 공식 그라데이션 스파클을 흰 칸에
+  'gemini': { kind: 'image', file: 'gemini.png' },          // 지금의 4색 스파클 — Google 공식 PNG만 있어 PNG
 };
