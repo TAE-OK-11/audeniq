@@ -10,6 +10,7 @@ import { useConfirm } from '../components/Confirm';
 import { ApiError, errorMessage, messageForCode } from '../api/errors';
 import { aiActionRequest, decideAiAction, type AiActionRequest } from '../api/aiConnections';
 import { MOCK } from '../lib/mode';
+import { josa } from '../lib/josa';
 import { AiRequestMissing } from '../components/AiRequestMissing';
 import { AiFlowFrame, AiFlowHeader, AiFlowHero, AiFlowLoading, AiFlowPage, AiSetCard, AiSetRow, workspaceName } from '../components/AiFlow';
 import type { Tone } from '../ui';
@@ -18,10 +19,10 @@ const TITLE = '작업 승인 요청';
 
 const DONE_TITLE: Record<Exclude<AiActionRequest['status'], 'PENDING'>, string> = {
   RUNNING: '처리하고 있어요',
-  DONE: '승인하고 처리했어요',
-  FAILED: '작업을 마치지 못했어요',
+  DONE: '처리했어요',
+  FAILED: '처리하지 못했어요',
   REJECTED: '거절했어요',
-  EXPIRED: '요청 시간이 지났어요',
+  EXPIRED: '답할 수 있는 시간이 지났어요',
   REVOKED: '이미 끊긴 연결이에요',
 };
 type Status = AiActionRequest['status'];
@@ -32,12 +33,12 @@ const DONE_ICON: Record<Status, { kind: 'ok' | 'off' | 'warn'; tone: Tone }> = {
 };
 const STATUS_TEXT: Record<AiActionRequest['status'], string> = {
   PENDING: '',
-  RUNNING: '잠시 뒤에 다시 확인해 주세요.',
-  DONE: '요청한 작업을 마쳤어요. AI 앱에서 계속 진행해 주세요.',
-  FAILED: '승인은 했어요.',
+  RUNNING: '잠시 뒤 이 화면을 다시 열면 결과를 볼 수 있어요.',
+  DONE: 'AI 앱으로 돌아가 이어서 진행해 주세요.',
+  FAILED: '승인은 했지만 처리 중에 문제가 생겼어요.',
   REJECTED: '아무것도 바뀌지 않았어요.',
-  EXPIRED: '요청 시간(24시간)이 지났어요. 필요하면 AI 앱에서 다시 요청해 주세요.',
-  REVOKED: '이 연결은 이미 끊겼어요.',
+  EXPIRED: '요청은 24시간 동안만 답할 수 있어요. 필요하면 AI 앱에 다시 요청해 달라고 말해 주세요.',
+  REVOKED: '끊긴 연결의 요청은 처리할 수 없어요.',
 };
 
 const demo = (id: string): AiActionRequest => ({
@@ -70,9 +71,9 @@ export function AiAction() {
     if (!r || busy) return;
     if (approve) {
       const ok = await confirm({
-        title: `${r.summary.title}을(를) 승인할까요?`,
-        message: `승인하면 내 계정으로 바로 처리돼요. ${r.summary.warning}`,
-        confirmLabel: '승인하고 실행',
+        title: '승인하면 바로 처리해요',
+        message: r.summary.warning || `${josa(r.summary.title, '을/를')} 내 계정으로 처리해요.`,
+        confirmLabel: '승인하기',
       });
       if (!ok) return;
     }
@@ -80,9 +81,11 @@ export function AiAction() {
     try {
       const res = MOCK ? { status: approve ? 'DONE' : 'REJECTED' } : await decideAiAction(r.id, approve);
       setR({ ...r, status: res.status as AiActionRequest['status'], decided_at: new Date().toISOString() });
-      toast(approve ? '승인하고 처리했어요. AI 앱에서 계속 진행해 주세요.' : '요청을 거절했어요.', approve ? 'success' : 'info');
+      if (!approve) toast('요청을 거절했어요.', 'info');
+      else if (res.status === 'DONE') toast('승인하고 처리했어요.', 'success');
+      else if (res.status === 'RUNNING') toast('승인했어요. 처리를 시작했어요.', 'success');
     } catch (err) {
-      toast(errorMessage(err, '처리하지 못했어요.'), 'error');
+      toast(errorMessage(err, '처리하지 못했어요. 잠시 후 다시 해 주세요.'), 'error');
       // 실패·만료·이미 처리된 요청은 최신 상태로 다시 보여 준다
       aiActionRequest(r.id).then(setR, () => {});
     } finally {
@@ -98,7 +101,7 @@ export function AiAction() {
           <AiFlowHeader kicker={TITLE} title={'요청을\n불러오지 못했어요'} />
           <div className="ui-callout is-danger" role="alert">{error}</div>
           <div className="step-actions">
-            <Link id="wizardNext" className="ui-btn is-primary" to="/">스튜디오 홈</Link>
+            <Link id="wizardNext" className="ui-btn is-primary" to="/">홈으로</Link>
           </div>
         </AiFlowFrame>
       </AiFlowPage>
@@ -118,8 +121,8 @@ export function AiAction() {
         {pending ? (
           <AiFlowHero
             app={app} kicker={TITLE}
-            title={`${app}에서\n작업 승인을 요청했어요`}
-            sub="승인하면 내 계정으로 바로 처리돼요. 내가 요청한 게 아니라면 거절해 주세요."
+            title={`${josa(r.summary.title, '을/를')}\n승인할까요?`}
+            sub={`${josa(app, '이/가')} 요청했어요. 승인하면 바로 내 계정으로 처리해요. 내가 시작한 요청이 아니라면 거절해 주세요.`}
           />
         ) : (
           <AiFlowHero
@@ -129,11 +132,11 @@ export function AiAction() {
         )}
 
         <AiSetCard title="요청한 작업">
-          <AiSetRow label="작업" value={r.summary.title} />
+          {!pending && <AiSetRow label="작업" value={r.summary.title} />}
           {r.summary.lines.map(l => <AiSetRow key={l.label} label={l.label} value={l.value} stack={l.value.length > 18} />)}
-          {!pending && <AiSetRow label="AI 앱" value={app} />}
+          <AiSetRow label="요청한 AI 앱" value={app} />
           <AiSetRow label="작업 공간" value={workspaceName(r.org_name)} />
-          {pending && <AiSetRow label="답할 시간" value={`${until}까지`} />}
+          {pending && <AiSetRow label="답할 수 있는 시간" value={`${until}까지`} />}
           {r.summary.warning && <p className="aq-flow-note">{r.summary.warning}</p>}
         </AiSetCard>
 
@@ -141,17 +144,17 @@ export function AiAction() {
           <>
             <div className="step-actions">
               <button type="button" id="wizardBack" className="ui-btn is-soft" disabled={!!busy} onClick={() => void decide(false)}>거절</button>
-              <button type="button" id="wizardNext" className={`ui-btn is-primary${busy === 'approve' ? ' is-busy' : ''}`} disabled={!!busy} onClick={() => void decide(true)}>승인</button>
+              <button type="button" id="wizardNext" className={`ui-btn is-primary${busy === 'approve' ? ' is-busy' : ''}`} disabled={!!busy} onClick={() => void decide(true)}>승인하기</button>
             </div>
             <p className="aq-connect-deny">
-              <button type="button" className="ui-btn is-text" disabled={!!busy} onClick={() => void decide(false)}>거절할래요</button>
+              <button type="button" className="ui-btn is-text" disabled={!!busy} onClick={() => void decide(false)}>거절하기</button>
             </p>
           </>
         ) : (
           <>
             <div className="step-actions">
               <Link id="wizardBack" className="ui-btn is-soft" to="/profile?open=ai">연결된 AI 앱</Link>
-              <Link id="wizardNext" className="ui-btn is-primary" to="/">스튜디오 홈</Link>
+              <Link id="wizardNext" className="ui-btn is-primary" to="/">홈으로</Link>
             </div>
             <p className="aq-connect-deny">
               <Link className="ui-btn is-text" to="/profile?open=ai">연결된 AI 앱 관리</Link>
