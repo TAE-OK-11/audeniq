@@ -1,7 +1,7 @@
 //! MCP prompts: ready-made starting points the client can offer the artist
 //! (Claude shows them as slash commands). Each one only fills the artist's
 //! first message; every action still goes through the tools and their
-//! confirmations. Written in AUDENIQ's Korean voice (어데닉, 해요체); the
+//! confirmations. Written in AUDENIQ's Korean voice (AUDENIQ in English letters, 해요체); the
 //! assistant answers in the artist's own language.
 use serde_json::{Value, json};
 
@@ -31,14 +31,14 @@ const PROMPTS: &[Prompt] = &[
     Prompt {
         name: "prepare_release",
         title: "새 발매 준비",
-        description: "어데닉에서 새 발매 초안을 만들고, 빠진 정보를 하나씩 채워요.",
+        description: "AUDENIQ에서 새 발매 초안을 만들고, 빠진 정보를 하나씩 채워요.",
         arguments: &[("title", "발매 제목 (선택)", false)],
         text: |a| {
             let title = arg(a, "title")
                 .map(|t| format!(" 제목은 {}이에요.", quoted(t)))
                 .unwrap_or_default();
             format!(
-                "어데닉에서 새 발매를 준비하고 싶어요.{title} 발매 요건을 먼저 확인하고, 초안을 만든 뒤 필요한 정보를 하나씩 물어봐 주세요. 음원과 커버는 어데닉 스튜디오에서 올릴게요."
+                "AUDENIQ에서 새 발매를 준비하고 싶어요.{title} 발매 요건을 먼저 확인하고, 초안을 만든 뒤 필요한 정보를 하나씩 물어봐 주세요. 음원과 커버는 AUDENIQ Studio에서 올릴게요."
             )
         },
     },
@@ -71,7 +71,7 @@ const PROMPTS: &[Prompt] = &[
         description: "정산 잔액과 최근 정산 내역, 지급 신청 현황을 확인해요.",
         arguments: &[],
         text: |_| {
-            "어데닉 정산 잔액과 최근 정산 내역, 지급 신청 현황을 정리해 주세요. 금액은 받은 그대로 원 단위로 보여 주세요.".into()
+            "AUDENIQ 정산 잔액과 최근 정산 내역, 지급 신청 현황을 정리해 주세요. 금액은 받은 그대로 원 단위로 보여 주세요.".into()
         },
     },
     Prompt {
@@ -117,7 +117,7 @@ mod tests {
         let v = get("prepare_release", &json!({"title": "봄\u{0}노래"})).unwrap();
         let text = v["messages"][0]["content"]["text"].as_str().unwrap();
         assert!(text.contains("「봄노래」"), "{text}");
-        assert!(text.contains("어데닉"));
+        assert!(text.contains("AUDENIQ에서"));
         assert!(get("nope", &json!({})).is_none());
         for p in PROMPTS {
             let t = (p.text)(&json!({}));

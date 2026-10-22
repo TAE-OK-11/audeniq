@@ -49,13 +49,13 @@ async function render() {
 const buttons = (label: string) => [...document.querySelectorAll('button')].filter(b => b.textContent === label);
 
 describe('AiConnections', () => {
-  it('lists each app with its host, workspace and permissions', async () => {
+  it('lists each app by name (not its address), workspace and permissions', async () => {
     http.req.mockResolvedValue({ items });
     await render();
     expect(http.req).toHaveBeenCalledWith('/api/auth/ai-connections');
     const text = el.textContent ?? '';
     expect(text).toContain('ChatGPT');
-    expect(text).toContain('chatgpt.com');
+    expect(text).not.toContain('chatgpt.com');
     expect(text).toContain('내 작업 공간');
     expect(text).toContain('발매 정보 보기, 발매 초안 작성·수정, 소액 지급 신청');
     expect(text).toContain('아직 사용 안 함');

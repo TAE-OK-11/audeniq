@@ -1,6 +1,7 @@
 // 연결된 AI 앱 — AI 어시스턴트(ChatGPT·Claude 등)가 이 계정에 받은 권한을 보고, 언제든 끊는다.
 // 에이전트마다 하나씩 주는 에이전트 키(서버의 연결 토큰)도 여기서 만든다 (한 번만 보여 줌).
 // 키는 그대로 쓰거나, 토큰 교환(RFC 8693)으로 권한을 좁힌 1시간짜리 작업 토큰을 받아 쓴다.
+import { BrandMark } from './BrandMark';
 import { useEffect, useRef, useState } from 'react';
 import { useToast } from './Toast';
 import { useConfirm } from './Confirm';
@@ -8,7 +9,7 @@ import { CopyButton } from './CopyButton';
 import { ApiError, errorMessage } from '../api/errors';
 import { orgId } from '../api/http';
 import {
-  aiActionRequests, aiConnections, aiPermissionRequests, aiSettings, aiSubmissions, approveAiSubmission, clientHost, createConnectionToken, DECLARATION_LABEL,
+  aiActionRequests, aiConnections, aiPermissionRequests, aiSettings, aiSubmissions, appBrandForHost, appName, approveAiSubmission, clientHost, createConnectionToken, DECLARATION_LABEL,
   rejectAiSubmission, revokeAiConnection, saveAiSettings, SCOPE_HELP, SCOPE_LABEL,
   type AiActionRequest, type AiConnection, type AiPermissionRequest, type AiSettings, type AiSubmission, type NewConnectionToken,
 } from '../api/aiConnections';
@@ -304,7 +305,7 @@ export function AiConnections() {
       title: `${name} 연결을 끊을까요?`,
       message: c.method === 'TOKEN'
         ? '끊으면 이 키와 키로 받은 작업 토큰을 바로 쓸 수 없어요. 다시 쓰려면 에이전트 키를 새로 만들어 주세요.'
-        : '끊으면 이 AI 앱은 바로 어데닉에 접근할 수 없어요. 다시 쓰려면 AI 앱에서 새로 연결하면 돼요.',
+        : '끊으면 이 AI 앱은 바로 AUDENIQ에 접근할 수 없어요. 다시 쓰려면 AI 앱에서 새로 연결하면 돼요.',
       confirmLabel: '연결 끊기',
       danger: true,
     });
@@ -360,25 +361,28 @@ export function AiConnections() {
       )}
       {pending.length > 0 && <PendingSubmissions items={pending} onDone={id => setPending(list => list.filter(p => p.id !== id))} />}
       <p className="aq-muted">
-        ChatGPT·Claude 같은 AI 앱에서 어데닉을 연결하면 여기에 나와요. 앱마다 승인한 일만 할 수 있어요.
+        ChatGPT·Claude 같은 AI 앱에서 AUDENIQ을 연결하면 여기에 나와요. 앱마다 승인한 일만 할 수 있어요.
       </p>
       {items.length === 0 ? (
         <div className="aq-token-empty">
           <strong>연결된 AI 앱이 없어요</strong>
-          <small>AI 앱에서 어데닉을 연결하거나, 아래에서 에이전트 키를 만들 수 있어요.</small>
+          <small>AI 앱에서 AUDENIQ을 연결하거나, 아래에서 에이전트 키를 만들 수 있어요.</small>
         </div>
       ) : (
         <ul className="aq-passkey-list">
           {items.map(c => {
             const host = clientHost(c.client_id);
+            // 이름과 같은 앱(Claude · Claude)은 한 번만, 모르는 주소는 그대로
+            const from = host && appName(host) !== c.client_name ? appName(host) : null;
             const used = c.last_used_at ? `마지막 사용 ${relativeTime(c.last_used_at)}` : '아직 사용 안 함';
             const token = c.method === 'TOKEN';
             const until = c.no_expiry || !c.expires_at ? '무기한' : `${day(c.expires_at)}까지`;
             const meta = token
               ? ['에이전트 키', workspaceName(c.org_name), until, used]
-              : [host, workspaceName(c.org_name), `연결 ${relativeTime(c.created_at)}`, used];
+              : [from, workspaceName(c.org_name), `연결 ${relativeTime(c.created_at)}`, used];
             return (
               <li key={c.id}>
+                {!token && appBrandForHost(host) && <BrandMark id={appBrandForHost(host)!} label={c.client_name} size={36} className="aq-ai-app-logo" />}
                 <span className="min-0">
                   <strong>{token ? c.label ?? c.client_name : c.client_name}</strong>
                   <small>{meta.filter(Boolean).join(' · ')}</small>

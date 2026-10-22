@@ -159,8 +159,6 @@ function PortalRoutes() {
             <Route path="/notices/:id" element={<NoticeDetail />} />
             <Route path="/support" element={<Navigate to="/inquiries" replace />} />
             <Route path="/profile" element={<Profile />} />
-            <Route path="/ai/approve/:id" element={<AiApprove />} />
-            <Route path="/ai/actions/:id" element={<AiAction />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>
@@ -203,6 +201,9 @@ export function App() {
                     <Route path="/admin/*" element={<Protected><AdminApp /></Protected>} />
                     {/* AI 앱 연결 승인 — 스튜디오 메뉴 없이 한 화면으로 (AI 앱의 앱 안 브라우저에서 열린다) */}
                     <Route path="/ai/connect" element={<Protected><AiConnect /></Protected>} />
+                    {/* AI 앱이 보낸 권한·작업 승인 링크 — 연결 화면과 같은 틀 */}
+                    <Route path="/ai/approve/:id" element={<Protected><AiApprove /></Protected>} />
+                    <Route path="/ai/actions/:id" element={<Protected><AiAction /></Protected>} />
                     <Route path="/*" element={<Protected><PortalRoutes /></Protected>} />
                   </Routes>
                 </Suspense>

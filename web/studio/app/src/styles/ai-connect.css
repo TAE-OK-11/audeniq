@@ -2,7 +2,6 @@
    여기에는 신청서에 없는 몇 가지만 둔다: 요청한 앱 줄, 연결 코드, 권한 꼬리표, 지켜지는 것 목록, 연결 정보. */
 .aq-connect-view{min-height:100vh;min-height:100dvh}
 .aq-connect-topspace{visibility:hidden}
-.aq-connect-account{display:inline-block;max-width:44vw;height:28px;padding:0 10px;border-radius:var(--aq-r-pill);background:var(--aq-gray-50);color:var(--aq-text-3);font-size:12px;font-weight:600;line-height:28px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .aq-connect-layout{margin:0 auto}
 
 /* 요청한 앱 — 신청서의 고르는 카드(aq-choice)와 같은 면 */
@@ -66,3 +65,29 @@
   #view-new.aq-connect-view .aq-choice-row{grid-template-columns:1fr 1fr}
   #view-new.aq-connect-view .aq-options{grid-template-columns:1fr!important}
 }
+
+/* 승인 화면 (/ai/approve/:id, /ai/actions/:id) — 계정 정보 화면(pages/Profile.tsx)의 프로필 줄·묶음 카드
+   (aq-set-profile·aq-set-card·aq-set-row)를 그대로 쓰고, 보여 주기만 하는 줄과 두 줄 항목만 여기 둔다 */
+.aq-flow-hero>.ui-icon{margin:4px 0 20px}
+.aq-flow-avatar{display:grid!important;place-items:center;width:56px!important;height:56px!important;margin:4px 0 20px!important;font-size:24px!important;font-weight:800;border-radius:18px!important}
+.aq-flow-row{cursor:default;align-items:flex-start;min-height:0;padding:14px 14px;gap:16px}
+.aq-flow-row:active{transform:none!important;filter:none!important}
+@media (hover:hover){.aq-set-card .aq-flow-row:hover{background:none}}
+.aq-flow-row .aq-set-label{font-size:15px;color:var(--aq-text-3);font-weight:500}
+.aq-flow-row .aq-set-value{font-size:15px;font-weight:600;color:var(--aq-text);white-space:pre-wrap;overflow:visible;overflow-wrap:anywhere;word-break:keep-all}
+.aq-flow-row.is-stack{flex-direction:column;gap:4px}
+.aq-flow-row.is-stack .aq-set-value{text-align:left;font-weight:500;line-height:1.6}
+.aq-flow-item{display:grid;gap:4px;padding:12px 14px 14px}
+.aq-flow-item strong{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:16px;font-weight:700;color:var(--aq-text)}
+.aq-flow-item span{color:var(--aq-text-3);font-size:14px;line-height:1.55;word-break:keep-all}
+.aq-flow-note{margin:2px 14px 10px;padding:12px 14px;border-radius:var(--aq-r-lg);background:var(--aq-amber-50);color:var(--aq-amber-700);font-size:13px;line-height:1.6;word-break:keep-all}
+.aq-flow-fine{margin:14px 2px 0;color:var(--aq-text-3);font-size:13px;line-height:1.6;word-break:keep-all}
+.aq-flow-set{margin-bottom:12px}
+/* 남은 시간 — 아래에 마감 시각, 5분 안 남으면 주황 */
+.aq-flow-row .aq-set-value small{display:block;margin-top:2px;font-size:13px;font-weight:500;color:var(--aq-text-3)}
+.aq-flow-soon{color:var(--aq-amber-700)}
+.aq-flow-me{--av:32px;font-size:13px;cursor:default}
+.aq-connect-who{margin:-6px 2px 12px;color:var(--aq-text-3);font-size:13px;overflow-wrap:anywhere}
+/* 아는 AI 앱은 공식 로고(BrandMark) — 맨 위는 아바타와 같은 56px 둥근 칸 */
+.aq-flow-avatar-logo{margin:4px 0 20px;border-radius:18px}
+.aq-connect-app-row .aq-flow-brand{border-radius:var(--aq-r-sm)}

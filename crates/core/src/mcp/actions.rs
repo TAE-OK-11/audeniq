@@ -218,7 +218,7 @@ async fn prepare(
                 summary(
                     "서비스 중단 요청",
                     vec![line("발매", title), line("사유", str_arg(args, "reason"))],
-                    "어데닉이 검토한 뒤 모든 플랫폼에서 이 발매를 내려요. 내려간 발매를 다시 올리려면 새로 신청해야 해요.",
+                    "AUDENIQ이 검토한 뒤 모든 플랫폼에서 이 발매를 내려요. 내려간 발매를 다시 올리려면 새로 신청해야 해요.",
                 ),
             )
         }
@@ -317,7 +317,7 @@ async fn prepare(
                 None,
                 payload,
                 summary(
-                    "어데닉 계약 종료 예약",
+                    "AUDENIQ 계약 종료 예약",
                     vec![line("종료일", str_arg(args, "end_date"))],
                     "종료일이 정해지면 새 발매를 신청할 수 없고, 종료일에 이 작업 공간의 모든 발매 서비스가 끝나요. 종료일 전에는 예약을 취소할 수 있어요.",
                 ),

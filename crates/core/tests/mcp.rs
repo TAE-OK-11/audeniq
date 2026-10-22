@@ -375,9 +375,9 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
     );
     // The assistant is told AUDENIQ's Korean name and voice, user requests first.
     let instructions = v["result"]["instructions"].as_str().unwrap();
-    assert!(instructions.contains("어데닉"));
+    assert!(instructions.contains("Write it in English letters, in Korean sentences too"));
     assert!(instructions.contains("requests about language, tone and format always come first"));
-    assert!(instructions.contains("never 오디닉, 오데닉"));
+    assert!(instructions.contains("never spell it in Hangul"));
     assert!(instructions.contains("Never ask the artist for their AUDENIQ password"));
     assert!(h.get("mcp-session-id").is_none());
     let (s, _, v) = rpc(
@@ -680,7 +680,8 @@ async fn tools_require_a_valid_token_and_logout_everywhere_revokes_it(pool: PgPo
         json!(["releases:read", "releases:write"])
     );
     assert_eq!(v["can_submit"], false);
-    assert_eq!(v["brand"]["name_ko"], "어데닉");
+    assert_eq!(v["brand"]["name_ko"], "AUDENIQ");
+    assert_eq!(v["brand"]["reading_ko"], "어데닉");
 
     // Expired access token → 401 (client refreshes).
     sqlx::query(
@@ -3173,7 +3174,7 @@ async fn artist_pages_platform_requests_splits_prompts_and_upload_links(pool: Pg
     let text = v["result"]["messages"][0]["content"]["text"]
         .as_str()
         .unwrap();
-    assert!(text.contains("어데닉") && text.contains("「봄」"), "{text}");
+    assert!(text.contains("AUDENIQ에서") && text.contains("「봄」"), "{text}");
     let (_, _, v) = rpc(&app, None, "prompts/get", json!({"name": "nope"})).await;
     assert_eq!(v["error"]["code"], -32602);
     let (_, _, v) = rpc(&app, None, "initialize", json!({"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}})).await;
@@ -4464,7 +4465,7 @@ async fn risky_actions_wait_for_one_studio_approval(pool: PgPool) {
     .await;
     assert!(!err, "{v}");
     assert_eq!(v["status"], "PENDING");
-    assert_eq!(v["summary"]["title"], "어데닉 계약 종료 예약");
+    assert_eq!(v["summary"]["title"], "AUDENIQ 계약 종료 예약");
     let id = v["request_id"].as_str().unwrap().to_string();
     assert_eq!(v["approve_url"], format!("{ORIGIN}/ai/actions/{id}"));
     let (_, again) = tool(

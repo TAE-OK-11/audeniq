@@ -889,7 +889,7 @@ summary::-webkit-details-marker{display:none}
 .aq-bank-logo.is-symbol>img{display:block;width:38px;height:38px;object-fit:contain}
 @media(max-width:600px){.aq-bank-logo.is-symbol>img{width:36px;height:36px}}
 .aq-brand.is-app{background:#fff;box-shadow:inset 0 0 0 1px rgba(23,27,41,.06)}
-.aq-brand.is-app>img{width:100%;height:100%;object-fit:cover}
+.aq-brand.is-app>img{width:100%;height:100%;object-fit:cover;border-radius:inherit}
 .aq-brand.is-image>img{padding:10%}
 
 /* ---------- 배급 신청서(문서) — 휴대폰: 표 대신 '항목 | 내용' 줄, 수록곡은 곡마다 작은 카드 ---------- */
@@ -935,8 +935,11 @@ summary::-webkit-details-marker{display:none}
 .aq-passkeys{display:grid;gap:14px}
 .aq-passkey-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .aq-passkey-list li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:var(--aq-r-lg);background:var(--aq-surface-2,var(--aq-surface))}
+.aq-passkey-list li>.aq-ai-app-logo+.min-0{flex:1}
 .aq-passkey-list strong{display:block}
 .aq-passkey-list small{color:var(--aq-text-2)}
+/* 이름 아래 작은 줄이 여럿이면 한 줄씩 (연결된 AI 앱: 앱·작업 공간·사용 / 권한) */
+.aq-passkey-list .min-0>small{display:block;margin-top:2px;line-height:1.5}
 .aq-passkeys .aq-row-actions{display:flex;justify-content:flex-end;gap:8px}
 .aq-passkey-btn{margin-top:8px}
 .aq-token-empty{display:grid;gap:4px;padding:16px;border-radius:var(--aq-r-lg);background:var(--aq-surface-2,var(--aq-surface));text-align:center}
@@ -1046,20 +1049,3 @@ legend{padding:0}
 .aq-copy-btn{gap:4px}
 .aq-copy-btn.is-copied{--btn-bg:var(--aq-green-50);--btn-fg:var(--aq-green-700);--btn-bg-hover:var(--aq-green-50);--btn-fg-hover:var(--aq-green-700)}
 .aq-inquiry-identity{margin:0 0 16px;line-height:1.6}
-/* AI 앱 권한 추가 요청 승인 (/ai/approve/:id) */
-.aq-ai-approve-card{max-width:640px}
-.aq-ai-approve-meta{display:grid;grid-template-columns:max-content 1fr;gap:8px 16px;margin:0 0 20px}
-.aq-ai-approve-meta dt{color:var(--aq-text-4);font-weight:600}
-.aq-ai-approve-meta dd{margin:0;min-width:0;overflow-wrap:anywhere}
-.aq-ai-approve-reason{white-space:pre-wrap}
-.aq-ai-action-line{display:contents}
-.aq-ai-missing-title{margin:0 0 4px;font-size:18px}
-.aq-ai-missing-list{display:grid;gap:10px;margin:12px 0 16px;padding:0;list-style:none;counter-reset:miss}
-.aq-ai-missing-list li{display:grid;gap:2px;padding:12px 14px 12px 44px;position:relative;border-radius:var(--aq-r-lg);background:var(--aq-surface-2)}
-.aq-ai-missing-list li::before{counter-increment:miss;content:counter(miss);position:absolute;left:14px;top:12px;width:20px;height:20px;border-radius:50%;background:var(--aq-blue-100);color:var(--aq-blue-700);font-size:12px;font-weight:700;display:grid;place-items:center}
-.aq-ai-missing-list span{color:var(--aq-text-3);font-size:14px}
-.aq-ai-approve-scopes{display:grid;gap:8px;margin:8px 0 16px;padding:0;list-style:none}
-.aq-ai-approve-scopes li{display:grid;gap:2px;padding:12px 14px;border-radius:var(--aq-r-md);background:var(--aq-gray-50)}
-.aq-ai-approve-scopes li.is-strong{background:var(--aq-amber-50)}
-.aq-ai-approve-scopes span{color:var(--aq-text-3);font-size:var(--aq-fs-sm)}
-.aq-ai-approve-actions{display:flex;gap:8px;justify-content:flex-end;margin:12px 0}
