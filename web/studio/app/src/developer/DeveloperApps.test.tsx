@@ -2,8 +2,8 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ToastProvider } from './Toast';
-import { ConfirmProvider } from './Confirm';
+import { ToastProvider } from '../components/Toast';
+import { ConfirmProvider } from '../components/Confirm';
 import { ApiError } from '../api/errors';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -59,7 +59,7 @@ describe('Developer apps', () => {
     await type('#aqAppRedirects', 'https://myapp.example/cb\n\nhttps://myapp.example/cb2');
     await click(el.querySelector('form button[type=submit]'));
     const [url, opts] = h.req.mock.calls[1];
-    expect(url).toBe('/api/auth/developer-apps');
+    expect(url).toBe('/api/developer/apps');
     expect((opts as { body: { redirect_uris: string[] } }).body.redirect_uris).toEqual(['https://myapp.example/cb', 'https://myapp.example/cb2']);
     expect(el.textContent).toContain('s3cret');
     expect(el.textContent).toContain('다시 볼 수 없어요');

@@ -254,7 +254,7 @@ async fn new_app(app: &Router, u: &User) -> (String, String, String) {
     let (s, v) = call(
         app,
         "POST",
-        "/api/auth/developer-apps",
+        "/api/developer/apps",
         json!({"name": " Release Helper ", "redirect_uris": [REDIRECT], "description": "Prepares releases", "website": "https://app.example.test"}),
         Some(u),
     )
@@ -297,7 +297,7 @@ async fn developer_app_connects_its_owner_and_calls_the_api(pool: PgPool) {
     let (s, v) = call(
         &app,
         "GET",
-        "/api/auth/developer-apps",
+        "/api/developer/apps",
         json!(null),
         Some(&owner),
     )
@@ -514,7 +514,7 @@ async fn developer_app_connects_its_owner_and_calls_the_api(pool: PgPool) {
     let (_, v) = call(
         &app,
         "GET",
-        "/api/auth/developer-apps",
+        "/api/developer/apps",
         json!(null),
         Some(&owner),
     )
@@ -560,7 +560,7 @@ async fn private_until_reviewed_and_deleting_ends_connections(pool: PgPool) {
     let (s, v) = call(
         &app,
         "POST",
-        &format!("/api/auth/developer-apps/{id}/review"),
+        &format!("/api/developer/apps/{id}/review"),
         json!({}),
         Some(&owner),
     )
@@ -573,7 +573,7 @@ async fn private_until_reviewed_and_deleting_ends_connections(pool: PgPool) {
     let (s, _) = call(
         &app,
         "POST",
-        &format!("/api/auth/developer-apps/{id}/review"),
+        &format!("/api/developer/apps/{id}/review"),
         json!({}),
         Some(&owner),
     )
@@ -620,7 +620,7 @@ async fn private_until_reviewed_and_deleting_ends_connections(pool: PgPool) {
     let (_, v) = call(
         &app,
         "GET",
-        "/api/auth/developer-apps",
+        "/api/developer/apps",
         json!(null),
         Some(&owner),
     )
@@ -632,7 +632,7 @@ async fn private_until_reviewed_and_deleting_ends_connections(pool: PgPool) {
     let (s, _) = call(
         &app,
         "POST",
-        &format!("/api/auth/developer-apps/{id}/secret"),
+        &format!("/api/developer/apps/{id}/secret"),
         json!({}),
         Some(&other),
     )
@@ -641,7 +641,7 @@ async fn private_until_reviewed_and_deleting_ends_connections(pool: PgPool) {
     let (s, _) = call(
         &app,
         "PATCH",
-        &format!("/api/auth/developer-apps/{id}"),
+        &format!("/api/developer/apps/{id}"),
         json!({"redirect_uris": ["http://bad.example/cb"]}),
         Some(&owner),
     )
@@ -653,7 +653,7 @@ async fn private_until_reviewed_and_deleting_ends_connections(pool: PgPool) {
     let (s, v) = call(
         &app,
         "POST",
-        &format!("/api/auth/developer-apps/{id}/secret"),
+        &format!("/api/developer/apps/{id}/secret"),
         json!({}),
         Some(&owner),
     )
@@ -682,7 +682,7 @@ async fn private_until_reviewed_and_deleting_ends_connections(pool: PgPool) {
     let (s, _) = call(
         &app,
         "DELETE",
-        &format!("/api/auth/developer-apps/{id}"),
+        &format!("/api/developer/apps/{id}"),
         json!(null),
         Some(&owner),
     )
@@ -697,7 +697,7 @@ async fn private_until_reviewed_and_deleting_ends_connections(pool: PgPool) {
     let (_, v) = call(
         &app,
         "GET",
-        "/api/auth/developer-apps",
+        "/api/developer/apps",
         json!(null),
         Some(&owner),
     )
@@ -759,7 +759,7 @@ async fn mcp_clients_and_tokens_stay_off_the_api(pool: PgPool) {
         let (s, v) = call(
             &app,
             "POST",
-            "/api/auth/developer-apps",
+            "/api/developer/apps",
             json!({"name": "A", "redirect_uris": [REDIRECT], "public_client": true}),
             Some(&u),
         )
@@ -770,7 +770,7 @@ async fn mcp_clients_and_tokens_stay_off_the_api(pool: PgPool) {
     let (s, v) = call(
         &app,
         "POST",
-        "/api/auth/developer-apps",
+        "/api/developer/apps",
         json!({"name": "A", "redirect_uris": [REDIRECT]}),
         Some(&u),
     )
@@ -794,14 +794,7 @@ async fn api_and_developer_apps_are_off_unless_enabled(pool: PgPool) {
         let (s, _, _) = raw(&app, "GET", path, &[], String::new()).await;
         assert_eq!(s, StatusCode::NOT_FOUND, "{path}");
     }
-    let (s, _) = call(
-        &app,
-        "GET",
-        "/api/auth/developer-apps",
-        json!(null),
-        Some(&u),
-    )
-    .await;
+    let (s, _) = call(&app, "GET", "/api/developer/apps", json!(null), Some(&u)).await;
     assert_eq!(s, StatusCode::NOT_FOUND);
     // The API resource is unknown while the API is off.
     let (s, _, body) = raw(

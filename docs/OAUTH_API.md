@@ -61,7 +61,7 @@ Registered in the Studio: Profile → 개발자 → 개발자 앱 (`/profile?ope
   description, "내 앱" for the owner, and a note while the app is private.
 
 Endpoints (Studio session cookie; writes need CSRF):
-`GET/POST /api/auth/developer-apps`, `PATCH/DELETE /api/auth/developer-apps/{id}`,
+`GET/POST /api/developer/apps`, `PATCH/DELETE /api/developer/apps/{id}`,
 `POST …/{id}/secret`, `POST …/{id}/review`. Errors: `APP_NAME_INVALID`,
 `APP_REDIRECT_URI_INVALID`, `APP_DESCRIPTION_TOO_LONG`, `APP_WEBSITE_INVALID`,
 `APP_LIMIT_REACHED`, `APP_HAS_NO_SECRET`, `APP_REVIEW_NOT_AVAILABLE`.
@@ -77,6 +77,25 @@ audeniq-admin developer-app return CLIENT_ID --note TEXT --operator NAME
 
 Check the name, website and redirect URIs belong to the same developer and
 that the description says what the app does with the account.
+
+## Moving to a developer platform
+
+Developer apps live in the Studio for now and move to a separate developer
+platform later. The boundary is kept so that move is a frontend change:
+
+- Backend: app management is only `/api/developer/*` (module
+  `mcp/developer.rs`); nothing else in the Studio API depends on it.
+- Studio: everything is in `web/studio/app/src/developer/` (the API client,
+  the screen and its test); `pages/Profile.tsx` only mounts it.
+- What stays where it is: the authorization server (`/authorize`, `/token`),
+  the consent screen (`/ai/connect`, the artist's own account) and
+  `/api/v1` — developers' apps keep the same URLs after the move.
+
+When the platform comes, follow the admin console (`web/admin`,
+`crates/core/src/sites.rs`): a new site value in `x-audeniq-site` with its
+own origin variable, a path allowlist of the login paths, `/api/me` and
+`/api/developer/*`, an edge worker that proxies `/api/*`, and the
+`src/developer` screens moved over. The Studio row then links to the platform.
 
 ## Connecting (authorization code + PKCE)
 
