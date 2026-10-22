@@ -304,7 +304,7 @@ export function AiConnections() {
       title: `${name} 연결을 끊을까요?`,
       message: c.method === 'TOKEN'
         ? '끊으면 이 키와 키로 받은 작업 토큰을 바로 쓸 수 없어요. 다시 쓰려면 에이전트 키를 새로 만들어 주세요.'
-        : '끊으면 이 AI 앱은 바로 어데닉에 접근할 수 없어요. 다시 쓰려면 AI 앱에서 새로 연결하면 돼요.',
+        : '끊으면 이 AI 앱은 바로 AUDENIQ에 접근할 수 없어요. 다시 쓰려면 AI 앱에서 새로 연결하면 돼요.',
       confirmLabel: '연결 끊기',
       danger: true,
     });
@@ -360,12 +360,12 @@ export function AiConnections() {
       )}
       {pending.length > 0 && <PendingSubmissions items={pending} onDone={id => setPending(list => list.filter(p => p.id !== id))} />}
       <p className="aq-muted">
-        ChatGPT·Claude 같은 AI 앱에서 어데닉을 연결하면 여기에 나와요. 앱마다 승인한 일만 할 수 있어요.
+        ChatGPT·Claude 같은 AI 앱에서 AUDENIQ을 연결하면 여기에 나와요. 앱마다 승인한 일만 할 수 있어요.
       </p>
       {items.length === 0 ? (
         <div className="aq-token-empty">
           <strong>연결된 AI 앱이 없어요</strong>
-          <small>AI 앱에서 어데닉을 연결하거나, 아래에서 에이전트 키를 만들 수 있어요.</small>
+          <small>AI 앱에서 AUDENIQ을 연결하거나, 아래에서 에이전트 키를 만들 수 있어요.</small>
         </div>
       ) : (
         <ul className="aq-passkey-list">

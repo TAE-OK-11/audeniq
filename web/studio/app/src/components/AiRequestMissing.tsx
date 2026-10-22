@@ -5,7 +5,7 @@ import { useAuth } from '../api/auth';
 import { AiFlowFrame, AiFlowHero, AiSetCard, AiSetItem } from './AiFlow';
 
 const REASONS = (hours: string, email?: string): [string, string][] => [
-  ['다른 계정으로 로그인했어요', `${email ? `지금은 ${email}로 로그인했어요. ` : ''}AI 앱을 연결한 어데닉 계정으로 로그인하면 요청이 보여요.`],
+  ['다른 계정으로 로그인했어요', `${email ? `지금은 ${email}로 로그인했어요. ` : ''}AI 앱을 연결한 AUDENIQ 계정으로 로그인하면 요청이 보여요.`],
   ['답할 수 있는 시간이 지났어요', `요청은 ${hours} 동안만 답할 수 있어요.`],
   ['이미 답했거나 연결을 끊었어요', '답한 요청과 끊긴 연결의 요청은 다시 열 수 없어요.'],
 ];

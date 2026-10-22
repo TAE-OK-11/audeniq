@@ -311,8 +311,8 @@ pub async fn verify(s: &AppState, h: &HeaderMap, user: Uuid, i: VerifyInput) -> 
     .bind(user)
     .bind(if i.correction { "실명 정보를 바로잡았어요" } else { "실명인증을 마쳤어요" })
     .bind(match i.channel.as_str() {
-        "IN_PERSON" => "어데닉 직원이 현장에서 신분증으로 실명을 확인했어요. 내가 한 게 아니라면 고객센터로 알려 주세요.",
-        _ => "어데닉 고객센터에서 신분증으로 실명을 확인했어요. 내가 한 게 아니라면 고객센터로 알려 주세요.",
+        "IN_PERSON" => "AUDENIQ 직원이 현장에서 신분증으로 실명을 확인했어요. 내가 한 게 아니라면 고객센터로 알려 주세요.",
+        _ => "AUDENIQ 고객센터에서 신분증으로 실명을 확인했어요. 내가 한 게 아니라면 고객센터로 알려 주세요.",
     })
     .execute(&mut *tx)
     .await?;

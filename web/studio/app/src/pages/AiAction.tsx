@@ -46,7 +46,7 @@ const demo = (id: string): AiActionRequest => ({
   summary: {
     title: '서비스 중단 요청',
     lines: [{ label: '발매', value: '밤의 산책' }, { label: '사유', value: '새 앨범으로 다시 낼 거예요' }],
-    warning: '어데닉이 검토한 뒤 모든 플랫폼에서 이 발매를 내려요. 내려간 발매를 다시 올리려면 새로 신청해야 해요.',
+    warning: 'AUDENIQ이 검토한 뒤 모든 플랫폼에서 이 발매를 내려요. 내려간 발매를 다시 올리려면 새로 신청해야 해요.',
   },
   client_name: 'Claude', org_id: 'o1', org_name: 'Personal workspace', release_id: 'r1',
   created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 86_400_000).toISOString(), decided_at: null,

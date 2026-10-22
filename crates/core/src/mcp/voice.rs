@@ -18,7 +18,7 @@ pub fn message_ko(v: &Value) -> Option<String> {
     let text = match s(v, "view") {
         "permission_request" => match s(v, "status") {
             "PENDING" => {
-                "어데닉 스튜디오에 권한 요청을 보냈어요. 아래 링크에서 승인해 주세요.".into()
+                "AUDENIQ Studio에 권한 요청을 보냈어요. 아래 링크에서 승인해 주세요.".into()
             }
             "APPROVED" => "권한이 더해졌어요. 이어서 진행할게요.".into(),
             "ALREADY_GRANTED" => "이미 필요한 권한이 있어요.".into(),
@@ -30,7 +30,7 @@ pub fn message_ko(v: &Value) -> Option<String> {
             let title = v["summary"]["title"].as_str().unwrap_or("요청한 작업");
             match s(v, "status") {
                 "PENDING" => format!(
-                    "'{title}'을(를) 어데닉 스튜디오에서 승인해 주세요. 승인하기 전에는 아무것도 바뀌지 않아요."
+                    "'{title}'을(를) AUDENIQ Studio에서 승인해 주세요. 승인하기 전에는 아무것도 바뀌지 않아요."
                 ),
                 "DONE" => format!("'{title}'을(를) 마쳤어요."),
                 "FAILED" => format!("'{title}'을(를) 승인했지만 처리하지 못했어요."),
@@ -48,12 +48,12 @@ pub fn message_ko(v: &Value) -> Option<String> {
             _ => return None,
         },
         "pending_approval" => {
-            "신청서를 보냈어요. 어데닉 스튜디오에서 한 번 더 승인하면 접수돼요.".into()
+            "신청서를 보냈어요. AUDENIQ Studio에서 한 번 더 승인하면 접수돼요.".into()
         }
-        "submitted" => "발매를 신청했어요. 어데닉이 검토를 시작해요.".into(),
+        "submitted" => "발매를 신청했어요. AUDENIQ이 검토를 시작해요.".into(),
         "release_deleted" => "초안을 삭제했어요.".into(),
         "notifications_read" => "알림을 읽음으로 표시했어요.".into(),
-        "document_proof" => "증빙 파일을 붙였어요. 어데닉이 확인할게요.".into(),
+        "document_proof" => "증빙 파일을 붙였어요. AUDENIQ이 확인할게요.".into(),
         "special_options" => "특수 콘텐츠 정보를 저장했어요.".into(),
         "split_invite_resent" => "분배 수락 메일을 다시 보냈어요.".into(),
         "takedown" if s(v, "status") == "CANCELLED" => "서비스 중단 요청을 취소했어요.".into(),
@@ -79,7 +79,7 @@ mod tests {
     fn outcomes_read_in_audeniq_voice() {
         assert_eq!(
             message_ko(&json!({"view":"action_request","status":"PENDING","summary":{"title":"서비스 중단 요청"}})).unwrap(),
-            "'서비스 중단 요청'을(를) 어데닉 스튜디오에서 승인해 주세요. 승인하기 전에는 아무것도 바뀌지 않아요."
+            "'서비스 중단 요청'을(를) AUDENIQ Studio에서 승인해 주세요. 승인하기 전에는 아무것도 바뀌지 않아요."
         );
         assert_eq!(
             message_ko(&json!({"view":"validation","ready_to_submit":false,"blocking":[1,2]}))

@@ -1,4 +1,4 @@
-// AI 앱 연결 (/ai/connect) — ChatGPT·Claude·Grok 같은 AI 앱이 어데닉을 쓰겠다고 할 때 아티스트가 보는 화면.
+// AI 앱 연결 (/ai/connect) — ChatGPT·Claude·Grok 같은 AI 앱이 AUDENIQ을 쓰겠다고 할 때 아티스트가 보는 화면.
 //  - ?request=…  : 서버가 확인하고 서명한 연결 요청 (브라우저 연결 또는 기기 코드 연결)
 //  - ?user_code= : AI 앱이 알려 준 코드로 온 기기 연결 → 코드를 확인해 요청으로 바꾼다
 //  - ?device=1   : 코드를 직접 입력
@@ -154,7 +154,7 @@ function Review({ request, d, onDone, onFailed }: {
       if (!ok) return;
     }
     if (!approve) {
-      const ok = await confirm({ title: '연결하지 않을까요?', message: `${d.client.name}은 어데닉 계정에 접근할 수 없어요.`, confirmLabel: '연결하지 않기' });
+      const ok = await confirm({ title: '연결하지 않을까요?', message: `${d.client.name}은 AUDENIQ 계정에 접근할 수 없어요.`, confirmLabel: '연결하지 않기' });
       if (!ok) return;
     }
     setBusy(approve ? 'approve' : 'deny');
@@ -173,7 +173,7 @@ function Review({ request, d, onDone, onFailed }: {
   const ws = d.workspaces.find(w => w.id === org);
   const verified = d.client.verified_host
     ? `${d.client.verified_host}에서 확인된 앱`
-    : d.client.registered ? '어데닉에 등록된 에이전트' : null;
+    : d.client.registered ? 'AUDENIQ에 등록된 에이전트' : null;
   // 확인된 곳과 요청한 곳이 같으면 한 번만 말한다
   const from = d.requested_from && d.requested_from === d.client.verified_host ? null
     : d.requested_from ? `${d.requested_from}에서 요청` : '연결 코드로 요청';
@@ -184,7 +184,7 @@ function Review({ request, d, onDone, onFailed }: {
     <Frame>
       <Header
         kicker="연결 요청"
-        title={`${d.client.name}에서\n어데닉을 쓰려고 해요`}
+        title={`${d.client.name}에서\nAUDENIQ을 쓰려고 해요`}
         sub="허용한 일만 할 수 있어요. 연결은 언제든 끊을 수 있어요."
       />
 
@@ -193,7 +193,7 @@ function Review({ request, d, onDone, onFailed }: {
         detail={[verified, from].filter(Boolean).join(' · ')}
         tag={verified && <span className="aq-connect-tag is-ok">확인됨</span>}
       />
-      {!verified && <p className="ui-callout is-warn small">어데닉이 이 앱이 누구인지 확인하지 못했어요. 내가 방금 시작한 연결일 때만 허용해 주세요.</p>}
+      {!verified && <p className="ui-callout is-warn small">AUDENIQ이 이 앱이 누구인지 확인하지 못했어요. 내가 방금 시작한 연결일 때만 허용해 주세요.</p>}
       {d.device_code && (
         <div className="aq-connect-code-row">
           <span>AI 앱에 보이는 코드와 같은지 확인해 주세요</span>
@@ -297,7 +297,7 @@ function Done({ approved, d, redirect, granted }: { approved: boolean; d: AiConn
         title={approved ? '연결했어요' : '연결하지 않았어요'}
         sub={approved
           ? (redirect ? `${d.client.name} 대화로 돌아가고 있어요.` : `${d.client.name} 대화로 돌아가 이어 가 주세요.`)
-          : `이 앱은 어데닉 계정에 접근할 수 없어요.${redirect ? ' AI 앱으로 돌아가고 있어요.' : ''}`}
+          : `이 앱은 AUDENIQ 계정에 접근할 수 없어요.${redirect ? ' AI 앱으로 돌아가고 있어요.' : ''}`}
       />
       {approved && (
         <>

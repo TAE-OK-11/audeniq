@@ -820,7 +820,7 @@ pub(super) async fn create_grant(
         (
             "새 AI 앱이 연결됐어요".to_string(),
             format!(
-                "{client}이(가) 어데닉 계정에 연결됐어요. 내가 연결하지 않았다면 프로필 → 연결된 AI 앱에서 바로 끊고 비밀번호를 바꿔 주세요."
+                "{client}이(가) AUDENIQ 계정에 연결됐어요. 내가 연결하지 않았다면 프로필 → 연결된 AI 앱에서 바로 끊고 비밀번호를 바꿔 주세요."
             ),
         )
     };
@@ -1677,7 +1677,7 @@ pub(super) fn page(title: &str, body: &str, form_action_extra: Option<&str>) -> 
 
 pub(super) fn page_error(message: &str) -> Response {
     let mut r = page(
-        "어데닉 연결",
+        "AUDENIQ 연결",
         &format!(
             "<div class=\"status bad\" aria-hidden=\"true\">!</div><h1>AI 앱을 연결하지 못했어요</h1><div class=\"card danger\">{}</div><p class=\"lead\">이 창을 닫고 AI 앱에서 연결을 처음부터 다시 시작해 주세요.</p>",
             escape(message)
@@ -1732,7 +1732,7 @@ pub(super) fn scope_label(scope: &str, payout_limit: i64) -> (&'static str, Stri
             return (
                 "소액 지급 신청",
                 format!(
-                    "등록해 둔 계좌로 {}원 이하(24시간 합계)의 지급 신청과 취소를 해요. 대화에서 금액을 확인한 뒤에만 신청되고, 그보다 큰 금액과 계좌 변경은 어데닉 스튜디오에서만 할 수 있어요.",
+                    "등록해 둔 계좌로 {}원 이하(24시간 합계)의 지급 신청과 취소를 해요. 대화에서 금액을 확인한 뒤에만 신청되고, 그보다 큰 금액과 계좌 변경은 AUDENIQ Studio에서만 할 수 있어요.",
                     won(payout_limit)
                 ),
             );

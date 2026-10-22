@@ -1631,8 +1631,9 @@ async fn account(s: &AppState, p: &Principal) -> std::result::Result<Value, Tool
         "can_request_payouts": can_request_payouts,
         "assistant_payout_limit_krw": payout_limit,
         "studio_url": super::issuer(s),
-        // For clients that drop server instructions: the Korean name is 어데닉, never 오디닉/오데닉.
-        "brand": {"name": "AUDENIQ", "name_ko": "어데닉", "studio_ko": "어데닉 스튜디오"},
+        // For clients that drop server instructions: write AUDENIQ in English letters, in Korean too;
+        // 어데닉 is only how it is read (particles follow it), never a spelling to use.
+        "brand": {"name": "AUDENIQ", "name_ko": "AUDENIQ", "reading_ko": "어데닉", "studio_ko": "AUDENIQ Studio"},
         "not_available_here": ["signing the application or agreement", "withdrawals and takedowns", "payout account changes", "payouts above the assistant limit", "contracts", "account and member settings"],
     }))
 }
@@ -2765,7 +2766,7 @@ async fn submit(
             p.actor.user,
             "AI 앱으로 발매를 신청했어요",
             &format!(
-                "{}에서 ‘{title}’ 발매 신청을 접수했어요. 내가 한 신청이 아니라면 프로필 → 연결된 AI 앱에서 연결을 끊고 어데닉에 문의해 주세요.",
+                "{}에서 ‘{title}’ 발매 신청을 접수했어요. 내가 한 신청이 아니라면 프로필 → 연결된 AI 앱에서 연결을 끊고 AUDENIQ에 문의해 주세요.",
                 p.client_name
             ),
             &format!("/releases/{release}"),
@@ -3316,7 +3317,7 @@ async fn request_payout(
         p.actor.user,
         "AI 앱으로 지급을 신청했어요",
         &format!(
-            "{}에서 {}원 지급을 신청했어요 (수수료 {}원, 받을 금액 {}원). 내가 한 신청이 아니라면 정산 화면에서 바로 취소하고 어데닉에 문의해 주세요.",
+            "{}에서 {}원 지급을 신청했어요 (수수료 {}원, 받을 금액 {}원). 내가 한 신청이 아니라면 정산 화면에서 바로 취소하고 AUDENIQ에 문의해 주세요.",
             p.client_name,
             v["amount"].as_str().unwrap_or("?"),
             v["fee"].as_str().unwrap_or("?"),
