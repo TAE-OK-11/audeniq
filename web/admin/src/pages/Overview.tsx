@@ -5,6 +5,7 @@ import { DUTY_LABEL, ROLE_LABEL } from '../labels';
 import { CountUp, PageHeader, useDualApproval, useStaff } from '../staffUi';
 import type { Overview } from '../api/staff';
 import { IconTile, StatGrid, StatTile } from '../ui';
+import { isAdmin } from '../api/staff';
 
 interface Tile { key: keyof Overview; label: string; hint: string; to: string; icon: string; alert?: boolean }
 
@@ -59,7 +60,7 @@ export function OverviewPage() {
         })}
       </StatGrid>
 
-      {me.role === 'ADMIN' && counts && counts.payout_requests > 0 && (
+      {isAdmin(me) && counts && counts.payout_requests > 0 && (
         <div className="ui-callout is-row">
           <span>지급 요청 <b>{counts.payout_requests}건</b>이 운영 처리를 기다리고 있어요. (지급 실행은 운영 도구에서만 할 수 있어요)</span>
           <button type="button" className="ui-btn is-soft is-sm" onClick={() => nav('/payouts')}>지급 요청 보기</button>

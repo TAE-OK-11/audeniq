@@ -1,16 +1,33 @@
 export class ApiError extends Error {
   status: number;
   code: string;
-  constructor(message: string, status = 0, code = '') {
+  /** 서버가 보낸 원문 설명과 세부 정보 (운영 도구가 CLI 설명을 그대로 보여 줄 때) */
+  server?: { message?: string; details?: Record<string, unknown> };
+  constructor(message: string, status = 0, code = '', server?: ApiError['server']) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.server = server;
   }
 }
 
 /** 백엔드 오류 코드(`{ error: { code } }`) → 사용자에게 보여줄 한국어 문구 */
 const CODE_MESSAGES: Record<string, string> = {
+  // 관리자 운영 도구 (crates/core/src/staff_ops.rs)
+  STAFF_OPS_UNAVAILABLE: '이 서버에서는 운영 도구가 아직 꺼져 있어요. audeniq-admin CLI로 처리해 주세요.',
+  STAFF_LEVEL_REQUIRED: '내 관리자 레벨로는 할 수 없는 작업이에요.',
+  STAFF_STEP_UP_REQUIRED: '인증 앱의 6자리 코드를 한 번 더 입력해 주세요.',
+  STAFF_OWNER_REQUIRED: '직원 권한은 최고 관리자만 바꿀 수 있어요.',
+  STAFF_SELF_CHANGE: '내 권한은 내가 바꿀 수 없어요. 다른 최고 관리자에게 요청해 주세요.',
+  STAFF_OWNER_PROTECTED: '최고 관리자의 권한은 CLI에서만 바꿀 수 있어요.',
+  STAFF_ROLE_INVALID: '관리자 화면에서는 관리자·심사 담당·배급 운영·고객 지원 레벨만 줄 수 있어요.',
+  STAFF_NOT_FOUND: '지금 권한이 있는 직원이 아니에요.',
+  ACCOUNT_NOT_FOUND: '이 이메일로 가입한 계정이 없어요.',
+  OPS_ARGUMENT_INVALID: '입력값을 확인해 주세요.',
+  OPS_REJECTED: '처리하지 못했어요.',
+  PAYOUT_EXECUTOR_MUST_DIFFER: '지급을 승인한 사람과 다른 사람이 실행해야 해요.',
+  PAYOUT_EVIDENCE_REQUIRED: '이체 증빙을 입력해 주세요.',
   UNAUTHENTICATED: '로그인이 필요해요.',
   FORBIDDEN: '이 작업을 할 수 있는 권한이 없어요. 새로고침 후 다시 시도해 주세요.',
   NOT_FOUND: '요청한 정보를 찾을 수 없어요. 삭제됐거나 주소가 잘못됐을 수 있어요.',

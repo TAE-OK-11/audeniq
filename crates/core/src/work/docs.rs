@@ -14,7 +14,7 @@ use super::{audit, doc_model, entities, line, one_of};
 use crate::{
     api::AppState,
     error::{Error, Result},
-    staff::{self, Staff, StaffRole},
+    staff::{self, Staff},
 };
 use axum::{
     Json, Router,
@@ -78,7 +78,7 @@ pub(crate) async fn level(c: &mut PgConnection, st: &Staff, id: Uuid) -> Result<
     Ok(sqlx::query_scalar("SELECT work.doc_level($1,$2,$3)")
         .bind(id)
         .bind(st.actor.user)
-        .bind(st.role.as_str())
+        .bind(st.role.team())
         .fetch_one(&mut *c)
         .await?)
 }
@@ -177,7 +177,7 @@ pub async fn tree(s: &AppState, h: &HeaderMap, q: TreeQuery) -> Result<Value> {
     ))
     .bind(q.parent)
     .bind(st.actor.user)
-    .bind(st.role.as_str())
+    .bind(st.role.team())
     .bind(q.archived)
     .fetch_all(&mut *c)
     .await?;
@@ -244,7 +244,7 @@ pub async fn search(s: &AppState, h: &HeaderMap, q: SearchQuery) -> Result<Value
     ))
     .bind(&term)
     .bind(st.actor.user)
-    .bind(st.role.as_str())
+    .bind(st.role.team())
     .bind(status)
     .bind(q.author)
     .bind(entity.as_ref().map(|e| e.kind.clone()))
@@ -510,7 +510,7 @@ pub async fn detail(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<Value> {
     )
     .bind(id)
     .bind(st.actor.user)
-    .bind(st.role.as_str())
+    .bind(st.role.team())
     .fetch_all(&mut *c)
     .await?;
     // records this document is about (embeds + manual links), labels from the sources
@@ -570,7 +570,7 @@ pub async fn detail(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<Value> {
     )
     .bind(id)
     .bind(st.actor.user)
-    .bind(st.role.as_str())
+    .bind(st.role.team())
     .fetch_all(&mut *c)
     .await?;
     let comments: i64 = sqlx::query_scalar(
@@ -966,7 +966,7 @@ pub async fn delete(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<Value> {
     let st = staff::staff(s, h, true).await?;
     let mut tx = s.pool.begin().await?;
     let (r, lv) = load(&mut tx, &st, id, MANAGER, true).await?;
-    if lv < OWNER && st.role != StaffRole::Admin {
+    if lv < OWNER && !st.role.is_admin() {
         return Err(Error::Forbidden);
     }
     if r.get::<Option<DateTime<Utc>>, _>("archived_at").is_none() {
@@ -1035,7 +1035,7 @@ pub async fn set_status(s: &AppState, h: &HeaderMap, id: Uuid, i: StatusInput) -
             // anyone may while two-person approval is off)
             if crate::config::dual_approval_enabled()
                 && r.get::<Option<Uuid>, _>("review_requested_by") == Some(me)
-                && st.role != StaffRole::Admin
+                && !st.role.is_admin()
             {
                 return Err(Error::PolicyGate("DOC_SELF_APPROVAL"));
             }
@@ -1365,7 +1365,7 @@ pub struct TemplateInput {
 /// ADMIN: save a document as a template.
 pub async fn save_template(s: &AppState, h: &HeaderMap, i: TemplateInput) -> Result<Value> {
     let st = staff::staff(s, h, true).await?;
-    if st.role != StaffRole::Admin {
+    if !st.role.is_admin() {
         return Err(Error::Forbidden);
     }
     let name = line(&i.name, 80)?;
@@ -1408,7 +1408,7 @@ pub async fn save_template(s: &AppState, h: &HeaderMap, i: TemplateInput) -> Res
 
 pub async fn archive_template(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<Value> {
     let st = staff::staff(s, h, true).await?;
-    if st.role != StaffRole::Admin {
+    if !st.role.is_admin() {
         return Err(Error::Forbidden);
     }
     let mut tx = s.pool.begin().await?;

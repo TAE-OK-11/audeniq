@@ -1,11 +1,14 @@
 export class ApiError extends Error {
   status: number;
   code: string;
-  constructor(message: string, status = 0, code = '') {
+  /** 서버가 보낸 원문 설명과 세부 정보 (운영 도구가 CLI 설명을 그대로 보여 줄 때) */
+  server?: { message?: string; details?: Record<string, unknown> };
+  constructor(message: string, status = 0, code = '', server?: ApiError['server']) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.server = server;
   }
 }
 
@@ -291,6 +294,22 @@ const CODE_MESSAGES: Record<string, string> = {
   CORRECTION_ARTIST_LOCKED: '아티스트 표기는 여기서 바꿀 수 없어요. 문의로 요청해 주세요.',
   CORRECTION_NOTHING_SENT: '아직 플랫폼에 보낸 발매가 아니에요.',
   CORRECTION_INVALID: '수정 내용을 다시 확인해 주세요.',
+  // 관리자 운영 도구 (crates/core/src/staff_ops.rs)
+  STAFF_OPS_UNAVAILABLE: '이 서버에서는 운영 도구가 아직 꺼져 있어요. audeniq-admin CLI로 처리해 주세요.',
+  STAFF_LEVEL_REQUIRED: '내 관리자 레벨로는 할 수 없는 작업이에요.',
+  STAFF_STEP_UP_REQUIRED: '인증 앱의 6자리 코드를 한 번 더 입력해 주세요.',
+  STAFF_MFA_CODE_INVALID: '인증 코드가 맞지 않아요. 인증 앱의 새 코드를 입력해 주세요.',
+  STAFF_MFA_ENROLL_REQUIRED: '먼저 인증 앱을 등록해 주세요.',
+  STAFF_OWNER_REQUIRED: '직원 권한은 최고 관리자만 바꿀 수 있어요.',
+  STAFF_SELF_CHANGE: '내 권한은 내가 바꿀 수 없어요. 다른 최고 관리자에게 요청해 주세요.',
+  STAFF_OWNER_PROTECTED: '최고 관리자의 권한은 CLI에서만 바꿀 수 있어요.',
+  STAFF_ROLE_INVALID: '관리자 화면에서는 관리자·심사 담당·배급 운영·고객 지원 레벨만 줄 수 있어요.',
+  STAFF_NOT_FOUND: '지금 권한이 있는 직원이 아니에요.',
+  ACCOUNT_NOT_FOUND: '이 이메일로 가입한 계정이 없어요.',
+  OPS_ARGUMENT_INVALID: '입력값을 확인해 주세요.',
+  OPS_REJECTED: '처리하지 못했어요.',
+  PAYOUT_EXECUTOR_MUST_DIFFER: '지급을 승인한 사람과 다른 사람이 실행해야 해요.',
+  PAYOUT_EVIDENCE_REQUIRED: '이체 증빙을 입력해 주세요.',
   MEMBER_ACCOUNT_NOT_FOUND: '이 이메일로 가입한 AUDENIQ 계정이 없어요. 상대가 먼저 가입한 뒤 초대해 주세요.',
   TAKEDOWN_REJECTED: 'AUDENIQ이 중단 요청을 받아들이지 않았어요. 문의로 자세한 내용을 확인해 주세요.',
   TAKEDOWN_ALREADY_REQUESTED: '이미 확인 중인 중단 요청이 있어요.',

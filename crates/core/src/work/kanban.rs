@@ -15,7 +15,7 @@ use super::{audit, entities, line, one_of, tasks};
 use crate::{
     api::AppState,
     error::{Error, Result},
-    staff::{self, Staff, StaffRole},
+    staff::{self, Staff},
 };
 use axum::{
     Json, Router,
@@ -88,10 +88,7 @@ impl Board {
         !self.archived
             && match self.kind.as_str() {
                 "PERSONAL" => self.owner_id == Some(st.actor.user),
-                "TEAM" => {
-                    st.role == StaffRole::Admin
-                        || self.team_role.as_deref() == Some(st.role.as_str())
-                }
+                "TEAM" => st.role.is_admin() || self.team_role.as_deref() == Some(st.role.team()),
                 _ => true,
             }
     }
@@ -99,7 +96,7 @@ impl Board {
         match self.kind.as_str() {
             "PERSONAL" => self.owner_id == Some(st.actor.user),
             _ => {
-                st.role == StaffRole::Admin
+                st.role.is_admin()
                     || (self.created_by.is_some() && self.created_by == Some(st.actor.user))
             }
         }
@@ -389,7 +386,7 @@ pub async fn create(s: &AppState, h: &HeaderMap, i: BoardInput) -> Result<Value>
     let kind = i.kind.as_deref().unwrap_or("PERSONAL");
     one_of(kind, KINDS, "BOARD_KIND_UNKNOWN")?;
     // personal boards for anyone; shared boards are an ADMIN decision
-    if kind != "PERSONAL" && st.role != StaffRole::Admin {
+    if kind != "PERSONAL" && !st.role.is_admin() {
         return Err(Error::Forbidden);
     }
     let team_role = match (kind, i.team_role.as_deref()) {
@@ -1053,7 +1050,7 @@ pub struct RuleInput {
 
 pub async fn save_rule(s: &AppState, h: &HeaderMap, i: RuleInput) -> Result<Value> {
     let st = staff::staff(s, h, true).await?;
-    if st.role != StaffRole::Admin {
+    if !st.role.is_admin() {
         return Err(Error::Forbidden);
     }
     one_of(&i.trigger, TRIGGERS, "TRIGGER_UNKNOWN")?;
@@ -1095,7 +1092,7 @@ pub async fn save_rule(s: &AppState, h: &HeaderMap, i: RuleInput) -> Result<Valu
 /// Run the automation now (ADMIN; it also runs with the staff summary).
 pub async fn run_automation(s: &AppState, h: &HeaderMap) -> Result<Value> {
     let st = staff::staff(s, h, true).await?;
-    if st.role != StaffRole::Admin {
+    if !st.role.is_admin() {
         return Err(Error::Forbidden);
     }
     let created = super::automation::sweep(&s.pool, true).await?;

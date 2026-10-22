@@ -10,7 +10,7 @@ use super::{
 use crate::{
     api::AppState,
     error::{Error, Result},
-    staff::{self, Duty, Staff, StaffRole},
+    staff::{self, Duty, Staff},
 };
 use axum::{
     Json, Router,
@@ -99,7 +99,7 @@ fn duty_of_queue(q: &str) -> Duty {
 async fn build(s: &AppState, st: &Staff) -> Result<Vec<Item>> {
     sla::sweep(&s.pool).await?;
     let me = st.actor.user;
-    let role = st.role.as_str();
+    let role = st.role.team();
     let now = Utc::now();
     let mut tx = s.pool.begin().await?;
     let book = Book::load(&mut tx).await?;
@@ -134,7 +134,7 @@ async fn build(s: &AppState, st: &Staff) -> Result<Vec<Item>> {
         let review = reviewer == Some(me) && status == "IN_REVIEW";
         let escalated_to_me = level > 0
             && !mine
-            && (st.role == StaffRole::Admin || policy.is_some_and(|p| p.escalate_to == role));
+            && (st.role.is_admin() || policy.is_some_and(|p| p.escalate_to == role));
         if !mine && !review && !escalated_to_me {
             continue;
         }
@@ -231,7 +231,7 @@ async fn build(s: &AppState, st: &Staff) -> Result<Vec<Item>> {
           ORDER BY n.created_at DESC LIMIT 200",
     )
     .bind(me)
-    .bind(st.role.as_str())
+    .bind(st.role.team())
     .fetch_all(&mut *tx)
     .await?;
     for n in notes {

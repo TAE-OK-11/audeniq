@@ -8,6 +8,7 @@ import { ApiError, errorMessage } from '../api/errors';
 import { staffApi, type GuardianRelation, type IdentityAccount, type IdentityChannel, type IdentityDocument } from '../api/staff';
 import { NoDuty, useStaff } from '../staffUi';
 import { when } from '../labels';
+import { isAdmin as hasAdmin } from '../api/staff';
 
 export const CHANNEL_LABEL: Record<IdentityChannel, string> = { IN_PERSON: '현장', CUSTOMER_CENTER: '고객센터' };
 export const DOCUMENT_LABEL: Record<IdentityDocument, string> = {
@@ -61,7 +62,7 @@ export function IdentityDesk() {
 
   if (!can('IDENTITY')) return <div className="adm-page"><NoDuty duty="실명인증" /></div>;
 
-  const isAdmin = me.role === 'ADMIN';
+  const isAdmin = hasAdmin(me);
   const current = account?.identity ?? null;
   // 직원 인증을 다른 사람으로 바로잡을 수 있는 경우 (ADMIN만, 사유 필수)
   const canCorrect = isAdmin && !!current?.offline;

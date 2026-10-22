@@ -16,6 +16,7 @@ import { workApi } from './api';
 import { DOC_KIND_LABEL, ENTITY_KIND, LINK_KINDS, PRIORITY, TASK_STATUS, entityLink, remaining } from './labels';
 import type { EntityKind, EntityRef, Priority, StaffPerson, TaskStatus, WorkNote } from './types';
 import { StatGrid, StatTile } from '../../ui';
+import { isAdmin } from '../api';
 
 // ---------- 담당자 ----------
 let peopleCache: Promise<StaffPerson[]> | null = null;
@@ -272,7 +273,7 @@ function NoteItem({ n, people, onChanged }: { n: WorkNote; people: People; onCha
         <span className="adm-w-note-actions">
           {n.revisions > 0 && <button type="button" className="ui-btn is-text is-muted" onClick={() => setHistory(true)}>이력 {n.revisions}</button>}
           {mine && !editing && <button type="button" className="ui-btn is-text is-muted" onClick={() => { setDraft(n.body); setEditing(true); }}>고치기</button>}
-          {(mine || me.role === 'ADMIN') && <button type="button" className="ui-btn is-text is-muted" onClick={archive}>보관</button>}
+          {(mine || isAdmin(me)) && <button type="button" className="ui-btn is-text is-muted" onClick={archive}>보관</button>}
           <button type="button" className={`adm-w-resolve${n.resolved ? ' is-on' : ''}`} disabled={busy} aria-pressed={n.resolved} onClick={() => run(() => workApi.resolveNote(n.id, !n.resolved))}>
             <CheckIcon size={12} />{n.resolved ? '해결됨' : '해결 표시'}
           </button>

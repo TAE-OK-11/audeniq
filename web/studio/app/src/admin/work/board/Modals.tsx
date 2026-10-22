@@ -15,6 +15,7 @@ import type {
   AutoTrigger, Board, BoardColumn, BoardKind, BoardRule, BoardView, Priority, StaffRoleKey, TaskStatus, WorkTask, WorkType,
 } from '../types';
 import { josa } from '../../../lib/josa';
+import { isAdmin } from '../../api';
 
 const COLUMN_STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'BLOCKED', 'DONE', 'CANCELLED'];
 const ROLES: StaffRoleKey[] = ['ADMIN', 'REVIEWER', 'OPERATOR', 'SUPPORT'];
@@ -252,7 +253,7 @@ export function BoardCreateForm({ onCreated }: { onCreated: (v: BoardView) => vo
   const close = useModalClose();
   const toast = useToast();
   const { me } = useStaff();
-  const admin = me.role === 'ADMIN';
+  const admin = isAdmin(me);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [kind, setKind] = useState<BoardKind>('PERSONAL');

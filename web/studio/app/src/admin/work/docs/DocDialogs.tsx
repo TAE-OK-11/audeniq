@@ -12,6 +12,7 @@ import { EntityPicker, PersonSelect, type People } from '../ui';
 import { Glyph } from '../../../components/Glyph';
 import { DocIcon } from './DocIcon';
 import type { DocAccess, DocGrant, DocTemplate, EntityRef, StaffRoleName } from '../types';
+import { isAdmin } from '../../api';
 
 const LEVELS: [DocGrant['level'], string][] = [['VIEWER', '보기'], ['EDITOR', '편집'], ['MANAGER', '관리(공유·승인)']];
 const ROLES = Object.keys(ROLE_NAME) as StaffRoleName[];
@@ -150,7 +151,7 @@ export function TemplateDialog({ docId, defaultName, onClose }: { docId: string;
   const [name, setName] = useState(defaultName);
   const [description, setDescription] = useState('');
   const [busy, setBusy] = useState(false);
-  if (me.role !== 'ADMIN') return null;
+  if (!isAdmin(me)) return null;
   return (
     <Modal title="템플릿으로 저장" onClose={onClose}>
       <form className="adm-form" onSubmit={async e => {

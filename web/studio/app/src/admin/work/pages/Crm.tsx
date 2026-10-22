@@ -20,6 +20,7 @@ import type {
   ActivityKind, ContactInput, ContractStatus, EntityRef, RelContact, RelKind, RelQuery, RelStatus, Relationship, RelationshipDetail,
 } from '../types';
 import { DateTimeField } from '../../../components/Picker';
+import { isAdmin } from '../../api';
 
 const contractChip = (r: Relationship) => <StatusBadge value={CONTRACT_STATUS[r.contract.status]} />;
 const name = (r: Relationship) => r.name ?? (r.missing ? '원천 기록이 없어요' : '이름 없음');
@@ -332,7 +333,7 @@ export function CrmDetail() {
         sub={<span className="adm-codes"><StatusBadge value={REL_STATUS[r.status]} />{contractChip(r)}{r.tags.map(t => <Badge key={t} tone="gray">#{t}</Badge>)}{archived && <Badge tone="gray">보관됨</Badge>}</span>}
         actions={<>
           <Link to={`/admin/tasks?entity_kind=relationship&entity_id=${r.id}`} className="ui-btn is-soft is-sm"><Glyph name="task" size={14} />연결된 업무 {r.open_tasks}</Link>
-          {me.role === 'ADMIN' && !archived && <button type="button" className="ui-btn is-soft is-sm" onClick={archive}>보관</button>}
+          {isAdmin(me) && !archived && <button type="button" className="ui-btn is-soft is-sm" onClick={archive}>보관</button>}
         </>}
       />
       <div className="adm-detail">
