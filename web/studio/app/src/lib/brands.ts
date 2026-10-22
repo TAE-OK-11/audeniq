@@ -81,9 +81,9 @@ export const BRAND_ASSETS: Record<string, BrandAsset> = {
   'chatgpt': { kind: 'glyph', file: 'chatgpt.svg', color: '#000000' },
   'perplexity': { kind: 'app', file: 'perplexity.svg' },    // perplexity.ai 공식 SVG 아이콘 (검은 칸 그대로)
   'grok': { kind: 'glyph', file: 'grok.svg', color: '#000000' },
-  'gemini': { kind: 'image', file: 'gemini.png' },          // 지금의 4색 스파클 — Google 공식 PNG만 있어 PNG
-  'muse': { kind: 'app', file: 'muse.png' },                // Meta Muse 공식 앱 아이콘 (muse.ai 매니페스트, PNG만 있음)
-  'pickle': { kind: 'app', file: 'pickle.png' },            // 피클: 나만의 AI 에이전트 — App Store 공식 앱 아이콘
+  'gemini': { kind: 'app', file: 'gemini.webp' },          // App Store 공식 앱 아이콘(1024px)에서 줄임 — 4색 스파클은 벡터가 없다
+  'muse': { kind: 'app', file: 'muse.webp' },              // Muse from Meta — App Store 공식 앱 아이콘(1024px)에서 줄임
+  'pickle': { kind: 'app', file: 'pickle.webp' },          // 피클: 나만의 AI 에이전트 — App Store 공식 앱 아이콘(1024px)에서 줄임
   'hermes': { kind: 'image', file: 'hermes.svg' },          // Hermes Agent 공식 아이콘 'Nous girl' SVG (NousResearch/hermes-agent)
   'openclaw': { kind: 'image', file: 'openclaw.svg' },      // openclaw.ai 공식 SVG (바닷가재)
 };
