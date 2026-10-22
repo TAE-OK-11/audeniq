@@ -3,7 +3,7 @@
 // 실행돼요(스튜디오에서 직접 하는 것과 같아요). 24시간 안에 답하지 않으면 요청은 사라져요.
 // crates/core/src/mcp/actions.rs
 // AI 앱 연결 화면과 같은 틀(components/AiFlow): 누가 → 무엇을 → 주의할 점, 아래 고정 버튼.
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from '../lib/router';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
@@ -12,7 +12,7 @@ import { aiActionRequest, decideAiAction, type AiActionRequest } from '../api/ai
 import { MOCK } from '../lib/mode';
 import { josa } from '../lib/josa';
 import { AiRequestMissing } from '../components/AiRequestMissing';
-import { AiFlowFrame, AiFlowHeader, AiFlowHero, AiFlowLoading, AiFlowPage, AiSetCard, AiSetRow, workspaceName } from '../components/AiFlow';
+import { AiFlowFrame, AiFlowHeader, AiFlowHero, AiFlowLoading, AiFlowPage, AiSetCard, AiSetRow, AiNextRequest, timeLeft, useFreshRequest, useNow, workspaceName } from '../components/AiFlow';
 import type { Tone } from '../ui';
 
 const TITLE = '작업 승인 요청';
@@ -33,8 +33,8 @@ const DONE_ICON: Record<Status, { kind: 'ok' | 'off' | 'warn'; tone: Tone }> = {
 };
 const STATUS_TEXT: Record<AiActionRequest['status'], string> = {
   PENDING: '',
-  RUNNING: '잠시 뒤 이 화면을 다시 열면 결과를 볼 수 있어요.',
-  DONE: 'AI 앱으로 돌아가 이어서 진행해 주세요.',
+  RUNNING: '끝나면 이 화면에 바로 결과가 나와요.',
+  DONE: 'AI 앱 대화로 돌아가 이어서 진행해 주세요. 바로 이어지지 않으면 "승인했어"라고 말해 주세요.',
   FAILED: '승인은 했지만 처리 중에 문제가 생겼어요.',
   REJECTED: '아무것도 바뀌지 않았어요.',
   EXPIRED: '요청은 24시간 동안만 답할 수 있어요. 필요하면 AI 앱에 다시 요청해 달라고 말해 주세요.',
@@ -62,10 +62,19 @@ export function AiAction() {
   const [missing, setMissing] = useState(false);
   const [busy, setBusy] = useState<'approve' | 'deny' | null>(null);
 
-  useEffect(() => {
-    if (MOCK) { setR(demo(id)); return; }
-    aiActionRequest(id).then(setR, err => (err instanceof ApiError && err.status === 404 ? setMissing(true) : setError(errorMessage(err, '요청을 불러오지 못했어요. 잠시 후 다시 열어 주세요.'))));
+  const load = useCallback(() => {
+    if (MOCK) { setR(prev => prev ?? demo(id)); return; }
+    setError('');
+    aiActionRequest(id).then(setR, err => (err instanceof ApiError && err.status === 404 ? setMissing(true) : setError(errorMessage(err, '요청을 불러오지 못했어요. 잠시 후 다시 해 주세요.'))));
   }, [id]);
+  useEffect(load, [load]);
+  const now = useNow();
+  // 시간이 지나면 버튼을 누르기 전에 바로 '시간이 지났어요'로
+  const status: Status | null = !r ? null
+    : r.connection_revoked && r.status === 'PENDING' ? 'REVOKED'
+    : r.status === 'PENDING' && new Date(r.expires_at).getTime() <= now ? 'EXPIRED'
+    : r.status;
+  useFreshRequest(load, { active: status === 'PENDING' || status === 'RUNNING', poll: status === 'RUNNING' });
 
   async function decide(approve: boolean) {
     if (!r || busy) return;
@@ -90,6 +99,7 @@ export function AiAction() {
       aiActionRequest(r.id).then(setR, () => {});
     } finally {
       setBusy(null);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }
 
@@ -101,7 +111,8 @@ export function AiAction() {
           <AiFlowHeader kicker={TITLE} title={'요청을\n불러오지 못했어요'} />
           <div className="ui-callout is-danger" role="alert">{error}</div>
           <div className="step-actions">
-            <Link id="wizardNext" className="ui-btn is-primary" to="/">홈으로</Link>
+            <Link id="wizardBack" className="ui-btn is-soft" to="/">홈으로</Link>
+            <button type="button" id="wizardNext" className="ui-btn is-primary" onClick={load}>다시 시도</button>
           </div>
         </AiFlowFrame>
       </AiFlowPage>
@@ -110,8 +121,9 @@ export function AiAction() {
   if (!r) return <AiFlowPage><AiFlowFrame><AiFlowLoading text="요청을 불러오고 있어요…" /></AiFlowFrame></AiFlowPage>;
 
   const app = r.connection_label ?? r.client_name;
-  const status = r.connection_revoked && r.status === 'PENDING' ? 'REVOKED' : r.status;
+  if (!status) return null;
   const pending = status === 'PENDING';
+  const soon = pending && new Date(r.expires_at).getTime() - now < 5 * 60_000;
 
   const until = new Date(r.expires_at).toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
@@ -136,7 +148,7 @@ export function AiAction() {
           {r.summary.lines.map(l => <AiSetRow key={l.label} label={l.label} value={l.value} stack={l.value.length > 18} />)}
           <AiSetRow label="요청한 AI 앱" value={app} />
           <AiSetRow label="작업 공간" value={workspaceName(r.org_name)} />
-          {pending && <AiSetRow label="답할 수 있는 시간" value={`${until}까지`} />}
+          {pending && <AiSetRow label="답할 수 있는 시간" value={<span className={soon ? 'aq-flow-soon' : undefined}>{timeLeft(r.expires_at, now)}<small>{until}까지</small></span>} />}
           {r.summary.warning && <p className="aq-flow-note">{r.summary.warning}</p>}
         </AiSetCard>
 
@@ -152,9 +164,12 @@ export function AiAction() {
           </>
         ) : (
           <>
+            <AiNextRequest current={r.id} />
             <div className="step-actions">
               <Link id="wizardBack" className="ui-btn is-soft" to="/profile?open=ai">연결된 AI 앱</Link>
-              <Link id="wizardNext" className="ui-btn is-primary" to="/">홈으로</Link>
+              {status === 'DONE' && r.release_id
+                ? <Link id="wizardNext" className="ui-btn is-primary" to={`/releases/${r.release_id}`}>발매 보기</Link>
+                : <Link id="wizardNext" className="ui-btn is-primary" to="/">홈으로</Link>}
             </div>
             <p className="aq-connect-deny">
               <Link className="ui-btn is-text" to="/profile?open=ai">연결된 AI 앱 관리</Link>

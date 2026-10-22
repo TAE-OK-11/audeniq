@@ -1,9 +1,13 @@
 // AI 앱 화면의 공통 틀 — 연결(/ai/connect)·권한 추가 승인(/ai/approve/:id)·작업 승인(/ai/actions/:id).
 // 발매 신청서(pages/Upload.tsx)와 같은 틀: 스튜디오 메뉴 없이 흰 바탕, 위에 고정된 제목 막대(로그인 계정),
 // 신청서의 단계 제목, 아래 고정 버튼(step-actions). AI 앱의 앱 안 브라우저에서 한 화면으로 열린다.
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../api/auth';
+import { aiActionRequests, aiPermissionRequests } from '../api/aiConnections';
+import { Link } from '../lib/router';
+import { MOCK } from '../lib/mode';
 import { IconTile, type Tone } from '../ui';
+import { Glyph } from './Glyph';
 import '../styles/ai-connect.css';
 
 export const workspaceName = (name: string) => (name === 'Personal workspace' ? '내 작업 공간' : name);
@@ -134,5 +138,74 @@ export function AiFlowStatusIcon({ kind }: { kind: 'ok' | 'off' | 'warn' }) {
       {kind === 'off' && <path d="M7 7l10 10M17 7 7 17" />}
       {kind === 'warn' && <path d="M12 7v6M12 17h.01" />}
     </svg>
+  );
+}
+
+/** 지금 시각 — 남은 시간을 세려고 every ms마다 다시 그린다 */
+export function useNow(every = 15_000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), every);
+    return () => window.clearInterval(t);
+  }, [every]);
+  return now;
+}
+
+/** 남은 시간 한 줄 — '47분 남았어요', '23시간 10분 남았어요', '1분도 안 남았어요' */
+export function timeLeft(expiresAt: string, now: number): string {
+  const min = Math.floor((new Date(expiresAt).getTime() - now) / 60_000);
+  if (min < 1) return '1분도 안 남았어요';
+  if (min < 60) return `${min}분 남았어요`;
+  const h = Math.floor(min / 60), m = min % 60;
+  return m ? `${h}시간 ${m}분 남았어요` : `${h}시간 남았어요`;
+}
+
+/** 열어 둔 화면을 최신으로 — 다른 기기·탭에서 답했을 수 있으니 화면으로 돌아오면 다시 읽고,
+ *  처리 중(poll)이면 끝날 때까지 3초마다(최대 1분) 다시 읽는다 */
+export function useFreshRequest(load: () => void, { active, poll }: { active: boolean; poll: boolean }) {
+  const loadRef = useRef(load);
+  loadRef.current = load;
+  useEffect(() => {
+    if (!active || MOCK) return;
+    const onVisible = () => { if (document.visibilityState === 'visible') loadRef.current(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => { document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('focus', onVisible); };
+  }, [active]);
+  useEffect(() => {
+    if (!poll || MOCK) return;
+    let n = 0;
+    const t = window.setInterval(() => { if (++n > 20) window.clearInterval(t); else loadRef.current(); }, 3000);
+    return () => window.clearInterval(t);
+  }, [poll]);
+}
+
+/** 답을 기다리는 다른 요청 — 하나에 답한 뒤 다음 요청으로 바로 가게 */
+export function AiNextRequest({ current }: { current: string }) {
+  const [next, setNext] = useState<{ to: string; count: number } | null>(null);
+  useEffect(() => {
+    if (MOCK) return;
+    let alive = true;
+    const now = Date.now();
+    Promise.all([aiPermissionRequests().catch(() => []), aiActionRequests().catch(() => [])]).then(([perms, actions]) => {
+      const open = [
+        ...(perms ?? []).map(r => ({ ...r, to: `/ai/approve/${r.id}` })),
+        ...(actions ?? []).map(r => ({ ...r, to: `/ai/actions/${r.id}` })),
+      ].filter(r => r.id !== current && r.status === 'PENDING' && !r.connection_revoked && new Date(r.expires_at).getTime() > now)
+        .sort((a, b) => a.expires_at.localeCompare(b.expires_at));
+      if (alive) setNext(open.length ? { to: open[0].to, count: open.length } : null);
+    }).catch(() => {}); // 다음 요청 안내는 덤 — 못 불러오면 보여 주지 않는다
+    return () => { alive = false; };
+  }, [current]);
+  if (!next) return null;
+  return (
+    <section className="aq-set-card aq-flow-set">
+      <h2>답을 기다리는 요청이 {next.count}개 더 있어요</h2>
+      <Link className="aq-set-row" to={next.to}>
+        <span className="aq-set-label">{next.count > 1 ? '시간이 가장 적게 남은 요청 보기' : '다음 요청 보기'}</span>
+        <span className="aq-set-value" />
+        <Glyph name="chevron-right" size={16} className="aq-set-chev" />
+      </Link>
+    </section>
   );
 }

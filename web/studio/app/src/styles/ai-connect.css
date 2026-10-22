@@ -84,3 +84,6 @@
 .aq-flow-note{margin:2px 14px 10px;padding:12px 14px;border-radius:var(--aq-r-lg);background:var(--aq-amber-50);color:var(--aq-amber-700);font-size:13px;line-height:1.6;word-break:keep-all}
 .aq-flow-fine{margin:14px 2px 0;color:var(--aq-text-3);font-size:13px;line-height:1.6;word-break:keep-all}
 .aq-flow-set{margin-bottom:12px}
+/* 남은 시간 — 아래에 마감 시각, 5분 안 남으면 주황 */
+.aq-flow-row .aq-set-value small{display:block;margin-top:2px;font-size:13px;font-weight:500;color:var(--aq-text-3)}
+.aq-flow-soon{color:var(--aq-amber-700)}
