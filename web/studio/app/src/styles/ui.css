@@ -889,7 +889,7 @@ summary::-webkit-details-marker{display:none}
 .aq-bank-logo.is-symbol>img{display:block;width:38px;height:38px;object-fit:contain}
 @media(max-width:600px){.aq-bank-logo.is-symbol>img{width:36px;height:36px}}
 .aq-brand.is-app{background:#fff;box-shadow:inset 0 0 0 1px rgba(23,27,41,.06)}
-.aq-brand.is-app>img{width:100%;height:100%;object-fit:cover}
+.aq-brand.is-app>img{width:100%;height:100%;object-fit:cover;border-radius:inherit}
 .aq-brand.is-image>img{padding:10%}
 
 /* ---------- 배급 신청서(문서) — 휴대폰: 표 대신 '항목 | 내용' 줄, 수록곡은 곡마다 작은 카드 ---------- */
