@@ -1046,6 +1046,3 @@ legend{padding:0}
 .aq-copy-btn{gap:4px}
 .aq-copy-btn.is-copied{--btn-bg:var(--aq-green-50);--btn-fg:var(--aq-green-700);--btn-bg-hover:var(--aq-green-50);--btn-fg-hover:var(--aq-green-700)}
 .aq-inquiry-identity{margin:0 0 16px;line-height:1.6}
-/* AI 앱 작업 승인 (/ai/actions/:id) — 요청 내용 줄 (나머지는 styles/ai-connect.css) */
-.aq-ai-approve-reason{white-space:pre-wrap}
-.aq-ai-action-line{display:contents}

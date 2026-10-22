@@ -10,9 +10,9 @@ import { ApiError, errorMessage } from '../api/errors';
 import { aiPermissionRequest, decideAiPermission, SCOPE_HELP, SCOPE_LABEL, type AiPermissionRequest } from '../api/aiConnections';
 import { MOCK } from '../lib/mode';
 import { AiRequestMissing } from '../components/AiRequestMissing';
-import { AiAppRow, AiFlowFrame, AiFlowHeader, AiFlowLoading, AiFlowPage, workspaceName } from '../components/AiFlow';
+import { AiFlowFrame, AiFlowHeader, AiFlowHero, AiFlowLoading, AiFlowPage, AiFlowRows, AiFlowStatusIcon, appInitial, workspaceName } from '../components/AiFlow';
 
-const TITLE = '권한 추가 요청';
+const TITLE = '권한 추가 요청';  // 위 막대는 연결 화면과 같은 'AI 앱 연결', 이 이름은 제목 위 작은 글씨로
 /** 돈이 움직이거나 내 이름으로 접수되는 권한 — 한 번 더 확인한다 */
 const STRONG: Record<string, string> = { 'releases:submit': '내 이름으로 접수', 'payouts:request': '돈이 움직여요' };
 
@@ -22,10 +22,13 @@ const DONE_TITLE: Record<Exclude<AiPermissionRequest['status'], 'PENDING'>, stri
   EXPIRED: '요청 시간이 지났어요',
   REVOKED: '이미 끊긴 연결이에요',
 };
+const DONE_TONE: Record<AiPermissionRequest['status'], 'ok' | 'off' | 'warn'> = {
+  PENDING: 'warn', APPROVED: 'ok', REJECTED: 'off', EXPIRED: 'warn', REVOKED: 'warn',
+};
 const STATUS_TEXT: Record<AiPermissionRequest['status'], string> = {
   PENDING: '',
-  APPROVED: '승인했어요. 이 연결에 권한이 더해졌어요. AI 앱에서 계속 진행해 주세요.',
-  REJECTED: '거절했어요. 연결의 권한은 그대로예요.',
+  APPROVED: '이 연결에 권한이 더해졌어요. AI 앱에서 계속 진행해 주세요.',
+  REJECTED: '연결의 권한은 그대로예요.',
   EXPIRED: '요청 시간(60분)이 지났어요. 필요하면 AI 앱에서 다시 요청해 주세요.',
   REVOKED: '이 연결은 이미 끊겼어요.',
 };
@@ -80,7 +83,7 @@ export function AiApprove() {
   if (error) {
     return (
       <AiFlowPage>
-        <AiFlowFrame title={TITLE}>
+        <AiFlowFrame>
           <AiFlowHeader kicker={TITLE} title={'요청을\n불러오지 못했어요'} />
           <div className="ui-callout is-danger" role="alert">{error}</div>
           <div className="step-actions">
@@ -90,56 +93,45 @@ export function AiApprove() {
       </AiFlowPage>
     );
   }
-  if (!r) return <AiFlowPage><AiFlowFrame title={TITLE}><AiFlowLoading text="요청을 불러오고 있어요…" /></AiFlowFrame></AiFlowPage>;
+  if (!r) return <AiFlowPage><AiFlowFrame><AiFlowLoading text="요청을 불러오고 있어요…" /></AiFlowFrame></AiFlowPage>;
 
   const app = r.connection_label ?? r.client_name;
   const status = r.connection_revoked && r.status === 'PENDING' ? 'REVOKED' : r.status;
   const pending = status === 'PENDING';
 
+  const until = new Date(r.expires_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+  const tone = DONE_TONE[status];
+
   return (
     <AiFlowPage>
-      <AiFlowFrame title={TITLE}>
+      <AiFlowFrame>
         {pending ? (
-          <AiFlowHeader
-            kicker={TITLE}
+          <AiFlowHero
+            mark={appInitial(app)} kicker={TITLE}
             title={`${app}에서\n권한을 더 달라고 해요`}
-            sub="내가 요청한 게 아니라면 거절하고 연결을 끊어 주세요."
+            sub="승인하면 연결을 끊을 때까지 유지돼요. 내가 요청한 게 아니라면 거절해 주세요."
           />
         ) : (
-          <AiFlowHeader kicker={TITLE} title={DONE_TITLE[status]} sub={STATUS_TEXT[status]} />
+          <AiFlowHero mark={<AiFlowStatusIcon kind={tone} />} tone={tone} kicker={TITLE} title={DONE_TITLE[status]} sub={STATUS_TEXT[status]} />
         )}
 
-        <AiAppRow name={app} detail={`${workspaceName(r.org_name)}에 연결된 앱`} />
-        {r.reason && (
-          <>
-            <h2 className="subhead">요청 이유</h2>
-            <p className="aq-connect-reason">{r.reason}</p>
-          </>
-        )}
+        {r.scopes.map(s => (
+          <div key={s} className="aq-flow-card">
+            <strong>
+              {SCOPE_LABEL[s] ?? s}
+              {STRONG[s] && <span className="aq-connect-tag is-warn">{STRONG[s]}</span>}
+            </strong>
+            {SCOPE_HELP[s] && <p>{SCOPE_HELP[s]}</p>}
+          </div>
+        ))}
 
-        <h2 className="subhead">더 달라는 권한</h2>
-        <div className="aq-options">
-          {r.scopes.map(s => (
-            <div key={s} className="aq-option aq-connect-static">
-              <span className="aq-option-text">
-                <strong>
-                  {SCOPE_LABEL[s] ?? s}
-                  {STRONG[s] && <span className="aq-connect-tag is-warn">{STRONG[s]}</span>}
-                </strong>
-                {SCOPE_HELP[s] && <small>{SCOPE_HELP[s]}</small>}
-              </span>
-            </div>
-          ))}
-        </div>
-        <p className="aq-connect-always">
-          <span className="aq-connect-tag">지금 권한</span>
-          <span>{r.connection_scopes.map(s => SCOPE_LABEL[s] ?? s).join('·')}</span>
-        </p>
-        {pending && (
-          <p className="aq-option-note">
-            승인하면 연결을 끊을 때까지 유지돼요. {new Date(r.expires_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}까지 답해 주세요.
-          </p>
-        )}
+        <AiFlowRows rows={[
+          ['AI 앱', app],
+          ['작업 공간', workspaceName(r.org_name)],
+          ...(r.reason ? [['요청 이유', r.reason] as [string, string]] : []),
+          ['지금 권한', r.connection_scopes.map(s => SCOPE_LABEL[s] ?? s).join('\n')],
+          ...(pending ? [['답할 시간', `${until}까지`] as [string, string]] : []),
+        ]} />
 
         {pending ? (
           <>

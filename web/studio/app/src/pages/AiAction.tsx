@@ -11,7 +11,7 @@ import { ApiError, errorMessage, messageForCode } from '../api/errors';
 import { aiActionRequest, decideAiAction, type AiActionRequest } from '../api/aiConnections';
 import { MOCK } from '../lib/mode';
 import { AiRequestMissing } from '../components/AiRequestMissing';
-import { AiAppRow, AiFlowFrame, AiFlowHeader, AiFlowLoading, AiFlowPage, workspaceName } from '../components/AiFlow';
+import { AiFlowFrame, AiFlowHeader, AiFlowHero, AiFlowLoading, AiFlowPage, AiFlowRows, AiFlowStatusIcon, appInitial, workspaceName } from '../components/AiFlow';
 
 const TITLE = '작업 승인 요청';
 
@@ -23,12 +23,15 @@ const DONE_TITLE: Record<Exclude<AiActionRequest['status'], 'PENDING'>, string> 
   EXPIRED: '요청 시간이 지났어요',
   REVOKED: '이미 끊긴 연결이에요',
 };
+const DONE_TONE: Record<AiActionRequest['status'], 'ok' | 'off' | 'warn'> = {
+  PENDING: 'warn', RUNNING: 'warn', DONE: 'ok', FAILED: 'warn', REJECTED: 'off', EXPIRED: 'warn', REVOKED: 'warn',
+};
 const STATUS_TEXT: Record<AiActionRequest['status'], string> = {
   PENDING: '',
-  RUNNING: '처리하고 있어요. 잠시 뒤에 다시 확인해 주세요.',
-  DONE: '승인했고 요청한 작업을 마쳤어요. AI 앱에서 계속 진행해 주세요.',
-  FAILED: '승인했지만 작업을 마치지 못했어요.',
-  REJECTED: '거절했어요. 아무것도 바뀌지 않았어요.',
+  RUNNING: '잠시 뒤에 다시 확인해 주세요.',
+  DONE: '요청한 작업을 마쳤어요. AI 앱에서 계속 진행해 주세요.',
+  FAILED: '승인은 했어요.',
+  REJECTED: '아무것도 바뀌지 않았어요.',
   EXPIRED: '요청 시간(24시간)이 지났어요. 필요하면 AI 앱에서 다시 요청해 주세요.',
   REVOKED: '이 연결은 이미 끊겼어요.',
 };
@@ -87,7 +90,7 @@ export function AiAction() {
   if (error) {
     return (
       <AiFlowPage>
-        <AiFlowFrame title={TITLE}>
+        <AiFlowFrame>
           <AiFlowHeader kicker={TITLE} title={'요청을\n불러오지 못했어요'} />
           <div className="ui-callout is-danger" role="alert">{error}</div>
           <div className="step-actions">
@@ -97,48 +100,42 @@ export function AiAction() {
       </AiFlowPage>
     );
   }
-  if (!r) return <AiFlowPage><AiFlowFrame title={TITLE}><AiFlowLoading text="요청을 불러오고 있어요…" /></AiFlowFrame></AiFlowPage>;
+  if (!r) return <AiFlowPage><AiFlowFrame><AiFlowLoading text="요청을 불러오고 있어요…" /></AiFlowFrame></AiFlowPage>;
 
   const app = r.connection_label ?? r.client_name;
   const status = r.connection_revoked && r.status === 'PENDING' ? 'REVOKED' : r.status;
   const pending = status === 'PENDING';
 
+  const until = new Date(r.expires_at).toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const tone = DONE_TONE[status];
+
   return (
     <AiFlowPage>
-      <AiFlowFrame title={TITLE}>
+      <AiFlowFrame>
         {pending ? (
-          <AiFlowHeader
-            kicker={TITLE}
-            title={`${app}에서\n이 작업을 해도 되는지 물어봤어요`}
-            sub="승인하면 내 계정으로 바로 처리돼요. 내가 요청한 게 아니라면 거절하고 연결을 끊어 주세요."
+          <AiFlowHero
+            mark={appInitial(app)} kicker={TITLE}
+            title={`${app}에서\n작업 승인을 요청했어요`}
+            sub="승인하면 내 계정으로 바로 처리돼요. 내가 요청한 게 아니라면 거절해 주세요."
           />
         ) : (
-          <AiFlowHeader
-            kicker={TITLE}
-            title={DONE_TITLE[status]}
+          <AiFlowHero
+            mark={<AiFlowStatusIcon kind={tone} />} tone={tone} kicker={TITLE} title={DONE_TITLE[status]}
             sub={<>{STATUS_TEXT[status]}{status === 'FAILED' && r.error_code && <> {messageForCode(r.error_code)}</>}</>}
           />
         )}
 
-        <AiAppRow name={app} detail={`${workspaceName(r.org_name)}에 연결된 앱`} />
-
-        <h2 className="subhead">요청한 작업</h2>
-        <div className="aq-connect-summary">
+        <div className="aq-flow-card">
           <strong>{r.summary.title}</strong>
-          {r.summary.lines.length > 0 && (
-            <dl className="aq-connect-facts">
-              {r.summary.lines.map(l => (
-                <div key={l.label} className="aq-ai-action-line"><dt>{l.label}</dt><dd className="aq-ai-approve-reason">{l.value}</dd></div>
-              ))}
-            </dl>
-          )}
+          {r.summary.warning && <p className="aq-flow-warn">{r.summary.warning}</p>}
         </div>
-        {r.summary.warning && <p className="ui-callout is-warn small">{r.summary.warning}</p>}
-        {pending && (
-          <p className="aq-option-note">
-            {new Date(r.expires_at).toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}까지 답해 주세요.
-          </p>
-        )}
+
+        <AiFlowRows rows={[
+          ...r.summary.lines.map(l => [l.label, l.value] as [string, string]),
+          ['AI 앱', app],
+          ['작업 공간', workspaceName(r.org_name)],
+          ...(pending ? [['답할 시간', `${until}까지`] as [string, string]] : []),
+        ]} />
 
         {pending ? (
           <>

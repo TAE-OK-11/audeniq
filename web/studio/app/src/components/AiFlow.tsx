@@ -79,3 +79,37 @@ export function AiAppRow({ name, detail, tag }: { name: string; detail?: React.R
     </div>
   );
 }
+
+/** 승인 화면 맨 위 — 앱 첫 글자(또는 결과 표시)와 큰 제목. 신청서 단계 제목과 같은 글씨 */
+export function AiFlowHero({ mark, tone, kicker, title, sub }: {
+  mark: React.ReactNode; tone?: 'ok' | 'off' | 'warn'; kicker: string; title: React.ReactNode; sub?: React.ReactNode;
+}) {
+  return (
+    <div className="aq-flow-hero">
+      <span className={`aq-flow-mark${tone ? ` is-${tone}` : ''}`} aria-hidden="true">{mark}</span>
+      <AiFlowHeader kicker={kicker} title={title} sub={sub} />
+    </div>
+  );
+}
+
+export const appInitial = (name: string) => (name.match(/[\p{L}\p{N}]/u)?.[0] ?? 'A').toUpperCase();
+
+/** 신청서 '접수 전 확인'과 같은 줄 목록 — 왼쪽 이름, 오른쪽 값 */
+export function AiFlowRows({ rows }: { rows: [string, React.ReactNode][] }) {
+  return (
+    <dl className="aq-flow-rows">
+      {rows.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
+    </dl>
+  );
+}
+
+/** 결과 표시 — 마침(✓)·거절(✕)·멈춤(!) */
+export function AiFlowStatusIcon({ kind }: { kind: 'ok' | 'off' | 'warn' }) {
+  return (
+    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+      {kind === 'ok' && <path d="M5 12.5 9.5 17 19 7.5" />}
+      {kind === 'off' && <path d="M7 7l10 10M17 7 7 17" />}
+      {kind === 'warn' && <path d="M12 7v6M12 17h.01" />}
+    </svg>
+  );
+}
