@@ -57,6 +57,7 @@ async fn app_with(pool: PgPool, enabled: bool, bypass_dsp_gate: bool) -> (Router
         dynamic_registration: true,
         payout_limit_krw: 300_000,
         public_daily_user: 150,
+        api_enabled: enabled,
     });
     (router(s), store)
 }
@@ -3174,7 +3175,10 @@ async fn artist_pages_platform_requests_splits_prompts_and_upload_links(pool: Pg
     let text = v["result"]["messages"][0]["content"]["text"]
         .as_str()
         .unwrap();
-    assert!(text.contains("AUDENIQ에서") && text.contains("「봄」"), "{text}");
+    assert!(
+        text.contains("AUDENIQ에서") && text.contains("「봄」"),
+        "{text}"
+    );
     let (_, _, v) = rpc(&app, None, "prompts/get", json!({"name": "nope"})).await;
     assert_eq!(v["error"]["code"], -32602);
     let (_, _, v) = rpc(&app, None, "initialize", json!({"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}})).await;

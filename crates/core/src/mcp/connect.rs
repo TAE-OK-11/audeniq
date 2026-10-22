@@ -121,13 +121,21 @@ pub async fn details(
         .and_then(|v| v.parse().ok())
         .ok_or(Error::Invalid)?;
     let client = sqlx::query(
-        "SELECT client_id, client_name, kind FROM identity.mcp_clients WHERE id=$1 AND disabled_at IS NULL",
+        "SELECT client_id, client_name, kind, client_uri, description, visibility, owner_user_id
+           FROM identity.mcp_clients WHERE id=$1 AND disabled_at IS NULL",
     )
     .bind(client_pk)
     .fetch_optional(&s.pool)
     .await?
     .ok_or(Error::InvalidCode("AI_CONNECT_CLIENT_UNKNOWN"))?;
     let client_id: String = client.get("client_id");
+    // A developer app stays with its owner until an operator approves it.
+    if client.get::<String, _>("visibility") != "PUBLIC"
+        && client.get::<Option<Uuid>, _>("owner_user_id") != Some(a.user)
+    {
+        return Err(Error::InvalidCode("AI_CONNECT_CLIENT_PRIVATE"));
+    }
+    let developer = client.get::<String, _>("kind") == "DEV";
     let offered = offered(&req);
     let scopes: Vec<Value> = SCOPES
         .iter()
@@ -164,12 +172,20 @@ pub async fn details(
     };
     Ok(Json(json!({
         "kind": match kind { Kind::Browser => "browser", Kind::Device => "device" },
+        // "api": an app asks for the REST API; "mcp": an AI assistant.
+        "audience": super::Audience::from_code(req["rs"].as_str()).code(),
         "client": {
             "name": client.get::<String, _>("client_name"),
             "client_id": client_id,
             // A metadata document at an https URL names the app's own site.
             "verified_host": client_id.starts_with("https://").then(|| host(&client_id)).flatten(),
             "registered": client.get::<String, _>("kind") == "ADMIN",
+            // An app a Studio user registered: its own site (if given) and
+            // whether it is still only for its owner.
+            "developer": developer,
+            "website": developer.then(|| client.get::<Option<String>, _>("client_uri")).flatten(),
+            "description": developer.then(|| client.get::<Option<String>, _>("description")).flatten(),
+            "private": client.get::<String, _>("visibility") != "PUBLIC",
         },
         "requested_from": requested_from,
         "return_to": return_to,

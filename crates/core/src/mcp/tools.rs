@@ -95,7 +95,7 @@ const RETRY_SAFE_TOOLS: [&str; 3] = [
     "create_platform_request",
 ];
 
-fn defs() -> &'static [ToolDef] {
+pub(super) fn defs() -> &'static [ToolDef] {
     static DEFS: OnceLock<Vec<ToolDef>> = OnceLock::new();
     DEFS.get_or_init(|| {
         vec![

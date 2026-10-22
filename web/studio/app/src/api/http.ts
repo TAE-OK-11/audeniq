@@ -36,7 +36,7 @@ export function orgPath(path: string): string {
 }
 
 interface ReqOptions {
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   timeoutMs?: number;
   /** 401이어도 로그인 화면으로 보내지 않음 (세션 확인·로그인 요청용) */
