@@ -38,6 +38,9 @@ pub const MODERN: &str = "2026-07-28";
 /// 2024-11-05 is kept for clients built on older SDKs that still send it
 /// over Streamable HTTP; the messages used here are the same.
 pub const LEGACY: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
+/// How long (2026-07-28 `ttlMs`) clients may reuse the listings, which only
+/// change with a new release of the server.
+const STATIC_TTL_MS: u64 = 60 * 60 * 1000;
 const META_VERSION: &str = "io.modelcontextprotocol/protocolVersion";
 /// Scopes a new connection asks for by default (the consent screen offers the rest).
 const SCOPE_HINT: &str = "releases:read releases:write";
@@ -528,6 +531,16 @@ async fn serve(s: AppState, h: HeaderMap, body: Bytes, endpoint: Endpoint) -> Re
         }
         v
     };
+    // 2026-07-28 cacheable results: the listings and the widget are the
+    // same for every user, so any cache may keep them for an hour.
+    let cacheable = |v: Value| {
+        let mut v = complete(v);
+        if modern {
+            v["cacheScope"] = json!("public");
+            v["ttlMs"] = json!(STATIC_TTL_MS);
+        }
+        v
+    };
     match method {
         "initialize" => {
             let asked = params
@@ -557,14 +570,16 @@ async fn serve(s: AppState, h: HeaderMap, body: Bytes, endpoint: Endpoint) -> Re
                 "capabilities": capabilities(),
                 "_meta": {"io.modelcontextprotocol/serverInfo": server_info()},
                 "instructions": INSTRUCTIONS,
+                "cacheScope": "public",
+                "ttlMs": STATIC_TTL_MS,
             }),
         ),
         "ping" => rpc_result(&id, complete(json!({}))),
         "tools/list" => rpc_result(
             &id,
-            complete(json!({"tools": tools::list_json(endpoint == Endpoint::Public)})),
+            cacheable(json!({"tools": tools::list_json(endpoint == Endpoint::Public)})),
         ),
-        "prompts/list" => rpc_result(&id, complete(json!({"prompts": prompts::list_json()}))),
+        "prompts/list" => rpc_result(&id, cacheable(json!({"prompts": prompts::list_json()}))),
         "prompts/get" => {
             let name = params.get("name").and_then(Value::as_str).unwrap_or("");
             let args = params
@@ -582,14 +597,15 @@ async fn serve(s: AppState, h: HeaderMap, body: Bytes, endpoint: Endpoint) -> Re
                 ),
             }
         }
-        "resources/list" => {
-            rpc_result(&id, complete(json!({"resources": tools::resources_json()})))
-        }
-        "resources/templates/list" => rpc_result(&id, complete(json!({"resourceTemplates": []}))),
+        "resources/list" => rpc_result(
+            &id,
+            cacheable(json!({"resources": tools::resources_json()})),
+        ),
+        "resources/templates/list" => rpc_result(&id, cacheable(json!({"resourceTemplates": []}))),
         "resources/read" => {
             let uri = params.get("uri").and_then(Value::as_str).unwrap_or("");
             match tools::read_resource(uri) {
-                Some(contents) => rpc_result(&id, complete(json!({"contents": [contents]}))),
+                Some(contents) => rpc_result(&id, cacheable(json!({"contents": [contents]}))),
                 None => rpc_error(
                     StatusCode::OK,
                     &id,

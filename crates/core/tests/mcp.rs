@@ -519,6 +519,9 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
     let (s, v) = modern("tools/list", ok_headers("tools/list")).await;
     assert_eq!(s, StatusCode::OK);
     assert_eq!(v["result"]["resultType"], "complete");
+    // 2026-07-28 cacheable results: the same for every user.
+    assert_eq!(v["result"]["cacheScope"], "public");
+    assert_eq!(v["result"]["ttlMs"], 3_600_000);
     let (s, v) = modern("tools/list", ok_headers("server/discover")).await;
     assert_eq!(
         (s, v["error"]["code"].as_i64()),
@@ -591,6 +594,11 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
     // Transport rules: GET → 405, foreign browser Origin → 403, garbage → 400.
     let (s, _, _) = raw(&app, "GET", "/api/mcp", &[], String::new()).await;
     assert_eq!(s, StatusCode::METHOD_NOT_ALLOWED);
+    // DELETE (ending a session, which this server never starts) as well,
+    // not the Studio's cross-site refusal.
+    let (s, h, _) = raw(&app, "DELETE", "/api/mcp", &[], String::new()).await;
+    assert_eq!(s, StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(h["allow"], "POST");
     let (s, _, _) = raw(
         &app,
         "POST",

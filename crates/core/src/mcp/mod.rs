@@ -242,6 +242,11 @@ pub fn routes() -> Router<AppState> {
 /// token / PKCE / client credentials instead. A browser that does send an
 /// Origin to `/api/mcp` must still send ours (checked in `protocol`).
 pub fn origin_exempt(method: &axum::http::Method, path: &str) -> bool {
+    // DELETE on the MCP endpoint (a client ending a session) changes nothing:
+    // it reaches the handler for its 405, as the transport specifies.
+    if *method == axum::http::Method::DELETE {
+        return matches!(path, MCP_PATH | MCP_PATH_SLASH | MCP_PUBLIC_PATH);
+    }
     *method == axum::http::Method::POST
         && matches!(
             path,
