@@ -747,6 +747,15 @@ async fn special_options(s: &AppState, p: &Principal, args: &Value) -> ToolResul
             o["expressAck"] = json!(e["terms_accepted"] == true);
         }
     }
+    if let Some(m) = args.get("minor") {
+        let on = m["is_minor"] == true;
+        o["minor"] = json!(on);
+        if on {
+            o["guardian"] = json!(text(&m["guardian_name"], 90));
+            o["guardianRelation"] = json!(text(&m["guardian_relation"], 20));
+            o["guardianContact"] = json!(text(&m["guardian_contact"], 160));
+        }
+    }
     let options = draft["options"].clone();
     super::tools::write_release(s, &p.actor, p.org, release, &r, draft, &json!({})).await?;
     Ok(json!({
