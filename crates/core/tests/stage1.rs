@@ -364,17 +364,194 @@ async fn minority_paths_are_hard_gated(pool: PgPool) {
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let (release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
 
+    // A minor's release needs the guardian's signed consent first.
     let (s, v) = consent(&app, &u, release, true).await;
     assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
-    assert_eq!(v["error"]["code"], "MINORITY_REVIEW_REQUIRED");
+    assert_eq!(v["error"]["code"], "GUARDIAN_CONSENT_REQUIRED");
 
     let (s, v) = consent(&app, &u, release, false).await;
     assert_eq!(s, StatusCode::OK, "{v}");
     let consent_id = Uuid::parse_str(v["consent_id"].as_str().unwrap()).unwrap();
 
+    // Declaring a minor while confirming adulthood is refused, and an adult
+    // consent cannot carry a minor's submission.
     let (s, v) = submit(&app, &u, release, consent_id, true, "k-minor").await;
     assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
-    assert_eq!(v["error"]["code"], "MINORITY_REVIEW_REQUIRED");
+    assert_eq!(v["error"]["code"], "DECLARATION_REQUIRED");
+}
+
+/// A 1×1 PNG, as the Studio's signature pad sends it.
+const GUARDIAN_SIG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+#[sqlx::test]
+async fn a_minor_submits_with_the_guardians_signed_consent(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let wav = make_good_wav(dir.path());
+    let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
+    let (release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
+    let guardian_path = format!("/api/orgs/{}/releases/{release}/guardian-consent", u.org);
+    sqlx::query("UPDATE catalog.releases SET draft = jsonb_set(coalesce(draft,'{}'::jsonb), '{artist}', '\"김미성\"'), row_version = row_version + 1 WHERE id=$1")
+        .bind(release)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // The guardian's own signing link, with AUDENIQ's consent text.
+    let (s, link) = call(
+        &app,
+        "POST",
+        &guardian_path,
+        json!({"guardian_name": "김보호", "relation": "모", "channel": "LINK"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{link}");
+    let token = link["token"].as_str().unwrap().to_string();
+    let (_, again) = call(
+        &app,
+        "POST",
+        &guardian_path,
+        json!({"guardian_name": "김보호", "relation": "모", "channel": "LINK"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        again["id"], link["id"],
+        "asking again reissues the same request"
+    );
+    let token = again["token"].as_str().map(str::to_owned).unwrap_or(token);
+    // The generic endpoint never opens a guardian consent with its own text.
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/signing-requests", u.org),
+        json!({"release_id": release, "document_no": Uuid::new_v4(), "document_kind": "guardian",
+            "title": "x", "body": "x", "rights_holder": "x", "signer_name": "김보호", "signer_role": "법정대리인", "channel": "LINK"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+
+    // Not signed yet: a minor's consent is refused.
+    let (_, v) = consent(&app, &u, release, true).await;
+    assert_eq!(v["error"]["code"], "GUARDIAN_CONSENT_REQUIRED");
+
+    // The guardian verifies (an adult, named in the request) and signs.
+    let sign = format!("/api/sign/{token}");
+    let (s, view) = call(&app, "GET", &sign, Value::Null, None).await;
+    assert_eq!(s, StatusCode::OK, "{view}");
+    assert!(
+        view["body"]
+            .as_str()
+            .unwrap()
+            .contains("법정대리인 김보호(모)"),
+        "{view}"
+    );
+    // SAFETY: only this test in this binary reads the provider variable.
+    unsafe { std::env::set_var("IDENTITY_PROVIDER", "test") };
+    let (_, e) = call(
+        &app,
+        "POST",
+        &format!("{sign}/identity"),
+        json!({"transaction_id": "test:김보호:2012-05-05"}),
+        None,
+    )
+    .await;
+    assert_eq!(e["error"]["code"], "GUARDIAN_NOT_ADULT");
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("{sign}/identity"),
+        json!({"transaction_id": "test:김보호:1980-05-05"}),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    // The signature image was already inspected (the media engine that
+    // sanitizes it is not needed here).
+    sqlx::query("INSERT INTO catalog.inline_file_safety(source_sha256, rule_version) VALUES($1,'1') ON CONFLICT DO NOTHING")
+        .bind(audeniq_core::domain::sha256_hex(GUARDIAN_SIG))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let consents = json!({"document": true, "electronic_signature": true, "privacy": true});
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("{sign}/sign"),
+        json!({"signature": GUARDIAN_SIG, "consents": consents}),
+        None,
+    )
+    .await;
+    unsafe { std::env::remove_var("IDENTITY_PROVIDER") };
+    assert_eq!(s, StatusCode::OK, "{v}");
+
+    // Signed, but the family relation certificate has no file yet.
+    let (_, v) = consent(&app, &u, release, true).await;
+    assert_eq!(v["error"]["code"], "GUARDIAN_RELATION_DOCUMENT_REQUIRED");
+    let (_, status) = call(&app, "GET", &guardian_path, Value::Null, Some(&u)).await;
+    assert_eq!(status["ready"], false);
+    assert_eq!(status["requests"][0]["status"], "SIGNED");
+    let document = status["relation_document"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let file = register_asset(&pool, &store, &u, "family.pdf", b"%PDF-1.4 family").await;
+    sqlx::query(
+        "UPDATE catalog.assets SET kind='DOCUMENT', content_type='application/pdf' WHERE id=$1",
+    )
+    .bind(file)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let rv: i64 = sqlx::query_scalar("SELECT row_version FROM portal.documents WHERE id=$1::uuid")
+        .bind(&document)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/documents/{document}/proof", u.org),
+        json!({"asset_id": file, "file_name": "family.pdf", "row_version": rv}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (_, status) = call(&app, "GET", &guardian_path, Value::Null, Some(&u)).await;
+    assert_eq!(status["ready"], true, "{status}");
+
+    // Now the consent records the guardian path, and the minor's submission
+    // (no adult declaration) goes to human review.
+    let (s, v) = consent(&app, &u, release, true).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let consent_id = Uuid::parse_str(v["consent_id"].as_str().unwrap()).unwrap();
+    let body: Value = sqlx::query_scalar("SELECT body FROM catalog.consent_packages WHERE id=$1")
+        .bind(consent_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(body["minority_path"], "GUARDIAN");
+    assert_eq!(body["signature_ids"][0], link["id"]);
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/releases/{release}/submit", u.org),
+        json!({"consent_id":consent_id,"minority_declared":true,"idempotency_key":"k-guardian","declarations":{"rights_confirmed":true,"adult_confirmed":false,"is_cover":false,"is_remix":false,"contains_samples":false,"ai_involved":false,"explicit_content":false}}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let minority: Option<bool> = sqlx::query_scalar(
+        "SELECT (body->>'minority_declared')::boolean FROM catalog.application_revisions WHERE id=$1::uuid",
+    )
+    .bind(v["revision_id"].as_str().unwrap())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(minority, Some(true));
 }
 
 #[sqlx::test]
