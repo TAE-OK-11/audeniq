@@ -1,31 +1,33 @@
 // AI 앱이 보낸 승인 링크를 열었는데 요청이 안 보일 때 (/ai/approve/:id, /ai/actions/:id).
 // 서버는 다른 계정의 요청을 "없음"으로만 답하므로, 흔한 이유를 차례로 보여 주고 다음 할 일을 알려 준다.
 import { Link } from '../lib/router';
+import { useAuth } from '../api/auth';
+import { AiFlowFrame, AiFlowHero, AiSetCard, AiSetItem } from './AiFlow';
 
-export function AiRequestMissing({ hours }: { hours: string }) {
+const REASONS = (hours: string, email?: string): [string, string][] => [
+  ['다른 계정으로 로그인했어요', `${email ? `지금은 ${email}로 로그인했어요. ` : ''}AI 앱을 연결한 AUDENIQ 계정으로 로그인하면 요청이 보여요.`],
+  ['답할 수 있는 시간이 지났어요', `요청은 ${hours} 동안만 답할 수 있어요.`],
+  ['이미 답했거나 연결을 끊었어요', '답한 요청과 끊긴 연결의 요청은 다시 열 수 없어요.'],
+];
+
+export function AiRequestMissing({ title, hours }: { title: string; hours: string }) {
+  const { user } = useAuth();
   return (
-    <section className="ui-card aq-ai-approve-card aq-ai-missing" role="alert">
-      <h2 className="aq-ai-missing-title">요청을 찾지 못했어요</h2>
-      <p className="ui-field-help">이런 경우에 이 화면이 보여요.</p>
-      <ol className="aq-ai-missing-list">
-        <li>
-          <strong>다른 계정으로 로그인했어요</strong>
-          <span>AI 앱을 연결한 어데닉 계정으로 로그인해야 요청이 보여요.</span>
-        </li>
-        <li>
-          <strong>요청 시간이 지났어요</strong>
-          <span>요청은 {hours} 안에 답해야 해요.</span>
-        </li>
-        <li>
-          <strong>이미 처리했거나 연결을 끊었어요</strong>
-          <span>처리한 요청과 끊긴 연결의 요청은 다시 열 수 없어요.</span>
-        </li>
-      </ol>
-      <p className="ui-field-help">AI 앱에 "다시 요청해 줘"라고 말하면 새 링크를 받을 수 있어요.</p>
-      <div className="aq-ai-approve-actions">
-        <Link className="ui-btn is-soft" to="/profile?open=ai">연결된 AI 앱 보기</Link>
-        <Link className="ui-btn is-primary" to="/">홈으로</Link>
+    <AiFlowFrame>
+      <div role="alert">
+        <AiFlowHero icon={{ kind: 'warn', tone: 'gray' }} kicker={title} title="요청을 찾지 못했어요" sub="이 링크로는 요청을 열 수 없어요. 이유는 보통 셋 중 하나예요." />
+        <AiSetCard title="열리지 않는 이유">
+          {REASONS(hours, user?.email).map(([t, d]) => <AiSetItem key={t} title={t}>{d}</AiSetItem>)}
+        </AiSetCard>
+        <p className="aq-flow-fine">AI 앱에 "다시 요청해 줘"라고 말하면 새 링크를 받을 수 있어요.</p>
       </div>
-    </section>
+      <div className="step-actions">
+        <Link id="wizardBack" className="ui-btn is-soft" to="/profile?open=ai">연결된 AI 앱 보기</Link>
+        <Link id="wizardNext" className="ui-btn is-primary" to="/">홈으로</Link>
+      </div>
+      <p className="aq-connect-deny">
+        <Link className="ui-btn is-text" to="/profile?open=ai">연결된 AI 앱 보기</Link>
+      </p>
+    </AiFlowFrame>
   );
 }

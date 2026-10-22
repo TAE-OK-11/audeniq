@@ -76,4 +76,14 @@ export const BRAND_ASSETS: Record<string, BrandAsset> = {
   'daol': { kind: 'image', file: 'daol.png' },
   'ls': { kind: 'image', file: 'ls.png' },
   'hana': { kind: 'image', file: 'hana.png' },
+  // AI 앱·에이전트 (AI 앱 연결·승인 화면) — 각 공식 사이트의 지금 아이콘, 출처는 docs/BRAND_LOGOS.md
+  'claude': { kind: 'image', file: 'claude.svg' },          // claude.ai 공식 SVG (주황 표시를 흰 칸에)
+  'chatgpt': { kind: 'glyph', file: 'chatgpt.svg', color: '#000000' },
+  'perplexity': { kind: 'glyph', file: 'perplexity.svg', color: '#000000' },  // 공식 아이콘(검은 칸·흰 표시)과 같은 모양, 표시 크기는 ChatGPT·Grok에 맞춤
+  'grok': { kind: 'glyph', file: 'grok.svg', color: '#000000' },
+  'gemini': { kind: 'image', file: 'gemini.webp' },          // App Store 공식 앱 아이콘(1024px)에서 줄임, 흰 앱 칸이라 다른 흰 칸 로고처럼 여백을 둔다 — 4색 스파클은 벡터가 없다
+  'muse': { kind: 'app', file: 'muse.webp' },              // Muse from Meta — App Store 공식 앱 아이콘(1024px)에서 줄임
+  'pickle': { kind: 'app', file: 'pickle.webp' },          // 피클: 나만의 AI 에이전트 — App Store 공식 앱 아이콘(1024px)에서 줄임
+  'hermes': { kind: 'image', file: 'hermes.svg' },          // Hermes Agent 공식 아이콘 'Nous girl' SVG (NousResearch/hermes-agent)
+  'openclaw': { kind: 'image', file: 'openclaw.svg' },      // openclaw.ai 공식 SVG (바닷가재)
 };

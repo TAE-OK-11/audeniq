@@ -62,6 +62,26 @@ DSP는 기존 `public/static/brands/`, `src/lib/brands.ts`, `components/BrandMar
 | `trebel` | TREBEL | App Store 공식 앱 아이콘 — TREBEL Music - Download Songs (M&M Media, Inc.) — https://apps.apple.com/us/app/trebel-music-download-songs/id912390687 |
 | `yandex` | Yandex Music | App Store 공식 앱 아이콘 — Яндекс Музыка, книги, подкасты (DIRECT CURSUS COMPUTER SYSTEMS TRADING LLC) — https://apps.apple.com/ru/app/%D1%8F%D0%BD%D0%B4%D0%B5%D0%BA%D1%81-%D0%BC%D1%83%D0%B7%D1%8B%D0%BA%D0%B0-%D0%BA%D0%BD%D0%B8%D0%B3%D0%B8-%D0%BF%D0%BE%D0%B4%D0%BA%D0%B0%D1%81%D1%82%D1%8B/id520797969 |
 | `canva` | Canva | App Store 공식 앱 아이콘 — Canva(캔바): 디자인, 사진편집, 동영상 편집 (Canva Pty Ltd) — https://apps.apple.com/kr/app/canva-%EC%BA%94%EB%B0%94-%EB%94%94%EC%9E%90%EC%9D%B8-%EC%82%AC%EC%A7%84%ED%8E%B8%EC%A7%91-%EB%8F%99%EC%98%81%EC%83%81-%ED%8E%B8%EC%A7%91/id897446215 |
+### AI 앱 로고
+
+AI 앱 연결·승인 화면과 프로필의 연결된 AI 앱 목록은 잘 알려진 AI 앱·에이전트를 주소 대신 이름과 공식 로고로 보여 준다(`api/aiConnections.ts`의 `KNOWN_APPS`). 연결 화면과 연결 목록은 앱의 확인된 주소(정확히 그 주소이거나 하위 주소)로만 로고를 붙이고, 이미 연결된 앱의 승인 화면은 앱 이름이 아는 이름과 똑같을 때만 붙인다. 모르는 주소는 이름·로고 없이 주소 그대로 보여 준다. 각 사이트의 지금 아이콘 모양을 따른다: ChatGPT·Perplexity·Grok은 검은 칸에 흰 표시(`kind: 'glyph'`), Muse·Pickle은 공식 앱 아이콘 칸 그대로(`kind: 'app'`), Claude·Gemini·Hermes·OpenClaw는 원래 색 표시를 흰 칸에(`kind: 'image'`). 표시 크기는 칸의 약 60%로 맞춘다(실제 화면에서 잰 값: ChatGPT·Grok·Gemini 60%, Claude 62%, Perplexity·OpenClaw·Hermes 57~67%). Muse·Pickle은 앱 아이콘 구성 그대로 둔다.
+
+| 키 | 이름 | 출처 (2026-10-22 각 공식 사이트에서 확인한 지금 아이콘) |
+|---|---|---|
+| `claude` | Claude | claude.ai 공식 SVG 파비콘(https://claude.ai/favicon.svg) — 주황 표시를 흰 칸에, 여백만 맞춤 |
+| `chatgpt` | ChatGPT | OpenAI 공식 브랜드 키트의 Blossom 심볼(`OAI_OpenAI-Blossom_Black.svg`) — https://cdn.openai.com/brand/openai-logos.zip · 검은 칸에 흰 표시 |
+| `perplexity` | Perplexity | perplexity.ai 지금 공식 아이콘(https://www.perplexity.ai/favicon.svg, 검은 칸·흰 표시)과 같은 모양 — 그 파일은 표시가 칸을 거의 채워(약 75%) 다른 로고보다 커 보여서, 같은 표시의 공식 브랜드 기반 SVG(simple-icons 16.35.0)를 ChatGPT·Grok처럼 검은 칸에 흰 표시로 그린다 |
+| `grok` | Grok | grok.com 공식 파비콘 SVG(https://grok.com/images/favicon.svg)의 심볼 경로 두 개만 꺼냄 — 검은 칸에 흰 표시 |
+| `gemini` | Gemini | App Store 공식 앱 아이콘 — Google Gemini (Google LLC) 1024px 원본을 Lanczos로 384px로 줄여 WebP(품질 95, 7KB) · 4색 스파클은 공식 벡터가 공개되지 않는다 |
+| `muse` | Muse (Meta) | App Store 공식 앱 아이콘 — Muse from Meta (Meta Platforms, Inc.) 1024px 원본을 384px WebP로(품질 95) · 공식 벡터 없음 |
+| `pickle` | Pickle (피클: 나만의 AI 에이전트) | App Store 공식 앱 아이콘 — 피클: 나만의 AI 에이전트 (Pickle, Inc., pickle.com) 1024px 원본을 384px WebP로(품질 95) · 공식 벡터 없음. 사이트 첫 화면의 고리 로고는 안경(Pickle 1) 쪽 표시라 쓰지 않는다 |
+| `hermes` | Hermes Agent (Nous Research) | 공식 저장소의 앱 아이콘 'Nous girl' 벡터 — https://github.com/NousResearch/hermes-agent/blob/main/assets/nous-girl-black.svg (사이트 파비콘과 같은 그림) · 여백만 맞춤 |
+| `openclaw` | OpenClaw | openclaw.ai 공식 SVG 파비콘(https://openclaw.ai/favicon.svg, 바닷가재 Molty) |
+
+비트맵만 있는 아이콘은 가장 큰 공식 원본(App Store 1024px)을 받아 Lanczos로 384px까지 줄여 WebP로 둔다. 56px 칸을 3배 화면에서 보아도 선명하고 파일은 10KB 안팎이다. 벡터가 있는 로고는 벡터를 그대로 쓴다.
+
+Microsoft Copilot은 공식 벡터를 확보하지 못해 이름 바꾸기 목록에서 뺐다(주소 그대로 보인다). 새 AI 앱은 공식 벡터를 `public/static/brands/`에 넣고 `brands.ts`와 `KNOWN_APPS`에 함께 등록한다.
+
 ### 보관 중인 이전 금융기관 앱 아이콘
 
 아래 파일은 기존 공용 브랜드 레지스트리에 보관되어 있으며, 은행 심볼 표시에 사용하지 않는다. 현재 출처는 위 금융기관 출처 JSON을 참조한다.

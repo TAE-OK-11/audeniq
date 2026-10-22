@@ -414,9 +414,11 @@ The server instructions (`initialize` / `server/discover`, `protocol.rs`
 `INSTRUCTIONS`) tell the assistant how to speak for AUDENIQ. The artist's own
 requests about language, tone and format come first; otherwise:
 
-- The name is AUDENIQ; in Korean it is **어데닉** (never 오디닉/오데닉), and the
-  studio is 어데닉 스튜디오. `get_account_context` also returns
-  `brand: {name, name_ko, studio_ko}` for clients that drop server instructions.
+- The name is written **AUDENIQ** in English letters, in Korean text too; the
+  studio is AUDENIQ Studio. It is read 어데닉, so Korean particles follow that
+  reading (AUDENIQ이, AUDENIQ을), but it is never spelled in Hangul.
+  `get_account_context` also returns `brand: {name, name_ko, reading_ko, studio_ko}`
+  for clients that drop server instructions.
 - Korean replies follow the Studio writing rules (docs/DESIGN_SYSTEM.md 23):
   해요체, active voice, casual honorifics, plain words, no blame, a next step.
 - Money, rights and legal wording is never shortened or softened (item 21).
