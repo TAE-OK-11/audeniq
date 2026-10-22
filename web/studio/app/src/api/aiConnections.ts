@@ -66,6 +66,11 @@ const KNOWN_APPS: [string, string, string][] = [
   ['perplexity.ai', 'Perplexity', 'perplexity'],
   ['grok.com', 'Grok', 'grok'], ['x.ai', 'Grok', 'grok'],
   ['gemini.google.com', 'Gemini', 'gemini'],
+  // 에이전트
+  ['muse.ai', 'Muse', 'muse'],
+  ['pickle.com', 'Pickle', 'pickle'],
+  ['hermes-agent.nousresearch.com', 'Hermes', 'hermes'], ['nousresearch.com', 'Hermes', 'hermes'],
+  ['openclaw.ai', 'OpenClaw', 'openclaw'],
 ];
 const known = (host: string) => {
   const h = host.toLowerCase().replace(/:\d+$/, '');
@@ -80,7 +85,12 @@ export const isKnownApp = (host: string) => !!known(host);
 /** 아는 앱의 로고 키 (lib/brands.ts) — 주소로 확인된 앱에만 */
 export const appBrandForHost = (host: string | null | undefined) => (host ? known(host)?.[2] ?? null : null);
 /** 이미 연결된 앱의 이름으로 로고 키 — 이름이 아는 앱 이름과 똑같을 때만 */
-export const appBrandForName = (name: string) => KNOWN_APPS.find(([, n]) => n.toLowerCase() === name.trim().toLowerCase())?.[2] ?? null;
+const NAME_ALIASES: Record<string, string> = { 'hermes agent': 'Hermes', 'meta muse': 'Muse' };
+export const appBrandForName = (name: string) => {
+  const n = name.trim().toLowerCase();
+  const want = (NAME_ALIASES[n] ?? name.trim()).toLowerCase();
+  return KNOWN_APPS.find(([, k]) => k.toLowerCase() === want)?.[2] ?? null;
+};
 
 /** 앱 확인용 주소의 호스트 (CIMD). 임의 ID면 없음. */
 export function clientHost(clientId: string): string | null {

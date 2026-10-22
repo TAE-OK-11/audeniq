@@ -27,5 +27,10 @@ describe('AI app logos', () => {
     expect(appBrandForHost(null)).toBeNull();
     expect(appBrandForName('Perplexity')).toBe('perplexity');
     expect(appBrandForName('Claude Helper')).toBeNull();
+    expect(appBrandForName('Hermes Agent')).toBe('hermes');
+    expect(appBrandForName('OpenClaw')).toBe('openclaw');
+    expect(appBrandForHost('muse.ai')).toBe('muse');
+    expect(appBrandForHost('pickle.com')).toBe('pickle');
+    expect(appBrandForHost('hermes-agent.nousresearch.com')).toBe('hermes');
   });
 });

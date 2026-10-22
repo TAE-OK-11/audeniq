@@ -76,10 +76,14 @@ export const BRAND_ASSETS: Record<string, BrandAsset> = {
   'daol': { kind: 'image', file: 'daol.png' },
   'ls': { kind: 'image', file: 'ls.png' },
   'hana': { kind: 'image', file: 'hana.png' },
-  // AI 앱 (AI 앱 연결·승인 화면) — 출처는 docs/BRAND_LOGOS.md
-  'claude': { kind: 'glyph', file: 'claude.svg', color: '#D97757' },
+  // AI 앱·에이전트 (AI 앱 연결·승인 화면) — 각 공식 사이트의 지금 아이콘, 출처는 docs/BRAND_LOGOS.md
+  'claude': { kind: 'image', file: 'claude.svg' },          // claude.ai 공식 SVG (주황 표시를 흰 칸에)
   'chatgpt': { kind: 'glyph', file: 'chatgpt.svg', color: '#000000' },
-  'perplexity': { kind: 'image', file: 'perplexity.svg' },  // 브랜드 색(True Turquoise) 표시를 흰 칸에
+  'perplexity': { kind: 'app', file: 'perplexity.svg' },    // perplexity.ai 공식 SVG 아이콘 (검은 칸 그대로)
   'grok': { kind: 'glyph', file: 'grok.svg', color: '#000000' },
   'gemini': { kind: 'image', file: 'gemini.png' },          // 지금의 4색 스파클 — Google 공식 PNG만 있어 PNG
+  'muse': { kind: 'app', file: 'muse.png' },                // Meta Muse 공식 앱 아이콘 (muse.ai 매니페스트, PNG만 있음)
+  'pickle': { kind: 'image', file: 'pickle.svg' },          // pickle.com 공식 SVG 로고
+  'hermes': { kind: 'image', file: 'hermes.svg' },          // Nous Research 공식 Hermes Agent 날개 SVG
+  'openclaw': { kind: 'image', file: 'openclaw.svg' },      // openclaw.ai 공식 SVG (바닷가재)
 };
