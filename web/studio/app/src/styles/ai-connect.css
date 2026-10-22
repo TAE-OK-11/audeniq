@@ -66,3 +66,17 @@
   #view-new.aq-connect-view .aq-choice-row{grid-template-columns:1fr 1fr}
   #view-new.aq-connect-view .aq-options{grid-template-columns:1fr!important}
 }
+
+/* 권한 추가·작업 승인 (/ai/approve/:id, /ai/actions/:id) — 같은 틀에 요청 내용만 보여 준다 */
+.aq-option.aq-connect-static{cursor:default;min-height:0}
+.aq-option.aq-connect-static:active{transform:none!important}
+.aq-connect-reason{margin:0 0 8px;padding:16px 18px;border-radius:var(--aq-r-lg);background:var(--aq-gray-50);color:var(--aq-text-2);font-size:14px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+.aq-connect-summary{margin:0 0 10px;padding:16px 18px;border-radius:var(--aq-r-lg);background:var(--aq-gray-50)}
+.aq-connect-summary>strong{display:block;font-size:15px;font-weight:700;color:var(--aq-text)}
+.aq-connect-summary .aq-connect-facts{margin:10px 0 0;font-size:14px}
+.aq-connect-summary .aq-connect-facts dd{color:var(--aq-text-2)}
+.aq-connect-reasons{display:grid;gap:10px;margin:0 0 8px;padding:0;list-style:none;counter-reset:aqr}
+.aq-connect-reasons li{position:relative;display:grid;gap:2px;padding:14px 18px 14px 52px;border-radius:var(--aq-r-lg);background:var(--aq-gray-50);counter-increment:aqr}
+.aq-connect-reasons li::before{content:counter(aqr);position:absolute;left:18px;top:14px;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--aq-primary-soft);color:var(--aq-primary-text);font-size:12px;font-weight:800}
+.aq-connect-reasons strong{font-size:15px;font-weight:700;color:var(--aq-text)}
+.aq-connect-reasons span{color:var(--aq-text-3);font-size:13px;line-height:1.55;word-break:keep-all}

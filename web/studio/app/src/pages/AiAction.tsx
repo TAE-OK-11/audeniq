@@ -2,6 +2,7 @@
 // 서비스·계약 종료 예약, 이의 제기, 멤버 초대, 한도 넘는 지급. 승인하면 내 계정으로 바로
 // 실행돼요(스튜디오에서 직접 하는 것과 같아요). 24시간 안에 답하지 않으면 요청은 사라져요.
 // crates/core/src/mcp/actions.rs
+// AI 앱 연결 화면과 같은 틀(components/AiFlow): 누가 → 무엇을 → 주의할 점, 아래 고정 버튼.
 import { useEffect, useState } from 'react';
 import { Link, useParams } from '../lib/router';
 import { useToast } from '../components/Toast';
@@ -9,15 +10,23 @@ import { useConfirm } from '../components/Confirm';
 import { ApiError, errorMessage, messageForCode } from '../api/errors';
 import { aiActionRequest, decideAiAction, type AiActionRequest } from '../api/aiConnections';
 import { MOCK } from '../lib/mode';
-import { PageHeader } from '../ui';
 import { AiRequestMissing } from '../components/AiRequestMissing';
+import { AiAppRow, AiFlowFrame, AiFlowHeader, AiFlowLoading, AiFlowPage, workspaceName } from '../components/AiFlow';
 
-const workspaceName = (name: string) => (name === 'Personal workspace' ? '내 작업 공간' : name);
+const TITLE = '작업 승인 요청';
 
+const DONE_TITLE: Record<Exclude<AiActionRequest['status'], 'PENDING'>, string> = {
+  RUNNING: '처리하고 있어요',
+  DONE: '승인하고 처리했어요',
+  FAILED: '작업을 마치지 못했어요',
+  REJECTED: '거절했어요',
+  EXPIRED: '요청 시간이 지났어요',
+  REVOKED: '이미 끊긴 연결이에요',
+};
 const STATUS_TEXT: Record<AiActionRequest['status'], string> = {
   PENDING: '',
   RUNNING: '처리하고 있어요. 잠시 뒤에 다시 확인해 주세요.',
-  DONE: '승인했고 요청한 작업을 마쳤어요.',
+  DONE: '승인했고 요청한 작업을 마쳤어요. AI 앱에서 계속 진행해 주세요.',
   FAILED: '승인했지만 작업을 마치지 못했어요.',
   REJECTED: '거절했어요. 아무것도 바뀌지 않았어요.',
   EXPIRED: '요청 시간(24시간)이 지났어요. 필요하면 AI 앱에서 다시 요청해 주세요.',
@@ -43,7 +52,7 @@ export function AiAction() {
   const [r, setR] = useState<AiActionRequest | null>(null);
   const [error, setError] = useState('');
   const [missing, setMissing] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<'approve' | 'deny' | null>(null);
 
   useEffect(() => {
     if (MOCK) { setR(demo(id)); return; }
@@ -60,7 +69,7 @@ export function AiAction() {
       });
       if (!ok) return;
     }
-    setBusy(true);
+    setBusy(approve ? 'approve' : 'deny');
     try {
       const res = MOCK ? { status: approve ? 'DONE' : 'REJECTED' } : await decideAiAction(r.id, approve);
       setR({ ...r, status: res.status as AiActionRequest['status'], decided_at: new Date().toISOString() });
@@ -70,46 +79,89 @@ export function AiAction() {
       // 실패·만료·이미 처리된 요청은 최신 상태로 다시 보여 준다
       aiActionRequest(r.id).then(setR, () => {});
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
+  if (missing) return <AiFlowPage><AiRequestMissing title={TITLE} hours="24시간" /></AiFlowPage>;
+  if (error) {
+    return (
+      <AiFlowPage>
+        <AiFlowFrame title={TITLE}>
+          <AiFlowHeader kicker={TITLE} title={'요청을\n불러오지 못했어요'} />
+          <div className="ui-callout is-danger" role="alert">{error}</div>
+          <div className="step-actions">
+            <Link id="wizardNext" className="ui-btn is-primary" to="/">스튜디오 홈</Link>
+          </div>
+        </AiFlowFrame>
+      </AiFlowPage>
+    );
+  }
+  if (!r) return <AiFlowPage><AiFlowFrame title={TITLE}><AiFlowLoading text="요청을 불러오고 있어요…" /></AiFlowFrame></AiFlowPage>;
+
+  const app = r.connection_label ?? r.client_name;
+  const status = r.connection_revoked && r.status === 'PENDING' ? 'REVOKED' : r.status;
+  const pending = status === 'PENDING';
+
   return (
-    <div className="view-enter aq-ai-approve">
-      <PageHeader eyebrow="AI 앱 연결" title="작업 승인 요청" sub="AI 앱이 아래 작업을 해도 되는지 물어봤어요. 내가 요청한 게 아니라면 거절하고 연결을 끊어 주세요." />
-      {error && <div className="ui-callout is-danger" role="alert">{error}</div>}
-      {missing && <AiRequestMissing hours="24시간" />}
-      {!r && !error && !missing && <p role="status">불러오는 중이에요.</p>}
-      {r && (
-        <section className="ui-card aq-ai-approve-card">
-          <dl className="aq-ai-approve-meta">
-            <dt>AI 앱</dt><dd><b>{r.connection_label ?? r.client_name}</b></dd>
-            <dt>작업 공간</dt><dd>{workspaceName(r.org_name)}</dd>
-            <dt>요청한 작업</dt><dd><b>{r.summary.title}</b></dd>
-            {r.summary.lines.map(l => (
-              <div key={l.label} className="aq-ai-action-line"><dt>{l.label}</dt><dd className="aq-ai-approve-reason">{l.value}</dd></div>
-            ))}
-          </dl>
-          {r.summary.warning && <div className="ui-callout is-warn">{r.summary.warning}</div>}
-          {r.status === 'PENDING' && !r.connection_revoked ? (
-            <>
-              <p className="ui-field-help">
-                {new Date(r.expires_at).toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}까지 답해 주세요.
-              </p>
-              <div className="aq-ai-approve-actions">
-                <button type="button" className="ui-btn is-soft" disabled={busy} onClick={() => void decide(false)}>거절</button>
-                <button type="button" className={`ui-btn is-primary${busy ? ' is-busy' : ''}`} disabled={busy} onClick={() => void decide(true)}>승인</button>
-              </div>
-            </>
-          ) : (
-            <div className={`ui-callout${r.status === 'DONE' ? ' is-success' : r.status === 'FAILED' ? ' is-danger' : ''}`} role="status">
-              {r.connection_revoked && r.status === 'PENDING' ? STATUS_TEXT.REVOKED : STATUS_TEXT[r.status]}
-              {r.status === 'FAILED' && r.error_code && <> {messageForCode(r.error_code)}</>}
-            </div>
+    <AiFlowPage>
+      <AiFlowFrame title={TITLE}>
+        {pending ? (
+          <AiFlowHeader
+            kicker={TITLE}
+            title={`${app}에서\n이 작업을 해도 되는지 물어봤어요`}
+            sub="승인하면 내 계정으로 바로 처리돼요. 내가 요청한 게 아니라면 거절하고 연결을 끊어 주세요."
+          />
+        ) : (
+          <AiFlowHeader
+            kicker={TITLE}
+            title={DONE_TITLE[status]}
+            sub={<>{STATUS_TEXT[status]}{status === 'FAILED' && r.error_code && <> {messageForCode(r.error_code)}</>}</>}
+          />
+        )}
+
+        <AiAppRow name={app} detail={`${workspaceName(r.org_name)}에 연결된 앱`} />
+
+        <h2 className="subhead">요청한 작업</h2>
+        <div className="aq-connect-summary">
+          <strong>{r.summary.title}</strong>
+          {r.summary.lines.length > 0 && (
+            <dl className="aq-connect-facts">
+              {r.summary.lines.map(l => (
+                <div key={l.label} className="aq-ai-action-line"><dt>{l.label}</dt><dd className="aq-ai-approve-reason">{l.value}</dd></div>
+              ))}
+            </dl>
           )}
-          <p className="ui-field-help"><Link to="/profile?open=ai">연결된 AI 앱 관리</Link></p>
-        </section>
-      )}
-    </div>
+        </div>
+        {r.summary.warning && <p className="ui-callout is-warn small">{r.summary.warning}</p>}
+        {pending && (
+          <p className="aq-option-note">
+            {new Date(r.expires_at).toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}까지 답해 주세요.
+          </p>
+        )}
+
+        {pending ? (
+          <>
+            <div className="step-actions">
+              <button type="button" id="wizardBack" className="ui-btn is-soft" disabled={!!busy} onClick={() => void decide(false)}>거절</button>
+              <button type="button" id="wizardNext" className={`ui-btn is-primary${busy === 'approve' ? ' is-busy' : ''}`} disabled={!!busy} onClick={() => void decide(true)}>승인</button>
+            </div>
+            <p className="aq-connect-deny">
+              <button type="button" className="ui-btn is-text" disabled={!!busy} onClick={() => void decide(false)}>거절할래요</button>
+            </p>
+          </>
+        ) : (
+          <>
+            <div className="step-actions">
+              <Link id="wizardBack" className="ui-btn is-soft" to="/profile?open=ai">연결된 AI 앱</Link>
+              <Link id="wizardNext" className="ui-btn is-primary" to="/">스튜디오 홈</Link>
+            </div>
+            <p className="aq-connect-deny">
+              <Link className="ui-btn is-text" to="/profile?open=ai">연결된 AI 앱 관리</Link>
+            </p>
+          </>
+        )}
+      </AiFlowFrame>
+    </AiFlowPage>
   );
 }

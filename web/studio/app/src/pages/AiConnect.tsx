@@ -2,19 +2,18 @@
 //  - ?request=…  : 서버가 확인하고 서명한 연결 요청 (브라우저 연결 또는 기기 코드 연결)
 //  - ?user_code= : AI 앱이 알려 준 코드로 온 기기 연결 → 코드를 확인해 요청으로 바꾼다
 //  - ?device=1   : 코드를 직접 입력
-// 발매 신청서(pages/Upload.tsx)와 같은 틀로 한 화면에 보여 준다: 위에 고정된 제목 막대, 신청서의 단계 제목,
+// 발매 신청서(pages/Upload.tsx)와 같은 틀(components/AiFlow)로 한 화면에 보여 준다: 위에 고정된 제목 막대, 신청서의 단계 제목,
 // 고르는 카드(aq-choice)·옵션 카드(aq-option)·칩(ui-chip), 아래 고정 버튼(step-actions).
 // 위에서부터 누가(어느 앱이, 어디서) → 어느 작업 공간에 → 무엇을 허용할지 → 어떤 권한을 줘도 지켜지는 것.
 // 돈·접수 권한과 거절은 확인 창으로 한 번 더 묻는다.
 // 승인하면 브라우저 연결은 AI 앱으로 돌아가고, 기기 연결은 여기서 끝난다.
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from '../lib/router';
-import { useAuth } from '../api/auth';
 import { ApiError, errorMessage } from '../api/errors';
 import { aiConnectByCode, aiConnectDetails, decideAiConnect, type AiConnectDetails } from '../api/aiConnect';
 import { useConfirm } from '../components/Confirm';
 import { MOCK } from '../lib/mode';
-import '../styles/ai-connect.css';
+import { AiAppRow, AiFlowFrame as Frame, AiFlowHeader as Header, AiFlowLoading, AiFlowPage, workspaceName } from '../components/AiFlow';
 
 type Phase =
   | { at: 'code'; error?: string }
@@ -24,7 +23,6 @@ type Phase =
   | { at: 'failed'; code: string; message: string };
 
 const ROLE: Record<string, string> = { OWNER: '소유자', EDITOR: '편집자', VIEWER: '보기 전용 — 연결해도 읽기만 할 수 있어요' };
-const workspaceName = (name: string) => (name === 'Personal workspace' ? '내 작업 공간' : name);
 
 /** 고르기 쉬운 묶음 — 대부분은 '초안 작성까지'면 충분하다 */
 const PRESETS: { id: string; label: string; scopes: string[] }[] = [
@@ -76,12 +74,6 @@ export function AiConnect() {
     );
   };
 
-  // 신청서와 같은 화면 모드 (흰 바탕, 아래 고정 버튼 자리)
-  useEffect(() => {
-    document.body.classList.add('wizard-mode');
-    return () => document.body.classList.remove('wizard-mode');
-  }, []);
-
   useEffect(() => {
     const request = params.get('request');
     const code = params.get('user_code');
@@ -93,12 +85,10 @@ export function AiConnect() {
   }, [params]);
 
   return (
-    <div className="portal-layout aq-connect-layout">
-    <section id="view-new" className="view aq-connect-view">
-      <div className="wizard">
+    <AiFlowPage>
         {phase.at === 'loading' && (
-          <Frame step={-1}>
-            <div className="ui-callout aq-loading-notice" role="status"><span className="aq-spinner" aria-hidden="true" /> 연결 요청을 확인하고 있어요…</div>
+          <Frame>
+            <AiFlowLoading text="연결 요청을 확인하고 있어요…" />
           </Frame>
         )}
         {phase.at === 'code' && <CodeEntry error={phase.error} onSubmit={byCode} />}
@@ -111,55 +101,13 @@ export function AiConnect() {
         )}
         {phase.at === 'done' && <Done {...phase} />}
         {phase.at === 'failed' && <Failed code={phase.code} message={phase.message} />}
-      </div>
-    </section>
-    </div>
+    </AiFlowPage>
   );
 }
 
 function failed(err: unknown): Phase {
   const code = err instanceof ApiError ? err.code : '';
   return { at: 'failed', code, message: FAILED_TEXT[code] ?? errorMessage(err, '연결 요청을 열지 못했어요.') };
-}
-
-function BackIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24" fill="none"
-      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m15 18-6-6 6-6" />
-    </svg>
-  );
-}
-
-/** 신청서와 같은 위 막대(제목·로그인 계정). 연결은 한 화면에서 끝나 진행 막대는 없다 */
-function Frame({ onBack, children }: { step?: number; onBack?: () => void; children: React.ReactNode }) {
-  const { user } = useAuth();
-  return (
-    <>
-      <div className="aq-wiz-top">
-        <div className="wizard-topbar" aria-label="AI 앱 연결">
-          {onBack
-            ? <button type="button" className="wizard-topback" aria-label="이전으로 돌아가기" onClick={onBack}><BackIcon /></button>
-            : <span className="wizard-topback aq-connect-topspace" aria-hidden="true" />}
-          <span className="wizard-top-title">AI 앱 연결</span>
-          <span className="aq-save-slot">
-            {user?.email && <span className="aq-connect-account" title="이 계정으로 연결돼요">{user.email}</span>}
-          </span>
-        </div>
-      </div>
-      {children}
-    </>
-  );
-}
-
-function Header({ kicker, title, sub }: { kicker: string; title: React.ReactNode; sub?: React.ReactNode }) {
-  return (
-    <div className="wizard-header">
-      <p className="aq-step-kicker">{kicker}</p>
-      <h1 className="aq-step-title">{title}</h1>
-      {sub && <p>{sub}</p>}
-    </div>
-  );
 }
 
 function Review({ request, d, onDone, onFailed }: {
@@ -231,21 +179,18 @@ function Review({ request, d, onDone, onFailed }: {
   const extra = d.scopes.filter(s => !s.locked && on.has(s.scope)).length;
 
   return (
-    <Frame step={-1}>
+    <Frame>
       <Header
         kicker="연결 요청"
         title={`${d.client.name}에서\n어데닉을 쓰려고 해요`}
         sub="허용한 일만 할 수 있어요. 연결은 언제든 끊을 수 있어요."
       />
 
-      <div className="aq-connect-app-row">
-        <span className="aq-connect-app-mark" aria-hidden="true">{(d.client.name.match(/[\p{L}\p{N}]/u)?.[0] ?? 'A').toUpperCase()}</span>
-        <span className="min-0">
-          <strong>{d.client.name}</strong>
-          <small>{[verified, from].filter(Boolean).join(' · ')}</small>
-        </span>
-        {verified && <span className="aq-connect-tag is-ok">확인됨</span>}
-      </div>
+      <AiAppRow
+        name={d.client.name}
+        detail={[verified, from].filter(Boolean).join(' · ')}
+        tag={verified && <span className="aq-connect-tag is-ok">확인됨</span>}
+      />
       {!verified && <p className="ui-callout is-warn small">어데닉이 이 앱이 누구인지 확인하지 못했어요. 내가 방금 시작한 연결일 때만 허용해 주세요.</p>}
       {d.device_code && (
         <div className="aq-connect-code-row">
@@ -343,7 +288,7 @@ function Done({ approved, d, redirect, granted }: { approved: boolean; d: AiConn
     return () => window.clearTimeout(t);
   }, [redirect, approved]);
   return (
-    <Frame step={-1}>
+    <Frame>
       <Header
         kicker="AI 앱 연결"
         title={approved ? '연결했어요' : '연결하지 않았어요'}
@@ -370,7 +315,7 @@ function Done({ approved, d, redirect, granted }: { approved: boolean; d: AiConn
 
 function Failed({ code, message }: { code: string; message: string }) {
   return (
-    <Frame step={-1}>
+    <Frame>
       <Header kicker="AI 앱 연결" title={'연결 요청을\n열 수 없어요'} sub={message} />
       {code !== 'AI_CONNECT_CLIENT_UNKNOWN' && (
         <p className="ui-callout is-info small">AI 앱에서 연결을 처음부터 다시 시작해 주세요. 새 링크로 이 화면이 다시 열려요.</p>
@@ -388,7 +333,7 @@ function CodeEntry({ error, onSubmit }: { error?: string; onSubmit: (code: strin
   const clean = value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 8);
   const shown = clean.length > 4 ? `${clean.slice(0, 4)}-${clean.slice(4)}` : clean;
   return (
-    <Frame step={-1}>
+    <Frame>
       <Header kicker="AI 앱 연결" title={'연결 코드를\n입력해 주세요'} sub="코드는 AI 앱이 대화에서 알려 줘요. 영문 8자리예요." />
       <form id="aqConnectCode" onSubmit={e => { e.preventDefault(); if (clean.length === 8) onSubmit(clean); }}>
         <div className="ui-field">

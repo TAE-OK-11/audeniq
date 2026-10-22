@@ -11,6 +11,7 @@ import { ApiError } from '../api/errors';
 const http = vi.hoisted(() => ({ req: vi.fn() }));
 vi.mock('../api/http', () => ({ req: (...args: [string, unknown?]) => http.req(...args), orgId: () => 'o1', orgPath: (p: string) => `/api/orgs/o1${p}` }));
 vi.mock('../lib/mode', () => ({ MOCK: false }));
+vi.mock('../api/auth', () => ({ useAuth: () => ({ user: { email: 'hana@example.com' } }) }));
 vi.mock('../lib/router', () => ({
   Link: ({ to, children, ...rest }: { to: string; children: unknown }) => <a href={to} {...rest}>{children as never}</a>,
   useParams: () => ({ id: 'q1' }),
