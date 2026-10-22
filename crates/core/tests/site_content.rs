@@ -340,6 +340,77 @@ async fn content_maintenance_and_site_rules(pool: PgPool) {
         sc::cli_start(&pool, "ops-kim", Some(0), None, None).await,
         Err(Error::InvalidCode("MINUTES_INVALID"))
     ));
+
+    // 예약 점검: 예고 배너로 보이고, 취소하면 사라진다. 진행 중인 점검은 cancel이 아니라 stop
+    let planned = sc::cli_create(
+        &pool,
+        "ops-kim",
+        "maintenance",
+        json!({"title":"DB 업그레이드","starts_at":sc::cli_time("2099-01-01 02:00").unwrap(),
+               "ends_at":"2099-01-01T19:00:00Z","kind":"scheduled"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(planned["starts_at"], "2098-12-31T17:00:00Z");
+    let listed = sc::cli_list(&pool, "maintenance").await.unwrap();
+    assert!(
+        listed["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m["id"] == planned["id"])
+    );
+    sc::cli_remove(
+        &pool,
+        "ops-kim",
+        "maintenance",
+        planned["id"].as_str().unwrap(),
+    )
+    .await
+    .unwrap();
+    let running = sc::cli_start(&pool, "ops-kim", None, None, None)
+        .await
+        .unwrap();
+    assert_eq!(running["end_unknown"], true);
+    assert!(matches!(
+        sc::cli_remove(
+            &pool,
+            "ops-kim",
+            "maintenance",
+            running["id"].as_str().unwrap()
+        )
+        .await,
+        Err(Error::PolicyGate("MAINTENANCE_ACTIVE_USE_STOP"))
+    ));
+
+    // 긴급 공지: 점검 중에도 공개 목록에 보이고, 내리면 사라진다
+    let notice = sc::cli_create(
+        &pool,
+        "ops-kim",
+        "notices",
+        json!({"title":"접속 장애 안내","body":"복구 중이에요.","pinned":true}),
+    )
+    .await
+    .unwrap();
+    sc::reset_maintenance_cache();
+    let (s, v) = call(&app, "GET", "/api/notices", json!(null), None).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert!(v.to_string().contains("접속 장애 안내"), "{v}");
+    assert!(matches!(
+        sc::cli_create(&pool, "ops-kim", "notices", json!({"title":"","body":"x"})).await,
+        Err(Error::InvalidCode("TITLE_REQUIRED"))
+    ));
+    assert!(matches!(
+        sc::cli_create(&pool, "ops-kim", "events", json!({})).await,
+        Err(Error::InvalidCode("CONTENT_KIND_INVALID"))
+    ));
+    sc::cli_remove(&pool, "ops-kim", "notices", notice["id"].as_str().unwrap())
+        .await
+        .unwrap();
+    let (_, v) = call(&app, "GET", "/api/notices", json!(null), None).await;
+    assert!(!v.to_string().contains("접속 장애 안내"), "{v}");
+    sc::cli_stop(&pool, "ops-kim").await.unwrap();
+
     let audited: Vec<String> = sqlx::query_scalar(
         "SELECT action FROM operations.audit_events WHERE actor_service='audeniq-admin:ops-kim' ORDER BY occurred_at, action",
     )
@@ -351,7 +422,13 @@ async fn content_maintenance_and_site_rules(pool: PgPool) {
         [
             "maintenance.started",
             "maintenance.extended",
-            "maintenance.stopped"
+            "maintenance.stopped",
+            "content.maintenance.created",
+            "content.maintenance.removed",
+            "maintenance.started",
+            "content.notices.created",
+            "content.notices.removed",
+            "maintenance.stopped",
         ]
     );
 }

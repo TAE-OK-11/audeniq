@@ -88,12 +88,22 @@
 //!   (emergency maintenance from now; no --minutes = end unknown)
 //! audeniq-admin --operator NAME maintenance extend --minutes N
 //! audeniq-admin --operator NAME maintenance stop
-//!   (straight in the database, so it works while the API, sign-in and the
-//!    admin console are down; the API applies it within seconds)
+//! audeniq-admin maintenance list
+//! audeniq-admin --operator NAME maintenance schedule --from TIME --to TIME [--announce-from TIME] [--title TEXT] [--message TEXT]
+//! audeniq-admin --operator NAME maintenance cancel ID   (a planned one; a running one is `stop`)
+//! audeniq-admin notice list
+//! audeniq-admin --operator NAME notice post --title TEXT (--body TEXT | --body-file FILE) [--pin] [--at TIME]
+//! audeniq-admin --operator NAME notice remove ID
+//!   (emergency work only, straight in the database, so it works while the
+//!    API, sign-in and the admin console are down; the API applies it within
+//!    seconds. TIME: KST `YYYY-MM-DD HH:MM` or UTC `YYYY-MM-DDTHH:MM:SSZ`)
 use audeniq_core::protected_admin as admin;
 use audeniq_core::protected_names::{Action, Mode};
 
 const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...\n       audeniq-admin [--operator NAME] identifier-issuer <list|register UPC|ISRC PREFIX>\n       audeniq-admin [--operator NAME] partner <list|config-check|status ID|set-dsp ID [DSP_UUID]|probe ID|dpid ID DPID|test-ern ID FILE|test-ack ID FILE|capabilities ID JSON|contract ID REF|go-live ID|suspend ID --reason TEXT|route D-n DIRECT|MERLIN|merlin-eligible D-n true|false>\n       audeniq-admin [--operator NAME] staff <list|grant EMAIL ROLE|revoke EMAIL|reset-mfa EMAIL>\n       audeniq-admin dsp list\n       audeniq-admin [--operator NAME] mcp-client <list|add NAME [--password-grant] [--secret-post] [--redirect-uri URI]...|disable CLIENT_ID>\n       audeniq-admin [--operator NAME] developer-app <list [STATUS]|approve CLIENT_ID [--note TEXT]|return CLIENT_ID --note TEXT>\n       audeniq-admin [--operator NAME] mcp-limit <list|set EMAIL N [--note TEXT]|clear EMAIL>\n       audeniq-admin --operator STAFF_EMAIL payout <list [STATUS]|order REQUEST_ID|approve ORDER_ID|submit ORDER_ID BANK_TX|result ORDER_ID settled|failed|returned|unknown [BANK_TX]|manual ORDER_ID BANK_TX EVIDENCE_JSON_FILE|reissue ORDER_ID|cancel ORDER_ID>\n       audeniq-admin --operator STAFF_EMAIL payout return ORDER_ID BANK_REF AMOUNT EVIDENCE_JSON_FILE [--refund-fee]\n       audeniq-admin --operator STAFF_EMAIL royalty <import ORG DSP START END CUR FILE|match ORG REPORT|receipt ORG REPORT BANK_REF AMOUNT CUR EVIDENCE_JSON_FILE|post ORG REPORT FX_RATE|show ORG REPORT>";
+
+const MAINTENANCE_USAGE: &str = "usage: audeniq-admin maintenance <status|list>\n       audeniq-admin --operator NAME maintenance start [--minutes N] [--title TEXT] [--message TEXT]\n       audeniq-admin --operator NAME maintenance extend --minutes N\n       audeniq-admin --operator NAME maintenance stop\n       audeniq-admin --operator NAME maintenance schedule --from TIME --to TIME [--announce-from TIME] [--title TEXT] [--message TEXT]\n       audeniq-admin --operator NAME maintenance cancel ID\n  TIME: KST 'YYYY-MM-DD HH:MM' or UTC 'YYYY-MM-DDTHH:MM:SSZ'";
+const NOTICE_USAGE: &str = "usage: audeniq-admin notice list\n       audeniq-admin --operator NAME notice post --title TEXT (--body TEXT | --body-file FILE) [--pin] [--at TIME]\n       audeniq-admin --operator NAME notice remove ID";
 
 fn take_opt(args: &mut Vec<String>, key: &str) -> Option<String> {
     let i = args.iter().position(|a| a == key)?;
@@ -176,13 +186,38 @@ async fn run(mut args: Vec<String>) -> anyhow::Result<()> {
             .map_err(|_| anyhow::anyhow!("--minutes must be a number"))?;
         let title = take_opt(&mut args, "--title");
         let message = take_opt(&mut args, "--message");
+        let from = take_opt(&mut args, "--from");
+        let to = take_opt(&mut args, "--to");
+        let announce = take_opt(&mut args, "--announce-from");
         let sub = args.get(1).map(String::as_str);
-        if sub != Some("status") && operator.trim().is_empty() {
+        if !matches!(sub, Some("status" | "list")) && operator.trim().is_empty() {
             anyhow::bail!("--operator NAME (or AUDENIQ_OPERATOR) is required for changes");
         }
         let pool = audeniq_core::database::connect(&std::env::var("DATABASE_URL")?, 1).await?;
         let out = match (sub, args.len()) {
             (Some("status"), 2) => site_content::cli_status(&pool).await?,
+            (Some("list"), 2) => site_content::cli_list(&pool, "maintenance").await?,
+            // Planned maintenance: shown as a notice banner from --announce-from
+            // (default now), blocking the API from --from to --to.
+            (Some("schedule"), 2) => {
+                let (Some(from), Some(to)) = (from, to) else {
+                    anyhow::bail!("schedule needs --from TIME --to TIME");
+                };
+                let mut input = serde_json::json!({
+                    "title": title.as_deref().unwrap_or("서버 점검"),
+                    "body": message.unwrap_or_default(),
+                    "starts_at": site_content::cli_time(&from)?,
+                    "ends_at": site_content::cli_time(&to)?,
+                    "kind": "scheduled",
+                });
+                if let Some(a) = announce {
+                    input["published_at"] = site_content::cli_time(&a)?.into();
+                }
+                site_content::cli_create(&pool, &operator, "maintenance", input).await?
+            }
+            (Some("cancel"), 3) => {
+                site_content::cli_remove(&pool, &operator, "maintenance", &args[2]).await?
+            }
             (Some("start"), 2) => {
                 site_content::cli_start(
                     &pool,
@@ -198,9 +233,7 @@ async fn run(mut args: Vec<String>) -> anyhow::Result<()> {
                 let m = minutes.ok_or_else(|| anyhow::anyhow!("extend needs --minutes N"))?;
                 site_content::cli_extend(&pool, &operator, m).await?
             }
-            _ => anyhow::bail!(
-                "usage: audeniq-admin maintenance status\n       audeniq-admin --operator NAME maintenance start [--minutes N] [--title TEXT] [--message TEXT]\n       audeniq-admin --operator NAME maintenance extend --minutes N\n       audeniq-admin --operator NAME maintenance stop"
-            ),
+            _ => anyhow::bail!(MAINTENANCE_USAGE),
         };
         println!("{}", serde_json::to_string_pretty(&out)?);
         if std::env::var("MAINTENANCE_MODE").is_ok_and(|v| {
@@ -213,6 +246,43 @@ async fn run(mut args: Vec<String>) -> anyhow::Result<()> {
                 "MAINTENANCE_MODE is on in this environment: that emergency switch keeps the API blocked until it is turned off and the API restarted."
             );
         }
+        return Ok(());
+    }
+    // Emergency notices, same rows as the admin console's notices (readable
+    // during maintenance: /api/notices stays open).
+    if args.first().map(String::as_str) == Some("notice") {
+        use audeniq_core::site_content;
+        let title = take_opt(&mut args, "--title");
+        let body = take_opt(&mut args, "--body");
+        let body_file = take_opt(&mut args, "--body-file");
+        let at = take_opt(&mut args, "--at");
+        let pin = take_flag(&mut args, "--pin");
+        let sub = args.get(1).map(String::as_str);
+        if sub != Some("list") && operator.trim().is_empty() {
+            anyhow::bail!("--operator NAME (or AUDENIQ_OPERATOR) is required for changes");
+        }
+        let pool = audeniq_core::database::connect(&std::env::var("DATABASE_URL")?, 1).await?;
+        let out = match (sub, args.len()) {
+            (Some("list"), 2) => site_content::cli_list(&pool, "notices").await?,
+            (Some("post"), 2) => {
+                let title = title.ok_or_else(|| anyhow::anyhow!("post needs --title TEXT"))?;
+                let body = match (body, body_file) {
+                    (Some(b), None) => b,
+                    (None, Some(f)) => std::fs::read_to_string(f)?,
+                    _ => anyhow::bail!("post needs --body TEXT or --body-file FILE"),
+                };
+                let mut input = serde_json::json!({"title": title, "body": body, "pinned": pin});
+                if let Some(at) = at {
+                    input["published_at"] = site_content::cli_time(&at)?.into();
+                }
+                site_content::cli_create(&pool, &operator, "notices", input).await?
+            }
+            (Some("remove"), 3) => {
+                site_content::cli_remove(&pool, &operator, "notices", &args[2]).await?
+            }
+            _ => anyhow::bail!(NOTICE_USAGE),
+        };
+        println!("{}", serde_json::to_string_pretty(&out)?);
         return Ok(());
     }
     if args.first().map(String::as_str) == Some("privacy") {
