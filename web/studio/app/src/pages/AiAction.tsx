@@ -11,8 +11,8 @@ import { ApiError, errorMessage, messageForCode } from '../api/errors';
 import { aiActionRequest, decideAiAction, type AiActionRequest } from '../api/aiConnections';
 import { MOCK } from '../lib/mode';
 import { AiRequestMissing } from '../components/AiRequestMissing';
-import { AiFlowFrame, AiFlowHeader, AiFlowHero, AiFlowLoading, AiFlowPage, AiRequestApp, workspaceName } from '../components/AiFlow';
-import { Badge, Callout, Card, KeyValue, type Tone } from '../ui';
+import { AiFlowFrame, AiFlowHeader, AiFlowHero, AiFlowLoading, AiFlowPage, AiSetCard, AiSetRow, workspaceName } from '../components/AiFlow';
+import type { Tone } from '../ui';
 
 const TITLE = '작업 승인 요청';
 
@@ -25,10 +25,6 @@ const DONE_TITLE: Record<Exclude<AiActionRequest['status'], 'PENDING'>, string> 
   REVOKED: '이미 끊긴 연결이에요',
 };
 type Status = AiActionRequest['status'];
-const BADGE: Record<Status, [Tone, string]> = {
-  PENDING: ['amber', '답을 기다려요'], RUNNING: ['blue', '처리 중'], DONE: ['green', '처리함'], FAILED: ['red', '처리 못 함'],
-  REJECTED: ['gray', '거절함'], EXPIRED: ['gray', '시간 지남'], REVOKED: ['gray', '연결 끊김'],
-};
 const DONE_ICON: Record<Status, { kind: 'ok' | 'off' | 'warn'; tone: Tone }> = {
   PENDING: { kind: 'warn', tone: 'amber' }, RUNNING: { kind: 'warn', tone: 'blue' }, DONE: { kind: 'ok', tone: 'green' },
   FAILED: { kind: 'warn', tone: 'red' }, REJECTED: { kind: 'off', tone: 'gray' }, EXPIRED: { kind: 'warn', tone: 'gray' },
@@ -115,14 +111,13 @@ export function AiAction() {
   const pending = status === 'PENDING';
 
   const until = new Date(r.expires_at).toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-  const [badgeTone, badgeText] = BADGE[status];
 
   return (
     <AiFlowPage>
       <AiFlowFrame>
         {pending ? (
           <AiFlowHero
-            kicker={TITLE}
+            app={app} kicker={TITLE}
             title={`${app}에서\n작업 승인을 요청했어요`}
             sub="승인하면 내 계정으로 바로 처리돼요. 내가 요청한 게 아니라면 거절해 주세요."
           />
@@ -133,18 +128,14 @@ export function AiAction() {
           />
         )}
 
-        <AiRequestApp
-          name={app}
-          meta={[workspaceName(r.org_name)]}
-          due={pending ? until : undefined}
-          badge={<Badge tone={badgeTone} dot>{badgeText}</Badge>}
-        />
-
-        <Card className="aq-flow-card">
-          <h3>{r.summary.title}</h3>
-          {r.summary.lines.length > 0 && <KeyValue cols={2} items={r.summary.lines.map(l => [l.label, l.value] as const)} />}
-          {r.summary.warning && <Callout tone="warn">{r.summary.warning}</Callout>}
-        </Card>
+        <AiSetCard title="요청한 작업">
+          <AiSetRow label="작업" value={r.summary.title} />
+          {r.summary.lines.map(l => <AiSetRow key={l.label} label={l.label} value={l.value} stack={l.value.length > 18} />)}
+          {!pending && <AiSetRow label="AI 앱" value={app} />}
+          <AiSetRow label="작업 공간" value={workspaceName(r.org_name)} />
+          {pending && <AiSetRow label="답할 시간" value={`${until}까지`} />}
+          {r.summary.warning && <p className="aq-flow-note">{r.summary.warning}</p>}
+        </AiSetCard>
 
         {pending ? (
           <>

@@ -3,7 +3,7 @@
 // 신청서의 단계 제목, 아래 고정 버튼(step-actions). AI 앱의 앱 안 브라우저에서 한 화면으로 열린다.
 import { useEffect } from 'react';
 import { useAuth } from '../api/auth';
-import { Card, IconTile, type Tone } from '../ui';
+import { IconTile, type Tone } from '../ui';
 import '../styles/ai-connect.css';
 
 export const workspaceName = (name: string) => (name === 'Personal workspace' ? '내 작업 공간' : name);
@@ -81,13 +81,14 @@ export function AiAppRow({ name, detail, tag }: { name: string; detail?: React.R
   );
 }
 
-/** 승인 화면 맨 위 — 큰 제목. 처리가 끝났으면 위에 결과 아이콘 칸(IconTile) */
-export function AiFlowHero({ icon, kicker, title, sub }: {
-  icon?: { kind: 'ok' | 'off' | 'warn'; tone: Tone }; kicker: string; title: React.ReactNode; sub?: React.ReactNode;
+/** 승인 화면 맨 위 — 요청한 앱의 아바타(계정 정보 화면과 같은 모양)와 큰 제목. 처리가 끝났으면 아바타 대신 결과 아이콘 칸(IconTile) */
+export function AiFlowHero({ icon, app, kicker, title, sub }: {
+  icon?: { kind: 'ok' | 'off' | 'warn'; tone: Tone }; app?: string; kicker: string; title: React.ReactNode; sub?: React.ReactNode;
 }) {
   return (
     <div className="aq-flow-hero">
       {icon && <IconTile tone={icon.tone} size="lg"><AiFlowStatusIcon kind={icon.kind} /></IconTile>}
+      {!icon && app && <span className="ui-avatar is-xl aq-profile-avatar aq-flow-avatar" aria-hidden="true">{appInitial(app)}</span>}
       <AiFlowHeader kicker={kicker} title={title} sub={sub} />
     </div>
   );
@@ -95,21 +96,33 @@ export function AiFlowHero({ icon, kicker, title, sub }: {
 
 export const appInitial = (name: string) => (name.match(/[\p{L}\p{N}]/u)?.[0] ?? 'A').toUpperCase();
 
-/** 요청한 앱 카드의 머리 — 아이콘 칸 · 이름 · 작업 공간 · 상태 배지 */
-export function AiRequestApp({ name, meta, badge, due, children }: { name: string; meta: React.ReactNode[]; badge: React.ReactNode; due?: string; children?: React.ReactNode }) {
+/** 계정 정보 화면의 묶음 카드(aq-set-card) — 회색 소제목 + 줄 */
+export function AiSetCard({ title, children }: { title: React.ReactNode; children: React.ReactNode }) {
   return (
-    <Card className="aq-flow-card">
-      <div className="aq-flow-app">
-        <IconTile>{appInitial(name)}</IconTile>
-        <span className="ui-row-body">
-          <strong className="ui-row-title">{name}</strong>
-          <span className="ui-row-meta">{meta.map((m, i) => <span key={i}>{m}</span>)}</span>
-        </span>
-        {badge}
-      </div>
-      {due && <p className="aq-flow-due">{due}까지 답해 주세요. 지나면 요청이 사라져요.</p>}
+    <section className="aq-set-card aq-flow-set">
+      <h2>{title}</h2>
       {children}
-    </Card>
+    </section>
+  );
+}
+
+/** 줄 — 왼쪽 이름, 오른쪽 값 (눌러서 고치는 줄이 아니라 보여 주기만). stack: 긴 글은 이름 아래에 */
+export function AiSetRow({ label, value, stack }: { label: React.ReactNode; value: React.ReactNode; stack?: boolean }) {
+  return (
+    <div className={`aq-set-row aq-flow-row${stack ? ' is-stack' : ''}`}>
+      <span className="aq-set-label">{label}</span>
+      <span className="aq-set-value">{value}</span>
+    </div>
+  );
+}
+
+/** 두 줄 항목 — 굵은 이름(꼬리표) 아래 설명 */
+export function AiSetItem({ title, tag, children }: { title: React.ReactNode; tag?: React.ReactNode; children?: React.ReactNode }) {
+  return (
+    <div className="aq-flow-item">
+      <strong>{title}{tag}</strong>
+      {children && <span>{children}</span>}
+    </div>
   );
 }
 
