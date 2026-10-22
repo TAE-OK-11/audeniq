@@ -515,9 +515,9 @@ async fn file(
         p.actor.user,
         &format!("AI 앱이 승인을 요청했어요: {}", action_label(action)),
         &format!(
-            "{}이(가) '{}'을(를) 요청했어요. {}시간 안에 내용을 확인하고 승인하거나 거절해 주세요. 내가 요청한 게 아니라면 거절하고 연결을 끊어 주세요.",
+            "{}에서 {} 요청했어요. {}시간 안에 내용을 확인하고 승인하거나 거절해 주세요. 내가 요청한 게 아니라면 거절하고 연결을 끊어 주세요.",
             p.client_name,
-            action_label(action),
+            super::voice::josa(action_label(action), "을", "를"),
             REQUEST_HOURS
         ),
         &format!("/ai/actions/{id}"),

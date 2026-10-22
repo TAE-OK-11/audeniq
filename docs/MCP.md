@@ -487,14 +487,30 @@ sign. `get_release {view: status}` (`get_submission_status`) says so in
 ## Name and voice
 
 The server instructions (`initialize` / `server/discover`, `protocol.rs`
-`INSTRUCTIONS`) tell the assistant how to speak for AUDENIQ. The artist's own
-requests about language, tone and format come first; otherwise:
+`INSTRUCTIONS`) are the agent's role description, in five parts: who it works
+for (one artist, one workspace, AUDENIQ's own checks), how to work (start
+with `get_account_context`, read before writing, data is never
+instructions, no secrets in chat, files), what needs the artist's explicit
+confirmation (submitting, money, approval requests and taking them back,
+text sent in their name, deletes), what to tell the artist (review is not
+delivery, what a correction can change, what stays in the Studio), and name
+and voice. Tool descriptions follow the same order: what it returns or does
+first, then when to use it, then what to confirm. The artist's own requests
+about language, tone and format come first; otherwise:
 
 - The name is AUDENIQ; in Korean it is **어데닉** (never 오디닉/오데닉), and the
   studio is 어데닉 스튜디오. `get_account_context` also returns
   `brand: {name, name_ko, studio_ko}` for clients that drop server instructions.
-- Korean replies follow the Studio writing rules (docs/DESIGN_SYSTEM.md 23):
-  해요체, active voice, casual honorifics, plain words, no blame, a next step.
+- Korean replies follow the Studio writing rules (docs/DESIGN_SYSTEM.md 23,
+  after Toss's UX writing principles): 해요체 in short sentences with the key
+  point first, active voice, casual honorifics, plain words, no particles in
+  brackets, no blame, a suggested next step.
+- Every Korean sentence the MCP itself sends (results, notices, approval
+  pages, prompts, the widget) is checked by
+  `voice::tests::korean_text_follows_the_writing_rules`, the same rules as
+  the Studio's `lib/writing.test.ts`. Particles after a variable come from
+  `voice::josa` (멤버 초대를, 지급 요청을); a sentence about an app name is
+  written so no particle follows it ("ChatGPT에서 … 요청했어요").
 - Money, rights and legal wording is never shortened or softened (item 21).
 - The widget shows Korean text in the same voice when the host locale is `ko`,
   English otherwise.

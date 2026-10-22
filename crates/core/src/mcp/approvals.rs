@@ -139,7 +139,7 @@ pub(super) async fn request(
         p.actor.user,
         "AI 앱이 권한을 더 요청했어요",
         &format!(
-            "{}이(가) {} 권한을 요청했어요. {}분 안에 승인하거나 거절해 주세요. 내가 요청한 게 아니라면 거절하고 연결을 끊어 주세요.",
+            "{}에서 {} 권한을 요청했어요. {}분 안에 승인하거나 거절해 주세요. 내가 요청한 게 아니라면 거절하고 연결을 끊어 주세요.",
             p.client_name,
             scope_labels(&missing),
             REQUEST_MINUTES

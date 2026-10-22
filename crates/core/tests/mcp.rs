@@ -4460,7 +4460,7 @@ async fn assistants_take_back_requests_the_artist_has_not_answered(pool: PgPool)
     assert!(!err && v["status"] == "WITHDRAWN", "{v}");
     assert_eq!(
         v["message_ko"],
-        "'멤버 초대' 요청을 거둬들였어요. 아무것도 바뀌지 않았어요."
+        "요청을 취소했어요. 멤버 초대는 진행되지 않아요."
     );
     let (_, v) = call(
         &app,
