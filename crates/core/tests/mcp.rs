@@ -4937,6 +4937,166 @@ async fn invitations_counter_notices_and_proofs_can_be_taken_back(pool: PgPool) 
     assert!(err && v["error"]["code"] == "DOCUMENT_NOT_EDITABLE", "{v}");
 }
 
+/// A 1×1 PNG, as a signature pad sends it.
+const GUARDIAN_SIG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+#[sqlx::test]
+async fn a_minors_application_waits_for_the_guardian_in_the_studio(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    // Even a connection that may submit on its own holds a minor's application.
+    let c = connect(&app, &u, &["scope_write", "scope_submit"]).await;
+    let (release, _) = Box::pin(previewed_release(
+        &app, &pool, &store, &u, &c.access, "Teen",
+    ))
+    .await;
+    let mut minor = declarations(true);
+    minor["adult_confirmed"] = json!(false);
+
+    // No guardian named yet.
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "validate_release",
+        json!({"view": "preview", "release_id": release, "declarations": minor}),
+    )
+    .await;
+    let codes: Vec<&str> = v["blocking"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|i| i["code"].as_str())
+        .collect();
+    assert!(codes.contains(&"GUARDIAN_DETAILS_REQUIRED"), "{v}");
+    assert!(v["confirmation_token"].is_null());
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "save_release_draft",
+        json!({"action": "special_options", "release_id": release, "artist_confirmed": true,
+            "minor": {"is_minor": true, "guardian_name": "김보호", "guardian_relation": "모", "guardian_contact": "010-0000-0000"}}),
+    )
+    .await;
+    assert!(!err, "{v}");
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "validate_release",
+        json!({"view": "preview", "release_id": release, "declarations": minor}),
+    )
+    .await;
+    assert_eq!(v["guardian_consent_required"], true, "{v}");
+    let token = v["confirmation_token"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{v}"))
+        .to_string();
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "submit_release",
+        json!({"release_id": release, "confirmation_token": token, "declarations": minor, "artist_confirmed": true}),
+    )
+    .await;
+    assert!(!err && v["view"] == "pending_approval", "{v}");
+    assert_eq!(v["guardian_consent_required"], true);
+    let held = v["approval_id"].as_str().unwrap().to_string();
+
+    // Approving before the guardian consents is refused.
+    let approve = format!("/api/auth/ai-submissions/{held}/approve");
+    let (_, v) = call(&app, "POST", &approve, json!({}), Some(&u)).await;
+    assert_eq!(v["error"]["code"], "GUARDIAN_CONSENT_REQUIRED", "{v}");
+
+    // The Studio opens the guardian's link; the guardian verifies and signs.
+    let (s, link) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/releases/{release}/guardian-consent", u.org),
+        json!({"guardian_name": "김보호", "relation": "모", "channel": "IN_PERSON"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{link}");
+    let sign = format!("/api/sign/{}", link["token"].as_str().unwrap());
+    // SAFETY: no other test in this binary reads the provider variable.
+    unsafe { std::env::set_var("IDENTITY_PROVIDER", "test") };
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("{sign}/identity"),
+        json!({"transaction_id": "test:김보호:1982-03-03"}),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    sqlx::query("INSERT INTO catalog.inline_file_safety(source_sha256, rule_version) VALUES($1,'1') ON CONFLICT DO NOTHING")
+        .bind(audeniq_core::domain::sha256_hex(GUARDIAN_SIG))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("{sign}/sign"),
+        json!({"signature": GUARDIAN_SIG, "consents": {"document": true, "electronic_signature": true, "privacy": true}}),
+        None,
+    )
+    .await;
+    unsafe { std::env::remove_var("IDENTITY_PROVIDER") };
+    assert_eq!(s, StatusCode::OK, "{v}");
+
+    // The assistant sees what is left: the certificate, which it can attach.
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "get_release",
+        json!({"view": "guardian_consent", "release_id": release}),
+    )
+    .await;
+    assert_eq!(
+        (v["ready"].clone(), v["requests"][0]["status"].clone()),
+        (json!(false), json!("SIGNED")),
+        "{v}"
+    );
+    let document = v["relation_document"]["id"].clone();
+    let file = register_asset(&pool, &store, &u, "family.pdf", b"%PDF-1.4 family").await;
+    sqlx::query(
+        "UPDATE catalog.assets SET kind='DOCUMENT', content_type='application/pdf' WHERE id=$1",
+    )
+    .bind(file)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "attach_rights_proof",
+        json!({"document_id": document, "asset_id": file, "file_name": "family.pdf"}),
+    )
+    .await;
+    assert!(!err, "{v}");
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "get_release",
+        json!({"view": "guardian_consent", "release_id": release}),
+    )
+    .await;
+    assert_eq!(v["ready"], true, "{v}");
+
+    // Now the artist's approval submits it as a minor's application.
+    let (s, v) = call(&app, "POST", &approve, json!({}), Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["status"], "APPROVED");
+    let path: String = sqlx::query_scalar(
+        "SELECT cp.body->>'minority_path' FROM catalog.application_revisions ar JOIN catalog.consent_packages cp ON cp.package_hash = ar.body->>'consent_package_hash' WHERE ar.release_id=$1::uuid",
+    )
+    .bind(&release)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(path, "GUARDIAN");
+}
+
 #[sqlx::test]
 async fn risky_actions_wait_for_one_studio_approval(pool: PgPool) {
     let (app, _) = app(pool.clone()).await;

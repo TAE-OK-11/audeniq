@@ -731,7 +731,7 @@ fn defs() -> &'static [ToolDef] {
             ToolDef {
                 name: "set_special_options",
                 title: "Set special-content details",
-                description: "Set a draft's special-content details as the artist states them: cover song (original title, artist and writers per track, rights confirmation, licence file), samples (licence file), AI use (what for, which tools) and express release (reason, terms). Only facts the artist told you, after they confirmed the exact content; declarations at submission must match.",
+                description: "Set a draft's special-content details as the artist states them: cover song (original title, artist and writers per track, rights confirmation, licence file), samples (licence file), AI use (what for, which tools), a minor artist's legal guardian (name, relation, contact) and express release (reason, terms). Only facts the artist told you, after they confirmed the exact content; declarations at submission must match.",
                 scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
                 schema: || json!({"type":"object","additionalProperties":false,"required":["release_id","artist_confirmed"],"properties":{
                     "release_id": uuid_schema("The draft"),
@@ -754,6 +754,11 @@ fn defs() -> &'static [ToolDef] {
                         "involved": {"type":"boolean"},
                         "uses": {"type":"array","maxItems":10,"items":{"type":"string","maxLength":200},"description":"What AI was used for, e.g. '작곡(멜로디)에 AI 도움을 받았어요'"},
                         "tools": {"type":"array","maxItems":10,"items":{"type":"string","maxLength":100},"description":"e.g. Suno, Udio"}}},
+                    "minor": {"type":"object","additionalProperties":false,"required":["is_minor"],"description":"The artist is under 19 (civil-law minor): the release then needs their legal guardian's consent","properties":{
+                        "is_minor": {"type":"boolean"},
+                        "guardian_name": {"type":"string","minLength":1,"maxLength":90,"description":"The legal guardian's real name, exactly as on their ID (identity verification must match it)"},
+                        "guardian_relation": {"type":"string","enum":["부","모","기타 법정대리인"]},
+                        "guardian_contact": {"type":"string","maxLength":160,"description":"A phone number or e-mail where AUDENIQ can reach the guardian"}}},
                     "express": {"type":"object","additionalProperties":false,"required":["requested"],"properties":{
                         "requested": {"type":"boolean"},
                         "reason": {"type":"string","maxLength":300},
@@ -875,6 +880,13 @@ fn defs() -> &'static [ToolDef] {
                 schema: release_id_schema,
             },
             ToolDef {
+                name: "get_guardian_consent",
+                title: "Guardian consent",
+                description: "For a minor artist's release: whether the legal guardian has verified their identity and signed the consent, and whether the family relation certificate has a file (ready). The guardian signs in AUDENIQ Studio or at a link opened from there, never in the chat; the certificate can be attached with attach_rights_proof (document_id here).",
+                scope: SCOPE_READ, read_only: true, destructive: false, idempotent: true, widget: false,
+                schema: release_id_schema,
+            },
+            ToolDef {
                 name: "cancel_member_invite",
                 title: "Cancel a member invitation",
                 description: "Take back an invitation to this workspace that the person has not accepted yet (user_id of an INVITED member from get_account_context with view members). Only the workspace owner can, and only when the artist asks. Members who already joined are removed in AUDENIQ Studio.",
@@ -933,7 +945,7 @@ fn declarations_schema() -> Value {
         "description":"Statements the artist makes about this release. Ask the artist; never assume.",
         "properties":{
             "rights_confirmed": b("The artist owns or controls all rights needed to distribute the recordings, compositions and artwork"),
-            "adult_confirmed": b("The artist is 18 or older"),
+            "adult_confirmed": b("The artist is 19 or older (civil-law adult). false for a minor: set the guardian with save_release_draft (action special_options, minor) first; the application then waits for the guardian's consent in AUDENIQ Studio"),
             "is_cover": b("Contains a cover of someone else's song"),
             "is_remix": b("Is a remix of an existing recording"),
             "contains_samples": b("Contains samples of other recordings"),
@@ -1056,6 +1068,7 @@ const GROUPS: &[Group] = &[
             ("claims", "list_infringement_claims"),
             ("missing_files", "get_upload_link"),
             ("handover", "get_release_handover"),
+            ("guardian_consent", "get_guardian_consent"),
         ],
     },
     Group {
@@ -1624,8 +1637,14 @@ fn mcp_message(code: &str) -> Option<&'static str> {
         "DECLARATION_REQUIRED" => {
             "The artist must confirm they hold the rights and are 18 or older before submitting."
         }
-        "MINORITY_REVIEW_REQUIRED" => {
-            "Releases by artists under 18 need a guardian process that is not available yet. Contact AUDENIQ support."
+        "GUARDIAN_CONSENT_REQUIRED" => {
+            "A minor artist's application needs the legal guardian's signed consent. The guardian signs in AUDENIQ Studio; get_release with view guardian_consent shows the state."
+        }
+        "GUARDIAN_RELATION_DOCUMENT_REQUIRED" => {
+            "The family relation certificate is still missing. Attach it with attach_rights_proof (document_id from get_release with view guardian_consent) or in AUDENIQ Studio."
+        }
+        "GUARDIAN_DETAILS_REQUIRED" => {
+            "For a minor artist, set the legal guardian's name and relation first: save_release_draft with action special_options and minor."
         }
         "CONSENT_SCOPE_MISMATCH" => "The release changed while submitting. Preview again.",
         "ORG_CONTRACT_ENDING" => {
@@ -2185,7 +2204,8 @@ async fn run(
 
 /// Newer operations, answered in their own (boxed) function
 /// so the dispatch in [`run`] keeps a small stack frame in debug builds.
-const LATER_TOOLS: [&str; 8] = [
+const LATER_TOOLS: [&str; 9] = [
+    "get_guardian_consent",
     "cancel_member_invite",
     "withdraw_counter_notice",
     "withdraw_rights_proof",
@@ -2205,6 +2225,13 @@ async fn later(
     let (a, org) = (&p.actor, p.org);
     match name {
         "withdraw_permission_request" => super::approvals::withdraw(s, p, args).await,
+        "get_guardian_consent" => {
+            let release = release_arg(args)?;
+            let mut v = crate::signing::guardian_status(s, a, org, release).await?;
+            v["view"] = json!("guardian_consent");
+            v["studio_url"] = json!(format!("{}/profile?open=ai", super::issuer(s)));
+            Ok(v)
+        }
         "cancel_member_invite" => {
             let mut v =
                 crate::members::cancel_invite(s, a, org, uuid_arg(args, "user_id")?).await?;
@@ -2418,7 +2445,7 @@ pub(super) fn requirements() -> Value {
             "artwork_max_bytes": crate::uploads::MAX_IMAGE_BYTES,
             "artwork_note": "Square; see artwork_min_px per platform in get_account_context (view platforms).",
         },
-        "declarations_at_submission": ["rights_confirmed (required true)", "adult_confirmed (required true)", "is_cover", "is_remix", "contains_samples", "ai_involved", "explicit_content"],
+        "declarations_at_submission": ["rights_confirmed (required true)", "adult_confirmed (true for an adult; false for a minor, who needs the legal guardian's consent)", "is_cover", "is_remix", "contains_samples", "ai_involved", "explicit_content"],
         "after_submission": "AUDENIQ runs automatic checks (metadata, audio QC, rights) and staff review. The artist signs the release application and distribution agreement in AUDENIQ Studio; delivery to platforms starts only after the agreement is signed and approved.",
     })
 }
@@ -3164,6 +3191,9 @@ fn issue(code: &str, source: &str, track: Option<&Value>, extra: Option<&str>) -
 fn check_hint(code: &str) -> Option<&'static str> {
     Some(match code {
         "TRACK_REQUIRED" => "Add at least one track (upsert_track).",
+        "GUARDIAN_DETAILS_REQUIRED" => {
+            "Ask the artist for their legal guardian's name and relation, then save_release_draft with action special_options and minor."
+        }
         "AUDIO_REQUIRED" | "ASSET_MISSING" => "Upload this track's audio in AUDENIQ Studio.",
         "AUDIO_NOT_REGISTERED" | "AUDIO_NOT_ADMITTED" => {
             "This track's audio upload has not finished or was refused; upload it again in AUDENIQ Studio."
@@ -3344,8 +3374,33 @@ async fn preview(
     let d = declarations_from(&args["declarations"]);
     let mut v = Box::pin(validate(s, &p.actor, p.org, release, &d)).await?;
     let mut blocking = v["blocking"].as_array().cloned().unwrap_or_default();
-    if !d.rights_confirmed || !d.adult_confirmed {
+    if !d.rights_confirmed {
         blocking.push(issue("DECLARATION_REQUIRED", "declarations", None, None));
+    }
+    // A minor: the guardian named on the draft consents in the Studio
+    // before the application goes in.
+    let minor = !d.adult_confirmed;
+    if minor {
+        let (r, _) = load(s, &p.actor, p.org, release).await?;
+        let o = &r["draft"]["options"];
+        let named = o["minor"] == true
+            && o["guardian"].as_str().is_some_and(|g| !g.trim().is_empty())
+            && o["guardianRelation"]
+                .as_str()
+                .is_some_and(|g| crate::signing::GUARDIAN_RELATIONS.contains(&g));
+        if !named {
+            blocking.push(issue(
+                "GUARDIAN_DETAILS_REQUIRED",
+                "options.minor",
+                None,
+                None,
+            ));
+        }
+        if let Some(items) = v["will_be_reviewed"].as_array_mut() {
+            items.push(json!({"code": "MINOR_ARTIST", "source": "declarations",
+                "message": "Minor artist: the legal guardian verifies their identity and signs the consent in AUDENIQ Studio, and a family relation certificate is attached, before the application goes in. AUDENIQ staff confirm the relation."}));
+        }
+        v["guardian_consent_required"] = json!(true);
     }
     let ready = blocking.is_empty();
     let decl = declarations_json(&d);
@@ -3372,7 +3427,9 @@ async fn preview(
         v["confirmation_token"] = json!(token);
         v["confirmation_expires_at"] =
             json!(chrono::DateTime::from_timestamp(exp, 0).map(|t| t.to_rfc3339()));
-        v["instruction"] = json!(if p.has(SCOPE_SUBMIT) {
+        v["instruction"] = json!(if minor {
+            "Show this preview to the artist. Call submit_release only after they explicitly confirm this exact content and these declarations. The artist is a minor: the application then waits in AUDENIQ Studio, where their legal guardian verifies their identity and signs the consent and the family relation certificate is attached; only then can the artist approve it. Give the artist the studio_url submit_release returns."
+        } else if p.has(SCOPE_SUBMIT) {
             "Show this preview to the artist. Call submit_release only after they explicitly confirm this exact content and these declarations."
         } else {
             "Show this preview to the artist. Call submit_release only after they explicitly confirm this exact content and these declarations. This connection has no submit permission, so the application then waits for the artist's one-time approval in AUDENIQ Studio (or ask for releases:submit with request_permission)."
@@ -3442,7 +3499,10 @@ async fn submit(
     // No submit permission: this one application waits for the artist's
     // approval in the Studio (one-time approval of exactly this content).
     let one_time = !p.has(SCOPE_SUBMIT);
-    if one_time || super::safety::studio_approval(&s.pool, p.actor.user).await? {
+    // A minor's application always waits: the guardian consents in the
+    // Studio before the artist approves it there.
+    let minor = !d.adult_confirmed;
+    if one_time || minor || super::safety::studio_approval(&s.pool, p.actor.user).await? {
         let (id, new) = super::safety::hold(
             &s.pool,
             super::safety::Pending {
@@ -3466,13 +3526,27 @@ async fn submit(
                 &format!(
                     "{}에서 ‘{title}’ 발매 신청을 보냈어요.{} 프로필 → 연결된 AI 앱에서 승인하면 접수돼요. 7일 안에 승인하지 않으면 취소돼요.",
                     p.client_name,
-                    if one_time { " 이 연결에는 발매 신청 권한이 없어서 이번 한 번만 승인을 요청했어요." } else { "" }
+                    if minor {
+                        " 미성년 아티스트의 발매라 법정대리인 동의와 가족관계증명서가 먼저 필요해요."
+                    } else if one_time {
+                        " 이 연결에는 발매 신청 권한이 없어서 이번 한 번만 승인을 요청했어요."
+                    } else {
+                        ""
+                    }
                 ),
                 "/profile?open=ai",
             )
             .await;
         }
-        return Ok(pending_view(s, release, id, "PENDING", !new));
+        let mut v = pending_view(s, release, id, "PENDING", !new);
+        if minor {
+            v["guardian_consent_required"] = json!(true);
+            v["next_steps"] = json!([format!(
+                "The artist is a minor, so nothing is submitted yet. In AUDENIQ Studio ({}/profile?open=ai) the legal guardian verifies their identity and signs the consent (on the artist's device or by a link), the family relation certificate is attached, and then the artist approves the application within 7 days. get_release with view guardian_consent shows how far it is.",
+                super::issuer(s)
+            )]);
+        }
+        return Ok(v);
     }
     let confirmed = token["h"].as_str().unwrap_or("").to_string();
     let result = match submit_now(s, &p.actor, p.org, release, d, idempotency_key, &confirmed).await
@@ -3523,7 +3597,7 @@ pub(super) async fn submit_now(
                 party_id: a.party,
                 role: "RIGHTS_HOLDER".into(),
             }],
-            minority_declared: false,
+            minority_declared: !d.adult_confirmed,
             valid_days: Some(365),
         },
     )
@@ -3545,7 +3619,7 @@ pub(super) async fn submit_now(
         release,
         submission::SubmitInput {
             consent_id,
-            minority_declared: false,
+            minority_declared: !d.adult_confirmed,
             idempotency_key,
             declarations: d,
         },
