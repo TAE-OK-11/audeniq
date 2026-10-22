@@ -938,6 +938,8 @@ summary::-webkit-details-marker{display:none}
 .aq-passkey-list li>.aq-ai-app-logo+.min-0{flex:1}
 .aq-passkey-list strong{display:block}
 .aq-passkey-list small{color:var(--aq-text-2)}
+/* 이름 아래 작은 줄이 여럿이면 한 줄씩 (연결된 AI 앱: 앱·작업 공간·사용 / 권한) */
+.aq-passkey-list .min-0>small{display:block;margin-top:2px;line-height:1.5}
 .aq-passkeys .aq-row-actions{display:flex;justify-content:flex-end;gap:8px}
 .aq-passkey-btn{margin-top:8px}
 .aq-token-empty{display:grid;gap:4px;padding:16px;border-radius:var(--aq-r-lg);background:var(--aq-surface-2,var(--aq-surface));text-align:center}
