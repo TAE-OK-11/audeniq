@@ -74,8 +74,8 @@ AI 앱 연결·승인 화면과 프로필의 연결된 AI 앱 목록은 잘 알�
 | `grok` | Grok | grok.com 공식 파비콘 SVG(https://grok.com/images/favicon.svg)의 심볼 경로 두 개만 꺼냄 — 검은 칸에 흰 표시 |
 | `gemini` | Gemini | gemini.google.com이 지금 쓰는 4색 스파클, Google 공식 512px PNG — https://www.gstatic.com/lamda/images/gemini_sparkle_4g_512_lt_f94943af3be039176192d.png · 공식 벡터가 없어 PNG |
 | `muse` | Muse (Meta) | muse.ai 공식 웹앱 매니페스트의 512px 앱 아이콘(https://muse.ai/images/pwa_icons/any/512.png?v=3) — 공식 벡터를 받을 수 없어 PNG, 흰 둥근 칸 포함 그대로 |
-| `pickle` | Pickle | pickle.com 페이지에 들어 있는 공식 SVG 로고(`pickle-com-boot__logo`) — 색은 사이트 CSS가 정해 #111로 칠함 |
-| `hermes` | Hermes Agent (Nous Research) | Nous Research 공식 자산의 Hermes 날개 SVG(https://web-assets.nousresearch.com/…/hermes-landing/teams/hermes-wing.svg, 공식 `hermes-agent-badge.svg`와 같은 날개) — 사이트 파비콘은 48px 그림뿐 |
+| `pickle` | Pickle (피클: 나만의 AI 에이전트) | App Store 공식 앱 아이콘 — 피클: 나만의 AI 에이전트 (Pickle, Inc., pickle.com) — https://apps.apple.com/kr/app/%ED%94%BC%ED%81%B4-%EB%82%98%EB%A7%8C%EC%9D%98-ai-%EC%97%90%EC%9D%B4%EC%A0%84%ED%8A%B8 · 공식 벡터가 공개되지 않아 앱 아이콘(512px). 사이트 첫 화면의 고리 로고는 안경(Pickle 1) 쪽 표시라 쓰지 않는다 |
+| `hermes` | Hermes Agent (Nous Research) | 공식 저장소의 앱 아이콘 'Nous girl' 벡터 — https://github.com/NousResearch/hermes-agent/blob/main/assets/nous-girl-black.svg (사이트 파비콘과 같은 그림) · 여백만 맞춤 |
 | `openclaw` | OpenClaw | openclaw.ai 공식 SVG 파비콘(https://openclaw.ai/favicon.svg, 바닷가재 Molty) |
 
 Microsoft Copilot은 공식 벡터를 확보하지 못해 이름 바꾸기 목록에서 뺐다(주소 그대로 보인다). 새 AI 앱은 공식 벡터를 `public/static/brands/`에 넣고 `brands.ts`와 `KNOWN_APPS`에 함께 등록한다.

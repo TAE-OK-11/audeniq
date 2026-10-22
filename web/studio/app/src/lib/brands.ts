@@ -83,7 +83,7 @@ export const BRAND_ASSETS: Record<string, BrandAsset> = {
   'grok': { kind: 'glyph', file: 'grok.svg', color: '#000000' },
   'gemini': { kind: 'image', file: 'gemini.png' },          // 지금의 4색 스파클 — Google 공식 PNG만 있어 PNG
   'muse': { kind: 'app', file: 'muse.png' },                // Meta Muse 공식 앱 아이콘 (muse.ai 매니페스트, PNG만 있음)
-  'pickle': { kind: 'image', file: 'pickle.svg' },          // pickle.com 공식 SVG 로고
-  'hermes': { kind: 'image', file: 'hermes.svg' },          // Nous Research 공식 Hermes Agent 날개 SVG
+  'pickle': { kind: 'app', file: 'pickle.png' },            // 피클: 나만의 AI 에이전트 — App Store 공식 앱 아이콘
+  'hermes': { kind: 'image', file: 'hermes.svg' },          // Hermes Agent 공식 아이콘 'Nous girl' SVG (NousResearch/hermes-agent)
   'openclaw': { kind: 'image', file: 'openclaw.svg' },      // openclaw.ai 공식 SVG (바닷가재)
 };
