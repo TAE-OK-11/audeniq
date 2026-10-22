@@ -13,7 +13,7 @@ import { IdentityVerify } from '../components/IdentityVerify';
 import { PasskeySettings } from '../components/PasskeySettings';
 import { ConnectedAccounts } from '../components/ConnectedAccounts';
 import { AiConnections } from '../components/AiConnections';
-import { DeveloperApps } from '../components/DeveloperApps';
+import { DeveloperApps } from '../developer/DeveloperApps';
 import { TeamSettings } from '../components/TeamSettings';
 import { ArtistPagesCard } from '../components/ArtistPagesCard';
 import { OAUTH_LABEL, takeOAuthResult } from '../api/oauth';

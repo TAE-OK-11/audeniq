@@ -11,9 +11,10 @@
 //!   only. Both use authorization code + PKCE and rotating refresh tokens.
 //! - Deleting an app disables it and ends every connection to it.
 //!
-//! `GET/POST /api/auth/developer-apps`, `PATCH/DELETE …/{id}`,
+//! `GET/POST /api/developer/apps`, `PATCH/DELETE …/{id}`,
 //! `POST …/{id}/secret`, `POST …/{id}/review` (Studio session; writes need
-//! CSRF). Off unless the API is on.
+//! CSRF). Off unless the API is on. The routes live under their own prefix
+//! so a separate developer site can take them over later (docs/OAUTH_API.md).
 use super::oauth::{self, valid_redirect_uri};
 use crate::{
     api::AppState,
@@ -137,7 +138,7 @@ async fn app_json(c: &mut PgConnection, id: Uuid, owner: Uuid) -> Result<Value> 
     .ok_or(Error::NotFound)
 }
 
-/// `GET /api/auth/developer-apps`: the user's apps.
+/// `GET /api/developer/apps`: the user's apps.
 pub async fn list(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     enabled(&s)?;
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
@@ -160,7 +161,7 @@ pub async fn list(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>
     })))
 }
 
-/// `POST /api/auth/developer-apps`: a new private app. The secret is in
+/// `POST /api/developer/apps`: a new private app. The secret is in
 /// this answer only.
 pub async fn create(
     State(s): State<AppState>,
@@ -230,7 +231,7 @@ pub async fn create(
     Ok(Json(app))
 }
 
-/// `PATCH /api/auth/developer-apps/{id}`: redirect URIs, description,
+/// `PATCH /api/developer/apps/{id}`: redirect URIs, description,
 /// website. The name stays (people approved the app under it).
 pub async fn update(
     State(s): State<AppState>,
@@ -292,7 +293,7 @@ async fn owned(c: &mut PgConnection, id: Uuid, owner: Uuid) -> Result<sqlx::post
     .ok_or(Error::NotFound)
 }
 
-/// `POST /api/auth/developer-apps/{id}/secret`: a new secret; the old one
+/// `POST /api/developer/apps/{id}/secret`: a new secret; the old one
 /// stops working at once.
 pub async fn rotate_secret(
     State(s): State<AppState>,
@@ -329,7 +330,7 @@ pub async fn rotate_secret(
     Ok(Json(app))
 }
 
-/// `POST /api/auth/developer-apps/{id}/review`: ask to open the app to
+/// `POST /api/developer/apps/{id}/review`: ask to open the app to
 /// other artists.
 pub async fn request_review(
     State(s): State<AppState>,
@@ -364,7 +365,7 @@ pub async fn request_review(
     Ok(Json(app))
 }
 
-/// `DELETE /api/auth/developer-apps/{id}`: the app stops working and every
+/// `DELETE /api/developer/apps/{id}`: the app stops working and every
 /// connection to it ends.
 pub async fn delete(
     State(s): State<AppState>,

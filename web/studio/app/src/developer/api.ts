@@ -1,6 +1,7 @@
 // 개발자 앱 — 내 서비스에서 AUDENIQ API(/api/v1)를 OAuth 2.0으로 쓰는 앱 (crates/core/src/mcp/developer.rs).
 // 처음에는 만든 사람만 연결할 수 있고(PRIVATE), 검토를 요청하면 REVIEW, 운영자가 승인하면 누구나 연결(PUBLIC).
-import { req } from './http';
+// 지금은 스튜디오 프로필에 있지만 나중에 개발자 플랫폼으로 분리한다 — 이 폴더(src/developer)만 옮기면 되게 둔다.
+import { req } from '../api/http';
 
 export type AppVisibility = 'PRIVATE' | 'REVIEW' | 'PUBLIC';
 
@@ -43,7 +44,7 @@ export interface NewDeveloperApp {
   public_client?: boolean;
 }
 
-const base = '/api/auth/developer-apps';
+const base = '/api/developer/apps';
 const one = (id: string) => `${base}/${encodeURIComponent(id)}`;
 
 export const developerApps = () => req<DeveloperApps>(base);

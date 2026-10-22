@@ -192,19 +192,19 @@ pub fn routes() -> Router<AppState> {
         .route("/api/v1/openapi.json", get(rest::openapi))
         .route("/api/v1/{*rest}", axum::routing::any(rest::handle))
         .route(
-            "/api/auth/developer-apps",
+            "/api/developer/apps",
             get(developer::list).post(developer::create),
         )
         .route(
-            "/api/auth/developer-apps/{id}",
+            "/api/developer/apps/{id}",
             axum::routing::patch(developer::update).delete(developer::delete),
         )
         .route(
-            "/api/auth/developer-apps/{id}/secret",
+            "/api/developer/apps/{id}/secret",
             post(developer::rotate_secret),
         )
         .route(
-            "/api/auth/developer-apps/{id}/review",
+            "/api/developer/apps/{id}/review",
             post(developer::request_review),
         )
         .route(

@@ -3,15 +3,15 @@
 // 검토를 요청해 운영자가 승인하면 다른 아티스트도 연결할 수 있다.
 // 비밀 키(client secret)는 만들 때와 새로 만들 때 한 번만 보여 준다.
 import { useEffect, useRef, useState } from 'react';
-import { useToast } from './Toast';
-import { useConfirm } from './Confirm';
-import { CopyButton } from './CopyButton';
+import { useToast } from '../components/Toast';
+import { useConfirm } from '../components/Confirm';
+import { CopyButton } from '../components/CopyButton';
 import { ApiError, errorMessage } from '../api/errors';
 import {
   createDeveloperApp, deleteDeveloperApp, developerApps, requestDeveloperAppReview, rotateDeveloperAppSecret,
   updateDeveloperApp, VISIBILITY_LABEL,
   type DeveloperApp, type DeveloperApps as AppsInfo,
-} from '../api/developerApps';
+} from './api';
 import { Badge } from '../ui';
 
 const lines = (v: string) => v.split('\n').map(l => l.trim()).filter(Boolean);
