@@ -64,15 +64,15 @@ DSP는 기존 `public/static/brands/`, `src/lib/brands.ts`, `components/BrandMar
 | `canva` | Canva | App Store 공식 앱 아이콘 — Canva(캔바): 디자인, 사진편집, 동영상 편집 (Canva Pty Ltd) — https://apps.apple.com/kr/app/canva-%EC%BA%94%EB%B0%94-%EB%94%94%EC%9E%90%EC%9D%B8-%EC%82%AC%EC%A7%84%ED%8E%B8%EC%A7%91-%EB%8F%99%EC%98%81%EC%83%81-%ED%8E%B8%EC%A7%91/id897446215 |
 ### AI 앱 로고
 
-AI 앱 연결·승인 화면과 프로필의 연결된 AI 앱 목록은 잘 알려진 AI 앱을 주소 대신 이름과 공식 로고로 보여 준다(`api/aiConnections.ts`의 `KNOWN_APPS`). 연결 화면과 연결 목록은 앱의 확인된 주소(정확히 그 주소이거나 하위 주소)로만 로고를 붙이고, 이미 연결된 앱의 승인 화면은 앱 이름이 아는 이름과 똑같을 때만 붙인다. 모르는 주소는 이름·로고 없이 주소 그대로 보여 준다. 단색 SVG를 브랜드 색 칸 위에 흰 표시로 그린다(`kind: 'glyph'`).
+AI 앱 연결·승인 화면과 프로필의 연결된 AI 앱 목록은 잘 알려진 AI 앱을 주소 대신 이름과 공식 로고로 보여 준다(`api/aiConnections.ts`의 `KNOWN_APPS`). 연결 화면과 연결 목록은 앱의 확인된 주소(정확히 그 주소이거나 하위 주소)로만 로고를 붙이고, 이미 연결된 앱의 승인 화면은 앱 이름이 아는 이름과 똑같을 때만 붙인다. 모르는 주소는 이름·로고 없이 주소 그대로 보여 준다. Claude·ChatGPT·Grok은 단색 SVG를 브랜드 색 칸 위에 흰 표시로(`kind: 'glyph'`), Perplexity·Gemini는 컬러 표시를 흰 칸에(`kind: 'image'`) 그린다.
 
 | 키 | 이름 | 출처 |
 |---|---|---|
 | `claude` | Claude | 공식 브랜드 기반 SVG(simple-icons 16.35.0, `claude`) — https://claude.ai |
 | `chatgpt` | ChatGPT | OpenAI 공식 브랜드 키트의 Blossom 심볼(`OAI_OpenAI-Blossom_Black.svg`) — https://cdn.openai.com/brand/openai-logos.zip · 여백만 잘라 viewBox를 심볼 크기로 맞춤 |
-| `perplexity` | Perplexity | 공식 브랜드 기반 SVG(simple-icons 16.35.0, `perplexity`) — https://www.perplexity.ai |
+| `perplexity` | Perplexity | 공식 브랜드 기반 SVG(simple-icons 16.35.0, `perplexity`) — https://www.perplexity.ai · 브랜드 색 True Turquoise(#20808D)로 칠해 흰 칸에(`kind: 'image'`) |
 | `grok` | Grok | grok.com 공식 파비콘 SVG(https://grok.com/images/favicon.svg)의 심볼 경로 두 개만 꺼냄(앱 아이콘 바탕·흐림 효과 제외) |
-| `gemini` | Gemini | 공식 브랜드 기반 SVG(simple-icons 16.35.0, `googlegemini`) — https://gemini.google.com |
+| `gemini` | Gemini | Google 공식 스파클 벡터(그라데이션) — https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg · 흰 칸에 원래 색 그대로(`kind: 'image'`). 지금의 4색 스파클은 공식 PNG만 있어 쓰지 않았다 |
 
 Microsoft Copilot은 공식 벡터를 확보하지 못해 이름 바꾸기 목록에서 뺐다(주소 그대로 보인다). 새 AI 앱은 공식 벡터를 `public/static/brands/`에 넣고 `brands.ts`와 `KNOWN_APPS`에 함께 등록한다.
 

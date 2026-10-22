@@ -79,7 +79,7 @@ export const BRAND_ASSETS: Record<string, BrandAsset> = {
   // AI 앱 (AI 앱 연결·승인 화면) — 출처는 docs/BRAND_LOGOS.md
   'claude': { kind: 'glyph', file: 'claude.svg', color: '#D97757' },
   'chatgpt': { kind: 'glyph', file: 'chatgpt.svg', color: '#000000' },
-  'perplexity': { kind: 'glyph', file: 'perplexity.svg', color: '#1FB8CD' },
+  'perplexity': { kind: 'image', file: 'perplexity.svg' },  // 브랜드 색(True Turquoise) 표시를 흰 칸에
   'grok': { kind: 'glyph', file: 'grok.svg', color: '#000000' },
-  'gemini': { kind: 'glyph', file: 'gemini.svg', color: '#8E75B2' },
+  'gemini': { kind: 'image', file: 'gemini.svg' },          // Google 공식 그라데이션 스파클을 흰 칸에
 };
