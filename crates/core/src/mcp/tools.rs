@@ -1296,16 +1296,35 @@ fn sentences(text: &str) -> impl Iterator<Item = &str> {
         .filter(|s| !s.is_empty())
 }
 
-/// The schema as listed: a UUID field shows `format: uuid` without the long
-/// pattern that repeats on every id (about 4 KB of `tools/list`, which goes
-/// into the model's context). Calls are still checked against the full
-/// schema, pattern included ([`validator`]).
+/// The schema as listed. Calls are still checked against the full schema
+/// ([`validator`]); the listing is shorter and uses only keywords every
+/// client's function calling takes:
+/// - a UUID field shows `format: uuid` without the long pattern that repeats
+///   on every id (about 4 KB of `tools/list`, which goes into the model's
+///   context);
+/// - `const` becomes a one-value `enum`, and `propertyNames` (not accepted
+///   by some function-calling schema dialects) becomes a list of the
+///   allowed keys in the description.
 fn listed(mut schema: Value) -> Value {
     fn walk(v: &mut Value) {
         match v {
             Value::Object(o) => {
                 if o.get("format").and_then(Value::as_str) == Some("uuid") {
                     o.remove("pattern");
+                }
+                if let Some(c) = o.remove("const") {
+                    o.insert("enum".into(), json!([c]));
+                }
+                if let Some(names) = o.remove("propertyNames") {
+                    let keys: Vec<&str> = names["enum"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_str)
+                        .collect();
+                    let desc = o.get("description").and_then(Value::as_str).unwrap_or("");
+                    let text = format!("{desc} Keys: {}.", keys.join(", "));
+                    o.insert("description".into(), json!(text.trim()));
                 }
                 o.values_mut().for_each(walk);
             }
@@ -4094,6 +4113,11 @@ mod tests {
             .unwrap()
             .input_schema;
         assert!(listed["properties"]["release_id"].get("pattern").is_none());
+        // Only keywords every client's function calling takes.
+        let all = serde_json::to_string(list_json(false)).unwrap();
+        for keyword in ["\"const\"", "\"propertyNames\"", "\"oneOf\"", "\"$ref\""] {
+            assert!(!all.contains(keyword), "{keyword} in tools/list");
+        }
         assert!(
             !validator(find("get_release").unwrap()).is_valid(&json!({"release_id": "not-a-uuid"}))
         );

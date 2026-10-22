@@ -760,10 +760,33 @@ for directory listing follow Anthropic's current connector review
 requirements. Claude Code / desktop clients with loopback redirect URIs work
 via DCR.
 
-**Other MCP clients.** Any client implementing MCP authorization (PRM
-discovery, PKCE, DCR or CIMD) can connect: Grok, Manus and other clients that
-prefer CIMD use their own metadata URL, and older SDK clients may speak
-`2024-11-05`. A missing token gets `401` with
+**Grok, Manus and other agents.** Clients that take a remote MCP server
+with a bearer header (xAI's remote MCP tools, Manus custom MCP, OpenAI's
+Responses API `mcp` tool, agent frameworks) use a connection token made in
+AUDENIQ Studio (Profile → Connected AI apps): URL `https://<host>/api/mcp`,
+header `Authorization: Bearer <token>`. Clients implementing MCP
+authorization (PRM discovery, PKCE, DCR or CIMD) connect through OAuth
+instead; those that prefer CIMD use their own metadata URL. Agents without a
+browser use the link and code (device authorization).
+
+**Protocol compatibility.**
+
+| Client behaviour | Answer |
+|---|---|
+| `initialize` with 2024-11-05, 2025-03-26, 2025-06-18 or 2025-11-25 | That version; an unknown version gets 2025-11-25 |
+| 2026-07-28 per-request `_meta` and `Mcp-*` headers | Modern era (headers must match the body) |
+| JSON-RPC batch (2025-03-26) | Array of answers, notifications left out, at most 16 messages; a missing token answers the 401 challenge for the whole batch |
+| `Accept: text/event-stream` only | The answer as one SSE `message` event, then the stream ends |
+| `Accept: application/json, text/event-stream` | Plain JSON (every client must accept it) |
+| `GET` / `DELETE` on the endpoint | 405 (no server-initiated stream, no sessions) |
+| `resources/templates/list` | Empty list |
+| Notifications and responses | 202 with no body |
+
+Listed schemas use only keywords every function-calling dialect takes (no
+`const`, `propertyNames`, `oneOf` or `$ref`; top level always an object); the
+full schemas still validate each call.
+
+A missing token gets `401` with
 `WWW-Authenticate: Bearer resource_metadata=…, scope="releases:read releases:write"`
 (no `error`, so clients start authorization); an expired or revoked one adds
 `error="invalid_token"`. Unknown `/.well-known/*` paths (e.g.
@@ -775,21 +798,23 @@ an assistant recommend AUDENIQ; listing and discovery are separate tasks.
 
 ## Known limitations
 
-- Audio, cover art and rights proofs can come through the tools (see Files).
-  Special-content options (cover licences, sample
-  clearances, AI tool details, express review) are entered in the Studio.
-- Signing the application/agreement, withdrawal, takedown, payout account
-  changes, payouts above the limit, members, account settings: not exposed by
-  design.
-- Correction requests are tested at the MCP layer for the refusal paths
-  (not yet delivered, no pending request, other tenants); the
-  request→approve→platform update flow itself is covered by the existing
-  `execution` tests, not re-run through MCP.
-- No progress notifications or SSE (all tools finish within the deadline).
+- Signing the application or agreement, payout account changes, account
+  settings and member removal: Studio only by
+  design. Withdrawals, takedowns, splits, end dates, counter notices, member
+  invites and payouts above the limit are filed through MCP and approved once
+  in the Studio (Actions approved once).
+- Not offered at all yet: cancelling a sent member invite, withdrawing a
+  counter notice, taking back an attached rights proof (no service for it).
+- Correction requests are tested at the MCP layer for the refusal paths; the
+  request→approve→platform update flow itself is covered by the `execution`
+  tests, not re-run through MCP.
+- No progress notifications or server-initiated messages (every tool
+  finishes within the deadline); an SSE-only client gets one event per
+  answer.
 - Minors: submission is refused (`MINORITY_REVIEW_REQUIRED`), as in the Studio.
-- Not run here: real ChatGPT/Claude clients, the deployed Worker, and the
-  native QC/photo binaries (unit/integration tests that need them fail in an
-  environment without them, unchanged from before this change).
+- Not run here: real ChatGPT/Claude/Grok/Manus clients, the deployed Worker,
+  and the native QC/photo binaries (tests that need them fail in an
+  environment without them).
 
 ## Operations
 
