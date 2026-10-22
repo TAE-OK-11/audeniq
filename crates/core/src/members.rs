@@ -148,6 +148,39 @@ pub async fn decline(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
     Ok(json!({"status": "DECLINED"}))
 }
 
+/// An OWNER takes back an invitation the invitee has not answered: it is
+/// closed like a declined one (REVOKED; the owner may invite again). Active
+/// members are not touched here.
+pub async fn cancel_invite(s: &AppState, a: &Actor, org: Uuid, user: Uuid) -> Result<Value> {
+    let mut tx = s.pool.begin().await?;
+    if auth::membership(&mut tx, a, org, true).await? != "OWNER" {
+        return Err(Error::Forbidden);
+    }
+    let n = sqlx::query(
+        "UPDATE identity.memberships SET status='REVOKED' WHERE org_id=$1 AND user_id=$2 AND status='INVITED'",
+    )
+    .bind(org)
+    .bind(user)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if n == 0 {
+        return Err(Error::PolicyGate("MEMBER_INVITE_NOT_PENDING"));
+    }
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        Some(org),
+        Some(user),
+        "membership.invite_cancelled",
+        "OWNER_CANCEL",
+        a.request,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"user_id": user, "status": "CANCELLED"}))
+}
+
 async fn h_list(
     State(s): State<AppState>,
     Path(org): Path<Uuid>,
@@ -164,6 +197,14 @@ async fn h_invite(
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, true).await?;
     Ok(Json(invite(&s, &a, org, i).await?))
+}
+async fn h_cancel_invite(
+    State(s): State<AppState>,
+    Path((org, user)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    Ok(Json(cancel_invite(&s, &a, org, user).await?))
 }
 async fn h_invitations(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
@@ -182,6 +223,10 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/orgs/{org}/members", get(h_list))
         .route("/api/orgs/{org}/members/invite", post(h_invite))
+        .route(
+            "/api/orgs/{org}/members/{user}/cancel-invite",
+            post(h_cancel_invite),
+        )
         .route("/api/me/invitations", get(h_invitations))
         .route("/api/me/invitations/{org}/decline", post(h_decline))
 }

@@ -4823,6 +4823,121 @@ async fn batches_and_stream_only_clients_are_answered(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn invitations_counter_notices_and_proofs_can_be_taken_back(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let c = connect(&app, &u, &["scope_write"]).await;
+
+    // An invitation nobody answered yet.
+    let invitee = user(&app).await;
+    sqlx::query("INSERT INTO identity.memberships(org_id,user_id,role,status,invited_at) VALUES($1,$2,'VIEWER','INVITED',now())")
+        .bind(u.org)
+        .bind(invitee.user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let cancel = json!({"kind": "member_invite", "user_id": invitee.user});
+    let (err, v) = tool(&app, &c.access, "cancel_request", cancel.clone()).await;
+    assert!(!err && v["status"] == "CANCELLED", "{v}");
+    assert_eq!(v["message_ko"], "초대를 취소했어요.");
+    let (err, v) = tool(&app, &c.access, "cancel_request", cancel).await;
+    assert!(
+        err && v["error"]["code"] == "MEMBER_INVITE_NOT_PENDING",
+        "{v}"
+    );
+    let status: String = sqlx::query_scalar(
+        "SELECT status FROM identity.memberships WHERE org_id=$1 AND user_id=$2",
+    )
+    .bind(u.org)
+    .bind(invitee.user)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(status, "REVOKED");
+
+    // A counter notice staff have not decided on.
+    let (_, rel) = tool(
+        &app,
+        &c.access,
+        "save_release_draft",
+        json!({"action": "create", "title": "Claimed", "release_type": "SINGLE", "artist_name": "Han River"}),
+    )
+    .await;
+    let release: Uuid = rel["release_id"].as_str().unwrap().parse().unwrap();
+    let claim = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO portal.infringement_claims(id,claimant_name_cipher,claimant_email_cipher,claimant_role,right_type,work,target,status,org_id,release_id,decided_at,counter_deadline,counter_notice,counter_by,counter_at)
+         VALUES($1,'\\x00','\\x00','RIGHTS_HOLDER','COPYRIGHT','Work','Target','COUNTER_NOTICED',$2,$3,now(),now()+interval '10 days','제가 직접 만든 곡이에요.',$4,now())",
+    )
+    .bind(claim)
+    .bind(u.org)
+    .bind(release)
+    .bind(u.user)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let withdraw = json!({"kind": "counter_notice", "claim_id": claim, "artist_confirmed": true});
+    let (err, v) = tool(&app, &c.access, "cancel_request", withdraw.clone()).await;
+    assert!(!err && v["status"] == "SUSPENDED", "{v}");
+    let (statement, withdrawn): (Option<String>, bool) = sqlx::query_as(
+        "SELECT counter_notice, counter_withdrawn_at IS NOT NULL FROM portal.infringement_claims WHERE id=$1",
+    )
+    .bind(claim)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(
+        withdrawn && statement.is_some(),
+        "the statement stays on record"
+    );
+    let (err, v) = tool(&app, &c.access, "cancel_request", withdraw).await;
+    assert!(
+        err && v["error"]["code"] == "CLAIM_COUNTER_NOT_PENDING",
+        "{v}"
+    );
+    // While the deadline lasts the artist can answer again.
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "get_release",
+        json!({"view": "claims", "release_id": release}),
+    )
+    .await;
+    assert_eq!(v["items"][0]["can_answer"], true, "{v}");
+
+    // A rights proof file sent by mistake.
+    let asset = register_asset(&pool, &store, &u, "licence.pdf", b"%PDF-1.4 test").await;
+    sqlx::query(
+        "UPDATE catalog.assets SET kind='DOCUMENT', content_type='application/pdf' WHERE id=$1",
+    )
+    .bind(asset)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "attach_rights_proof",
+        json!({"release_id": release, "title": "Sample licence", "asset_id": asset, "file_name": "licence.pdf"}),
+    )
+    .await;
+    assert!(!err, "{v}");
+    let document = v["id"].as_str().unwrap().to_string();
+    let back = json!({"kind": "rights_proof", "document_id": document});
+    let (err, v) = tool(&app, &c.access, "cancel_request", back.clone()).await;
+    assert!(!err && v["status"] == "AWAITING_DOCUMENTS", "{v}");
+    let (status, file): (String, Option<Uuid>) =
+        sqlx::query_as("SELECT status, asset_id FROM portal.documents WHERE id=$1::uuid")
+            .bind(&document)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!((status.as_str(), file), ("AWAITING_DOCUMENTS", None));
+    let (err, v) = tool(&app, &c.access, "cancel_request", back).await;
+    assert!(err && v["error"]["code"] == "DOCUMENT_NOT_EDITABLE", "{v}");
+}
+
+#[sqlx::test]
 async fn risky_actions_wait_for_one_studio_approval(pool: PgPool) {
     let (app, _) = app(pool.clone()).await;
     let u = user(&app).await;

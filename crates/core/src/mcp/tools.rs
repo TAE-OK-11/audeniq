@@ -875,6 +875,31 @@ fn defs() -> &'static [ToolDef] {
                 schema: release_id_schema,
             },
             ToolDef {
+                name: "cancel_member_invite",
+                title: "Cancel a member invitation",
+                description: "Take back an invitation to this workspace that the person has not accepted yet (user_id of an INVITED member from get_account_context with view members). Only the workspace owner can, and only when the artist asks. Members who already joined are removed in AUDENIQ Studio.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["user_id"],"properties":{
+                    "user_id": uuid_schema("The invited member")}}),
+            },
+            ToolDef {
+                name: "withdraw_counter_notice",
+                title: "Withdraw a counter notice",
+                description: "Take back the artist's counter notice to a rights claim before AUDENIQ decides on it (claim_id from get_release with view claims). The release stays suspended; while the deadline lasts a new answer can be sent. Only after the artist explicitly asked.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["claim_id","artist_confirmed"],"properties":{
+                    "claim_id": uuid_schema("The claim"),
+                    "artist_confirmed": {"type":"boolean","const":true,"description":"The artist explicitly asked to withdraw their counter notice"}}}),
+            },
+            ToolDef {
+                name: "withdraw_rights_proof",
+                title: "Take back a rights proof file",
+                description: "Take back the file attached to a rights document AUDENIQ has not decided on yet (document_id from get_account_context with view documents): the document waits for a file again. For a wrong file the artist sent; attach the right one with attach_rights_proof.",
+                scope: SCOPE_WRITE, read_only: false, destructive: false, idempotent: true, widget: false,
+                schema: || json!({"type":"object","additionalProperties":false,"required":["document_id"],"properties":{
+                    "document_id": uuid_schema("The rights document")}}),
+            },
+            ToolDef {
                 name: "withdraw_permission_request",
                 title: "Withdraw a permission request",
                 description: "Take back a permission request from this connection that the artist has not answered yet (when the task no longer needs it). Permissions already given stay until the connection is disconnected.",
@@ -1180,6 +1205,9 @@ const GROUPS: &[Group] = &[
             ("approval", "withdraw_action_request"),
             ("submission", "withdraw_pending_submission"),
             ("signing_request", "cancel_signing_request"),
+            ("member_invite", "cancel_member_invite"),
+            ("counter_notice", "withdraw_counter_notice"),
+            ("rights_proof", "withdraw_rights_proof"),
         ],
     },
     Group {
@@ -1642,6 +1670,15 @@ fn mcp_message(code: &str) -> Option<&'static str> {
             "After the fee nothing would be paid out; request a larger amount."
         }
         "PAYEE_ON_HOLD" => "Payouts are on hold for this account. Contact AUDENIQ support.",
+        "MEMBER_INVITE_NOT_PENDING" => {
+            "That person has no invitation waiting: they already accepted or declined it, or it was cancelled. Check get_account_context with view members."
+        }
+        "CLAIM_COUNTER_NOT_PENDING" => {
+            "There is no counter notice waiting for AUDENIQ's decision on this claim (none was sent, or staff already decided)."
+        }
+        "DOCUMENT_NOT_EDITABLE" => {
+            "This document cannot change now: it is signed electronically, already decided, or has no file waiting for review."
+        }
         "PAYOUT_NOT_CANCELLABLE" => {
             "This payout was already sent to the bank and can no longer be cancelled."
         }
@@ -2148,7 +2185,10 @@ async fn run(
 
 /// Newer operations, answered in their own (boxed) function
 /// so the dispatch in [`run`] keeps a small stack frame in debug builds.
-const LATER_TOOLS: [&str; 5] = [
+const LATER_TOOLS: [&str; 8] = [
+    "cancel_member_invite",
+    "withdraw_counter_notice",
+    "withdraw_rights_proof",
     "withdraw_permission_request",
     "remove_track",
     "get_withdrawal_quota",
@@ -2165,6 +2205,25 @@ async fn later(
     let (a, org) = (&p.actor, p.org);
     match name {
         "withdraw_permission_request" => super::approvals::withdraw(s, p, args).await,
+        "cancel_member_invite" => {
+            let mut v =
+                crate::members::cancel_invite(s, a, org, uuid_arg(args, "user_id")?).await?;
+            v["view"] = json!("member_invite");
+            Ok(v)
+        }
+        "withdraw_counter_notice" => {
+            let mut v =
+                crate::infringement::withdraw_counter(s, a, org, uuid_arg(args, "claim_id")?)
+                    .await?;
+            v["view"] = json!("counter_notice");
+            Ok(v)
+        }
+        "withdraw_rights_proof" => {
+            let mut v =
+                crate::portal::withdraw_proof(s, a, org, uuid_arg(args, "document_id")?).await?;
+            v["view"] = json!("document_proof_withdrawn");
+            Ok(v)
+        }
         "remove_track" => Box::pin(remove_track(s, a, org, args)).await,
         "get_withdrawal_quota" => {
             let mut v = crate::withdraw::quota(&s.pool, a, org).await?;
