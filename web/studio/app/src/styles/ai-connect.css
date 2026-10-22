@@ -2,7 +2,6 @@
    여기에는 신청서에 없는 몇 가지만 둔다: 요청한 앱 줄, 연결 코드, 권한 꼬리표, 지켜지는 것 목록, 연결 정보. */
 .aq-connect-view{min-height:100vh;min-height:100dvh}
 .aq-connect-topspace{visibility:hidden}
-.aq-connect-account{display:inline-block;max-width:44vw;height:28px;padding:0 10px;border-radius:var(--aq-r-pill);background:var(--aq-gray-50);color:var(--aq-text-3);font-size:12px;font-weight:600;line-height:28px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .aq-connect-layout{margin:0 auto}
 
 /* 요청한 앱 — 신청서의 고르는 카드(aq-choice)와 같은 면 */
@@ -87,3 +86,5 @@
 /* 남은 시간 — 아래에 마감 시각, 5분 안 남으면 주황 */
 .aq-flow-row .aq-set-value small{display:block;margin-top:2px;font-size:13px;font-weight:500;color:var(--aq-text-3)}
 .aq-flow-soon{color:var(--aq-amber-700)}
+.aq-flow-me{--av:32px;font-size:13px;cursor:default}
+.aq-connect-who{margin:-6px 2px 12px;color:var(--aq-text-3);font-size:13px;overflow-wrap:anywhere}

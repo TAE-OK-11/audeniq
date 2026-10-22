@@ -9,6 +9,7 @@
 // 승인하면 브라우저 연결은 AI 앱으로 돌아가고, 기기 연결은 여기서 끝난다.
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from '../lib/router';
+import { useAuth } from '../api/auth';
 import { ApiError, errorMessage } from '../api/errors';
 import { aiConnectByCode, aiConnectDetails, decideAiConnect, type AiConnectDetails } from '../api/aiConnect';
 import { useConfirm } from '../components/Confirm';
@@ -116,6 +117,7 @@ function Review({ request, d, onDone, onFailed }: {
   onFailed: (err: unknown) => void;
 }) {
   const confirm = useConfirm();
+  const { user } = useAuth();
   const editable = d.workspaces.filter(w => w.role !== 'VIEWER');
   const [org, setOrg] = useState(() => (editable[0] ?? d.workspaces[0])?.id ?? '');
   const [on, setOn] = useState<Set<string>>(() => new Set(d.scopes.filter(s => s.checked).map(s => s.scope)));
@@ -200,6 +202,7 @@ function Review({ request, d, onDone, onFailed }: {
       )}
 
       <h2 className="subhead">연결할 작업 공간</h2>
+      {user?.email && <p className="aq-connect-who">{user.email} 계정으로 연결해요.</p>}
       {d.workspaces.length > 1 ? (
         <div className="aq-choice-row aq-connect-workspaces" role="radiogroup" aria-label="연결할 작업 공간">
           {d.workspaces.map(w => (

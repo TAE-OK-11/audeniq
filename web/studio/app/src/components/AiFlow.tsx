@@ -3,6 +3,7 @@
 // 신청서의 단계 제목, 아래 고정 버튼(step-actions). AI 앱의 앱 안 브라우저에서 한 화면으로 열린다.
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../api/auth';
+import { useProfile } from '../store/profile';
 import { aiActionRequests, aiPermissionRequests } from '../api/aiConnections';
 import { Link } from '../lib/router';
 import { MOCK } from '../lib/mode';
@@ -39,6 +40,7 @@ export function AiFlowPage({ children }: { children: React.ReactNode }) {
 /** 신청서와 같은 위 막대(제목·로그인 계정). 한 화면에서 끝나 진행 막대는 없다 */
 export function AiFlowFrame({ title = 'AI 앱 연결', onBack, children }: { title?: string; onBack?: () => void; children: React.ReactNode }) {
   const { user } = useAuth();
+  const profile = useProfile();
   return (
     <>
       <div className="aq-wiz-top">
@@ -48,7 +50,12 @@ export function AiFlowFrame({ title = 'AI 앱 연결', onBack, children }: { tit
             : <span className="wizard-topback aq-connect-topspace" aria-hidden="true" />}
           <span className="wizard-top-title">{title}</span>
           <span className="aq-save-slot">
-            {user?.email && <span className="aq-connect-account" title="로그인한 계정">{user.email}</span>}
+            {/* 스튜디오 머리글과 같은 계정 아바타 — 이메일은 길어서 잘리니 첫 글자만, 전체는 읽어 주기·툴팁으로 */}
+            {user && (
+              <span className="ui-avatar aq-flow-me" title={user.email} role="img" aria-label={`로그인한 계정 ${user.email ?? ''}`}>
+                {(profile.name || user.email || 'A').slice(0, 1).toUpperCase()}
+              </span>
+            )}
           </span>
         </div>
       </div>
