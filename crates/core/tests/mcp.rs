@@ -610,6 +610,9 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
         json!([{"jsonrpc":"2.0","id":1,"method":"ping"}]).to_string(),
     )
     .await;
+    // A batch (2025-03-26) is read, and like a single call needs a token.
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+    let (s, _, _) = raw(&app, "POST", "/api/mcp", &[], "\"ping\"".into()).await;
     assert_eq!(s, StatusCode::BAD_REQUEST);
     // Still behind the edge's service secret.
     let r = app
@@ -4722,6 +4725,93 @@ async fn several_rate_buckets_are_counted_in_one_call(pool: PgPool) {
             .await
             .is_err()
     );
+}
+
+#[sqlx::test]
+async fn batches_and_stream_only_clients_are_answered(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let owner = user(&app).await;
+    let c = connect(&app, &owner, &[]).await;
+    let auth = format!("Bearer {}", c.access);
+    let json_headers = [
+        ("content-type", "application/json"),
+        ("accept", "application/json, text/event-stream"),
+        ("mcp-protocol-version", "2025-03-26"),
+        ("authorization", auth.as_str()),
+    ];
+    // 2025-03-26 batch: one answer per request, none for the notification.
+    let batch = json!([
+        {"jsonrpc":"2.0","id":1,"method":"ping"},
+        {"jsonrpc":"2.0","method":"notifications/initialized"},
+        {"jsonrpc":"2.0","id":"two","method":"tools/call","params":{"name":"get_account_context","arguments":{}}},
+        {"jsonrpc":"2.0","id":3,"method":"no/such"}
+    ]);
+    let (s, _, body) = raw(&app, "POST", "/api/mcp", &json_headers, batch.to_string()).await;
+    assert_eq!(s, StatusCode::OK, "{body}");
+    let v: Value = serde_json::from_str(&body).unwrap();
+    let answers = v.as_array().unwrap();
+    assert_eq!(answers.len(), 3, "{v}");
+    assert_eq!(answers[0]["id"], 1);
+    assert_eq!(answers[1]["id"], "two");
+    assert_eq!(answers[1]["result"]["isError"], false, "{v}");
+    assert_eq!(answers[2]["error"]["code"], -32601);
+    // Without a token the whole batch gets the challenge.
+    let (s, h, _) = raw(
+        &app,
+        "POST",
+        "/api/mcp",
+        &json_headers[..3],
+        batch.to_string(),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+    assert!(h.contains_key("www-authenticate"));
+    let too_many = Value::Array(vec![json!({"jsonrpc":"2.0","id":1,"method":"ping"}); 17]);
+    let (s, _, _) = raw(
+        &app,
+        "POST",
+        "/api/mcp",
+        &json_headers,
+        too_many.to_string(),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+
+    // A client that only takes an event stream gets the answer as one event.
+    let stream_headers = [
+        ("content-type", "application/json"),
+        ("accept", "text/event-stream"),
+        ("authorization", auth.as_str()),
+    ];
+    let (s, h, body) = raw(
+        &app,
+        "POST",
+        "/api/mcp",
+        &stream_headers,
+        json!({"jsonrpc":"2.0","id":9,"method":"tools/list"}).to_string(),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(h["content-type"], "text/event-stream");
+    let data = body
+        .strip_prefix("event: message\ndata: ")
+        .and_then(|b| b.strip_suffix("\n\n"))
+        .expect("one SSE message event");
+    let v: Value = serde_json::from_str(data).unwrap();
+    assert_eq!(v["id"], 9);
+    assert!(v["result"]["tools"].as_array().unwrap().len() > 20);
+    // A refusal keeps its status and its JSON body (it is not a stream).
+    let unauthenticated = json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}).to_string();
+    let (s, h, _) = raw(
+        &app,
+        "POST",
+        "/api/mcp",
+        &stream_headers[..2],
+        unauthenticated,
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+    assert!(h.contains_key("www-authenticate"));
 }
 
 #[sqlx::test]

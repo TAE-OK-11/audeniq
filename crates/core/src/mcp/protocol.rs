@@ -235,11 +235,121 @@ enum Endpoint {
 }
 
 pub async fn post(State(s): State<AppState>, h: HeaderMap, body: Bytes) -> Response {
-    serve(s, h, body, Endpoint::Account).await
+    let sse = wants_sse(&h);
+    framed(
+        Box::pin(serve_body(s, h, body, Endpoint::Account)).await,
+        sse,
+    )
+    .await
 }
 
 pub async fn post_public(State(s): State<AppState>, h: HeaderMap, body: Bytes) -> Response {
-    serve(s, h, body, Endpoint::Public).await
+    let sse = wants_sse(&h);
+    framed(
+        Box::pin(serve_body(s, h, body, Endpoint::Public)).await,
+        sse,
+    )
+    .await
+}
+
+/// Most batched messages answered in one request (2025-03-26 batches).
+const MAX_BATCH: usize = 16;
+
+/// A single message, or (for clients on 2025-03-26, the one revision with
+/// JSON-RPC batching) an array of them answered with an array. Each message
+/// of a batch goes through [`serve`] on its own, with the same headers, so
+/// authentication, rate limits and audit are exactly those of single calls;
+/// a batch that needs a token answers the 401 challenge as a whole.
+async fn serve_body(s: AppState, h: HeaderMap, body: Bytes, endpoint: Endpoint) -> Response {
+    let first = body.iter().find(|b| !b.is_ascii_whitespace());
+    if first != Some(&b'[') || !s.mcp.enabled {
+        return serve(s, h, body, endpoint).await;
+    }
+    let Ok(Value::Array(items)) = serde_json::from_slice::<Value>(&body) else {
+        return rpc_error(
+            StatusCode::BAD_REQUEST,
+            &Value::Null,
+            -32700,
+            "Parse error",
+            None,
+        );
+    };
+    if items.is_empty() || items.len() > MAX_BATCH {
+        return rpc_error(
+            StatusCode::BAD_REQUEST,
+            &Value::Null,
+            -32600,
+            &format!("A batch holds 1 to {MAX_BATCH} messages"),
+            None,
+        );
+    }
+    let mut answers = Vec::new();
+    for item in items {
+        let r = Box::pin(serve(
+            s.clone(),
+            h.clone(),
+            Bytes::from(item.to_string()),
+            endpoint,
+        ))
+        .await;
+        let status = r.status();
+        if status == StatusCode::ACCEPTED {
+            continue; // a notification or a response: nothing to answer
+        }
+        if status == StatusCode::UNAUTHORIZED {
+            return r;
+        }
+        let bytes = axum::body::to_bytes(r.into_body(), 16 * 1024 * 1024)
+            .await
+            .unwrap_or_default();
+        match serde_json::from_slice::<Value>(&bytes) {
+            Ok(v) => answers.push(v),
+            Err(_) => return server_error(&Value::Null, Error::Internal),
+        }
+    }
+    if answers.is_empty() {
+        return StatusCode::ACCEPTED.into_response();
+    }
+    Json(Value::Array(answers)).into_response()
+}
+
+/// Whether the client only takes an event stream (`Accept` names
+/// `text/event-stream` but not JSON). Streamable HTTP clients must accept
+/// both, but some send only the stream type.
+fn wants_sse(h: &HeaderMap) -> bool {
+    let accept = header_str(h, "accept").unwrap_or("").to_ascii_lowercase();
+    accept.contains("text/event-stream")
+        && !accept.contains("application/json")
+        && !accept.contains("*/*")
+}
+
+/// The JSON answer as one SSE `message` event, for clients that asked for
+/// a stream; the stream ends after it (no server-initiated messages).
+async fn framed(r: Response, sse: bool) -> Response {
+    let is_json = r
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .is_some_and(|v| v.as_bytes().starts_with(b"application/json"));
+    if !sse || !is_json {
+        return r;
+    }
+    let (mut parts, body) = r.into_parts();
+    let bytes = axum::body::to_bytes(body, 16 * 1024 * 1024)
+        .await
+        .unwrap_or_default();
+    let mut event = Vec::with_capacity(bytes.len() + 24);
+    event.extend_from_slice(b"event: message\ndata: ");
+    event.extend_from_slice(&bytes);
+    event.extend_from_slice(b"\n\n");
+    parts.headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/event-stream"),
+    );
+    parts
+        .headers
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    parts.headers.remove(header::CONTENT_LENGTH);
+    Response::from_parts(parts, axum::body::Body::from(event))
 }
 
 async fn serve(s: AppState, h: HeaderMap, body: Bytes, endpoint: Endpoint) -> Response {
@@ -274,7 +384,7 @@ async fn serve(s: AppState, h: HeaderMap, body: Bytes, endpoint: Endpoint) -> Re
             StatusCode::BAD_REQUEST,
             &Value::Null,
             -32600,
-            "Expected a single JSON-RPC message (batches are not supported)",
+            "Expected a JSON-RPC message object (or, for 2025-03-26 clients, an array of them)",
             None,
         );
     };
