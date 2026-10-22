@@ -935,6 +935,7 @@ summary::-webkit-details-marker{display:none}
 .aq-passkeys{display:grid;gap:14px}
 .aq-passkey-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .aq-passkey-list li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:var(--aq-r-lg);background:var(--aq-surface-2,var(--aq-surface))}
+.aq-passkey-list li>.aq-ai-app-logo+.min-0{flex:1}
 .aq-passkey-list strong{display:block}
 .aq-passkey-list small{color:var(--aq-text-2)}
 .aq-passkeys .aq-row-actions{display:flex;justify-content:flex-end;gap:8px}

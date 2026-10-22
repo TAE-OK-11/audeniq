@@ -76,4 +76,10 @@ export const BRAND_ASSETS: Record<string, BrandAsset> = {
   'daol': { kind: 'image', file: 'daol.png' },
   'ls': { kind: 'image', file: 'ls.png' },
   'hana': { kind: 'image', file: 'hana.png' },
+  // AI 앱 (AI 앱 연결·승인 화면) — 출처는 docs/BRAND_LOGOS.md
+  'claude': { kind: 'glyph', file: 'claude.svg', color: '#D97757' },
+  'chatgpt': { kind: 'glyph', file: 'chatgpt.svg', color: '#000000' },
+  'perplexity': { kind: 'glyph', file: 'perplexity.svg', color: '#1FB8CD' },
+  'grok': { kind: 'glyph', file: 'grok.svg', color: '#000000' },
+  'gemini': { kind: 'glyph', file: 'gemini.svg', color: '#8E75B2' },
 };

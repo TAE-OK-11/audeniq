@@ -12,7 +12,7 @@ import { Link, useLocation } from '../lib/router';
 import { useAuth } from '../api/auth';
 import { ApiError, errorMessage } from '../api/errors';
 import { aiConnectByCode, aiConnectDetails, decideAiConnect, type AiConnectDetails } from '../api/aiConnect';
-import { appName, isKnownApp } from '../api/aiConnections';
+import { appBrandForHost, appName, isKnownApp } from '../api/aiConnections';
 import { useConfirm } from '../components/Confirm';
 import { MOCK } from '../lib/mode';
 import { AiAppRow, AiFlowFrame as Frame, AiFlowHeader as Header, AiFlowLoading, AiFlowPage, workspaceName } from '../components/AiFlow';
@@ -192,6 +192,7 @@ function Review({ request, d, onDone, onFailed }: {
 
       <AiAppRow
         name={d.client.name}
+        brand={appBrandForHost(d.client.verified_host)}
         detail={[verified, from].filter(Boolean).join(' · ')}
         tag={verified && <span className="aq-connect-tag is-ok">확인됨</span>}
       />

@@ -8,7 +8,7 @@ import { Link, useParams } from '../lib/router';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { ApiError, errorMessage, messageForCode } from '../api/errors';
-import { aiActionRequest, decideAiAction, type AiActionRequest } from '../api/aiConnections';
+import { appBrandForName, aiActionRequest, decideAiAction, type AiActionRequest } from '../api/aiConnections';
 import { MOCK } from '../lib/mode';
 import { josa } from '../lib/josa';
 import { AiRequestMissing } from '../components/AiRequestMissing';
@@ -132,7 +132,7 @@ export function AiAction() {
       <AiFlowFrame>
         {pending ? (
           <AiFlowHero
-            app={app} kicker={TITLE}
+            app={app} brand={appBrandForName(r.client_name)} kicker={TITLE}
             title={`${josa(r.summary.title, '을/를')}\n승인할까요?`}
             sub={`${josa(app, '이/가')} 요청했어요. 승인하면 바로 내 계정으로 처리해요. 내가 시작한 요청이 아니라면 거절해 주세요.`}
           />

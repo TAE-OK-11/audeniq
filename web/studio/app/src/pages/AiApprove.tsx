@@ -7,7 +7,7 @@ import { Link, useParams } from '../lib/router';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { ApiError, errorMessage } from '../api/errors';
-import { aiPermissionRequest, decideAiPermission, SCOPE_HELP, SCOPE_LABEL, type AiPermissionRequest } from '../api/aiConnections';
+import { appBrandForName, aiPermissionRequest, decideAiPermission, SCOPE_HELP, SCOPE_LABEL, type AiPermissionRequest } from '../api/aiConnections';
 import { MOCK } from '../lib/mode';
 import { particle } from '../lib/josa';
 import { AiRequestMissing } from '../components/AiRequestMissing';
@@ -128,7 +128,7 @@ export function AiApprove() {
       <AiFlowFrame>
         {pending ? (
           <AiFlowHero
-            app={app} kicker={TITLE}
+            app={app} brand={appBrandForName(r.client_name)} kicker={TITLE}
             title={`${app}에게\n권한을 더 줄까요?`}
             sub="주면 연결을 끊기 전까지 계속 쓸 수 있어요. 내가 시작한 요청이 아니라면 거절해 주세요."
           />

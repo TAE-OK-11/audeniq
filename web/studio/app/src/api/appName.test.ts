@@ -16,3 +16,16 @@ describe('appName', () => {
     expect(isKnownApp('agent.example.com')).toBe(false);
   });
 });
+
+describe('AI app logos', () => {
+  it('uses a logo only for a verified known host or an exact known name', async () => {
+    const { appBrandForHost, appBrandForName } = await import('./aiConnections');
+    expect(appBrandForHost('claude.ai')).toBe('claude');
+    expect(appBrandForHost('chatgpt.com')).toBe('chatgpt');
+    expect(appBrandForHost('grok.com')).toBe('grok');
+    expect(appBrandForHost('claude.ai.evil.com')).toBeNull();
+    expect(appBrandForHost(null)).toBeNull();
+    expect(appBrandForName('Perplexity')).toBe('perplexity');
+    expect(appBrandForName('Claude Helper')).toBeNull();
+  });
+});

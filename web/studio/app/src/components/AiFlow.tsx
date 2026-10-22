@@ -9,6 +9,7 @@ import { Link } from '../lib/router';
 import { MOCK } from '../lib/mode';
 import { IconTile, type Tone } from '../ui';
 import { Glyph } from './Glyph';
+import { BrandMark } from './BrandMark';
 import '../styles/ai-connect.css';
 
 export const workspaceName = (name: string) => (name === 'Personal workspace' ? '내 작업 공간' : name);
@@ -79,10 +80,12 @@ export function AiFlowLoading({ text }: { text: string }) {
 }
 
 /** 요청한 AI 앱 한 줄 — 첫 글자 표시, 이름, 작은 설명 */
-export function AiAppRow({ name, detail, tag }: { name: string; detail?: React.ReactNode; tag?: React.ReactNode }) {
+export function AiAppRow({ name, brand, detail, tag }: { name: string; brand?: string | null; detail?: React.ReactNode; tag?: React.ReactNode }) {
   return (
     <div className="aq-connect-app-row">
-      <span className="aq-connect-app-mark" aria-hidden="true">{(name.match(/[\p{L}\p{N}]/u)?.[0] ?? 'A').toUpperCase()}</span>
+      {brand
+        ? <BrandMark id={brand} label={name} size={40} className="aq-flow-brand" />
+        : <span className="aq-connect-app-mark" aria-hidden="true">{appInitial(name)}</span>}
       <span className="min-0">
         <strong>{name}</strong>
         {detail && <small>{detail}</small>}
@@ -93,13 +96,14 @@ export function AiAppRow({ name, detail, tag }: { name: string; detail?: React.R
 }
 
 /** 승인 화면 맨 위 — 요청한 앱의 아바타(계정 정보 화면과 같은 모양)와 큰 제목. 처리가 끝났으면 아바타 대신 결과 아이콘 칸(IconTile) */
-export function AiFlowHero({ icon, app, kicker, title, sub }: {
-  icon?: { kind: 'ok' | 'off' | 'warn'; tone: Tone }; app?: string; kicker: string; title: React.ReactNode; sub?: React.ReactNode;
+export function AiFlowHero({ icon, app, brand, kicker, title, sub }: {
+  icon?: { kind: 'ok' | 'off' | 'warn'; tone: Tone }; app?: string; brand?: string | null; kicker: string; title: React.ReactNode; sub?: React.ReactNode;
 }) {
   return (
     <div className="aq-flow-hero">
       {icon && <IconTile tone={icon.tone} size="lg"><AiFlowStatusIcon kind={icon.kind} /></IconTile>}
-      {!icon && app && <span className="ui-avatar is-xl aq-profile-avatar aq-flow-avatar" aria-hidden="true">{appInitial(app)}</span>}
+      {!icon && app && brand && <BrandMark id={brand} label={app} size={56} className="aq-flow-brand aq-flow-avatar-logo" />}
+      {!icon && app && !brand && <span className="ui-avatar is-xl aq-profile-avatar aq-flow-avatar" aria-hidden="true">{appInitial(app)}</span>}
       <AiFlowHeader kicker={kicker} title={title} sub={sub} />
     </div>
   );

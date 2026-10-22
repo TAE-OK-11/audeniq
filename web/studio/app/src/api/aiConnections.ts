@@ -60,21 +60,27 @@ export const SCOPE_HELP: Record<string, string> = {
 };
 
 /** 잘 알려진 AI 앱의 주소 → 사람이 아는 이름. 주소 자체이거나 그 하위 주소일 때만 (claude.ai.evil.com은 아님) */
-const KNOWN_APPS: [string, string][] = [
-  ['claude.ai', 'Claude'], ['claude.com', 'Claude'], ['anthropic.com', 'Claude'],
-  ['chatgpt.com', 'ChatGPT'], ['openai.com', 'ChatGPT'],
-  ['perplexity.ai', 'Perplexity'],
-  ['grok.com', 'Grok'], ['x.ai', 'Grok'],
-  ['gemini.google.com', 'Gemini'],
-  ['copilot.microsoft.com', 'Copilot'],
+const KNOWN_APPS: [string, string, string][] = [
+  ['claude.ai', 'Claude', 'claude'], ['claude.com', 'Claude', 'claude'], ['anthropic.com', 'Claude', 'claude'],
+  ['chatgpt.com', 'ChatGPT', 'chatgpt'], ['openai.com', 'ChatGPT', 'chatgpt'],
+  ['perplexity.ai', 'Perplexity', 'perplexity'],
+  ['grok.com', 'Grok', 'grok'], ['x.ai', 'Grok', 'grok'],
+  ['gemini.google.com', 'Gemini', 'gemini'],
 ];
+const known = (host: string) => {
+  const h = host.toLowerCase().replace(/:\d+$/, '');
+  return KNOWN_APPS.find(([d]) => h === d || h.endsWith(`.${d}`));
+};
 
 /** 주소를 화면에 보일 이름으로 — 아는 앱이면 'Claude'·'ChatGPT', 모르는 주소는 그대로 (확인할 수 있게) */
 export function appName(host: string): string {
-  const h = host.toLowerCase().replace(/:\d+$/, '');
-  return KNOWN_APPS.find(([d]) => h === d || h.endsWith(`.${d}`))?.[1] ?? host;
+  return known(host)?.[1] ?? host;
 }
-export const isKnownApp = (host: string) => appName(host) !== host;
+export const isKnownApp = (host: string) => !!known(host);
+/** 아는 앱의 로고 키 (lib/brands.ts) — 주소로 확인된 앱에만 */
+export const appBrandForHost = (host: string | null | undefined) => (host ? known(host)?.[2] ?? null : null);
+/** 이미 연결된 앱의 이름으로 로고 키 — 이름이 아는 앱 이름과 똑같을 때만 */
+export const appBrandForName = (name: string) => KNOWN_APPS.find(([, n]) => n.toLowerCase() === name.trim().toLowerCase())?.[2] ?? null;
 
 /** 앱 확인용 주소의 호스트 (CIMD). 임의 ID면 없음. */
 export function clientHost(clientId: string): string | null {

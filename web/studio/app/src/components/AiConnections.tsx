@@ -1,6 +1,7 @@
 // 연결된 AI 앱 — AI 어시스턴트(ChatGPT·Claude 등)가 이 계정에 받은 권한을 보고, 언제든 끊는다.
 // 에이전트마다 하나씩 주는 에이전트 키(서버의 연결 토큰)도 여기서 만든다 (한 번만 보여 줌).
 // 키는 그대로 쓰거나, 토큰 교환(RFC 8693)으로 권한을 좁힌 1시간짜리 작업 토큰을 받아 쓴다.
+import { BrandMark } from './BrandMark';
 import { useEffect, useRef, useState } from 'react';
 import { useToast } from './Toast';
 import { useConfirm } from './Confirm';
@@ -8,7 +9,7 @@ import { CopyButton } from './CopyButton';
 import { ApiError, errorMessage } from '../api/errors';
 import { orgId } from '../api/http';
 import {
-  aiActionRequests, aiConnections, aiPermissionRequests, aiSettings, aiSubmissions, appName, approveAiSubmission, clientHost, createConnectionToken, DECLARATION_LABEL,
+  aiActionRequests, aiConnections, aiPermissionRequests, aiSettings, aiSubmissions, appBrandForHost, appName, approveAiSubmission, clientHost, createConnectionToken, DECLARATION_LABEL,
   rejectAiSubmission, revokeAiConnection, saveAiSettings, SCOPE_HELP, SCOPE_LABEL,
   type AiActionRequest, type AiConnection, type AiPermissionRequest, type AiSettings, type AiSubmission, type NewConnectionToken,
 } from '../api/aiConnections';
@@ -381,6 +382,7 @@ export function AiConnections() {
               : [from, workspaceName(c.org_name), `연결 ${relativeTime(c.created_at)}`, used];
             return (
               <li key={c.id}>
+                {!token && appBrandForHost(host) && <BrandMark id={appBrandForHost(host)!} label={c.client_name} size={36} className="aq-ai-app-logo" />}
                 <span className="min-0">
                   <strong>{token ? c.label ?? c.client_name : c.client_name}</strong>
                   <small>{meta.filter(Boolean).join(' · ')}</small>
