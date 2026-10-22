@@ -12,7 +12,7 @@ use super::{audit, line, one_of};
 use crate::{
     api::AppState,
     error::{Error, Result},
-    staff::{self, Staff, StaffRole},
+    staff::{self, Staff},
 };
 use axum::{
     Json, Router,
@@ -38,7 +38,7 @@ pub const QUEUE_TYPES: &[&str] = &[
 const ROLES: &[&str] = &["ADMIN", "REVIEWER", "OPERATOR", "SUPPORT"];
 
 fn admin(st: &Staff) -> Result<()> {
-    if st.role == StaffRole::Admin {
+    if st.role.is_admin() {
         Ok(())
     } else {
         Err(Error::Forbidden)

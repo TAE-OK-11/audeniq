@@ -47,6 +47,10 @@ pub struct AppState {
     pub antivirus_enabled: bool,
     /// AI assistant access (crate::mcp). Off unless AUDENIQ_MCP_ENABLED.
     pub mcp: Arc<crate::mcp::Settings>,
+    /// The staff operations login (crate::staff_ops), only when
+    /// `AUDENIQ_STAFF_OPS_DATABASE_URL` is set: the admin console's former
+    /// CLI-only operations are unavailable without it.
+    pub staff_ops: Option<PgPool>,
     service_secret_digest: [u8; 32],
 }
 impl AppState {
@@ -65,6 +69,7 @@ impl AppState {
             payout_keys: Arc::new(crate::payout_keys::KeyRing::from_env(false)?),
             antivirus_enabled: crate::config::antivirus_enabled()?,
             mcp: Arc::new(crate::mcp::Settings::from_env()),
+            staff_ops: crate::staff_ops::pool_from_env()?,
             dummy_hash: auth::password_hash(auth::random_token()).await?,
             service_secret_digest,
         })
@@ -181,6 +186,7 @@ pub fn router(s: AppState) -> Router {
         .merge(crate::email::routes())
         .merge(crate::signing::routes())
         .merge(crate::staff::routes())
+        .merge(crate::staff_ops::routes())
         .merge(crate::identity_desk::routes())
         .merge(crate::work::routes())
         .merge(crate::live::routes())

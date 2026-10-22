@@ -18,6 +18,7 @@ import {
 import { MiniStats, Person, PriorityChip, SwitchRow, usePeople } from '../ui';
 import type { SlaOverview, SlaPolicy, SlaPolicyInput, StaffRoleName, WorkCalendar } from '../types';
 import { DateField, TimeField } from '../../../components/Picker';
+import { isAdmin } from '../../api';
 
 const ROLES: StaffRoleName[] = ['ADMIN', 'REVIEWER', 'OPERATOR', 'SUPPORT'];
 const dayMinutes = (c?: WorkCalendar) => {
@@ -197,7 +198,7 @@ function Holidays({ cal, names, admin, onSaved }: { cal: WorkCalendar; names: Re
 
 export function Sla() {
   const { me } = useStaff();
-  const admin = me.role === 'ADMIN';
+  const admin = isAdmin(me);
   const confirm = useConfirm();
   const toast = useToast();
   const people = usePeople();

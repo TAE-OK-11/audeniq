@@ -38,10 +38,16 @@
 //! audeniq-admin partner merlin-eligible D-11 true|false
 //!   (Merlin's own agreement: `partner contract merlin REF`)
 //! audeniq-admin staff list
-//! audeniq-admin staff grant EMAIL ADMIN|REVIEWER|OPERATOR|SUPPORT
+//! audeniq-admin staff grant EMAIL OWNER|ADMIN|REVIEWER|OPERATOR|SUPPORT
+//!   (levels: OWNER 4 > ADMIN 3 > REVIEWER, OPERATOR 2 > SUPPORT 1; OWNER only
+//!    here — the admin console grants the levels below an OWNER's)
 //! audeniq-admin staff reset-mfa EMAIL   (lost authenticator: re-enroll at next sign-in)
 //! audeniq-admin staff revoke EMAIL
-//!   (AUDENIQ employees for /api/staff; the API can only read this)
+//!   (AUDENIQ employees for /api/staff; the console changes staff only through
+//!    identity.staff_set, never an OWNER or oneself)
+//!
+//! Most of the commands below also run in the admin console (crate::staff_ops)
+//! when AUDENIQ_STAFF_OPS_DATABASE_URL is set; deployment commands stay here.
 //! audeniq-admin upload-sandbox-check   (deploy check: the upload parser sandbox holds)
 //! audeniq-admin antivirus-update       (FreshClam behind the TLS-only proxy; the antivirus-update service)
 //! audeniq-admin dsp list
@@ -68,7 +74,7 @@
 //! audeniq-admin --operator STAFF_EMAIL payout manual ORDER_ID BANK_TX EVIDENCE_JSON_FILE
 //!     (paid in the bank's own channel; transfer evidence required, executor ≠ approver)
 //! audeniq-admin --operator STAFF_EMAIL payout reissue ORDER_ID   (after RETURNED/FAILED)
-//!   (ADMIN/OPERATOR staff; SETTLED posts the ledger debit, UNKNOWN is never resent)
+//!   (OWNER/ADMIN/OPERATOR staff; SETTLED posts the ledger debit, UNKNOWN is never resent)
 //! audeniq-admin --operator STAFF_EMAIL royalty import ORG DSP START END CUR FILE
 //! audeniq-admin --operator STAFF_EMAIL royalty match ORG REPORT
 //! audeniq-admin --operator STAFF_EMAIL royalty receipt ORG REPORT BANK_REF AMOUNT CUR EVIDENCE_JSON
@@ -501,12 +507,13 @@ async fn run(mut args: Vec<String>) -> anyhow::Result<()> {
         let actor: Option<uuid::Uuid> = sqlx::query_scalar(
             "SELECT u.id FROM identity.users u JOIN identity.staff_members s ON s.user_id=u.id
              WHERE u.email=lower($1) AND u.status='ACTIVE' AND s.status='ACTIVE'
-               AND s.role IN ('ADMIN','OPERATOR')",
+               AND s.role IN ('OWNER','ADMIN','OPERATOR')",
         )
         .bind(operator.trim())
         .fetch_optional(&pool)
         .await?;
-        let actor = actor.ok_or_else(|| anyhow::anyhow!("active ADMIN/OPERATOR email required"))?;
+        let actor =
+            actor.ok_or_else(|| anyhow::anyhow!("active OWNER/ADMIN/OPERATOR email required"))?;
         let arg = |i: usize| -> anyhow::Result<&str> {
             args.get(i)
                 .map(String::as_str)
@@ -549,17 +556,7 @@ async fn run(mut args: Vec<String>) -> anyhow::Result<()> {
                 .await?;
                 serde_json::json!({"receipt_id":id,"payable_posted":false})
             }
-            "show" => {
-                let value:Option<serde_json::Value>=sqlx::query_scalar(
-                    "SELECT jsonb_build_object('report_id',r.id,'dsp_id',r.dsp_id,'status',r.status,
-                       'currency',r.currency,'source_hash',r.source_hash,
-                       'source_amount',(SELECT COALESCE(SUM(gross_amount),0)::text FROM finance.report_lines WHERE org_id=$1 AND report_id=r.id),
-                       'received_amount',(SELECT COALESCE(SUM(amount),0)::text FROM finance.royalty_receipts WHERE org_id=$1 AND report_id=r.id),
-                       'unresolved',(SELECT COUNT(*) FROM finance.report_lines WHERE org_id=$1 AND report_id=r.id AND match_status NOT IN ('AUTO','MANUAL')))
-                     FROM finance.royalty_reports r WHERE r.org_id=$1 AND r.id=$2",
-                ).bind(org).bind(arg(3)?.parse::<uuid::Uuid>()?).fetch_optional(&pool).await?;
-                value.ok_or_else(|| anyhow::anyhow!("report not found"))?
-            }
+            "show" => audeniq_core::staff_ops::royalty_show(&pool, org, arg(3)?.parse()?).await?,
             "post" => {
                 // KRW per unit of the report currency (1 for a KRW report).
                 let fx: rust_decimal::Decimal = arg(4)?.parse()?;
@@ -592,25 +589,12 @@ async fn run(mut args: Vec<String>) -> anyhow::Result<()> {
         };
         if args.get(1).map(String::as_str) == Some("list") {
             let status = args.get(2).cloned().unwrap_or_else(|| "REQUESTED".into());
-            let mut rows: serde_json::Value = serde_json::Value::Array(sqlx::query_scalar(concat!(
-                "SELECT jsonb_build_object('request_id',p.id,'org_id',p.org_id,'amount',p.amount::text,'fee',p.fee_amount::text,
-                   'net',p.net_amount::text,'status',p.status,
-                   'account',p.account_snapshot - 'holder_name' || jsonb_build_object('holder_name',",
-                audeniq_core::pii_ref!(
-                    "holder_name",
-                    "p.org_id",
-                    "p.account_snapshot->>'holder_name'",
-                    "p.holder_cipher"
-                ),
-                "),'created_at',p.created_at,
-                   'order_id',o.id,'order_status',o.status)
-                 FROM portal.payout_requests p LEFT JOIN finance.payout_orders o ON o.id=p.payout_order_id
-                 WHERE p.status=$1 ORDER BY p.created_at LIMIT 500"
-            ))
-            .bind(status.to_ascii_uppercase())
-            .fetch_all(&pool)
-            .await?);
-            audeniq_core::pii::reveal(&audeniq_core::pii::cli_keys()?, &mut rows)?;
+            let rows = audeniq_core::staff_ops::payout_list(
+                &pool,
+                &audeniq_core::pii::cli_keys()?,
+                &status,
+            )
+            .await?;
             println!("{}", serde_json::to_string_pretty(&rows)?);
             return Ok(());
         }
@@ -619,7 +603,7 @@ async fn run(mut args: Vec<String>) -> anyhow::Result<()> {
         let operator_email = operator.trim().to_lowercase();
         let actor: Option<uuid::Uuid> = sqlx::query_scalar(
             "SELECT u.id FROM identity.users u JOIN identity.staff_members s ON s.user_id=u.id
-             WHERE (u.email=$1 OR u.email_bidx=ANY($2)) AND s.status='ACTIVE' AND s.role IN ('ADMIN','OPERATOR')",
+             WHERE (u.email=$1 OR u.email_bidx=ANY($2)) AND s.status='ACTIVE' AND s.role IN ('OWNER','ADMIN','OPERATOR')",
         )
         .bind(&operator_email)
         .bind(audeniq_core::pii::email_indexes(&keys, &operator_email))
@@ -627,7 +611,7 @@ async fn run(mut args: Vec<String>) -> anyhow::Result<()> {
         .await?;
         let actor = actor.ok_or_else(|| {
             anyhow::anyhow!(
-                "--operator must be the email of an active ADMIN/OPERATOR staff account"
+                "--operator must be the email of an active OWNER/ADMIN/OPERATOR staff account"
             )
         })?;
         let org_of = |order: uuid::Uuid| {

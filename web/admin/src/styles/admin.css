@@ -773,3 +773,47 @@ svg.aq-glyph{flex:none;fill:none!important;stroke:currentColor!important;stroke-
 .adm-note>small{display:block;margin-top:14px;font-size:var(--aq-fs-xs);font-weight:700;color:var(--aq-text-3)}
 .adm-note>small:first-child{margin-top:0}
 .adm-note>small+p{margin-top:3px;font-size:14px;line-height:1.6;color:var(--aq-text)}
+
+/* 운영 도구 (pages/Ops.tsx) — 예전 CLI 작업 */
+.adm-ops-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px 16px; align-items: end; padding: 20px; }
+.adm-ops-form > .ui-btn, .adm-ops-form > .adm-ops-check { justify-self: start; }
+.adm-ops-form.is-modal { grid-template-columns: 1fr; padding: 0; }
+.adm-ops-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.adm-ops-stepup p { margin: 0 0 12px; color: var(--aq-text-3); }
+.adm-ops-note { margin: 8px 2px 0; font-size: 13px; color: var(--aq-text-3); }
+.adm-ops-dim { color: var(--aq-text-3); font-weight: 400; }
+.adm-ops-levels { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.adm-ops-levels .ui-card { display: grid; gap: 4px; padding: 14px 16px; }
+.adm-ops-levels .ui-card small { color: var(--aq-text-3); line-height: 1.5; }
+.adm-ops-levels .is-current { outline: 2px solid var(--aq-primary); outline-offset: -2px; }
+.adm-ops-list { display: grid; gap: 10px; }
+.adm-ops-item { display: grid; gap: 8px; padding: 16px 18px; }
+.adm-ops-item.is-off { opacity: .6; }
+.adm-ops-item > header, .adm-ops-detail > header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.adm-ops-item > p { margin: 0; font-size: 14px; }
+.adm-ops-item-actions { margin-left: auto; display: flex; gap: 4px; }
+.adm-ops-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.adm-ops-x { margin-left: 6px; border: 0; background: none; cursor: pointer; font-size: 14px; line-height: 1; color: inherit; opacity: .6; }
+.adm-ops-x:hover { opacity: 1; }
+.adm-ops-sub { display: grid; gap: 8px; padding-top: 8px; border-top: 1px solid var(--aq-line); }
+.adm-ops-inline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.adm-ops-inline .ui-input { flex: 1 1 180px; min-width: 0; }
+.adm-ops-check { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+.adm-ops-row-actions { white-space: nowrap; text-align: right; }
+.adm-ops-kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 16px; margin: 0; }
+.adm-ops-kv dt { font-size: 12px; color: var(--aq-text-3); }
+.adm-ops-kv dd { margin: 2px 0 0; overflow-wrap: anywhere; }
+.adm-ops-split { display: grid; grid-template-columns: minmax(200px, 280px) 1fr; gap: 12px; align-items: start; }
+.adm-ops-pick { display: grid; padding: 6px; }
+.adm-ops-pick button { display: grid; gap: 2px; text-align: left; padding: 10px 12px; border: 0; border-radius: 10px; background: none; cursor: pointer; color: inherit; }
+.adm-ops-pick button small { color: var(--aq-text-3); }
+.adm-ops-pick button.is-on, .adm-ops-pick button:hover { background: var(--aq-surface-2); }
+.adm-ops-detail { display: grid; gap: 12px; padding: 18px; }
+.adm-ops-out { margin: 12px 0 0; padding: 12px; max-height: 280px; overflow: auto; border-radius: 10px; background: var(--aq-surface-2); font-size: 12px; }
+.adm-ops .is-mono { font-family: var(--font-mono); }
+.adm-ops .ui-section .ui-select.is-sm, .adm-ops .ui-section .ui-input.is-sm { width: auto; min-width: 140px; max-width: 220px; flex: 0 0 auto; }
+.adm-ops-inline .ui-input.is-sm { max-width: none; flex: 1 1 180px; }
+@media (max-width: 720px) {
+  .adm-ops-split { grid-template-columns: 1fr; }
+  .adm-ops-item-actions { margin-left: 0; }
+}

@@ -35,11 +35,11 @@ export function dspLabel(value: string): string {
 }
 
 export const ROLE_LABEL: Record<StaffRole, string> = {
-  ADMIN: '관리자', REVIEWER: '심사 담당', OPERATOR: '배급 운영', SUPPORT: '고객 지원',
+  OWNER: '최고 관리자', ADMIN: '관리자', REVIEWER: '심사 담당', OPERATOR: '배급 운영', SUPPORT: '고객 지원',
 };
 
 export const DUTY_LABEL: Record<Duty, string> = {
-  REVIEW: '발매 심사', DOCUMENTS: '서류 검토', INQUIRIES: '문의 답변', DELIVERY: '배급 승인', IDENTITY: '실명인증',
+  REVIEW: '발매 심사', DOCUMENTS: '서류 검토', INQUIRIES: '문의 답변', DELIVERY: '배급 승인', IDENTITY: '실명인증', FINANCE: '정산·지급',
 };
 
 export const RELEASE_STATUS: Record<string, [string, Tone]> = {

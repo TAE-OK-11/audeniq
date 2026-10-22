@@ -27,7 +27,7 @@ use crate::{
     operations,
     payout_keys::Field,
     print_stamp::{mask_email, mask_name},
-    staff::{self, Duty, StaffRole},
+    staff::{self, Duty},
 };
 use axum::{
     Json, Router,
@@ -213,7 +213,7 @@ pub async fn verify(s: &AppState, h: &HeaderMap, user: Uuid, i: VerifyInput) -> 
     check_minor_rules(&i.document_type, guardian, birth, today)?;
     let note = i.note.trim();
     staff::note_ok(note, NOTE_MAX)?;
-    if i.correction && st.role != StaffRole::Admin {
+    if i.correction && !st.role.is_admin() {
         return Err(Error::Forbidden);
     }
     if i.correction && note.is_empty() {
