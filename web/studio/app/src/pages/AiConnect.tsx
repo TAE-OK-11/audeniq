@@ -15,6 +15,7 @@ import { aiConnectByCode, aiConnectDetails, decideAiConnect, type AiConnectDetai
 import { appBrandForHost, appName, isKnownApp } from '../api/aiConnections';
 import { useConfirm } from '../components/Confirm';
 import { MOCK } from '../lib/mode';
+import { josa } from '../lib/josa';
 import { AiAppRow, AiFlowFrame as Frame, AiFlowHeader as Header, AiFlowLoading, AiFlowPage, workspaceName } from '../components/AiFlow';
 
 type Phase =
@@ -37,6 +38,7 @@ const FAILED_TEXT: Record<string, string> = {
   AI_CONNECT_EXPIRED: '연결 요청 시간(10분)이 지났어요.',
   AI_CONNECT_OTHER_SESSION: '연결을 시작한 뒤 로그인이 바뀌었어요.',
   AI_CONNECT_CLIENT_UNKNOWN: '등록되지 않았거나 사용이 중단된 AI 앱이에요.',
+  AI_CONNECT_CLIENT_PRIVATE: '이 앱은 아직 만든 사람만 연결할 수 있어요.',
 };
 
 
@@ -147,9 +149,11 @@ function Review({ request, d, onDone, onFailed }: {
     if (approve && risky.length) {
       const ok = await confirm({
         title: `${risky.map(s => s.title).join('·')} 권한도 줄까요?`,
-        message: risky.some(s => s.risk === 'money')
-          ? '지급 신청은 대화에서 금액·수수료·받을 계좌를 내가 확인한 뒤에만 해요.'
-          : '발매 신청은 대화에서 신청 내용을 내가 최종 확인한 뒤에만 접수해요.',
+        message: d.audience === 'api'
+          ? '이 앱이 내 이름으로 신청할 수 있어요. 믿을 수 있는 앱에만 허용해 주세요.'
+          : risky.some(s => s.risk === 'money')
+            ? '지급 신청은 대화에서 금액·수수료·받을 계좌를 내가 확인한 뒤에만 해요.'
+            : '발매 신청은 대화에서 신청 내용을 내가 최종 확인한 뒤에만 접수해요.',
         confirmLabel: '허용하고 연결',
       });
       if (!ok) return;
@@ -173,17 +177,20 @@ function Review({ request, d, onDone, onFailed }: {
 
   const ws = d.workspaces.find(w => w.id === org);
   // claude.ai 같은 주소 대신 사람이 아는 이름으로 — 모르는 주소는 그대로 보여 준다
-  const verified = d.client.verified_host
-    ? (isKnownApp(d.client.verified_host) ? `${appName(d.client.verified_host)} 공식 앱` : `${d.client.verified_host}에서 확인된 앱`)
-    : d.client.registered ? 'AUDENIQ에 등록된 에이전트' : null;
+  const site = d.client.website ? hostOf(d.client.website) : null;
+  const verified = d.client.developer
+    ? (site ? `${site} · 개발자 앱` : 'AUDENIQ 개발자 앱')
+    : d.client.verified_host
+      ? (isKnownApp(d.client.verified_host) ? `${appName(d.client.verified_host)} 공식 앱` : `${d.client.verified_host}에서 확인된 앱`)
+      : d.client.registered ? 'AUDENIQ에 등록된 에이전트' : null;
   // 확인된 곳과 요청한 곳이 같으면 한 번만 말한다
-  const from = d.requested_from && d.requested_from === d.client.verified_host ? null
+  const from = d.requested_from && (d.requested_from === d.client.verified_host || d.requested_from === site) ? null
     : d.requested_from ? `${appName(d.requested_from)}에서 요청` : '연결 코드로 요청';
   const always = d.scopes.filter(s => s.locked);
   const extra = d.scopes.filter(s => !s.locked && on.has(s.scope)).length;
 
   return (
-    <Frame>
+    <Frame title={frameTitle(d)}>
       <Header
         kicker="연결 요청"
         title={`${d.client.name}에서\nAUDENIQ을 쓰려고 해요`}
@@ -194,8 +201,12 @@ function Review({ request, d, onDone, onFailed }: {
         name={d.client.name}
         brand={appBrandForHost(d.client.verified_host)}
         detail={[verified, from].filter(Boolean).join(' · ')}
-        tag={verified && <span className="aq-connect-tag is-ok">확인됨</span>}
+        tag={d.client.private
+          ? <span className="aq-connect-tag">내 앱</span>
+          : verified && <span className="aq-connect-tag is-ok">확인됨</span>}
       />
+      {d.client.description && <p className="aq-connect-about">{d.client.description}</p>}
+      {d.client.private && <p className="aq-option-note">내가 만든 앱이에요. 공개 검토 전이라 나만 연결할 수 있어요.</p>}
       {!verified && <p className="ui-callout is-warn small">AUDENIQ이 이 앱이 누구인지 확인하지 못했어요. 내가 방금 시작한 연결일 때만 허용해 주세요.</p>}
       {d.device_code && (
         <div className="aq-connect-code-row">
@@ -285,6 +296,10 @@ function Review({ request, d, onDone, onFailed }: {
   );
 }
 
+/** API를 쓰려는 앱이면 '앱 연결', AI 어시스턴트면 'AI 앱 연결' */
+const frameTitle = (d: AiConnectDetails) => (d.audience === 'api' ? '앱 연결' : 'AI 앱 연결');
+const hostOf = (url: string) => { try { return new URL(url).host.replace(/^www\./, ''); } catch { return null; } };
+
 function Done({ approved, d, redirect, granted }: { approved: boolean; d: AiConnectDetails; redirect?: string; granted: string[] }) {
   const titles = d.scopes.filter(s => granted.includes(s.scope)).map(s => s.title);
   useEffect(() => {
@@ -294,13 +309,15 @@ function Done({ approved, d, redirect, granted }: { approved: boolean; d: AiConn
     return () => window.clearTimeout(t);
   }, [redirect, approved]);
   return (
-    <Frame>
+    <Frame title={frameTitle(d)}>
       <Header
-        kicker="AI 앱 연결"
+        kicker={frameTitle(d)}
         title={approved ? '연결했어요' : '연결하지 않았어요'}
         sub={approved
-          ? (redirect ? `${d.client.name} 대화로 돌아가고 있어요.` : `${d.client.name} 대화로 돌아가 이어 가 주세요.`)
-          : `이 앱은 AUDENIQ 계정에 접근할 수 없어요.${redirect ? ' AI 앱으로 돌아가고 있어요.' : ''}`}
+          ? d.audience === 'api'
+            ? (redirect ? `${josa(d.client.name, '으로/로')} 돌아가고 있어요.` : `${d.client.name}에서 이어 가 주세요.`)
+            : (redirect ? `${d.client.name} 대화로 돌아가고 있어요.` : `${d.client.name} 대화로 돌아가 이어 가 주세요.`)
+          : `이 앱은 AUDENIQ 계정에 접근할 수 없어요.${redirect ? ' 앱으로 돌아가고 있어요.' : ''}`}
       />
       {approved && (
         <>
