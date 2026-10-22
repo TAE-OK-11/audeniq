@@ -793,6 +793,21 @@ A missing token gets `401` with
 `openid-configuration`) are a JSON 404, never the Studio page. To limit CIMD
 to known clients, list them in `AUDENIQ_MCP_CIMD_HOSTS`.
 
+**Conformance check (2026-10-22).** Run against a local server with
+independent implementations, not this repository's code:
+
+| Check | Result |
+|---|---|
+| Responses validated against the official MCP JSON schemas 2024-11-05, 2025-03-26, 2025-06-18, 2025-11-25, 2026-07-28 (initialize / server/discover, tools, prompts, resources, errors) | 54/54 |
+| Official Python SDK `mcp` 2.3.0 client (initialize, tools, grouped and old names, prompts, resources, ping, errors) | 13/13 |
+| Official TypeScript SDK 1.32.1 client (same, plus capabilities, instructions, annotations, 403 `insufficient_scope`) | 13/13 |
+| TypeScript SDK OAuth: RFC 9728 and 8414 discovery, DCR, PKCE S256, consent, `iss` (RFC 9207), code exchange, refresh rotation, reuse grace and late-reuse revocation, 401 challenge | 12/12 |
+| Streamable HTTP rules: GET/DELETE 405, notifications 202, parse error -32700, foreign Origin 403, unknown version 400, tool names, top-level object schemas, widget metadata, tool errors as `isError` | 13/13 |
+
+Found and fixed by it: 2026-07-28 cacheable results lacked `cacheScope` and
+`ttlMs` (now `public`, 1 hour, for discover, the listings and the widget),
+and DELETE answered the Studio's 403 instead of the transport's 405.
+
 Implementing MCP does not publish an app, guarantee directory approval, or make
 an assistant recommend AUDENIQ; listing and discovery are separate tasks.
 
