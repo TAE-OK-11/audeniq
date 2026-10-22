@@ -308,7 +308,7 @@ pub async fn search(s: &AppState, h: &HeaderMap, q: SearchQuery) -> Result<Value
             sqlx::query_scalar("SELECT id FROM unnest($1::text[]) AS x(id) WHERE work.doc_level(id::uuid, $2, $3) > 0")
                 .bind(&ids)
                 .bind(st.actor.user)
-                .bind(st.role.as_str())
+                .bind(st.role.team())
                 .fetch_all(&mut *c)
                 .await?,
         ),

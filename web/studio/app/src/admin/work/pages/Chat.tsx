@@ -15,6 +15,7 @@ import { workApi } from '../api';
 import { MAX_FILE, MAX_FILES, MentionArea, NoteBody, Person, mentionsIn, sizeLabel, usePeople, type People } from '../ui';
 import { ADMIN_WORK_EVENT } from '../../liveEvents';
 import type { Channel, WorkNote } from '../types';
+import { isAdmin } from '../../api';
 
 const dayLabel = (iso: string) => {
   const d = new Date(iso);
@@ -108,7 +109,7 @@ function Message({ m, people, grouped, onChanged }: { m: WorkNote; people: Peopl
         )}
         {m.edited_at && !editing && <small className="adm-chat-edited">수정됨{m.revisions ? ` · 이력 ${m.revisions}` : ''}</small>}
       </div>
-      {!editing && (mine || me.role === 'ADMIN') && (
+      {!editing && (mine || isAdmin(me)) && (
         <span className="adm-chat-msg-actions">
           {mine && <button type="button" className="ui-btn is-ghost is-sm" aria-label="메시지 고치기" onClick={() => { setDraft(m.body); setEditing(true); }}><Glyph name="pencil" size={13} /></button>}
           <button type="button" className="ui-btn is-ghost is-sm" aria-label="메시지 지우기" onClick={archive}><Glyph name="close" size={13} /></button>
@@ -227,7 +228,7 @@ function Conversation({ channel, people, onRead, onEdit, onArchive }: {
     }
   };
 
-  const manage = me.role === 'ADMIN' || channel.created_by === me.user_id;
+  const manage = isAdmin(me) || channel.created_by === me.user_id;
   let lastDay = '';
   let prev: WorkNote | null = null;
   return (

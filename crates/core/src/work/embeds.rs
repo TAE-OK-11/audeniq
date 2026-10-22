@@ -133,7 +133,7 @@ pub async fn resolve(s: &AppState, h: &HeaderMap, raw: &str) -> Result<Value> {
         .execute(&mut *tx)
         .await?;
     let me = st.actor.user;
-    let role = st.role.as_str();
+    let role = st.role.team();
 
     let releases = objects(
         &mut tx,

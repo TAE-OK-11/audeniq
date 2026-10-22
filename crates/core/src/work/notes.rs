@@ -479,7 +479,7 @@ pub async fn mentions(s: &AppState, h: &HeaderMap, q: MentionQuery) -> Result<Va
     )
     .bind(st.actor.user)
     .bind(q.resolved)
-    .bind(st.role.as_str())
+    .bind(st.role.team())
     .fetch_all(&mut *c)
     .await?;
     let mut items = notes_json(&mut c, &ids).await?;

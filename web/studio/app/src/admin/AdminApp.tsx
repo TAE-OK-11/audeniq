@@ -31,6 +31,11 @@ const PAGE_LOADERS = {
   Claims: () => import('./pages/Claims'),
   Payouts: () => import('./pages/Payouts'),
   ContentAdmin: () => import('../pages/ContentAdmin'),
+  OpsStaff: () => import('./pages/Ops'),
+  OpsProtected: () => import('./pages/Ops'),
+  OpsAi: () => import('./pages/Ops'),
+  OpsPartners: () => import('./pages/Ops'),
+  OpsFinance: () => import('./pages/Ops'),
   Tasks: () => import('./work/pages/Tasks'),
   TaskDetail: () => import('./work/pages/TaskDetail'),
   Inbox: () => import('./work/pages/Inbox'),
@@ -61,6 +66,11 @@ const Terms = page('Terms');
 const Claims = page('Claims');
 const Payouts = page('Payouts');
 const ContentAdmin = page('ContentAdmin');
+const OpsStaff = page('OpsStaff');
+const OpsProtected = page('OpsProtected');
+const OpsAi = page('OpsAi');
+const OpsPartners = page('OpsPartners');
+const OpsFinance = page('OpsFinance');
 const Tasks = page('Tasks');
 const TaskDetail = page('TaskDetail');
 const Inbox = page('Inbox');
@@ -89,6 +99,7 @@ import { ADMIN_INQUIRIES_EVENT, ADMIN_WORK_EVENT } from './liveEvents';
 import { workApi } from './work/api';
 import type { WorkSummary } from './work/types';
 import { Avatar, Badge } from '../ui';
+import { isAdmin, levelOf } from './api';
 
 // 관리자 메뉴 아이콘 — 스튜디오와 같은 AUDENIQ 아이콘 세트(Glyph)
 const ICONS: Record<string, string> = {
@@ -101,7 +112,7 @@ export function Icon({ name }: { name: string }) {
   return <Glyph name={ICONS[name] ?? name} size={18} />;
 }
 
-interface NavItem { to: string; label: string; icon: string; count?: (o: Overview | null, w: WorkSummary | null) => number; hot?: boolean; adminOnly?: boolean; duty?: Duty; also?: string[] }
+interface NavItem { to: string; label: string; icon: string; count?: (o: Overview | null, w: WorkSummary | null) => number; hot?: boolean; adminOnly?: boolean; duty?: Duty; also?: string[]; /** 이 레벨 이상에게만 (운영 도구) */ minLevel?: number }
 const NAV: { group: string; items: NavItem[] }[] = [
   { group: '한눈에', items: [{ to: '/admin', label: '오늘의 업무', icon: 'home' }] },
   {
@@ -132,6 +143,17 @@ const NAV: { group: string; items: NavItem[] }[] = [
       // 배급은 최종 승인 + 아티스트 서명 후 자동 — 여기서는 현황과 문제만 본다 (DSP 사양은 탭)
       { to: '/admin/deliveries', label: '배급 현황', icon: 'delivery', count: o => (o ? o.deliveries_blocked : 0), hot: true, also: ['/admin/dsps', '/admin/dsp-ops', '/admin/takedowns', '/admin/claims', '/admin/corrections', '/admin/pitches', '/admin/platform-requests', '/admin/terms'] },
       { to: '/admin/payouts', label: '지급 요청', icon: 'payout', count: o => (o ? o.payout_requests : 0), adminOnly: true },
+    ],
+  },
+  {
+    // 예전에는 audeniq-admin CLI로만 하던 일 — 레벨에 맞는 메뉴만 보인다 (서버도 다시 확인)
+    group: '운영 도구',
+    items: [
+      { to: '/admin/ops/finance', label: '정산·지급 처리', icon: 'payout', duty: 'FINANCE' },
+      { to: '/admin/ops/protected', label: '보호 아티스트', icon: 'lock', minLevel: 2 },
+      { to: '/admin/ops/ai', label: 'AI·개발자 앱', icon: 'antenna', minLevel: 2 },
+      { to: '/admin/ops/partners', label: '파트너·식별코드', icon: 'dsp', minLevel: 2 },
+      { to: '/admin/ops/staff', label: '직원·권한', icon: 'users', minLevel: 3 },
     ],
   },
   { group: '시스템', items: [{ to: '/admin/design', label: '디자인 시스템', icon: 'design' }] },
@@ -283,7 +305,7 @@ export function AdminApp() {
             {NAV.map(g => (
               <div className="adm-side-group" key={g.group}>
                 <div className="adm-side-label">{g.group}</div>
-                {g.items.filter(i => (!i.adminOnly || me.role === 'ADMIN') && (!i.duty || me.duties.includes(i.duty))).map(i => {
+                {g.items.filter(i => (!i.adminOnly || isAdmin(me)) && (!i.duty || me.duties.includes(i.duty)) && (!i.minLevel || levelOf(me) >= i.minLevel)).map(i => {
                   const n = i.count ? i.count(counts, work) : 0;
                   const cur = active(loc.pathname, i.to) || !!i.also?.some(a => active(loc.pathname, a));
                   return (
@@ -299,7 +321,7 @@ export function AdminApp() {
               </div>
             ))}
             <div className="adm-side-foot">
-              {ROLE_LABEL[me.role]} 권한<br />모든 처리는 담당자 계정으로 감사 기록에 남아요.
+              {ROLE_LABEL[me.role]} · 레벨 {levelOf(me)}<br />모든 처리는 담당자 계정으로 감사 기록에 남아요.
             </div>
           </nav>
 
@@ -338,8 +360,13 @@ export function AdminApp() {
               <Route path="/admin/docs" element={<Docs />} />
               <Route path="/admin/docs/:id" element={<Docs />} />
               <Route path="/admin/tasks/:id" element={<TaskDetail />} />
-              <Route path="/admin/payouts" element={me.role === 'ADMIN' ? <Payouts /> : <Navigate to="/admin" replace />} />
-              <Route path="/admin/content" element={me.role === 'ADMIN' ? <ContentAdmin /> : <Navigate to="/admin" replace />} />
+              <Route path="/admin/payouts" element={isAdmin(me) ? <Payouts /> : <Navigate to="/admin" replace />} />
+              <Route path="/admin/content" element={isAdmin(me) ? <ContentAdmin /> : <Navigate to="/admin" replace />} />
+              <Route path="/admin/ops/staff" element={levelOf(me) >= 3 ? <OpsStaff /> : <Navigate to="/admin" replace />} />
+              <Route path="/admin/ops/protected" element={levelOf(me) >= 2 ? <OpsProtected /> : <Navigate to="/admin" replace />} />
+              <Route path="/admin/ops/ai" element={levelOf(me) >= 2 ? <OpsAi /> : <Navigate to="/admin" replace />} />
+              <Route path="/admin/ops/partners" element={levelOf(me) >= 2 ? <OpsPartners /> : <Navigate to="/admin" replace />} />
+              <Route path="/admin/ops/finance" element={me.duties.includes('FINANCE') ? <OpsFinance /> : <Navigate to="/admin" replace />} />
               <Route path="/content-admin" element={<Navigate to="/admin/content" replace />} />
               <Route path="*" element={<Navigate to="/admin" replace />} />
             </Routes>

@@ -277,3 +277,38 @@ DO $$ BEGIN
  EXECUTE format('REVOKE CONNECT,TEMPORARY ON DATABASE %I FROM PUBLIC', current_database());
  EXECUTE format('GRANT CONNECT ON DATABASE %I TO audeniq_api,audeniq_worker', current_database());
 END $$;
+
+-- Staff operations login (0146, crate::staff_ops): the admin console runs the
+-- operator CLI's day-to-day commands with it. Optional: nothing here applies
+-- until the role exists (docs/STAFF_LEVELS.md). It reads what those commands
+-- read and writes only the tables they change; staff rows and authenticators
+-- change only through identity.staff_set / identity.staff_reset_mfa, which
+-- re-check that the actor is an OWNER.
+DO $$ BEGIN
+IF EXISTS (SELECT FROM pg_roles WHERE rolname='audeniq_staff_ops') THEN
+  GRANT USAGE ON SCHEMA identity,catalog,operations,execution,distribution,finance,portal TO audeniq_staff_ops;
+  GRANT SELECT ON ALL TABLES IN SCHEMA identity,catalog,execution,distribution,finance,portal TO audeniq_staff_ops;
+  GRANT INSERT ON operations.audit_events TO audeniq_staff_ops;
+  -- protected names, AI agents and limits, developer app review
+  GRANT INSERT,UPDATE ON catalog.protected_artists,catalog.protected_artist_exceptions TO audeniq_staff_ops;
+  GRANT INSERT,UPDATE,DELETE ON catalog.protected_artist_aliases TO audeniq_staff_ops;
+  GRANT INSERT ON catalog.protected_artist_changes TO audeniq_staff_ops;
+  GRANT INSERT,UPDATE ON identity.mcp_clients TO audeniq_staff_ops;
+  GRANT UPDATE ON identity.mcp_grants TO audeniq_staff_ops;
+  GRANT DELETE ON identity.mcp_tokens TO audeniq_staff_ops;
+  GRANT INSERT,UPDATE,DELETE ON identity.mcp_usage_limits TO audeniq_staff_ops;
+  -- partner onboarding and identifier ranges
+  GRANT INSERT,UPDATE ON execution.partner_onboarding TO audeniq_staff_ops;
+  GRANT UPDATE ON execution.adapter_profiles,distribution.dsp_contract_routes TO audeniq_staff_ops;
+  GRANT INSERT,UPDATE ON distribution.identifier_issuers TO audeniq_staff_ops;
+  GRANT INSERT ON distribution.identifier_counters TO audeniq_staff_ops;
+  GRANT EXECUTE ON FUNCTION execution.partner_onboarding_gaps(text), execution.platform_contract_live(text) TO audeniq_staff_ops;
+  GRANT EXECUTE ON FUNCTION finance.withdrawable(uuid,uuid), finance.settle_split_share(uuid) TO audeniq_staff_ops;
+  -- payouts and royalty reports
+  GRANT INSERT,UPDATE ON finance.payout_orders,finance.finance_holds,finance.royalty_reports,finance.report_lines TO audeniq_staff_ops;
+  GRANT INSERT ON finance.ledger_transactions,finance.ledger_entries,finance.payout_returns,finance.royalty_receipts,
+    finance.royalty_match_candidates,finance.royalty_postings,finance.split_allocations TO audeniq_staff_ops;
+  GRANT UPDATE ON portal.payout_requests TO audeniq_staff_ops;
+  GRANT EXECUTE ON FUNCTION identity.staff_set(uuid,uuid,text,text), identity.staff_reset_mfa(uuid,uuid) TO audeniq_staff_ops;
+END IF;
+END $$;

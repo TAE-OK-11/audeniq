@@ -123,7 +123,8 @@ async function send<T>(path: string, opts: ReqOptions): Promise<T> {
     // 점검은 조용한 요청이어도 알린다 (어느 요청이든 먼저 받은 쪽이 점검 화면을 띄운다)
     if (issue && (!opts.quietServer || issue.kind === 'maintenance')) reportServerIssue(issue);
     const msg = code === 'PAYLOAD_TOO_LARGE' ? '보낼 정보가 너무 커요. 앨범 소개나 가사 길이를 줄여 주세요.' : messageForCode(code, res.status);
-    throw new ApiError(msg, res.status, code);
+    const server = (data as { error?: ApiError['server'] } | null)?.error;
+    throw new ApiError(msg, res.status, code, server ? { message: server.message, details: server.details } : undefined);
   }
   return (data ?? {}) as T;
 }

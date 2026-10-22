@@ -16,6 +16,7 @@ import { TaskForm, fromLocalInput, toLocalInput } from '../TaskForm';
 import { DueChip, EntityChips, EntityPicker, NotesPanel, Person, PersonSelect, PriorityChip, TaskStatusChip, usePeople, type People } from '../ui';
 import type { EntityKind, Priority, TaskDetail as Detail, TaskEvent, TaskPatch, TaskStatus, WorkTask } from '../types';
 import { DateTimeField } from '../../../components/Picker';
+import { isAdmin } from '../../api';
 
 function ReviewForm({ task, approve, onDone }: { task: WorkTask; approve: boolean; onDone: () => void }) {
   const close = useModalClose();
@@ -115,8 +116,8 @@ export function TaskDetail() {
   const t = data.task;
   const closed = t.status === 'DONE' || t.status === 'CANCELLED';
   const archived = !!t.archived_at;
-  const iReview = t.reviewer_id === me.user_id || me.role === 'ADMIN';
-  const canArchive = !archived && (t.created_by === me.user_id || t.assignee_id === me.user_id || me.role === 'ADMIN');
+  const iReview = t.reviewer_id === me.user_id || isAdmin(me);
+  const canArchive = !archived && (t.created_by === me.user_id || t.assignee_id === me.user_id || isAdmin(me));
   const openSubs = t.subtasks.total - t.subtasks.done;
 
   const run = async (fn: () => Promise<unknown>, msg?: string) => {
