@@ -235,7 +235,7 @@ and `{code, message}` (stable API codes, human messages from
 
 ### Published tools and operations
 
-`tools/list` shows 25 tools. The 85 operations below are the units of scope,
+`tools/list` shows 25 tools. The 88 operations below are the units of scope,
 schema, rate limit, audit (`mcp.<operation>`) and handler; operations of the
 same kind are published as one tool, and one argument picks the operation
 (`view` for reads, `action` or `kind` for writes). The other arguments are the
@@ -263,7 +263,7 @@ its own name.
 | `manage_artist_pages` | `action`: `links`, `platform_request` | `set_artist_pages`, `create_platform_request` |
 | `manage_inquiry` | `action`: `create`, `reply`, `close` | `create_inquiry`, `reply_inquiry`, `close_inquiry` |
 | `request_approval` | `action`: `withdrawal`, `takedown`, `split_change`, `release_end`, `contract_end`, `counter_notice`, `member_invite` | `request_release_withdrawal`, `request_takedown`, `request_split_change`, `request_release_end`, `request_contract_end`, `request_counter_notice`, `request_member_invite` |
-| `cancel_request` | `kind`: `correction`, `playlist_pitch`, `takedown`, `release_end`, `contract_end`, `platform_request`, `approval`, `submission`, `signing_request` | `cancel_release_correction`, `withdraw_playlist_pitch`, `cancel_takedown`, `cancel_release_end`, `cancel_contract_end`, `cancel_platform_request`, `withdraw_action_request`, `withdraw_pending_submission`, `cancel_signing_request` |
+| `cancel_request` | `kind`: `correction`, `playlist_pitch`, `takedown`, `release_end`, `contract_end`, `platform_request`, `approval`, `submission`, `signing_request`, `member_invite`, `counter_notice`, `rights_proof` | `cancel_release_correction`, `withdraw_playlist_pitch`, `cancel_takedown`, `cancel_release_end`, `cancel_contract_end`, `cancel_platform_request`, `withdraw_action_request`, `withdraw_pending_submission`, `cancel_signing_request`, `cancel_member_invite`, `withdraw_counter_notice`, `withdraw_rights_proof` |
 | `delete_release_draft` (destructive) | `action`: `draft` (default), `track` | `delete_release_draft`, `remove_track` |
 | `request_permission` | `action`: `request` (default), `withdraw` | `request_permission`, `withdraw_permission_request` |
 | `request_payout` (payout, destructive) | `action`: `small` (default), `large`, `cancel` | `request_payout`, `request_large_payout`, `cancel_payout` |
@@ -834,8 +834,12 @@ an assistant recommend AUDENIQ; listing and discovery are separate tasks.
   design. Withdrawals, takedowns, splits, end dates, counter notices, member
   invites and payouts above the limit are filed through MCP and approved once
   in the Studio (Actions approved once).
-- Not offered at all yet: cancelling a sent member invite, withdrawing a
-  counter notice, taking back an attached rights proof (no service for it).
+- Taking back a sent member invite (owner only), a counter notice staff
+  have not decided on (the release stays suspended; migration 0147 keeps the
+  statement with `counter_withdrawn_at`) and a rights proof file not yet
+  decided (`cancel_request` kinds `member_invite`, `counter_notice`,
+  `rights_proof`; Studio API under `/members/{user}/cancel-invite`,
+  `/infringement-claims/{id}/counter/withdraw`, `/documents/{id}/proof/withdraw`).
 - Correction requests are tested at the MCP layer for the refusal paths; the
   request→approve→platform update flow itself is covered by the `execution`
   tests, not re-run through MCP.

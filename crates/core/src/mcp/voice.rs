@@ -96,6 +96,13 @@ pub fn message_ko(v: &Value) -> Option<String> {
         "document_proof" => "증빙 파일을 붙였어요. 어데닉이 확인할게요.".into(),
         "special_options" => "특수 콘텐츠 정보를 저장했어요.".into(),
         "split_invite_resent" => "분배 수락 메일을 다시 보냈어요.".into(),
+        "member_invite" if s(v, "status") == "CANCELLED" => "초대를 취소했어요.".into(),
+        "counter_notice" if v["counter_withdrawn"] == true => {
+            "이의 제기를 철회했어요. 발매는 계속 중단돼 있어요.".into()
+        }
+        "document_proof_withdrawn" => {
+            "보낸 증빙 파일을 회수했어요. 맞는 파일을 다시 붙여 주세요.".into()
+        }
         "takedown" if s(v, "status") == "CANCELLED" => "서비스 중단 요청을 취소했어요.".into(),
         "validation" => {
             if v["ready_to_submit"] == true {

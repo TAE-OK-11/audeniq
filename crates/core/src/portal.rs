@@ -982,6 +982,43 @@ pub async fn attach_proof(
     Ok(json!({"id":id,"status":"REVIEW","row_version":rv}))
 }
 
+/// Takes back the file of a rights proof staff have not decided on yet (in
+/// review, or sent back for more): the document waits for a file again.
+/// Signed electronic documents and approved ones stay as they are.
+pub async fn withdraw_proof(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
+    let mut tx = s.pool.begin().await?;
+    member(&mut tx, a, org, true).await?;
+    let (kind, status, _, _) = locked_doc(&mut tx, a, org, id).await?;
+    let status = status.trim_end_matches("+CHECKED");
+    let electronic: bool = sqlx::query_scalar(
+        "SELECT electronic_record IS NOT NULL FROM portal.documents WHERE id=$1",
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if kind != "RIGHTS_PROOF" || electronic || !matches!(status, "REVIEW" | "NEEDS") {
+        return Err(Error::PolicyGate("DOCUMENT_NOT_EDITABLE"));
+    }
+    let rv: i64 = sqlx::query_scalar(
+        "UPDATE portal.documents SET asset_id=NULL,file_name='',status='AWAITING_DOCUMENTS',row_version=row_version+1,updated_at=now() WHERE id=$1 RETURNING row_version",
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        Some(org),
+        Some(id),
+        "portal.document.proof_withdrawn",
+        "USER_EDIT",
+        a.request,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"id": id, "status": "AWAITING_DOCUMENTS", "row_version": rv}))
+}
+
 // ---------------------------------------------------------------------------
 // Signed release application
 // ---------------------------------------------------------------------------
@@ -1931,6 +1968,7 @@ org_body!(h_create_document, create_document, DocumentInput);
 id_post!(h_document_check, check_document);
 id_body!(h_document_sign, sign_document, SignInput);
 id_body!(h_document_proof, attach_proof, ProofInput);
+id_post!(h_document_proof_withdraw, withdraw_proof);
 id_get!(h_application, get_application);
 id_body!(h_record_application, record_application, ApplicationInput);
 org_get!(h_finance_summary, finance_summary);
@@ -2055,6 +2093,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/orgs/{org}/documents/{id}/proof",
             post(h_document_proof),
+        )
+        .route(
+            "/api/orgs/{org}/documents/{id}/proof/withdraw",
+            post(h_document_proof_withdraw),
         )
         .route(
             "/api/orgs/{org}/releases/{id}/application",
