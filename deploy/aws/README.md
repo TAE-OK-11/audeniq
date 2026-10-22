@@ -106,6 +106,12 @@ R2(업로드 저장소), DNS는 이번에 바꾸지 않아요. 설문(survey.aud
 - `_headers`가 계속 보안 헤더와 캐시 규칙의 원본이에요. CSP를 바꾸면 `deploy-stack.sh`를 다시 실행하세요.
 - 비상 점검 스위치는 이제 Worker secret이 아니라 백엔드 환경변수예요. `production.env`에 `MAINTENANCE_MODE=on`을 넣고 api를 재시작해요.
   - 평소에는 관리자 콘솔의 '서버 점검'으로 등록해요. 10초 안에 반영돼요.
+  - 로그인이나 관리자 콘솔에 들어갈 수 없을 때는 서버에서 CLI로 바로 시작·종료해요. DB에 직접 쓰고, 도는 api는 10초 안에 반영해요. 스키마 소유자 `DATABASE_URL`이 필요해요.
+    - `audeniq-admin maintenance status`
+    - `audeniq-admin --operator 이름 maintenance start [--minutes 60] [--title 제목] [--message 안내]`: `--minutes`를 빼면 종료 시각 미정이에요.
+    - `audeniq-admin --operator 이름 maintenance extend --minutes 30`
+    - `audeniq-admin --operator 이름 maintenance stop`
+    - 관리자 콘솔의 긴급 점검과 같은 기록이라 콘솔에서도 이어서 연장·종료할 수 있어요. 바뀔 때마다 감사 기록(`audeniq-admin:이름`)이 남아요. `MAINTENANCE_MODE` 스위치로 켠 점검은 CLI로 끌 수 없어요. 환경변수를 지우고 api를 재시작해요.
 - 공개 공지·이벤트는 `Cache-Control: public, max-age=30`이에요. CloudFront `/api`는 캐시하지 않아서 브라우저만 30초 캐시해요.
 - 업로드는 지금처럼 브라우저가 저장소(R2) presigned URL로 직접 올려서 CloudFront를 거치지 않아요.
 - 검증: `node --experimental-strip-types --test deploy/aws/test/aws.test.ts`, `cargo test -p audeniq-core --test site_content`
