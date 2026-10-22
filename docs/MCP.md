@@ -52,6 +52,10 @@ checks `submit` already ran, now shared with `submission::draft_review`) and
 
 ## Authentication and account linking
 
+The same authorization server also issues tokens for the REST API
+(`/api/v1`) to developer apps; MCP and API tokens are separate (RFC 8707
+resource on the grant). See docs/OAUTH_API.md.
+
 | Endpoint | Purpose |
 |---|---|
 | `GET /.well-known/oauth-protected-resource[/api/mcp]` | RFC 9728 metadata: resource `{origin}/api/mcp`, authorization server `{origin}` |
@@ -577,6 +581,7 @@ the Studio's design tokens and the AUDENIQ wordmark (`mcp/logo.svg`).
 | `AUDENIQ_MCP_DYNAMIC_REGISTRATION` | `true` | RFC 7591 endpoint |
 | `AUDENIQ_MCP_PUBLIC_DAILY_USER` | `150` | Public tools per signed-in user per day (per-user override: `mcp-limit`) |
 | `AUDENIQ_MCP_PAYOUT_LIMIT_KRW` | `300000` | Assistant payout limit per request and per 24 h; `0` = off |
+| `AUDENIQ_API_ENABLED` | `false` | REST API `/api/v1` and developer apps (docs/OAUTH_API.md) |
 
 Issuer and resource derive from `APP_ORIGIN` (the Studio origin the edge
 enforces): issuer `https://<studio host>`, MCP URL `https://<studio host>/api/mcp`.

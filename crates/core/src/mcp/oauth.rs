@@ -9,9 +9,11 @@
 //!   rotated on every use, reuse after a 30 s grace revokes the grant; a grant ends 90 days
 //!   after consent at the latest.
 //! - Every token is bound to one user, one workspace (org), the approved
-//!   scopes and this server's MCP resource (audience).
+//!   scopes and one resource (audience): the MCP endpoint, or the REST API
+//!   for registered apps (developer and operator-registered clients).
 use super::{
-    SCOPE_PAYOUT, SCOPE_READ, SCOPE_SETTLEMENT, SCOPE_SUBMIT, SCOPE_WRITE, SCOPES, Settings,
+    Audience, SCOPE_PAYOUT, SCOPE_READ, SCOPE_SETTLEMENT, SCOPE_SUBMIT, SCOPE_WRITE, SCOPES,
+    Settings,
 };
 use crate::{
     api::AppState,
@@ -70,6 +72,22 @@ pub async fn protected_resource_metadata(State(s): State<AppState>) -> Result<Js
     })))
 }
 
+/// RFC 9728 metadata of the REST API resource.
+pub async fn api_protected_resource_metadata(State(s): State<AppState>) -> Result<Json<Value>> {
+    enabled(&s)?;
+    if !s.mcp.api_enabled {
+        return Err(Error::NotFound);
+    }
+    Ok(Json(json!({
+        "resource": super::resource_for(&s, Audience::Api),
+        "authorization_servers": [super::issuer(&s)],
+        "scopes_supported": SCOPES,
+        "bearer_methods_supported": ["header"],
+        "resource_name": "AUDENIQ API",
+        "resource_documentation": format!("{}{}/openapi.json", super::issuer(&s), super::rest::API_PATH),
+    })))
+}
+
 pub async fn authorization_server_metadata(State(s): State<AppState>) -> Result<Json<Value>> {
     let settings = enabled(&s)?;
     let base = super::issuer(&s);
@@ -112,6 +130,26 @@ pub struct Client {
     /// An operator-registered agent that may send the artist's e-mail and
     /// password (`grant_type=password`); always a confidential client.
     pub password_grant: bool,
+    /// A developer app's owner (kind DEV).
+    pub owner: Option<Uuid>,
+    /// PRIVATE and REVIEW apps connect only their owner; PUBLIC anyone.
+    pub visibility: String,
+}
+
+impl Client {
+    /// Whether this user may connect the client: developer apps stay with
+    /// their owner until an operator approves them.
+    pub fn open_to(&self, user: Uuid) -> bool {
+        self.visibility == "PUBLIC" || self.owner == Some(user)
+    }
+    /// Registered apps (developer apps and operator-registered clients)
+    /// may get API tokens; anonymous MCP clients (CIMD, DCR) only MCP ones.
+    pub fn may_use(&self, a: Audience) -> bool {
+        match a {
+            Audience::Api => matches!(self.kind.as_str(), "DEV" | "ADMIN"),
+            Audience::Mcp => self.kind != "DEV",
+        }
+    }
 }
 
 /// Redirect URI stored for clients that never use the browser redirect
@@ -172,10 +210,12 @@ pub(super) fn row_client(r: &sqlx::postgres::PgRow) -> Client {
         secret_hash: r.get("secret_hash"),
         kind: r.get("kind"),
         password_grant: r.get("password_grant"),
+        owner: r.get("owner_user_id"),
+        visibility: r.get("visibility"),
     }
 }
 
-pub(super) const CLIENT_COLS: &str = "id, client_id, client_name, redirect_uris, token_endpoint_auth_method, secret_hash, kind, fetched_at, password_grant";
+pub(super) const CLIENT_COLS: &str = "id, client_id, client_name, redirect_uris, token_endpoint_auth_method, secret_hash, kind, fetched_at, password_grant, owner_user_id, visibility";
 
 /// The registered client for `client_id`. A URL client id is a Client ID
 /// Metadata Document: fetched (from allowlisted hosts only) and cached.
@@ -566,11 +606,14 @@ pub fn requested_scopes(raw: Option<&str>) -> Option<Vec<&'static str>> {
     Some(out)
 }
 
-/// RFC 8707 resource: this server's MCP endpoint (scheme/host compared
-/// case-insensitively, trailing slash tolerated). Absent = this server.
-pub(super) fn resource_ok(s: &AppState, given: Option<&str>) -> bool {
-    let Some(given) = given else { return true };
-    let ours = super::resource(s);
+/// RFC 8707 resource: which of this server's resources is meant (scheme/
+/// host compared case-insensitively, trailing slash tolerated). Absent or
+/// the server itself = the MCP endpoint (what MCP clients send); the REST
+/// API only when named, and only while it is on.
+pub(super) fn requested_audience(s: &AppState, given: Option<&str>) -> Option<Audience> {
+    let Some(given) = given else {
+        return Some(Audience::Mcp);
+    };
     let norm = |v: &str| -> Option<String> {
         let u = url::Url::parse(v).ok()?;
         if u.fragment().is_some() {
@@ -578,11 +621,21 @@ pub(super) fn resource_ok(s: &AppState, given: Option<&str>) -> bool {
         }
         Some(u.as_str().trim_end_matches('/').to_string())
     };
-    let issuer = super::issuer(s);
-    match norm(given) {
-        Some(g) => g == norm(&ours).unwrap_or_default() || g == issuer,
-        None => false,
+    let g = norm(given)?;
+    let is = |a: Audience| g == norm(&super::resource_for(s, a)).unwrap_or_default();
+    if is(Audience::Mcp) || g == super::issuer(s) {
+        Some(Audience::Mcp)
+    } else if s.mcp.api_enabled && is(Audience::Api) {
+        Some(Audience::Api)
+    } else {
+        None
     }
+}
+
+/// RFC 8707 resource for the MCP-only flows (device code, password grant,
+/// agent keys): the MCP endpoint or the server itself.
+pub(super) fn resource_ok(s: &AppState, given: Option<&str>) -> bool {
+    requested_audience(s, given) == Some(Audience::Mcp)
 }
 
 fn redirect_with(redirect_uri: &str, pairs: &[(&str, &str)]) -> Response {
@@ -686,13 +739,27 @@ pub async fn authorize(State(s): State<AppState>, h: HeaderMap, RawQuery(q): Raw
             "PKCE with S256 is required",
         );
     }
-    if !resource_ok(&s, p.get("resource").map(String::as_str)) {
+    let Some(audience) = requested_audience(&s, p.get("resource").map(String::as_str)) else {
         return redirect_error(
             &s,
             &redirect_uri,
             state,
             "invalid_target",
             "unknown resource",
+        );
+    };
+    if !client.may_use(audience) {
+        return redirect_error(
+            &s,
+            &redirect_uri,
+            state,
+            "invalid_target",
+            match audience {
+                Audience::Api => {
+                    "This client cannot use the AUDENIQ API: register an app in AUDENIQ Studio."
+                }
+                Audience::Mcp => "Developer apps use the AUDENIQ API resource.",
+            },
         );
     }
     let Some(mut scopes) = requested_scopes(p.get("scope").map(String::as_str)) else {
@@ -707,12 +774,17 @@ pub async fn authorize(State(s): State<AppState>, h: HeaderMap, RawQuery(q): Raw
         Err(Error::Unauthorized) => return page_sign_in(&s, "/api/oauth/authorize", &p),
         Err(e) => return e.into_response(),
     };
+    if !client.open_to(a.user) {
+        return page_error(
+            "이 앱은 아직 만든 사람만 연결할 수 있어요. 앱을 만든 곳에 문의해 주세요.",
+        );
+    }
     let request = super::seal(
         &s,
         "consent",
         &json!({
             "c": client.pk, "r": redirect_uri, "ch": challenge, "st": state,
-            "sc": scopes, "sh": crate::hex::encode(&a.session_hash),
+            "sc": scopes, "sh": crate::hex::encode(&a.session_hash), "rs": audience.code(),
             "exp": chrono::Utc::now().timestamp() + CONSENT_SECONDS,
         }),
     );
@@ -778,13 +850,18 @@ pub(super) async fn create_grant(
     label: Option<&str>,
     replace: bool,
     request: Uuid,
+    audience: Audience,
 ) -> Result<Uuid> {
-    let disabled: Option<bool> =
-        sqlx::query_scalar("SELECT disabled_at IS NOT NULL FROM identity.mcp_clients WHERE id=$1")
-            .bind(client_pk)
-            .fetch_optional(&mut *c)
-            .await?;
-    if disabled != Some(false) {
+    // Live, and open to this user (a developer app stays with its owner
+    // until it is approved).
+    let open: Option<bool> = sqlx::query_scalar(
+        "SELECT disabled_at IS NULL AND (visibility='PUBLIC' OR owner_user_id=$2) FROM identity.mcp_clients WHERE id=$1",
+    )
+    .bind(client_pk)
+    .bind(user)
+    .fetch_optional(&mut *c)
+    .await?;
+    if open != Some(true) {
         return Err(Error::Forbidden);
     }
     if replace {
@@ -799,7 +876,7 @@ pub(super) async fn create_grant(
     }
     let grant = Uuid::new_v4();
     sqlx::query("INSERT INTO identity.mcp_grants(id,client_pk,user_id,org_id,scopes,resource,method,label) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
-        .bind(grant).bind(client_pk).bind(user).bind(org).bind(scopes).bind(super::resource(s)).bind(method).bind(label)
+        .bind(grant).bind(client_pk).bind(user).bind(org).bind(scopes).bind(super::resource_for(s, audience)).bind(method).bind(label)
         .execute(&mut *c).await?;
     // Tell the user (Studio notice + e-mail): a connection they did not make
     // is noticed at once.
@@ -930,8 +1007,9 @@ pub(super) async fn consent_outcome(
     let org = org.ok_or(Error::Invalid)?;
     let mut tx = s.pool.begin().await?;
     auth::membership(&mut tx, a, org, false).await?;
+    let audience = Audience::from_code(req["rs"].as_str());
     let grant = create_grant(
-        &mut tx, s, client_pk, a.user, org, chosen, "CONSENT", None, true, a.request,
+        &mut tx, s, client_pk, a.user, org, chosen, "CONSENT", None, true, a.request, audience,
     )
     .await?;
     let code = auth::random_token();
@@ -1013,7 +1091,12 @@ pub(super) async fn authenticate_client(
         Ok(None) => return Err(invalid()),
         Err(e) => return Err(Box::new(token_api_error(e))),
     };
-    if c.auth_method != method {
+    // A developer app's secret works in the header or in the form (people
+    // use whatever their OAuth library sends); the others keep the method
+    // they registered.
+    let same_method =
+        c.auth_method == method || (c.kind == "DEV" && c.auth_method != "none" && method != "none");
+    if !same_method {
         return Err(invalid());
     }
     if let (Some(expected), Some(secret)) = (&c.secret_hash, &secret) {
@@ -1098,16 +1181,28 @@ pub async fn token(State(s): State<AppState>, h: HeaderMap, body: Bytes) -> Resp
         }
     };
     let grant_type = form.get("grant_type").map(String::as_str);
-    if !resource_ok(&s, form.get("resource").map(String::as_str)) {
+    let resource = form.get("resource").map(String::as_str);
+    let Some(audience) = requested_audience(&s, resource) else {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_target",
             "Unknown resource.",
         );
+    };
+    // A named resource must be the one the grant was made for; the device
+    // code and password grants exist for MCP only.
+    let want = resource.map(|_| audience);
+    let mcp_only = matches!(grant_type, Some(super::login::DEVICE_GRANT | "password"));
+    if mcp_only && audience != Audience::Mcp {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_target",
+            "This grant type is for the MCP resource only.",
+        );
     }
     let result = match grant_type {
-        Some("authorization_code") => exchange_code(&s, &h, &c, &form).await,
-        Some("refresh_token") => refresh(&s, &h, &c, &form).await,
+        Some("authorization_code") => exchange_code(&s, &h, &c, &form, want).await,
+        Some("refresh_token") => refresh(&s, &h, &c, &form, want).await,
         Some(super::login::DEVICE_GRANT) => super::login::exchange_device_code(&s, &c, &form).await,
         Some("password") => super::login::password_grant(&s, &h, &c, &form).await,
         _ => Err(TokenError::Oauth(
@@ -1199,6 +1294,10 @@ impl From<sqlx::Error> for TokenError {
 }
 pub(super) const BAD_GRANT: TokenError =
     TokenError::Oauth("invalid_grant", "The grant is invalid, expired or revoked.");
+pub(super) const WRONG_TARGET: TokenError = TokenError::Oauth(
+    "invalid_target",
+    "The grant was made for a different resource.",
+);
 
 /// The grant is still usable: not revoked, inside its lifetime, its user and
 /// membership still active, its client not disabled.
@@ -1259,6 +1358,7 @@ async fn exchange_code(
     h: &HeaderMap,
     client: &Client,
     form: &BTreeMap<String, String>,
+    want: Option<Audience>,
 ) -> std::result::Result<Value, TokenError> {
     let code = form.get("code").map(String::as_str).unwrap_or("");
     let verifier = form.get("code_verifier").map(String::as_str).unwrap_or("");
@@ -1270,7 +1370,7 @@ async fn exchange_code(
     }
     let mut tx = s.pool.begin().await?;
     let row = sqlx::query(
-        "SELECT k.grant_id, k.redirect_uri, k.code_challenge, k.expires_at > now() AS live, k.used_at IS NOT NULL AS used, g.client_pk, g.user_id, g.org_id
+        "SELECT k.grant_id, k.redirect_uri, k.code_challenge, k.expires_at > now() AS live, k.used_at IS NOT NULL AS used, g.client_pk, g.user_id, g.org_id, g.resource
            FROM identity.mcp_codes k JOIN identity.mcp_grants g ON g.id=k.grant_id
           WHERE k.code_hash=$1 FOR UPDATE OF k",
     )
@@ -1281,6 +1381,9 @@ async fn exchange_code(
     let grant: Uuid = row.get("grant_id");
     if row.get::<Uuid, _>("client_pk") != client.pk {
         return Err(BAD_GRANT);
+    }
+    if !resource_matches(s, &row, want) {
+        return Err(WRONG_TARGET);
     }
     if row.get::<bool, _>("used") {
         // A replayed code: the first exchange may have leaked (RFC 9700 §4.2.4).
@@ -1320,11 +1423,18 @@ async fn exchange_code(
     Ok(v)
 }
 
+/// RFC 8707 §2.2: a `resource` named at the token endpoint must be the one
+/// the grant was made for (absent: the grant's own).
+fn resource_matches(s: &AppState, row: &sqlx::postgres::PgRow, want: Option<Audience>) -> bool {
+    want.is_none_or(|a| row.get::<String, _>("resource") == super::resource_for(s, a))
+}
+
 async fn refresh(
     s: &AppState,
     h: &HeaderMap,
     client: &Client,
     form: &BTreeMap<String, String>,
+    want: Option<Audience>,
 ) -> std::result::Result<Value, TokenError> {
     let token = form.get("refresh_token").map(String::as_str).unwrap_or("");
     if token.len() != 64 {
@@ -1333,7 +1443,7 @@ async fn refresh(
     let mut tx = s.pool.begin().await?;
     let row = sqlx::query(
         "SELECT t.grant_id, t.expires_at > now() AS live, t.used_at IS NOT NULL AS used,
-                COALESCE(t.used_at > now() - make_interval(secs => $2), false) AS just_used, g.client_pk, g.user_id, g.org_id
+                COALESCE(t.used_at > now() - make_interval(secs => $2), false) AS just_used, g.client_pk, g.user_id, g.org_id, g.resource
            FROM identity.mcp_tokens t JOIN identity.mcp_grants g ON g.id=t.grant_id
           WHERE t.token_hash=$1 AND t.kind='REFRESH' FOR UPDATE OF t",
     )
@@ -1345,6 +1455,9 @@ async fn refresh(
     let grant: Uuid = row.get("grant_id");
     if row.get::<Uuid, _>("client_pk") != client.pk {
         return Err(BAD_GRANT);
+    }
+    if !resource_matches(s, &row, want) {
+        return Err(WRONG_TARGET);
     }
     // The same refresh token twice within seconds is a client racing itself
     // (parallel calls, a retry after a lost response), not theft. Refusing it
@@ -1466,7 +1579,18 @@ pub enum BearerError {
     Api(Error),
 }
 
+/// An MCP request's principal (tokens issued for the MCP resource).
 pub async fn principal(s: &AppState, h: &HeaderMap) -> std::result::Result<Principal, BearerError> {
+    principal_for(s, h, Audience::Mcp).await
+}
+
+/// The principal of a bearer token issued for `audience`; a token of the
+/// other resource is invalid here.
+pub async fn principal_for(
+    s: &AppState,
+    h: &HeaderMap,
+    audience: Audience,
+) -> std::result::Result<Principal, BearerError> {
     let token = h
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
@@ -1497,8 +1621,8 @@ pub async fn principal(s: &AppState, h: &HeaderMap) -> std::result::Result<Princ
     .await
     .map_err(|e| BearerError::Api(e.into()))?
     .ok_or(BearerError::Invalid)?;
-    // Audience (RFC 8707): only tokens issued for this MCP resource.
-    if row.get::<String, _>("resource") != super::resource(s) {
+    // Audience (RFC 8707): only tokens issued for this resource.
+    if row.get::<String, _>("resource") != super::resource_for(s, audience) {
         return Err(BearerError::Invalid);
     }
     let grant: Uuid = row.get("id");
@@ -1851,6 +1975,7 @@ mod tests {
             dynamic_registration: true,
             payout_limit_krw: 0,
             public_daily_user: 150,
+            api_enabled: false,
         };
         assert!(cimd_allowed(&s, "https://chatgpt.com/oauth/client.json"));
         assert!(!cimd_allowed(

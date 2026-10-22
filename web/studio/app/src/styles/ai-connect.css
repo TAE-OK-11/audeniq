@@ -91,3 +91,4 @@
 /* 아는 AI 앱은 공식 로고(BrandMark) — 맨 위는 아바타와 같은 56px 둥근 칸 */
 .aq-flow-avatar-logo{margin:4px 0 20px;border-radius:18px}
 .aq-connect-app-row .aq-flow-brand{border-radius:var(--aq-r-sm)}
+.aq-connect-about{margin:-2px 2px 10px;color:var(--aq-text-3);font-size:13px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}

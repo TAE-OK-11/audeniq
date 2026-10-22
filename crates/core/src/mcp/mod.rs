@@ -14,22 +14,30 @@
 //!   approval of AI submissions.
 //! - [`protocol`]: Streamable HTTP + JSON-RPC (2026-07-28 per-request
 //!   metadata and the earlier `initialize`-based revisions).
+//! - [`rest`]: the same tools as a REST API (`/api/v1`) for apps that
+//!   connect with OAuth 2.0; tokens are issued per resource, so an MCP token
+//!   does not work on the API and an API token not on MCP.
+//! - [`developer`]: developer apps (OAuth clients users register in the
+//!   Studio; private to their owner until an operator approves them).
 //! - [`tools`]: tool schemas and handlers. Handlers only call the existing
 //!   services (`catalog`, `drafts`, `submission`, `uploads`, ...) with an
 //!   [`Actor`](crate::auth::Actor) built from the token, so every
 //!   membership/ACL/state check is the one the Studio goes through.
 //!
 //! Off unless `AUDENIQ_MCP_ENABLED=true`: the endpoints answer 404 until an
-//! operator turns them on. See docs/MCP.md.
+//! operator turns them on; the REST API and developer apps also need
+//! `AUDENIQ_API_ENABLED=true`. See docs/MCP.md and docs/OAUTH_API.md.
 pub mod actions;
 pub mod approvals;
 pub mod connect;
+pub mod developer;
 pub mod files;
 pub mod login;
 pub mod oauth;
 pub mod prompts;
 pub mod protocol;
 pub mod public;
+pub mod rest;
 pub mod safety;
 pub mod tools;
 pub mod voice;
@@ -91,6 +99,8 @@ pub struct Settings {
     pub payout_limit_krw: i64,
     /// Public tools per signed-in user per day (unless overridden).
     pub public_daily_user: i32,
+    /// The REST API (`/api/v1`) and developer apps, on top of `enabled`.
+    pub api_enabled: bool,
 }
 
 impl Settings {
@@ -101,6 +111,7 @@ impl Settings {
             dynamic_registration: false,
             payout_limit_krw: 0,
             public_daily_user: DEFAULT_PUBLIC_DAILY_USER,
+            api_enabled: false,
         }
     }
     pub fn from_env() -> Self {
@@ -140,6 +151,7 @@ impl Settings {
                 .filter(|v| *v >= 0)
                 .unwrap_or(DEFAULT_PAYOUT_LIMIT_KRW),
             public_daily_user: count("AUDENIQ_MCP_PUBLIC_DAILY_USER", DEFAULT_PUBLIC_DAILY_USER),
+            api_enabled: flag("AUDENIQ_API_ENABLED", false),
         }
     }
 }
@@ -171,6 +183,29 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/.well-known/oauth-protected-resource/api/mcp",
             get(oauth::protected_resource_metadata),
+        )
+        .route(
+            "/.well-known/oauth-protected-resource/api/v1",
+            get(oauth::api_protected_resource_metadata),
+        )
+        .route(rest::API_PATH, axum::routing::any(rest::handle))
+        .route("/api/v1/openapi.json", get(rest::openapi))
+        .route("/api/v1/{*rest}", axum::routing::any(rest::handle))
+        .route(
+            "/api/auth/developer-apps",
+            get(developer::list).post(developer::create),
+        )
+        .route(
+            "/api/auth/developer-apps/{id}",
+            axum::routing::patch(developer::update).delete(developer::delete),
+        )
+        .route(
+            "/api/auth/developer-apps/{id}/secret",
+            post(developer::rotate_secret),
+        )
+        .route(
+            "/api/auth/developer-apps/{id}/review",
+            post(developer::request_review),
         )
         .route(
             "/.well-known/oauth-authorization-server",
@@ -242,6 +277,11 @@ pub fn routes() -> Router<AppState> {
 /// token / PKCE / client credentials instead. A browser that does send an
 /// Origin to `/api/mcp` must still send ours (checked in `protocol`).
 pub fn origin_exempt(method: &axum::http::Method, path: &str) -> bool {
+    // Apps call the REST API server to server with a bearer token (a
+    // browser Origin other than ours is refused there, see `rest`).
+    if path == rest::API_PATH || path.starts_with("/api/v1/") {
+        return true;
+    }
     *method == axum::http::Method::POST
         && matches!(
             path,
@@ -258,13 +298,54 @@ pub fn origin_exempt(method: &axum::http::Method, path: &str) -> bool {
 pub(crate) fn issuer(s: &AppState) -> String {
     s.config.origin.trim_end_matches('/').to_string()
 }
+/// Which protected resource a token is for (RFC 8707). Grants record it;
+/// a token works only where it was issued for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Audience {
+    /// The MCP endpoint (`/api/mcp`): AI assistants.
+    Mcp,
+    /// The REST API (`/api/v1`): registered apps.
+    Api,
+}
+
+impl Audience {
+    fn path(self) -> &'static str {
+        match self {
+            Audience::Mcp => MCP_PATH,
+            Audience::Api => rest::API_PATH,
+        }
+    }
+    /// The short name kept in signed consent requests.
+    pub fn code(self) -> &'static str {
+        match self {
+            Audience::Mcp => "mcp",
+            Audience::Api => "api",
+        }
+    }
+    pub fn from_code(v: Option<&str>) -> Self {
+        if v == Some("api") {
+            Audience::Api
+        } else {
+            Audience::Mcp
+        }
+    }
+}
+
+/// The MCP resource (kept for callers that only deal with MCP).
 pub(crate) fn resource(s: &AppState) -> String {
-    format!("{}{MCP_PATH}", issuer(s))
+    resource_for(s, Audience::Mcp)
+}
+pub(crate) fn resource_for(s: &AppState, a: Audience) -> String {
+    format!("{}{}", issuer(s), a.path())
 }
 pub(crate) fn resource_metadata_url(s: &AppState) -> String {
+    resource_metadata_url_for(s, Audience::Mcp)
+}
+pub(crate) fn resource_metadata_url_for(s: &AppState, a: Audience) -> String {
     format!(
-        "{}/.well-known/oauth-protected-resource{MCP_PATH}",
-        issuer(s)
+        "{}/.well-known/oauth-protected-resource{}",
+        issuer(s),
+        a.path()
     )
 }
 

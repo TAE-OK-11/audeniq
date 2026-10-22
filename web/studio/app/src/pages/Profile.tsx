@@ -13,6 +13,7 @@ import { IdentityVerify } from '../components/IdentityVerify';
 import { PasskeySettings } from '../components/PasskeySettings';
 import { ConnectedAccounts } from '../components/ConnectedAccounts';
 import { AiConnections } from '../components/AiConnections';
+import { DeveloperApps } from '../components/DeveloperApps';
 import { TeamSettings } from '../components/TeamSettings';
 import { ArtistPagesCard } from '../components/ArtistPagesCard';
 import { OAUTH_LABEL, takeOAuthResult } from '../api/oauth';
@@ -200,6 +201,7 @@ export function Profile() {
   const [showPasskeys, setShowPasskeys] = useState(false);
   const [showConnected, setShowConnected] = useState(false);
   const [showAi, setShowAi] = useState(false);
+  const [showDev, setShowDev] = useState(false);
   // 홈 '확인할 작업'·왼쪽 메뉴 알림에서 바로 온 경우 — 정산 계좌 등록·본인인증 창을 곧장 연다 (주소의 ?open=은 지운다).
   // 이미 이 화면에 있을 때 눌러도 열리도록 주소가 바뀔 때마다 읽는다
   const [params, setParams] = useSearchParams();
@@ -209,6 +211,7 @@ export function Profile() {
     if (openParam === 'payout') setShowPayment(true);
     else if (openParam === 'verify') setAccountEdit('verify');
     else if (openParam === 'ai' && !MOCK) setShowAi(true);
+    else if (openParam === 'developer' && !MOCK) setShowDev(true);
     setParams({}, { replace: true });
   }, [openParam, setParams]);
   // Google·Apple 연결을 마치고 돌아온 경우
@@ -321,6 +324,13 @@ export function Profile() {
         </section>
       )}
 
+      {!MOCK && (
+        <section className="aq-set-card" aria-labelledby="setDeveloper">
+          <h2 id="setDeveloper">개발자</h2>
+          <SetRow id="accountRowDeveloper" label="개발자 앱" empty="API · OAuth 2.0" onClick={() => setShowDev(true)} />
+        </section>
+      )}
+
       <section className="aq-set-card" aria-labelledby="setLegal">
         <h2 id="setLegal">약관</h2>
         <SetRow label="서비스 이용약관" onClick={() => nav('/terms')} />
@@ -357,6 +367,11 @@ export function Profile() {
       {showAi && (
         <Modal title="연결된 AI 앱" onClose={() => setShowAi(false)} modalClass="aq-set-modal">
           <AiConnections />
+        </Modal>
+      )}
+      {showDev && (
+        <Modal title="개발자 앱" onClose={() => setShowDev(false)} modalClass="aq-set-modal">
+          <DeveloperApps />
         </Modal>
       )}
       {accountEdit === 'verify' && (

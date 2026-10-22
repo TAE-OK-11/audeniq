@@ -13,7 +13,15 @@ export interface AiConnectScope {
 
 export interface AiConnectDetails {
   kind: 'browser' | 'device';
-  client: { name: string; client_id: string; verified_host: string | null; registered: boolean };
+  /** api: 앱이 AUDENIQ API(/api/v1)를 쓰려는 연결 · mcp: AI 어시스턴트 (없으면 mcp) */
+  audience?: 'api' | 'mcp';
+  client: {
+    name: string; client_id: string; verified_host: string | null; registered: boolean;
+    /** Studio에서 사용자가 만든 개발자 앱 */
+    developer?: boolean; website?: string | null; description?: string | null;
+    /** 공개 검토 전이라 만든 사람만 연결할 수 있는 앱 */
+    private?: boolean;
+  };
   requested_from: string | null;
   return_to: string | null;
   device_code: string | null;

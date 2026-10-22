@@ -318,7 +318,17 @@ pub(super) async fn device_outcome(
     let org = org.ok_or(Error::Invalid)?;
     auth::membership(&mut tx, a, org, false).await?;
     let grant = create_grant(
-        &mut tx, s, client_pk, a.user, org, chosen, "DEVICE", None, true, a.request,
+        &mut tx,
+        s,
+        client_pk,
+        a.user,
+        org,
+        chosen,
+        "DEVICE",
+        None,
+        true,
+        a.request,
+        super::Audience::Mcp,
     )
     .await?;
     sqlx::query("UPDATE identity.mcp_device_codes SET grant_id=$2 WHERE device_code_hash=$1")
@@ -473,6 +483,7 @@ pub(super) async fn password_grant(
         None,
         true,
         auth::request_id(h),
+        super::Audience::Mcp,
     )
     .await?;
     let v = issue_tokens(&mut tx, grant, &scopes).await?;
@@ -547,6 +558,7 @@ pub async fn create_connection_token(
         Some(label),
         false,
         a.request,
+        super::Audience::Mcp,
     )
     .await?;
     let token = auth::random_token();
