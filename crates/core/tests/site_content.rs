@@ -293,4 +293,65 @@ async fn content_maintenance_and_site_rules(pool: PgPool) {
     .await;
     let (s, _) = call(&app, "GET", "/api/orgs", json!(null), Some(&artist)).await;
     assert_eq!(s, StatusCode::OK);
+
+    // ---- 운영자 CLI (audeniq-admin maintenance): API·로그인 없이 DB로 시작·연장·종료
+    use audeniq_core::{error::Error, site_content as sc};
+    let started = sc::cli_start(&pool, "ops-kim", Some(30), None, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        (started["kind"].clone(), started["end_unknown"].clone()),
+        (json!("emergency"), json!(false))
+    );
+    assert_eq!(started["body"], sc::EMERGENCY_BODY);
+    // 다른 프로세스(CLI)가 쓴 행: 도는 API는 STATUS_TTL 뒤에 본다
+    sc::reset_maintenance_cache();
+    let (s, v) = call(&app, "GET", "/api/orgs", json!(null), Some(&artist)).await;
+    assert_eq!(
+        (s, v["error"]["code"].clone()),
+        (StatusCode::SERVICE_UNAVAILABLE, json!("MAINTENANCE"))
+    );
+    assert!(matches!(
+        sc::cli_start(&pool, "ops-kim", None, None, None).await,
+        Err(Error::PolicyGate("MAINTENANCE_ALREADY_ACTIVE"))
+    ));
+    let before =
+        chrono::DateTime::parse_from_rfc3339(started["ends_at"].as_str().unwrap()).unwrap();
+    let extended = sc::cli_extend(&pool, "ops-kim", 30).await.unwrap();
+    let after = chrono::DateTime::parse_from_rfc3339(
+        extended["maintenance"]["active"]["ends_at"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!((after - before).num_minutes(), 30);
+    let st = sc::cli_status(&pool).await.unwrap();
+    assert_eq!(st["maintenance"]["active"]["id"], started["id"]);
+    let stopped = sc::cli_stop(&pool, "ops-kim").await.unwrap();
+    assert_eq!(stopped["stopped"], json!([started["id"]]));
+    sc::reset_maintenance_cache();
+    let (s, _) = call(&app, "GET", "/api/orgs", json!(null), Some(&artist)).await;
+    assert_eq!(s, StatusCode::OK);
+    assert!(matches!(
+        sc::cli_stop(&pool, "ops-kim").await,
+        Err(Error::PolicyGate("MAINTENANCE_NOT_ACTIVE"))
+    ));
+    assert!(matches!(
+        sc::cli_start(&pool, "ops-kim", Some(0), None, None).await,
+        Err(Error::InvalidCode("MINUTES_INVALID"))
+    ));
+    let audited: Vec<String> = sqlx::query_scalar(
+        "SELECT action FROM operations.audit_events WHERE actor_service='audeniq-admin:ops-kim' ORDER BY occurred_at, action",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        audited,
+        [
+            "maintenance.started",
+            "maintenance.extended",
+            "maintenance.stopped"
+        ]
+    );
 }

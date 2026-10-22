@@ -83,6 +83,13 @@
 //! audeniq-admin --operator STAFF_EMAIL royalty show ORG REPORT
 //! audeniq-admin --operator STAFF_EMAIL payout return ORDER BANK_REF AMOUNT EVIDENCE_JSON [--refund-fee]
 //! audeniq-admin storage probe [--origin URL] [--archive]   (bucket check: docs/STORAGE_PROVIDERS.md)
+//! audeniq-admin maintenance status
+//! audeniq-admin --operator NAME maintenance start [--minutes N] [--title TEXT] [--message TEXT]
+//!   (emergency maintenance from now; no --minutes = end unknown)
+//! audeniq-admin --operator NAME maintenance extend --minutes N
+//! audeniq-admin --operator NAME maintenance stop
+//!   (straight in the database, so it works while the API, sign-in and the
+//!    admin console are down; the API applies it within seconds)
 use audeniq_core::protected_admin as admin;
 use audeniq_core::protected_names::{Action, Mode};
 
@@ -158,6 +165,56 @@ async fn run(mut args: Vec<String>) -> anyhow::Result<()> {
     let note = take_opt(&mut args, "--note");
     let reason = take_opt(&mut args, "--reason");
     let phrase = take_flag(&mut args, "--phrase");
+    // Server maintenance straight in the database: works while the API, sign-in
+    // and the admin console are unreachable. A running API applies it within
+    // seconds (site_content::STATUS_TTL).
+    if args.first().map(String::as_str) == Some("maintenance") {
+        use audeniq_core::site_content;
+        let minutes = take_opt(&mut args, "--minutes")
+            .map(|m| m.parse::<i64>())
+            .transpose()
+            .map_err(|_| anyhow::anyhow!("--minutes must be a number"))?;
+        let title = take_opt(&mut args, "--title");
+        let message = take_opt(&mut args, "--message");
+        let sub = args.get(1).map(String::as_str);
+        if sub != Some("status") && operator.trim().is_empty() {
+            anyhow::bail!("--operator NAME (or AUDENIQ_OPERATOR) is required for changes");
+        }
+        let pool = audeniq_core::database::connect(&std::env::var("DATABASE_URL")?, 1).await?;
+        let out = match (sub, args.len()) {
+            (Some("status"), 2) => site_content::cli_status(&pool).await?,
+            (Some("start"), 2) => {
+                site_content::cli_start(
+                    &pool,
+                    &operator,
+                    minutes,
+                    title.as_deref(),
+                    message.as_deref(),
+                )
+                .await?
+            }
+            (Some("stop"), 2) => site_content::cli_stop(&pool, &operator).await?,
+            (Some("extend"), 2) => {
+                let m = minutes.ok_or_else(|| anyhow::anyhow!("extend needs --minutes N"))?;
+                site_content::cli_extend(&pool, &operator, m).await?
+            }
+            _ => anyhow::bail!(
+                "usage: audeniq-admin maintenance status\n       audeniq-admin --operator NAME maintenance start [--minutes N] [--title TEXT] [--message TEXT]\n       audeniq-admin --operator NAME maintenance extend --minutes N\n       audeniq-admin --operator NAME maintenance stop"
+            ),
+        };
+        println!("{}", serde_json::to_string_pretty(&out)?);
+        if std::env::var("MAINTENANCE_MODE").is_ok_and(|v| {
+            !matches!(
+                v.trim().to_lowercase().as_str(),
+                "" | "0" | "off" | "false" | "no"
+            )
+        }) {
+            eprintln!(
+                "MAINTENANCE_MODE is on in this environment: that emergency switch keeps the API blocked until it is turned off and the API restarted."
+            );
+        }
+        return Ok(());
+    }
     if args.first().map(String::as_str) == Some("privacy") {
         if operator.trim().is_empty() {
             anyhow::bail!("--operator NAME is required");
