@@ -51,6 +51,9 @@
 //!    credential form sends the e-mail and password to AUDENIQ without the model seeing them.
 //!    Prints the client id and secret once.)
 //! audeniq-admin --operator NAME mcp-client disable CLIENT_ID   (ends all of its connections)
+//! audeniq-admin developer-app list [PRIVATE|REVIEW|PUBLIC]   (apps users registered for the REST API, review queue first)
+//! audeniq-admin --operator NAME developer-app approve CLIENT_ID [--note TEXT]   (any artist can connect it)
+//! audeniq-admin --operator NAME developer-app return CLIENT_ID --note TEXT   (back to its owner only; other artists' connections end)
 //! audeniq-admin mcp-limit list
 //! audeniq-admin --operator NAME mcp-limit set EMAIL N [--note TEXT]
 //! audeniq-admin --operator NAME mcp-limit clear EMAIL
@@ -77,7 +80,7 @@
 use audeniq_core::protected_admin as admin;
 use audeniq_core::protected_names::{Action, Mode};
 
-const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...\n       audeniq-admin [--operator NAME] identifier-issuer <list|register UPC|ISRC PREFIX>\n       audeniq-admin [--operator NAME] partner <list|config-check|status ID|set-dsp ID [DSP_UUID]|probe ID|dpid ID DPID|test-ern ID FILE|test-ack ID FILE|capabilities ID JSON|contract ID REF|go-live ID|suspend ID --reason TEXT|route D-n DIRECT|MERLIN|merlin-eligible D-n true|false>\n       audeniq-admin [--operator NAME] staff <list|grant EMAIL ROLE|revoke EMAIL|reset-mfa EMAIL>\n       audeniq-admin dsp list\n       audeniq-admin [--operator NAME] mcp-client <list|add NAME [--password-grant] [--secret-post] [--redirect-uri URI]...|disable CLIENT_ID>\n       audeniq-admin [--operator NAME] mcp-limit <list|set EMAIL N [--note TEXT]|clear EMAIL>\n       audeniq-admin --operator STAFF_EMAIL payout <list [STATUS]|order REQUEST_ID|approve ORDER_ID|submit ORDER_ID BANK_TX|result ORDER_ID settled|failed|returned|unknown [BANK_TX]|manual ORDER_ID BANK_TX EVIDENCE_JSON_FILE|reissue ORDER_ID|cancel ORDER_ID>\n       audeniq-admin --operator STAFF_EMAIL payout return ORDER_ID BANK_REF AMOUNT EVIDENCE_JSON_FILE [--refund-fee]\n       audeniq-admin --operator STAFF_EMAIL royalty <import ORG DSP START END CUR FILE|match ORG REPORT|receipt ORG REPORT BANK_REF AMOUNT CUR EVIDENCE_JSON_FILE|post ORG REPORT FX_RATE|show ORG REPORT>";
+const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...\n       audeniq-admin [--operator NAME] identifier-issuer <list|register UPC|ISRC PREFIX>\n       audeniq-admin [--operator NAME] partner <list|config-check|status ID|set-dsp ID [DSP_UUID]|probe ID|dpid ID DPID|test-ern ID FILE|test-ack ID FILE|capabilities ID JSON|contract ID REF|go-live ID|suspend ID --reason TEXT|route D-n DIRECT|MERLIN|merlin-eligible D-n true|false>\n       audeniq-admin [--operator NAME] staff <list|grant EMAIL ROLE|revoke EMAIL|reset-mfa EMAIL>\n       audeniq-admin dsp list\n       audeniq-admin [--operator NAME] mcp-client <list|add NAME [--password-grant] [--secret-post] [--redirect-uri URI]...|disable CLIENT_ID>\n       audeniq-admin [--operator NAME] developer-app <list [STATUS]|approve CLIENT_ID [--note TEXT]|return CLIENT_ID --note TEXT>\n       audeniq-admin [--operator NAME] mcp-limit <list|set EMAIL N [--note TEXT]|clear EMAIL>\n       audeniq-admin --operator STAFF_EMAIL payout <list [STATUS]|order REQUEST_ID|approve ORDER_ID|submit ORDER_ID BANK_TX|result ORDER_ID settled|failed|returned|unknown [BANK_TX]|manual ORDER_ID BANK_TX EVIDENCE_JSON_FILE|reissue ORDER_ID|cancel ORDER_ID>\n       audeniq-admin --operator STAFF_EMAIL payout return ORDER_ID BANK_REF AMOUNT EVIDENCE_JSON_FILE [--refund-fee]\n       audeniq-admin --operator STAFF_EMAIL royalty <import ORG DSP START END CUR FILE|match ORG REPORT|receipt ORG REPORT BANK_REF AMOUNT CUR EVIDENCE_JSON_FILE|post ORG REPORT FX_RATE|show ORG REPORT>";
 
 fn take_opt(args: &mut Vec<String>, key: &str) -> Option<String> {
     let i = args.iter().position(|a| a == key)?;
@@ -378,6 +381,40 @@ async fn run(mut args: Vec<String>) -> anyhow::Result<()> {
             (Some("disable"), Some(id), 3) => {
                 login::admin_disable_client(&pool, &operator, id).await?;
                 println!("ok");
+            }
+            _ => anyhow::bail!(USAGE),
+        }
+        return Ok(());
+    }
+    if args.first().map(String::as_str) == Some("developer-app") {
+        use audeniq_core::mcp::developer;
+        let note = take_opt(&mut args, "--note");
+        let pool = audeniq_core::database::connect(&std::env::var("DATABASE_URL")?, 1).await?;
+        match (args.get(1).map(String::as_str), args.get(2), args.len()) {
+            (Some("list"), status, 2 | 3) => {
+                let status = status.map(|v| v.to_ascii_uppercase());
+                if let Some(v) = &status {
+                    anyhow::ensure!(
+                        matches!(v.as_str(), "PRIVATE" | "REVIEW" | "PUBLIC"),
+                        "STATUS is PRIVATE, REVIEW or PUBLIC"
+                    );
+                }
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &developer::admin_list(&pool, status.as_deref()).await?
+                    )?
+                );
+            }
+            (Some(action @ ("approve" | "return")), Some(id), 3) => {
+                anyhow::ensure!(
+                    action == "approve" || note.is_some(),
+                    "returning an app needs --note TEXT for its owner"
+                );
+                let to =
+                    developer::review(&pool, &operator, id, action == "approve", note.as_deref())
+                        .await?;
+                println!("{}", serde_json::json!({"client_id": id, "visibility": to}));
             }
             _ => anyhow::bail!(USAGE),
         }

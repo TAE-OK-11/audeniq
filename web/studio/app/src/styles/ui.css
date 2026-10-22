@@ -940,6 +940,16 @@ summary::-webkit-details-marker{display:none}
 .aq-passkey-list small{color:var(--aq-text-2)}
 /* 이름 아래 작은 줄이 여럿이면 한 줄씩 (연결된 AI 앱: 앱·작업 공간·사용 / 권한) */
 .aq-passkey-list .min-0>small{display:block;margin-top:2px;line-height:1.5}
+/* 개발자 앱 (components/DeveloperApps) — 줄을 펼치면 아래에 관리 칸 */
+.aq-dev-apps .aq-passkey-list li{flex-wrap:wrap}
+.aq-dev-apps .aq-passkey-list li>.min-0{flex:1}
+.aq-dev-detail{flex-basis:100%;display:grid;gap:12px;margin-top:4px;padding-top:12px;border-top:1px solid var(--aq-line)}
+.aq-dev-detail .ui-field{margin:0}
+.aq-dev-detail .ui-callout p{margin:0}
+.aq-dev-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.aq-dev-delete{margin-left:auto;color:var(--aq-red-600)}
+.aq-dev-endpoints{display:grid;gap:10px}
+.aq-dev-endpoints .aq-muted{margin:0}
 .aq-passkeys .aq-row-actions{display:flex;justify-content:flex-end;gap:8px}
 .aq-passkey-btn{margin-top:8px}
 .aq-token-empty{display:grid;gap:4px;padding:16px;border-radius:var(--aq-r-lg);background:var(--aq-surface-2,var(--aq-surface));text-align:center}

@@ -112,6 +112,25 @@ describe('AI app connection page', () => {
     expect(el.textContent).toContain('연결 요청 시간(10분)이 지났어요.');
   });
 
+  it('shows a developer app asking for the API as an app, not an AI assistant', async () => {
+    const app = {
+      ...details, audience: 'api', requested_from: 'myapp.example', return_to: 'myapp.example',
+      client: { name: 'Release Helper', client_id: 'audeniq-app-x', verified_host: null, registered: false,
+        developer: true, website: 'https://www.myapp.example', description: '발매를 준비해요', private: true },
+    };
+    h.req.mockResolvedValueOnce(app).mockResolvedValueOnce({ kind: 'browser', status: 'APPROVED', redirect: 'https://myapp.example/cb?code=x', scopes: ['releases:read'] });
+    await render('?request=abc');
+    expect(el.querySelector('.wizard-top-title')?.textContent).toBe('앱 연결');
+    expect(el.textContent).toContain('myapp.example · 개발자 앱');
+    expect(el.textContent).not.toContain('myapp.example에서 요청');
+    expect(el.textContent).toContain('내 앱');
+    expect(el.textContent).toContain('나만 연결할 수 있어요');
+    expect(el.textContent).toContain('발매를 준비해요');
+    expect(el.textContent).not.toContain('확인하지 못했어요');
+    await click(el.querySelector('#wizardNext'));
+    expect(el.textContent).toContain('Release Helper로 돌아가고 있어요.');
+  });
+
   it('asks for the code when none was given', async () => {
     await render('?device=1');
     expect(el.textContent).toContain('입력해 주세요');
