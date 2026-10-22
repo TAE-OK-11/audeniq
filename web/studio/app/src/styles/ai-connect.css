@@ -67,27 +67,32 @@
   #view-new.aq-connect-view .aq-options{grid-template-columns:1fr!important}
 }
 
-/* 승인 화면 공통 (AiFlowHero·aq-flow-card·AiFlowRows) — 큰 제목 하나, 강조 카드 하나, 줄 목록 하나 */
-.aq-flow-hero{padding-top:8px}
-.aq-flow-mark{display:grid;place-items:center;width:56px;height:56px;margin:0 0 20px;border-radius:18px;background:var(--aq-primary-soft);color:var(--aq-primary-text);font-size:24px;font-weight:800}
-.aq-flow-mark.is-ok{background:var(--aq-green-50);color:var(--aq-green-600)}
-.aq-flow-mark.is-off{background:var(--aq-gray-50);color:var(--aq-text-3)}
-.aq-flow-mark.is-warn{background:var(--aq-amber-50);color:var(--aq-amber-700)}
-.aq-flow-card{display:grid;gap:6px;margin:0 0 8px;padding:20px;border-radius:var(--aq-r-xl);background:var(--aq-blue-50)}
-.aq-flow-card+.aq-flow-card{margin-top:8px}
-.aq-flow-card strong{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:17px;font-weight:700;letter-spacing:-.02em;color:var(--aq-text)}
-.aq-flow-card strong .aq-connect-tag{margin:0}
-.aq-flow-card p{margin:0;color:var(--aq-text-3);font-size:14px;line-height:1.6;word-break:keep-all}
-.aq-flow-card .aq-flow-warn{margin-top:8px;padding-top:12px;border-top:1px solid var(--aq-gray-150);color:var(--aq-amber-700)}
-.aq-flow-rows{margin:16px 0 0;padding:0}
-.aq-flow-rows>div{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:14px 2px;border-bottom:1px solid var(--aq-gray-150);font-size:14px}
-.aq-flow-rows>div:last-child{border-bottom:0}
-.aq-flow-rows dt{flex:none;color:var(--aq-text-3)}
-.aq-flow-rows dd{margin:0;min-width:0;text-align:right;font-weight:600;color:var(--aq-text);white-space:pre-wrap;overflow-wrap:anywhere;word-break:keep-all}
-.aq-flow-fine{margin:12px 2px 0;color:var(--aq-text-3);font-size:13px;line-height:1.6;word-break:keep-all}
-/* 요청을 찾지 못했을 때 — 번호만 단 가벼운 목록 */
-.aq-flow-reasons{display:grid;gap:18px;margin:4px 0 0;padding:0;list-style:none;counter-reset:aqr}
-.aq-flow-reasons li{position:relative;display:grid;gap:2px;padding-left:36px;counter-increment:aqr}
-.aq-flow-reasons li::before{content:counter(aqr);position:absolute;left:0;top:0;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--aq-primary-soft);color:var(--aq-primary-text);font-size:12px;font-weight:800}
-.aq-flow-reasons strong{font-size:15px;font-weight:700;color:var(--aq-text)}
-.aq-flow-reasons span{color:var(--aq-text-3);font-size:14px;line-height:1.55;word-break:keep-all}
+/* 승인 화면 (/ai/approve/:id, /ai/actions/:id) — 스튜디오 디자인 시스템(ui-card·ui-row·ui-icon·ui-badge·ui-tag·ui-kv)으로 짓고
+   여기에는 카드 안 배치만 둔다 */
+.aq-flow-hero>.ui-icon{margin:4px 0 20px}
+.aq-connect-view .aq-flow-card{padding:20px}
+.aq-connect-view .aq-flow-card+.aq-flow-card{margin-top:12px}
+.aq-flow-app{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:14px}
+.aq-flow-app .ui-icon{font-size:18px;font-weight:800}
+.aq-flow-app .ui-row-title{font-size:16px}
+.aq-flow-due{display:flex;align-items:center;gap:6px;margin:14px 0 0;padding-top:14px;border-top:1px solid var(--aq-gray-150);color:var(--aq-text-3);font-size:13px;line-height:1.5}
+.aq-flow-due::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--aq-amber-500,#F59E0B)}
+.aq-flow-card>.ui-box,.aq-flow-card>.ui-list,.aq-flow-card>.ui-kv,.aq-flow-card>.ui-callout{margin-top:16px}
+.aq-flow-card>h3{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0!important;font-size:17px!important}
+.aq-flow-card>h3+p{margin:4px 0 0;color:var(--aq-text-3);font-size:13px}
+.aq-flow-quote small{display:block;margin-bottom:4px;color:var(--aq-text-3);font-size:12px;font-weight:700}
+.aq-flow-quote p{margin:0;color:var(--aq-text);font-size:14px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+.aq-flow-card .ui-row{padding:14px 16px}
+.aq-flow-card .ui-row-title{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.aq-flow-card .ui-row .ui-row-meta{font-size:13px;color:var(--aq-text-3)}
+.aq-flow-scopes{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:14px;font-size:12px;font-weight:700;color:var(--aq-text-3)}
+.aq-flow-scopes>span:first-child{margin-right:2px}
+.aq-flow-card .ui-kv{--cols:2;padding:14px 16px;border-radius:var(--aq-r-lg);background:#fff}
+.aq-flow-card .ui-kv dd{white-space:pre-wrap}
+/* 요청을 찾지 못했을 때 — 흰 줄 카드에 번호 */
+.aq-flow-reasons{counter-reset:aqr}
+.aq-flow-reasons .ui-row{grid-template-columns:auto minmax(0,1fr);counter-increment:aqr}
+.aq-flow-reasons .ui-row::before{content:counter(aqr);display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--aq-primary-soft);color:var(--aq-primary-text);font-size:12px;font-weight:800}
+.aq-flow-reasons .ui-row-meta{font-size:13px;color:var(--aq-text-3)}
+.aq-flow-fine{margin:14px 2px 0;color:var(--aq-text-3);font-size:13px;line-height:1.6;word-break:keep-all}
+.aq-flow-card>:last-child{margin-bottom:0!important}

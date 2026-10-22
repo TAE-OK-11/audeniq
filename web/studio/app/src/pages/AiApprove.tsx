@@ -10,7 +10,8 @@ import { ApiError, errorMessage } from '../api/errors';
 import { aiPermissionRequest, decideAiPermission, SCOPE_HELP, SCOPE_LABEL, type AiPermissionRequest } from '../api/aiConnections';
 import { MOCK } from '../lib/mode';
 import { AiRequestMissing } from '../components/AiRequestMissing';
-import { AiFlowFrame, AiFlowHeader, AiFlowHero, AiFlowLoading, AiFlowPage, AiFlowRows, AiFlowStatusIcon, appInitial, workspaceName } from '../components/AiFlow';
+import { AiFlowFrame, AiFlowHeader, AiFlowHero, AiFlowLoading, AiFlowPage, AiRequestApp, workspaceName } from '../components/AiFlow';
+import { Badge, Card, Tag, type Tone } from '../ui';
 
 const TITLE = '권한 추가 요청';  // 위 막대는 연결 화면과 같은 'AI 앱 연결', 이 이름은 제목 위 작은 글씨로
 /** 돈이 움직이거나 내 이름으로 접수되는 권한 — 한 번 더 확인한다 */
@@ -22,8 +23,14 @@ const DONE_TITLE: Record<Exclude<AiPermissionRequest['status'], 'PENDING'>, stri
   EXPIRED: '요청 시간이 지났어요',
   REVOKED: '이미 끊긴 연결이에요',
 };
-const DONE_TONE: Record<AiPermissionRequest['status'], 'ok' | 'off' | 'warn'> = {
-  PENDING: 'warn', APPROVED: 'ok', REJECTED: 'off', EXPIRED: 'warn', REVOKED: 'warn',
+type Status = AiPermissionRequest['status'];
+const BADGE: Record<Status, [Tone, string]> = {
+  PENDING: ['amber', '답을 기다려요'], APPROVED: ['green', '승인함'], REJECTED: ['gray', '거절함'],
+  EXPIRED: ['gray', '시간 지남'], REVOKED: ['gray', '연결 끊김'],
+};
+const DONE_ICON: Record<Status, { kind: 'ok' | 'off' | 'warn'; tone: Tone }> = {
+  PENDING: { kind: 'warn', tone: 'amber' }, APPROVED: { kind: 'ok', tone: 'green' }, REJECTED: { kind: 'off', tone: 'gray' },
+  EXPIRED: { kind: 'warn', tone: 'gray' }, REVOKED: { kind: 'warn', tone: 'gray' },
 };
 const STATUS_TEXT: Record<AiPermissionRequest['status'], string> = {
   PENDING: '',
@@ -100,38 +107,54 @@ export function AiApprove() {
   const pending = status === 'PENDING';
 
   const until = new Date(r.expires_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-  const tone = DONE_TONE[status];
+  const [badgeTone, badgeText] = BADGE[status];
 
   return (
     <AiFlowPage>
       <AiFlowFrame>
         {pending ? (
           <AiFlowHero
-            mark={appInitial(app)} kicker={TITLE}
+            kicker={TITLE}
             title={`${app}에서\n권한을 더 달라고 해요`}
             sub="승인하면 연결을 끊을 때까지 유지돼요. 내가 요청한 게 아니라면 거절해 주세요."
           />
         ) : (
-          <AiFlowHero mark={<AiFlowStatusIcon kind={tone} />} tone={tone} kicker={TITLE} title={DONE_TITLE[status]} sub={STATUS_TEXT[status]} />
+          <AiFlowHero icon={DONE_ICON[status]} kicker={TITLE} title={DONE_TITLE[status]} sub={STATUS_TEXT[status]} />
         )}
 
-        {r.scopes.map(s => (
-          <div key={s} className="aq-flow-card">
-            <strong>
-              {SCOPE_LABEL[s] ?? s}
-              {STRONG[s] && <span className="aq-connect-tag is-warn">{STRONG[s]}</span>}
-            </strong>
-            {SCOPE_HELP[s] && <p>{SCOPE_HELP[s]}</p>}
-          </div>
-        ))}
+        <AiRequestApp
+          name={app}
+          meta={[workspaceName(r.org_name)]}
+          due={pending ? until : undefined}
+          badge={<Badge tone={badgeTone} dot>{badgeText}</Badge>}
+        >
+          {r.reason && (
+            <div className="ui-box aq-flow-quote">
+              <span><small>요청 이유</small><p>{r.reason}</p></span>
+            </div>
+          )}
+        </AiRequestApp>
 
-        <AiFlowRows rows={[
-          ['AI 앱', app],
-          ['작업 공간', workspaceName(r.org_name)],
-          ...(r.reason ? [['요청 이유', r.reason] as [string, string]] : []),
-          ['지금 권한', r.connection_scopes.map(s => SCOPE_LABEL[s] ?? s).join('\n')],
-          ...(pending ? [['답할 시간', `${until}까지`] as [string, string]] : []),
-        ]} />
+        <Card className="aq-flow-card">
+          <h3>더 달라는 권한</h3>
+          <ul className="ui-list">
+            {r.scopes.map(s => (
+              <li key={s} className="ui-row is-flat">
+                <span className="ui-row-body">
+                  <strong className="ui-row-title">
+                    {SCOPE_LABEL[s] ?? s}
+                    {STRONG[s] && <Tag tone="amber">{STRONG[s]}</Tag>}
+                  </strong>
+                  {SCOPE_HELP[s] && <span className="ui-row-meta"><span>{SCOPE_HELP[s]}</span></span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="aq-flow-scopes">
+            <span>지금 권한</span>
+            {r.connection_scopes.map(s => <Tag key={s} white>{SCOPE_LABEL[s] ?? s}</Tag>)}
+          </p>
+        </Card>
 
         {pending ? (
           <>

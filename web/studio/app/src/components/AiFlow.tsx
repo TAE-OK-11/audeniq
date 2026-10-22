@@ -3,6 +3,7 @@
 // 신청서의 단계 제목, 아래 고정 버튼(step-actions). AI 앱의 앱 안 브라우저에서 한 화면으로 열린다.
 import { useEffect } from 'react';
 import { useAuth } from '../api/auth';
+import { Card, IconTile, type Tone } from '../ui';
 import '../styles/ai-connect.css';
 
 export const workspaceName = (name: string) => (name === 'Personal workspace' ? '내 작업 공간' : name);
@@ -80,13 +81,13 @@ export function AiAppRow({ name, detail, tag }: { name: string; detail?: React.R
   );
 }
 
-/** 승인 화면 맨 위 — 앱 첫 글자(또는 결과 표시)와 큰 제목. 신청서 단계 제목과 같은 글씨 */
-export function AiFlowHero({ mark, tone, kicker, title, sub }: {
-  mark: React.ReactNode; tone?: 'ok' | 'off' | 'warn'; kicker: string; title: React.ReactNode; sub?: React.ReactNode;
+/** 승인 화면 맨 위 — 큰 제목. 처리가 끝났으면 위에 결과 아이콘 칸(IconTile) */
+export function AiFlowHero({ icon, kicker, title, sub }: {
+  icon?: { kind: 'ok' | 'off' | 'warn'; tone: Tone }; kicker: string; title: React.ReactNode; sub?: React.ReactNode;
 }) {
   return (
     <div className="aq-flow-hero">
-      <span className={`aq-flow-mark${tone ? ` is-${tone}` : ''}`} aria-hidden="true">{mark}</span>
+      {icon && <IconTile tone={icon.tone} size="lg"><AiFlowStatusIcon kind={icon.kind} /></IconTile>}
       <AiFlowHeader kicker={kicker} title={title} sub={sub} />
     </div>
   );
@@ -94,12 +95,21 @@ export function AiFlowHero({ mark, tone, kicker, title, sub }: {
 
 export const appInitial = (name: string) => (name.match(/[\p{L}\p{N}]/u)?.[0] ?? 'A').toUpperCase();
 
-/** 신청서 '접수 전 확인'과 같은 줄 목록 — 왼쪽 이름, 오른쪽 값 */
-export function AiFlowRows({ rows }: { rows: [string, React.ReactNode][] }) {
+/** 요청한 앱 카드의 머리 — 아이콘 칸 · 이름 · 작업 공간 · 상태 배지 */
+export function AiRequestApp({ name, meta, badge, due, children }: { name: string; meta: React.ReactNode[]; badge: React.ReactNode; due?: string; children?: React.ReactNode }) {
   return (
-    <dl className="aq-flow-rows">
-      {rows.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
-    </dl>
+    <Card className="aq-flow-card">
+      <div className="aq-flow-app">
+        <IconTile>{appInitial(name)}</IconTile>
+        <span className="ui-row-body">
+          <strong className="ui-row-title">{name}</strong>
+          <span className="ui-row-meta">{meta.map((m, i) => <span key={i}>{m}</span>)}</span>
+        </span>
+        {badge}
+      </div>
+      {due && <p className="aq-flow-due">{due}까지 답해 주세요. 지나면 요청이 사라져요.</p>}
+      {children}
+    </Card>
   );
 }
 
