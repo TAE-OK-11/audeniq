@@ -23,7 +23,7 @@ aws-lc-rs = "1.18.1"
 # Content-MD5 for S3 Object Lock (WORM) uploads; already in the tree via sqlx.
 md5 = { package = "md-5", version = "0.11.0" }
 hmac = "0.13.0"
-base64 = "0.22.1"
+base64 = "0.23.1"
 subtle = "2.6.1"
 # Email notifications over SMTP (AWS SES, OCI Email Delivery): STARTTLS with
 # rustls on aws-lc-rs and the Mozilla roots, no native-tls.

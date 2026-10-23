@@ -45,3 +45,14 @@ export function KeyValue({ items, cols = 3, className }: { items: readonly (read
 export function Card({ children, white, tight, className, as: Tag = 'div' }: { children: ReactNode; white?: boolean; tight?: boolean; className?: string; as?: 'div' | 'section' | 'article' }) {
   return <Tag className={cx('ui-card', white && 'is-white', tight && 'is-tight', className)}>{children}</Tag>;
 }
+
+/** 진행 단계 — 정해진 순서의 일에서 지금 위치. current가 -1이면 아직 시작 전, warn이면 지금 단계가 막혀 있음(보완 필요) */
+export function Steps({ steps, current, warn, label, className }: { steps: readonly ReactNode[]; current: number; warn?: boolean; label?: string; className?: string }) {
+  return (
+    <ol className={cx('ui-steps', className)} style={{ '--steps': steps.length } as CSSProperties} aria-label={label}>
+      {steps.map((s, i) => (
+        <li key={i} className={i < current ? 'is-done' : i === current ? (warn ? 'is-warn' : 'is-current') : undefined} aria-current={i === current ? 'step' : undefined}>{s}</li>
+      ))}
+    </ol>
+  );
+}

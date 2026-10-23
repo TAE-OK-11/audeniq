@@ -71,7 +71,7 @@ pub async fn call(
             tracing::info!(tool = def.name, limit, "mcp_public_limit");
             let mut e = tool_error(
                 "DAILY_LIMIT_REACHED",
-                "Today's limit for AUDENIQ's public information is used up. To use more, the artist asks AUDENIQ support to raise it (create_inquiry, or the support page in AUDENIQ Studio).",
+                "Today's limit for AUDENIQ's public information is used up. To use more, the artist asks AUDENIQ support to raise it (manage_inquiry, or the support page in AUDENIQ Studio).",
             );
             e.details = Some(json!({
                 "limit": limit,
@@ -178,7 +178,7 @@ async fn announcement(s: &AppState, args: &Value) -> std::result::Result<Value, 
     let Some(mut row) = site_content::published_one(s, table, id).await? else {
         return Err(tool_error(
             "NOT_FOUND",
-            "No published notice or event has this id. Call list_announcements for current ones.",
+            "No published notice or event has this id. Call get_audeniq_info for current ones.",
         ));
     };
     row["url"] = json!(link(s, table, id));

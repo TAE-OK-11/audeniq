@@ -394,7 +394,26 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
     // account endpoint lists them all, and answers nothing without a token.
     let (s, _, v) = rpc(&app, None, "tools/list", json!({})).await;
     assert_eq!(s, StatusCode::OK);
-    assert_eq!(v["result"]["tools"].as_array().unwrap().len(), 4);
+    let names: Vec<&str> = v["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["get_audeniq_info"]);
+    // One public tool covers notices, events, the service status and requirements.
+    let (s, _, v) = rpc(
+        &app,
+        None,
+        "tools/call",
+        json!({"name":"get_audeniq_info","arguments":{"view":"service_status"}}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(
+        v["result"]["structuredContent"]["view"], "service_status",
+        "{v}"
+    );
     let (s, h, _) = rpc_at(&app, "/api/mcp", None, "tools/list", json!({})).await;
     assert_eq!(s, StatusCode::UNAUTHORIZED);
     assert!(h.contains_key("www-authenticate"));
@@ -418,13 +437,25 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
     let (s, _, v) = rpc(&app, Some(&c.access), "tools/list", json!({})).await;
     assert_eq!(s, StatusCode::OK);
     let tools = v["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 78);
-    let public = [
-        "get_release_requirements",
-        "list_announcements",
-        "get_announcement",
-        "get_service_status",
-    ];
+    // Operations of the same kind are published as one tool (78 → 25).
+    assert_eq!(tools.len(), 25);
+    let public = ["get_audeniq_info"];
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "get_release",
+        json!({"view": "everything"}),
+    )
+    .await;
+    assert!(err && v["error"]["code"] == "INVALID_ARGUMENTS", "{v}");
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "get_account_context",
+        json!({"view": "members"}),
+    )
+    .await;
+    assert!(!err && v["view"] == "members", "{v}");
     for t in tools {
         assert_eq!(
             t["inputSchema"]["additionalProperties"], false,
@@ -489,6 +520,9 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
     let (s, v) = modern("tools/list", ok_headers("tools/list")).await;
     assert_eq!(s, StatusCode::OK);
     assert_eq!(v["result"]["resultType"], "complete");
+    // 2026-07-28 cacheable results: the same for every user.
+    assert_eq!(v["result"]["cacheScope"], "public");
+    assert_eq!(v["result"]["ttlMs"], 3_600_000);
     let (s, v) = modern("tools/list", ok_headers("server/discover")).await;
     assert_eq!(
         (s, v["error"]["code"].as_i64()),
@@ -561,6 +595,11 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
     // Transport rules: GET → 405, foreign browser Origin → 403, garbage → 400.
     let (s, _, _) = raw(&app, "GET", "/api/mcp", &[], String::new()).await;
     assert_eq!(s, StatusCode::METHOD_NOT_ALLOWED);
+    // DELETE (ending a session, which this server never starts) as well,
+    // not the Studio's cross-site refusal.
+    let (s, h, _) = raw(&app, "DELETE", "/api/mcp", &[], String::new()).await;
+    assert_eq!(s, StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(h["allow"], "POST");
     let (s, _, _) = raw(
         &app,
         "POST",
@@ -580,6 +619,9 @@ async fn discovery_metadata_and_protocol_eras(pool: PgPool) {
         json!([{"jsonrpc":"2.0","id":1,"method":"ping"}]).to_string(),
     )
     .await;
+    // A batch (2025-03-26) is read, and like a single call needs a token.
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+    let (s, _, _) = raw(&app, "POST", "/api/mcp", &[], "\"ping\"".into()).await;
     assert_eq!(s, StatusCode::BAD_REQUEST);
     // Still behind the edge's service secret.
     let r = app
@@ -1323,8 +1365,8 @@ async fn conversational_release_preparation_to_confirmed_submission(pool: PgPool
     let (err, v) = tool(
         &app,
         &c.access,
-        "preview_submission",
-        json!({"release_id": release, "declarations": declarations(true)}),
+        "validate_release",
+        json!({"view": "preview", "release_id": release, "declarations": declarations(true)}),
     )
     .await;
     assert!(!err);
@@ -3254,10 +3296,10 @@ async fn activity_notices_retry_safe_creates_and_studio_approval(pool: PgPool) {
     );
 
     // Retry-safe create: the same client_request_id returns the first draft.
-    let args = json!({"title":"Once","release_type":"SINGLE","artist_name":"Han River","client_request_id":"req-0001-abcd"});
-    let (err, first) = tool(&app, &c.access, "create_release_draft", args.clone()).await;
+    let args = json!({"action":"create","title":"Once","release_type":"SINGLE","artist_name":"Han River","client_request_id":"req-0001-abcd"});
+    let (err, first) = tool(&app, &c.access, "save_release_draft", args.clone()).await;
     assert!(!err, "{first}");
-    let (err, again) = tool(&app, &c.access, "create_release_draft", args).await;
+    let (err, again) = tool(&app, &c.access, "save_release_draft", args).await;
     assert!(!err, "{again}");
     assert_eq!(again["release_id"], first["release_id"]);
     assert_eq!(again["duplicate_request"], true);
@@ -3274,7 +3316,7 @@ async fn activity_notices_retry_safe_creates_and_studio_approval(pool: PgPool) {
         .as_array()
         .unwrap()
         .iter()
-        .find(|t| t["name"] == "create_release_draft")
+        .find(|t| t["name"] == "save_release_draft")
         .unwrap()
         .clone();
     assert!(create["inputSchema"]["properties"]["client_request_id"].is_object());
@@ -3983,34 +4025,34 @@ async fn assistants_send_and_import_files(pool: PgPool) {
     let (err, up) = tool(
         &app,
         &c.access,
-        "start_upload",
-        json!({"kind":"IMAGE","size_bytes":cover.len(),"content_type":"image/png"}),
+        "upload_file",
+        json!({"action":"start","kind":"IMAGE","size_bytes":cover.len(),"content_type":"image/png"}),
     )
     .await;
     assert!(!err, "{up}");
     let key = up["expected_key"].as_str().unwrap().to_string();
     assert_eq!(up["upload"]["method"], "PUT");
-    let done = json!({"upload_session_id": up["upload_session_id"], "asset_id": up["asset_id"], "expected_key": key});
+    let done = json!({"action": "complete", "upload_session_id": up["upload_session_id"], "asset_id": up["asset_id"], "expected_key": key});
     let (_, v) = tool(
         &app,
         &c.access,
-        "get_upload_status",
-        json!({"upload_session_id": up["upload_session_id"]}),
+        "get_file_status",
+        json!({"view": "upload", "upload_session_id": up["upload_session_id"]}),
     )
     .await;
     assert_eq!(v["state"], "WAITING_FOR_FILE", "{v}");
     store.put_signed(&up["upload"], &key, cover).await;
-    let (err, v) = tool(&app, &c.access, "complete_upload", done.clone()).await;
+    let (err, v) = tool(&app, &c.access, "upload_file", done.clone()).await;
     assert!(!err, "{v}");
     assert_eq!(v["state"], "READY", "{v}");
     assert_eq!(v["asset_id"], up["asset_id"]);
-    let (err, again) = tool(&app, &c.access, "complete_upload", done).await;
+    let (err, again) = tool(&app, &c.access, "upload_file", done).await;
     assert!(!err && again["state"] == "READY", "{again}");
     let (_, v) = tool(
         &app,
         &c.access,
-        "get_upload_status",
-        json!({"upload_session_id": up["upload_session_id"]}),
+        "get_file_status",
+        json!({"view": "upload", "upload_session_id": up["upload_session_id"]}),
     )
     .await;
     assert_eq!(v["state"], "READY", "{v}");
@@ -4399,6 +4441,668 @@ async fn workspace_tools_read_state_and_make_small_changes(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn assistants_take_back_requests_the_artist_has_not_answered(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let c = connect(&app, &u, &["scope_write"]).await;
+
+    // An action request: withdrawn, the Studio then refuses to run it.
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "request_approval",
+        json!({"action": "member_invite", "email": "someone@example.test", "role": "VIEWER"}),
+    )
+    .await;
+    let withdrawn = v["request_id"].as_str().unwrap().to_string();
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "cancel_request",
+        json!({"kind": "approval", "request_id": withdrawn}),
+    )
+    .await;
+    assert!(!err && v["status"] == "WITHDRAWN", "{v}");
+    assert_eq!(
+        v["message_ko"],
+        "요청을 취소했어요. 멤버 초대는 진행되지 않아요."
+    );
+    let (_, v) = call(
+        &app,
+        "POST",
+        &format!("/api/auth/ai-action-requests/{withdrawn}/approve"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "AI_REQUEST_WITHDRAWN");
+    // A decided request cannot be withdrawn.
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "request_approval",
+        json!({"action": "member_invite", "email": "other@example.test", "role": "VIEWER"}),
+    )
+    .await;
+    let rejected = v["request_id"].as_str().unwrap().to_string();
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("/api/auth/ai-action-requests/{rejected}/reject"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "cancel_request",
+        json!({"kind": "approval", "request_id": rejected}),
+    )
+    .await;
+    assert!(err && v["error"]["code"] == "AI_REQUEST_DECIDED", "{v}");
+    assert_eq!(v["error"]["details"]["status"], "REJECTED");
+    // Only this connection's own requests.
+    let other = connect(&app, &u, &["scope_write"]).await;
+    let (err, v) = tool(
+        &app,
+        &other.access,
+        "withdraw_action_request",
+        json!({"request_id": rejected}),
+    )
+    .await;
+    assert!(err && v["error"]["code"] == "NOT_FOUND", "{v}");
+
+    // A permission request.
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "request_permission",
+        json!({"scopes": ["settlement:read"], "reason": "정산을 보려고요"}),
+    )
+    .await;
+    let unwanted = v["request_id"].as_str().unwrap().to_string();
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "request_permission",
+        json!({"action": "withdraw", "request_id": unwanted}),
+    )
+    .await;
+    assert!(!err && v["status"] == "WITHDRAWN", "{v}");
+    let (_, v) = call(
+        &app,
+        "POST",
+        &format!("/api/auth/ai-permission-requests/{unwanted}/approve"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "AI_REQUEST_WITHDRAWN");
+
+    // An application waiting for the artist's one-time approval.
+    let (release, token) = Box::pin(previewed_release(
+        &app, &pool, &store, &u, &c.access, "Twice",
+    ))
+    .await;
+    let submit = json!({"release_id": release, "confirmation_token": token,
+        "declarations": declarations(true), "artist_confirmed": true});
+    let (_, v) = tool(&app, &c.access, "submit_release", submit.clone()).await;
+    assert_eq!(v["view"], "pending_approval", "{v}");
+    let held = v["approval_id"].as_str().unwrap().to_string();
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "cancel_request",
+        json!({"kind": "submission", "release_id": release}),
+    )
+    .await;
+    assert!(!err && v["approval_status"] == "WITHDRAWN", "{v}");
+    let (_, list) = call(
+        &app,
+        "GET",
+        "/api/auth/ai-submissions",
+        json!(null),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(list["items"], json!([]), "no longer shown for approval");
+    let (_, v) = call(
+        &app,
+        "POST",
+        &format!("/api/auth/ai-submissions/{held}/approve"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "AI_SUBMISSION_WITHDRAWN");
+    let (_, v) = tool(&app, &c.access, "submit_release", submit).await;
+    assert_eq!(
+        v["approval_status"], "WITHDRAWN",
+        "a retry does not send it again: {v}"
+    );
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "cancel_request",
+        json!({"kind": "submission", "release_id": release}),
+    )
+    .await;
+    assert!(err && v["error"]["code"] == "NOT_FOUND", "{v}");
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM catalog.releases WHERE id=$1::uuid")
+            .bind(&release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(status, "DRAFT");
+}
+
+#[sqlx::test]
+async fn drafts_lose_tracks_and_signing_requests_can_be_cancelled(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let c = connect(&app, &u, &["scope_write"]).await;
+    let (err, rel) = tool(
+        &app,
+        &c.access,
+        "save_release_draft",
+        json!({"action": "create", "title": "Two Songs", "release_type": "EP", "artist_name": "Han River"}),
+    )
+    .await;
+    assert!(!err, "{rel}");
+    let release = rel["release_id"].as_str().unwrap().to_string();
+    let mut tracks = Vec::new();
+    for (n, title) in [(1, "Keep"), (2, "Drop")] {
+        let (err, v) = tool(
+            &app,
+            &c.access,
+            "upsert_track",
+            json!({"release_id": release, "title": title, "track_number": n}),
+        )
+        .await;
+        assert!(!err, "{v}");
+        tracks.push(v["track_id"].as_str().unwrap().to_string());
+    }
+
+    // Removing a track needs the artist's word and leaves the editor's copy in step.
+    let remove = json!({"action": "track", "release_id": release, "track_id": tracks[1], "artist_confirmed": true});
+    let (err, v) = tool(&app, &c.access, "delete_release_draft", remove.clone()).await;
+    assert!(!err, "{v}");
+    let titles: Vec<&str> = v["tracks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|t| t["title"].as_str())
+        .collect();
+    assert_eq!(titles, ["Keep"]);
+    let draft_titles: Vec<String> = sqlx::query_scalar(
+        "SELECT t->>'title' FROM catalog.releases, jsonb_array_elements(draft->'draftTracks') t WHERE id=$1::uuid",
+    )
+    .bind(&release)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(draft_titles, ["Keep"]);
+    let (err, v) = tool(&app, &c.access, "delete_release_draft", remove).await;
+    assert!(err && v["error"]["code"] == "NOT_FOUND", "{v}");
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "delete_release_draft",
+        json!({"action": "track", "release_id": release, "track_id": tracks[0]}),
+    )
+    .await;
+    assert!(err && v["error"]["code"] == "INVALID_ARGUMENTS", "{v}");
+
+    // Read-only views that came from the Studio.
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "get_account_context",
+        json!({"view": "withdrawal_quota"}),
+    )
+    .await;
+    assert!(
+        !err && v["used"] == 0 && v["remaining"] == v["limit"],
+        "{v}"
+    );
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "get_release",
+        json!({"view": "handover", "release_id": release}),
+    )
+    .await;
+    assert!(err, "no transfer was scheduled: {v}");
+
+    // A signing request sent from the Studio can be cancelled by the assistant.
+    let (s, created) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/signing-requests", u.org),
+        json!({"release_id": release, "document_no": Uuid::new_v4(), "document_kind": "composition",
+            "title": "작사·작곡 이용 허락서", "body": "허락서 본문",
+            "rights_holder": "홍길동", "signer_name": "홍길동", "signer_role": "권리자 본인", "channel": "LINK"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{created}");
+    let cancel = json!({"kind": "signing_request", "request_id": created["id"]});
+    let (err, v) = tool(&app, &c.access, "cancel_request", cancel.clone()).await;
+    assert!(!err && v["status"] == "CANCELLED", "{v}");
+    let (err, v) = tool(&app, &c.access, "cancel_request", cancel).await;
+    assert!(err && v["error"]["code"] == "SIGNING_REQUEST_CLOSED", "{v}");
+    let other = user(&app).await;
+    let c2 = connect(&app, &other, &["scope_write"]).await;
+    let (err, _) = tool(
+        &app,
+        &c2.access,
+        "cancel_request",
+        json!({"kind": "signing_request", "request_id": created["id"]}),
+    )
+    .await;
+    assert!(err, "another workspace's request is not reachable");
+}
+
+#[sqlx::test]
+async fn several_rate_buckets_are_counted_in_one_call(pool: PgPool) {
+    database::MIGRATOR.run(&pool).await.unwrap();
+    let key = Uuid::new_v4();
+    let (tight, loose) = (format!("t:{key}"), format!("l:{key}"));
+    let buckets = [(tight.as_str(), 2), (loose.as_str(), 5)];
+    for _ in 0..2 {
+        audeniq_core::auth::rate_all(&pool, &buckets).await.unwrap();
+    }
+    assert!(audeniq_core::auth::rate_all(&pool, &buckets).await.is_err());
+    // Each bucket keeps its own count.
+    assert!(
+        audeniq_core::auth::over_limit(&pool, &loose, 3)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !audeniq_core::auth::over_limit(&pool, &loose, 4)
+            .await
+            .unwrap()
+    );
+    // Three counted so far: the 4th and 5th pass, the 6th is over.
+    for _ in 0..2 {
+        audeniq_core::auth::rate_all(&pool, &[(loose.as_str(), 5)])
+            .await
+            .unwrap();
+    }
+    assert!(
+        audeniq_core::auth::rate_all(&pool, &[(loose.as_str(), 5)])
+            .await
+            .is_err()
+    );
+}
+
+#[sqlx::test]
+async fn batches_and_stream_only_clients_are_answered(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let owner = user(&app).await;
+    let c = connect(&app, &owner, &[]).await;
+    let auth = format!("Bearer {}", c.access);
+    let json_headers = [
+        ("content-type", "application/json"),
+        ("accept", "application/json, text/event-stream"),
+        ("mcp-protocol-version", "2025-03-26"),
+        ("authorization", auth.as_str()),
+    ];
+    // 2025-03-26 batch: one answer per request, none for the notification.
+    let batch = json!([
+        {"jsonrpc":"2.0","id":1,"method":"ping"},
+        {"jsonrpc":"2.0","method":"notifications/initialized"},
+        {"jsonrpc":"2.0","id":"two","method":"tools/call","params":{"name":"get_account_context","arguments":{}}},
+        {"jsonrpc":"2.0","id":3,"method":"no/such"}
+    ]);
+    let (s, _, body) = raw(&app, "POST", "/api/mcp", &json_headers, batch.to_string()).await;
+    assert_eq!(s, StatusCode::OK, "{body}");
+    let v: Value = serde_json::from_str(&body).unwrap();
+    let answers = v.as_array().unwrap();
+    assert_eq!(answers.len(), 3, "{v}");
+    assert_eq!(answers[0]["id"], 1);
+    assert_eq!(answers[1]["id"], "two");
+    assert_eq!(answers[1]["result"]["isError"], false, "{v}");
+    assert_eq!(answers[2]["error"]["code"], -32601);
+    // Without a token the whole batch gets the challenge.
+    let (s, h, _) = raw(
+        &app,
+        "POST",
+        "/api/mcp",
+        &json_headers[..3],
+        batch.to_string(),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+    assert!(h.contains_key("www-authenticate"));
+    let too_many = Value::Array(vec![json!({"jsonrpc":"2.0","id":1,"method":"ping"}); 17]);
+    let (s, _, _) = raw(
+        &app,
+        "POST",
+        "/api/mcp",
+        &json_headers,
+        too_many.to_string(),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+
+    // A client that only takes an event stream gets the answer as one event.
+    let stream_headers = [
+        ("content-type", "application/json"),
+        ("accept", "text/event-stream"),
+        ("authorization", auth.as_str()),
+    ];
+    let (s, h, body) = raw(
+        &app,
+        "POST",
+        "/api/mcp",
+        &stream_headers,
+        json!({"jsonrpc":"2.0","id":9,"method":"tools/list"}).to_string(),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(h["content-type"], "text/event-stream");
+    let data = body
+        .strip_prefix("event: message\ndata: ")
+        .and_then(|b| b.strip_suffix("\n\n"))
+        .expect("one SSE message event");
+    let v: Value = serde_json::from_str(data).unwrap();
+    assert_eq!(v["id"], 9);
+    assert!(v["result"]["tools"].as_array().unwrap().len() > 20);
+    // A refusal keeps its status and its JSON body (it is not a stream).
+    let unauthenticated = json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}).to_string();
+    let (s, h, _) = raw(
+        &app,
+        "POST",
+        "/api/mcp",
+        &stream_headers[..2],
+        unauthenticated,
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+    assert!(h.contains_key("www-authenticate"));
+}
+
+#[sqlx::test]
+async fn invitations_counter_notices_and_proofs_can_be_taken_back(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let c = connect(&app, &u, &["scope_write"]).await;
+
+    // An invitation nobody answered yet.
+    let invitee = user(&app).await;
+    sqlx::query("INSERT INTO identity.memberships(org_id,user_id,role,status,invited_at) VALUES($1,$2,'VIEWER','INVITED',now())")
+        .bind(u.org)
+        .bind(invitee.user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let cancel = json!({"kind": "member_invite", "user_id": invitee.user});
+    let (err, v) = tool(&app, &c.access, "cancel_request", cancel.clone()).await;
+    assert!(!err && v["status"] == "CANCELLED", "{v}");
+    assert_eq!(v["message_ko"], "초대를 취소했어요.");
+    let (err, v) = tool(&app, &c.access, "cancel_request", cancel).await;
+    assert!(
+        err && v["error"]["code"] == "MEMBER_INVITE_NOT_PENDING",
+        "{v}"
+    );
+    let status: String = sqlx::query_scalar(
+        "SELECT status FROM identity.memberships WHERE org_id=$1 AND user_id=$2",
+    )
+    .bind(u.org)
+    .bind(invitee.user)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(status, "REVOKED");
+
+    // A counter notice staff have not decided on.
+    let (_, rel) = tool(
+        &app,
+        &c.access,
+        "save_release_draft",
+        json!({"action": "create", "title": "Claimed", "release_type": "SINGLE", "artist_name": "Han River"}),
+    )
+    .await;
+    let release: Uuid = rel["release_id"].as_str().unwrap().parse().unwrap();
+    let claim = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO portal.infringement_claims(id,claimant_name_cipher,claimant_email_cipher,claimant_role,right_type,work,target,status,org_id,release_id,decided_at,counter_deadline,counter_notice,counter_by,counter_at)
+         VALUES($1,'\\x00','\\x00','RIGHTS_HOLDER','COPYRIGHT','Work','Target','COUNTER_NOTICED',$2,$3,now(),now()+interval '10 days','제가 직접 만든 곡이에요.',$4,now())",
+    )
+    .bind(claim)
+    .bind(u.org)
+    .bind(release)
+    .bind(u.user)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let withdraw = json!({"kind": "counter_notice", "claim_id": claim, "artist_confirmed": true});
+    let (err, v) = tool(&app, &c.access, "cancel_request", withdraw.clone()).await;
+    assert!(!err && v["status"] == "SUSPENDED", "{v}");
+    let (statement, withdrawn): (Option<String>, bool) = sqlx::query_as(
+        "SELECT counter_notice, counter_withdrawn_at IS NOT NULL FROM portal.infringement_claims WHERE id=$1",
+    )
+    .bind(claim)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(
+        withdrawn && statement.is_some(),
+        "the statement stays on record"
+    );
+    let (err, v) = tool(&app, &c.access, "cancel_request", withdraw).await;
+    assert!(
+        err && v["error"]["code"] == "CLAIM_COUNTER_NOT_PENDING",
+        "{v}"
+    );
+    // While the deadline lasts the artist can answer again.
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "get_release",
+        json!({"view": "claims", "release_id": release}),
+    )
+    .await;
+    assert_eq!(v["items"][0]["can_answer"], true, "{v}");
+
+    // A rights proof file sent by mistake.
+    let asset = register_asset(&pool, &store, &u, "licence.pdf", b"%PDF-1.4 test").await;
+    sqlx::query(
+        "UPDATE catalog.assets SET kind='DOCUMENT', content_type='application/pdf' WHERE id=$1",
+    )
+    .bind(asset)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "attach_rights_proof",
+        json!({"release_id": release, "title": "Sample licence", "asset_id": asset, "file_name": "licence.pdf"}),
+    )
+    .await;
+    assert!(!err, "{v}");
+    let document = v["id"].as_str().unwrap().to_string();
+    let back = json!({"kind": "rights_proof", "document_id": document});
+    let (err, v) = tool(&app, &c.access, "cancel_request", back.clone()).await;
+    assert!(!err && v["status"] == "AWAITING_DOCUMENTS", "{v}");
+    let (status, file): (String, Option<Uuid>) =
+        sqlx::query_as("SELECT status, asset_id FROM portal.documents WHERE id=$1::uuid")
+            .bind(&document)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!((status.as_str(), file), ("AWAITING_DOCUMENTS", None));
+    let (err, v) = tool(&app, &c.access, "cancel_request", back).await;
+    assert!(err && v["error"]["code"] == "DOCUMENT_NOT_EDITABLE", "{v}");
+}
+
+/// A 1×1 PNG, as a signature pad sends it.
+const GUARDIAN_SIG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+#[sqlx::test]
+async fn a_minors_application_waits_for_the_guardian_in_the_studio(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    // Even a connection that may submit on its own holds a minor's application.
+    let c = connect(&app, &u, &["scope_write", "scope_submit"]).await;
+    let (release, _) = Box::pin(previewed_release(
+        &app, &pool, &store, &u, &c.access, "Teen",
+    ))
+    .await;
+    let mut minor = declarations(true);
+    minor["adult_confirmed"] = json!(false);
+
+    // No guardian named yet.
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "validate_release",
+        json!({"view": "preview", "release_id": release, "declarations": minor}),
+    )
+    .await;
+    let codes: Vec<&str> = v["blocking"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|i| i["code"].as_str())
+        .collect();
+    assert!(codes.contains(&"GUARDIAN_DETAILS_REQUIRED"), "{v}");
+    assert!(v["confirmation_token"].is_null());
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "save_release_draft",
+        json!({"action": "special_options", "release_id": release, "artist_confirmed": true,
+            "minor": {"is_minor": true, "guardian_name": "김보호", "guardian_relation": "모", "guardian_contact": "010-0000-0000"}}),
+    )
+    .await;
+    assert!(!err, "{v}");
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "validate_release",
+        json!({"view": "preview", "release_id": release, "declarations": minor}),
+    )
+    .await;
+    assert_eq!(v["guardian_consent_required"], true, "{v}");
+    let token = v["confirmation_token"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{v}"))
+        .to_string();
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "submit_release",
+        json!({"release_id": release, "confirmation_token": token, "declarations": minor, "artist_confirmed": true}),
+    )
+    .await;
+    assert!(!err && v["view"] == "pending_approval", "{v}");
+    assert_eq!(v["guardian_consent_required"], true);
+    let held = v["approval_id"].as_str().unwrap().to_string();
+
+    // Approving before the guardian consents is refused.
+    let approve = format!("/api/auth/ai-submissions/{held}/approve");
+    let (_, v) = call(&app, "POST", &approve, json!({}), Some(&u)).await;
+    assert_eq!(v["error"]["code"], "GUARDIAN_CONSENT_REQUIRED", "{v}");
+
+    // The Studio opens the guardian's link; the guardian verifies and signs.
+    let (s, link) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/releases/{release}/guardian-consent", u.org),
+        json!({"guardian_name": "김보호", "relation": "모", "channel": "IN_PERSON"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{link}");
+    let sign = format!("/api/sign/{}", link["token"].as_str().unwrap());
+    // SAFETY: no other test in this binary reads the provider variable.
+    unsafe { std::env::set_var("IDENTITY_PROVIDER", "test") };
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("{sign}/identity"),
+        json!({"transaction_id": "test:김보호:1982-03-03"}),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    sqlx::query("INSERT INTO catalog.inline_file_safety(source_sha256, rule_version) VALUES($1,'1') ON CONFLICT DO NOTHING")
+        .bind(audeniq_core::domain::sha256_hex(GUARDIAN_SIG))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("{sign}/sign"),
+        json!({"signature": GUARDIAN_SIG, "consents": {"document": true, "electronic_signature": true, "privacy": true}}),
+        None,
+    )
+    .await;
+    unsafe { std::env::remove_var("IDENTITY_PROVIDER") };
+    assert_eq!(s, StatusCode::OK, "{v}");
+
+    // The assistant sees what is left: the certificate, which it can attach.
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "get_release",
+        json!({"view": "guardian_consent", "release_id": release}),
+    )
+    .await;
+    assert_eq!(
+        (v["ready"].clone(), v["requests"][0]["status"].clone()),
+        (json!(false), json!("SIGNED")),
+        "{v}"
+    );
+    let document = v["relation_document"]["id"].clone();
+    let file = register_asset(&pool, &store, &u, "family.pdf", b"%PDF-1.4 family").await;
+    sqlx::query(
+        "UPDATE catalog.assets SET kind='DOCUMENT', content_type='application/pdf' WHERE id=$1",
+    )
+    .bind(file)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (err, v) = tool(
+        &app,
+        &c.access,
+        "attach_rights_proof",
+        json!({"document_id": document, "asset_id": file, "file_name": "family.pdf"}),
+    )
+    .await;
+    assert!(!err, "{v}");
+    let (_, v) = tool(
+        &app,
+        &c.access,
+        "get_release",
+        json!({"view": "guardian_consent", "release_id": release}),
+    )
+    .await;
+    assert_eq!(v["ready"], true, "{v}");
+
+    // Now the artist's approval submits it as a minor's application.
+    let (s, v) = call(&app, "POST", &approve, json!({}), Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["status"], "APPROVED");
+    let path: String = sqlx::query_scalar(
+        "SELECT cp.body->>'minority_path' FROM catalog.application_revisions ar JOIN catalog.consent_packages cp ON cp.package_hash = ar.body->>'consent_package_hash' WHERE ar.release_id=$1::uuid",
+    )
+    .bind(&release)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(path, "GUARDIAN");
+}
+
+#[sqlx::test]
 async fn risky_actions_wait_for_one_studio_approval(pool: PgPool) {
     let (app, _) = app(pool.clone()).await;
     let u = user(&app).await;
@@ -4513,8 +5217,8 @@ async fn risky_actions_wait_for_one_studio_approval(pool: PgPool) {
     let (_, v) = tool(
         &app,
         &c.access,
-        "get_action_request",
-        json!({"request_id": id}),
+        "get_approval_status",
+        json!({"kind": "action", "request_id": id}),
     )
     .await;
     assert_eq!(v["status"], "DONE", "{v}");

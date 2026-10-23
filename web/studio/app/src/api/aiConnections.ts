@@ -130,7 +130,7 @@ export const approveAiSubmission = (id: string) =>
   req<{ status: string }>(`/api/auth/ai-submissions/${encodeURIComponent(id)}/approve`, { method: 'POST', body: {} });
 /** AI 앱이 연결에 권한을 더 달라고 한 요청 (crates/core/src/mcp/approvals.rs) */
 export interface AiPermissionRequest {
-  id: string; status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'REVOKED';
+  id: string; status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'REVOKED' | 'WITHDRAWN';
   scopes: string[]; reason: string; client_name: string; org_id: string; org_name: string;
   created_at: string; expires_at: string; decided_at: string | null;
   connection_scopes: string[]; connection_label: string | null; connection_revoked: boolean;
@@ -145,7 +145,7 @@ export const decideAiPermission = (id: string, approve: boolean) =>
 /** AI 앱이 요청한 작업 (스튜디오에서 한 번 승인해야 실행돼요) — crates/core/src/mcp/actions.rs */
 export interface AiActionRequest {
   id: string; action: string;
-  status: 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'REJECTED' | 'EXPIRED' | 'REVOKED';
+  status: 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'REJECTED' | 'EXPIRED' | 'REVOKED' | 'WITHDRAWN';
   summary: { title: string; lines: { label: string; value: string }[]; warning: string };
   client_name: string; org_id: string; org_name: string; release_id: string | null;
   created_at: string; expires_at: string; decided_at: string | null;

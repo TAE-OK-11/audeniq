@@ -57,7 +57,9 @@ admin() {
 recipients() {
   local f
   f=${BACKUP_RECIPIENTS_FILE:-$(get BACKUP_RECIPIENTS_FILE)}
-  [ -n "$f" ] && [ -f "$f" ] || die "BACKUP_RECIPIENTS_FILE(age 공개키) 없음"
+  if [ -z "$f" ] || [ ! -f "$f" ]; then
+    die "BACKUP_RECIPIENTS_FILE(age 공개키) 없음"
+  fi
   command -v age >/dev/null || die "age가 설치돼 있어야 해요"
   age -R "$f" </dev/null >/dev/null
   printf '%s' "$f"
@@ -81,6 +83,8 @@ case "${1:-}" in
   daily)
     admin archive anchor
     admin seal verify
+    # 이름이 고정 형식(audeniq_prod-*.dump.age)이라 ls -t로 최신 파일을 고른다
+    # shellcheck disable=SC2012
     latest=$(ls -1t "$BACKUP_DIR"/audeniq_prod-*.dump.age 2>/dev/null | head -n 1 || true)
     if [ -n "$latest" ]; then
       upload "$latest" "backups/$(basename "$latest")" 35

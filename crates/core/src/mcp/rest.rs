@@ -53,6 +53,11 @@ pub const ROUTES: &[Route] = &[
     r("GET", "/me", "get_account_context"),
     r("GET", "/members", "list_members"),
     r("POST", "/members/invitations", "request_member_invite"),
+    r(
+        "DELETE",
+        "/members/invitations/{user_id}",
+        "cancel_member_invite",
+    ),
     r("GET", "/platforms", "list_distribution_platforms"),
     r("GET", "/requirements", "get_release_requirements"),
     r("GET", "/status", "get_service_status"),
@@ -62,6 +67,12 @@ pub const ROUTES: &[Route] = &[
     r("POST", "/notifications/read", "mark_notifications_read"),
     r("GET", "/documents", "list_documents"),
     r("GET", "/signing-requests", "list_signing_requests"),
+    r(
+        "DELETE",
+        "/signing-requests/{request_id}",
+        "cancel_signing_request",
+    ),
+    r("GET", "/withdrawal-quota", "get_withdrawal_quota"),
     // Releases
     r("GET", "/releases", "list_releases"),
     r("POST", "/releases", "create_release_draft"),
@@ -69,6 +80,11 @@ pub const ROUTES: &[Route] = &[
     r("PATCH", "/releases/{release_id}", "update_release_draft"),
     r("DELETE", "/releases/{release_id}", "delete_release_draft"),
     r("POST", "/releases/{release_id}/tracks", "upsert_track"),
+    r(
+        "DELETE",
+        "/releases/{release_id}/tracks/{track_id}",
+        "remove_track",
+    ),
     r(
         "PUT",
         "/releases/{release_id}/tracks/{track_id}/credits",
@@ -103,6 +119,21 @@ pub const ROUTES: &[Route] = &[
         "GET",
         "/releases/{release_id}/submission",
         "get_submission_status",
+    ),
+    r(
+        "DELETE",
+        "/releases/{release_id}/submission",
+        "withdraw_pending_submission",
+    ),
+    r(
+        "GET",
+        "/releases/{release_id}/handover",
+        "get_release_handover",
+    ),
+    r(
+        "GET",
+        "/releases/{release_id}/guardian-consent",
+        "get_guardian_consent",
     ),
     r(
         "GET",
@@ -173,6 +204,11 @@ pub const ROUTES: &[Route] = &[
         "request_counter_notice",
     ),
     r(
+        "DELETE",
+        "/infringement-claims/{claim_id}/counter-notice",
+        "withdraw_counter_notice",
+    ),
+    r(
         "POST",
         "/releases/{release_id}/withdrawal",
         "request_release_withdrawal",
@@ -201,6 +237,11 @@ pub const ROUTES: &[Route] = &[
     ),
     r("GET", "/assets/{asset_id}/checks", "get_file_checks"),
     r("POST", "/rights-proofs", "attach_rights_proof"),
+    r(
+        "DELETE",
+        "/rights-proofs/{document_id}",
+        "withdraw_rights_proof",
+    ),
     // Inquiries and platform requests
     r("GET", "/inquiries", "list_inquiries"),
     r("POST", "/inquiries", "create_inquiry"),
@@ -241,7 +282,17 @@ pub const ROUTES: &[Route] = &[
         "/permission-requests/{request_id}",
         "get_permission_request",
     ),
+    r(
+        "DELETE",
+        "/permission-requests/{request_id}",
+        "withdraw_permission_request",
+    ),
     r("GET", "/action-requests/{request_id}", "get_action_request"),
+    r(
+        "DELETE",
+        "/action-requests/{request_id}",
+        "withdraw_action_request",
+    ),
 ];
 
 fn enabled(s: &AppState) -> bool {
