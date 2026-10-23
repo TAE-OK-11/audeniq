@@ -6,6 +6,8 @@ import { errorMessage } from '../api/errors';
 import { MOCK } from '../lib/mode';
 import { useToast } from './Toast';
 import { ManageHead } from './ManageHead';
+import { Glyph } from './Glyph';
+import { Callout, IconTile, Steps, Tag } from '../ui';
 
 interface Pitch {
   id: string; track_id: string; track_title: string; description: string; status: string;
@@ -30,6 +32,9 @@ const BADGE: Record<string, { tone: 'blue' | 'violet' | 'green' | 'gray'; label:
   PITCHED: { tone: 'blue', label: '플랫폼 전달' }, SELECTED: { tone: 'green', label: '선정' },
   NOT_SELECTED: { tone: 'gray', label: '미선정' },
 };
+/** 보낸 피칭이 지나는 길 — 선정·미선정은 마지막 단계의 결과 */
+const PITCH_STEPS = ['접수', '담당자 검토', '플랫폼 전달', '선정 결과'];
+const PITCH_STEP: Record<string, number> = { SUBMITTED: 0, IN_REVIEW: 1, PITCHED: 2, SELECTED: 3, NOT_SELECTED: 3 };
 const PLATFORM_KO: Record<string, string> = {
   spotify: 'Spotify', apple: 'Apple Music', melon: '멜론', genie: '지니', bugs: '벅스', flo: 'FLO', vibe: 'VIBE', youtube: 'YouTube Music',
 };
@@ -80,13 +85,28 @@ export function PitchCard({ releaseId }: { releaseId: string }) {
       <ManageHead id="pitchHeading" icon="star" title="플레이리스트 피칭" status={active ? BADGE[p.status] ?? null : null} />
       <p className="ui-field-help">대표곡 하나를 플랫폼 에디터에게 소개해요. 발매일 {st.lead_days}일 전까지 보내야 하고, 선정 여부는 플랫폼이 정해요.</p>
       {active && (
-        <div className="aq-claim-status">
-          <p className="small"><b>{p.track_title}</b> <span className="muted">· {STATUS[p.status] ?? p.status}</span>
-            {(p.status === 'SUBMITTED' || p.status === 'IN_REVIEW') && <button type="button" className="ui-btn is-text is-sm" onClick={() => void withdraw()}>피칭 취소</button>}
-          </p>
-          {p.platforms.length > 0 && <p className="small muted">전달한 플랫폼: {p.platforms.map(x => PLATFORM_KO[x] ?? x).join(', ')}</p>}
-          {p.result && <p className="small">{p.result}</p>}
-          {p.staff_note && <p className="small muted">{p.staff_note}</p>}
+        // 보낸 뒤 — 어떤 곡을 보냈는지(곡 줄), 지금 어디쯤인지(단계), 어디에 전달했는지(플랫폼), 결과·담당자 메모(알림 상자)
+        <div className="aq-pitch-status">
+          <div className="ui-list">
+            <div className="ui-row">
+              <IconTile size="sm"><Glyph name="music" size={16} /></IconTile>
+              <span className="ui-row-body min-0">
+                <b className="ui-row-title">{p.track_title}</b>
+                <span className="ui-row-meta">{STATUS[p.status] ?? p.status}</span>
+              </span>
+              {(p.status === 'SUBMITTED' || p.status === 'IN_REVIEW') && (
+                <span className="ui-row-end"><button type="button" className="ui-btn is-white is-sm" onClick={() => void withdraw()}>피칭 취소</button></span>
+              )}
+            </div>
+          </div>
+          <Steps steps={PITCH_STEPS} current={PITCH_STEP[p.status] ?? 0} label="피칭 진행 단계" />
+          {p.platforms.length > 0 && (
+            <div className="aq-pitch-platforms" aria-label="전달한 플랫폼">
+              {p.platforms.map(x => <Tag key={x}>{PLATFORM_KO[x] ?? x}</Tag>)}
+            </div>
+          )}
+          {p.result && <Callout tone={p.status === 'SELECTED' ? 'success' : 'neutral'}>{p.result}</Callout>}
+          {p.staff_note && <Callout tone="info">{p.staff_note}</Callout>}
         </div>
       )}
       {tooLate && <p className="small muted">발매일까지 {Math.max(st.days_until_release ?? 0, 0)}일 남아 이번 발매는 피칭할 수 없어요. 다음 발매는 일찍 신청해 주세요.</p>}
