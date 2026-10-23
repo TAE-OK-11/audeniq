@@ -10,9 +10,8 @@ import { useDocs } from '../store/docs';
 import { useBalance } from '../store/settlement';
 import { useAsync } from '../hooks/useAsync';
 import { SkeletonBlock, SkeletonRows } from '../components/Skeleton';
-import { useSmoothHeight } from '../hooks/useSmoothHeight';
 import { prefetchRelease } from '../api/prefetch';
-import { Badge, CountUp, StatTile, Steps } from '../ui';
+import { Badge, CountUp } from '../ui';
 import { Money } from '../components/Money';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { latestSummary, periodLabel } from '../data/reports';
@@ -25,6 +24,7 @@ import { Glyph } from '../components/Glyph';
 import { josa } from '../lib/josa';
 import { RELEASE_STEPS, dDayLabel, releaseStep, upcomingRelease } from '../lib/home';
 import { useHomeSignals } from '../hooks/useHomeSignals';
+import { useLandingReveal } from '../hooks/useLandingReveal';
 import { MOCK } from '../lib/mode';
 import type { Release } from '../api/types';
 
@@ -102,66 +102,76 @@ function MiniTrend({ data }: { data: { period: string; revenue: number }[] }) {
   );
 }
 
-/** 정산 — 받을 수 있는 금액과 다음 할 일(계좌 등록·지급 요청). 아직 돈이 하나도 없으면 숨긴다 */
-function MoneyCard({ payable, pending, held, minimum, registered }: {
-  payable: number; pending: number; held: number; minimum: number; registered: boolean;
-}) {
-  const navigate = useNavigate();
-  // 체험 모드의 used는 지난 지급 요청 합계라 '처리 중'이 아니다
-  const processing = MOCK ? 0 : pending;
-  if (payable <= 0 && processing <= 0 && held <= 0) return null;
-  const canRequest = registered && payable >= minimum && payable > 0;
-  const hint = !registered && payable > 0 ? '계좌를 등록하면 지급을 요청할 수 있어요.'
-    : registered && payable > 0 && payable < minimum ? `${money(minimum)}부터 지급을 요청할 수 있어요.`
-    : [processing > 0 && `지급 처리 중 ${money(processing)}`, held > 0 && `보류 ${money(held)}`].filter(Boolean).join(' · ') || undefined;
-  // 계좌 등록은 '확인할 작업'에 이미 있다 — 여기서는 지급 요청만 (한 화면에 같은 일을 두 번 두지 않는다)
-  const action = canRequest ? { to: '/settlement', label: '지급 요청하기' } : undefined;
+const ARROW = <Glyph name="arrow-up-right" size={16} />;
+
+/** 홍보 페이지 섹션 머리 — 파란 작은 분류 글자 + 큰 제목 (+ 오른쪽 링크) */
+function Head({ eyebrow, title, sub, link, delay = 0 }: { eyebrow: string; title: ReactNode; sub?: ReactNode; link?: { to: string; label: string }; delay?: number }) {
   return (
-    <section className="ui-card aq-home-money" aria-labelledby="moneyTitle">
-      <div className="ui-section-head">
-        <h2 id="moneyTitle">정산</h2>
-        <button type="button" className="aq-head-link" onClick={() => navigate('/settlement')}>정산 보기<Glyph name="chevron-right" size={14} /></button>
+    <div className="hm-head">
+      <div className="min-0">
+        <p className="hm-eyebrow" data-reveal data-delay={delay}>{eyebrow}</p>
+        <h2 data-reveal data-delay={delay + 65}>{title}</h2>
+        {sub && <p className="hm-sub" data-reveal data-delay={delay + 130}>{sub}</p>}
       </div>
-      <StatTile label="받을 수 있는 금액" value={<CountUp value={payable} format={num} />} unit="원" hint={hint} />
-      {action && <Link className="ui-btn is-white is-block" to={action.to} onPointerEnter={() => prefetchRoute(action.to)}>{action.label}</Link>}
+      {link && <Link className="hm-link" to={link.to} onPointerEnter={() => prefetchRoute(link.to)}>{link.label}<Glyph name="arrow-right" size={14} /></Link>}
+    </div>
+  );
+}
+
+const STEP_NOTE = ['신청서를 받았어요', 'AUDENIQ이 확인해요', '플랫폼에 보낼 준비', '플랫폼에 공개'];
+
+/** 다가오는 발매 — 홍보 페이지의 여정 줄(01 → 04)로 지금 단계 */
+function Journey({ release: r }: { release: Release }) {
+  const step = releaseStep(r.status);
+  const live = r.livePlatforms?.length ?? 0;
+  return (
+    <section className="hm-section" aria-labelledby="hmNext">
+      <Head eyebrow={r.status === 'live' ? '최근 발매' : '다가오는 발매'} title={<span id="hmNext">{r.title || '제목 없는 발매'}</span>}
+        sub={<>{r.artist || '아티스트 없음'} · {r.track_count}곡{r.release_date && <> · <span className="hm-pill">{dDayLabel(r.release_date)}</span></>}</>}
+        link={{ to: `/releases/${r.id}`, label: '자세히' }} />
+      <ol className="hm-journey" aria-label="발매 진행 단계">
+        {RELEASE_STEPS.map((label, i) => {
+          const warn = i === step && r.status === 'needs';
+          const cls = i < step ? 'is-done' : i === step ? (warn ? 'is-warn' : 'is-current') : '';
+          return (
+            <li key={label} className={cls} aria-current={i === step ? 'step' : undefined} data-reveal data-delay={i * 70}>
+              <span>{i < step ? <CheckIcon size={12} /> : `0${i + 1}`}</span>
+              <strong>{warn ? '보완 필요' : label}</strong>
+              <small>{warn ? '고치면 검토를 이어서 해요' : i === 3 && r.status === 'live' && live ? `플랫폼 ${live}곳` : STEP_NOTE[i]}</small>
+            </li>
+          );
+        })}
+      </ol>
     </section>
   );
 }
 
-/** 다가오는 발매 — '내 발매'와 같은 줄에 남은 날, 아래에 지금 단계 (접수 → 검토 → 배급 승인 → 발매) */
-function UpcomingCard({ release: r }: { release: Release }) {
-  const navigate = useNavigate();
-  const live = r.livePlatforms?.length ?? 0;
-  const note = r.status === 'live' ? (live > 0 ? `플랫폼 ${live}곳에 올라갔어요.` : '')
-    : r.status === 'scheduled' ? '배급을 승인했어요. 발매일에 맞춰 플랫폼에 보내요.'
-    : r.status === 'needs' ? '보완하면 검토를 이어서 해요.' : '';
+/** 정산 — 홍보 페이지의 남색 패널. 아직 돈이 하나도 없으면 숨긴다 */
+function MoneyPanel({ payable, pending, held, minimum, registered }: { payable: number; pending: number; held: number; minimum: number; registered: boolean }) {
+  // 체험 모드의 used는 지난 지급 요청 합계라 '처리 중'이 아니다
+  const processing = MOCK ? 0 : pending;
+  if (payable <= 0 && processing <= 0 && held <= 0) return null;
+  const canRequest = registered && payable >= minimum && payable > 0;
+  const note = !registered ? '계좌를 등록하면 지급을 요청할 수 있어요.'
+    : payable < minimum ? `${money(minimum)}부터 지급을 요청할 수 있어요.`
+    : '등록한 계좌로 지급을 요청할 수 있어요.';
+  const pills = [processing > 0 && `지급 처리 중 ${money(processing)}`, held > 0 && `보류 ${money(held)}`].filter(Boolean) as string[];
   return (
-    <section className="ui-card aq-home-upcoming" aria-labelledby="nextTitle">
-      <div className="ui-section-head">
-        <h2 id="nextTitle">{r.status === 'live' ? '최근 발매' : '다가오는 발매'}</h2>
-        <button type="button" className="aq-head-link" onClick={() => navigate(`/releases/${r.id}`)}>자세히<Glyph name="chevron-right" size={14} /></button>
+    <section className="hm-navy" aria-labelledby="hmMoney" data-reveal>
+      <p className="hm-eyebrow" id="hmMoney">받을 수 있는 금액</p>
+      <strong className="hm-amount"><CountUp value={payable} format={num} /><small>원</small></strong>
+      <p>{note}</p>
+      {pills.length > 0 && <div className="hm-pills">{pills.map(t => <span key={t} className="hm-pill is-dark">{t}</span>)}</div>}
+      <div className="hm-actions">
+        {canRequest && <Link className="hm-button is-white" to="/settlement" onPointerEnter={() => prefetchRoute('/settlement')}>지급 요청하기<span>{ARROW}</span></Link>}
+        <Link className="hm-link is-dark" to="/settlement">정산 보기<Glyph name="arrow-right" size={14} /></Link>
       </div>
-      <div className="ui-list">
-        <Link to={`/releases/${r.id}`} className="release-row ui-row studio-album-row aq-row-link" onPointerDown={() => prefetchRelease(r.id)}>
-          <ReleaseCover id={r.id} src={r.coverData} />
-          <div className="min-0">
-            <span className="ui-row-title">{r.title || '제목 없는 발매'}</span>
-            <span className="ui-row-meta">{r.artist || '아티스트 없음'} · {r.track_count}곡 · {r.release_date || '발매일 아직 없음'}</span>
-          </div>
-          {r.release_date && (
-            <div className="ui-row-end">
-              <Badge tone={r.status === 'live' ? 'green' : r.status === 'needs' ? 'amber' : 'blue'}>{dDayLabel(r.release_date)}</Badge>
-            </div>
-          )}
-        </Link>
-      </div>
-      <Steps steps={RELEASE_STEPS.map((s, i) => (i === releaseStep(r.status) && r.status === 'needs' ? '보완 필요' : s))} current={releaseStep(r.status)} warn={r.status === 'needs'} label="발매 진행 단계" />
-      {note && <p className="ui-row-meta">{note}</p>}
     </section>
   );
 }
 
 export function Dashboard() {
+  const rootRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const profile = useProfile();
   const docs = useDocs();
@@ -171,8 +181,6 @@ export function Dashboard() {
   // 할 일은 앞의 몇 개만 — 나머지는 '더 보기'로 (한 화면에 일곱 줄씩 쌓이면 무엇부터 할지 흐려진다)
   const [allTasks, setAllTasks] = useState(false);
   const { data: releases = [], loading, error, reload } = useAsync(() => api.listReleases(), [], { key: 'releases' });
-  const topRef = useRef<HTMLDivElement>(null);
-  useSmoothHeight(topRef, loading);
   const { rows: reportRows } = useReportRows();
   const report = latestSummary(reportRows);
   const signals = useHomeSignals(releases, loading);
@@ -244,189 +252,135 @@ export function Dashboard() {
   if (docFix) gridStatus.contracts = { text: `보완 서류 ${docFix}건`, tone: 'warn' };
   else if (toSign) gridStatus.contracts = { text: `서명할 계약서 ${toSign}건` };
 
+  useLandingReveal(rootRef, !loading);
+
+  const name = profileName || '내';
+  // 큰 제목의 파란 줄 — 지금 가장 먼저 볼 것 하나 (한 화면에 판단 하나)
+  const accent = loading ? '' : urgent ? `${urgent.name}.`
+    : upcoming?.release_date && upcoming.status !== 'live' ? `${upcoming.title || '새 발매'}, ${dDayLabel(upcoming.release_date)}.`
+    : '새 발매를 시작해요.';
+  const desc = urgent ? urgent.sub
+    : upcoming && upcoming.status !== 'live' ? '검토와 배급 승인을 마치면 발매일에 맞춰 플랫폼에 보내요.'
+    : `${greeting()} 음원과 커버아트, 크레딧을 등록하고 발매를 준비해요.`;
+  const cta = urgent ? { to: urgent.to, label: `${urgent.btn}하기` } : { to: '/upload', label: '발매 등록하기' };
+  const shownTasks = allTasks ? restTasks : restTasks.slice(0, TASK_PREVIEW);
+
   return (
-    <div id="view-home" className="view">
-      {/* 머리와 큰 카드는 불러오기가 끝나면 높이가 바뀐다(급한 일이 있을 때만 '새 발매' 버튼, 자리표시보다 큰 카드) —
-          한 번에 아래 내용을 밀지 않고 부드럽게 자란다 */}
-      <div ref={topRef} className="aq-home-top">
-      <div className="ui-page-head aq-home-title">
-        <div>
-          <p className="aq-home-date">{todayLabel()}</p>
-          <h1>{profileName ? <>{profileName}<span className="aq-home-suffix">님의 작업실</span></> : '내 작업실'}</h1>
-          <p>{greeting()} 오늘 확인할 작업을 모아 두었어요.</p>
-        </div>
-        {urgent && (
-          <Link className="ui-btn is-soft is-sm aq-home-new" to="/upload" onPointerEnter={() => prefetchRoute('/upload')}><Glyph name="plus" size={14} />새 발매</Link>
+    <div id="view-home" className="view hm" ref={rootRef}>
+      <section className={`hm-hero${urgent ? ' is-urgent' : ''}`} aria-labelledby="hmTitle">
+        <p className="hm-eyebrow" data-reveal>{todayLabel()}</p>
+        <h1 id="hmTitle" data-reveal data-delay={70}>
+          <span className="hm-line">{name === '내' ? '내 작업실.' : <>{name}님의</>}</span>
+          {name !== '내' && <span className="hm-line">작업실.</span>}
+          {loading ? <span className="hm-line"><SkeletonBlock height={44} className="hm-skel" /></span> : <span className="hm-line hm-accent">{accent}</span>}
+        </h1>
+        {!loading && <p className="hm-desc" data-reveal data-delay={140}>{desc}</p>}
+        {!loading && (
+          <div className="hm-actions" data-reveal data-delay={200}>
+            <Link className="hm-button" to={cta.to} onPointerEnter={() => prefetchRoute(cta.to)}>{cta.label}<span>{ARROW}</span></Link>
+            {urgent && <Link className="hm-link" to="/upload" onPointerEnter={() => prefetchRoute('/upload')}><Glyph name="plus" size={14} />새 발매</Link>}
+          </div>
         )}
-      </div>
+        {urgent && <p className="hm-pill is-warn" data-reveal data-delay={260}>먼저 할 일</p>}
+      </section>
 
-      {loading ? (
-        <SkeletonBlock height={160} className="aq-home-skel" />
-      ) : urgent ? (
-        <Link className="ui-hero aq-home-hero ui-tone-warn is-urgent" to={urgent.to} onPointerEnter={() => prefetchRoute(urgent.to)}>
-          <div>
-            <p className="eyebrow">먼저 할 일</p>
-            <h2>{urgent.name}</h2>
-            <p>{urgent.sub}</p>
-          </div>
-          <span className="ui-btn is-primary aq-hero-cta">
-            {urgent.btn}하기
-            <span className="aq-cta-arrow" aria-hidden="true">
-              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4" /></svg>
-            </span>
-          </span>
-        </Link>
-      ) : (
-      <Link className="ui-hero aq-home-hero" to="/upload" onPointerEnter={() => prefetchRoute('/upload')}>
-        <div>
-          <p className="eyebrow">새 발매</p>
-          <h2>새로운 발매를 <span className="aq-accent">시작해 보세요.</span></h2>
-          <p>음원과 커버아트, 크레딧을 등록하고 발매를 준비해요.</p>
-        </div>
-        <span className="ui-btn is-primary aq-hero-cta">
-          발매 등록하기
-          <span className="aq-cta-arrow" aria-hidden="true">
-            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4" /></svg>
-          </span>
-        </span>
-      </Link>
-      )}
-      </div>
+      {!loading && upcoming && <Journey release={upcoming} />}
 
-      {/* 자주 가는 화면 바로가기는 새 발매 바로 아래 — 할 일·발매 목록 아래로 내리면 누르러 한참 내려가야 했다 */}
-      <div className="dashboard-grid aq-stagger" aria-label="주요 업무">
-        {GRID_ITEMS.map(item => {
-          const st = gridStatus[item.key];
-          return (
-          <Link key={item.to} className="service-item" to={item.to} onPointerEnter={() => prefetchRoute(item.to)} onFocus={() => prefetchRoute(item.to)}>
-            <span className="ui-icon">{item.icon}</span>
-            <div>
-              <h3>{item.title}</h3>
-              <p className={st ? `aq-grid-status${st.tone ? ` is-${st.tone}` : ''}` : undefined}>{st?.text ?? item.desc}</p>
-            </div>
-          </Link>
-          );
-        })}
-      </div>
+      {!loading && <MoneyPanel payable={payable} pending={payoutPending} held={held} minimum={minimum} registered={isPaymentRegistered(payment)} />}
 
-      {/* 돈과 다가오는 발매 — 아티스트가 홈에서 가장 자주 찾는 두 가지. 없으면 둘 다 숨는다 */}
-      {!loading && (
-        <div className="dashboard-columns aq-home-glance">
-          <MoneyCard payable={payable} pending={payoutPending} held={held} minimum={minimum} registered={isPaymentRegistered(payment)} />
-          {upcoming && <UpcomingCard release={upcoming} />}
-        </div>
-      )}
-
-      <div className="dashboard-columns">
-        {/* 해야 할 일을 먼저 — 휴대폰에서 '확인할 작업'이 발매 목록 아래(약 1100px)에 묻혀 있었다 */}
-        <section className="ui-card" aria-labelledby="workTitle">
-          <div className="ui-section-head">
-            <h2 id="workTitle">확인할 작업</h2>
-            {restTasks.length > 0 && <span className="ui-count is-soft">{restTasks.length}</span>}
-          </div>
-          <div id="homeTasks">
-            {loading ? (
-              <SkeletonRows count={2} />
-            ) : restTasks.length ? (
-              <>
-              <ul className="aq-task-list aq-stagger">
-                {(allTasks ? restTasks : restTasks.slice(0, TASK_PREVIEW)).map((t, i) => (
-                  // '더 보기'로 붙는 줄은 높이가 자라며 펼쳐지고 접을 때 줄어든다 — 아래 '내 발매'가 툭 밀리지 않게 (lib/expand.ts)
-                  <li key={t.name} data-expand={i >= TASK_PREVIEW || undefined}>
-                    <button type="button" className={`aq-task is-${t.tone}`} onClick={() => navigate(t.to)}>
-                      <span className="ui-icon" aria-hidden="true">{TASK_ICONS[t.icon]}</span>
-                      <span className="aq-task-text">
-                        <strong>{t.name}</strong>
-                        <small>{t.sub}</small>
-                      </span>
-                      <span className="aq-task-go">{t.btn}<i aria-hidden="true"><Glyph name="chevron-right" size={14} /></i></span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              {restTasks.length > TASK_PREVIEW && (
-                <button type="button" className="aq-task-more" aria-expanded={allTasks} onClick={() => setAllTasks(v => !v)}>
-                  {allTasks ? '접기' : `${restTasks.length - TASK_PREVIEW}건 더 보기`}
-                  <Glyph name="chevron-down" size={14} className={allTasks ? 'is-flip' : ''} />
-                </button>
-              )}
-              </>
-            ) : (
-              <div className="empty-note aq-all-done">
-                <span className="aq-check-badge"><CheckIcon size={12} /></span>
-                {urgent ? '그 밖에 확인할 작업은 없어요.' : '지금 확인할 작업이 없어요.'}
-              </div>
+      <section className="hm-section" aria-labelledby="hmTasks">
+        <Head eyebrow="확인할 작업" title={<span id="hmTasks">{loading ? '불러오고 있어요' : restTasks.length ? `할 일 ${restTasks.length}가지` : '지금은 할 일이 없어요'}</span>}
+          sub={!loading && !restTasks.length ? (urgent ? '위의 먼저 할 일만 마치면 돼요.' : '새 일이 생기면 여기에 모아 둘게요.') : undefined} />
+        {loading ? <SkeletonRows count={2} /> : restTasks.length > 0 && (
+          <>
+            <ol className="hm-list">
+              {shownTasks.map((t, i) => (
+                <li key={t.name} data-reveal data-delay={(i % 4) * 60} data-expand={i >= TASK_PREVIEW || undefined}>
+                  <button type="button" className={`hm-row is-${t.tone}`} onClick={() => navigate(t.to)}>
+                    <span className="hm-no">{String(i + 1).padStart(2, '0')}</span>
+                    <span className="min-0"><strong>{t.name}</strong><small>{t.sub}</small></span>
+                    <span className="hm-go">{t.btn}<Glyph name="arrow-right" size={14} /></span>
+                  </button>
+                </li>
+              ))}
+            </ol>
+            {restTasks.length > TASK_PREVIEW && (
+              <button type="button" className="hm-more" aria-expanded={allTasks} onClick={() => setAllTasks(v => !v)}>
+                {allTasks ? '접기' : `${restTasks.length - TASK_PREVIEW}가지 더 보기`}
+                <Glyph name="chevron-down" size={14} className={allTasks ? 'is-flip' : ''} />
+              </button>
             )}
-          </div>
-        </section>
-        <section className="ui-card" aria-labelledby="upcomingTitle">
-          <div className="ui-section-head">
-            <h2 id="upcomingTitle">내 발매</h2>
-            <button type="button" className="aq-head-link" onClick={() => navigate('/releases')}>전체 보기<Glyph name="chevron-right" size={14} /></button>
-          </div>
-          <div id="homeReleases" aria-live="polite">
-            {loading ? (
-              <SkeletonRows count={3} />
-            ) : error ? (
-              <div className="empty-note">
-                {error}<br />
-                <button className="ui-btn is-white is-sm" type="button" onClick={reload}>다시 불러오기</button>
-              </div>
-            ) : releases.length ? (
-              <div className="ui-list aq-stagger">
-                {releases.slice(0, 4).map(r => (
-                  <Link key={r.id} to={`/releases/${r.id}`} className="release-row ui-row studio-album-row aq-row-link" onPointerDown={() => prefetchRelease(r.id)}>
-                    <ReleaseCover id={r.id} src={r.coverData} />
-                    <div className="min-0">
-                      <span className="ui-row-title">{r.title || '제목 없는 발매'}</span>
-                      <span className="ui-row-meta">{r.artist || '아티스트 없음'} · {r.track_count}곡 · {r.release_date || '발매일 아직 없음'}</span>
-                    </div>
-                    <div className="ui-row-end">
-                      <Badge tone={statusTone(r.status)} className={`aq-status is-${r.status}`}>{STATUS_LABEL[r.status] || r.status}</Badge>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            ) : (
-              <div className="empty-note">
-                아직 등록한 발매가 없어요.<br />새 발매를 만들면 여기에서 확인할 수 있어요.<br />
-                <button className="ui-btn is-white is-sm" type="button" onClick={() => navigate('/upload')}>발매 등록하기 <Glyph name="chevron-right" size={13} /></button>
-              </div>
-            )}
-          </div>
-        </section>
-      </div>
+          </>
+        )}
+      </section>
 
-      <section className="ui-card aq-report-card" aria-label="이번 달 리포트 요약">
-        <div className="ui-section-head aq-report-head">
-          <h2>{periodLabel(report.period)} 음악 리포트</h2>
-          <button className="aq-head-link" type="button" onClick={() => navigate('/reports')}>리포트 보기<Glyph name="chevron-right" size={14} /></button>
+      <section className="hm-section" aria-label="주요 업무">
+        <Head eyebrow="바로가기" title="필요한 곳으로 바로." />
+        <div className="hm-services">
+          {GRID_ITEMS.map((item, i) => {
+            const st = gridStatus[item.key];
+            return (
+              <Link key={item.to} className="hm-service" to={item.to} onPointerEnter={() => prefetchRoute(item.to)} onFocus={() => prefetchRoute(item.to)} data-reveal data-delay={(i % 2) * 90}>
+                <span className="hm-service-top">
+                  <span className="hm-no">{String(i + 1).padStart(2, '0')}</span>
+                  {st && <span className={`hm-pill${st.tone ? ` is-${st.tone}` : ''}`}>{st.text}</span>}
+                </span>
+                <strong>{item.title}</strong>
+                <small>{item.desc}</small>
+              </Link>
+            );
+          })}
         </div>
-        {reportEmpty ? (
-          <div className="aq-report-empty">
-            <span className="ui-icon is-blue" aria-hidden="true"><Glyph name="chart" size={20} /></span>
-            <div className="min-0">
-              <strong>아직 수익 리포트가 없어요</strong>
-              <small>발매가 플랫폼에 나가고 정산이 들어오면 여기서 수익과 재생 수를 보여 드려요.</small>
+      </section>
+
+      <section className="hm-section" aria-labelledby="hmReleases">
+        <Head eyebrow="내 발매" title={<span id="hmReleases">{releases.length ? `발매 ${releases.length}건` : '첫 발매를 기다려요'}</span>} link={releases.length ? { to: '/releases', label: '전체 보기' } : undefined} />
+        <div className="hm-panel" aria-live="polite" data-reveal>
+          {loading ? (
+            <SkeletonRows count={3} />
+          ) : error ? (
+            <div className="empty-note">
+              {error}<br />
+              <button className="ui-btn is-white is-sm" type="button" onClick={reload}>다시 불러오기</button>
             </div>
-          </div>
-        ) : (<>
-        <div className="aq-report-total">
-          <small>이번 달 수익</small>
-          <strong><Money value={report.revenue} animate /></strong>
-          {report.change != null && (
-            <span className={`aq-report-delta${report.change < 0 ? ' is-down' : ''}`}>
-              전월 대비 {report.change >= 0 ? '+' : ''}{report.change.toFixed(1)}%
-            </span>
+          ) : releases.length ? (
+            <div className="ui-list">
+              {releases.slice(0, 4).map(r => (
+                <Link key={r.id} to={`/releases/${r.id}`} className="release-row ui-row studio-album-row aq-row-link" onPointerDown={() => prefetchRelease(r.id)}>
+                  <ReleaseCover id={r.id} src={r.coverData} />
+                  <div className="min-0">
+                    <span className="ui-row-title">{r.title || '제목 없는 발매'}</span>
+                    <span className="ui-row-meta">{r.artist || '아티스트 없음'} · {r.track_count}곡 · {r.release_date || '발매일 아직 없음'}</span>
+                  </div>
+                  <div className="ui-row-end">
+                    <Badge tone={statusTone(r.status)} className={`aq-status is-${r.status}`}>{STATUS_LABEL[r.status] || r.status}</Badge>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-note">
+              아직 등록한 발매가 없어요.<br />새 발매를 만들면 여기에서 확인할 수 있어요.
+            </div>
           )}
         </div>
-        <MiniTrend data={report.trend} />
-        <div className="aq-report-grid">
-          <div><small>총 재생</small><strong>{report.plays > 0 ? <CountUp value={report.plays} format={n => `${num(n)}회`} /> : '아직 없어요'}</strong></div>
-          <div><small>Top 트랙</small><strong>{report.topTrack || '—'}</strong></div>
-          <div><small>Top 플랫폼</small><strong>{report.topPlatform || '—'}</strong></div>
-        </div>
-        </>)}
+      </section>
+
+      <section className="hm-section" aria-labelledby="hmReport">
+        <Head eyebrow={`${periodLabel(report.period)} 음악 리포트`} title={<span id="hmReport">{reportEmpty ? '아직 수익 리포트가 없어요' : <Money value={report.revenue} animate />}</span>}
+          sub={reportEmpty ? '발매가 플랫폼에 나가고 정산이 들어오면 여기서 수익과 재생 수를 보여 드려요.'
+            : report.change != null ? `전월 대비 ${report.change >= 0 ? '+' : ''}${report.change.toFixed(1)}%` : undefined}
+          link={{ to: '/reports', label: '리포트 보기' }} />
+        {!reportEmpty && (
+          <div className="hm-panel hm-report" data-reveal>
+            <MiniTrend data={report.trend} />
+            <dl className="hm-stats">
+              <div><dt>총 재생</dt><dd>{report.plays > 0 ? <CountUp value={report.plays} format={n => `${num(n)}회`} /> : '아직 없어요'}</dd></div>
+              <div><dt>Top 트랙</dt><dd>{report.topTrack || '—'}</dd></div>
+              <div><dt>Top 플랫폼</dt><dd>{report.topPlatform || '—'}</dd></div>
+            </dl>
+          </div>
+        )}
       </section>
     </div>
   );
