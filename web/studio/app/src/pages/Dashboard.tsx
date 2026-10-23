@@ -403,18 +403,22 @@ export function Dashboard() {
                 발매가 플랫폼에 나가고 정산이 들어오면 여기서 수익과 재생 수를 보여 드려요.
               </EmptyState>
             ) : (<>
+            {/* 큰 숫자는 금액이 아니라 증가폭 — 바로 위 정산 카드의 '받을 수 있는 금액'과 두 금액이 나란히 크게 있으면 헷갈린다.
+                한눈에 볼 중요한 것(늘었나 줄었나)을 먼저, 금액은 아래 항목으로 */}
             <div className="aq-report-total">
-              <small>수익</small>
-              <div className="aq-report-amount">
-                <strong><Money value={report.revenue} animate /></strong>
-                {report.change != null && (
-                  <Badge tone={report.change < 0 ? 'red' : 'blue'}>전월 대비 {report.change >= 0 ? '+' : ''}{report.change.toFixed(1)}%</Badge>
-                )}
-              </div>
+              {report.change != null ? (<>
+                <small>지난달보다</small>
+                <strong>{report.change >= 0 ? '+' : ''}{report.change.toFixed(1)}%</strong>
+                <p className="ui-row-meta">{report.change > 0 ? '수익이 늘었어요.' : report.change < 0 ? '수익이 줄었어요.' : '수익이 지난달과 같아요.'}</p>
+              </>) : (<>
+                <small>총 재생</small>
+                <strong>{report.plays > 0 ? <CountUp value={report.plays} format={n => `${num(n)}회`} /> : '아직 없어요'}</strong>
+              </>)}
             </div>
             <MiniTrend data={report.trend} />
-            <KeyValue className="aq-report-kv" items={[
-              ['총 재생', report.plays > 0 ? <CountUp value={report.plays} format={n => `${num(n)}회`} /> : '아직 없어요'],
+            <KeyValue className="aq-report-kv" cols={2} items={[
+              ['수익', <Money value={report.revenue} />],
+              report.change != null && ['총 재생', report.plays > 0 ? <CountUp value={report.plays} format={n => `${num(n)}회`} /> : '아직 없어요'],
               ['많이 들은 곡', report.topTrack || '—'],
               ['많이 들은 플랫폼', report.topPlatform || '—'],
             ]} />
