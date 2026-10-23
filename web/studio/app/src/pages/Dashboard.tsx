@@ -15,7 +15,7 @@ import { prefetchRelease } from '../api/prefetch';
 import { Badge, CountUp, EmptyState, KeyValue, Steps } from '../ui';
 import { Money } from '../components/Money';
 import { ReleaseCover } from '../components/ReleaseCover';
-import { latestSummary, periodLabel } from '../data/reports';
+import { listeningSummary, periodLabel } from '../data/reports';
 import { useReportRows } from '../hooks/useReportRows';
 import type { CSSVarStyle } from '../hooks/useAnimations';
 import { useGrowOnView } from '../hooks/useAnimations';
@@ -79,21 +79,22 @@ function todayLabel(): string {
   return `${d.getMonth() + 1}월 ${d.getDate()}일 ${'일월화수목금토'[d.getDay()]}요일`;
 }
 
-/** 막대 위 짧은 금액 — 1만 원 이상은 ‘2.7만’처럼 */
-const shortWon = (n: number) => (n >= 10000 ? `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}만` : num(n));
+/** 막대 위 짧은 수 — 1만 이상은 ‘3.1만’처럼 */
+const shortCount = (n: number) => (n >= 10000 ? `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}만` : num(n));
 
-function MiniTrend({ data }: { data: { period: string; revenue: number }[] }) {
+/** 최근 몇 달 재생 수 막대 — 이번 달만 진하게 */
+function MiniTrend({ data }: { data: { period: string; value: number }[] }) {
   const ref = useGrowOnView<HTMLDivElement>('.aq-mini-bar');
-  const high = Math.max(1, ...data.map(d => d.revenue));
+  const high = Math.max(1, ...data.map(d => d.value));
   return (
-    <div className="aq-mini-trend" ref={ref} role="img" aria-label="최근 월별 수익 추이">
+    <div className="aq-mini-trend" ref={ref} role="img" aria-label="최근 월별 재생 수 추이">
       {data.map((d, i) => (
         <span key={d.period} className="aq-mini-col">
-          <b className="aq-mini-val">{shortWon(d.revenue)}</b>
+          <b className="aq-mini-val">{shortCount(d.value)}</b>
           <span
             className={`aq-mini-bar${i === data.length - 1 ? ' is-current' : ''}`}
-            style={{ '--h': `${Math.max(6, Math.round((d.revenue / high) * 100))}%`, '--d': `${i * 80}ms` } as CSSVarStyle}
-            title={`${periodLabel(d.period)} · ${money(d.revenue)}`}
+            style={{ '--h': `${Math.max(6, Math.round((d.value / high) * 100))}%`, '--d': `${i * 80}ms` } as CSSVarStyle}
+            title={`${periodLabel(d.period)} · ${num(d.value)}회`}
           />
           <small>{Number(d.period.slice(5))}월</small>
         </span>
@@ -172,7 +173,7 @@ export function Dashboard() {
   const topRef = useRef<HTMLDivElement>(null);
   useSmoothHeight(topRef, loading);
   const { rows: reportRows } = useReportRows();
-  const report = latestSummary(reportRows);
+  const report = listeningSummary(reportRows);
   const signals = useHomeSignals(releases, loading);
   const upcoming = loading ? undefined : upcomingRelease(releases);
 
@@ -224,7 +225,7 @@ export function Dashboard() {
   // 읽지 않은 알림은 머리의 종 숫자로 이미 보인다 — 할 일 목록에서는 뺀다 (홈이 너무 길고 복잡해 보였다)
 
   // 정산·재생이 아직 하나도 없으면 빈 차트 대신 짧은 안내만
-  const reportEmpty = report.revenue <= 0 && report.plays <= 0 && report.trend.every(d => !d.revenue);
+  const reportEmpty = report.plays <= 0 && report.trend.every(d => !d.value);
 
   // 보완처럼 기한이 걸린 일이 있으면 맨 위 큰 카드를 그 일로 — '새 발매'보다 먼저 할 일이다 (한 화면에 판단 하나)
   const urgent = loading ? undefined : tasks.find(t => t.tone === 'warn');
@@ -237,7 +238,8 @@ export function Dashboard() {
     else if (reviewing) gridStatus.releases = { text: `검토 중 ${reviewing}건` };
     else if (releases.length) gridStatus.releases = { text: `발매 ${releases.length}건` };
   }
-  if (!reportEmpty && report.revenue > 0) gridStatus.reports = { text: `${Number(report.period.slice(5))}월 수익 ${money(report.revenue)}` };
+  // 홈의 돈은 정산 하나 — 리포트 바로가기는 재생 수로
+  if (!reportEmpty && report.plays > 0) gridStatus.reports = { text: `${Number(report.period.slice(5))}월 재생 ${num(report.plays)}회` };
   if (docFix) gridStatus.contracts = { text: `보완 서류 ${docFix}건`, tone: 'warn' };
   else if (toSign) gridStatus.contracts = { text: `서명할 계약서 ${toSign}건` };
 
@@ -399,29 +401,28 @@ export function Dashboard() {
               <button className="aq-head-link" type="button" onClick={() => navigate('/reports')}>리포트 보기<Glyph name="chevron-right" size={14} /></button>
             </div>
             {reportEmpty ? (
-              <EmptyState compact icon={<Glyph name="chart" size={22} />} title="아직 수익 리포트가 없어요">
-                발매가 플랫폼에 나가고 정산이 들어오면 여기서 수익과 재생 수를 보여 드려요.
+              <EmptyState compact icon={<Glyph name="chart" size={22} />} title="아직 리포트가 없어요">
+                발매가 플랫폼에 나가고 리포트가 들어오면 여기서 얼마나 들었는지 보여 드려요.
               </EmptyState>
             ) : (<>
-            {/* 큰 숫자는 금액이 아니라 증가폭 — 바로 위 정산 카드의 '받을 수 있는 금액'과 두 금액이 나란히 크게 있으면 헷갈린다.
-                한눈에 볼 중요한 것(늘었나 줄었나)을 먼저, 금액은 아래 항목으로 */}
+            {/* 경쟁사(TuneCore·DistroKid·Spotify for Artists)처럼 음악 반응과 돈을 나눈다 — 돈은 정산 카드 하나.
+                큰 숫자는 늘 쌓인 재생 수(줄어든 달에도 성과), 지난달은 회색 비교 글자로만, 좋은 소식이 있을 때만 배지 */}
             <div className="aq-report-total">
-              {report.change != null ? (<>
-                <small>지난달보다</small>
-                <strong>{report.change >= 0 ? '+' : ''}{report.change.toFixed(1)}%</strong>
-                <p className="ui-row-meta">{report.change > 0 ? '수익이 늘었어요.' : report.change < 0 ? '수익이 줄었어요.' : '수익이 지난달과 같아요.'}</p>
-              </>) : (<>
-                <small>총 재생</small>
-                <strong>{report.plays > 0 ? <CountUp value={report.plays} format={n => `${num(n)}회`} /> : '아직 없어요'}</strong>
-              </>)}
+              <small>{Number(report.period.slice(5))}월에 들은 횟수</small>
+              <strong><CountUp value={report.plays} format={n => `${num(n)}회`} /></strong>
+              {(report.highlight || report.prevPlays != null) && (
+                <div className="aq-home-report-note">
+                  {report.highlight && <Badge tone="blue">{report.highlight}</Badge>}
+                  {report.prevPlays != null && <small>지난달 {num(report.prevPlays)}회</small>}
+                </div>
+              )}
             </div>
             <MiniTrend data={report.trend} />
             <KeyValue className="aq-report-kv" cols={2} items={[
-              ['수익', <Money value={report.revenue} />],
-              report.change != null && ['총 재생', report.plays > 0 ? <CountUp value={report.plays} format={n => `${num(n)}회`} /> : '아직 없어요'],
               ['많이 들은 곡', report.topTrack || '—'],
               ['많이 들은 플랫폼', report.topPlatform || '—'],
             ]} />
+            <p className="ui-row-meta aq-report-foot">플랫폼이 보낸 리포트 기준이라 한 달쯤 늦게 들어와요. 수익은 리포트에서 볼 수 있어요.</p>
             </>)}
           </section>
         </div>
