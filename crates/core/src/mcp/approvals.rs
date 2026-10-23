@@ -15,6 +15,7 @@
 //! while the assistant payout limit is 0.
 use super::{
     SCOPE_PAYOUT, SCOPES,
+    actions::Owner,
     oauth::Principal,
     tools::{ToolError, tool_error},
 };
@@ -138,7 +139,7 @@ pub(super) async fn request(
         p.actor.user,
         "AI 앱이 권한을 더 요청했어요",
         &format!(
-            "{}이(가) {} 권한을 요청했어요. {}분 안에 승인하거나 거절해 주세요. 내가 요청한 게 아니라면 거절하고 연결을 끊어 주세요.",
+            "{}에서 {} 권한을 요청했어요. {}분 안에 승인하거나 거절해 주세요. 내가 요청한 게 아니라면 거절하고 연결을 끊어 주세요.",
             p.client_name,
             scope_labels(&missing),
             REQUEST_MINUTES
@@ -151,7 +152,7 @@ pub(super) async fn request(
 
 fn with_instruction(mut v: Value) -> Value {
     v["instruction"] = json!(
-        "Show approve_url to the artist and ask them to open it in AUDENIQ Studio and approve. Call get_permission_request (or retry the tool) after they say they approved. Nothing changes until they do."
+        "Show approve_url to the artist and ask them to open it in AUDENIQ Studio and approve. Call get_approval_status with kind permission (or retry the tool) after they say they approved. Nothing changes until they do."
     );
     v
 }
@@ -167,7 +168,7 @@ pub(super) async fn status(
         .and_then(Value::as_str)
         .and_then(|v| v.parse::<Uuid>().ok())
         .ok_or_else(|| tool_error("INVALID_INPUT", "request_id must be a UUID."))?;
-    expire(s).await?;
+    expire(s, Owner::Grant(p.grant)).await?;
     let r = sqlx::query(
         "SELECT id,status,scopes,expires_at FROM identity.mcp_permission_requests WHERE id=$1 AND grant_id=$2",
     )
@@ -182,10 +183,50 @@ pub(super) async fn status(
     Ok(v)
 }
 
-async fn expire(s: &AppState) -> Result<()> {
-    sqlx::query("UPDATE identity.mcp_permission_requests SET status='EXPIRED', decided_at=now() WHERE status='PENDING' AND expires_at < now()")
-        .execute(&s.pool)
-        .await?;
+/// `withdraw_permission_request`: this connection no longer needs what it
+/// asked for, and the artist has not answered yet.
+pub(super) async fn withdraw(
+    s: &AppState,
+    p: &Principal,
+    args: &Value,
+) -> std::result::Result<Value, ToolError> {
+    let id = args
+        .get("request_id")
+        .and_then(Value::as_str)
+        .and_then(|v| v.parse::<Uuid>().ok())
+        .ok_or_else(|| tool_error("INVALID_INPUT", "request_id must be a UUID."))?;
+    expire(s, Owner::Grant(p.grant)).await?;
+    let done = sqlx::query(
+        "UPDATE identity.mcp_permission_requests SET status='WITHDRAWN', decided_at=now()
+          WHERE id=$1 AND grant_id=$2 AND status='PENDING'",
+    )
+    .bind(id)
+    .bind(p.grant)
+    .execute(&s.pool)
+    .await
+    .map_err(Error::from)?
+    .rows_affected();
+    let v = status(s, p, args).await?;
+    if done == 0 {
+        return Err(super::actions::not_pending(&v["status"]));
+    }
+    Ok(v)
+}
+
+/// Marks the owner's (one connection's, or one user's) overdue requests
+/// EXPIRED: only their own rows, so a status read stays an index lookup.
+async fn expire(s: &AppState, owner: Owner) -> Result<()> {
+    let (sql, id) = match owner {
+        Owner::Grant(id) => (
+            "UPDATE identity.mcp_permission_requests SET status='EXPIRED', decided_at=now() WHERE grant_id=$1 AND status='PENDING' AND expires_at < now()",
+            id,
+        ),
+        Owner::User(id) => (
+            "UPDATE identity.mcp_permission_requests SET status='EXPIRED', decided_at=now() WHERE user_id=$1 AND status='PENDING' AND expires_at < now()",
+            id,
+        ),
+    };
+    sqlx::query(sql).bind(id).execute(&s.pool).await?;
     Ok(())
 }
 
@@ -216,7 +257,7 @@ const REQUEST_JSON: &str = "jsonb_build_object('id',q.id,'status',q.status,'scop
 /// The user's open requests (Studio: Profile → Connected AI apps).
 pub async fn list(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
-    expire(&s).await?;
+    expire(&s, Owner::User(a.user)).await?;
     let items: Vec<Value> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT {REQUEST_JSON} FROM identity.mcp_permission_requests q
            JOIN identity.mcp_grants g ON g.id=q.grant_id JOIN identity.orgs o ON o.id=q.org_id
@@ -235,7 +276,7 @@ pub async fn get(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
-    expire(&s).await?;
+    expire(&s, Owner::User(a.user)).await?;
     let v: Value = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT {REQUEST_JSON} FROM identity.mcp_permission_requests q
            JOIN identity.mcp_grants g ON g.id=q.grant_id JOIN identity.orgs o ON o.id=q.org_id
@@ -280,8 +321,10 @@ async fn decide(s: &AppState, h: &HeaderMap, id: Uuid, approve: bool) -> Result<
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(Error::NotFound)?;
-    if row.get::<String, _>("status") != "PENDING" {
-        return Err(Error::InvalidCode("AI_REQUEST_DECIDED"));
+    match row.get::<String, _>("status").as_str() {
+        "PENDING" => {}
+        "WITHDRAWN" => return Err(Error::InvalidCode("AI_REQUEST_WITHDRAWN")),
+        _ => return Err(Error::InvalidCode("AI_REQUEST_DECIDED")),
     }
     if row.get::<bool, _>("expired") {
         sqlx::query("UPDATE identity.mcp_permission_requests SET status='EXPIRED', decided_at=now() WHERE id=$1")

@@ -8,6 +8,7 @@ on:
     branches: [main]
     paths: [Cargo.lock, Cargo.toml, 'crates/*/Cargo.toml', .github/workflows/security-audit.yml]
   pull_request:
+    branches: [main]
     paths: [Cargo.lock, Cargo.toml, 'crates/*/Cargo.toml', .github/workflows/security-audit.yml]
   schedule:
     - cron: '17 0 * * 1'

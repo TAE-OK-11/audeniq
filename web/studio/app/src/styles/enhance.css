@@ -102,6 +102,57 @@ img{max-width:100%}
 .aq-mini-bar.grow{animation:aq-grow-y .7s var(--aq-e-ease) both;animation-delay:var(--d,0s)}
 @media(max-width:600px){.aq-report-card{grid-template-columns:1fr}.aq-mini-trend{height:90px;margin-top:14px}}
 
+/* 홈 정산 · 다가오는 발매 — 배치만 (모양은 ui-stat · ui-row · ui-steps) */
+/* 홈 두 줄기 — 왼쪽 할 일·내 발매, 오른쪽 다가오는 발매·정산·리포트를 각자 쌓는다 (짧은 카드 옆 빈 칸 없음).
+   오른쪽이 비면 왼쪽이 폭을 다 쓴다. 좁은 화면은 한 줄: 할 일 → 다가오는 발매 → 내 발매 → 정산 → 리포트 */
+#view-home .aq-home-board{align-items:start}
+.aq-home-main,.aq-home-side{display:grid;gap:13px;align-content:start;min-width:0}
+.aq-home-main>*,.aq-home-side>*{margin:0}
+#view-home .aq-home-board>.aq-home-main:only-child,#view-home .aq-home-board:has(>.aq-home-side:empty)>.aq-home-main{grid-column:1/-1}
+.aq-home-side:empty{display:none}
+.aq-home-side .aq-report-card{grid-template-columns:minmax(0,1fr)}
+/* 홈 리포트 — 배치만: 금액과 전월 대비를 한 줄에, 막대는 가운데 고르게, 세 숫자는 막대 아래 */
+#view-home .aq-report-card .aq-report-head{margin-bottom:4px}
+#view-home .aq-report-card .ui-row-meta{margin:8px 0 0;padding:0;clip-path:none}
+#view-home .aq-home-report-note{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:10px}
+#view-home .aq-report-foot{display:block;margin-top:16px}
+/* 홈 리포트 막대 — 36px 막대, 위만 6px 둥글게, 한 기준선 위에 선다. 이번 달만 진한 파랑, 숫자도 이번 달만(글자 색) */
+#view-home .aq-report-card .aq-mini-trend{justify-content:stretch;gap:0;height:116px;margin:8px 0 0;padding-top:4px}
+#view-home .aq-report-card .aq-mini-col{flex:1 1 0;gap:0}
+#view-home .aq-report-card .aq-mini-plot{flex:1;display:flex;align-items:flex-end;justify-content:center;align-self:stretch;min-height:0;padding-top:24px}
+#view-home .aq-report-card .aq-mini-bar{position:relative}
+#view-home .aq-report-card .aq-mini-val{position:absolute;bottom:100%;left:50%;margin-bottom:6px;transform:translateX(-50%);color:var(--aq-text)}
+#view-home .aq-report-card .aq-mini-bar{width:36px;max-width:36px;border-radius:6px 6px 0 0;background:var(--aq-blue-300)}
+#view-home .aq-report-card .aq-mini-bar.is-current{background:var(--aq-primary)}
+#view-home .aq-report-card .aq-mini-col small{align-self:stretch;margin:0;padding-top:8px;border-top:1px solid var(--aq-line);text-align:center;font-weight:600}
+#view-home .aq-report-card .aq-mini-col:last-child small{color:var(--aq-text-2);font-weight:700}
+.aq-report-top{display:flex;align-items:center;gap:10px;min-width:0}
+.aq-report-top>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#view-home .aq-report-kv{margin-top:24px}
+#view-home .aq-report-card .ui-empty{min-height:0}
+@media(max-width:900px){
+  #view-home .aq-home-board{display:flex;flex-direction:column;align-items:stretch;gap:11px}
+  .aq-home-main,.aq-home-side{display:contents}
+  .aq-home-tasks{order:1}.aq-home-upcoming{order:2}.aq-home-releases{order:3}.aq-home-money{order:4}.aq-home-side .aq-report-card{order:5}
+}
+/* 왼쪽 메뉴가 같은 곳을 배지와 함께 보여 주는 넓은 화면에서는 바로가기 칸을 숨긴다 */
+@media(min-width:1024px){#view-home .aq-home-shortcuts{display:none}}
+/* 정산 금액은 리포트 금액과 같은 모양·간격 */
+.aq-home-money .aq-report-total{margin-top:4px}
+.aq-home-money .aq-report-total .ui-row-meta,.aq-home-upcoming>.ui-row-meta{display:block;margin:8px 0 0;padding:0;clip-path:none}
+/* 휴대폰은 폭이 좁아 할 일 설명이 한 줄에서 잘린다('2분이면…') — 두 줄까지 */
+@media(max-width:760px){#view-home .aq-task-text small{-webkit-line-clamp:2;line-clamp:2}}
+.aq-home-money,.aq-home-upcoming{display:grid;gap:14px;align-content:start}
+.aq-home-money .ui-section-head,.aq-home-upcoming .ui-section-head{margin-bottom:0}
+.aq-home-upcoming>.ui-row-meta{margin:0}
+.aq-upcoming-link{display:flex;align-items:center;gap:14px;min-width:0;color:inherit;text-decoration:none}
+.aq-upcoming-link>.min-0{flex:1;display:grid;gap:2px}
+.aq-upcoming-link>.ui-badge{flex:none}
+/* 카드 면 위 세 덩어리(제목 · 발매 · 단계) 사이에 숨 쉴 여백 */
+#view-home .aq-home-upcoming .ui-section-head{margin-bottom:16px}
+#view-home .aq-home-upcoming .ui-steps{margin-top:20px}
+#view-home .aq-home-upcoming>.ui-row-meta{margin-top:12px}
+
 /* ---------- 스켈레톤 ---------- */
 .aq-skel{display:block;background:linear-gradient(90deg,#eff2f8 25%,#f7f9fc 45%,#eff2f8 65%);background-size:300% 100%;animation:aq-shimmer 1.4s ease-in-out infinite;border-radius:var(--aq-r-sm)}
 .aq-skeleton-list{display:grid;gap:8px}

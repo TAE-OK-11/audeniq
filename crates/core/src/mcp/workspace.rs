@@ -120,7 +120,9 @@ async fn attach_proof(s: &AppState, p: &Principal, args: &Value) -> ToolResult {
             portal::create_document(s, &p.actor, p.org, input).await?,
             "document_proof",
         );
-        v["note"] = json!("AUDENIQ reviews the proof; list_documents shows the outcome.");
+        v["note"] = json!(
+            "AUDENIQ reviews the proof; get_account_context (view documents) shows the outcome."
+        );
         return Ok(v);
     }
     let id = uuid_arg(args, "document_id")?;
@@ -145,7 +147,9 @@ async fn attach_proof(s: &AppState, p: &Principal, args: &Value) -> ToolResult {
             Err(Error::Conflict) if attempt == 0 => continue,
             r => {
                 let mut v = view(r?, "document_proof");
-                v["note"] = json!("AUDENIQ reviews the proof; list_documents shows the outcome.");
+                v["note"] = json!(
+                    "AUDENIQ reviews the proof; get_account_context (view documents) shows the outcome."
+                );
                 return Ok(v);
             }
         }

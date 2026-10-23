@@ -5,7 +5,7 @@ import { Glyph } from '../../components/Glyph';
 import { CheckIcon } from '../../components/Check';
 import {
   Avatar, Badge, Button, ButtonArrow, Callout, Card, ChipGroup, Count, Cover, EmptyState, Field, IconTile, KeyValue,
-  PageHeader, Section, SectionHeader, Segmented, SkeletonList, StatGrid, StatTile, Tabs, Tag, type Tone,
+  PageHeader, Section, SectionHeader, Segmented, SkeletonList, StatGrid, StatTile, Steps, Tabs, Tag, type Tone,
 } from '../../ui';
 
 type View = 'tokens' | 'components' | 'decisions';
@@ -170,6 +170,14 @@ function Components() {
           <StatTile label="배급 문제" value={1} hint="전송이 막힌 플랫폼" tone="alert" icon={<IconTile size="sm"><Glyph name="truck" size={18} /></IconTile>} onClick={() => {}} />
           <StatTile label="이번 달 수익" value="27,118" unit="원" hint="전월 대비 +133.6%" />
         </StatGrid>
+      </Demo>
+      <Demo title="Steps" note="정해진 순서의 일에서 지금 위치 · 막히면 주황">
+        <div className="ds-mini">
+          <Steps steps={['접수', '검토', '배급 승인', '발매']} current={1} label="발매 진행 단계" />
+        </div>
+        <div className="ds-mini">
+          <Steps steps={['접수', '보완 필요', '배급 승인', '발매']} current={1} warn label="보완이 필요한 발매" />
+        </div>
       </Demo>
       <Demo title="목록 줄 (ui-row)" note="카드 목록 · 카드 안 목록(is-inset)">
         <div className="ui-list">

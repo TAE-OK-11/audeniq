@@ -28,11 +28,13 @@ const DONE_TITLE: Record<Exclude<AiPermissionRequest['status'], 'PENDING'>, stri
   REJECTED: '거절했어요',
   EXPIRED: '답할 수 있는 시간이 지났어요',
   REVOKED: '이미 끊긴 연결이에요',
+  WITHDRAWN: 'AI 앱에서 거둬들인 요청이에요',
 };
 type Status = AiPermissionRequest['status'];
 const DONE_ICON: Record<Status, { kind: 'ok' | 'off' | 'warn'; tone: Tone }> = {
   PENDING: { kind: 'warn', tone: 'amber' }, APPROVED: { kind: 'ok', tone: 'green' }, REJECTED: { kind: 'off', tone: 'gray' },
   EXPIRED: { kind: 'warn', tone: 'gray' }, REVOKED: { kind: 'warn', tone: 'gray' },
+  WITHDRAWN: { kind: 'off', tone: 'gray' },
 };
 const STATUS_TEXT: Record<AiPermissionRequest['status'], string> = {
   PENDING: '',
@@ -40,6 +42,7 @@ const STATUS_TEXT: Record<AiPermissionRequest['status'], string> = {
   REJECTED: '이 연결의 권한은 그대로예요. AI 앱은 지금 있는 권한으로만 도와요.',
   EXPIRED: '요청은 60분 동안만 답할 수 있어요. 필요하면 AI 앱에 다시 요청해 달라고 말해 주세요.',
   REVOKED: '끊긴 연결의 요청은 처리할 수 없어요.',
+  WITHDRAWN: 'AI 앱에서 요청을 거둬들였어요. 연결의 권한은 그대로예요.',
 };
 
 const demo = (id: string): AiPermissionRequest => ({

@@ -172,3 +172,22 @@ Graviton4에서는 같은 입력·같은 자원 제한으로 공용 ARM 빌드�
 `foundation`·`distribution`·`portal`·`partner_onboarding`·`stage2`·
 `sandbox_regressions` 통합 테스트(PostgreSQL, audeniq-music 포함)를 변경 전후로
 돌려 실패 목록이 동일함(ClamAV가 필요한 업로드 VERIFIED 테스트만 이 환경에서 실패)을 확인했다.
+
+## MCP 도구 통합과 호출 비용 (2026-10-22)
+
+PR #265(도구 78개 → 25개, 호출 한도 일괄 집계, 감사 기록 한 문장, `tools/list` 캐시와 축소)를
+main(24eae68)과 비교했다. 같은 설정의 release 빌드(thin LTO, codegen-units 16, jemalloc), PostgreSQL 16,
+API 2코어·oha 2코어(`taskset`), 회차마다 새 DB와 새 프로세스, 순서를 번갈아 3회씩 쟀다.
+인증 호출은 연결당 호출 한도(15분에 900회, 쓰기 300회) 안에서 연결 토큰 40개로 나눠 보냈다.
+
+| | main | PR #265 | 변화 |
+|---|---|---|---|
+| `tools/list` 응답 크기 | 91,430 B | 57,984 B | −37% |
+| `tools/list` req/s (p99) | 663 (69 ms) | 1,182 (36 ms) | +78% |
+| 읽기 호출 `get_account_context` req/s (p99) | 1,731 (22 ms) | 1,795 (19 ms) | 오차 안 |
+| 쓰기 호출 `mark_notifications_read` req/s (p99) | 1,263 (28 ms) | 1,560 (27 ms) | +24% |
+
+부하: `tools/list` 동시 32개 15초(토큰 1개) → 읽기 16,000회(토큰 20개, 각 800회, 동시 16) →
+쓰기 5,800회(토큰 20개, 각 290회, 동시 16), 측정 전 3초 예열. 수치는 3회의 중앙값이다.
+쓰기 호출은 부가 DB 왕복이 최대 7번에서 3번(토큰 확인, 호출 한도, 감사 기록)으로 줄었다.
+읽기 호출은 원래 2번(토큰 확인, 호출 한도)이라 그대로다.

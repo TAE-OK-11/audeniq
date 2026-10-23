@@ -282,6 +282,11 @@ pub fn origin_exempt(method: &axum::http::Method, path: &str) -> bool {
     if path == rest::API_PATH || path.starts_with("/api/v1/") {
         return true;
     }
+    // DELETE on the MCP endpoint (a client ending a session) changes nothing:
+    // it reaches the handler for its 405, as the transport specifies.
+    if *method == axum::http::Method::DELETE {
+        return matches!(path, MCP_PATH | MCP_PATH_SLASH | MCP_PUBLIC_PATH);
+    }
     *method == axum::http::Method::POST
         && matches!(
             path,

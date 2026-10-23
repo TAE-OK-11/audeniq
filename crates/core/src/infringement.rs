@@ -459,7 +459,7 @@ pub async fn counter(
     .ok_or(Error::NotFound)?;
     auth::authorize(&mut tx, a, org, release, "release", true).await?;
     let n = sqlx::query(
-        "UPDATE portal.infringement_claims SET status='COUNTER_NOTICED', counter_notice=$3, counter_by=$4, counter_at=now(), updated_at=now()
+        "UPDATE portal.infringement_claims SET status='COUNTER_NOTICED', counter_notice=$3, counter_by=$4, counter_at=now(), counter_withdrawn_at=NULL, updated_at=now()
           WHERE id=$1 AND org_id=$2 AND status='SUSPENDED' AND counter_deadline > now()",
     )
     .bind(id)
@@ -484,6 +484,48 @@ pub async fn counter(
     .await?;
     tx.commit().await?;
     Ok(json!({"id": id, "status": "COUNTER_NOTICED"}))
+}
+
+/// The artist takes back a counter notice before staff decide on it: the
+/// claim is SUSPENDED again (the release stays down) and, while the
+/// deadline lasts, a new answer can be sent. The statement stays on record
+/// with the time it was withdrawn.
+pub async fn withdraw_counter(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
+    let mut tx = s.pool.begin().await?;
+    let release: Uuid = sqlx::query_scalar(
+        "SELECT release_id FROM portal.infringement_claims WHERE id=$1 AND org_id=$2",
+    )
+    .bind(id)
+    .bind(org)
+    .fetch_optional(&mut *tx)
+    .await?
+    .flatten()
+    .ok_or(Error::NotFound)?;
+    auth::authorize(&mut tx, a, org, release, "release", true).await?;
+    let n = sqlx::query(
+        "UPDATE portal.infringement_claims SET status='SUSPENDED', counter_withdrawn_at=now(), updated_at=now()
+          WHERE id=$1 AND org_id=$2 AND status='COUNTER_NOTICED'",
+    )
+    .bind(id)
+    .bind(org)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if n != 1 {
+        return Err(Error::PolicyGate("CLAIM_COUNTER_NOT_PENDING"));
+    }
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        Some(org),
+        Some(id),
+        "release.infringement_counter_withdrawn",
+        "ARTIST",
+        a.request,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"id": id, "status": "SUSPENDED", "counter_withdrawn": true}))
 }
 
 // ---------------------------------------------------------------------------
@@ -553,6 +595,15 @@ async fn h_counter(
     Ok(Json(counter(&s, &a, org, id, i).await?))
 }
 
+async fn h_withdraw_counter(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    Ok(Json(withdraw_counter(&s, &a, org, id).await?))
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/infringement-claims", post(h_file))
@@ -574,6 +625,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/orgs/{org}/infringement-claims/{id}/counter",
             post(h_counter),
+        )
+        .route(
+            "/api/orgs/{org}/infringement-claims/{id}/counter/withdraw",
+            post(h_withdraw_counter),
         )
 }
 

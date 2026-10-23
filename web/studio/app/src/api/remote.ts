@@ -646,7 +646,6 @@ export const remoteApi = {
       throw new ApiError('선택한 플랫폼의 배급 가능 상태가 바뀌었어요. 플랫폼 선택을 다시 확인해 주세요.', 422, 'DSP_UNAVAILABLE');
     }
     const o = data.options;
-    if (o.minor) throw new ApiError('미성년 아티스트 발매는 법정대리인 확인 절차가 서버에 준비되면 접수할 수 있어요. 지금은 임시 저장해 두고 문의로 알려 주세요.', 422, 'MINORITY_REVIEW_REQUIRED');
     const rel = await persist(id, data, null);
     await attachOptionProofs(rel.id, o);
     // 1) 사전 점검
@@ -658,7 +657,8 @@ export const remoteApi = {
     // 2) 동의 — 본인(파티)이 권리자로서 현재 발매 내용 범위에 동의
     if (!partyId) await remoteApi.me();
     const consent = await req<{ consent_id: string }>(orgPath(`/releases/${rel.id}/consents`), {
-      method: 'POST', body: { parties: [{ party_id: partyId, role: 'RIGHTS_HOLDER' }], minority_declared: false, valid_days: 365 },
+      // 미성년 아티스트: 법정대리인 서명과 가족관계증명서가 준비돼 있어야 서버가 받아요
+      method: 'POST', body: { parties: [{ party_id: partyId, role: 'RIGHTS_HOLDER' }], minority_declared: !!o.minor, valid_days: 365 },
     });
     // 3) 접수 — 같은 내용(row_version)으로 다시 눌러도 한 번만 처리되도록 멱등 키 사용
     const rc = data.rightsChecks;
@@ -666,7 +666,7 @@ export const remoteApi = {
       method: 'POST',
       body: {
         consent_id: consent.consent_id,
-        minority_declared: false,
+        minority_declared: !!o.minor,
         idempotency_key: `studio:${rel.id}:${rel.row_version}`,
         declarations: {
           rights_confirmed: !!(rc.rightsMaster && rc.rightsComposition && rc.rightsArtwork && rc.rightsConsent),
