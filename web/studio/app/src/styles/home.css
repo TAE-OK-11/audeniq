@@ -1,0 +1,141 @@
+/* 홈(작업실) — 홍보 페이지(audeniq.com, web/landing/index.html)와 같은 모양과 움직임.
+   큰 파란 면 히어로 · 파란 작은 분류 글자 + 굵은 큰 제목 · 01→04 여정 줄 · 남색 패널 · 번호 붙은 서비스 카드.
+   값은 홍보 페이지에서 그대로 가져왔다 (파랑 #3B63F3, 옅은 면 #F5F8FF·#F5F7FA, 남색 #111C3D, 회색 글자 #667085). */
+.hm{
+  --hm-blue:var(--aq-blue-500);--hm-blue-hover:#2C56E0;--hm-soft:#F5F8FF;--hm-card:#F5F7FA;--hm-navy:#111C3D;--hm-navy-2:#1A2B58;
+  --hm-ink:var(--aq-text);--hm-muted:#667085;--hm-line:#E6ECF5;--hm-ease:cubic-bezier(.22,1,.36,1);
+  --hm-r:36px;--hm-gap:72px;
+  display:flex;flex-direction:column;gap:var(--hm-gap);padding-bottom:40px
+}
+.hm-waiting{opacity:0;transform:translateY(16px)}
+@media(prefers-reduced-motion:reduce){.hm-waiting{opacity:1;transform:none}}
+
+/* 분류 글자 · 알약 */
+.hm-eyebrow{margin:0 0 18px;font-size:15px;font-weight:700;letter-spacing:.03em;color:var(--hm-blue)}
+.hm-pill{display:inline-block;padding:5px 11px;border-radius:8px;background:#EAF0FF;color:#3456C4;font-size:13px;line-height:1.4;font-weight:650;white-space:nowrap}
+.hm-pill.is-warn{background:var(--aq-amber-50);color:var(--aq-amber-700)}
+.hm-pill.is-dark{background:#273B6D;color:#C1CFF3}
+
+/* 버튼 — 파란 면 + 오른쪽 동그란 화살표 (홍보 페이지 .button) */
+.hm-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px 22px;margin-top:30px}
+.hm-button{display:inline-flex;align-items:center;gap:20px;min-height:56px;padding:12px 18px 12px 24px;border-radius:20px;background:var(--hm-blue);color:#fff;font-size:17px;font-weight:650;text-decoration:none;transition:background .2s,transform .22s var(--hm-ease),box-shadow .22s}
+.hm-button>span{display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:#ffffff20;transition:transform .25s var(--hm-ease)}
+.hm-button:is(:active,.is-pressed){transform:scale(.975)}
+.hm-button.is-white{background:#fff;color:var(--hm-navy)}
+.hm-button.is-white>span{background:#EAF0FF;color:var(--hm-blue)}
+.hm-link{display:inline-flex;align-items:center;gap:8px;font-size:15px;font-weight:650;color:var(--hm-blue);text-decoration:none;white-space:nowrap}
+.hm-link svg{transition:transform .25s var(--hm-ease)}
+.hm-link.is-dark{color:#B9CBFF}
+@media(hover:hover) and (pointer:fine){
+  .hm-button:hover{background:var(--hm-blue-hover);box-shadow:0 10px 24px -12px #3B63F380}
+  .hm-button.is-white:hover{background:#F2F6FF;box-shadow:none}
+  .hm-button:hover>span{transform:translate(2px,-2px)}
+  .hm-link:hover svg{transform:translateX(3px)}
+}
+
+/* 히어로 — 큰 옅은 파란 면 */
+.hm-hero{padding:64px clamp(24px,5.2vw,70px);border-radius:44px;background:var(--hm-soft)}
+.hm-hero h1{margin:0;font-size:clamp(36px,4.6vw,62px);line-height:1.24;font-weight:780;letter-spacing:-.035em;color:var(--hm-ink)}
+.hm-line{display:block}
+.hm-accent{color:var(--hm-blue)}
+.hm-hero.is-urgent .hm-accent{color:var(--aq-amber-700)}
+.hm-hero.is-urgent .hm-button{background:#AD6118}
+.hm-skel{max-width:420px;border-radius:12px}
+.hm-desc{max-width:520px;margin:26px 0 0;font-size:17px;line-height:1.85;color:var(--hm-muted)}
+.hm-hero>.hm-pill{margin-top:28px}
+
+/* 섹션 머리 */
+.hm-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:36px}
+.hm-head h2{margin:0;font-size:clamp(27px,4.1vw,44px);line-height:1.3;font-weight:750;letter-spacing:-.03em;color:var(--hm-ink)}
+.hm-sub{margin:16px 0 0;font-size:17px;line-height:1.7;color:var(--hm-muted)}
+.hm-head>.hm-link{padding-bottom:8px}
+
+/* 여정 줄 — 01 → 04 */
+.hm-journey{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin:0;padding:40px 20px;list-style:none;border-radius:32px;background:#F8FAFD}
+.hm-journey li{position:relative;min-width:0;padding:8px 26px;color:var(--hm-muted)}
+.hm-journey li+li::before{content:'→';position:absolute;left:-10px;top:35px;color:#ABB6CF}
+.hm-journey li>span{display:inline-flex;align-items:center;height:20px;font-size:13px;font-weight:700;color:var(--hm-blue)}
+.hm-journey strong{display:block;margin:8px 0 3px;font-size:21px;font-weight:750;letter-spacing:-.02em;color:var(--hm-ink)}
+.hm-journey small{display:block;font-size:14px;line-height:1.5}
+.hm-journey li:not(.is-done):not(.is-current):not(.is-warn){opacity:.45}
+.hm-journey li.is-current strong{color:var(--hm-blue)}
+.hm-journey li.is-warn>span,.hm-journey li.is-warn strong{color:var(--aq-amber-700)}
+
+/* 남색 패널 — 정산 */
+.hm-navy{padding:48px clamp(28px,4vw,56px);border-radius:var(--hm-r);background:var(--hm-navy);color:#fff}
+.hm-navy .hm-eyebrow{color:#A9BCFF}
+.hm-amount{display:block;font-size:clamp(44px,6vw,70px);line-height:1.15;font-weight:850;letter-spacing:-.04em;color:#fff}
+.hm-amount small{margin-left:6px;font-size:.4em;font-weight:700;color:#91ABFF}
+.hm-navy>p{max-width:520px;margin:18px 0 0;font-size:17px;color:#BDC8E3}
+.hm-pills{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+
+/* 할 일 — 번호 붙은 줄 (홍보 페이지 .difference-list) */
+.hm-list{margin:0;padding:0;list-style:none}
+.hm-list li+li{border-top:1px solid var(--hm-line)}
+.hm-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:start;gap:22px;width:100%;padding:24px 4px;border:0;background:none;text-align:left;color:inherit;font:inherit;cursor:pointer;transition:transform var(--aq-press-out,.16s) var(--aq-press-spring,ease)}
+.hm-row:is(:active,.is-pressed){transform:scale(.99)}
+.hm-list li:first-child .hm-row{padding-top:4px}
+.hm-no{padding-top:4px;font-size:14px;font-weight:650;color:var(--hm-blue)}
+.hm-row strong{display:block;font-size:21px;line-height:1.4;font-weight:750;letter-spacing:-.02em;color:var(--hm-ink)}
+.hm-row small{display:block;margin-top:8px;font-size:16px;line-height:1.6;color:var(--hm-muted)}
+.hm-row.is-warn .hm-no{color:var(--aq-amber-700)}
+.hm-go{display:inline-flex;align-items:center;gap:6px;padding-top:4px;font-size:15px;font-weight:650;color:var(--hm-blue);white-space:nowrap}
+.hm-go svg{transition:transform .25s var(--hm-ease)}
+@media(hover:hover) and (pointer:fine){.hm-row:hover .hm-go svg{transform:translateX(3px)}.hm-row:hover strong{color:var(--hm-blue)}}
+.hm-more{display:inline-flex;align-items:center;gap:6px;margin-top:12px;padding:10px 4px;border:0;background:none;font:inherit;font-size:15px;font-weight:650;color:var(--hm-muted);cursor:pointer}
+.hm-more .is-flip{transform:rotate(180deg)}
+
+/* 바로가기 — 번호 붙은 서비스 카드 */
+.hm-services{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
+.hm-service{display:flex;flex-direction:column;min-width:0;padding:34px 36px;border-radius:var(--hm-r);background:var(--hm-card);color:inherit;text-decoration:none;transition:transform var(--aq-press-out,.16s) var(--aq-press-spring,ease),background .2s}
+.hm-service:is(:active,.is-pressed){transform:scale(.98)}
+@media(hover:hover) and (pointer:fine){.hm-service:hover{background:#EEF2F8}}
+.hm-service-top{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:30px;margin-bottom:26px}
+.hm-service .hm-no{padding:0;color:#8C9AB4}
+.hm-service strong{font-size:24px;line-height:1.35;font-weight:750;letter-spacing:-.02em;color:var(--hm-ink)}
+.hm-service small{margin-top:10px;font-size:16px;line-height:1.6;color:var(--hm-muted)}
+
+/* 발매 목록 · 리포트 면 */
+.hm-panel{padding:20px;border-radius:var(--hm-r);background:var(--hm-card)}
+.hm-panel .ui-list{gap:8px}
+.hm-head h2 .aq-money-unit{font-size:.5em}
+.hm-report{display:grid;gap:24px;padding:32px 36px}
+.hm-report .aq-mini-trend{height:132px;justify-content:space-around}
+.hm-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:0}
+.hm-stats dt{font-size:14px;color:var(--hm-muted)}
+.hm-stats dd{margin:4px 0 0;font-size:19px;font-weight:750;color:var(--hm-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+@media(max-width:1050px){.hm-journey li{padding-inline:18px}.hm-journey strong{font-size:19px}}
+@media(max-width:760px){
+  .hm{--hm-r:30px;--hm-gap:56px}
+  .hm-eyebrow{font-size:13px;margin-bottom:14px}
+  .hm-hero{padding:44px 24px 36px;border-radius:34px}
+  .hm-hero h1{font-size:clamp(31px,8.9vw,46px);line-height:1.3}
+  .hm-desc{font-size:16px;margin-top:22px;line-height:1.8}
+  .hm-actions{margin-top:26px}
+  .hm-button{font-size:16px;min-height:54px;padding:11px 16px 11px 22px;border-radius:18px}
+  .hm-head{margin-bottom:26px}
+  .hm-head h2{font-size:clamp(25px,6.8vw,34px);line-height:1.4}
+  .hm-sub{font-size:15px;margin-top:12px}
+  .hm-journey{grid-template-columns:1fr 1fr;gap:24px 5px;padding:26px 15px}
+  .hm-journey li{padding:0 12px}
+  .hm-journey li+li::before{display:none}
+  .hm-journey strong{font-size:18px;margin-top:6px}
+  .hm-journey small{font-size:12px}
+  .hm-navy{padding:32px 26px}
+  .hm-navy>p{font-size:16px}
+  .hm-row{gap:16px;padding:22px 2px}
+  .hm-row strong{font-size:18px}
+  .hm-row small{font-size:15px}
+  .hm-go{font-size:0;gap:0}
+  .hm-services{grid-template-columns:1fr 1fr;gap:12px}
+  .hm-service{padding:22px 20px;border-radius:26px}
+  .hm-service-top{flex-direction:column;align-items:flex-start;gap:8px;margin-bottom:16px;min-height:0}
+  .hm-service strong{font-size:18px}
+  .hm-service small{font-size:13px;margin-top:6px}
+  .hm-panel{padding:14px;border-radius:28px}
+  .hm-report{padding:24px 20px}
+  .hm-report .aq-mini-trend{height:110px}
+  .hm-stats dd{font-size:16px}
+}
+@media(prefers-reduced-motion:reduce){.hm-button,.hm-button>span,.hm-link svg,.hm-go svg,.hm-row,.hm-service{transition:none}}

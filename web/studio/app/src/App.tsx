@@ -20,6 +20,7 @@ import './styles/ui.css';
 import './styles/desktop.css';
 import './styles/wizard-motion.css';
 import './styles/design-align.css';
+import './styles/home.css';
 import { SelectHost } from './components/PickerSurface';
 import { PrintStampHost } from './lib/printStamp';
 
