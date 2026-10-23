@@ -91,6 +91,16 @@ export function Application() {
 
   return (
     <div id="view-application" className="view aq-doc-view">
+      {/* 버튼 줄이 먼저, 그 아래 '신청했어요' 카드 — 무엇을 할 수 있는지가 위에서 바로 보이고, 완료 카드는 문서 바로 위에 붙는다 */}
+      <div className="aq-doc-toolbar">
+        <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={() => nav(`/releases/${rel.id}`)}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />발매 상세</button>
+        <div className="row-actions">
+          {/* 신청 직후엔 다음 할 일(홈)이 주 버튼, 인쇄는 원할 때만 — 한 화면에 파란 버튼은 하나 */}
+          <button type="button" className={`ui-btn ${done ? 'is-soft' : 'is-primary'}`} onClick={() => void printWithStamp({ kind: 'APPLICATION', ref: id, root: document.querySelector('.aq-paper') })}>인쇄 · PDF 저장</button>
+          {done && <button type="button" className="ui-btn is-primary" onClick={() => nav('/')}>홈으로 가기</button>}
+        </div>
+      </div>
+
       {done && (
         <div className="aq-doc-done" role="status">
           <span className="aq-doc-done-mark" aria-hidden="true">
@@ -109,14 +119,6 @@ export function Application() {
           </div>
         </div>
       )}
-
-      <div className="aq-doc-toolbar">
-        <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={() => nav(`/releases/${rel.id}`)}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />발매 상세</button>
-        <div className="row-actions">
-          <button type="button" className="ui-btn is-soft" onClick={() => nav('/')}>홈으로 가기</button>
-          <button type="button" className="ui-btn is-primary" onClick={() => void printWithStamp({ kind: 'APPLICATION', ref: id, root: document.querySelector('.aq-paper') })}>인쇄 · PDF 저장</button>
-        </div>
-      </div>
 
       <article className="aq-paper" aria-label="디지털 음원 배급 신청서">
         <header className="aq-paper-head">

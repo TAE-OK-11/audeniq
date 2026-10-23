@@ -944,7 +944,14 @@ summary::-webkit-details-marker{display:none}
 
 /* 패스키 */
 .aq-passkeys{display:grid;gap:14px}
+/* 설명 문단 — 프로필 창(연결된 계정·패스키·AI 앱·개발자 앱)의 안내 글. 클래스만 있고 모양이 없어
+   전역 p(18px)로 커져 보였다: 보조 글자 크기·색으로 */
+.aq-muted{margin:0;font-size:var(--aq-fs-sm);line-height:1.6;color:var(--aq-text-3)}
+/* 발매 관리 카드의 상태 줄(보완 요청·권리 침해·피칭) — 본문 보조 글자 크기 */
+.aq-claim-status{font-size:var(--aq-fs-sm);line-height:1.6}
 .aq-passkey-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+/* 줄 끝 버튼은 줄바꿈 없이 ('연결\n끊기'로 깨졌다) */
+.aq-passkey-list li>.ui-btn,.aq-passkey-list li>.aq-row-actions{flex:none;white-space:nowrap}
 .aq-passkey-list li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:var(--aq-r-lg);background:var(--aq-surface-2,var(--aq-surface))}
 .aq-passkey-list li>.aq-ai-app-logo+.min-0{flex:1}
 .aq-passkey-list strong{display:block}
@@ -965,7 +972,14 @@ summary::-webkit-details-marker{display:none}
 .aq-passkey-btn{margin-top:8px}
 .aq-token-empty{display:grid;gap:4px;padding:16px;border-radius:var(--aq-r-lg);background:var(--aq-surface-2,var(--aq-surface));text-align:center}
 .aq-token-empty small{color:var(--aq-text-3,var(--aq-text-2))}
-.aq-token-section{display:grid;gap:10px;padding-top:16px;border-top:1px solid var(--aq-line)}
+/* 창 안 묶음 — 선 대신 여백으로 나눈다 (규칙 4: 윤곽선 없이 면·여백으로 구분) */
+.aq-token-section{display:grid;gap:10px;padding-top:24px}
+.aq-token-section:first-child{padding-top:0}
+/* 연결된 AI 앱 줄 — 권한은 이름표로, 표시는 줄 왼쪽 같은 자리 */
+.aq-ai-list>.ui-row{align-items:flex-start}
+.aq-ai-list .aq-ai-app-logo{flex:none;display:grid;place-items:center;width:36px;height:36px}
+.aq-ai-scopes{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.aq-ai-list .ui-row-end{align-self:center}
 .aq-token-section h3{margin:0}
 .aq-token-form{display:grid;gap:18px}
 .aq-token-form .ui-field{margin:0}
@@ -1032,6 +1046,10 @@ legend{padding:0}
 /* 누르는 영역 — 보이는 크기는 그대로 두고 손가락이 닿는 영역만 44px로 (터치 기기) */
 @media (pointer:coarse){
   .ui-tab::before{content:"";position:absolute;inset:0 -10px}
+  /* 맨 앞·맨 끝 탭의 누르는 영역은 탭 줄 안에서 끝낸다 — 밖으로 10px 삐져나가면 탭 줄이 가로로 스크롤되는 상태가 되어,
+     탭을 바꿀 때마다 줄 전체(글자)가 고른 쪽으로 밀렸다. 글자는 그대로, 밑줄만 움직인다 */
+  .ui-tabs>.ui-tab:first-of-type::before{left:0}
+  .ui-tabs>.ui-tab:last-of-type::before{right:0}
   .aq-head-link,.aq-release-fix-btn{position:relative}
   :is(.ui-btn.is-text,.ui-btn.is-xs,.ui-btn.is-sm,.aq-head-link,.aq-release-fix-btn)::before{
     content:"";position:absolute;left:-4px;right:-4px;top:50%;height:44px;transform:translateY(-50%)

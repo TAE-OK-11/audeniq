@@ -507,6 +507,9 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 #view-release .aq-manage-card{display:grid;gap:14px;align-content:start;padding:22px 22px 24px;margin:0}
 #view-release .aq-manage-card>*{margin:0}
 #view-release .aq-manage-card>.ui-btn,#view-release .aq-manage-card>.ui-actions{justify-self:start}
+/* 피칭 보낸 뒤 상태 — 곡 줄 · 단계 · 플랫폼 · 결과를 한 덩어리로 (배치만) */
+.aq-pitch-status{display:grid;gap:14px}
+.aq-pitch-platforms{display:flex;flex-wrap:wrap;gap:6px}
 .aq-manage-head{display:flex;align-items:center;gap:12px;min-width:0}
 .aq-manage-head h2{flex:1;min-width:0;margin:0;font-size:var(--aq-fs-title-sm,18px);font-weight:700;letter-spacing:0;line-height:1.35}
 .aq-manage-head .ui-badge{flex:none}

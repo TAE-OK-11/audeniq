@@ -2,6 +2,7 @@
 // 에이전트마다 하나씩 주는 에이전트 키(서버의 연결 토큰)도 여기서 만든다 (한 번만 보여 줌).
 // 키는 그대로 쓰거나, 토큰 교환(RFC 8693)으로 권한을 좁힌 1시간짜리 작업 토큰을 받아 쓴다.
 import { BrandMark } from './BrandMark';
+import { Avatar, Tag } from '../ui';
 import { useEffect, useRef, useState } from 'react';
 import { useToast } from './Toast';
 import { useConfirm } from './Confirm';
@@ -230,14 +231,14 @@ function PendingSubmissions({ items, onDone }: { items: AiSubmission[]; onDone: 
   return (
     <section className="aq-token-section" aria-labelledby="aqAiPending">
       <h3 id="aqAiPending" className="ui-field-label">승인을 기다리는 AI 신청</h3>
-      <ul className="aq-passkey-list">
+      <ul className="ui-list aq-ai-list">
         {items.map(p => (
-          <li key={p.id}>
-            <span className="min-0">
-              <strong>{p.title}</strong>
-              <small>{[p.client_name, workspaceName(p.org_name), `${day(p.expires_at)}까지 승인`, ...(isMinor(p) ? ['법정대리인 동의 필요'] : [])].join(' · ')}</small>
+          <li key={p.id} className="ui-row">
+            <span className="ui-row-body min-0">
+              <b className="ui-row-title">{p.title}</b>
+              <span className="ui-row-meta">{[p.client_name, workspaceName(p.org_name), `${day(p.expires_at)}까지 승인`, ...(isMinor(p) ? ['법정대리인 동의 필요'] : [])].join(' · ')}</span>
             </span>
-            <span className="aq-row-actions">
+            <span className="ui-row-end aq-row-actions">
               {isMinor(p) && (
                 <button type="button" className="ui-btn is-soft is-sm" disabled={busy !== null} onClick={() => setGuardianFor(p)}>법정대리인 동의</button>
               )}
@@ -352,14 +353,14 @@ export function AiConnections() {
       {asks.length > 0 && (
         <section className="aq-token-section" aria-labelledby="aqAiAsks">
           <h3 id="aqAiAsks" className="ui-field-label">권한 추가 요청</h3>
-          <ul className="aq-passkey-list">
+          <ul className="ui-list aq-ai-list">
             {asks.map(q => (
-              <li key={q.id}>
-                <span className="min-0">
-                  <strong>{q.client_name}</strong>
-                  <small>{[q.scopes.map(s => SCOPE_LABEL[s] ?? s).join('·'), workspaceName(q.org_name)].join(' · ')}</small>
+              <li key={q.id} className="ui-row">
+                <span className="ui-row-body min-0">
+                  <b className="ui-row-title">{q.client_name}</b>
+                  <span className="ui-row-meta">{[q.scopes.map(s => SCOPE_LABEL[s] ?? s).join('·'), workspaceName(q.org_name)].join(' · ')}</span>
                 </span>
-                <span className="aq-row-actions"><Link className="ui-btn is-primary is-sm" to={`/ai/approve/${q.id}`}>확인하기</Link></span>
+                <span className="ui-row-end aq-row-actions"><Link className="ui-btn is-primary is-sm" to={`/ai/approve/${q.id}`}>확인하기</Link></span>
               </li>
             ))}
           </ul>
@@ -368,20 +369,22 @@ export function AiConnections() {
       {actions.length > 0 && (
         <section className="aq-token-section" aria-labelledby="aqAiActions">
           <h3 id="aqAiActions" className="ui-field-label">승인을 기다리는 작업</h3>
-          <ul className="aq-passkey-list">
+          <ul className="ui-list aq-ai-list">
             {actions.map(q => (
-              <li key={q.id}>
-                <span className="min-0">
-                  <strong>{q.summary.title}</strong>
-                  <small>{[q.client_name, workspaceName(q.org_name)].join(' · ')}</small>
+              <li key={q.id} className="ui-row">
+                <span className="ui-row-body min-0">
+                  <b className="ui-row-title">{q.summary.title}</b>
+                  <span className="ui-row-meta">{[q.client_name, workspaceName(q.org_name)].join(' · ')}</span>
                 </span>
-                <span className="aq-row-actions"><Link className="ui-btn is-primary is-sm" to={`/ai/actions/${q.id}`}>확인하기</Link></span>
+                <span className="ui-row-end aq-row-actions"><Link className="ui-btn is-primary is-sm" to={`/ai/actions/${q.id}`}>확인하기</Link></span>
               </li>
             ))}
           </ul>
         </section>
       )}
       {pending.length > 0 && <PendingSubmissions items={pending} onDone={id => setPending(list => list.filter(p => p.id !== id))} />}
+      <section className="aq-token-section" aria-labelledby="aqAiApps">
+      <h3 id="aqAiApps" className="ui-field-label">연결된 앱{items.length > 0 && <span className="aq-optional">{items.length}개</span>}</h3>
       <p className="aq-muted">
         ChatGPT·Claude 같은 AI 앱에서 AUDENIQ을 연결하면 여기에 나와요. 앱마다 승인한 일만 할 수 있어요.
       </p>
@@ -391,7 +394,8 @@ export function AiConnections() {
           <small>AI 앱에서 AUDENIQ을 연결하거나, 아래에서 에이전트 키를 만들 수 있어요.</small>
         </div>
       ) : (
-        <ul className="aq-passkey-list">
+        // '내 발매'·'확인할 작업'과 같은 줄 — 표시 · 이름 · 점으로 나눈 정보 · 권한 이름표 · 끝 버튼
+        <ul className="ui-list aq-ai-list">
           {items.map(c => {
             const host = clientHost(c.client_id);
             // 이름과 같은 앱(Claude · Claude)은 한 번만, 모르는 주소는 그대로
@@ -403,21 +407,27 @@ export function AiConnections() {
               ? ['에이전트 키', workspaceName(c.org_name), until, used]
               : [from, workspaceName(c.org_name), `연결 ${relativeTime(c.created_at)}`, used];
             return (
-              <li key={c.id}>
-                {!token && appBrandForHost(host) && <BrandMark id={appBrandForHost(host)!} label={c.client_name} size={36} className="aq-ai-app-logo" />}
-                <span className="min-0">
-                  <strong>{token ? c.label ?? c.client_name : c.client_name}</strong>
-                  <small>{meta.filter(Boolean).join(' · ')}</small>
-                  <small>{c.scopes.map(s => SCOPE_LABEL[s] ?? s).join(', ')}</small>
+              <li key={c.id} className="ui-row">
+                {/* 줄마다 같은 자리에 표시 하나 — 로고를 아는 앱은 로고, 모르는 앱·에이전트 키는 이름 첫 글자 (로고 있는 줄만 글자가 들여 써져 들쭉날쭉했다) */}
+                {!token && appBrandForHost(host)
+                  ? <BrandMark id={appBrandForHost(host)!} label={c.client_name} size={36} className="aq-ai-app-logo" />
+                  : <span className="aq-ai-app-logo"><Avatar name={token ? c.label ?? c.client_name : c.client_name} size="sm" /></span>}
+                <span className="ui-row-body min-0">
+                  <b className="ui-row-title">{token ? c.label ?? c.client_name : c.client_name}</b>
+                  <span className="ui-row-meta">{meta.filter(Boolean).map(m => <span key={m as string}>{m}</span>)}</span>
+                  <span className="aq-ai-scopes" aria-label="허용한 일">{c.scopes.map(s => <Tag key={s}>{SCOPE_LABEL[s] ?? s}</Tag>)}</span>
                 </span>
-                <button type="button" className="ui-btn is-soft is-sm" onClick={() => void disconnect(c)} disabled={busy !== null}>
-                  {busy === c.id ? '끊는 중' : '연결 끊기'}
-                </button>
+                <span className="ui-row-end">
+                  <button type="button" className="ui-btn is-white is-sm" onClick={() => void disconnect(c)} disabled={busy !== null}>
+                    {busy === c.id ? '끊는 중' : '연결 끊기'}
+                  </button>
+                </span>
               </li>
             );
           })}
         </ul>
       )}
+      </section>
 
       {(settings?.mcp_enabled !== false || made) && (
       <section className="aq-token-section" aria-labelledby="aqTokenTitle">
