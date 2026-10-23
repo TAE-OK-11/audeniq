@@ -2,6 +2,7 @@
 // 에이전트마다 하나씩 주는 에이전트 키(서버의 연결 토큰)도 여기서 만든다 (한 번만 보여 줌).
 // 키는 그대로 쓰거나, 토큰 교환(RFC 8693)으로 권한을 좁힌 1시간짜리 작업 토큰을 받아 쓴다.
 import { BrandMark } from './BrandMark';
+import { Avatar } from '../ui';
 import { useEffect, useRef, useState } from 'react';
 import { useToast } from './Toast';
 import { useConfirm } from './Confirm';
@@ -404,7 +405,10 @@ export function AiConnections() {
               : [from, workspaceName(c.org_name), `연결 ${relativeTime(c.created_at)}`, used];
             return (
               <li key={c.id}>
-                {!token && appBrandForHost(host) && <BrandMark id={appBrandForHost(host)!} label={c.client_name} size={36} className="aq-ai-app-logo" />}
+                {/* 줄마다 같은 자리에 표시 하나 — 로고를 아는 앱은 로고, 모르는 앱·에이전트 키는 이름 첫 글자 (로고 있는 줄만 글자가 들여 써져 들쭉날쭉했다) */}
+                {!token && appBrandForHost(host)
+                  ? <BrandMark id={appBrandForHost(host)!} label={c.client_name} size={36} className="aq-ai-app-logo" />
+                  : <span className="aq-ai-app-logo"><Avatar name={token ? c.label ?? c.client_name : c.client_name} size="sm" /></span>}
                 <span className="min-0">
                   <strong>{token ? c.label ?? c.client_name : c.client_name}</strong>
                   <small>{meta.filter(Boolean).join(' · ')}</small>

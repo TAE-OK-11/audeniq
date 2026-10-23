@@ -944,7 +944,14 @@ summary::-webkit-details-marker{display:none}
 
 /* 패스키 */
 .aq-passkeys{display:grid;gap:14px}
+/* 설명 문단 — 프로필 창(연결된 계정·패스키·AI 앱·개발자 앱)의 안내 글. 클래스만 있고 모양이 없어
+   전역 p(18px)로 커져 보였다: 보조 글자 크기·색으로 */
+.aq-muted{margin:0;font-size:var(--aq-fs-sm);line-height:1.6;color:var(--aq-text-3)}
+/* 발매 관리 카드의 상태 줄(보완 요청·권리 침해·피칭) — 본문 보조 글자 크기 */
+.aq-claim-status{font-size:var(--aq-fs-sm);line-height:1.6}
 .aq-passkey-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+/* 줄 끝 버튼은 줄바꿈 없이 ('연결\n끊기'로 깨졌다) */
+.aq-passkey-list li>.ui-btn,.aq-passkey-list li>.aq-row-actions{flex:none;white-space:nowrap}
 .aq-passkey-list li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:var(--aq-r-lg);background:var(--aq-surface-2,var(--aq-surface))}
 .aq-passkey-list li>.aq-ai-app-logo+.min-0{flex:1}
 .aq-passkey-list strong{display:block}

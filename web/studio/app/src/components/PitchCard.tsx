@@ -81,7 +81,7 @@ export function PitchCard({ releaseId }: { releaseId: string }) {
       <p className="ui-field-help">대표곡 하나를 플랫폼 에디터에게 소개해요. 발매일 {st.lead_days}일 전까지 보내야 하고, 선정 여부는 플랫폼이 정해요.</p>
       {active && (
         <div className="aq-claim-status">
-          <p><b>{p.track_title}</b> <span className="muted">· {STATUS[p.status] ?? p.status}</span>
+          <p className="small"><b>{p.track_title}</b> <span className="muted">· {STATUS[p.status] ?? p.status}</span>
             {(p.status === 'SUBMITTED' || p.status === 'IN_REVIEW') && <button type="button" className="ui-btn is-text is-sm" onClick={() => void withdraw()}>피칭 취소</button>}
           </p>
           {p.platforms.length > 0 && <p className="small muted">전달한 플랫폼: {p.platforms.map(x => PLATFORM_KO[x] ?? x).join(', ')}</p>}
