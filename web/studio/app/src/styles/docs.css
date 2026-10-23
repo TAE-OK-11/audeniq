@@ -5,7 +5,7 @@
 .adm-docs{display:grid;grid-template-columns:260px minmax(0,1fr);gap:24px;align-items:start;min-height:calc(100vh - 120px)}
 .adm-docs-nav{position:sticky;top:16px;display:flex;flex-direction:column;gap:10px;max-height:calc(100vh - 40px);padding:16px 12px;border-radius:var(--aq-r-xl);background:var(--adm-soft)}
 .adm-docs-nav-top{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 4px}
-.adm-docs-nav-top h1{margin:0;font-size:18px;font-weight:800;letter-spacing:-.03em}
+.adm-docs-nav-top h1{margin:0;font-size:18px;font-weight:800;letter-spacing:-.01em}
 .adm-docs-nav-body{flex:1;min-height:80px;overflow:auto;margin:0 -4px;padding:0 4px}
 .adm-docs-archive{align-self:flex-start;padding:4px}
 .adm-docs-nav-toggle{display:none}
@@ -65,7 +65,7 @@
 .adm-doc-iconpick-pop button:hover{background:var(--aq-gray-50)}
 .adm-doc-iconpick-pop button.is-on{background:var(--aq-primary-soft);color:var(--aq-primary)}
 .adm-doc-tree-icon,.adm-doc-template>span{color:var(--aq-blue-600)}
-.adm-doc-title{flex:1;min-width:0;border:0;background:none;font:inherit;font-size:30px;font-weight:800;letter-spacing:-.04em;color:var(--adm-ink);padding:4px 0}
+.adm-doc-title{flex:1;min-width:0;border:0;background:none;font:inherit;font-size:30px;font-weight:800;letter-spacing:-.02em;color:var(--adm-ink);padding:4px 0}
 .adm-doc-title:focus{outline:none;box-shadow:0 2px 0 var(--adm-blue)}
 .adm-doc-title::placeholder{color:var(--aq-gray-300)}
 
@@ -114,8 +114,8 @@
 .adm-doc-prose{min-height:50vh;padding:6px 2px 80px;outline:none;font-size:16px;line-height:1.75;color:var(--aq-text);word-break:break-word}
 .adm-doc-prose:focus-visible{box-shadow:none}
 .adm-doc-prose>*+*{margin-top:.55em}
-.adm-doc-prose h1{font-size:26px;font-weight:800;letter-spacing:-.03em;margin:1.2em 0 .3em}
-.adm-doc-prose h2{font-size:21px;font-weight:800;letter-spacing:-.02em;margin:1.1em 0 .25em}
+.adm-doc-prose h1{font-size:26px;font-weight:800;letter-spacing:-.01em;margin:1.2em 0 .3em}
+.adm-doc-prose h2{font-size:21px;font-weight:800;letter-spacing:0;margin:1.1em 0 .25em}
 .adm-doc-prose h3{font-size:18px;font-weight:700;margin:1em 0 .2em}
 .adm-doc-prose p{margin:0}
 .adm-doc-prose ul,.adm-doc-prose ol{padding-left:1.5em;margin:.3em 0}

@@ -19,7 +19,7 @@
 .adm-side{position:sticky;top:calc(var(--aq-header-h) + 28px);align-self:start;display:grid;gap:22px}
 .adm-side-group{display:grid;gap:3px}
 .adm-side-label{font-size:12px;font-weight:700;letter-spacing:.02em;color:var(--aq-text-4);padding:0 12px 6px}
-.adm-side a{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;padding:10px 12px;border-radius:var(--aq-r-md);color:var(--aq-text-2);font-size:14px;font-weight:700;letter-spacing:-.02em;transition:background-color .18s var(--adm-ease),color .18s var(--adm-ease)}
+.adm-side a{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;padding:10px 12px;border-radius:var(--aq-r-md);color:var(--aq-text-2);font-size:14px;font-weight:700;letter-spacing:0;transition:background-color .18s var(--adm-ease),color .18s var(--adm-ease)}
 .adm-side a:hover{background:var(--adm-soft-2);color:var(--adm-ink)}
 .adm-side a[aria-current=page]{background:var(--adm-blue-soft);color:var(--adm-blue)}
 .adm-side a span{display:flex;align-items:center;gap:10px;min-width:0}
@@ -35,9 +35,9 @@
 /* ---------- 칩 ---------- */
 
 /* ---------- 개요 ---------- */
-.adm-hero h2{font-size:clamp(24px,2.6vw,32px);line-height:1.3;letter-spacing:-.055em}
+.adm-hero h2{font-size:clamp(24px,2.6vw,32px);line-height:1.3;letter-spacing:-.035em}
 .adm-hero p{font-size:14px;color:var(--aq-text-3);margin-top:9px;max-width:460px}
-.adm-hero-num{font-size:64px;font-weight:800;letter-spacing:-.06em;color:var(--adm-blue);line-height:1}
+.adm-hero-num{font-size:64px;font-weight:800;letter-spacing:-.04em;color:var(--adm-blue);line-height:1}
 .adm-hero-num small{display:block;font-size:12px;letter-spacing:0;color:var(--aq-text-3);font-weight:700;margin-top:8px;text-align:right}
 
 /* ---------- 섹션·카드 ---------- */
@@ -54,12 +54,12 @@
 .adm-detail-side{position:sticky;top:calc(var(--aq-header-h) + 28px);display:grid;gap:12px}
 .adm-release-hero{display:grid;grid-template-columns:88px minmax(0,1fr);gap:18px;align-items:center;background:var(--adm-soft);border-radius:var(--aq-r-2xl);padding:20px;margin-bottom:18px}
 .adm-release-hero .ui-cover{width:88px}
-.adm-release-hero h1{font-size:clamp(22px,5.6vw,30px);letter-spacing:-.05em;line-height:1.25}
+.adm-release-hero h1{font-size:clamp(22px,5.6vw,30px);letter-spacing:-.03em;line-height:1.25}
 .adm-release-hero .ui-row-meta{margin-top:6px}
 .adm-checks{display:grid;gap:8px}
 .adm-check{background:#fff;border-radius:var(--aq-r-lg);padding:14px 16px;border:1px solid var(--adm-line)}
 .adm-check-top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
-.adm-check-top b{font-size:14px;letter-spacing:-.02em}
+.adm-check-top b{font-size:14px;letter-spacing:0}
 .adm-check p{font-size:13px;color:var(--aq-text-2);margin-top:6px;line-height:1.6;white-space:pre-wrap}
 .adm-check.is-open{border-color:var(--aq-blue-300);background:var(--aq-blue-25)}
 .adm-check.is-sensitive{border-color:var(--aq-red-100);background:var(--aq-gray-25)}
@@ -74,7 +74,7 @@
 .adm-tl-top{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 .adm-tl-summary{margin:4px 0 0;font-size:13px;line-height:1.5;color:var(--aq-text-2);overflow-wrap:anywhere}
 .adm-tl-day+.adm-tl-day{margin-top:6px}
-.adm-tl-day h3{margin:0 0 10px;font-size:12px;font-weight:800;color:var(--adm-muted);letter-spacing:-.01em}
+.adm-tl-day h3{margin:0 0 10px;font-size:12px;font-weight:800;color:var(--adm-muted);letter-spacing:0}
 /* 플랫폼별 배급 상태 */
 .adm-dsp-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .adm-dsp-list>.adm-dsp{display:grid;grid-template-columns:20px minmax(0,1fr);gap:10px;padding:13px 15px;border-radius:var(--aq-r-md);background:#fff;border:1px solid var(--adm-line)}
@@ -105,7 +105,7 @@
 
 /* 결정 패널 */
 .adm-decide{background:var(--adm-ink);color:#fff;border-radius:var(--aq-r-2xl);padding:22px}
-.adm-decide h2{font-size:var(--aq-fs-title);letter-spacing:-.04em;color:#fff}
+.adm-decide h2{font-size:var(--aq-fs-title);letter-spacing:-.02em;color:#fff}
 .adm-decide p{color:var(--aq-text-disabled);font-size:13px;margin-top:6px;line-height:1.6}
 .adm-decide-actions{display:grid;gap:8px;margin-top:16px}
 .adm-decide-note{margin-top:14px;padding-top:14px;border-top:1px solid #ffffff1f;font-size:12px;color:var(--aq-text-disabled);line-height:1.6}
@@ -119,7 +119,7 @@
 .adm-split{display:grid;grid-template-columns:minmax(280px,380px) minmax(0,1fr);gap:18px;align-items:start}
 .adm-thread-pane{background:#fff;border:1px solid var(--adm-line);border-radius:var(--aq-r-2xl);padding:22px;position:sticky;top:calc(var(--aq-header-h) + 28px);max-height:calc(100dvh - 124px);display:flex;flex-direction:column;min-height:420px}
 .adm-thread-head{padding-bottom:14px;border-bottom:1px solid var(--adm-line)}
-.adm-thread-head h2{font-size:18px;letter-spacing:-.045em;line-height:1.35}
+.adm-thread-head h2{font-size:18px;letter-spacing:-.025em;line-height:1.35}
 .adm-thread{list-style:none;margin:0;padding:16px 2px;display:grid;gap:10px;overflow-y:auto;flex:1;align-content:start}
 .adm-msg{max-width:86%;justify-self:start;background:var(--adm-soft-2);border-radius:18px 18px 18px 6px;padding:11px 14px}
 .adm-msg.is-staff{justify-self:end;background:var(--adm-blue-soft);border-radius:18px 18px 6px 18px}
@@ -133,7 +133,7 @@
 .adm-dsp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
 .adm-dsp{background:var(--adm-soft);border-radius:var(--aq-r-xl);padding:18px}
 .adm-dsp-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.adm-dsp h3{font-size:16px;letter-spacing:-.035em}
+.adm-dsp h3{font-size:16px;letter-spacing:-.015em}
 .adm-dsp ul{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:6px;font-size:13px;color:var(--aq-text-2)}
 .adm-dsp li{display:flex;justify-content:space-between;gap:10px}
 .adm-dsp li b{color:var(--adm-ink);font-weight:700}
@@ -141,7 +141,7 @@
 /* ---------- 접근 불가 ---------- */
 .adm-gate{max-width:480px;margin:12dvh auto;text-align:center;padding:0 20px}
 .adm-gate .ui-icon.is-lg{width:64px}
-.adm-gate h1{font-size:26px;letter-spacing:-.05em}
+.adm-gate h1{font-size:26px;letter-spacing:-.03em}
 .adm-gate p{font-size:14px;margin:10px 0 22px}
 
 /* ---------- 반응형 ---------- */
@@ -282,7 +282,7 @@
 
 /* 부가서비스 · 해당 항목 */
 .adm-opts{display:grid;gap:18px}
-.adm-opt-group h3{margin:0 0 10px;font-size:14px;font-weight:800;letter-spacing:-.02em}
+.adm-opt-group h3{margin:0 0 10px;font-size:14px;font-weight:800;letter-spacing:0}
 .adm-opt-group h3 small{margin-left:6px;font-size:12px;font-weight:600;color:var(--adm-muted)}
 .adm-opt{padding:13px 15px;border-radius:var(--aq-r-md);background:#fff}
 .adm-opt+.adm-opt{margin-top:8px}

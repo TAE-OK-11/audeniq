@@ -24,13 +24,13 @@
 
 /* ── 화면 머리: 업무 화면이라 제목은 한 단계 작게, 목록이 더 위로 ── */
 .adm-main .ui-page-head{margin-bottom:20px;align-items:center}
-.adm-main .ui-page-head h1{font-size:28px;letter-spacing:-.04em}
+.adm-main .ui-page-head h1{font-size:28px;letter-spacing:-.02em}
 .adm-main .ui-page-head>div:first-child>p:last-child:not(:first-child):not(.ui-eyebrow):not(.eyebrow){margin-top:6px;font-size:14px}
 .adm-main .ui-tabs{margin-bottom:16px}
 
 /* ── 오늘의 업무 머리 카드: 인사 문구는 작게, 숫자 강조는 유지 ── */
 .adm-hero.ui-hero,.adm-hero{padding:24px 28px}
-.adm-hero.ui-hero h2,.adm-hero h2{font-size:22px;line-height:1.4;letter-spacing:-.03em}
+.adm-hero.ui-hero h2,.adm-hero h2{font-size:22px;line-height:1.4;letter-spacing:-.01em}
 .adm-hero.ui-hero p,.adm-hero p{margin-top:6px;font-size:13px}
 .adm-hero-num{font-size:48px}
 
