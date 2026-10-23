@@ -4,8 +4,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { ReviewContext } from '../src/api/staff';
 
 // These rendered components do not need a browser/router or network.
-mock.module('../src/lib/router', () => ({ Link: () => null, useLocation: () => ({ pathname: '/' }) }));
-mock.module('../src/api/staff', () => ({ staffApi: {} }));
+// bun은 mock.module을 같은 실행의 다른 테스트 파일에도 적용한다. 필요한 것만 가짜로 바꾸고 나머지(currentPath·isAdmin·levelOf 등)는
+// 진짜를 그대로 둬야, 이 파일이 먼저 돌 때 identityDesk.test.ts가 이름을 못 찾는 일이 없다(CI에서 그 순서로 실패했다).
+const realRouter = await import('../src/lib/router');
+const realStaff = await import('../src/api/staff');
+mock.module('../src/lib/router', () => ({ ...realRouter, Link: () => null, useLocation: () => ({ pathname: '/' }) }));
+mock.module('../src/api/staff', () => ({ ...realStaff, staffApi: {} }));
 const { CheckCard } = await import('../src/components/ReviewCheck');
 const { contextOrReadOnly, ReviewActions } = await import('../src/components/ReviewActions');
 const { TimelineRow } = await import('../src/components/ReviewTimeline');
