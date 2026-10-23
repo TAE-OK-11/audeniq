@@ -12,7 +12,7 @@ import { useAsync } from '../hooks/useAsync';
 import { SkeletonBlock, SkeletonRows } from '../components/Skeleton';
 import { useSmoothHeight } from '../hooks/useSmoothHeight';
 import { prefetchRelease } from '../api/prefetch';
-import { Badge, CountUp, StatTile, Steps } from '../ui';
+import { Badge, CountUp, Steps } from '../ui';
 import { Money } from '../components/Money';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { latestSummary, periodLabel } from '../data/reports';
@@ -118,20 +118,23 @@ function MoneyCard({ payable, pending, held, minimum, registered }: {
   // 계좌 등록은 '확인할 작업'에 이미 있다 — 여기서는 지급 요청만 (한 화면에 같은 일을 두 번 두지 않는다)
   const action = canRequest ? { to: '/settlement', label: '지급 요청하기' } : undefined;
   return (
-    <section className="ui-card aq-home-money" aria-labelledby="moneyTitle" data-reveal>
+    <section className="ui-card aq-home-money" aria-labelledby="moneyTitle" data-reveal data-delay={90}>
       <div className="ui-section-head">
         <h2 id="moneyTitle">정산</h2>
         <button type="button" className="aq-head-link" onClick={() => navigate('/settlement')}>정산 보기<Glyph name="chevron-right" size={14} /></button>
       </div>
-      <StatTile label="받을 수 있는 금액" value={<CountUp value={payable} format={num} />} unit="원" hint={hint} />
-      {action && <Link className="ui-btn is-white is-block" to={action.to} onPointerEnter={() => prefetchRoute(action.to)}>{action.label}</Link>}
+      <div className="aq-report-total">
+        <small>받을 수 있는 금액</small>
+        <strong><Money value={payable} animate /></strong>
+        {hint && <p className="ui-row-meta">{hint}</p>}
+      </div>
+      {action && <Link className="ui-btn is-primary is-block" to={action.to} onPointerEnter={() => prefetchRoute(action.to)}>{action.label}</Link>}
     </section>
   );
 }
 
 /** 다가오는 발매 — '내 발매'와 같은 줄에 남은 날, 아래에 지금 단계 (접수 → 검토 → 배급 승인 → 발매) */
 function UpcomingCard({ release: r }: { release: Release }) {
-  const navigate = useNavigate();
   const live = r.livePlatforms?.length ?? 0;
   const note = r.status === 'live' ? (live > 0 ? `플랫폼 ${live}곳에 올라갔어요.` : '')
     : r.status === 'scheduled' ? '배급을 승인했어요. 발매일에 맞춰 플랫폼에 보내요.'
@@ -140,7 +143,6 @@ function UpcomingCard({ release: r }: { release: Release }) {
     <section className="ui-card aq-home-upcoming" aria-labelledby="nextTitle" data-reveal data-delay={90}>
       <div className="ui-section-head">
         <h2 id="nextTitle">{r.status === 'live' ? '최근 발매' : '다가오는 발매'}</h2>
-        <button type="button" className="aq-head-link" onClick={() => navigate(`/releases/${r.id}`)}>자세히<Glyph name="chevron-right" size={14} /></button>
       </div>
       <div className="ui-list">
         <Link to={`/releases/${r.id}`} className="release-row ui-row studio-album-row aq-row-link" onPointerDown={() => prefetchRelease(r.id)}>
@@ -243,7 +245,6 @@ export function Dashboard() {
     else if (releases.length) gridStatus.releases = { text: `발매 ${releases.length}건` };
   }
   if (!reportEmpty && report.revenue > 0) gridStatus.reports = { text: `${Number(report.period.slice(5))}월 수익 ${money(report.revenue)}` };
-  if (payable > 0) gridStatus.settlement = { text: `받을 수 있는 금액 ${money(payable)}` };
   if (docFix) gridStatus.contracts = { text: `보완 서류 ${docFix}건`, tone: 'warn' };
   else if (toSign) gridStatus.contracts = { text: `서명할 계약서 ${toSign}건` };
 
@@ -296,8 +297,9 @@ export function Dashboard() {
       )}
       </div>
 
-      {/* 자주 가는 화면 바로가기는 새 발매 바로 아래 — 할 일·발매 목록 아래로 내리면 누르러 한참 내려가야 했다 */}
-      <div className="dashboard-grid aq-stagger" aria-label="주요 업무">
+      {/* 자주 가는 화면 바로가기는 새 발매 바로 아래 — 할 일·발매 목록 아래로 내리면 누르러 한참 내려가야 했다.
+          왼쪽 메뉴가 같은 곳을 배지와 함께 보여 주는 넓은 화면에서는 숨긴다 */}
+      <div className="dashboard-grid aq-stagger aq-home-shortcuts" aria-label="주요 업무">
         {GRID_ITEMS.map(item => {
           const st = gridStatus[item.key];
           return (
@@ -311,14 +313,6 @@ export function Dashboard() {
           );
         })}
       </div>
-
-      {/* 돈과 다가오는 발매 — 아티스트가 홈에서 가장 자주 찾는 두 가지. 없으면 둘 다 숨는다 */}
-      {!loading && (
-        <div className="dashboard-columns aq-home-glance">
-          <MoneyCard payable={payable} pending={payoutPending} held={held} minimum={minimum} registered={isPaymentRegistered(payment)} />
-          {upcoming && <UpcomingCard release={upcoming} />}
-        </div>
-      )}
 
       <div className="dashboard-columns">
         {/* 해야 할 일을 먼저 — 휴대폰에서 '확인할 작업'이 발매 목록 아래(약 1100px)에 묻혀 있었다 */}
@@ -362,7 +356,13 @@ export function Dashboard() {
             )}
           </div>
         </section>
-        <section className="ui-card" aria-labelledby="upcomingTitle" data-reveal data-delay={90}>
+        {/* 할 일 옆에 다가오는 발매 — 지금 할 일과 곧 일어날 일을 한눈에 */}
+        {!loading && upcoming && <UpcomingCard release={upcoming} />}
+      </div>
+
+      {/* 내 발매 옆에 정산 — 발매와 그 돈을 나란히. 한쪽이 없으면 남은 카드가 폭을 다 쓴다 */}
+      <div className="dashboard-columns">
+        <section className="ui-card" aria-labelledby="upcomingTitle" data-reveal>
           <div className="ui-section-head">
             <h2 id="upcomingTitle">내 발매</h2>
             <button type="button" className="aq-head-link" onClick={() => navigate('/releases')}>전체 보기<Glyph name="chevron-right" size={14} /></button>
@@ -398,6 +398,7 @@ export function Dashboard() {
             )}
           </div>
         </section>
+        {!loading && <MoneyCard payable={payable} pending={payoutPending} held={held} minimum={minimum} registered={isPaymentRegistered(payment)} />}
       </div>
 
       <section className="ui-card aq-report-card" aria-label="이번 달 리포트 요약">
@@ -415,7 +416,7 @@ export function Dashboard() {
           </div>
         ) : (<>
         <div className="aq-report-total">
-          <small>이번 달 수익</small>
+          <small>{Number(report.period.slice(5))}월 수익</small>
           <strong><Money value={report.revenue} animate /></strong>
           {report.change != null && (
             <span className={`aq-report-delta${report.change < 0 ? ' is-down' : ''}`}>
