@@ -590,7 +590,7 @@ pub fn render(
     let footer = "이 링크는 받으신 분만 쓸 수 있어요. 모르는 내용이면 거절하거나 무시해 주세요.";
     let text = format!("{headline}\n\n{body}\n\n확인하기: {url}\n\n--\n{footer}\n");
     let html = format!(
-        "<!doctype html><html lang=\"ko\"><body style=\"margin:0;padding:24px;background:#f5f6f8;font-family:-apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif\">\
+        "<!doctype html><html lang=\"ko\"><body style=\"margin:0;padding:24px;background:#f5f6f8;font-family:'Pretendard Variable',Pretendard,-apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif\">\
 <div style=\"max-width:520px;margin:0 auto;background:#ffffff;border-radius:16px;padding:28px\">\
 <p style=\"margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:.08em;color:#3b63f6\">AUDENIQ</p>\
 <h1 style=\"margin:0 0 14px;font-size:20px;line-height:1.4;color:#111827\">{headline}</h1>\

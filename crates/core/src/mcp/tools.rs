@@ -951,9 +951,9 @@ pub fn read_resource(uri: &str) -> Option<Value> {
             "_meta": {
                 // No network access and no external resources: the card only
                 // renders the tool result it is given.
-                "ui": {"csp": {"connectDomains": [], "resourceDomains": []}, "prefersBorder": true},
+                "ui": {"csp": {"connectDomains": [], "resourceDomains": ["https://cdn.jsdelivr.net"]}, "prefersBorder": true},
                 "openai/widgetDescription": "Shows an AUDENIQ release, its check results, the application preview or its review status.",
-                "openai/widgetCSP": {"connect_domains": [], "resource_domains": []},
+                "openai/widgetCSP": {"connect_domains": [], "resource_domains": ["https://cdn.jsdelivr.net"]},
             }
         })
     })
