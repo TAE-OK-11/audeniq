@@ -2573,8 +2573,8 @@ export function Upload() {
               </div>
             </div>
             {form.tracks.some(t => t.title.trim()) && (
-              <div className="aq-preview-starts">
-                <p className="ui-field-help">곡별 미리듣기·숏폼 클립 시작 지점이에요. 비우면 플랫폼이 정해요. 예: 1:05</p>
+              <div className="ui-field aq-preview-starts" role="group" aria-labelledby="f-previewStarts">
+                <span id="f-previewStarts" className="ui-field-label">미리듣기 시작 지점<span className="aq-optional">선택</span></span>
                 {form.tracks.filter(t => t.title.trim()).map((t, i) => (
                   <label key={t.id} className="aq-preview-row">
                     <span>{i + 1}. {t.title}</span>
@@ -2583,6 +2583,7 @@ export function Upload() {
                       onChange={e => setTrack(t.id, 'previewStart', e.target.value.replace(/[^0-9:]/g, ''))} />
                   </label>
                 ))}
+                <small className="ui-field-help">곡별 미리듣기·숏폼 클립이 시작하는 곳이에요. 비우면 플랫폼이 정해요. 예: 1:05</small>
               </div>
             )}
             <h2 className="subhead">배급 지역</h2>
