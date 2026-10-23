@@ -32,7 +32,7 @@ import {
 import { uid } from '../lib/store';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
-import { Badge } from '../ui';
+import { Badge, IconTile } from '../ui';
 import { TrackChecks } from '../components/TrackChecks';
 import { Segmented } from '../components/Segmented';
 import { DateField } from '../components/Picker';
@@ -2573,16 +2573,25 @@ export function Upload() {
               </div>
             </div>
             {form.tracks.some(t => t.title.trim()) && (
-              <div className="aq-preview-starts">
-                <p className="ui-field-help">곡별 미리듣기·숏폼 클립 시작 지점이에요. 비우면 플랫폼이 정해요. 예: 1:05</p>
-                {form.tracks.filter(t => t.title.trim()).map((t, i) => (
-                  <label key={t.id} className="aq-preview-row">
-                    <span>{i + 1}. {t.title}</span>
-                    <input className="ui-input" inputMode="numeric" placeholder="m:ss" maxLength={5} value={t.previewStart}
-                      aria-invalid={!!t.previewStart.trim() && !previewSecs(t.previewStart)}
-                      onChange={e => setTrack(t.id, 'previewStart', e.target.value.replace(/[^0-9:]/g, ''))} />
-                  </label>
-                ))}
+              <div className="ui-field aq-preview-starts" role="group" aria-labelledby="f-previewStarts">
+                <span id="f-previewStarts" className="ui-field-label">미리듣기 시작 지점<span className="aq-optional">선택</span></span>
+                {/* 곡마다 '내 발매'와 같은 줄 — 번호 · 곡 이름 · 길이, 오른쪽에 시작 지점 칸 */}
+                <div className="ui-list">
+                  {form.tracks.filter(t => t.title.trim()).map((t, i) => (
+                    <label key={t.id} className="ui-row aq-preview-row">
+                      <IconTile size="sm"><span className="aq-preview-no">{i + 1}</span></IconTile>
+                      <span className="ui-row-body min-0">
+                        <b className="ui-row-title">{t.title}</b>
+                        <span className="ui-row-meta">{t.duration ? `길이 ${t.duration}` : '미리듣기 시작'}</span>
+                      </span>
+                      <input className="ui-input" inputMode="numeric" placeholder="0:00" maxLength={5} value={t.previewStart}
+                        aria-label={`${t.title} 미리듣기 시작 지점`}
+                        aria-invalid={!!t.previewStart.trim() && !previewSecs(t.previewStart)}
+                        onChange={e => setTrack(t.id, 'previewStart', e.target.value.replace(/[^0-9:]/g, ''))} />
+                    </label>
+                  ))}
+                </div>
+                <small className="ui-field-help">곡별 미리듣기·숏폼 클립이 시작하는 곳이에요. 비우면 플랫폼이 정해요. 예: 1:05</small>
               </div>
             )}
             <h2 className="subhead">배급 지역</h2>
