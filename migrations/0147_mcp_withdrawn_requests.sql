@@ -1,4 +1,4 @@
--- 0145: an AI connection may take back what it asked for while the artist has not answered
+-- 0147: an AI connection may take back what it asked for while the artist has not answered
 -- yet (crates/core/src/mcp/actions.rs, approvals.rs): an action request, a permission request
 -- or a submission waiting for Studio approval. WITHDRAWN is final, like REJECTED.
 ALTER TABLE identity.mcp_action_requests DROP CONSTRAINT mcp_action_requests_status_check;

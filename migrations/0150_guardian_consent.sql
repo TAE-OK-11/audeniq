@@ -1,4 +1,4 @@
--- 0148: guardian consent for a minor artist's release (crates/core/src/signing.rs guardian_consent).
+-- 0150: guardian consent for a minor artist's release (crates/core/src/signing.rs guardian_consent).
 -- The legal guardian verifies their identity and signs electronically like a rights holder; the
 -- document kind is 'guardian' and the signer role '법정대리인' (only together). Submission of a
 -- release declared as a minor's needs it signed and a family relation certificate attached
