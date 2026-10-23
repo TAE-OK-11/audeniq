@@ -1732,10 +1732,14 @@ pub fn escape(v: &str) -> String {
 
 /// AUDENIQ design tokens (web/studio/app/src/styles/tokens.css) for the
 /// pages this server renders itself: sign-in, consent, device code, errors.
-/// System fonts only: the page loads nothing from elsewhere (CSP).
+/// Pretendard Variable from jsDelivr like the apps (CSP allows only that
+/// stylesheet and its fonts); system fonts when it does not load.
+/// The stylesheet every app's index.html loads.
+const PRETENDARD_CSS: &str = "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css";
+
 const STYLE: &str = ":root{--blue:#3B63F3;--blue-600:#2C56E0;--blue-50:#F5F8FF;--blue-100:#EEF3FF;--blue-300:#CFDBFF;--ink:#171B29;--ink-2:#4D5970;--ink-3:#5D687E;--line:#E8EDF5;--gray-50:#F5F7FA;--amber-50:#FFF3E6;--amber-700:#8A4F12;--red-50:#FFF1F2;--red-700:#9A2C38;--green-50:#E8F6F0;--green-700:#1D6B4C}
 *{box-sizing:border-box}
-body{margin:0;background:#fff;color:var(--ink);font:16px/1.6 -apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',sans-serif;-webkit-font-smoothing:antialiased;word-break:keep-all;overflow-wrap:anywhere}
+body{margin:0;background:#fff;color:var(--ink);font:16px/1.6 'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',sans-serif;-webkit-font-smoothing:antialiased;word-break:keep-all;overflow-wrap:anywhere}
 main{max-width:520px;margin:0 auto;padding:16px 20px 0}
 .top{display:flex;align-items:center;gap:10px;height:56px;margin-bottom:12px}.top svg{height:20px;width:auto}
 .chip{display:inline-flex;align-items:center;height:26px;padding:0 10px;border-radius:999px;background:var(--blue-100);color:#2F55D4;font-size:12px;font-weight:700;letter-spacing:.02em}
@@ -1770,12 +1774,12 @@ const LOGO: &str = include_str!("logo.svg");
 
 pub(super) fn page(title: &str, body: &str, form_action_extra: Option<&str>) -> Response {
     let html = format!(
-        "<!doctype html><html lang=\"ko\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1,viewport-fit=cover\"><meta name=\"robots\" content=\"noindex\"><meta name=\"color-scheme\" content=\"light\"><title>{}</title><style>{STYLE}</style></head><body><main><header class=\"top\">{LOGO}<span class=\"chip\">AI 앱 연결</span></header>{body}</main></body></html>",
+        "<!doctype html><html lang=\"ko\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1,viewport-fit=cover\"><meta name=\"robots\" content=\"noindex\"><meta name=\"color-scheme\" content=\"light\"><title>{}</title><link rel=\"stylesheet\" href=\"{PRETENDARD_CSS}\"><style>{STYLE}</style></head><body><main><header class=\"top\">{LOGO}<span class=\"chip\">AI 앱 연결</span></header>{body}</main></body></html>",
         escape(title)
     );
     let mut r = (StatusCode::OK, html).into_response();
     let csp = format!(
-        "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self'{}; frame-ancestors 'none'; base-uri 'none'",
+        "default-src 'none'; style-src 'unsafe-inline' https://cdn.jsdelivr.net; font-src https://cdn.jsdelivr.net; img-src data:; form-action 'self'{}; frame-ancestors 'none'; base-uri 'none'",
         form_action_extra
             .map(|o| format!(" {o}"))
             .unwrap_or_default()
