@@ -55,9 +55,9 @@
 
 /* ---------- 업무 상세 ---------- */
 .adm-w-task-head{margin:0 0 18px}
-.adm-w-task-head h1{font-size:clamp(22px,2.3vw,30px);line-height:1.3;letter-spacing:-.05em;font-weight:700;margin:10px 0 6px;overflow-wrap:anywhere}
+.adm-w-task-head h1{font-size:clamp(22px,2.3vw,30px);line-height:1.3;letter-spacing:-.03em;font-weight:700;margin:10px 0 6px;overflow-wrap:anywhere}
 .adm-w-desc{margin:0;font-size:14px;line-height:1.75;color:var(--aq-text-2);white-space:pre-wrap;overflow-wrap:anywhere}
-.adm-w-side h3{font-size:15px;font-weight:800;letter-spacing:-.03em;margin:0 0 12px}
+.adm-w-side h3{font-size:15px;font-weight:800;letter-spacing:-.01em;margin:0 0 12px}
 .adm-w-actions{display:grid;gap:8px}
 .adm-w-actions .ui-btn{width:100%}
 .adm-w-fields{display:grid;gap:14px;margin:0}
@@ -158,7 +158,7 @@
 .adm-w-exc.is-focus{box-shadow:inset 0 0 0 2px var(--aq-blue-300)}
 .adm-w-exc.is-closed{background:var(--aq-gray-25)}
 .adm-w-exc-top{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center}
-.adm-w-exc-title{display:block;font-size:15px;font-weight:800;letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.adm-w-exc-title{display:block;font-size:15px;font-weight:800;letter-spacing:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .adm-w-exc-detail{margin:0;padding:10px 12px;border-radius:var(--aq-r-md);background:#fff;font:600 13px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--aq-text-2);overflow-wrap:anywhere}
 .adm-w-exc-meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
 .adm-w-exc-actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
@@ -218,7 +218,7 @@
 .adm-w-dsp-top b{font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .adm-w-dsp-nums{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 .adm-w-dsp-nums span{display:grid;font-size:12px;font-weight:700;color:var(--adm-muted)}
-.adm-w-dsp-nums strong{min-width:0;overflow-wrap:anywhere;font-size:18px;font-weight:800;color:var(--adm-ink);letter-spacing:-.03em}
+.adm-w-dsp-nums strong{min-width:0;overflow-wrap:anywhere;font-size:18px;font-weight:800;color:var(--adm-ink);letter-spacing:-.01em}
 .adm-w-dsp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 18px}
 .adm-w-dsp-grid .adm-w-fields dd{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 @media (max-width:960px){.adm-w-dsp-grid{grid-template-columns:minmax(0,1fr)}}
@@ -311,7 +311,7 @@
 .adm-kb-col.is-over{background:var(--adm-blue-soft);box-shadow:inset 0 0 0 2px var(--aq-blue-300)}
 .adm-kb-col.is-over-wip{box-shadow:inset 0 3px 0 #d98a3a}
 .adm-kb-col-head{display:grid;gap:4px;padding:2px 4px 4px}
-.adm-kb-col-head h3{display:flex;align-items:center;gap:8px;margin:0;font-size:14px;font-weight:800;letter-spacing:-.02em;min-width:0}
+.adm-kb-col-head h3{display:flex;align-items:center;gap:8px;margin:0;font-size:14px;font-weight:800;letter-spacing:0;min-width:0}
 .adm-kb-col-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .adm-kb-col-head .ui-count{margin-left:auto}
 .adm-kb-col-sub{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:12px;font-weight:700;color:var(--adm-muted)}
@@ -345,7 +345,7 @@
 .adm-kb-card-top,.adm-kb-card-foot{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
 .adm-kb-card-foot{justify-content:space-between}
 .adm-kb-card .ui-tag.is-mono{margin:0}
-.adm-kb-card-open{display:block;width:100%;padding:0;border:0;background:none;text-align:left;font:inherit;font-size:14px;font-weight:700;line-height:1.4;letter-spacing:-.02em;color:var(--adm-ink);overflow-wrap:anywhere;cursor:inherit}
+.adm-kb-card-open{display:block;width:100%;padding:0;border:0;background:none;text-align:left;font:inherit;font-size:14px;font-weight:700;line-height:1.4;letter-spacing:0;color:var(--adm-ink);overflow-wrap:anywhere;cursor:inherit}
 .adm-kb-card-open::after{content:"";position:absolute;inset:0;border-radius:inherit}
 .adm-kb-card-open:focus-visible{outline:0}
 .adm-kb-card:hover .adm-kb-card-open{color:var(--adm-blue)}

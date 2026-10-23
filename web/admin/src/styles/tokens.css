@@ -5,7 +5,7 @@
    ========================================================================== */
 :root{
   /* ---------- 글꼴 ---------- */
-  --font-brand:"Pretendard Variable", Pretendard;  /* index.html 에서 jsDelivr로 불러옴 */
+  --font-brand:"Audeniq Sans", "Audeniq Sans Full";  /* index.html 에서 jsDelivr로 불러옴. 한글 자간 −0.02em이 글꼴 안에 있어 화면 CSS 자간은 Pretendard 때보다 0.02em 넓게 */
   --font-fallback:-apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
   --font-body:var(--font-brand), var(--font-fallback);
   --font-display:var(--font-body);

@@ -6,7 +6,7 @@
 .aq-report>*{min-width:0;margin:0}
 .aq-report-hero{padding:28px 28px 24px;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
 .aq-report-hero h2{margin:0 0 8px;font-size:14px;font-weight:700;letter-spacing:0;color:var(--aq-text-3)}
-.aq-report-amount{display:block;font-size:clamp(36px,5vw,44px);font-weight:800;letter-spacing:-.04em;line-height:1.15;color:var(--portal-ink)}
+.aq-report-amount{display:block;font-size:clamp(36px,5vw,44px);font-weight:800;letter-spacing:-.02em;line-height:1.15;color:var(--portal-ink)}
 .aq-report-amount .aq-money-unit{font-size:22px}
 .aq-report-change{display:inline-flex;margin-top:12px;padding:5px 10px;border-radius:var(--aq-r-pill);background:#fff;font-size:13px;font-weight:700;color:var(--aq-blue-500)}
 .aq-report-change.is-down{color:var(--aq-red-500)}
@@ -151,7 +151,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 #view-contracts .aq-doc-path-wrap h2{margin:0 0 10px;font-size:var(--aq-fs-md,16px);font-weight:700;color:var(--aq-text-2)}
 #view-contracts .studio-doc-path>div{padding:14px 16px;border-radius:var(--aq-r-lg);background:#fff}
 #view-contracts .studio-path-n{display:inline-block;margin-bottom:10px;padding:3px 8px;border-radius:6px;background:var(--aq-blue-50);color:var(--aq-blue-700);font-size:11px;font-weight:700;letter-spacing:0}
-#view-contracts .studio-doc-path strong{font-size:14px;letter-spacing:-.02em}
+#view-contracts .studio-doc-path strong{font-size:14px;letter-spacing:0}
 @media(max-width:560px){
   #view-contracts .studio-doc-path{grid-template-columns:1fr}
   #view-contracts .studio-doc-path>div{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:10px;align-items:center;padding:12px 14px}
@@ -246,7 +246,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .aq-stepbar-label{margin:10px 0 0;font-size:13px;color:var(--aq-text-4)}
 .aq-stepbar-label b{font-weight:700;color:var(--aq-blue-500)}
 /* 권리 서류 작성 — 제목·안내, 입력은 '권리자 / 허락 내용' 두 묶음 */
-.aq-rd-title{margin:0;font-size:20px;font-weight:700;letter-spacing:-.03em;color:var(--portal-ink)}
+.aq-rd-title{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em;color:var(--portal-ink)}
 .aq-rd-intro{margin:6px 0 4px;font-size:14px;line-height:1.6;color:var(--aq-text-3)}
 .aq-form-group{margin:22px 0 10px;padding-top:2px;font-size:var(--aq-fs-md);font-weight:700;color:var(--aq-text-3)}
 .aq-rights-document-mode form .aq-rights-error{margin:4px 0 12px}
@@ -320,7 +320,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .aq-territory-picked b{color:var(--aq-blue-500);font-weight:800}
 .aq-territory-group{display:grid;gap:10px}
 .aq-territory-region{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:32px}
-.aq-territory-region p{margin:0;font-size:13px;font-weight:800;letter-spacing:-.01em;color:var(--aq-text-3)}
+.aq-territory-region p{margin:0;font-size:13px;font-weight:800;letter-spacing:0;color:var(--aq-text-3)}
 .aq-territory .aq-chip{min-height:38px;padding:8px 12px;font-size:13px;display:inline-flex;align-items:center;gap:6px}
 /* 빼는 지역은 파랑(고름)이 아니라 진한 회색으로 — 배급하지 않는다는 뜻 */
 .aq-territory .aq-chip.is-excluded{background:var(--aq-gray-800);color:#fff}
@@ -342,7 +342,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 /* ---------- 접수 실패 ---------- */
 .aq-submit-error{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px 12px;margin-top:20px;padding:18px;border-radius:var(--aq-r-2xl);background:var(--aq-red-50);animation:aq-fade-up .32s var(--aq-e-spring) both}
 .aq-submit-error-icon{display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:var(--aq-red-500);color:#fff}
-.aq-submit-error-text strong{display:block;margin:4px 0 4px;font-size:15px;letter-spacing:-.02em;color:var(--aq-red-700)}
+.aq-submit-error-text strong{display:block;margin:4px 0 4px;font-size:15px;letter-spacing:0;color:var(--aq-red-700)}
 .aq-submit-error-text p{margin:0;font-size:14px;line-height:1.6;color:var(--portal-ink);overflow-wrap:anywhere}
 .aq-submit-error-text small{display:block;margin-top:6px;font-size:12px;line-height:1.6;color:var(--aq-text-3)}
 .aq-submit-error>.ui-btn{grid-column:1/-1;width:100%}
@@ -508,7 +508,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 #view-release .aq-manage-card>*{margin:0}
 #view-release .aq-manage-card>.ui-btn,#view-release .aq-manage-card>.ui-actions{justify-self:start}
 .aq-manage-head{display:flex;align-items:center;gap:12px;min-width:0}
-.aq-manage-head h2{flex:1;min-width:0;margin:0;font-size:var(--aq-fs-title-sm,18px);font-weight:700;letter-spacing:-.02em;line-height:1.35}
+.aq-manage-head h2{flex:1;min-width:0;margin:0;font-size:var(--aq-fs-title-sm,18px);font-weight:700;letter-spacing:0;line-height:1.35}
 .aq-manage-head .ui-badge{flex:none}
 .aq-manage-head+.ui-field-help{margin-top:-4px}
 #view-release .aq-manage-card .ui-kv{padding:14px 16px;border-radius:var(--aq-r-lg);background:#fff}
@@ -537,7 +537,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .aq-smartlink-list a:focus-visible{outline:var(--aq-focus);outline-offset:2px}
 .aq-smartlink-logo{border-radius:12px!important}
 .aq-smartlink-name{display:grid;gap:2px;min-width:0}
-.aq-smartlink-name strong{font-size:var(--aq-fs-lg);font-weight:700;letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-smartlink-name strong{font-size:var(--aq-fs-lg);font-weight:700;letter-spacing:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .aq-smartlink-name small{font-size:var(--aq-fs-xs);color:var(--aq-text-4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .aq-smartlink-go{display:inline-flex;align-items:center;gap:2px;height:var(--aq-h-xs,32px);padding:0 10px 0 14px;border-radius:var(--aq-r-pill);background:var(--aq-primary);color:#fff;font-size:13px;font-weight:700;white-space:nowrap}
 .aq-smartlink-list a:hover .aq-smartlink-go{background:var(--aq-primary-hover)}
@@ -545,7 +545,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 
 /* 발매 신청 > 배급 플랫폼 칸 — 'YouTube M…'·'Anghami (…'처럼 이름이 잘려 무슨 플랫폼인지 모르던 것: 세 줄까지 보여 준다 */
 .aq-dsp-name{white-space:normal;word-break:keep-all;overflow-wrap:anywhere;line-height:1.3;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
-@media (max-width:600px){.aq-dsp-name{font-size:13px;letter-spacing:-.03em}}
+@media (max-width:600px){.aq-dsp-name{font-size:13px;letter-spacing:-.01em}}
 
 /* 발매 신청 > 트랙: 곡이 여럿이면 고치는 곡만 펼치고 나머지는 한 줄 요약 (번호 · 제목 · 작곡·음원 · 입력 상태) */
 #view-new .track-editor.is-collapsed{padding:0!important;overflow:hidden}
@@ -554,7 +554,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .aq-track-summary:hover{background:var(--aq-surface-hover)}
 .aq-track-summary:is(:active,.is-pressed){transform:scale(var(--aq-press-row,.985));transition-duration:var(--aq-press-in,.06s)}
 .aq-track-summary-no{display:grid;place-items:center;width:36px;height:36px;border-radius:12px;background:#fff;color:var(--aq-primary);font-size:14px;font-weight:800}
-.aq-track-summary strong{display:block;font-size:var(--aq-fs-lg);font-weight:700;letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-track-summary strong{display:block;font-size:var(--aq-fs-lg);font-weight:700;letter-spacing:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .aq-track-summary small{display:block;margin-top:2px;font-size:var(--aq-fs-xs);color:var(--aq-text-4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .aq-track-summary-chev{color:var(--aq-text-disabled)}
 #view-new .track-editor .minor-actions .ui-actions{gap:4px}
@@ -563,7 +563,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
    묶음 안 카드가 모두 비면(해당 없음) 제목만 남지 않게 통째로 숨긴다. */
 #view-release .aq-manage-group{display:grid;gap:12px}
 #view-release .aq-manage-group+.aq-manage-group{margin-top:14px}
-#view-release .aq-manage-group-title{margin:0;padding:0 4px;font-size:13px;font-weight:700;letter-spacing:-.01em;color:var(--aq-text-3)}
+#view-release .aq-manage-group-title{margin:0;padding:0 4px;font-size:13px;font-weight:700;letter-spacing:0;color:var(--aq-text-3)}
 #view-release .aq-manage-group:not(:has(>:not(.aq-manage-group-title))){display:none}
 
 /* ==========================================================================
@@ -818,7 +818,7 @@ button.settle-hero-account.is-button .min-0{display:grid}
 .settle-day-head{margin:0;padding:12px 4px 6px;font-size:13px;font-weight:600;color:var(--aq-text-4)}
 .settle-entry+.settle-entry{margin-top:6px}
 /* 통장처럼 — 들어온 돈은 파랑 +, 빠진 돈은 기본 글자색 −. 빨강은 오류처럼 읽혀 쓰지 않는다 */
-.settle-entry-amount{display:inline-flex;align-items:baseline;white-space:nowrap;font-size:15px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.settle-entry-amount{display:inline-flex;align-items:baseline;white-space:nowrap;font-size:15px;font-weight:700;letter-spacing:0;font-variant-numeric:tabular-nums}
 .settle-entry-amount.is-plus{color:var(--aq-blue-600,var(--aq-primary))}
 .settle-entry-amount.is-minus{color:var(--portal-ink)}
 .settle-entry-amount .aq-money.is-minus{color:inherit}
@@ -894,7 +894,7 @@ button.settle-hero-account.is-button .min-0{display:grid}
 
 /* ---------- 디자인 통일 ----------
    빈 화면·오류 안내의 제목은 h1이어도 화면 제목(28~36px)이 아니라 안내 제목 크기 — 404와 같게 */
-.ui-empty h1{font-size:var(--aq-fs-title-lg);line-height:1.35;letter-spacing:-.04em}
+.ui-empty h1{font-size:var(--aq-fs-title-lg);line-height:1.35;letter-spacing:-.02em}
 
 /* 화면 머리는 불투명한 흰색 — 스크롤하면 반투명 + 흐림(유리 효과)으로 아래 내용이 비쳐 보였다 */
 .portal-header,.portal-header.is-scrolled{background:#fff!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
