@@ -312,124 +312,124 @@ export function Dashboard() {
         })}
       </div>
 
-      <div className="dashboard-columns">
-        {/* 해야 할 일을 먼저 — 휴대폰에서 '확인할 작업'이 발매 목록 아래(약 1100px)에 묻혀 있었다 */}
-        <section className="ui-card" aria-labelledby="workTitle">
-          <div className="ui-section-head">
-            <h2 id="workTitle">확인할 작업</h2>
-            {restTasks.length > 0 && <span className="ui-count is-soft">{restTasks.length}</span>}
-          </div>
-          <div id="homeTasks">
-            {loading ? (
-              <SkeletonRows count={2} />
-            ) : restTasks.length ? (
-              <>
-              <ul className="aq-task-list aq-stagger">
-                {(allTasks ? restTasks : restTasks.slice(0, TASK_PREVIEW)).map((t, i) => (
-                  // '더 보기'로 붙는 줄은 높이가 자라며 펼쳐지고 접을 때 줄어든다 — 아래 '내 발매'가 툭 밀리지 않게 (lib/expand.ts)
-                  <li key={t.name} data-expand={i >= TASK_PREVIEW || undefined}>
-                    <button type="button" className={`aq-task is-${t.tone}`} onClick={() => navigate(t.to)}>
-                      <span className="ui-icon" aria-hidden="true">{TASK_ICONS[t.icon]}</span>
-                      <span className="aq-task-text">
-                        <strong>{t.name}</strong>
-                        <small>{t.sub}</small>
-                      </span>
-                      <span className="aq-task-go">{t.btn}<i aria-hidden="true"><Glyph name="chevron-right" size={14} /></i></span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              {restTasks.length > TASK_PREVIEW && (
-                <button type="button" className="aq-task-more" aria-expanded={allTasks} onClick={() => setAllTasks(v => !v)}>
-                  {allTasks ? '접기' : `${restTasks.length - TASK_PREVIEW}건 더 보기`}
-                  <Glyph name="chevron-down" size={14} className={allTasks ? 'is-flip' : ''} />
-                </button>
-              )}
-              </>
-            ) : (
-              <div className="empty-note aq-all-done">
-                <span className="aq-check-badge"><CheckIcon size={12} /></span>
-                {urgent ? '그 밖에 확인할 작업은 없어요.' : '지금 확인할 작업이 없어요.'}
-              </div>
-            )}
-          </div>
-        </section>
-        {/* 할 일 옆에 다가오는 발매 — 지금 할 일과 곧 일어날 일을 한눈에 */}
-        {!loading && upcoming && <UpcomingCard release={upcoming} />}
-      </div>
-
-      {/* 내 발매 옆에 정산 — 발매와 그 돈을 나란히. 한쪽이 없으면 남은 카드가 폭을 다 쓴다 */}
-      <div className="dashboard-columns">
-        <section className="ui-card" aria-labelledby="upcomingTitle">
-          <div className="ui-section-head">
-            <h2 id="upcomingTitle">내 발매</h2>
-            <button type="button" className="aq-head-link" onClick={() => navigate('/releases')}>전체 보기<Glyph name="chevron-right" size={14} /></button>
-          </div>
-          <div id="homeReleases" aria-live="polite">
-            {loading ? (
-              <SkeletonRows count={3} />
-            ) : error ? (
-              <div className="empty-note">
-                {error}<br />
-                <button className="ui-btn is-white is-sm" type="button" onClick={reload}>다시 불러오기</button>
-              </div>
-            ) : releases.length ? (
-              <div className="ui-list aq-stagger">
-                {releases.slice(0, 4).map(r => (
-                  <Link key={r.id} to={`/releases/${r.id}`} className="release-row ui-row studio-album-row aq-row-link" onPointerDown={() => prefetchRelease(r.id)}>
-                    <ReleaseCover id={r.id} src={r.coverData} />
-                    <div className="min-0">
-                      <span className="ui-row-title">{r.title || '제목 없는 발매'}</span>
-                      <span className="ui-row-meta">{r.artist || '아티스트 없음'} · {r.track_count}곡 · {r.release_date || '발매일 아직 없음'}</span>
-                    </div>
-                    <div className="ui-row-end">
-                      <Badge tone={statusTone(r.status)} className={`aq-status is-${r.status}`}>{STATUS_LABEL[r.status] || r.status}</Badge>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            ) : (
-              <div className="empty-note">
-                아직 등록한 발매가 없어요.<br />새 발매를 만들면 여기에서 확인할 수 있어요.<br />
-                <button className="ui-btn is-white is-sm" type="button" onClick={() => navigate('/upload')}>발매 등록하기 <Glyph name="chevron-right" size={13} /></button>
-              </div>
-            )}
-          </div>
-        </section>
-        {!loading && <MoneyCard payable={payable} pending={payoutPending} held={held} minimum={minimum} registered={isPaymentRegistered(payment)} />}
-      </div>
-
-      <section className="ui-card aq-report-card" aria-label="이번 달 리포트 요약">
-        <div className="ui-section-head aq-report-head">
-          <h2>{periodLabel(report.period)} 음악 리포트</h2>
-          <button className="aq-head-link" type="button" onClick={() => navigate('/reports')}>리포트 보기<Glyph name="chevron-right" size={14} /></button>
-        </div>
-        {reportEmpty ? (
-          <div className="aq-report-empty">
-            <span className="ui-icon is-blue" aria-hidden="true"><Glyph name="chart" size={20} /></span>
-            <div className="min-0">
-              <strong>아직 수익 리포트가 없어요</strong>
-              <small>발매가 플랫폼에 나가고 정산이 들어오면 여기서 수익과 재생 수를 보여 드려요.</small>
+      {/* 넓은 화면은 두 줄기 — 왼쪽은 할 일·내 발매(길다), 오른쪽은 다가오는 발매·정산·리포트(짧다)를 쌓아
+          짧은 카드 옆에 빈 칸이 생기지 않게. 좁은 화면은 한 줄로: 할 일 → 다가오는 발매 → 내 발매 → 정산 → 리포트 */}
+      <div className="dashboard-columns aq-home-board">
+        <div className="aq-home-main">
+          {/* 해야 할 일을 먼저 — 휴대폰에서 '확인할 작업'이 발매 목록 아래(약 1100px)에 묻혀 있었다 */}
+          <section className="ui-card aq-home-tasks" aria-labelledby="workTitle">
+            <div className="ui-section-head">
+              <h2 id="workTitle">확인할 작업</h2>
+              {restTasks.length > 0 && <span className="ui-count is-soft">{restTasks.length}</span>}
             </div>
-          </div>
-        ) : (<>
-        <div className="aq-report-total">
-          <small>{Number(report.period.slice(5))}월 수익</small>
-          <strong><Money value={report.revenue} animate /></strong>
-          {report.change != null && (
-            <span className={`aq-report-delta${report.change < 0 ? ' is-down' : ''}`}>
-              전월 대비 {report.change >= 0 ? '+' : ''}{report.change.toFixed(1)}%
-            </span>
-          )}
+            <div id="homeTasks">
+              {loading ? (
+                <SkeletonRows count={2} />
+              ) : restTasks.length ? (
+                <>
+                <ul className="aq-task-list aq-stagger">
+                  {(allTasks ? restTasks : restTasks.slice(0, TASK_PREVIEW)).map((t, i) => (
+                    // '더 보기'로 붙는 줄은 높이가 자라며 펼쳐지고 접을 때 줄어든다 — 아래 '내 발매'가 툭 밀리지 않게 (lib/expand.ts)
+                    <li key={t.name} data-expand={i >= TASK_PREVIEW || undefined}>
+                      <button type="button" className={`aq-task is-${t.tone}`} onClick={() => navigate(t.to)}>
+                        <span className="ui-icon" aria-hidden="true">{TASK_ICONS[t.icon]}</span>
+                        <span className="aq-task-text">
+                          <strong>{t.name}</strong>
+                          <small>{t.sub}</small>
+                        </span>
+                        <span className="aq-task-go">{t.btn}<i aria-hidden="true"><Glyph name="chevron-right" size={14} /></i></span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                {restTasks.length > TASK_PREVIEW && (
+                  <button type="button" className="aq-task-more" aria-expanded={allTasks} onClick={() => setAllTasks(v => !v)}>
+                    {allTasks ? '접기' : `${restTasks.length - TASK_PREVIEW}건 더 보기`}
+                    <Glyph name="chevron-down" size={14} className={allTasks ? 'is-flip' : ''} />
+                  </button>
+                )}
+                </>
+              ) : (
+                <div className="empty-note aq-all-done">
+                  <span className="aq-check-badge"><CheckIcon size={12} /></span>
+                  {urgent ? '그 밖에 확인할 작업은 없어요.' : '지금 확인할 작업이 없어요.'}
+                </div>
+              )}
+            </div>
+          </section>
+          <section className="ui-card aq-home-releases" aria-labelledby="upcomingTitle">
+            <div className="ui-section-head">
+              <h2 id="upcomingTitle">내 발매</h2>
+              <button type="button" className="aq-head-link" onClick={() => navigate('/releases')}>전체 보기<Glyph name="chevron-right" size={14} /></button>
+            </div>
+            <div id="homeReleases" aria-live="polite">
+              {loading ? (
+                <SkeletonRows count={3} />
+              ) : error ? (
+                <div className="empty-note">
+                  {error}<br />
+                  <button className="ui-btn is-white is-sm" type="button" onClick={reload}>다시 불러오기</button>
+                </div>
+              ) : releases.length ? (
+                <div className="ui-list aq-stagger">
+                  {releases.slice(0, 4).map(r => (
+                    <Link key={r.id} to={`/releases/${r.id}`} className="release-row ui-row studio-album-row aq-row-link" onPointerDown={() => prefetchRelease(r.id)}>
+                      <ReleaseCover id={r.id} src={r.coverData} />
+                      <div className="min-0">
+                        <span className="ui-row-title">{r.title || '제목 없는 발매'}</span>
+                        <span className="ui-row-meta">{r.artist || '아티스트 없음'} · {r.track_count}곡 · {r.release_date || '발매일 아직 없음'}</span>
+                      </div>
+                      <div className="ui-row-end">
+                        <Badge tone={statusTone(r.status)} className={`aq-status is-${r.status}`}>{STATUS_LABEL[r.status] || r.status}</Badge>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-note">
+                  아직 등록한 발매가 없어요.<br />새 발매를 만들면 여기에서 확인할 수 있어요.<br />
+                  <button className="ui-btn is-white is-sm" type="button" onClick={() => navigate('/upload')}>발매 등록하기 <Glyph name="chevron-right" size={13} /></button>
+                </div>
+              )}
+            </div>
+          </section>
         </div>
-        <MiniTrend data={report.trend} />
-        <div className="aq-report-grid">
-          <div><small>총 재생</small><strong>{report.plays > 0 ? <CountUp value={report.plays} format={n => `${num(n)}회`} /> : '아직 없어요'}</strong></div>
-          <div><small>Top 트랙</small><strong>{report.topTrack || '—'}</strong></div>
-          <div><small>Top 플랫폼</small><strong>{report.topPlatform || '—'}</strong></div>
+        <div className="aq-home-side">
+            {!loading && upcoming && <UpcomingCard release={upcoming} />}
+            {!loading && <MoneyCard payable={payable} pending={payoutPending} held={held} minimum={minimum} registered={isPaymentRegistered(payment)} />}
+          <section className="ui-card aq-report-card" aria-label="이번 달 리포트 요약">
+            <div className="ui-section-head aq-report-head">
+              <h2>{periodLabel(report.period)} 음악 리포트</h2>
+              <button className="aq-head-link" type="button" onClick={() => navigate('/reports')}>리포트 보기<Glyph name="chevron-right" size={14} /></button>
+            </div>
+            {reportEmpty ? (
+              <div className="aq-report-empty">
+                <span className="ui-icon is-blue" aria-hidden="true"><Glyph name="chart" size={20} /></span>
+                <div className="min-0">
+                  <strong>아직 수익 리포트가 없어요</strong>
+                  <small>발매가 플랫폼에 나가고 정산이 들어오면 여기서 수익과 재생 수를 보여 드려요.</small>
+                </div>
+              </div>
+            ) : (<>
+            <div className="aq-report-total">
+              <small>{Number(report.period.slice(5))}월 수익</small>
+              <strong><Money value={report.revenue} animate /></strong>
+              {report.change != null && (
+                <span className={`aq-report-delta${report.change < 0 ? ' is-down' : ''}`}>
+                  전월 대비 {report.change >= 0 ? '+' : ''}{report.change.toFixed(1)}%
+                </span>
+              )}
+            </div>
+            <MiniTrend data={report.trend} />
+            <div className="aq-report-grid">
+              <div><small>총 재생</small><strong>{report.plays > 0 ? <CountUp value={report.plays} format={n => `${num(n)}회`} /> : '아직 없어요'}</strong></div>
+              <div><small>Top 트랙</small><strong>{report.topTrack || '—'}</strong></div>
+              <div><small>Top 플랫폼</small><strong>{report.topPlatform || '—'}</strong></div>
+            </div>
+            </>)}
+          </section>
         </div>
-        </>)}
-      </section>
+      </div>
     </div>
   );
 }
