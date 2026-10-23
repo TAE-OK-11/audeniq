@@ -110,7 +110,12 @@ img{max-width:100%}
 /* 홈 정산 · 다가오는 발매 — 배치만 (모양은 ui-stat · ui-row · ui-steps) */
 .aq-home-upcoming .ui-steps b{margin-right:6px;font-weight:700;color:var(--aq-primary)}
 .aq-home-upcoming .ui-steps li:not(.is-done):not(.is-current):not(.is-warn) b{color:inherit}
-.aq-home-glance:empty{display:none}
+/* 두 칸 줄에서 한쪽 카드가 없으면 남은 카드가 폭을 다 쓴다 */
+#view-home .dashboard-columns>:only-child{grid-column:1/-1}
+/* 왼쪽 메뉴가 같은 곳을 배지와 함께 보여 주는 넓은 화면에서는 바로가기 칸을 숨긴다 */
+@media(min-width:1024px){#view-home .aq-home-shortcuts{display:none}}
+.aq-home-money .aq-report-total{display:grid;gap:4px;margin-top:10px}
+.aq-home-money .aq-report-total .ui-row-meta,.aq-home-upcoming>.ui-row-meta{display:block;margin:2px 0 0;padding:0;clip-path:none}
 .aq-home-money,.aq-home-upcoming{display:grid;gap:14px;align-content:start}
 .aq-home-money .ui-section-head,.aq-home-upcoming .ui-section-head{margin-bottom:0}
 .aq-home-upcoming>.ui-row-meta{margin:0}
