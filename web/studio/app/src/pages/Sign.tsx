@@ -157,7 +157,7 @@ export function Sign() {
           {v.status !== 'SIGNED' && <> 본인확인을 마친 뒤 문서를 읽고 직접 서명해 주세요.</>}
         </p>
         <dl className="aq-sign-facts">
-          <div><dt>권리자</dt><dd>{v.rights_holder}</dd></div>
+          <div><dt>{(v.document_kind as string) === 'guardian' ? '미성년 아티스트' : '권리자'}</dt><dd>{v.rights_holder}</dd></div>
           <div><dt>서명자</dt><dd>{v.signer_name} · {v.signer_role}</dd></div>
           {v.release_title && <div><dt>발매</dt><dd>{v.release_title}</dd></div>}
           <div><dt>{v.status === 'SIGNED' ? '서명 시각' : '서명 기한'}</dt><dd>{when(v.status === 'SIGNED' ? v.signed_at : v.expires_at)}</dd></div>
