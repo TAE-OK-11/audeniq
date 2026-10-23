@@ -113,8 +113,7 @@ img{max-width:100%}
 .aq-home-side .aq-report-card{grid-template-columns:minmax(0,1fr)}
 /* 홈 리포트 — 배치만: 금액과 전월 대비를 한 줄에, 막대는 가운데 고르게, 세 숫자는 막대 아래 */
 #view-home .aq-report-card .aq-report-head{margin-bottom:4px}
-#view-home .aq-report-amount{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin-top:6px}
-#view-home .aq-report-amount>strong{display:block;flex:none;width:auto;margin:0}
+#view-home .aq-report-card .aq-report-total .ui-row-meta{display:block;margin:8px 0 0;padding:0;clip-path:none}
 #view-home .aq-home-side .aq-report-card .aq-mini-trend{justify-content:space-around;height:120px;margin:4px 0 0}
 #view-home .aq-report-kv{margin-top:24px}
 .aq-report-kv dd{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
