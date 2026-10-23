@@ -8,8 +8,10 @@
   <meta name="description" content="AUDENIQ ADMIN — 발매 심사·문의 답변·배급 승인 관리자 콘솔">
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <title>AUDENIQ ADMIN</title>
-  <!-- 글꼴: Audeniq Sans (public/static/fonts, @font-face는 src/styles/tokens.css). 자주 쓰는 글자 판을 먼저 받는다 -->
-  <link rel="preload" href="/static/fonts/AudeniqSansVariable-Subset.woff2" as="font" type="font/woff2" crossorigin>
+  <!-- 글꼴: Audeniq Sans (jsDelivr, github.com/TAE-OK-11/audeniq-font 커밋 308d641에 고정). 버전을 올릴 때는 아래 두 주소의 커밋만 바꾸면 된다 -->
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="preload" href="https://cdn.jsdelivr.net/gh/TAE-OK-11/audeniq-font@308d641281443c6172d94b50785d43890f5aafde/fonts/web/AudeniqSansVariable-Subset.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/TAE-OK-11/audeniq-font@308d641281443c6172d94b50785d43890f5aafde/css/audeniq-sans-web.css">
 </head>
 <body>
   <div id="root"></div>
