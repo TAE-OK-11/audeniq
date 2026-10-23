@@ -111,7 +111,7 @@ pub fn render(origin: &str, slug: &str, title: &str, artist: Option<&str>) -> Re
     let footer = "발매 알림을 신청하셔서 한 번만 보내 드리는 메일이에요. 보낸 뒤 이메일 주소는 바로 지웠어요.";
     let text = format!("{headline}\n\n지금 들어 보세요: {url}\n\n--\n{footer}\n");
     let html = format!(
-        "<!doctype html><html lang=\"ko\"><body style=\"margin:0;padding:24px;background:#f5f6f8;font-family:-apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif\">\
+        "<!doctype html><html lang=\"ko\"><body style=\"margin:0;padding:24px;background:#f5f6f8;font-family:'Pretendard Variable',Pretendard,-apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif\">\
 <div style=\"max-width:520px;margin:0 auto;background:#ffffff;border-radius:16px;padding:28px\">\
 <h1 style=\"margin:0 0 18px;font-size:20px;line-height:1.4;color:#111827\">{headline}</h1>\
 <a href=\"{url}\" style=\"display:inline-block;padding:12px 20px;border-radius:10px;background:#3b63f6;color:#ffffff;text-decoration:none;font-weight:700\">지금 듣기</a>\

@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 
 function NotFound() {
   return (
-    <main style={{ fontFamily: 'system-ui,sans-serif', maxWidth: '48rem', margin: '5rem auto', padding: '1rem', color: '#171b29' }}>
+    <main style={{ fontFamily: 'var(--font-body)', maxWidth: '48rem', margin: '5rem auto', padding: '1rem', color: '#171b29' }}>
       <h1>페이지를 찾을 수 없어요.</h1>
       <p>요청한 주소를 다시 확인해 주세요.</p>
       <a href="/">설문으로 돌아가기</a>
