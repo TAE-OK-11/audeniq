@@ -103,8 +103,20 @@ img{max-width:100%}
 @media(max-width:600px){.aq-report-card{grid-template-columns:1fr}.aq-mini-trend{height:90px;margin-top:14px}}
 
 /* 홈 정산 · 다가오는 발매 — 배치만 (모양은 ui-stat · ui-row · ui-steps) */
-/* 두 칸 줄에서 한쪽 카드가 없으면 남은 카드가 폭을 다 쓴다 */
-#view-home .dashboard-columns>:only-child{grid-column:1/-1}
+/* 홈 두 줄기 — 왼쪽 할 일·내 발매, 오른쪽 다가오는 발매·정산·리포트를 각자 쌓는다 (짧은 카드 옆 빈 칸 없음).
+   오른쪽이 비면 왼쪽이 폭을 다 쓴다. 좁은 화면은 한 줄: 할 일 → 다가오는 발매 → 내 발매 → 정산 → 리포트 */
+#view-home .aq-home-board{align-items:start}
+.aq-home-main,.aq-home-side{display:grid;gap:13px;align-content:start;min-width:0}
+.aq-home-main>*,.aq-home-side>*{margin:0}
+#view-home .aq-home-board>.aq-home-main:only-child,#view-home .aq-home-board:has(>.aq-home-side:empty)>.aq-home-main{grid-column:1/-1}
+.aq-home-side:empty{display:none}
+.aq-home-side .aq-report-card{grid-template-columns:minmax(0,1fr)}
+.aq-home-side .aq-report-card .aq-mini-trend{justify-content:space-around;height:110px;margin-top:8px}
+@media(max-width:900px){
+  #view-home .aq-home-board{display:flex;flex-direction:column;align-items:stretch;gap:11px}
+  .aq-home-main,.aq-home-side{display:contents}
+  .aq-home-tasks{order:1}.aq-home-upcoming{order:2}.aq-home-releases{order:3}.aq-home-money{order:4}.aq-home-side .aq-report-card{order:5}
+}
 /* 왼쪽 메뉴가 같은 곳을 배지와 함께 보여 주는 넓은 화면에서는 바로가기 칸을 숨긴다 */
 @media(min-width:1024px){#view-home .aq-home-shortcuts{display:none}}
 .aq-home-money .aq-report-total{display:grid;gap:4px;margin-top:10px}
