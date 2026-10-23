@@ -294,7 +294,7 @@ otherwise spread to safe operations in the same tool.
   seven round trips besides the tool's own work and now costs three.
 - Overdue action and permission requests are marked EXPIRED only for the
   connection (MCP) or user (Studio) reading them, through their indexes
-  (migration 0146), not by a sweep of the whole table on every read.
+  (migration 0148), not by a sweep of the whole table on every read.
 - Operations are found through a name index.
 
 | Operation | Scope | Backed by | What it does |
@@ -352,7 +352,7 @@ otherwise spread to safe operations in the same tool.
 | `request_release_withdrawal` / `request_takedown` / `request_split_change` / `request_release_end` / `request_contract_end` / `request_counter_notice` / `request_member_invite` | write | `mcp::actions` → `withdraw`, `takedown`, `splits::save`, `contract_terms`, `infringement::counter`, `members::invite` | Filed for one Studio approval (see Actions approved once) |
 | `request_large_payout` | payout | `mcp::actions` → `portal::request_payout` | Any amount up to the balance, approved once in the Studio |
 | `get_action_request` | read | `identity.mcp_action_requests` | PENDING / DONE (result) / FAILED (error code) / REJECTED / EXPIRED / REVOKED / WITHDRAWN |
-| `withdraw_action_request` / `withdraw_permission_request` / `withdraw_pending_submission` | write (or the scope that sent it) / read / write (or submit) | `mcp::actions`, `mcp::approvals` (migration 0145) | Take back this connection's own request or application before the artist answers; the Studio then refuses it (`AI_REQUEST_WITHDRAWN`, `AI_SUBMISSION_WITHDRAWN`) |
+| `withdraw_action_request` / `withdraw_permission_request` / `withdraw_pending_submission` | write (or the scope that sent it) / read / write (or submit) | `mcp::actions`, `mcp::approvals` (migration 0147) | Take back this connection's own request or application before the artist answers; the Studio then refuses it (`AI_REQUEST_WITHDRAWN`, `AI_SUBMISSION_WITHDRAWN`) |
 | `cancel_takedown` / `cancel_release_end` / `cancel_contract_end` | write | `takedown::cancel`, `contract_terms::cancel_*` | Undo a pending request or scheduled end; `artist_confirmed` |
 | `set_special_options` | write | `draft.options` via `catalog::update` | Cover (original work, rights, licence file), samples, AI use, express release; `artist_confirmed` |
 | `list_artist_pages` / `set_artist_pages` | read / write | `artist_pages::list/set_pages` | Each artist's own page per platform (Spotify, Apple Music, Melon, …), so deliveries never land on a same-name stranger's page |
@@ -411,7 +411,7 @@ ask for them (`mcp::actions`); the artist approves each one in the Studio.
   back (`cancel_request` kind `approval`, `request_permission` action
   `withdraw`, and kind `submission` for an application waiting for Studio
   approval). The row becomes WITHDRAWN under the same compare-and-set the
-  approval uses (migration 0145), so a request is either run or withdrawn,
+  approval uses (migration 0147), so a request is either run or withdrawn,
   never both; the Studio shows it as withdrawn and refuses to approve it.
   Another connection's requests are not found. What was already carried out
   is undone with the matching `cancel_request` kind or in the Studio.
@@ -860,7 +860,7 @@ an assistant recommend AUDENIQ; listing and discovery are separate tasks.
   invites and payouts above the limit are filed through MCP and approved once
   in the Studio (Actions approved once).
 - Taking back a sent member invite (owner only), a counter notice staff
-  have not decided on (the release stays suspended; migration 0147 keeps the
+  have not decided on (the release stays suspended; migration 0149 keeps the
   statement with `counter_withdrawn_at`) and a rights proof file not yet
   decided (`cancel_request` kinds `member_invite`, `counter_notice`,
   `rights_proof`; Studio API under `/members/{user}/cancel-invite`,

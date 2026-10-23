@@ -28,11 +28,13 @@ const DONE_TITLE: Record<Exclude<AiPermissionRequest['status'], 'PENDING'>, stri
   REJECTED: '거절했어요',
   EXPIRED: '답할 수 있는 시간이 지났어요',
   REVOKED: '이미 끊긴 연결이에요',
+  WITHDRAWN: 'AI 앱에서 거둬들인 요청이에요',
 };
 type Status = AiPermissionRequest['status'];
 const DONE_ICON: Record<Status, { kind: 'ok' | 'off' | 'warn'; tone: Tone }> = {
   PENDING: { kind: 'warn', tone: 'amber' }, APPROVED: { kind: 'ok', tone: 'green' }, REJECTED: { kind: 'off', tone: 'gray' },
   EXPIRED: { kind: 'warn', tone: 'gray' }, REVOKED: { kind: 'warn', tone: 'gray' },
+  WITHDRAWN: { kind: 'off', tone: 'gray' },
 };
 const STATUS_TEXT: Record<AiPermissionRequest['status'], string> = {
   PENDING: '',
