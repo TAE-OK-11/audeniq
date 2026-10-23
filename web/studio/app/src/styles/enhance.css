@@ -116,9 +116,19 @@ img{max-width:100%}
 #view-home .aq-report-card .ui-row-meta{margin:8px 0 0;padding:0;clip-path:none}
 #view-home .aq-home-report-note{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:10px}
 #view-home .aq-report-foot{display:block;margin-top:16px}
-#view-home .aq-home-side .aq-report-card .aq-mini-trend{justify-content:space-around;height:120px;margin:4px 0 0}
+/* 홈 리포트 막대 — 얇은 막대(20px), 위만 4px 둥글게, 한 기준선 위에 선다. 이번 달만 진한 파랑, 숫자도 이번 달만(글자 색) */
+#view-home .aq-report-card .aq-mini-trend{justify-content:stretch;gap:0;height:116px;margin:8px 0 0;padding-top:4px}
+#view-home .aq-report-card .aq-mini-col{flex:1 1 0;gap:0}
+#view-home .aq-report-card .aq-mini-plot{flex:1;display:flex;align-items:flex-end;justify-content:center;align-self:stretch;min-height:0;padding-top:24px}
+#view-home .aq-report-card .aq-mini-bar{position:relative}
+#view-home .aq-report-card .aq-mini-val{position:absolute;bottom:100%;left:50%;margin-bottom:6px;transform:translateX(-50%);color:var(--aq-text)}
+#view-home .aq-report-card .aq-mini-bar{width:20px;max-width:20px;border-radius:4px 4px 0 0;background:var(--aq-blue-300)}
+#view-home .aq-report-card .aq-mini-bar.is-current{background:var(--aq-primary)}
+#view-home .aq-report-card .aq-mini-col small{align-self:stretch;margin:0;padding-top:8px;border-top:1px solid var(--aq-line);text-align:center;font-weight:600}
+#view-home .aq-report-card .aq-mini-col:last-child small{color:var(--aq-text-2);font-weight:700}
+.aq-report-top{display:flex;align-items:center;gap:10px;min-width:0}
+.aq-report-top>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #view-home .aq-report-kv{margin-top:24px}
-.aq-report-kv dd{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #view-home .aq-report-card .ui-empty{min-height:0}
 @media(max-width:900px){
   #view-home .aq-home-board{display:flex;flex-direction:column;align-items:stretch;gap:11px}
