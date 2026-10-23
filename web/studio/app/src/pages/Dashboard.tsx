@@ -12,7 +12,7 @@ import { useAsync } from '../hooks/useAsync';
 import { SkeletonBlock, SkeletonRows } from '../components/Skeleton';
 import { useSmoothHeight } from '../hooks/useSmoothHeight';
 import { prefetchRelease } from '../api/prefetch';
-import { Badge, CountUp, EmptyState, KeyValue, Steps } from '../ui';
+import { Badge, CountUp, EmptyState, IconTile, KeyValue, Steps } from '../ui';
 import { Money } from '../components/Money';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { listeningSummary, periodLabel } from '../data/reports';
@@ -90,12 +90,17 @@ function MiniTrend({ data }: { data: { period: string; value: number }[] }) {
     <div className="aq-mini-trend" ref={ref} role="img" aria-label="최근 월별 재생 수 추이">
       {data.map((d, i) => (
         <span key={d.period} className="aq-mini-col">
-          <b className="aq-mini-val">{shortCount(d.value)}</b>
-          <span
-            className={`aq-mini-bar${i === data.length - 1 ? ' is-current' : ''}`}
-            style={{ '--h': `${Math.max(6, Math.round((d.value / high) * 100))}%`, '--d': `${i * 80}ms` } as CSSVarStyle}
-            title={`${periodLabel(d.period)} · ${num(d.value)}회`}
-          />
+          {/* 막대는 모두 같은 그림 칸 안에서 같은 비율로 — 숫자 줄이 한 칸에만 있어도 높이가 틀어지지 않게 */}
+          <span className="aq-mini-plot">
+            <span
+              className={`aq-mini-bar${i === data.length - 1 ? ' is-current' : ''}`}
+              style={{ '--h': `${Math.max(6, Math.round((d.value / high) * 100))}%`, '--d': `${i * 80}ms` } as CSSVarStyle}
+              title={`${periodLabel(d.period)} · ${num(d.value)}회`}
+            >
+              {/* 숫자는 이번 달 막대에만 — 막대마다 붙이면 아무것도 눈에 안 띈다. 나머지는 막대에 손을 올리면 보인다 */}
+              {i === data.length - 1 && <b className="aq-mini-val">{shortCount(d.value)}</b>}
+            </span>
+          </span>
           <small>{Number(d.period.slice(5))}월</small>
         </span>
       ))}
@@ -419,8 +424,8 @@ export function Dashboard() {
             </div>
             <MiniTrend data={report.trend} />
             <KeyValue className="aq-report-kv" cols={2} items={[
-              ['많이 들은 곡', report.topTrack || '—'],
-              ['많이 들은 플랫폼', report.topPlatform || '—'],
+              ['많이 들은 곡', <span className="aq-report-top"><IconTile size="sm"><Glyph name="music" size={16} /></IconTile><span>{report.topTrack || '—'}</span></span>],
+              ['많이 들은 플랫폼', <span className="aq-report-top"><IconTile size="sm"><Glyph name="globe" size={16} /></IconTile><span>{report.topPlatform || '—'}</span></span>],
             ]} />
             <p className="ui-row-meta aq-report-foot">플랫폼이 보낸 리포트 기준이라 한 달쯤 늦게 들어와요. 수익은 리포트에서 볼 수 있어요.</p>
             </>)}
