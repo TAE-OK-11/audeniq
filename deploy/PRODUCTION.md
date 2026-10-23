@@ -61,6 +61,14 @@ cd /opt/audeniq
 
 `deploy.sh`는 이미지를 받아 필요한 바이너리가 있는지 먼저 확인하고, `production.env`의 `AUDENIQ_IMAGE`를 digest로 바꾼 뒤 `docker compose up -d`를 한다. migrate → grants가 성공해야 api·worker가 새 이미지로 바뀌고, 둘이 30초 동안 재시작 없이 떠 있어야 성공으로 `deploy-history.log`에 남긴다. 실패하면 로그를 보여 주고 멈춘다 (자동으로 되돌리지 않음).
 
+### 비공개 엔진 저장소 토큰 (CI 필수)
+
+엔진 저장소 `audeniq-media`(audeniq-music)는 비공개라 CI가 받으려면 읽기 전용 토큰이 필요하다. GitHub fine-grained PAT를
+그 저장소의 Contents 읽기 전용으로 만들어 **저장소 Secret `AUDENIQ_GITHUB_TOKEN`**으로 넣는다
+(Settings → Secrets and variables → Actions; Dependabot PR도 검사하려면 같은 이름으로 Dependabot 탭에도).
+CircleCI도 같은 이름의 환경 변수를 쓴다. 토큰은 빌드 비밀·임시 파일로만 넘기고 이미지 레이어에 남지 않는다.
+없으면 Foundation·Backend portability·Backend image의 엔진 빌드가 `failed to authenticate`로 실패한다.
+
 ### GitHub Actions에서 바로 배포 (선택)
 
 저장소 Settings → Environments → `production`을 만들고 (필요하면 승인자 지정) 다음을 넣는다.
@@ -72,7 +80,7 @@ cd /opt/audeniq
 | Secret | `DEPLOY_SSH_KEY` | 배포 전용 SSH 개인키 |
 | Secret | `DEPLOY_KNOWN_HOSTS` | `ssh-keyscan <서버>` 결과 (호스트 키 고정) |
 | Variable | `DEPLOY_PATH` | 기본 `/opt/audeniq` |
-| Variable (저장소) | `AUTO_DEPLOY` | `true`면 main에 이미지가 올라갈 때마다 자동 배포 |
+| Variable (저장소) | `AUTO_DEPLOY` | 기본은 main에 이미지가 올라갈 때마다 자동 배포, `false`면 끈다 |
 | Variable (저장소) | `BACKEND_CPU_VARIANT` | 자동 배포 이미지: `portable`(기본), `x86-64-v3`, `graviton4`, `ampere-a4`, `ampere-a1` |
 
 Actions → Backend image → *Run workflow*에서 `deploy`와 `cpu_variant`를 선택하거나, `AUTO_DEPLOY=true`와 `BACKEND_CPU_VARIANT`로 자동 배포한다. 배포 작업은 같은 커밋의 `compose.production.yaml`·`grants.sql`·`bootstrap.sql`·`deploy.sh`·`check-cpu.sh`·`pg-upgrade.sh`·`pgbouncer/`를 서버에 복사하고, 그 작업 동안만 유효한 토큰으로 GHCR에 로그인해 `deploy.sh`를 실행한다. 비밀 파일(`production.env`, `tunnel-token`)은 서버에만 있다.
