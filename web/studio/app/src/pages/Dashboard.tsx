@@ -25,7 +25,6 @@ import { Glyph } from '../components/Glyph';
 import { josa } from '../lib/josa';
 import { RELEASE_STEPS, dDayLabel, releaseStep, upcomingRelease } from '../lib/home';
 import { useHomeSignals } from '../hooks/useHomeSignals';
-import { useLandingReveal } from '../hooks/useLandingReveal';
 import { MOCK } from '../lib/mode';
 import type { Release } from '../api/types';
 
@@ -115,10 +114,11 @@ function MoneyCard({ payable, pending, held, minimum, registered }: {
   const hint = !registered && payable > 0 ? '계좌를 등록하면 지급을 요청할 수 있어요.'
     : registered && payable > 0 && payable < minimum ? `${money(minimum)}부터 지급을 요청할 수 있어요.`
     : [processing > 0 && `지급 처리 중 ${money(processing)}`, held > 0 && `보류 ${money(held)}`].filter(Boolean).join(' · ') || undefined;
-  // 계좌 등록은 '확인할 작업'에 이미 있다 — 여기서는 지급 요청만 (한 화면에 같은 일을 두 번 두지 않는다)
+  // 계좌 등록은 '확인할 작업'에 이미 있다 — 여기서는 지급 요청만 (한 화면에 같은 일을 두 번 두지 않는다).
+  // 주 실행(파란) 버튼은 맨 위 큰 카드 하나뿐 — 여기는 보조 버튼 (한 화면에 판단 하나)
   const action = canRequest ? { to: '/settlement', label: '지급 요청하기' } : undefined;
   return (
-    <section className="ui-card aq-home-money" aria-labelledby="moneyTitle" data-reveal data-delay={90}>
+    <section className="ui-card aq-home-money" aria-labelledby="moneyTitle">
       <div className="ui-section-head">
         <h2 id="moneyTitle">정산</h2>
         <button type="button" className="aq-head-link" onClick={() => navigate('/settlement')}>정산 보기<Glyph name="chevron-right" size={14} /></button>
@@ -128,7 +128,7 @@ function MoneyCard({ payable, pending, held, minimum, registered }: {
         <strong><Money value={payable} animate /></strong>
         {hint && <p className="ui-row-meta">{hint}</p>}
       </div>
-      {action && <Link className="ui-btn is-primary is-block" to={action.to} onPointerEnter={() => prefetchRoute(action.to)}>{action.label}</Link>}
+      {action && <Link className="ui-btn is-white is-block" to={action.to} onPointerEnter={() => prefetchRoute(action.to)}>{action.label}</Link>}
     </section>
   );
 }
@@ -140,7 +140,7 @@ function UpcomingCard({ release: r }: { release: Release }) {
     : r.status === 'scheduled' ? '배급을 승인했어요. 발매일에 맞춰 플랫폼에 보내요.'
     : r.status === 'needs' ? '보완하면 검토를 이어서 해요.' : '';
   return (
-    <section className="ui-card aq-home-upcoming" aria-labelledby="nextTitle" data-reveal data-delay={90}>
+    <section className="ui-card aq-home-upcoming" aria-labelledby="nextTitle">
       <div className="ui-section-head">
         <h2 id="nextTitle">{r.status === 'live' ? '최근 발매' : '다가오는 발매'}</h2>
       </div>
@@ -158,7 +158,7 @@ function UpcomingCard({ release: r }: { release: Release }) {
           )}
         </Link>
       </div>
-      <Steps steps={RELEASE_STEPS.map((s, i) => <span><b>{`0${i + 1}`}</b>{i === releaseStep(r.status) && r.status === 'needs' ? '보완 필요' : s}</span>)} current={releaseStep(r.status)} warn={r.status === 'needs'} label="발매 진행 단계" />
+      <Steps steps={RELEASE_STEPS.map((s, i) => (i === releaseStep(r.status) && r.status === 'needs' ? '보완 필요' : s))} current={releaseStep(r.status)} warn={r.status === 'needs'} label="발매 진행 단계" />
       {note && <p className="ui-row-meta">{note}</p>}
     </section>
   );
@@ -176,8 +176,6 @@ export function Dashboard() {
   const { data: releases = [], loading, error, reload } = useAsync(() => api.listReleases(), [], { key: 'releases' });
   const topRef = useRef<HTMLDivElement>(null);
   useSmoothHeight(topRef, loading);
-  const homeRef = useRef<HTMLDivElement>(null);
-  useLandingReveal(homeRef, !loading);
   const { rows: reportRows } = useReportRows();
   const report = latestSummary(reportRows);
   const signals = useHomeSignals(releases, loading);
@@ -249,7 +247,7 @@ export function Dashboard() {
   else if (toSign) gridStatus.contracts = { text: `서명할 계약서 ${toSign}건` };
 
   return (
-    <div id="view-home" className="view" ref={homeRef}>
+    <div id="view-home" className="view">
       {/* 머리와 큰 카드는 불러오기가 끝나면 높이가 바뀐다(급한 일이 있을 때만 '새 발매' 버튼, 자리표시보다 큰 카드) —
           한 번에 아래 내용을 밀지 않고 부드럽게 자란다 */}
       <div ref={topRef} className="aq-home-top">
@@ -276,7 +274,7 @@ export function Dashboard() {
           <span className="ui-btn is-primary aq-hero-cta">
             {urgent.btn}하기
             <span className="aq-cta-arrow" aria-hidden="true">
-              <Glyph name="arrow-up-right" size={15} />
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4" /></svg>
             </span>
           </span>
         </Link>
@@ -290,7 +288,7 @@ export function Dashboard() {
         <span className="ui-btn is-primary aq-hero-cta">
           발매 등록하기
           <span className="aq-cta-arrow" aria-hidden="true">
-            <Glyph name="arrow-up-right" size={15} />
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4" /></svg>
           </span>
         </span>
       </Link>
@@ -316,7 +314,7 @@ export function Dashboard() {
 
       <div className="dashboard-columns">
         {/* 해야 할 일을 먼저 — 휴대폰에서 '확인할 작업'이 발매 목록 아래(약 1100px)에 묻혀 있었다 */}
-        <section className="ui-card" aria-labelledby="workTitle" data-reveal>
+        <section className="ui-card" aria-labelledby="workTitle">
           <div className="ui-section-head">
             <h2 id="workTitle">확인할 작업</h2>
             {restTasks.length > 0 && <span className="ui-count is-soft">{restTasks.length}</span>}
@@ -362,7 +360,7 @@ export function Dashboard() {
 
       {/* 내 발매 옆에 정산 — 발매와 그 돈을 나란히. 한쪽이 없으면 남은 카드가 폭을 다 쓴다 */}
       <div className="dashboard-columns">
-        <section className="ui-card" aria-labelledby="upcomingTitle" data-reveal>
+        <section className="ui-card" aria-labelledby="upcomingTitle">
           <div className="ui-section-head">
             <h2 id="upcomingTitle">내 발매</h2>
             <button type="button" className="aq-head-link" onClick={() => navigate('/releases')}>전체 보기<Glyph name="chevron-right" size={14} /></button>

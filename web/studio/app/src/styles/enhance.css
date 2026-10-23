@@ -86,14 +86,9 @@ img{max-width:100%}
 .aq-all-done span{display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:var(--aq-e-green-soft);color:var(--aq-e-green);font-weight:800;animation:aq-soft-pop var(--aq-motion-long) var(--aq-enter) both}
 
 /* ---------- 홈 히어로 ---------- */
-/* 홍보 페이지(audeniq.com) 버튼처럼 오른쪽 동그란 화살표 — 호버 때 화살표만 위오른쪽으로 */
-.aq-hero-cta>.aq-cta-arrow{display:grid;place-items:center;flex:none;width:28px;height:28px;border-radius:50%;background:#ffffff26;transition:transform .25s var(--aq-e-ease)}
+.aq-hero-cta>.aq-cta-arrow{display:grid;place-items:center;flex:none;transition:transform .25s var(--aq-e-ease)}
 .aq-hero-cta>.aq-cta-arrow svg{display:block}
-.aq-hero-cta:hover .aq-cta-arrow svg{transform:translate(2px,-2px)}
-.aq-hero-cta>.aq-cta-arrow svg{transition:transform .25s var(--aq-e-ease)}
-/* 홈 아래쪽 카드는 홍보 페이지처럼 16px 아래에서 떠오른다 (hooks/useLandingReveal) */
-.aq-rise-wait{opacity:0;transform:translateY(16px)}
-@media(prefers-reduced-motion:reduce){.aq-rise-wait{opacity:1;transform:none}}
+.aq-hero-cta:hover span{transform:translateX(4px)}
 
 /* 이번 달 리포트 미니 추이 */
 .aq-report-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:4px 28px;align-items:end}
@@ -108,8 +103,6 @@ img{max-width:100%}
 @media(max-width:600px){.aq-report-card{grid-template-columns:1fr}.aq-mini-trend{height:90px;margin-top:14px}}
 
 /* 홈 정산 · 다가오는 발매 — 배치만 (모양은 ui-stat · ui-row · ui-steps) */
-.aq-home-upcoming .ui-steps b{margin-right:6px;font-weight:700;color:var(--aq-primary)}
-.aq-home-upcoming .ui-steps li:not(.is-done):not(.is-current):not(.is-warn) b{color:inherit}
 /* 두 칸 줄에서 한쪽 카드가 없으면 남은 카드가 폭을 다 쓴다 */
 #view-home .dashboard-columns>:only-child{grid-column:1/-1}
 /* 왼쪽 메뉴가 같은 곳을 배지와 함께 보여 주는 넓은 화면에서는 바로가기 칸을 숨긴다 */
