@@ -819,7 +819,7 @@ async fn admin_create(
             &uuid::Uuid::new_v4().simple().to_string()[..8]
         )
     });
-    let result = write_row(&s, table, &id, &row, now, true).await;
+    let result = write_row(&s.pool, table, &id, &row, now, true).await;
     finish(table, result, StatusCode::CREATED)
 }
 
@@ -844,7 +844,7 @@ async fn admin_update(
         Ok((_, row)) => row,
         Err(code) => return fail(StatusCode::BAD_REQUEST, code),
     };
-    let result = write_row(&s, table, &id, &row, now, false).await;
+    let result = write_row(&s.pool, table, &id, &row, now, false).await;
     finish(table, result, StatusCode::OK)
 }
 
@@ -905,7 +905,7 @@ fn finish(table: Table, result: Result<Written, sqlx::Error>, ok: StatusCode) ->
 
 /// 새 글(insert) 또는 수정. 수정은 삭제된 글도 다시 보이게 한다(복구).
 async fn write_row(
-    s: &AppState,
+    pool: &sqlx::PgPool,
     table: Table,
     id: &str,
     row: &Row,
@@ -983,11 +983,301 @@ async fn write_row(
             .bind(published_at),
     };
     let _ = table;
-    Ok(match query.bind(now).fetch_optional(&s.pool).await? {
+    Ok(match query.bind(now).fetch_optional(pool).await? {
         Some(v) => Written::Row(v),
         None if insert => Written::Taken,
         None => Written::Missing,
     })
+}
+
+// ---------------------------------------------------------------- 운영자 CLI (audeniq-admin maintenance|notice)
+// 비상 업무만: API·로그인·관리자 화면에 들어갈 수 없을 때도 DB에 바로 점검을 시작·연장·종료·예약·취소하고
+// 긴급 공지를 올리고 내린다. 관리 화면과 같은 행을 쓰고, 도는 API는 STATUS_TTL 안에 반영한다.
+
+/// 관리 화면 긴급 점검의 기본 안내 (web/admin ContentAdmin의 EMERGENCY_TEXT)
+pub const EMERGENCY_BODY: &str = "서비스를 안정적으로 되돌리기 위해 긴급 점검을 하고 있어요. 점검 중에는 로그인과 발매 접수를 할 수 없어요. 불편을 드려 죄송해요.";
+/// 종료 시각 미정으로 시작할 때의 예상 종료 (관리 화면과 같음)
+const UNKNOWN_END_MINUTES: i64 = 12 * 60;
+
+async fn cli_audit(
+    c: &mut sqlx::PgConnection,
+    operator: &str,
+    action: &str,
+    id: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("INSERT INTO operations.audit_events(id,actor_service,action,reason_code,request_id) VALUES($1,$2,$3,$4,$5)")
+        .bind(uuid::Uuid::new_v4())
+        .bind(format!("audeniq-admin:{operator}"))
+        .bind(action)
+        .bind(id)
+        .bind(uuid::Uuid::new_v4())
+        .execute(c)
+        .await?;
+    Ok(())
+}
+
+async fn cli_rows(
+    c: &mut sqlx::PgConnection,
+    now: DateTime<Utc>,
+) -> Result<Vec<Value>, sqlx::Error> {
+    let sql = format!(
+        "SELECT {} FROM content.maintenance WHERE deleted_at IS NULL AND ends_at > $1 ORDER BY starts_at LIMIT 20",
+        Table::Maintenance.json()
+    );
+    sqlx::query_scalar(sqlx::AssertSqlSafe(sql))
+        .bind(now)
+        .fetch_all(c)
+        .await
+}
+
+/// 진행 중인 점검 행의 id (게시됐고 시작했고 아직 안 끝난 것)
+async fn cli_active_ids(
+    c: &mut sqlx::PgConnection,
+    now: DateTime<Utc>,
+) -> Result<Vec<String>, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT id FROM content.maintenance WHERE deleted_at IS NULL AND published_at <= $1 AND starts_at <= $1 AND ends_at > $1
+          ORDER BY starts_at FOR UPDATE",
+    )
+    .bind(now)
+    .fetch_all(c)
+    .await
+}
+
+/// `/api/status`와 같은 모양 + 이 프로세스 환경의 비상 스위치(MAINTENANCE_MODE)
+pub async fn cli_status(pool: &sqlx::PgPool) -> crate::error::Result<Value> {
+    let now = now_utc();
+    let mut c = pool.acquire().await?;
+    let mut status = pick_status(&cli_rows(&mut c, now).await?, now);
+    status["emergency_switch"] = forced_maintenance(now).unwrap_or(Value::Null);
+    Ok(status)
+}
+
+/// 지금부터 긴급 점검. `minutes`가 없으면 종료 시각 미정.
+pub async fn cli_start(
+    pool: &sqlx::PgPool,
+    operator: &str,
+    minutes: Option<i64>,
+    title: Option<&str>,
+    body: Option<&str>,
+) -> crate::error::Result<Value> {
+    if minutes.is_some_and(|m| !(1..=7 * 24 * 60).contains(&m)) {
+        return Err(Error::InvalidCode("MINUTES_INVALID"));
+    }
+    let title = text(
+        Some(&json!(title.unwrap_or("긴급 서버 점검"))),
+        200,
+        false,
+        true,
+    )
+    .map_err(Error::InvalidCode)?;
+    let body = text(
+        Some(&json!(body.unwrap_or(EMERGENCY_BODY))),
+        2000,
+        true,
+        false,
+    )
+    .map_err(Error::InvalidCode)?;
+    let now = now_utc();
+    let mut tx = pool.begin().await?;
+    // 동시에 두 운영자가 시작해도 점검 행은 하나
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('content.maintenance.cli'))")
+        .execute(&mut *tx)
+        .await?;
+    if !cli_active_ids(&mut tx, now).await?.is_empty() {
+        return Err(Error::PolicyGate("MAINTENANCE_ALREADY_ACTIVE"));
+    }
+    let starts_at = now - Duration::seconds(1);
+    let ends_at = now + Duration::minutes(minutes.unwrap_or(UNKNOWN_END_MINUTES));
+    let id = format!(
+        "{}-{}-{}",
+        Table::Maintenance.id_prefix(),
+        now.format("%Y%m%d"),
+        &uuid::Uuid::new_v4().simple().to_string()[..8]
+    );
+    let row: Value = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+        "INSERT INTO content.maintenance (id,title,body,starts_at,ends_at,kind,end_unknown,published_at,created_at,updated_at) \
+         VALUES ($1,$2,$3,$4,$5,'emergency',$6,$4,$7,$7) RETURNING {}",
+        Table::Maintenance.json()
+    )))
+    .bind(&id)
+    .bind(&title)
+    .bind(&body)
+    .bind(starts_at)
+    .bind(ends_at)
+    .bind(minutes.is_none())
+    .bind(now)
+    .fetch_one(&mut *tx)
+    .await?;
+    cli_audit(&mut tx, operator, "maintenance.started", &id).await?;
+    tx.commit().await?;
+    Ok(row)
+}
+
+/// 진행 중인 점검을 지금 끝낸다 (예약 점검이 진행 중이어도 끝낸다).
+pub async fn cli_stop(pool: &sqlx::PgPool, operator: &str) -> crate::error::Result<Value> {
+    let now = now_utc();
+    let mut tx = pool.begin().await?;
+    let ids = cli_active_ids(&mut tx, now).await?;
+    if ids.is_empty() {
+        return Err(Error::PolicyGate("MAINTENANCE_NOT_ACTIVE"));
+    }
+    // ends_at > starts_at 제약: 막 시작한 점검은 시작 1초 뒤에 끝난다
+    sqlx::query(
+        "UPDATE content.maintenance SET ends_at=greatest($2, starts_at + interval '1 second'), end_unknown=false, updated_at=$2
+          WHERE id = ANY($1)",
+    )
+    .bind(&ids)
+    .bind(now)
+    .execute(&mut *tx)
+    .await?;
+    for id in &ids {
+        cli_audit(&mut tx, operator, "maintenance.stopped", id).await?;
+    }
+    tx.commit().await?;
+    Ok(json!({"stopped": ids, "ended_at": iso(now)}))
+}
+
+/// 진행 중인 점검의 예상 종료를 `minutes`분 늦춘다 (지난 예정이면 지금부터).
+pub async fn cli_extend(
+    pool: &sqlx::PgPool,
+    operator: &str,
+    minutes: i64,
+) -> crate::error::Result<Value> {
+    if !(1..=7 * 24 * 60).contains(&minutes) {
+        return Err(Error::InvalidCode("MINUTES_INVALID"));
+    }
+    let now = now_utc();
+    let mut tx = pool.begin().await?;
+    let ids = cli_active_ids(&mut tx, now).await?;
+    if ids.is_empty() {
+        return Err(Error::PolicyGate("MAINTENANCE_NOT_ACTIVE"));
+    }
+    sqlx::query(
+        "UPDATE content.maintenance SET ends_at=greatest(ends_at, $2) + make_interval(mins => $3), end_unknown=false, updated_at=$2
+          WHERE id = ANY($1)",
+    )
+    .bind(&ids)
+    .bind(now)
+    .bind(minutes as i32)
+    .execute(&mut *tx)
+    .await?;
+    for id in &ids {
+        cli_audit(&mut tx, operator, "maintenance.extended", id).await?;
+    }
+    tx.commit().await?;
+    let mut c = pool.acquire().await?;
+    Ok(pick_status(&cli_rows(&mut c, now).await?, now))
+}
+
+/// CLI 시각: `YYYY-MM-DDTHH:MM:SSZ`(UTC) 또는 한국 시각 `YYYY-MM-DD HH:MM`
+/// (`T`로 이어도 된다). 응답·저장은 UTC.
+pub fn cli_time(v: &str) -> crate::error::Result<String> {
+    let v = v.trim();
+    if let Some(t) = parse_ts(v) {
+        return Ok(iso(t));
+    }
+    let kst = FixedOffset::east_opt(9 * 3600).expect("valid offset");
+    ["%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M"]
+        .iter()
+        .find_map(|f| chrono::NaiveDateTime::parse_from_str(v, f).ok())
+        .and_then(|t| t.and_local_timezone(kst).single())
+        .map(|t| iso(t.with_timezone(&Utc)))
+        .ok_or(Error::InvalidCode("TIME_INVALID"))
+}
+
+fn cli_table(kind: &str) -> crate::error::Result<Table> {
+    match Table::parse(kind) {
+        Some(t @ (Table::Notices | Table::Maintenance)) => Ok(t),
+        _ => Err(Error::InvalidCode("CONTENT_KIND_INVALID")),
+    }
+}
+
+/// 공지(`notices`)나 점검(`maintenance`) 목록: 예약·숨김 글 포함, 삭제한 글 제외, 최근 50개
+pub async fn cli_list(pool: &sqlx::PgPool, kind: &str) -> crate::error::Result<Value> {
+    let table = cli_table(kind)?;
+    let sql = format!(
+        "SELECT {} FROM content.{} WHERE deleted_at IS NULL ORDER BY {} LIMIT 50",
+        table.json(),
+        table.name(),
+        table.order()
+    );
+    let rows: Vec<Value> = sqlx::query_scalar(sqlx::AssertSqlSafe(sql))
+        .fetch_all(pool)
+        .await?;
+    let now = now_utc();
+    Ok(json!({"now": iso(now), "items": rows}))
+}
+
+/// 관리 화면의 새 글과 같은 입력·검증(`validate`)으로 공지·예약 점검을 올린다.
+pub async fn cli_create(
+    pool: &sqlx::PgPool,
+    operator: &str,
+    kind: &str,
+    input: Value,
+) -> crate::error::Result<Value> {
+    let table = cli_table(kind)?;
+    let now = now_utc();
+    let (_, row) = validate(table, &input, now).map_err(Error::InvalidCode)?;
+    let id = format!(
+        "{}-{}-{}",
+        table.id_prefix(),
+        now.format("%Y%m%d"),
+        &uuid::Uuid::new_v4().simple().to_string()[..8]
+    );
+    let Written::Row(v) = write_row(pool, table, &id, &row, now, true).await? else {
+        return Err(Error::Conflict);
+    };
+    let mut c = pool.acquire().await?;
+    cli_audit(
+        &mut c,
+        operator,
+        &format!("content.{}.created", table.name()),
+        &id,
+    )
+    .await?;
+    Ok(present(table, v, &today_kst(now)))
+}
+
+/// 공지 내리기, 예약 점검 취소 (삭제 기록, 관리 화면에서 복구 가능).
+/// 진행 중인 점검은 기록이 남도록 `cli_stop`으로 끝낸다.
+pub async fn cli_remove(
+    pool: &sqlx::PgPool,
+    operator: &str,
+    kind: &str,
+    id: &str,
+) -> crate::error::Result<Value> {
+    let table = cli_table(kind)?;
+    if !valid_id(id) {
+        return Err(Error::NotFound);
+    }
+    let now = now_utc();
+    let mut tx = pool.begin().await?;
+    if table == Table::Maintenance && cli_active_ids(&mut tx, now).await?.iter().any(|a| a == id) {
+        return Err(Error::PolicyGate("MAINTENANCE_ACTIVE_USE_STOP"));
+    }
+    let sql = format!(
+        "UPDATE content.{} SET deleted_at = $1, updated_at = $1 WHERE id = $2 AND deleted_at IS NULL",
+        table.name()
+    );
+    let n = sqlx::query(sqlx::AssertSqlSafe(sql))
+        .bind(now)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    if n != 1 {
+        return Err(Error::NotFound);
+    }
+    cli_audit(
+        &mut tx,
+        operator,
+        &format!("content.{}.removed", table.name()),
+        id,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"id": id, "deleted": true}))
 }
 
 pub fn routes() -> Router<AppState> {
@@ -1155,6 +1445,25 @@ mod tests {
         assert!(
             none["maintenance"]["active"].is_null() && none["maintenance"]["upcoming"].is_null()
         );
+    }
+
+    #[test]
+    fn cli_time_reads_kst_and_utc() {
+        assert_eq!(
+            cli_time("2026-10-23 02:00").unwrap(),
+            "2026-10-22T17:00:00Z"
+        );
+        assert_eq!(
+            cli_time("2026-10-23T02:30").unwrap(),
+            "2026-10-22T17:30:00Z"
+        );
+        assert_eq!(
+            cli_time(" 2026-10-22T17:00:00Z ").unwrap(),
+            "2026-10-22T17:00:00Z"
+        );
+        for bad in ["", "내일 2시", "2026-13-01 02:00", "2026-10-23"] {
+            assert!(cli_time(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]
