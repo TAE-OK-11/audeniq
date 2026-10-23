@@ -167,14 +167,19 @@ pub async fn create_consent(
     release: Uuid,
     input: ConsentInput,
 ) -> Result<Value> {
-    if input.minority_declared {
-        return Err(Error::PolicyGate("MINORITY_REVIEW_REQUIRED"));
-    }
     if input.parties.is_empty() || input.parties.len() > 64 {
         return Err(Error::Invalid);
     }
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, release, "release", true).await?;
+    // A minor artist's release: the guardian's verified signature and the
+    // family relation certificate are part of the consent (human review
+    // confirms the relation, review.rs S2_ROUTER_PATH).
+    let guardian = if input.minority_declared {
+        Some(crate::signing::guardian_ready(&mut tx, org, release).await?)
+    } else {
+        None
+    };
     let mut party_ids: Vec<Uuid> = input.parties.iter().map(|p| p.party_id).collect();
     party_ids.sort();
     party_ids.dedup();
@@ -201,9 +206,9 @@ pub async fn create_consent(
         "release_id": release,
         "party_ids": party_ids,
         "party_roles": input.parties.iter().map(|p| json!({"party_id": p.party_id, "role": p.role})).collect::<Vec<_>>(),
-        "minority_path": "NONE",
-        "consent_doc_ids": [],
-        "signature_ids": [],
+        "minority_path": if guardian.is_some() { "GUARDIAN" } else { "NONE" },
+        "consent_doc_ids": guardian.map(|(_, doc)| vec![doc]).unwrap_or_default(),
+        "signature_ids": guardian.map(|(sig, _)| vec![sig]).unwrap_or_default(),
         "scope": scope,
         "scope_hash": scope_hash,
         "valid_until": (chrono::Utc::now() + chrono::Duration::days(valid_days)).to_rfc3339(),
@@ -255,7 +260,9 @@ pub struct SubmitInput {
 pub struct DeclarationsInput {
     /// "I own or control all rights needed to distribute this release."
     pub rights_confirmed: bool,
-    /// "I am 18+ or have legal-guardian consent to distribute."
+    /// "I am an adult (19 or older, civil-law majority)." A minor's release
+    /// declares `minority_declared` instead and needs the guardian's signed
+    /// consent ([`crate::signing::guardian_consent`]).
     pub adult_confirmed: bool,
     pub is_cover: bool,
     pub is_remix: bool,
@@ -437,10 +444,10 @@ pub async fn submit(
     release: Uuid,
     input: SubmitInput,
 ) -> Result<Value> {
-    if input.minority_declared {
-        return Err(Error::PolicyGate("MINORITY_REVIEW_REQUIRED"));
-    }
-    if !input.declarations.rights_confirmed || !input.declarations.adult_confirmed {
+    // Adult, or a minor with a guardian's consent: never both, never neither.
+    if !input.declarations.rights_confirmed
+        || input.declarations.adult_confirmed == input.minority_declared
+    {
         return Err(Error::PolicyGate("DECLARATION_REQUIRED"));
     }
     if input.idempotency_key.trim().is_empty() || input.idempotency_key.len() > 128 {
@@ -528,13 +535,21 @@ pub async fn submit(
     if scope_hash != consent_scope {
         return Err(Error::PolicyGate("CONSENT_SCOPE_MISMATCH"));
     }
+    if input.minority_declared {
+        // The consent must be the guardian one, and the guardian's
+        // signature must still stand (a request can be cancelled after).
+        if consent_body["minority_path"] != "GUARDIAN" {
+            return Err(Error::PolicyGate("GUARDIAN_CONSENT_REQUIRED"));
+        }
+        crate::signing::guardian_ready(&mut tx, org, release).await?;
+    }
     let consent_package_hash: String = c.get("package_hash");
     let body = revision_body(
         &mut tx,
         org,
         release,
         &consent_package_hash,
-        false,
+        input.minority_declared,
         &input.declarations,
     )
     .await?;

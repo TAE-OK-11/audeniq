@@ -41,7 +41,7 @@ const STALE_MINUTES: i32 = 30;
 /// Imports running at once on this server (disk and bandwidth).
 static IMPORTS: Semaphore = Semaphore::const_new(4);
 
-const NEXT_STEP: &str = "Attach it: audio with upsert_track (asset_id), cover art with update_release_draft (artwork_asset_id).";
+const NEXT_STEP: &str = "Attach it: audio with upsert_track (asset_id), cover art with save_release_draft (action update, artwork_asset_id).";
 
 fn kind_arg(args: &Value) -> std::result::Result<&'static str, ToolError> {
     match args.get("kind").and_then(Value::as_str) {
@@ -85,7 +85,7 @@ pub(super) async fn start(
         "asset_id": v["asset_id"],
         "expected_key": v["expected_key"],
         "upload": v["grant"],
-        "next": "PUT the file's bytes to upload.url with exactly upload.headers before upload.expires_at, then call complete_upload with upload_session_id, asset_id and expected_key.",
+        "next": "PUT the file's bytes to upload.url with exactly upload.headers before upload.expires_at, then call upload_file (action complete) with upload_session_id, asset_id and expected_key.",
     }))
 }
 
@@ -139,7 +139,7 @@ pub(super) async fn import(
     let size = res.content_length().ok_or_else(|| {
         tool_error(
             "IMPORT_SIZE_UNKNOWN",
-            "The link did not say how large the file is. Use a direct download link, or send the file with start_upload.",
+            "The link did not say how large the file is. Use a direct download link, or send the file with upload_file (action start).",
         )
     })?;
     let content_type = content_type(kind, args, &res).ok_or_else(|| {
@@ -316,7 +316,7 @@ async fn wait(
             "view": "upload_status",
             "upload_session_id": session,
             "state": "PROCESSING",
-            "next": "The file is still being checked. Call get_upload_status with upload_session_id in a minute; do not upload it again.",
+            "next": "The file is still being checked. Call get_file_status (view upload) with upload_session_id in a minute; do not upload it again.",
         })),
     }
 }

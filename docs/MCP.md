@@ -166,11 +166,11 @@ audited as `mcp.client_registered` / `mcp.client_disabled` with the operator.
 
 ### Public tools (no account)
 
-`get_release_requirements`, `list_announcements`, `get_announcement` (published
-notices and events, as on `/api/notices` and `/api/events`) and
-`get_service_status` (maintenance, as on `/api/status`) need no token on
+`get_audeniq_info` (published notices and events, as on `/api/notices` and
+`/api/events`; with `view: service_status` maintenance, as on `/api/status`;
+with `view: requirements` the release requirements) needs no token on
 `/api/mcp/public` (on `/api/mcp` they are called with the connection's token
-like the rest). Their `securitySchemes` list `noauth` first, then `oauth2`.
+like the rest). Its `securitySchemes` list `noauth` first, then `oauth2`.
 
 | Caller | Daily limit (KST day) | Over the limit |
 |---|---|---|
@@ -237,7 +237,67 @@ field) plus a text rendering. Failures are tool results with `isError: true`
 and `{code, message}` (stable API codes, human messages from
 `error::message`); internal details are never returned.
 
-| Tool | Scope | Backed by | What it does |
+### Published tools and operations
+
+`tools/list` shows 25 tools. The 89 operations below are the units of scope,
+schema, rate limit, audit (`mcp.<operation>`) and handler; operations of the
+same kind are published as one tool, and one argument picks the operation
+(`view` for reads, `action` or `kind` for writes). The other arguments are the
+operation's own and each call is checked against the operation's own schema.
+A grouped tool's annotations are the most careful of its operations' (read
+only if all are, destructive if any is, idempotent if all are). Every group
+stays within one scope, so the consent screen and `request_permission` work
+as before. Clients that kept the earlier list can still call an operation by
+its own name.
+
+| Tool | Argument | Operations |
+|---|---|---|
+| `get_account_context` | `view`: `account` (default), `members`, `platforms`, `notifications`, `documents`, `signing_requests`, `inquiries`, `inquiry`, `artist_pages`, `platform_requests`, `withdrawal_quota` | `get_account_context`, `list_members`, `list_distribution_platforms`, `list_notifications`, `list_documents`, `list_signing_requests`, `list_inquiries`, `get_inquiry`, `list_artist_pages`, `list_platform_requests`, `get_withdrawal_quota` |
+| `get_audeniq_info` (public) | `view`: `list` (default), `detail`, `service_status`, `requirements` | `list_announcements`, `get_announcement`, `get_service_status`, `get_release_requirements` |
+| `list_releases` | `view`: `releases` (default), `codes` | `list_releases`, `list_release_codes` |
+| `get_release` | `view`: `details` (default), `status`, `delivery`, `content_id`, `corrections`, `playlist_pitch`, `smart_link`, `smart_link_check`, `claims`, `missing_files`, `handover`, `guardian_consent` | `get_release`, `get_submission_status`, `get_delivery_status`, `get_content_id_status`, `get_release_corrections`, `get_playlist_pitch`, `get_smart_link`, `check_smart_link`, `list_infringement_claims`, `get_upload_link`, `get_release_handover`, `get_guardian_consent` |
+| `validate_release` | `view`: `checks` (default), `preview` | `validate_release`, `preview_submission` |
+| `get_file_status` | `view`: `upload`, `checks` | `get_upload_status`, `get_file_checks` |
+| `get_approval_status` | `kind`: `action` (default), `permission` | `get_action_request`, `get_permission_request` |
+| `get_settlement` (settlement) | `view`: `summary` (default), `statements`, `royalty_reports`, `payouts`, `splits`, `received_splits`, `csv` | `get_settlement_summary`, `list_settlement_statements`, `get_royalty_reports`, `list_payouts`, `get_release_splits`, `list_received_splits`, `export_csv` |
+| `save_release_draft` | `action`: `create`, `update`, `special_options` | `create_release_draft`, `update_release_draft`, `set_special_options` |
+| `upsert_track` | `action`: `save` (default), `credits` | `upsert_track`, `set_track_credits` |
+| `upload_file` | `action`: `start`, `complete`, `import` | `start_upload`, `complete_upload`, `import_file_from_url` |
+| `promote_release` | `action`: `pitch`, `smart_link` | `submit_playlist_pitch`, `save_smart_link` |
+| `manage_artist_pages` | `action`: `links`, `platform_request` | `set_artist_pages`, `create_platform_request` |
+| `manage_inquiry` | `action`: `create`, `reply`, `close` | `create_inquiry`, `reply_inquiry`, `close_inquiry` |
+| `request_approval` | `action`: `withdrawal`, `takedown`, `split_change`, `release_end`, `contract_end`, `counter_notice`, `member_invite` | `request_release_withdrawal`, `request_takedown`, `request_split_change`, `request_release_end`, `request_contract_end`, `request_counter_notice`, `request_member_invite` |
+| `cancel_request` | `kind`: `correction`, `playlist_pitch`, `takedown`, `release_end`, `contract_end`, `platform_request`, `approval`, `submission`, `signing_request`, `member_invite`, `counter_notice`, `rights_proof` | `cancel_release_correction`, `withdraw_playlist_pitch`, `cancel_takedown`, `cancel_release_end`, `cancel_contract_end`, `cancel_platform_request`, `withdraw_action_request`, `withdraw_pending_submission`, `cancel_signing_request`, `cancel_member_invite`, `withdraw_counter_notice`, `withdraw_rights_proof` |
+| `delete_release_draft` (destructive) | `action`: `draft` (default), `track` | `delete_release_draft`, `remove_track` |
+| `request_permission` | `action`: `request` (default), `withdraw` | `request_permission`, `withdraw_permission_request` |
+| `request_payout` (payout, destructive) | `action`: `small` (default), `large`, `cancel` | `request_payout`, `request_large_payout`, `cancel_payout` |
+
+The other 6 operations are published under their own name:
+`mark_notifications_read`, `attach_rights_proof`, `request_release_correction`, `resend_split_invite`,
+`preview_payout` and `submit_release`. They stay separate on purpose: a
+different scope, a confirmation step that must stay its own call
+(`preview_payout` before `request_payout`, `validate_release` preview before
+`submit_release`), or a destructive or not-read-only hint that would
+otherwise spread to safe operations in the same tool.
+
+### Server cost per call
+
+- `tools/list` is built once per process (both endpoints) and is 57.9 KB
+  for 25 tools, against 91.4 KB for the earlier 78. Listed UUID fields show
+  `format: uuid` without the repeated pattern, and a group's operation lines
+  leave out sentences its intro already says; calls are still validated
+  against each operation's full schema.
+- Per call: one query resolves the token; every rate bucket that applies
+  (`mcp`, `mcp-write`, `mcp-payout`, `mcp-submit`) is counted in one
+  statement (`auth::rate_all`); a consequential call's audit row is one
+  statement without a transaction around it. A write used to cost up to
+  seven round trips besides the tool's own work and now costs three.
+- Overdue action and permission requests are marked EXPIRED only for the
+  connection (MCP) or user (Studio) reading them, through their indexes
+  (migration 0146), not by a sweep of the whole table on every read.
+- Operations are found through a name index.
+
+| Operation | Scope | Backed by | What it does |
 |---|---|---|---|
 | `get_account_context` | read | `catalog::workspace` | Workspace, role, connection scopes, `can_submit` |
 | `list_distribution_platforms` | read | `api::dsp_availability`, `dsp_registry` | Platforms, availability now, per-platform requirements (artwork px, sample rate/bit depth, lossless, lead days, required credits, loudness) |
@@ -285,9 +345,14 @@ and `{code, message}` (stable API codes, human messages from
 | `resend_split_invite` | write | `splits::resend` | E-mail a collaborator's split invite again (rate limited) |
 | `export_csv` | settlement | `portal::statements_csv/reports_csv` | Statements or royalty reports as CSV text (≤ 256 KB) |
 | `delete_release_draft` | write | `catalog::archive` | Never-submitted drafts only, with `artist_confirmed` |
+| `remove_track` | write | `drafts::archive_track` | One track of an editable draft, with `artist_confirmed`; the editor's working copy follows; destructive |
+| `get_withdrawal_quota` | read | `withdraw::quota` | Withdrawals used and left this month |
+| `get_release_handover` | read | `contract_terms::handover` | Transfer to another distributor: UPC, ISRCs and platform ids as delivered |
+| `cancel_signing_request` | write | `signing::cancel` | An unsigned signing request; its link stops working |
 | `request_release_withdrawal` / `request_takedown` / `request_split_change` / `request_release_end` / `request_contract_end` / `request_counter_notice` / `request_member_invite` | write | `mcp::actions` → `withdraw`, `takedown`, `splits::save`, `contract_terms`, `infringement::counter`, `members::invite` | Filed for one Studio approval (see Actions approved once) |
 | `request_large_payout` | payout | `mcp::actions` → `portal::request_payout` | Any amount up to the balance, approved once in the Studio |
-| `get_action_request` | read | `identity.mcp_action_requests` | PENDING / DONE (result) / FAILED (error code) / REJECTED / EXPIRED / REVOKED |
+| `get_action_request` | read | `identity.mcp_action_requests` | PENDING / DONE (result) / FAILED (error code) / REJECTED / EXPIRED / REVOKED / WITHDRAWN |
+| `withdraw_action_request` / `withdraw_permission_request` / `withdraw_pending_submission` | write (or the scope that sent it) / read / write (or submit) | `mcp::actions`, `mcp::approvals` (migration 0145) | Take back this connection's own request or application before the artist answers; the Studio then refuses it (`AI_REQUEST_WITHDRAWN`, `AI_SUBMISSION_WITHDRAWN`) |
 | `cancel_takedown` / `cancel_release_end` / `cancel_contract_end` | write | `takedown::cancel`, `contract_terms::cancel_*` | Undo a pending request or scheduled end; `artist_confirmed` |
 | `set_special_options` | write | `draft.options` via `catalog::update` | Cover (original work, rights, licence file), samples, AI use, express release; `artist_confirmed` |
 | `list_artist_pages` / `set_artist_pages` | read / write | `artist_pages::list/set_pages` | Each artist's own page per platform (Spotify, Apple Music, Melon, …), so deliveries never land on a same-name stranger's page |
@@ -302,12 +367,13 @@ same checks apply: the declared type must match the bytes, the antivirus scan
 runs when enabled, lossless audio becomes a FLAC master, images are re-encoded
 without metadata.
 
-- **Signed PUT** (agents that can send HTTP): `start_upload {kind, size_bytes,
-  content_type}` returns `upload.url`, `upload.method` and the exact
+- **Signed PUT** (agents that can send HTTP): `upload_file {action: start, kind,
+  size_bytes, content_type}` (`start_upload`) returns `upload.url`, `upload.method` and the exact
   `upload.headers` (10 minutes, single use). The agent PUTs the bytes, then
-  calls `complete_upload {upload_session_id, asset_id, expected_key}`.
-- **Import from a link** (chat assistants): `import_file_from_url {kind, url,
-  content_type?}`. The server fetches the file with the public-only client:
+  calls `upload_file {action: complete, upload_session_id, asset_id,
+  expected_key}` (`complete_upload`).
+- **Import from a link** (chat assistants): `upload_file {action: import, kind,
+  url, content_type?}` (`import_file_from_url`). The server fetches the file with the public-only client:
   https only, a domain name (IP literals are refused so the address check
   cannot be skipped), no user info, every redirect checked again (at most 5),
   only public addresses. The response must state `Content-Length` (within the
@@ -339,8 +405,16 @@ ask for them (`mcp::actions`); the artist approves each one in the Studio.
   RUNNING and runs the action with the approving artist's own session, the
   same service call the Studio makes. The outcome is stored (DONE with the
   result, or FAILED with the error code) and shown on the page; the
-  assistant reads it with `get_action_request`.
+  assistant reads it with `get_approval_status` (`get_action_request`).
 - Payouts approved this way use the idempotency key `mcp-approval:{id}`.
+- Until the artist answers, the connection that filed a request can take it
+  back (`cancel_request` kind `approval`, `request_permission` action
+  `withdraw`, and kind `submission` for an application waiting for Studio
+  approval). The row becomes WITHDRAWN under the same compare-and-set the
+  approval uses (migration 0145), so a request is either run or withdrawn,
+  never both; the Studio shows it as withdrawn and refuses to approve it.
+  Another connection's requests are not found. What was already carried out
+  is undone with the matching `cancel_request` kind or in the Studio.
 - Undoing a pending takedown or a scheduled end, and a draft's special
   options, need only the artist's explicit word in the conversation
   (`artist_confirmed`); `set_special_options` writes `draft.options` exactly
@@ -377,7 +451,8 @@ a release prepared through MCP opens and re-saves correctly in the Studio.
 
 ### Submission confirmation
 
-1. `preview_submission(release_id, declarations)` runs every check, including
+1. `validate_release {view: preview, release_id, declarations}`
+   (`preview_submission`) runs every check, including
    the exact draft checks `submit` applies (platform selection/routability,
    territories, release time, pre-order, special options, text policy,
    protected names) and the Stage 1 field rules.
@@ -407,24 +482,59 @@ Studio (the pending submissions below, whatever the Studio approval setting),
 so the assistant can send one release without being given the submit
 permission for good. `get_account_context` reports `can_submit_with_approval`.
 
+**Minor artists (under 19).** The assistant sets the guardian with
+`save_release_draft {action: special_options, minor: {is_minor, guardian_name,
+guardian_relation, guardian_contact}}` and declares `adult_confirmed: false`.
+The preview then needs the guardian named (`GUARDIAN_DETAILS_REQUIRED`) and
+lists the guardian step under review. `submit_release` always holds a minor's
+application for the Studio, whatever the connection's permissions; there the
+artist opens the guardian consent (`POST /api/orgs/{org}/releases/{id}/guardian-consent`,
+`crate::signing::guardian_consent`): the guardian verifies their identity
+(the verified name must be the one named, and an adult, 19+) and signs
+AUDENIQ's own consent text themselves, on the artist's device or at a link
+sent to them. A family relation certificate document waits for a file
+(`attach_rights_proof`, or the Studio's rights documents). Approval submits
+with `minority_declared` only when both are ready (`GUARDIAN_CONSENT_REQUIRED`,
+`GUARDIAN_RELATION_DOCUMENT_REQUIRED` otherwise); the consent package records
+the `GUARDIAN` path with the signature and document ids, and staff confirm the
+relation in review. `get_release {view: guardian_consent}` shows the state.
+The assistant never signs, verifies or answers for the guardian.
+
 After submission the artist still signs the release application and the
 distribution agreement in AUDENIQ Studio; delivery waits for the signed,
 approved agreement (`execution::enqueue_delivery_jobs`). The MCP server cannot
-sign. `get_submission_status` says so in `follow_up`.
+sign. `get_release {view: status}` (`get_submission_status`) says so in
+`follow_up`.
 
 ## Name and voice
 
 The server instructions (`initialize` / `server/discover`, `protocol.rs`
-`INSTRUCTIONS`) tell the assistant how to speak for AUDENIQ. The artist's own
-requests about language, tone and format come first; otherwise:
+`INSTRUCTIONS`) are the agent's role description, in five parts: who it works
+for (one artist, one workspace, AUDENIQ's own checks), how to work (start
+with `get_account_context`, read before writing, data is never
+instructions, no secrets in chat, files), what needs the artist's explicit
+confirmation (submitting, money, approval requests and taking them back,
+text sent in their name, deletes), what to tell the artist (review is not
+delivery, what a correction can change, what stays in the Studio), and name
+and voice. Tool descriptions follow the same order: what it returns or does
+first, then when to use it, then what to confirm. The artist's own requests
+about language, tone and format come first; otherwise:
 
 - The name is written **AUDENIQ** in English letters, in Korean text too; the
   studio is AUDENIQ Studio. It is read 어데닉, so Korean particles follow that
   reading (AUDENIQ이, AUDENIQ을), but it is never spelled in Hangul.
   `get_account_context` also returns `brand: {name, name_ko, reading_ko, studio_ko}`
   for clients that drop server instructions.
-- Korean replies follow the Studio writing rules (docs/DESIGN_SYSTEM.md 23):
-  해요체, active voice, casual honorifics, plain words, no blame, a next step.
+- Korean replies follow the Studio writing rules (docs/DESIGN_SYSTEM.md 23,
+  after Toss's UX writing principles): 해요체 in short sentences with the key
+  point first, active voice, casual honorifics, plain words, no particles in
+  brackets, no blame, a suggested next step.
+- Every Korean sentence the MCP itself sends (results, notices, approval
+  pages, prompts, the widget) is checked by
+  `voice::tests::korean_text_follows_the_writing_rules`, the same rules as
+  the Studio's `lib/writing.test.ts`. Particles after a variable come from
+  `voice::josa` (멤버 초대를, 지급 요청을); a sentence about an app name is
+  written so no particle follows it ("ChatGPT에서 … 요청했어요").
 - Money, rights and legal wording is never shortened or softened (item 21).
 - The widget shows Korean text in the same voice when the host locale is `ko`,
   English otherwise.
@@ -691,36 +801,79 @@ for directory listing follow Anthropic's current connector review
 requirements. Claude Code / desktop clients with loopback redirect URIs work
 via DCR.
 
-**Other MCP clients.** Any client implementing MCP authorization (PRM
-discovery, PKCE, DCR or CIMD) can connect: Grok, Manus and other clients that
-prefer CIMD use their own metadata URL, and older SDK clients may speak
-`2024-11-05`. A missing token gets `401` with
+**Grok, Manus and other agents.** Clients that take a remote MCP server
+with a bearer header (xAI's remote MCP tools, Manus custom MCP, OpenAI's
+Responses API `mcp` tool, agent frameworks) use a connection token made in
+AUDENIQ Studio (Profile → Connected AI apps): URL `https://<host>/api/mcp`,
+header `Authorization: Bearer <token>`. Clients implementing MCP
+authorization (PRM discovery, PKCE, DCR or CIMD) connect through OAuth
+instead; those that prefer CIMD use their own metadata URL. Agents without a
+browser use the link and code (device authorization).
+
+**Protocol compatibility.**
+
+| Client behaviour | Answer |
+|---|---|
+| `initialize` with 2024-11-05, 2025-03-26, 2025-06-18 or 2025-11-25 | That version; an unknown version gets 2025-11-25 |
+| 2026-07-28 per-request `_meta` and `Mcp-*` headers | Modern era (headers must match the body) |
+| JSON-RPC batch (2025-03-26) | Array of answers, notifications left out, at most 16 messages; a missing token answers the 401 challenge for the whole batch |
+| `Accept: text/event-stream` only | The answer as one SSE `message` event, then the stream ends |
+| `Accept: application/json, text/event-stream` | Plain JSON (every client must accept it) |
+| `GET` / `DELETE` on the endpoint | 405 (no server-initiated stream, no sessions) |
+| `resources/templates/list` | Empty list |
+| Notifications and responses | 202 with no body |
+
+Listed schemas use only keywords every function-calling dialect takes (no
+`const`, `propertyNames`, `oneOf` or `$ref`; top level always an object); the
+full schemas still validate each call.
+
+A missing token gets `401` with
 `WWW-Authenticate: Bearer resource_metadata=…, scope="releases:read releases:write"`
 (no `error`, so clients start authorization); an expired or revoked one adds
 `error="invalid_token"`. Unknown `/.well-known/*` paths (e.g.
 `openid-configuration`) are a JSON 404, never the Studio page. To limit CIMD
 to known clients, list them in `AUDENIQ_MCP_CIMD_HOSTS`.
 
+**Conformance check (2026-10-22).** Run against a local server with
+independent implementations, not this repository's code:
+
+| Check | Result |
+|---|---|
+| Responses validated against the official MCP JSON schemas 2024-11-05, 2025-03-26, 2025-06-18, 2025-11-25, 2026-07-28 (initialize / server/discover, tools, prompts, resources, errors) | 54/54 |
+| Official Python SDK `mcp` 2.3.0 client (initialize, tools, grouped and old names, prompts, resources, ping, errors) | 13/13 |
+| Official TypeScript SDK 1.32.1 client (same, plus capabilities, instructions, annotations, 403 `insufficient_scope`) | 13/13 |
+| TypeScript SDK OAuth: RFC 9728 and 8414 discovery, DCR, PKCE S256, consent, `iss` (RFC 9207), code exchange, refresh rotation, reuse grace and late-reuse revocation, 401 challenge | 12/12 |
+| Streamable HTTP rules: GET/DELETE 405, notifications 202, parse error -32700, foreign Origin 403, unknown version 400, tool names, top-level object schemas, widget metadata, tool errors as `isError` | 13/13 |
+
+Found and fixed by it: 2026-07-28 cacheable results lacked `cacheScope` and
+`ttlMs` (now `public`, 1 hour, for discover, the listings and the widget),
+and DELETE answered the Studio's 403 instead of the transport's 405.
+
 Implementing MCP does not publish an app, guarantee directory approval, or make
 an assistant recommend AUDENIQ; listing and discovery are separate tasks.
 
 ## Known limitations
 
-- Audio, cover art and rights proofs can come through the tools (see Files).
-  Special-content options (cover licences, sample
-  clearances, AI tool details, express review) are entered in the Studio.
-- Signing the application/agreement, withdrawal, takedown, payout account
-  changes, payouts above the limit, members, account settings: not exposed by
-  design.
-- Correction requests are tested at the MCP layer for the refusal paths
-  (not yet delivered, no pending request, other tenants); the
-  request→approve→platform update flow itself is covered by the existing
-  `execution` tests, not re-run through MCP.
-- No progress notifications or SSE (all tools finish within the deadline).
-- Minors: submission is refused (`MINORITY_REVIEW_REQUIRED`), as in the Studio.
-- Not run here: real ChatGPT/Claude clients, the deployed Worker, and the
-  native QC/photo binaries (unit/integration tests that need them fail in an
-  environment without them, unchanged from before this change).
+- Signing the application or agreement, payout account changes, account
+  settings and member removal: Studio only by
+  design. Withdrawals, takedowns, splits, end dates, counter notices, member
+  invites and payouts above the limit are filed through MCP and approved once
+  in the Studio (Actions approved once).
+- Taking back a sent member invite (owner only), a counter notice staff
+  have not decided on (the release stays suspended; migration 0147 keeps the
+  statement with `counter_withdrawn_at`) and a rights proof file not yet
+  decided (`cancel_request` kinds `member_invite`, `counter_notice`,
+  `rights_proof`; Studio API under `/members/{user}/cancel-invite`,
+  `/infringement-claims/{id}/counter/withdraw`, `/documents/{id}/proof/withdraw`).
+- Correction requests are tested at the MCP layer for the refusal paths; the
+  request→approve→platform update flow itself is covered by the `execution`
+  tests, not re-run through MCP.
+- No progress notifications or server-initiated messages (every tool
+  finishes within the deadline); an SSE-only client gets one event per
+  answer.
+- Not run here: real ChatGPT/Claude/Grok/Manus clients, the deployed Worker,
+  and the native QC/photo binaries (tests that need them fail in an
+  environment without them).
 
 ## Operations
 

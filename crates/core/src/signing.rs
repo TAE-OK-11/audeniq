@@ -47,6 +47,11 @@ const KINDS: [&str; 6] = [
     "shared",
 ];
 const ROLES: [&str; 3] = ["권리자 본인", "권리자의 위임을 받은 대리인", "법인 대표자"];
+/// A minor artist's legal guardian ([`guardian_consent`]); only together.
+pub const GUARDIAN_KIND: &str = "guardian";
+const GUARDIAN_ROLE: &str = "법정대리인";
+/// Relations offered for a guardian (the Studio's choices).
+pub const GUARDIAN_RELATIONS: [&str; 3] = ["부", "모", "기타 법정대리인"];
 /// A link sent to someone else stays open for a week; a device handed over
 /// in person only for the signing session.
 const LINK_DAYS: i64 = 7;
@@ -307,8 +312,9 @@ pub async fn create(
     org: Uuid,
     i: CreateInput,
 ) -> Result<Value> {
-    if !KINDS.contains(&i.document_kind.as_str())
-        || !ROLES.contains(&i.signer_role.as_str())
+    let guardian = i.document_kind == GUARDIAN_KIND && i.signer_role == GUARDIAN_ROLE;
+    if !(guardian
+        || KINDS.contains(&i.document_kind.as_str()) && ROLES.contains(&i.signer_role.as_str()))
         || !matches!(i.channel.as_str(), "LINK" | "IN_PERSON")
     {
         return Err(Error::Invalid);
@@ -546,6 +552,193 @@ pub async fn cancel(s: &AppState, a: &Actor, h: &HeaderMap, org: Uuid, id: Uuid)
 }
 
 // ---------------------------------------------------------------------------
+// Guardian consent (a minor artist's release)
+// ---------------------------------------------------------------------------
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GuardianInput {
+    pub guardian_name: String,
+    pub relation: String,
+    pub channel: String,
+}
+
+/// The consent the guardian signs: AUDENIQ's own text for this release, so
+/// every guardian agrees to the same thing.
+fn guardian_text(release: &str, artist: &str, guardian: &str, relation: &str) -> String {
+    format!(
+        "법정대리인 동의서\n\n\
+         저는 미성년 아티스트 {artist}의 법정대리인 {guardian}({relation})으로서 아래 발매에 동의합니다.\n\n\
+         발매: {release}\n\
+         아티스트: {artist}\n\n\
+         1. 이 발매를 주식회사 AUDENIQ에 배급 신청하는 것\n\
+         2. 이 발매에 대한 AUDENIQ 배급 계약을 체결하는 것\n\
+         3. 이 발매로 생기는 수익을 AUDENIQ 정산 규정에 따라 받는 것\n\n\
+         이 동의는 위 발매에만 적용됩니다. AUDENIQ은 가족관계증명서로 법정대리인 관계를 확인한 뒤 심사를 진행합니다."
+    )
+}
+
+/// Opens (or reopens with a fresh link) the guardian's signing request for
+/// a minor artist's release, and the family relation certificate document
+/// that goes with it (waiting for a file). The guardian verifies their
+/// identity (the verified name must be the one given here, and an adult)
+/// and signs at the link; the artist never signs for them.
+pub async fn guardian_consent(
+    s: &AppState,
+    a: &Actor,
+    h: &HeaderMap,
+    org: Uuid,
+    release: Uuid,
+    i: GuardianInput,
+) -> Result<Value> {
+    if !GUARDIAN_RELATIONS.contains(&i.relation.as_str()) {
+        return Err(Error::InvalidCode("GUARDIAN_RELATION_INVALID"));
+    }
+    let guardian = text(&i.guardian_name, 1, 90)?;
+    let (title, artist): (String, String) = {
+        let mut c = s.pool.acquire().await?;
+        auth::authorize(&mut c, a, org, release, "release", true).await?;
+        sqlx::query_as(
+            "SELECT title, coalesce(nullif(btrim(draft->>'artist'),''), '') FROM catalog.releases WHERE org_id=$1 AND id=$2 AND archived_at IS NULL",
+        )
+        .bind(org)
+        .bind(release)
+        .fetch_optional(&mut *c)
+        .await?
+        .ok_or(Error::NotFound)?
+    };
+    if artist.is_empty() {
+        return Err(Error::PolicyGate("GUARDIAN_ARTIST_REQUIRED"));
+    }
+    // One document number per release and guardian: asking again reissues
+    // the open request's link instead of piling up requests.
+    let seed = sha256_hex(format!("guardian\0{release}\0{guardian}"));
+    let document_no =
+        Uuid::from_slice(&crate::hex::decode(&seed[..32]).map_err(|_| Error::Internal)?)
+            .map_err(|_| Error::Internal)?;
+    let issued = create(
+        s,
+        a,
+        h,
+        org,
+        CreateInput {
+            release_id: release,
+            document_no,
+            document_kind: GUARDIAN_KIND.into(),
+            title: format!("법정대리인 동의서 · {title}"),
+            body: guardian_text(&title, &artist, &guardian, &i.relation),
+            rights_holder: artist.clone(),
+            signer_name: guardian.clone(),
+            signer_role: GUARDIAN_ROLE.into(),
+            channel: i.channel,
+        },
+    )
+    .await?;
+    let mut tx = s.pool.begin().await?;
+    let waiting: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM portal.documents WHERE org_id=$1 AND release_id=$2 AND purpose='GUARDIAN_RELATION' AND status<>'CANCELLED')",
+    )
+    .bind(org)
+    .bind(release)
+    .fetch_one(&mut *tx)
+    .await?;
+    if !waiting {
+        let doc = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO portal.documents(id,org_id,release_id,kind,title,body,status,purpose) VALUES($1,$2,$3,'RIGHTS_PROOF',$4,$5,'AWAITING_DOCUMENTS','GUARDIAN_RELATION')",
+        )
+        .bind(doc)
+        .bind(org)
+        .bind(release)
+        .bind(format!("가족관계증명서 · {title}"))
+        .bind("미성년 아티스트와 법정대리인의 관계를 확인할 가족관계증명서(상세)를 올려 주세요. 주민등록번호 뒷자리는 가려도 돼요.")
+        .execute(&mut *tx)
+        .await?;
+        operations::audit(
+            &mut tx,
+            Some(a.user),
+            Some(org),
+            Some(doc),
+            "portal.document.created",
+            "GUARDIAN_RELATION",
+            a.request,
+        )
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(issued)
+}
+
+/// Whether a minor artist's release may be submitted: the guardian signed
+/// and the family relation certificate has a file. Returns the signed
+/// request's id and the certificate document's id.
+pub(crate) async fn guardian_ready(
+    c: &mut PgConnection,
+    org: Uuid,
+    release: Uuid,
+) -> Result<(Uuid, Uuid)> {
+    let signed: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM portal.signing_requests WHERE org_id=$1 AND release_id=$2 AND document_kind='guardian' AND status='SIGNED' ORDER BY signed_at DESC LIMIT 1",
+    )
+    .bind(org)
+    .bind(release)
+    .fetch_optional(&mut *c)
+    .await?;
+    let Some(signed) = signed else {
+        return Err(Error::PolicyGate("GUARDIAN_CONSENT_REQUIRED"));
+    };
+    let certificate: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM portal.documents WHERE org_id=$1 AND release_id=$2 AND purpose='GUARDIAN_RELATION' AND status IN ('REVIEW','APPROVED','NEEDS') AND asset_id IS NOT NULL ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(org)
+    .bind(release)
+    .fetch_optional(&mut *c)
+    .await?;
+    let Some(certificate) = certificate else {
+        return Err(Error::PolicyGate("GUARDIAN_RELATION_DOCUMENT_REQUIRED"));
+    };
+    Ok((signed, certificate))
+}
+
+/// The guardian consent of a release as the artist sees it.
+pub async fn guardian_status(s: &AppState, a: &Actor, org: Uuid, release: Uuid) -> Result<Value> {
+    let mut c = s.pool.acquire().await?;
+    auth::authorize(&mut c, a, org, release, "release", false).await?;
+    let rows = sqlx::query(concat!(
+        "SELECT ",
+        cols!(),
+        " FROM portal.signing_requests WHERE org_id=$1 AND release_id=$2 AND document_kind='guardian' ORDER BY created_at DESC LIMIT 5"
+    ))
+    .bind(org)
+    .bind(release)
+    .fetch_all(&mut *c)
+    .await?;
+    let certificate: Option<(Uuid, String, bool)> = sqlx::query_as(
+        "SELECT id, status, asset_id IS NOT NULL FROM portal.documents WHERE org_id=$1 AND release_id=$2 AND purpose='GUARDIAN_RELATION' AND status<>'CANCELLED' ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(org)
+    .bind(release)
+    .fetch_optional(&mut *c)
+    .await?;
+    let ready = guardian_ready(&mut c, org, release).await.is_ok();
+    // The guardian named on the draft (the Studio's and the MCP's keys).
+    let named: Option<(String, String)> = sqlx::query_as(
+        "SELECT coalesce(draft->'options'->>'guardian',''), coalesce(draft->'options'->>'guardianRelation','') FROM catalog.releases WHERE org_id=$1 AND id=$2",
+    )
+    .bind(org)
+    .bind(release)
+    .fetch_optional(&mut *c)
+    .await?;
+    let (name, relation) = named.unwrap_or_default();
+    Ok(json!({
+        "release_id": release,
+        "guardian": {"name": name.trim(), "relation": relation},
+        "requests": rows.iter().map(summary).collect::<Vec<_>>(),
+        "relation_document": certificate.map(|(id, status, file)| json!({"id": id, "status": status, "has_file": file})),
+        "ready": ready,
+    }))
+}
+
+// ---------------------------------------------------------------------------
 // Signer side (link token, no account)
 // ---------------------------------------------------------------------------
 async fn by_token(c: &mut PgConnection, token: &str, lock: bool) -> Result<sqlx::postgres::PgRow> {
@@ -725,6 +918,24 @@ pub async fn verify_identity(
         .await?;
         tx.commit().await?;
         return Err(Error::InvalidCode("IDENTITY_NAME_MISMATCH"));
+    }
+    // A guardian consents only as an adult (civil-law majority).
+    if r.get::<String, _>("document_kind") == GUARDIAN_KIND
+        && !chrono::NaiveDate::parse_from_str(&verified.birth_date, "%Y-%m-%d")
+            .is_ok_and(crate::account::is_adult)
+    {
+        event(
+            &mut tx,
+            s,
+            Some(h),
+            id,
+            "IDENTITY_FAILED",
+            None,
+            json!({"provider": provider_name, "reason": "GUARDIAN_NOT_ADULT"}),
+        )
+        .await?;
+        tx.commit().await?;
+        return Err(Error::PolicyGate("GUARDIAN_NOT_ADULT"));
     }
     let at: DateTime<Utc> = sqlx::query_scalar("SELECT now()")
         .fetch_one(&mut *tx)
@@ -957,6 +1168,11 @@ async fn h_create(
     Json(i): Json<CreateInput>,
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    // A guardian consent carries AUDENIQ's own text: only guardian_consent
+    // opens one.
+    if i.document_kind == GUARDIAN_KIND {
+        return Err(Error::Invalid);
+    }
     Ok(Json(create(&s, &a, &h, org, i).await?))
 }
 async fn h_list(
@@ -1017,8 +1233,30 @@ async fn h_decline(
     Ok(Json(decline(&s, &h, &token, i).await?))
 }
 
+async fn h_guardian(
+    State(s): State<AppState>,
+    Path((org, release)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+    Json(i): Json<GuardianInput>,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    Ok(Json(guardian_consent(&s, &a, &h, org, release, i).await?))
+}
+async fn h_guardian_status(
+    State(s): State<AppState>,
+    Path((org, release)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    Ok(Json(guardian_status(&s, &a, org, release).await?))
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route(
+            "/api/orgs/{org}/releases/{id}/guardian-consent",
+            get(h_guardian_status).post(h_guardian),
+        )
         .route(
             "/api/orgs/{org}/signing-requests",
             get(h_list).post(h_create),
