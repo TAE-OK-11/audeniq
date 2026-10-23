@@ -418,6 +418,17 @@ button.ui-avatar:hover{transform:scale(1.06);background:var(--aq-blue-200)}
 .ui-empty .ui-actions{justify-content:center}
 .ui-empty.is-compact{min-height:0;padding:28px 20px}
 
+/* ---------- 진행 단계 (Steps) — 발매처럼 정해진 순서로 나아가는 일의 지금 위치 ----------
+   면 색 막대만 씀(테두리·그림자·동그란 점 없음). is-done(지난 단계) · is-current(지금) · is-warn(지금, 보완 필요) */
+.ui-steps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(var(--steps,4),minmax(0,1fr));gap:6px}
+.ui-steps>li{display:grid;gap:8px;min-width:0;font-size:var(--aq-fs-xs);font-weight:600;color:var(--aq-text-4)}
+.ui-steps>li::before{content:"";display:block;height:4px;border-radius:999px;background:var(--aq-line)}
+.ui-steps>li.is-done{color:var(--aq-text-3)}
+.ui-steps>li.is-done::before,.ui-steps>li.is-current::before{background:var(--aq-primary)}
+.ui-steps>li.is-current{font-weight:700;color:var(--aq-text)}
+.ui-steps>li.is-warn{font-weight:700;color:var(--aq-tone-amber-fg)}
+.ui-steps>li.is-warn::before{background:var(--aq-amber-500)}
+
 /* ---------- 타임라인 (Timeline) — 처리 이력·변경 기록 ----------
    점 색: is-staff(담당자·파랑) · is-check(검사) · is-dsp(플랫폼) · is-warn · is-bad · is-now(지금) */
 .ui-timeline{list-style:none;margin:0;padding:0;display:grid}
