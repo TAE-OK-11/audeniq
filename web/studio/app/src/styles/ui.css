@@ -972,7 +972,14 @@ summary::-webkit-details-marker{display:none}
 .aq-passkey-btn{margin-top:8px}
 .aq-token-empty{display:grid;gap:4px;padding:16px;border-radius:var(--aq-r-lg);background:var(--aq-surface-2,var(--aq-surface));text-align:center}
 .aq-token-empty small{color:var(--aq-text-3,var(--aq-text-2))}
-.aq-token-section{display:grid;gap:10px;padding-top:16px;border-top:1px solid var(--aq-line)}
+/* 창 안 묶음 — 선 대신 여백으로 나눈다 (규칙 4: 윤곽선 없이 면·여백으로 구분) */
+.aq-token-section{display:grid;gap:10px;padding-top:24px}
+.aq-token-section:first-child{padding-top:0}
+/* 연결된 AI 앱 줄 — 권한은 이름표로, 표시는 줄 왼쪽 같은 자리 */
+.aq-ai-list>.ui-row{align-items:flex-start}
+.aq-ai-list .aq-ai-app-logo{flex:none;display:grid;place-items:center;width:36px;height:36px}
+.aq-ai-scopes{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.aq-ai-list .ui-row-end{align-self:center}
 .aq-token-section h3{margin:0}
 .aq-token-form{display:grid;gap:18px}
 .aq-token-form .ui-field{margin:0}
