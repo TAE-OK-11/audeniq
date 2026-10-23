@@ -57,7 +57,9 @@ describe('AiConnections', () => {
     expect(text).toContain('ChatGPT');
     expect(text).not.toContain('chatgpt.com');
     expect(text).toContain('내 작업 공간');
-    expect(text).toContain('발매 정보 보기, 발매 초안 작성·수정, 소액 지급 신청');
+    // 권한은 줄마다 이름표로
+    expect([...el.querySelectorAll('li')][0].querySelectorAll('.aq-ai-scopes .ui-tag').length).toBe(3);
+    expect([...el.querySelectorAll('.aq-ai-scopes .ui-tag')].slice(0, 3).map(t => t.textContent)).toEqual(['발매 정보 보기', '발매 초안 작성·수정', '소액 지급 신청']);
     expect(text).toContain('아직 사용 안 함');
     expect(text).toContain('Han River Label');
     expect(text).not.toContain('audeniq-mcp-abc');
@@ -80,7 +82,7 @@ describe('AiConnections', () => {
     const confirmButton = buttons('연결 끊기').find(b => b.className.includes('is-danger-solid'))!;
     await act(async () => { confirmButton.click(); });
     expect(http.req).toHaveBeenCalledWith('/api/auth/ai-connections/g1/revoke', { method: 'POST', body: {} });
-    const rows = [...el.querySelectorAll('li strong')].map(s => s.textContent);
+    const rows = [...el.querySelectorAll('li .ui-row-title')].map(s => s.textContent);
     expect(rows).toEqual(['Claude']);
   });
 
@@ -106,8 +108,9 @@ describe('AiConnections', () => {
     });
     expect(el.textContent).toContain('a'.repeat(64));
     expect(el.textContent).toContain('키를 다시 볼 수 없어요');
-    expect([...el.querySelectorAll('li strong')].map(s => s.textContent)).toEqual(['작업실 에이전트']);
-    expect(el.textContent).toContain('에이전트 키 · 내 작업 공간');
+    expect([...el.querySelectorAll('li .ui-row-title')].map(s => s.textContent)).toEqual(['작업실 에이전트']);
+    // 줄 정보는 점으로 나눈 칸 — 에이전트 키 · 내 작업 공간 · …
+    expect([...el.querySelectorAll('li .ui-row-meta > span')].slice(0, 2).map(x => x.textContent)).toEqual(['에이전트 키', '내 작업 공간']);
     // Closing the notice hides the token for good.
     await act(async () => { buttons('닫기')[0].click(); });
     expect(el.textContent).not.toContain('a'.repeat(64));
