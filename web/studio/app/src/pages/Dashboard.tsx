@@ -23,6 +23,10 @@ import { prefetchRoute } from '../routes';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
 import { josa } from '../lib/josa';
+import { RELEASE_STEPS, dDayLabel, releaseStep, upcomingRelease } from '../lib/home';
+import { useHomeSignals } from '../hooks/useHomeSignals';
+import { MOCK } from '../lib/mode';
+import type { Release } from '../api/types';
 
 type GridKey = 'releases' | 'reports' | 'settlement' | 'contracts';
 
@@ -56,6 +60,9 @@ const TASK_ICONS = {
   bell: <Glyph name="bell" size={20} />,
   won: <Glyph name="won" size={20} />,
   lock: <Glyph name="lock" size={20} />,
+  star: <Glyph name="star" size={20} />,
+  users: <Glyph name="users" size={20} />,
+  approval: <Glyph name="approval" size={20} />,
 };
 
 function greeting(): string {
@@ -95,13 +102,76 @@ function MiniTrend({ data }: { data: { period: string; revenue: number }[] }) {
   );
 }
 
+/** 정산 한눈에 — 받을 수 있는 금액과 다음 할 일(계좌 등록·지급 요청). 아직 돈이 하나도 없으면 숨긴다 */
+function MoneyCard({ payable, pending, held, minimum, registered, monthRevenue, month }: {
+  payable: number; pending: number; held: number; minimum: number; registered: boolean; monthRevenue: number; month: string;
+}) {
+  // 체험 모드의 used는 지난 지급 요청 합계라 '처리 중'이 아니다
+  const processing = MOCK ? 0 : pending;
+  if (payable <= 0 && processing <= 0 && held <= 0 && monthRevenue <= 0) return null;
+  const canRequest = registered && payable >= minimum && payable > 0;
+  const action = !registered
+    ? { to: '/profile?open=payout', label: '계좌 등록' }
+    : canRequest ? { to: '/settlement', label: '지급 요청' } : { to: '/settlement', label: '정산 내역' };
+  const notes = [
+    processing > 0 && `지급 처리 중 ${money(processing)}`,
+    held > 0 && `보류 ${money(held)}`,
+    monthRevenue > 0 && `${month} 수익 ${money(monthRevenue)}`,
+  ].filter(Boolean);
+  return (
+    <section className="ui-card aq-money-card" aria-labelledby="moneyTitle">
+      <div className="min-0">
+        <small id="moneyTitle">받을 수 있는 금액</small>
+        <strong><Money value={payable} animate /></strong>
+        {notes.length > 0 && <p className="aq-money-notes">{notes.join(' · ')}</p>}
+        {registered && payable > 0 && payable < minimum && <p className="aq-money-notes">{money(minimum)}부터 지급을 요청할 수 있어요.</p>}
+        {!registered && payable > 0 && <p className="aq-money-notes">계좌를 등록하면 지급을 요청할 수 있어요.</p>}
+      </div>
+      <Link className={`ui-btn is-sm ${canRequest || !registered ? 'is-primary' : 'is-white'}`} to={action.to} onPointerEnter={() => prefetchRoute(action.to)}>
+        {action.label}<Glyph name="chevron-right" size={13} />
+      </Link>
+    </section>
+  );
+}
+
+/** 다가오는 발매 — 발매까지 남은 날과 지금 단계 (접수 → 검토 → 배급 승인 → 발매) */
+function UpcomingCard({ release: r }: { release: Release }) {
+  const step = releaseStep(r.status);
+  const live = r.livePlatforms?.length ?? 0;
+  return (
+    <Link className="ui-card aq-upcoming" to={`/releases/${r.id}`} onPointerDown={() => prefetchRelease(r.id)} aria-label={`${r.title || '제목 없는 발매'} 진행 상황`}>
+      <div className="aq-upcoming-head">
+        <ReleaseCover id={r.id} src={r.coverData} />
+        <div className="min-0">
+          <small>{r.status === 'live' ? '최근 발매' : '다가오는 발매'}</small>
+          <strong className="ui-row-title">{r.title || '제목 없는 발매'}</strong>
+        </div>
+        {r.release_date && <span className={`aq-dday${r.status === 'live' ? ' is-live' : ''}`}>{dDayLabel(r.release_date)}</span>}
+      </div>
+      <ol className="aq-steps" aria-label="진행 단계">
+        {RELEASE_STEPS.map((label, i) => {
+          const state = i < step ? 'is-done' : i === step ? (r.status === 'needs' ? 'is-warn' : 'is-current') : '';
+          return (
+            <li key={label} className={state} aria-current={i === step ? 'step' : undefined}>
+              <span className="aq-step-dot" aria-hidden="true">{i < step && <CheckIcon size={10} />}</span>
+              <span>{i === step && r.status === 'needs' ? '보완 필요' : label}</span>
+            </li>
+          );
+        })}
+      </ol>
+      {r.status === 'live' && live > 0 && <p className="aq-upcoming-note">플랫폼 {live}곳에 올라갔어요.</p>}
+      {r.status === 'scheduled' && <p className="aq-upcoming-note">배급을 승인했어요. 발매일에 맞춰 플랫폼에 보내요.</p>}
+    </Link>
+  );
+}
+
 export function Dashboard() {
   const navigate = useNavigate();
   const profile = useProfile();
   const docs = useDocs();
   const payment = usePayment();
   const account = useAccount();
-  const { left: payable } = useBalance();
+  const { left: payable, used: payoutPending, held, minimum } = useBalance();
   // 할 일은 앞의 몇 개만 — 나머지는 '더 보기'로 (한 화면에 일곱 줄씩 쌓이면 무엇부터 할지 흐려진다)
   const [allTasks, setAllTasks] = useState(false);
   const { data: releases = [], loading, error, reload } = useAsync(() => api.listReleases(), [], { key: 'releases' });
@@ -109,6 +179,8 @@ export function Dashboard() {
   useSmoothHeight(topRef, loading);
   const { rows: reportRows } = useReportRows();
   const report = latestSummary(reportRows);
+  const signals = useHomeSignals(releases, loading);
+  const upcoming = loading ? undefined : upcomingRelease(releases);
 
   const needs = releases.filter(r => r.status === 'needs').length;
   const reviewing = releases.filter(r => r.status === 'review').length;
@@ -134,6 +206,25 @@ export function Dashboard() {
   // 수익을 받으려면 꼭 필요한 두 가지 — 예전엔 메뉴 안에서만 알려 줘서 놓치기 쉬웠다. 누르면 그 창이 바로 열린다
   if (!isPaymentRegistered(payment)) tasks.push({ icon: 'won', name: '정산 계좌 등록', sub: '수익을 받을 계좌를 등록해 주세요. 2분이면 돼요.', btn: '등록', to: '/profile?open=payout', tone: 'info' });
   if (!account.verified) tasks.push({ icon: 'lock', name: '본인인증', sub: '정산과 계약 서명에 필요해요. 예금주와 같은 이름이어야 해요.', btn: '인증', to: '/profile?open=verify', tone: 'info' });
+  // 마감이 있는 일 — 피칭은 발매일 며칠 전에 닫힌다. 사흘 안이면 맨 위 큰 카드로
+  if (signals.pitch) {
+    const p = signals.pitch;
+    tasks.push({
+      icon: 'star', name: `플레이리스트 피칭 마감 ${p.daysLeft ? `D-${p.daysLeft}` : '오늘'}`,
+      sub: `‘${p.title}’ 대표곡을 플랫폼 에디터에게 소개할 수 있어요.`,
+      btn: '피칭', to: `/releases/${p.releaseId}`, tone: p.daysLeft <= 3 ? 'warn' : 'info',
+    });
+  }
+  if (signals.ai) tasks.push({ icon: 'approval', name: `AI 앱 승인 요청 ${signals.ai.count}건`, sub: '승인하기 전에는 아무것도 바뀌지 않아요.', btn: '확인', to: signals.ai.to, tone: 'info' });
+  if (signals.splits.length) {
+    const waiting = signals.splits.reduce((n, s) => n + s.waiting, 0);
+    const one = signals.splits.length === 1 ? signals.splits[0] : undefined;
+    tasks.push({
+      icon: 'users', name: `수익 분배 수락 대기 ${waiting}명`,
+      sub: one ? `‘${one.title}’ 공동작업자가 아직 수락하지 않았어요. 메일을 다시 보낼 수 있어요.` : '공동작업자가 수락하면 그분 몫이 바로 정산돼요.',
+      btn: '확인', to: one ? `/releases/${one.releaseId}` : '/releases', tone: 'info',
+    });
+  }
   if (drafts) tasks.push({ icon: 'draft', name: `작성 중인 발매 ${drafts}건`, sub: '이어서 작성하고 접수해 보세요.', btn: '보기', to: '/releases?status=draft', tone: 'info' });
   if (!profileName) tasks.push({ icon: 'user', name: '계정 정보 등록', sub: '활동명과 연락처를 입력해 주세요.', btn: '등록', to: '/profile', tone: 'info' });
   // 읽지 않은 알림은 머리의 종 숫자로 이미 보인다 — 할 일 목록에서는 뺀다 (홈이 너무 길고 복잡해 보였다)
@@ -205,6 +296,9 @@ export function Dashboard() {
       </Link>
       )}
       </div>
+
+      {!loading && <MoneyCard payable={payable} pending={payoutPending} held={held} minimum={minimum} registered={isPaymentRegistered(payment)} monthRevenue={reportEmpty ? 0 : report.revenue} month={`${Number(report.period.slice(5))}월`} />}
+      {upcoming && <UpcomingCard release={upcoming} />}
 
       {/* 자주 가는 화면 바로가기는 새 발매 바로 아래 — 할 일·발매 목록 아래로 내리면 누르러 한참 내려가야 했다 */}
       <div className="dashboard-grid aq-stagger" aria-label="주요 업무">
