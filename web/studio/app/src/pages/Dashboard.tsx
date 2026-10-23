@@ -144,20 +144,15 @@ function UpcomingCard({ release: r }: { release: Release }) {
       <div className="ui-section-head">
         <h2 id="nextTitle">{r.status === 'live' ? '최근 발매' : '다가오는 발매'}</h2>
       </div>
-      <div className="ui-list">
-        <Link to={`/releases/${r.id}`} className="release-row ui-row studio-album-row aq-row-link" onPointerDown={() => prefetchRelease(r.id)}>
-          <ReleaseCover id={r.id} src={r.coverData} />
-          <div className="min-0">
-            <span className="ui-row-title">{r.title || '제목 없는 발매'}</span>
-            <span className="ui-row-meta">{r.artist || '아티스트 없음'} · {r.track_count}곡 · {r.release_date || '발매일 아직 없음'}</span>
-          </div>
-          {r.release_date && (
-            <div className="ui-row-end">
-              <Badge tone={r.status === 'live' ? 'green' : r.status === 'needs' ? 'amber' : 'blue'}>{dDayLabel(r.release_date)}</Badge>
-            </div>
-          )}
-        </Link>
-      </div>
+      {/* 안쪽에 흰 상자를 또 두지 않는다 — 카드 면 위에 바로 놓아야 여백이 생기고 덜 답답하다 */}
+      <Link to={`/releases/${r.id}`} className="aq-upcoming-link aq-row-link" onPointerDown={() => prefetchRelease(r.id)}>
+        <ReleaseCover id={r.id} src={r.coverData} />
+        <div className="min-0">
+          <span className="ui-row-title">{r.title || '제목 없는 발매'}</span>
+          <span className="ui-row-meta">{r.artist || '아티스트 없음'} · {r.track_count}곡 · {r.release_date || '발매일 아직 없음'}</span>
+        </div>
+        {r.release_date && <Badge tone={r.status === 'live' ? 'green' : r.status === 'needs' ? 'amber' : 'blue'}>{dDayLabel(r.release_date)}</Badge>}
+      </Link>
       <Steps steps={RELEASE_STEPS.map((s, i) => (i === releaseStep(r.status) && r.status === 'needs' ? '보완 필요' : s))} current={releaseStep(r.status)} warn={r.status === 'needs'} label="발매 진행 단계" />
       {note && <p className="ui-row-meta">{note}</p>}
     </section>
