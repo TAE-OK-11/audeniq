@@ -156,6 +156,7 @@ Every route is one MCP tool (a unit test checks all tools are mapped).
 | `GET /me` | `get_account_context` |
 | `GET /members` | `list_members` |
 | `POST /members/invitations` | `request_member_invite` |
+| `DELETE /members/invitations/{user_id}` | `cancel_member_invite` |
 | `GET /platforms` | `list_distribution_platforms` |
 | `GET /requirements` | `get_release_requirements` |
 | `GET /status` | `get_service_status` |
@@ -165,12 +166,15 @@ Every route is one MCP tool (a unit test checks all tools are mapped).
 | `POST /notifications/read` | `mark_notifications_read` |
 | `GET /documents` | `list_documents` |
 | `GET /signing-requests` | `list_signing_requests` |
+| `DELETE /signing-requests/{request_id}` | `cancel_signing_request` |
+| `GET /withdrawal-quota` | `get_withdrawal_quota` |
 | `GET /releases` | `list_releases` |
 | `POST /releases` | `create_release_draft` |
 | `GET /releases/{release_id}` | `get_release` |
 | `PATCH /releases/{release_id}` | `update_release_draft` |
 | `DELETE /releases/{release_id}` | `delete_release_draft` |
 | `POST /releases/{release_id}/tracks` | `upsert_track` |
+| `DELETE /releases/{release_id}/tracks/{track_id}` | `remove_track` |
 | `PUT /releases/{release_id}/tracks/{track_id}/credits` | `set_track_credits` |
 | `PUT /releases/{release_id}/special-options` | `set_special_options` |
 | `GET /releases/{release_id}/validation` | `validate_release` |
@@ -178,6 +182,9 @@ Every route is one MCP tool (a unit test checks all tools are mapped).
 | `GET /releases/{release_id}/submission/preview` | `preview_submission` |
 | `POST /releases/{release_id}/submission` | `submit_release` |
 | `GET /releases/{release_id}/submission` | `get_submission_status` |
+| `DELETE /releases/{release_id}/submission` | `withdraw_pending_submission` |
+| `GET /releases/{release_id}/handover` | `get_release_handover` |
+| `GET /releases/{release_id}/guardian-consent` | `get_guardian_consent` |
 | `GET /releases/{release_id}/delivery` | `get_delivery_status` |
 | `GET /releases/{release_id}/content-id` | `get_content_id_status` |
 | `GET /releases/{release_id}/corrections` | `get_release_corrections` |
@@ -194,6 +201,7 @@ Every route is one MCP tool (a unit test checks all tools are mapped).
 | `POST /releases/{release_id}/split-change` | `request_split_change` |
 | `GET /releases/{release_id}/infringement-claims` | `list_infringement_claims` |
 | `POST /infringement-claims/{claim_id}/counter-notice` | `request_counter_notice` |
+| `DELETE /infringement-claims/{claim_id}/counter-notice` | `withdraw_counter_notice` |
 | `POST /releases/{release_id}/withdrawal` | `request_release_withdrawal` |
 | `POST /releases/{release_id}/takedown` | `request_takedown` |
 | `DELETE /releases/{release_id}/takedown` | `cancel_takedown` |
@@ -206,6 +214,7 @@ Every route is one MCP tool (a unit test checks all tools are mapped).
 | `POST /uploads/{upload_session_id}/complete` | `complete_upload` |
 | `GET /assets/{asset_id}/checks` | `get_file_checks` |
 | `POST /rights-proofs` | `attach_rights_proof` |
+| `DELETE /rights-proofs/{document_id}` | `withdraw_rights_proof` |
 | `GET /inquiries` | `list_inquiries` |
 | `POST /inquiries` | `create_inquiry` |
 | `GET /inquiries/{inquiry_id}` | `get_inquiry` |
@@ -230,4 +239,6 @@ Every route is one MCP tool (a unit test checks all tools are mapped).
 | `DELETE /contract/end` | `cancel_contract_end` |
 | `POST /permission-requests` | `request_permission` |
 | `GET /permission-requests/{request_id}` | `get_permission_request` |
+| `DELETE /permission-requests/{request_id}` | `withdraw_permission_request` |
 | `GET /action-requests/{request_id}` | `get_action_request` |
+| `DELETE /action-requests/{request_id}` | `withdraw_action_request` |
