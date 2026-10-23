@@ -3,9 +3,15 @@
    스튜디오(아티스트 화면)·관리자·업무 화면이 모두 이 값을 쓴다. 다른 CSS는 숫자 대신 토큰을 쓴다.
    원본은 web/studio/app/src/styles/tokens.css, web/admin은 같은 내용 복사본.
    ========================================================================== */
+/* 글꼴: Audeniq Sans — Pretendard 기반 어데닉 서체(OFL, 원본 github.com/tae-ok-11/audeniq-font).
+   한글 자간 −0.02em이 글꼴 안에 들어 있어서 화면 CSS의 자간은 Pretendard 때보다 0.02em 넓게 쓴다.
+   'Audeniq Sans'는 자주 쓰는 한글 2,780자 판(0.65MB). 그 밖의 한글이 나올 때만 전체 판(2.1MB)을 받는다. */
+@font-face{font-family:"Audeniq Sans";src:url("/static/fonts/AudeniqSansVariable-Subset.woff2") format("woff2");font-weight:45 930;font-style:normal;font-display:swap}
+@font-face{font-family:"Audeniq Sans Full";src:url("/static/fonts/AudeniqSansVariable.woff2") format("woff2");font-weight:45 930;font-style:normal;font-display:swap;unicode-range:U+1100-11FF,U+3130-318F,U+A960-A97F,U+AC00-D7A3,U+D7B0-D7FF}
+
 :root{
   /* ---------- 글꼴 ---------- */
-  --font-brand:"Pretendard Variable", Pretendard;  /* index.html 에서 jsDelivr로 불러옴 */
+  --font-brand:"Audeniq Sans", "Audeniq Sans Full";  /* 아래 @font-face, 파일은 public/static/fonts */
   --font-fallback:-apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
   --font-body:var(--font-brand), var(--font-fallback);
   --font-display:var(--font-body);
