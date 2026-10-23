@@ -407,7 +407,8 @@ export function Dashboard() {
               </div>
             ) : (<>
             <div className="aq-report-total">
-              <small>{Number(report.period.slice(5))}월 수익</small>
+              {/* 제목에 이미 '2026년 9월'이 있다 — 달을 되풀이하지 않는다 */}
+          <small>수익</small>
               <strong><Money value={report.revenue} animate /></strong>
               {report.change != null && (
                 <span className={`aq-report-delta${report.change < 0 ? ' is-down' : ''}`}>
