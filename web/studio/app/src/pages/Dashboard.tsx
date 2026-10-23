@@ -12,7 +12,7 @@ import { useAsync } from '../hooks/useAsync';
 import { SkeletonBlock, SkeletonRows } from '../components/Skeleton';
 import { useSmoothHeight } from '../hooks/useSmoothHeight';
 import { prefetchRelease } from '../api/prefetch';
-import { Badge, CountUp, Steps } from '../ui';
+import { Badge, CountUp, EmptyState, KeyValue, Steps } from '../ui';
 import { Money } from '../components/Money';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { latestSummary, periodLabel } from '../data/reports';
@@ -392,36 +392,32 @@ export function Dashboard() {
         <div className="aq-home-side">
             {!loading && upcoming && <UpcomingCard release={upcoming} />}
             {!loading && <MoneyCard payable={payable} pending={payoutPending} held={held} minimum={minimum} registered={isPaymentRegistered(payment)} />}
-          <section className="ui-card aq-report-card" aria-label="이번 달 리포트 요약">
+          {/* 리포트 — 제목은 짧게(기간은 보조 글자), 금액 옆에 전월 대비, 아래에 세 숫자. 모양은 Badge · KeyValue · EmptyState */}
+          <section className="ui-card aq-report-card" aria-labelledby="reportTitle">
             <div className="ui-section-head aq-report-head">
-              <h2>{periodLabel(report.period)} 음악 리포트</h2>
+              <h2 id="reportTitle">음악 리포트{!reportEmpty && <small>{periodLabel(report.period)}</small>}</h2>
               <button className="aq-head-link" type="button" onClick={() => navigate('/reports')}>리포트 보기<Glyph name="chevron-right" size={14} /></button>
             </div>
             {reportEmpty ? (
-              <div className="aq-report-empty">
-                <span className="ui-icon is-blue" aria-hidden="true"><Glyph name="chart" size={20} /></span>
-                <div className="min-0">
-                  <strong>아직 수익 리포트가 없어요</strong>
-                  <small>발매가 플랫폼에 나가고 정산이 들어오면 여기서 수익과 재생 수를 보여 드려요.</small>
-                </div>
-              </div>
+              <EmptyState compact icon={<Glyph name="chart" size={22} />} title="아직 수익 리포트가 없어요">
+                발매가 플랫폼에 나가고 정산이 들어오면 여기서 수익과 재생 수를 보여 드려요.
+              </EmptyState>
             ) : (<>
             <div className="aq-report-total">
-              {/* 제목에 이미 '2026년 9월'이 있다 — 달을 되풀이하지 않는다 */}
-          <small>수익</small>
-              <strong><Money value={report.revenue} animate /></strong>
-              {report.change != null && (
-                <span className={`aq-report-delta${report.change < 0 ? ' is-down' : ''}`}>
-                  전월 대비 {report.change >= 0 ? '+' : ''}{report.change.toFixed(1)}%
-                </span>
-              )}
+              <small>수익</small>
+              <div className="aq-report-amount">
+                <strong><Money value={report.revenue} animate /></strong>
+                {report.change != null && (
+                  <Badge tone={report.change < 0 ? 'red' : 'blue'}>전월 대비 {report.change >= 0 ? '+' : ''}{report.change.toFixed(1)}%</Badge>
+                )}
+              </div>
             </div>
             <MiniTrend data={report.trend} />
-            <div className="aq-report-grid">
-              <div><small>총 재생</small><strong>{report.plays > 0 ? <CountUp value={report.plays} format={n => `${num(n)}회`} /> : '아직 없어요'}</strong></div>
-              <div><small>Top 트랙</small><strong>{report.topTrack || '—'}</strong></div>
-              <div><small>Top 플랫폼</small><strong>{report.topPlatform || '—'}</strong></div>
-            </div>
+            <KeyValue className="aq-report-kv" items={[
+              ['총 재생', report.plays > 0 ? <CountUp value={report.plays} format={n => `${num(n)}회`} /> : '아직 없어요'],
+              ['많이 들은 곡', report.topTrack || '—'],
+              ['많이 들은 플랫폼', report.topPlatform || '—'],
+            ]} />
             </>)}
           </section>
         </div>

@@ -111,7 +111,14 @@ img{max-width:100%}
 #view-home .aq-home-board>.aq-home-main:only-child,#view-home .aq-home-board:has(>.aq-home-side:empty)>.aq-home-main{grid-column:1/-1}
 .aq-home-side:empty{display:none}
 .aq-home-side .aq-report-card{grid-template-columns:minmax(0,1fr)}
-.aq-home-side .aq-report-card .aq-mini-trend{justify-content:space-around;height:110px;margin-top:8px}
+/* 홈 리포트 — 배치만: 금액과 전월 대비를 한 줄에, 막대는 가운데 고르게, 세 숫자는 막대 아래 */
+#view-home .aq-report-card .aq-report-head{margin-bottom:4px}
+#view-home .aq-report-amount{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin-top:6px}
+#view-home .aq-report-amount>strong{display:block;flex:none;width:auto;margin:0}
+#view-home .aq-home-side .aq-report-card .aq-mini-trend{justify-content:space-around;height:120px;margin:4px 0 0}
+#view-home .aq-report-kv{margin-top:24px}
+.aq-report-kv dd{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#view-home .aq-report-card .ui-empty{min-height:0}
 @media(max-width:900px){
   #view-home .aq-home-board{display:flex;flex-direction:column;align-items:stretch;gap:11px}
   .aq-home-main,.aq-home-side{display:contents}
