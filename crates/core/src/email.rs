@@ -330,7 +330,7 @@ pub fn render(origin: &str, title: &str, detail: &str, link: &str) -> Rendered {
         )
     };
     let html = format!(
-        "<!doctype html><html lang=\"ko\"><body style=\"margin:0;padding:24px;background:#f5f6f8;font-family:-apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif\">\
+        "<!doctype html><html lang=\"ko\"><body style=\"margin:0;padding:24px;background:#f5f6f8;font-family:'Pretendard Variable',Pretendard,-apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif\">\
 <div style=\"max-width:520px;margin:0 auto;background:#ffffff;border-radius:16px;padding:28px\">\
 <p style=\"margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:.08em;color:#3b63f6\">AUDENIQ STUDIO</p>\
 <h1 style=\"margin:0 0 14px;font-size:20px;line-height:1.4;color:#111827\">{title}</h1>{detail_html}\
