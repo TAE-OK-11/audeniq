@@ -6,6 +6,7 @@ export function initTopCover() {
   if (!window.matchMedia?.('(pointer: coarse)').matches) return;
   const cover = document.createElement('div');
   cover.setAttribute('aria-hidden', 'true');
+  cover.className = 'aq-top-cover';
   cover.style.cssText = 'position:absolute;left:0;right:0;z-index:69;pointer-events:none;background:#fff';
   document.body.appendChild(cover);
   let raf = 0;
