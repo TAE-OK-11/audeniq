@@ -505,8 +505,9 @@ export function SignatureModal({
               </div>
             </div>
             {boxes.length > 0 && (
-              <fieldset className="aq-confirm-boxes">
-                <legend>권리·배급 권한 확인 <small>계약서 별첨 2 · 직접 체크해 주세요</small></legend>
+              // fieldset의 legend는 사파리가 상자 위 테두리에 걸쳐 그려 제목·부제가 면 위로 삐져나왔다 — 그룹 + 제목 줄로
+              <div className="aq-confirm-boxes" role="group" aria-labelledby="aqConfirmTitle">
+                <p id="aqConfirmTitle" className="aq-confirm-title">권리·배급 권한 확인 <small>계약서 별첨 2 · 직접 체크해 주세요</small></p>
                 <label className="ui-check is-plain aq-confirm-all">
                   <input type="checkbox" checked={boxes.every(b => ticked[b.id])}
                     onChange={e => setTicked(Object.fromEntries(boxes.map(b => [b.id, e.target.checked])))} />
@@ -518,7 +519,7 @@ export function SignatureModal({
                     <span><b>{b.required ? '(필수)' : '(있을 때만)'}</b> {b.text}</span>
                   </label>
                 ))}
-              </fieldset>
+              </div>
             )}
             <label className="aq-sign-check">
               <input type="checkbox" id="aqSignAck" checked={ack} onChange={e => setAck(e.target.checked)} />

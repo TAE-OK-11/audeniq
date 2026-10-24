@@ -1611,8 +1611,8 @@ a.aq-inline-link{display:inline-block;max-width:100%}
 
 /* 배급 계약서 서명: 권리·배급 권한 확인 체크 */
 .aq-confirm-boxes{display:grid;gap:10px;margin:4px 0 16px;padding:16px;border:0;border-radius:var(--aq-r-lg);background:var(--aq-blue-50)}
-.aq-confirm-boxes legend{float:left;width:100%;margin:0 0 4px;padding:0;font-size:14px;font-weight:800;color:var(--aq-e-ink)}
-.aq-confirm-boxes legend small{display:block;margin-top:2px;font-size:12px;font-weight:600;color:var(--aq-text-4)}
+.aq-confirm-title{margin:0 0 4px;padding:0;font-size:14px;font-weight:800;color:var(--aq-e-ink)}
+.aq-confirm-title small{display:block;margin-top:2px;font-size:12px;font-weight:600;color:var(--aq-text-4)}
 .aq-confirm-boxes .ui-check.is-plain span{font-size:13px;line-height:1.6}
 .aq-confirm-boxes b{color:var(--aq-e-blue);font-weight:800}
 .aq-confirm-all{padding-bottom:10px;border-bottom:1px solid var(--aq-gray-150)}
