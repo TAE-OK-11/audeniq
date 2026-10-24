@@ -172,12 +172,12 @@ export function CheerBoard({ slug, artist, total, enabled }: { slug: string; art
   const left = CHEER_MAX - message.length;
   return (
     <section className="aq-cheers" aria-labelledby="cheersTitle">
-      <h2 id="cheersTitle" className="aq-smartlink-list-title">팬 응원 <span><CountUp value={count} format={n => n.toLocaleString()} /></span></h2>
+      <h2 id="cheersTitle" className="aq-smartlink-list-title">팬 응원{count > 0 && <> <span><CountUp value={count} format={n => n.toLocaleString()} /></span></>}</h2>
       <form ref={formRef} className="aq-cheer-form" onSubmit={send} noValidate>
         <input id="cheerNick" className="ui-input" aria-label="닉네임" placeholder="닉네임" maxLength={NICK_MAX}
           value={nickname} onChange={e => { setNickname(e.target.value); setError(''); }} autoComplete="nickname" />
         <textarea ref={msgRef} className="ui-input aq-cheer-msg" aria-label={`${artist}에게 응원 메시지`} rows={3} maxLength={CHEER_MAX}
-          placeholder={`${artist}에게 응원 한마디를 남겨 주세요.`} value={message}
+          placeholder={count > 0 ? `${artist}에게 응원 한마디를 남겨 주세요.` : `${artist}에게 첫 응원을 남겨 주세요.`} value={message}
           onChange={e => { setMessage(e.target.value); setError(''); setSent(null); }} />
         <div className="aq-cheer-foot">
           <span className={`aq-cheer-count${left <= 30 ? ' is-near' : ''}`}>{message.length} / {CHEER_MAX}</span>
@@ -191,7 +191,8 @@ export function CheerBoard({ slug, artist, total, enabled }: { slug: string; art
         <p className="aq-cheer-note">누구나 볼 수 있어요. 아티스트가 숨기거나 지울 수 있어요.</p>
       </form>
       {items === null ? <CheerSkeleton />
-        : items.length === 0 ? <p className="aq-cheer-empty"><Glyph name="heart" size={18} />첫 응원을 남겨 주세요.</p>
+        // 아직 없으면 빈 상자를 두지 않는다 — 바로 위 폼이 이미 ‘응원을 남겨 주세요’라고 말한다
+        : items.length === 0 ? null
         : (
           <ul className="aq-cheer-list">
             {items.map(c => <CheerItem key={c.id} c={c} artist={artist} fresh={c.id === sent} />)}
