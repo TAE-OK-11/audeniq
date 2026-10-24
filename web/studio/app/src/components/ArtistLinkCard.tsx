@@ -20,7 +20,10 @@ import { HANDLE_MAX, artistPath, artistPressUrl, artistUrl, handleProblem, norma
 
 export interface ArtistLinkRow {
   artist_id: string; name: string; releases: number;
-  link: { slug: string; enabled: boolean; bio: string; views: number; links?: OwnLink[]; contact?: string } | null;
+  link: {
+    slug: string; enabled: boolean; bio: string; views: number; links?: OwnLink[]; contact?: string;
+    cheers_enabled?: boolean; posts?: number; cheers?: number;
+  } | null;
 }
 
 const BIO_MAX = 1500;
@@ -80,7 +83,7 @@ export function LinkEditor({ artist, onSaved }: { artist: ArtistLinkRow; onSaved
       const r = MOCK
         ? { slug: h || slug || 'abcd2345', enabled }
         : await req<{ slug: string; enabled: boolean }>(orgPath(`/artists/${encodeURIComponent(artist.artist_id)}/link`), { method: 'PUT', body });
-      onSaved({ ...artist, link: { slug: r.slug, enabled: r.enabled, bio: bio.trim(), views: artist.link?.views ?? 0, links: checked.links, contact: body.contact } });
+      onSaved({ ...artist, link: { ...artist.link, slug: r.slug, enabled: r.enabled, bio: bio.trim(), views: artist.link?.views ?? 0, links: checked.links, contact: body.contact } });
       toast(!slug ? '아티스트 소개 페이지를 만들었어요. 링크를 SNS·프로필에 걸어 보세요.' : r.enabled ? '저장했어요.' : '페이지를 껐어요. 다시 켜면 같은 링크로 열려요.', 'success');
       close();
     } catch (err) { toast(errorMessage(err), 'error'); } finally { setBusy(false); }

@@ -50,6 +50,8 @@ const RightsReport = lazyPage(pageLoaders.RightsReport, m => m.RightsReport);
 const SmartLink = lazyPage(pageLoaders.SmartLink, m => m.SmartLink);
 const ArtistPage = lazyPage(pageLoaders.ArtistPage, m => m.ArtistPage);
 const ArtistPress = lazyPage(pageLoaders.ArtistPress, m => m.ArtistPress);
+const ArtistNews = lazyPage(pageLoaders.ArtistNews, m => m.ArtistNews);
+const ArtistDiscography = lazyPage(pageLoaders.ArtistDiscography, m => m.ArtistDiscography);
 const SplitInvite = lazyPage(pageLoaders.SplitInvite, m => m.SplitInvite);
 const SettlementTerms = lazyPage(pageLoaders.Terms, m => m.SettlementTerms);
 const PrivacyPolicy = lazyPage(pageLoaders.Terms, m => m.PrivacyPolicy);
@@ -207,6 +209,8 @@ export function App() {
                     <Route path="/link/artist/:slug" element={<ArtistPage />} />
                     {/* 보도자료 — 같은 아티스트 페이지의 큐레이터·기자용 */}
                     <Route path="/link/artist/:slug/press" element={<ArtistPress />} />
+                    <Route path="/link/artist/:slug/news" element={<ArtistNews />} />
+                    <Route path="/link/artist/:slug/discography" element={<ArtistDiscography />} />
                     {/* 예전 주소 — 이미 나간 QR·링크가 계속 열리게 새 주소로 넘긴다 (?src= 등은 그대로) */}
                     <Route path="/l/:slug" element={<MovedLink to={releasePath} />} />
                     <Route path="/a/:slug" element={<MovedLink to={artistPath} />} />
