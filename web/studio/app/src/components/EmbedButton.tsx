@@ -5,12 +5,12 @@ import { Glyph } from './Glyph';
 import { CopyButton } from './CopyButton';
 import { embedHtml, type EmbedInput } from '../lib/embed';
 
-export function EmbedButton({ input }: { input: EmbedInput }) {
+export function EmbedButton({ input, className = 'ui-btn is-sm' }: { input: EmbedInput; className?: string }) {
   const [open, setOpen] = useState(false);
   const html = embedHtml(input);
   return (
     <>
-      <button type="button" className="ui-btn is-sm" onClick={() => setOpen(true)}><Glyph name="table" size={14} />임베드</button>
+      <button type="button" className={className} onClick={() => setOpen(true)}><Glyph name="table" size={14} />임베드</button>
       {open && (
         <Modal title="블로그·홈페이지에 넣기" onClose={() => setOpen(false)} modalClass="aq-set-modal aq-embed-modal">
           <div className="aq-embed">

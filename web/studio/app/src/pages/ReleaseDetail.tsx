@@ -7,6 +7,7 @@ import { TakedownCard } from '../components/TakedownCard';
 import { CorrectionCard } from '../components/CorrectionCard';
 import { PitchCard } from '../components/PitchCard';
 import { SmartLinkCard } from '../components/SmartLinkCard';
+import { PreReleaseCard } from '../components/PreReleaseCard';
 import { SplitsCard } from '../components/SplitsCard';
 import { ContentIdCard } from '../components/ContentIdCard';
 import { TermCard } from '../components/TermCard';
@@ -434,6 +435,7 @@ export function ReleaseDetail() {
                   <div><dt>발매 유형</dt><dd>{kindLabel(d?.type) || <Empty>입력 전</Empty>}</dd></div>
                   <div><dt>주요 언어</dt><dd>{languageLabel(d?.language) || <Empty>입력 전</Empty>}</dd></div>
                   <div><dt>{dateLabel}</dt><dd>{rel.release_date || <Empty>미정</Empty>}</dd></div>
+                  {d?.preorder_start && <div><dt>사전 공개</dt><dd>{d.preorder_start}부터</dd></div>}
                   <div><dt>UPC / EAN</dt><dd>{d?.upc || <Empty>등록 전</Empty>}</dd></div>
                   <div><dt>장르</dt><dd>{genre || <Empty>입력 전</Empty>}</dd></div>
                   <div><dt>레이블</dt><dd>{d?.label || <Empty>입력 전</Empty>}</dd></div>
@@ -590,7 +592,12 @@ export function ReleaseDetail() {
                 <section className="aq-manage-group" aria-label="수익·홍보">
                   <h3 className="aq-manage-group-title">수익·홍보</h3>
                   <SplitsCard releaseId={rel.id} />
-                  <SmartLinkCard releaseId={rel.id} promo={{ title: rel.title, artist: rel.artist ?? '', releaseDate: rel.release_date ?? null, cover: coverOk ? coverSrc : undefined }} />
+                  <PreReleaseCard releaseId={rel.id} preorderStart={d?.preorder_start} releaseDate={rel.release_date} releaseTime={d?.release_time} />
+                  <SmartLinkCard releaseId={rel.id} promo={{
+                    title: rel.title, artist: rel.artist ?? '', releaseDate: rel.release_date ?? null, cover: coverOk ? coverSrc : undefined,
+                    releaseTime: d?.release_time || null, kind: kindLabel(d?.type) || undefined,
+                    lyrics: (d?.draftTracks ?? []).filter(t => t.lyrics?.trim()).map(t => ({ title: t.title, lyrics: t.lyrics })),
+                  }} />
                   <PitchCard releaseId={rel.id} />
                 </section>
                 <section className="aq-manage-group" aria-label="권리 보호">

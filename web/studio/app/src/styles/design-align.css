@@ -1053,6 +1053,61 @@ body.wizard-mode .portal-header,.portal-header:has(#portalNav:not([hidden])){box
 .aq-smartlink-countdown{display:grid;gap:2px;margin:14px auto 0;padding:12px 18px;border-radius:var(--aq-r-lg);background:var(--aq-blue-50);width:max-content;max-width:100%}
 .aq-smartlink-countdown small{font-size:12px;font-weight:700;color:var(--aq-blue-500)}
 .aq-smartlink-countdown strong{font-size:24px;font-weight:800;letter-spacing:-.01em;color:var(--aq-text);font-variant-numeric:tabular-nums}
+/* 신청서 사전 공개 빠른 선택, 발매 상세 '플랫폼 사전 공개' 카드 */
+.aq-preorder-picks{padding-bottom:0;margin-top:8px}
+.aq-prerelease-steps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.aq-prerelease-steps li{display:grid;gap:2px;padding:12px 14px;border-radius:var(--aq-r-lg);background:#fff}
+.aq-prerelease-steps strong{font-size:15px;font-weight:800;color:var(--aq-text)}
+.aq-prerelease-steps span{font-size:13px;color:var(--aq-text-3)}
+.aq-prerelease-steps li.is-now{box-shadow:inset 0 0 0 2px var(--aq-primary)}
+.aq-prerelease-steps li.is-now span{color:var(--aq-primary);font-weight:700}
+.aq-prerelease-steps li.is-done strong{color:var(--aq-text-3)}
+.aq-prerelease-platform{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:12px;padding:10px 12px}
+.aq-prerelease-platform strong{display:block;font-size:14px}
+.aq-prerelease-platform small{display:block;font-size:12px;color:var(--aq-text-3);line-height:1.45}
+
+/* 스마트링크 카드 — 홍보 도구 (같은 주소로 만드는 이미지·문구·링크를 한 묶음 타일로) */
+.aq-promo-tools{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0 4px}
+.aq-promo-tool{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:72px;padding:12px 6px;border:0;border-radius:var(--aq-r-lg);background:#fff;color:var(--aq-text);font:inherit;font-size:13px;font-weight:700;cursor:pointer;
+  transition:background var(--aq-dur-fast,.15s) ease,transform var(--aq-press-out,.2s) var(--aq-ease-out,ease)}
+.aq-promo-tool svg{width:20px;height:20px;color:var(--aq-primary)}
+.aq-promo-tool:hover{background:var(--aq-blue-50)}
+.aq-promo-tool:active{transform:scale(var(--aq-press-row,.97));transition-duration:var(--aq-press-in,.06s)}
+.aq-promo-tool:focus-visible{outline:var(--aq-focus);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){.aq-promo-tool:active{transform:none}}
+.aq-lyric-pick{margin:0;padding:0;border:0;min-width:0}
+.aq-lyric-pick ul{list-style:none;margin:6px 0 0;padding:4px;display:grid;gap:2px;max-height:200px;overflow:auto;border-radius:var(--aq-r-md);background:var(--aq-surface)}
+.aq-lyric-pick label{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--aq-r-sm,8px);font-size:14px;cursor:pointer}
+.aq-lyric-pick label.is-on{background:#fff;font-weight:700}
+.aq-lyric-pick input{flex:none;accent-color:var(--aq-primary)}
+.aq-lyric-pick input:disabled+span{color:var(--aq-text-4)}
+.aq-caption{display:grid;gap:10px}
+.aq-caption-text{width:100%;min-height:180px;resize:vertical;line-height:1.6;white-space:pre-wrap}
+.aq-channel-list{margin:10px 0}
+.aq-channel-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:10px 12px}
+.aq-channel-row strong{display:block;font-size:14px}
+.aq-channel-row code{display:block;font:500 12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--aq-text-4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-channel-n{min-width:28px;text-align:right;font-weight:800;font-variant-numeric:tabular-nums;color:var(--aq-text)}
+
+/* 발매 전 — 캘린더 추가, 프리세이브(플랫폼별 버튼 한 줄씩, 듣기 목록과 같은 결) */
+.aq-smartlink-cal{margin:10px auto 0}
+.aq-smartlink-presave-result{display:flex;align-items:flex-start;gap:8px;margin:16px 0 0;padding:10px 12px;border-radius:var(--aq-r-lg);background:var(--aq-blue-50);color:var(--aq-blue-500);font-size:14px;font-weight:700;text-align:left;line-height:1.5}
+.aq-smartlink-presave-result svg{flex:none;margin-top:2px}
+.aq-smartlink-presave-result.is-error{background:#fef3f2;color:#d92d20}
+.aq-smartlink-presave{margin:22px 0 0;text-align:left}
+.aq-smartlink-presave .aq-smartlink-list-title{margin-bottom:4px}
+.aq-smartlink-presave-help{margin:0 0 10px;font-size:13px;color:var(--aq-text-3)}
+.aq-smartlink-presave-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.aq-smartlink-presave-btn{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;width:100%;min-height:56px;padding:10px 12px;border:0;border-radius:var(--aq-r-xl);background:var(--aq-surface);color:var(--aq-text);font:inherit;font-weight:700;text-align:left;cursor:pointer;
+  transition:background var(--aq-dur-fast,.15s) ease,transform var(--aq-press-out,.2s) var(--aq-ease-out,ease)}
+.aq-smartlink-presave-btn:hover:not(:disabled){background:var(--aq-surface-hover)}
+.aq-smartlink-presave-btn:active:not(:disabled){transform:scale(var(--aq-press-row,.985));transition-duration:var(--aq-press-in,.06s)}
+.aq-smartlink-presave-btn:focus-visible{outline:var(--aq-focus);outline-offset:2px}
+.aq-smartlink-presave-btn:disabled{cursor:default;opacity:.6}
+.aq-smartlink-presave-btn[aria-busy="true"]{opacity:1}
+.aq-smartlink-presave-btn small{padding:6px 12px;border-radius:999px;background:var(--aq-primary);color:#fff;font-size:13px;font-weight:700}
+.aq-smartlink-presave-note{margin:8px 0 0;font-size:12px;color:var(--aq-text-4);line-height:1.5}
+@media (prefers-reduced-motion:reduce){.aq-smartlink-presave-btn:active:not(:disabled){transform:none}}
 .aq-smartlink-lyrics{display:grid;gap:8px;margin:22px 0 0;text-align:left}
 .aq-smartlink-lyrics .aq-faq-item{background:var(--aq-surface);border-radius:var(--aq-r-lg)}
 .aq-smartlink-lyrics .aq-faq-item p{white-space:pre-line;line-height:1.85}

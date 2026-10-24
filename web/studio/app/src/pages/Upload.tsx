@@ -1,6 +1,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { FilePicker } from '../components/FilePicker';
+import { preorderChoices } from '../lib/preRelease';
 import { FileCard } from '../components/FileCard';
 import { useNavigate, useSearchParams } from '../lib/router';
 import { useToast } from '../components/Toast';
@@ -2586,7 +2587,7 @@ export function Upload() {
                 <input id="f-upc" inputMode="numeric" value={form.upc} onChange={e => set('upc', e.target.value.replace(/\D/g, '').slice(0, 13))} maxLength={13} placeholder="없으면 자동 발급돼요" />
               </div>
             </div>
-            <h2 className="subhead">사전 공개·예약 판매<span className="aq-optional">선택</span></h2>
+            <h2 className="subhead">플랫폼 사전 공개·예약 판매<span className="aq-optional">선택</span></h2>
             <div className="form-grid">
               <div className="ui-field">
                 <label htmlFor="f-preorder">사전 공개 시작일</label>
@@ -2594,7 +2595,15 @@ export function Upload() {
                   min={form.releaseDate ? shiftDate(form.releaseDate, -90) : undefined}
                   max={form.releaseDate ? shiftDate(form.releaseDate, -1) : undefined}
                   onChange={v => set('preorderStart', v)} />
-                <small className="ui-field-help">이 날부터 플랫폼에 발매 예정 페이지·트랙 목록·커버·미리듣기가 열리고(사전 저장), 다운로드 스토어는 예약 판매를 받아요. 발매일 1–90일 전으로 골라 주세요.</small>
+                {form.releaseDate && preorderChoices(form.releaseDate).length > 0 && (
+                  <div className="ui-chips is-wrap aq-preorder-picks" role="group" aria-label="사전 공개 빠른 선택">
+                    {preorderChoices(form.releaseDate).map(c => (
+                      <button key={c.weeks} type="button" className="ui-chip is-sm" aria-pressed={form.preorderStart === c.date}
+                        onClick={() => set('preorderStart', form.preorderStart === c.date ? '' : c.date)}>발매 {c.weeks}주 전</button>
+                    ))}
+                  </div>
+                )}
+                <small className="ui-field-help">이 날부터 Spotify·Apple Music 등에 발매 예정 페이지·트랙 목록·커버가 열려 팬이 앱에서 미리 저장(Apple Music은 미리 추가)할 수 있고, iTunes 같은 다운로드 스토어는 예약 판매를 받아요. 발매일 1–90일 전으로 골라 주세요. 보통 2주 전을 많이 써요.</small>
               </div>
             </div>
             {form.tracks.some(t => t.title.trim()) && (

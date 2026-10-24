@@ -46,7 +46,7 @@ const SEED: ReleaseDetail[] = [
       { id: 't6', title: '밤바다', duration_ms: 241000, isrc: null, composers: '서린' },
     ],
     draft: {
-      artist: '서린', type: 'ep', language: 'ko', genre: 'Ballad', label: 'AUDENIQ', upc: '', notes: '',
+      artist: '서린', type: 'ep', language: 'ko', genre: 'Ballad', label: 'AUDENIQ', upc: '', notes: '', release_time: '18:00', preorder_start: '2026-11-01',
       coverName: '', territories: ['WORLD'], platforms: ['spotify', 'apple', 'melon', 'genie', 'flo'], ownership: '서린', phonogram: '2026 서린', copyright: '2026 서린',
       rightsChecks: {}, history: [{ text: '발매 신청 접수 완료 · AUDENIQ 검토 시작', time: '2026-09-22 09:10' }],
     },

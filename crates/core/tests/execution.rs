@@ -7060,3 +7060,400 @@ async fn transfer_names_the_distributor_hands_over_codes_and_takes_down(pool: Pg
         .bind(ctx.package_id.to_string()).fetch_one(&pool).await.unwrap();
     assert!(takedowns >= 1);
 }
+
+/// What the stand-in platform server saw: "METHOD path?query auth".
+#[derive(Clone, Default)]
+struct PresaveFx {
+    seen: Arc<std::sync::Mutex<Vec<String>>>,
+    challenges: Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
+}
+
+async fn presave_fixture() -> (String, PresaveFx) {
+    use axum::{
+        extract::State,
+        http::{HeaderMap, Method, Uri},
+    };
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let fx = PresaveFx::default();
+    let handler = |State(fx): State<PresaveFx>,
+                   m: Method,
+                   uri: Uri,
+                   h: HeaderMap,
+                   body: axum::body::Bytes| async move {
+        let path = uri.path().to_string();
+        let q: std::collections::HashMap<String, String> =
+            url::form_urlencoded::parse(uri.query().unwrap_or("").as_bytes())
+                .into_owned()
+                .collect();
+        let f: std::collections::HashMap<String, String> =
+            url::form_urlencoded::parse(&body).into_owned().collect();
+        let bearer = h
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        fx.seen
+            .lock()
+            .unwrap()
+            .push(format!("{m} {path}?{} {bearer}", uri.query().unwrap_or("")));
+        let ok = |v: Value| (StatusCode::OK, v.to_string());
+        match (m.as_str(), path.as_str()) {
+            ("GET", "/deezer/token") => {
+                if q["secret"] == "dz-secret" && q["code"] == "dz-code" {
+                    ok(json!({"access_token": "dz-access", "expires": 0}))
+                } else {
+                    (StatusCode::BAD_REQUEST, "{}".into())
+                }
+            }
+            ("POST", "/spotify/token" | "/tidal/token") => {
+                let p = &path[1..path.len() - 6];
+                match f["grant_type"].as_str() {
+                    "authorization_code" => {
+                        let challenge = fx.challenges.lock().unwrap().remove(&f["code"]);
+                        let verified = challenge.is_some_and(|c| {
+                            base64::Engine::encode(
+                                &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+                                sha2::Sha256::digest(f["code_verifier"].as_bytes()),
+                            ) == c
+                        });
+                        if verified && bearer.starts_with("Basic ") {
+                            ok(
+                                json!({"access_token": "x", "refresh_token": format!("{p}-refresh")}),
+                            )
+                        } else {
+                            (StatusCode::BAD_REQUEST, "{}".into())
+                        }
+                    }
+                    _ if f["refresh_token"] == format!("{p}-refresh") => {
+                        ok(json!({"access_token": format!("{p}-access")}))
+                    }
+                    _ => (
+                        StatusCode::BAD_REQUEST,
+                        json!({"error": "invalid_grant"}).to_string(),
+                    ),
+                }
+            }
+            ("GET", "/spotify/api/search") => {
+                ok(json!({"albums": {"items": [{"id": "sp-album"}]}}))
+            }
+            ("PUT", "/spotify/api/me/albums") => (StatusCode::OK, String::new()),
+            ("GET", p) if p.starts_with("/deezer/api/album/upc:") => ok(json!({"id": 4242})),
+            ("POST", "/deezer/api/user/me/albums") => ok(json!(true)),
+            ("GET", "/tidal/api/albums") => {
+                ok(json!({"data": [{"id": "td-album", "type": "albums"}]}))
+            }
+            ("GET", "/tidal/api/users/me") => ok(json!({"data": {"id": "td-user"}})),
+            ("POST", "/tidal/api/userCollections/td-user/relationships/albums") => {
+                (StatusCode::NO_CONTENT, String::new())
+            }
+            _ => (StatusCode::NOT_FOUND, "{}".into()),
+        }
+    };
+    let router = Router::new().fallback(handler).with_state(fx.clone());
+    tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    (base, fx)
+}
+
+/// Follows a platform's return to the server; the page it lands on.
+async fn presave_return(app: &Router, provider: &str, query: &str) -> String {
+    let r = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/presave/{provider}/callback?{query}"))
+                .header("x-audeniq-service", SECRET)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::SEE_OTHER);
+    r.headers()["location"]
+        .to_str()
+        .unwrap()
+        .trim_start_matches(ORIGIN)
+        .to_string()
+}
+
+/// Pre-saves: before the release a fan allows "add to library" on Spotify,
+/// Deezer or TIDAL; at the release instant the server finds the album (by
+/// UPC here) and saves it once, then erases the token. State is single-use,
+/// a refusal returns to the page, a revoked token ends the pre-save.
+#[sqlx::test]
+async fn presave_saves_album_at_release_and_erases_tokens(pool: PgPool) {
+    let (base, fx) = presave_fixture().await;
+    // Safety: set once in this test; other tests do not read these.
+    unsafe {
+        std::env::set_var("PRESAVE_FIXTURE_BASE", &base);
+        for (p, id) in [
+            ("SPOTIFY", "sp-id"),
+            ("DEEZER", "dz-id"),
+            ("TIDAL", "td-id"),
+        ] {
+            std::env::set_var(format!("PRESAVE_{p}_CLIENT_ID"), id);
+            std::env::set_var(
+                format!("PRESAVE_{p}_CLIENT_SECRET"),
+                format!("{}-secret", &id[..2]),
+            );
+        }
+    }
+    let d = draft_package(&pool).await;
+    consent_and_submit(&d.app, &d.u, d.release, &format!("k-ps-{}", Uuid::new_v4())).await;
+    let (app, user, release) = (d.app, d.u, d.release);
+    let link_path = format!("/api/orgs/{}/releases/{}/smart-link", user.org, release);
+    let (_, v) = call(&app, "PUT", &link_path, json!({"links": {}}), Some(&user)).await;
+    let slug = v["slug"].as_str().unwrap().to_string();
+    let set_date = |days: i64| {
+        let pool = pool.clone();
+        async move {
+            let d =
+                (chrono::Utc::now() + chrono::Duration::hours(9) + chrono::Duration::days(days))
+                    .date_naive()
+                    .to_string();
+            sqlx::query("UPDATE catalog.releases SET draft = jsonb_set(draft, '{release_date}', to_jsonb($2::text)) - 'release_time', upc='8800000000017', row_version = row_version + 1 WHERE id=$1")
+                .bind(release)
+                .bind(d)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    };
+    set_date(3).await;
+    let (_, page) = call(
+        &app,
+        "GET",
+        &format!("/api/smart-links/{slug}"),
+        Value::Null,
+        None,
+    )
+    .await;
+    assert_eq!(
+        page["presave"],
+        json!(["spotify", "deezer", "tidal"]),
+        "{page}"
+    );
+    // A link shared with a channel tag counts that channel too; unknown tags are ignored.
+    for src in ["instagram", "instagram", "bogus"] {
+        let (s, _) = call(
+            &app,
+            "GET",
+            &format!("/api/smart-links/{slug}?src={src}"),
+            Value::Null,
+            None,
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+    }
+    let (_, st) = call(&app, "GET", &link_path, Value::Null, Some(&user)).await;
+    assert_eq!(st["stats"]["sources"], json!({"instagram": 2}), "{st}");
+    assert_eq!(st["stats"]["clicks"], json!({}), "channels are not clicks");
+    assert!(st["sources"].as_array().unwrap().contains(&json!("tiktok")));
+
+    let start = |provider: &'static str| {
+        let (app, slug, base) = (app.clone(), slug.clone(), base.clone());
+        async move {
+            let (s, v) = call(
+                &app,
+                "POST",
+                &format!("/api/smart-links/{slug}/presave/{provider}"),
+                json!({}),
+                None,
+            )
+            .await;
+            assert_eq!(s, StatusCode::OK, "{v}");
+            let url = url::Url::parse(v["url"].as_str().unwrap()).unwrap();
+            assert!(
+                url.as_str()
+                    .starts_with(&format!("{base}/{provider}/authorize"))
+            );
+            url.query_pairs()
+                .into_owned()
+                .collect::<std::collections::HashMap<String, String>>()
+        }
+    };
+    let back = format!("/l/{slug}");
+
+    // Spotify: PKCE, the return saves a sealed refresh token; the state is single-use.
+    let q = start("spotify").await;
+    assert_eq!(
+        q["redirect_uri"],
+        format!("{ORIGIN}/api/presave/spotify/callback")
+    );
+    assert_eq!(
+        (q["scope"].as_str(), q["code_challenge_method"].as_str()),
+        ("user-library-modify", "S256")
+    );
+    fx.challenges
+        .lock()
+        .unwrap()
+        .insert("sp-code".into(), q["code_challenge"].clone());
+    let ret = format!("code=sp-code&state={}", q["state"]);
+    assert_eq!(
+        presave_return(&app, "spotify", &ret).await,
+        format!("{back}?presave=spotify")
+    );
+    assert_eq!(
+        presave_return(&app, "spotify", &ret).await,
+        "/?presave_error=PRESAVE_STATE_INVALID",
+        "state is single-use"
+    );
+
+    // Deezer: a refusal goes back to the page; then a consent.
+    let q = start("deezer").await;
+    assert_eq!(q["app_id"], "dz-id");
+    assert_eq!(
+        presave_return(
+            &app,
+            "deezer",
+            &format!("error_reason=user_denied&state={}", q["state"])
+        )
+        .await,
+        format!("{back}?presave_error=PRESAVE_DENIED")
+    );
+    let q = start("deezer").await;
+    assert_eq!(
+        presave_return(
+            &app,
+            "deezer",
+            &format!("code=dz-code&state={}", q["state"])
+        )
+        .await,
+        format!("{back}?presave=deezer")
+    );
+
+    // TIDAL.
+    let q = start("tidal").await;
+    assert_eq!(q["scope"], "collection.write");
+    fx.challenges
+        .lock()
+        .unwrap()
+        .insert("td-code".into(), q["code_challenge"].clone());
+    assert_eq!(
+        presave_return(&app, "tidal", &format!("code=td-code&state={}", q["state"])).await,
+        format!("{back}?presave=tidal")
+    );
+
+    let (n, plain): (i64, bool) = sqlx::query_as(
+        "SELECT count(*), bool_or(position('refresh' in encode(token_cipher,'escape'))>0 OR position('dz-access' in encode(token_cipher,'escape'))>0)
+           FROM portal.presaves WHERE status='PENDING'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!((n, plain), (3, false), "three sealed pre-saves");
+    let starts: i64 = sqlx::query_scalar("SELECT count(*) FROM portal.presave_starts")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(starts, 0, "every state was used up");
+
+    let keys = audeniq_core::payout_keys::KeyRing::from_env(false).unwrap();
+    use audeniq_core::presave::{dispatch_once, sweep};
+    assert_eq!(dispatch_once(&pool, &keys).await.unwrap(), 0, "not out yet");
+
+    // Release instant passed: each album found by UPC and saved once.
+    set_date(-1).await;
+    assert_eq!(dispatch_once(&pool, &keys).await.unwrap(), 3);
+    let seen = fx.seen.lock().unwrap().clone();
+    let has = |needle: &str| seen.iter().any(|l| l.contains(needle));
+    assert!(
+        has("GET /spotify/api/search?q=upc%3A8800000000017"),
+        "{seen:?}"
+    );
+    assert!(
+        has("PUT /spotify/api/me/albums?ids=sp-album Bearer spotify-access"),
+        "{seen:?}"
+    );
+    assert!(has("GET /deezer/api/album/upc:8800000000017"), "{seen:?}");
+    assert!(
+        has("POST /deezer/api/user/me/albums?album_id=4242&access_token=dz-access"),
+        "{seen:?}"
+    );
+    assert!(
+        has(
+            "POST /tidal/api/userCollections/td-user/relationships/albums?countryCode=KR Bearer tidal-access"
+        ),
+        "{seen:?}"
+    );
+    let left: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM portal.presaves WHERE status<>'SAVED' OR token_cipher IS NOT NULL OR saved_at IS NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(left, 0, "all saved, tokens erased");
+    assert_eq!(dispatch_once(&pool, &keys).await.unwrap(), 0, "only once");
+    let (_, st) = call(&app, "GET", &link_path, Value::Null, Some(&user)).await;
+    assert_eq!(
+        st["stats"]["presaves"]["spotify"],
+        json!({"total": 1, "saved": 1}),
+        "{st}"
+    );
+    let (_, page) = call(
+        &app,
+        "GET",
+        &format!("/api/smart-links/{slug}"),
+        Value::Null,
+        None,
+    )
+    .await;
+    assert_eq!(page["presave"], json!([]), "not offered once out");
+    let (_, v) = call(
+        &app,
+        "POST",
+        &format!("/api/smart-links/{slug}/presave/spotify"),
+        json!({}),
+        None,
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "PRESAVE_ALREADY_RELEASED", "{v}");
+
+    // A token the fan revoked ends the pre-save; a stale one expires.
+    set_date(3).await;
+    let id = Uuid::new_v4();
+    let sealed = keys
+        .seal_field(
+            audeniq_core::payout_keys::Field::PresaveToken,
+            id,
+            "revoked",
+        )
+        .unwrap();
+    sqlx::query("INSERT INTO portal.presaves(id, link_id, provider, token_cipher) SELECT $1, id, 'spotify', $2 FROM portal.smart_links WHERE slug=$3")
+        .bind(id)
+        .bind(sealed)
+        .bind(&slug)
+        .execute(&pool)
+        .await
+        .unwrap();
+    set_date(-1).await;
+    assert_eq!(dispatch_once(&pool, &keys).await.unwrap(), 1);
+    let (status, code, erased): (String, Option<String>, bool) = sqlx::query_as(
+        "SELECT status, last_error, token_cipher IS NULL FROM portal.presaves WHERE id=$1",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        (status.as_str(), code.as_deref(), erased),
+        ("FAILED", Some("PRESAVE_TOKEN_REVOKED"), true)
+    );
+
+    set_date(3).await;
+    let q = start("tidal").await;
+    fx.challenges
+        .lock()
+        .unwrap()
+        .insert("td-code".into(), q["code_challenge"].clone());
+    presave_return(&app, "tidal", &format!("code=td-code&state={}", q["state"])).await;
+    set_date(-10).await;
+    sweep(&pool).await.unwrap();
+    let expired: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM portal.presaves WHERE status='EXPIRED' AND token_cipher IS NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(expired, 1);
+}
