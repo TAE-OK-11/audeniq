@@ -1,6 +1,7 @@
 // 홈 등장 연출 — audeniq.com 랜딩과 같은 움직임만 가져온다 (색·배치는 스튜디오 그대로).
-// 덩어리가 화면에 들어올 때 16px 아래에서 0.76초 동안 떠오르고, 첫 화면은 날짜 → 이름 → 인사 → 큰 카드 순으로
-// 몇십 ms씩 차이를 둔다. 화면 밖 덩어리는 미리 숨겨 두었다가 스크롤해서 보일 때 나타난다.
+// 덩어리가 16px 아래에서 떠오르고, 첫 화면은 날짜 → 이름 → 인사 → 큰 카드 순으로 몇십 ms씩 차이를 둔다(0.6초).
+// 화면 밖 덩어리는 스크롤로 화면에 닿기 조금 전에 시작해 더 짧게(0.48초) — 화면 안에 들어온 뒤에야 시작하면
+// 내리는 동안 카드가 흐린 채로 보여 덜 불러온 것처럼 느껴졌다.
 // 초점이 들어가면 바로 제자리, 탭을 숨기면 진행 중인 연출을 끝낸다. 동작 줄이기·미지원 브라우저에서는 아무것도 하지 않는다.
 // (docs/DESIGN_SYSTEM.md 규칙 19의 예외 — 홈 첫 화면에만 쓴다. 다른 화면의 짧은 스크롤 등장은 useScrollReveal)
 import { useEffect, useRef, type RefObject } from 'react';
@@ -12,7 +13,9 @@ export interface RevealGroup {
 }
 
 const KEYFRAMES: Keyframe[] = [{ opacity: 0, transform: 'translateY(16px)' }, { opacity: 1, transform: 'none' }];
-const TIMING = { duration: 760, easing: 'cubic-bezier(.22,.61,.36,1)', fill: 'backwards' as const };
+const EASING = 'cubic-bezier(.22,.61,.36,1)';
+const FIRST_MS = 600;
+const SCROLL_MS = 480;
 const WAITING = 'aq-motion-waiting';
 
 /** key가 바뀔 때마다(불러오기가 끝나 내용이 그려지면) 아직 나타나지 않은 덩어리만 새로 맡는다 — 한 번 나타난 것은 다시 움직이지 않는다 */
@@ -28,12 +31,15 @@ export function useLandingReveal(root: RefObject<HTMLElement | null>, groups: Re
     firstRun.current = false;
 
     const delays = new Map<HTMLElement, number>();
+    const firsts = new Set<HTMLElement>();
     for (const g of groups) {
       box.querySelectorAll<HTMLElement>(g.selector).forEach((el, i) => {
         if (seen.current.has(el) || delays.has(el)) return;
         // 처음 그릴 때 이미 보이는 덩어리만 첫 화면 순서를 따른다 (불러온 뒤 나타난 카드도 화면 안이면 같은 흐름)
         const inView = el.getBoundingClientRect().top < window.innerHeight;
-        delays.set(el, g.delay?.(i, el, inView && (initial || window.scrollY < 40)) ?? 0);
+        const first = inView && (initial || window.scrollY < 40);
+        if (first) firsts.add(el);
+        delays.set(el, g.delay?.(i, el, first) ?? 0);
       });
     }
 
@@ -45,7 +51,7 @@ export function useLandingReveal(root: RefObject<HTMLElement | null>, groups: Re
       seen.current.add(el);
       // 연출을 먼저 걸고 숨김을 푼다 — 한 프레임이라도 제자리에 보였다가 다시 내려가지 않게
       if (!now && !document.hidden) {
-        const a = el.animate(KEYFRAMES, { ...TIMING, delay: delays.get(el) ?? 0 });
+        const a = el.animate(KEYFRAMES, { duration: firsts.has(el) ? FIRST_MS : SCROLL_MS, easing: EASING, fill: 'backwards', delay: delays.get(el) ?? 0 });
         active.set(el, a);
         a.finished.then(() => { if (active.get(el) === a) active.delete(el); }, () => {});
       }
@@ -53,7 +59,7 @@ export function useLandingReveal(root: RefObject<HTMLElement | null>, groups: Re
     };
     const io = new IntersectionObserver(entries => {
       entries.forEach(e => { if (e.isIntersecting) show(e.target as HTMLElement); });
-    }, { threshold: 0, rootMargin: '0px 0px -10% 0px' });
+    }, { threshold: 0, rootMargin: '0px 0px 64px 0px' });
 
     delays.forEach((_, el) => {
       if (el.contains(document.activeElement)) { seen.current.add(el); return; }
