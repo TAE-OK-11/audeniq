@@ -492,9 +492,6 @@ body:has(.aq-payout-setup-mode) .aq-toast-stack{bottom:calc(104px + env(safe-are
 /* ==========================================================================
    홍보 페이지(web/landing) 디자인 언어 반영
    ========================================================================== */
-/* 스크롤 등장 대기 (IntersectionObserver가 보일 때 떠오르게 함) */
-.aq-reveal-wait{opacity:0}
-@media(prefers-reduced-motion:reduce){.aq-reveal-wait{opacity:1!important}}
 /* 제목 마지막 줄 파란 강조 — 홍보 페이지 히어로 '더 넓은 세상으로.' */
 .aq-accent{color:var(--aq-e-blue)}
 /* 헤더 STUDIO 표시를 홍보 페이지 메뉴의 pill(사전 설문 안내)처럼 */
@@ -502,7 +499,6 @@ body:has(.aq-payout-setup-mode) .aq-toast-stack{bottom:calc(104px + env(safe-are
 .aq-service-top{display:flex;align-items:flex-start;justify-content:space-between;width:100%}
 .aq-service-no{font-size:13px;font-weight:600;color:var(--aq-text-4);letter-spacing:.02em;font-variant-numeric:tabular-nums}
 /* 기본 버튼: 홍보 페이지처럼 호버 시 진한 파랑 + 살짝 떠오름 */
-@media print{.aq-reveal-wait{opacity:1!important}}
 
 /* ---------- 계약서 서명: 검토 대기 화면, 다시 그리기 위치 ---------- */
 .aq-sign-sheet{position:relative}
