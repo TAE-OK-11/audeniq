@@ -48,8 +48,10 @@ export function PublicMissing({ text = '페이지가 꺼졌거나 주소가 잘�
     <main className="aq-smartlink aq-pub is-missing">
       <div className="aq-smartlink-card aq-pub-card aq-pub-missing">
         <span className="aq-pub-missing-icon" aria-hidden="true"><Glyph name="link" size={22} /></span>
+        <p className="aq-pub-missing-badge"><b>404</b>페이지 없음</p>
         <h1>페이지를 찾을 수 없어요</h1>
         <p className="muted">{text}</p>
+        <PublicFoot />
       </div>
     </main>
   );
@@ -84,7 +86,10 @@ export function PublicFoot({ artist, here }: { artist?: { slug: string; name: st
           {links.map(([k, label, to]) => <Link key={k} to={to}>{label}</Link>)}
         </nav>
       )}
-      <p className="aq-smartlink-foot">Distributed by AUDENIQ</p>
+      <a className="aq-pub-brand" href="https://audeniq.com" target="_blank" rel="noopener noreferrer">
+        <small>Distributed by</small>
+        <img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" />
+      </a>
     </footer>
   );
 }

@@ -103,8 +103,14 @@ export function ArtistPage() {
 
   return (
     <PublicShell bg={artistBackdrop(page)} className="aq-artistpage" cardClass="aq-artist-card">
-        <span className="aq-artist-avatar" style={{ background: gradientFor(slug) }} aria-hidden="true">{page.name.trim().charAt(0)}</span>
-        <h1>{page.name}</h1>
+        {/* 머리 — 스튜디오 화면 머리처럼 왼쪽 정렬: 파란 작은 제목 · 큰 이름 · 회색 소개 */}
+        <header className="aq-pub-hero">
+          <span className="aq-artist-avatar" style={{ background: gradientFor(slug) }} aria-hidden="true">{page.name.trim().charAt(0)}</span>
+          <div className="min-0">
+            <p className="aq-pub-eyebrow">아티스트</p>
+            <h1>{page.name}</h1>
+          </div>
+        </header>
         {page.bio && <p className="aq-artist-bio">{page.bio}</p>}
         {page.pages.length > 0 && (
           <ul className="aq-artist-platforms" aria-label="플랫폼 아티스트 페이지">
