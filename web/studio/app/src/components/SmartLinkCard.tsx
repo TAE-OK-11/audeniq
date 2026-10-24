@@ -12,6 +12,8 @@ import { ManageHead } from './ManageHead';
 import { Reveal } from '../ui';
 import { Glyph } from './Glyph';
 import { CopyButton } from './CopyButton';
+import { QrButton } from './QrButton';
+import { PromoImageButton } from './PromoImageButton';
 
 type Check = 'verified' | 'mismatch' | 'unverified' | 'not_release' | 'invalid';
 interface State {
@@ -40,7 +42,10 @@ function checkNote(c: Check | undefined, strict: boolean): { tone: 'ok' | 'warn'
 
 const pageUrl = (slug: string) => `${window.location.origin}/l/${slug}`;
 
-export function SmartLinkCard({ releaseId }: { releaseId: string }) {
+/** 홍보 이미지에 넣을 발매 정보 (발매 상세가 넘긴다) */
+export interface PromoRelease { title: string; artist: string; releaseDate: string | null; cover?: string }
+
+export function SmartLinkCard({ releaseId, promo }: { releaseId: string; promo?: PromoRelease }) {
   const toast = useToast();
   const [st, setSt] = useState<State | null>(null);
   const [edit, setEdit] = useState(false);
@@ -101,6 +106,8 @@ export function SmartLinkCard({ releaseId }: { releaseId: string }) {
               <code>{pageUrl(l.slug)}</code>
               <span className="ui-actions">
                 <CopyButton text={pageUrl(l.slug)} />
+                <QrButton url={pageUrl(l.slug)} title="스마트링크 QR 코드" filename={`smartlink-${l.slug}.png`} />
+                {promo && <PromoImageButton input={{ ...promo, url: pageUrl(l.slug) }} filename={`audeniq-${l.slug}`} />}
                 <a className="ui-btn is-sm" href={`/l/${l.slug}`} target="_blank" rel="noopener noreferrer"><Glyph name="arrow-up-right" size={14} />열기</a>
               </span>
             </div>

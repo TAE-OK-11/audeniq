@@ -23,6 +23,7 @@ const MULTIPART_MIN_BYTES = 16 * 1024 * 1024;
 import { stampNow } from '../lib/date';
 import { isrcValid, normalizeIsrc, upcValid } from '../lib/dsp';
 import { parseStaffFix } from '../lib/corrections';
+import { creditHistory, type CreditHistory } from '../lib/credits';
 
 // ---------------------------------------------------------------------------
 // 서버 모델
@@ -614,6 +615,12 @@ export const remoteApi = {
     const items = await listAll<ServerRelease>(orgPath('/releases'));
     const list = await Promise.all(items.map(toSummary).map(withCorrections));
     return list.sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+  },
+  /** 예전 발매에 쓴 크레딧 이름 (신청서 초안에 저장된 곡 정보에서) — 크레딧 칸 아래 제안 칩 */
+  async creditHistory(): Promise<CreditHistory> {
+    const items = await listAll<ServerRelease>(orgPath('/releases'));
+    const sorted = [...items].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+    return creditHistory(sorted.flatMap(r => readDraft(r).draftTracks ?? []));
   },
   async listDsps(): Promise<DspAvailability[]> {
     const r = await req<{ items: DspAvailability[] }>(orgPath('/dsps'));

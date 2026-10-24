@@ -995,3 +995,24 @@ body.wizard-mode .portal-header,.portal-header:has(#portalNav:not([hidden])){box
 .aq-artist-link-editor .aq-smartlink-url code{display:block;padding:12px 14px;border-radius:var(--aq-r-md);background:var(--aq-surface);font:600 14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--aq-text-2);overflow-wrap:anywhere}
 .aq-artist-link-editor .aq-smartlink-url .ui-actions{display:flex;gap:8px}
 .aq-artist-link-editor .aq-smartlink-url .ui-actions>*{flex:1}
+
+/* 발매 신청 > 곡 정보 — 크레딧 칸 아래 예전에 쓴 이름 칩 (누르면 칸에 덧붙는다) */
+.aq-credit-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.aq-credit-chip{display:inline-flex;align-items:center;gap:4px;min-height:30px;padding:0 10px;border:0;border-radius:var(--aq-r-pill);background:#fff;color:var(--aq-blue-700);font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:background-color var(--aq-dur) var(--aq-ease),transform var(--aq-press-out) var(--aq-press-spring)}
+.aq-credit-chip:is(:active,.is-pressed){transform:scale(var(--aq-press-btn));transition-duration:var(--aq-press-in)}
+/* 곡 카드(옅은 파랑) 위라 입력칸과 같은 흰 바탕 */
+@media (hover:hover){.aq-credit-chip:hover{background:var(--aq-blue-100)}}
+.aq-credit-chip:focus-visible{outline:var(--aq-focus);outline-offset:2px}
+
+/* QR 코드 창 (components/QrButton.tsx) — 흰 칸에 QR, 아래에 주소 */
+.aq-qr{display:grid;gap:14px}
+.aq-qr-frame{display:grid;place-items:center;width:min(260px,100%);aspect-ratio:1;margin:0 auto;padding:12px;border-radius:var(--aq-r-xl);background:#fff;box-shadow:0 10px 30px -18px rgba(27,51,104,.35)}
+.aq-qr-frame img{display:block;width:100%;height:100%;image-rendering:pixelated}
+.aq-qr-frame .aq-skel{width:100%;height:100%}
+.aq-qr-url{margin:0;text-align:center;font:600 14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--aq-text-2);overflow-wrap:anywhere}
+
+/* 홍보 이미지 창 (components/PromoImageButton.tsx) — 비율 고르기 · 미리 보기 · 저장 */
+.aq-promo{display:grid;gap:14px}
+.aq-promo-frame{display:grid;place-items:center;height:min(56vh,520px);width:auto;max-width:100%;margin:0 auto;overflow:hidden;border-radius:var(--aq-r-xl);background:var(--aq-gray-100);box-shadow:0 14px 34px -20px rgba(27,51,104,.45)}
+.aq-promo-frame img{display:block;width:100%;height:100%;object-fit:contain}
+.aq-promo-frame .aq-skel{width:100%;height:100%}

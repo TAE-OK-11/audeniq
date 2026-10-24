@@ -590,7 +590,7 @@ export function ReleaseDetail() {
                 <section className="aq-manage-group" aria-label="수익·홍보">
                   <h3 className="aq-manage-group-title">수익·홍보</h3>
                   <SplitsCard releaseId={rel.id} />
-                  <SmartLinkCard releaseId={rel.id} />
+                  <SmartLinkCard releaseId={rel.id} promo={{ title: rel.title, artist: rel.artist ?? '', releaseDate: rel.release_date ?? null, cover: coverOk ? coverSrc : undefined }} />
                   <PitchCard releaseId={rel.id} />
                 </section>
                 <section className="aq-manage-group" aria-label="권리 보호">

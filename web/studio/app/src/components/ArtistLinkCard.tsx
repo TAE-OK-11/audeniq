@@ -10,6 +10,7 @@ import { useProfile } from '../store/profile';
 import { Modal, useModalClose } from './Modal';
 import { Glyph } from './Glyph';
 import { CopyButton } from './CopyButton';
+import { QrButton } from './QrButton';
 import { useToast } from './Toast';
 
 export interface ArtistLinkRow {
@@ -57,6 +58,7 @@ function LinkEditor({ artist, onSaved }: { artist: ArtistLinkRow; onSaved: (row:
           <code>{pageUrl(slug)}</code>
           <span className="ui-actions">
             <CopyButton text={pageUrl(slug)} />
+            <QrButton url={pageUrl(slug)} title={`${artist.name} 소개 페이지 QR 코드`} filename={`artist-${slug}.png`} />
             <a className="ui-btn is-sm" href={`/a/${slug}`} target="_blank" rel="noopener noreferrer"><Glyph name="arrow-up-right" size={14} />열기</a>
           </span>
         </div>
