@@ -63,10 +63,10 @@ pub fn strict() -> bool {
         _ => crate::launch::live_transmission_enabled(),
     }
 }
-const STATS_DAYS: i32 = 30;
+pub(crate) const STATS_DAYS: i32 = 30;
 
 /// Release states without a page.
-const HIDDEN_STATES: &[&str] = &["DRAFT", "WITHDRAWN", "SUPERSEDED", "ON_HOLD_RIGHTS"];
+pub(crate) const HIDDEN_STATES: &[&str] = &["DRAFT", "WITHDRAWN", "SUPERSEDED", "ON_HOLD_RIGHTS"];
 
 pub(crate) fn hosts(platform: &str) -> Option<&'static [&'static str]> {
     PLATFORMS
@@ -322,7 +322,7 @@ fn refuse_unverifiable(checks: &Map<String, Value>) -> Result<()> {
     Ok(())
 }
 
-fn new_slug() -> Result<String> {
+pub(crate) fn new_slug() -> Result<String> {
     use rand::{TryRng, rngs::SysRng};
     const ALPHABET: &[u8] = b"abcdefghijkmnpqrstuvwxyz23456789";
     let mut raw = [0u8; 8];
@@ -335,7 +335,7 @@ fn new_slug() -> Result<String> {
         .collect())
 }
 
-fn valid_slug(slug: &str) -> bool {
+pub(crate) fn valid_slug(slug: &str) -> bool {
     slug.len() == 8
         && slug
             .bytes()
@@ -590,6 +590,19 @@ pub(crate) fn is_released(date: Option<&str>, time: Option<&str>) -> bool {
     format!("{date} {time}") <= now
 }
 
+/// Conditions under which link `l` on release `r` may be shown publicly;
+/// `hidden` is the parameter holding [`HIDDEN_STATES`]. Shared with the
+/// artist page, which lists the same links.
+pub(crate) fn visible_sql(hidden: &str) -> String {
+    format!(
+        "l.enabled AND r.archived_at IS NULL AND NOT (r.status = ANY({hidden}))
+            AND NOT EXISTS (SELECT 1 FROM portal.takedown_requests t WHERE t.release_id=r.id AND t.status='APPROVED')
+            AND NOT EXISTS (SELECT 1 FROM portal.infringement_claims c WHERE c.release_id=r.id
+                             AND c.status IN ('SUSPENDED','COUNTER_NOTICED','UPHELD'))
+            AND NOT EXISTS (SELECT 1 FROM portal.release_terms tm WHERE tm.release_id=r.id AND tm.status IN ('ENDED','FINAL_SETTLED'))"
+    )
+}
+
 /// The visible link behind `slug`: (link id, org, release, artwork, links).
 pub(crate) async fn visible(s: &AppState, slug: &str) -> Result<sqlx::postgres::PgRow> {
     if !valid_slug(slug) {
@@ -616,11 +629,8 @@ async fn visible_where(
                 r.draft->>'release_time' AS release_time, r.artwork_asset_id
            FROM portal.smart_links l
            JOIN catalog.releases r ON r.id=l.release_id AND r.org_id=l.org_id
-          WHERE {key} AND l.enabled AND r.archived_at IS NULL AND NOT (r.status = ANY($2))
-            AND NOT EXISTS (SELECT 1 FROM portal.takedown_requests t WHERE t.release_id=r.id AND t.status='APPROVED')
-            AND NOT EXISTS (SELECT 1 FROM portal.infringement_claims c WHERE c.release_id=r.id
-                             AND c.status IN ('SUSPENDED','COUNTER_NOTICED','UPHELD'))
-            AND NOT EXISTS (SELECT 1 FROM portal.release_terms tm WHERE tm.release_id=r.id AND tm.status IN ('ENDED','FINAL_SETTLED'))"
+          WHERE {key} AND {}",
+        visible_sql("$2")
     )))
     .bind(value)
     .bind(HIDDEN_STATES.iter().map(|v| v.to_string()).collect::<Vec<_>>())

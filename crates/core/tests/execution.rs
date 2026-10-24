@@ -5389,6 +5389,138 @@ async fn smart_link_public_page_counts_views_and_clicks(pool: PgPool) {
     }
 }
 
+/// Artist page: the org makes one page per artist with an introduction;
+/// anyone opens it and sees the artist's releases that have a visible smart
+/// link (each opening that link), and nothing once the page or the link is
+/// switched off. Other orgs cannot change it.
+#[sqlx::test]
+async fn artist_page_lists_releases_with_smart_links(pool: PgPool) {
+    // A submitted release is enough for a smart link (no pipeline needed).
+    struct Ctx {
+        app: Router,
+        user: User,
+        org: Uuid,
+        release: Uuid,
+    }
+    let d = draft_package(&pool).await;
+    consent_and_submit(&d.app, &d.u, d.release, &format!("k-al-{}", Uuid::new_v4())).await;
+    let ctx = Ctx {
+        org: d.u.org,
+        app: d.app,
+        user: d.u,
+        release: d.release,
+    };
+    let list = format!("/api/orgs/{}/artist-links", ctx.org);
+    let (s, v) = call(&ctx.app, "GET", &list, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let item = v["items"][0].clone();
+    assert!(item["link"].is_null(), "{v}");
+    assert_eq!(item["releases"], 0, "no smart link yet: {v}");
+    let artist = item["artist_id"].as_str().unwrap().to_string();
+    let name = item["name"].as_str().unwrap().to_string();
+
+    let save = format!("/api/orgs/{}/artists/{artist}/link", ctx.org);
+    let (_, v) = call(
+        &ctx.app,
+        "PUT",
+        &save,
+        json!({"bio": "x".repeat(1501)}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert!(v["error"].is_object(), "too long: {v}");
+    let (s, v) = call(
+        &ctx.app,
+        "PUT",
+        &save,
+        json!({"bio": "  도시의 하루를 음악으로 기록해요.  "}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let slug = v["slug"].as_str().unwrap().to_string();
+    assert_eq!(slug.len(), 8);
+
+    // Public, without an account; no release until it has a smart link.
+    let public = format!("/api/artist-links/{slug}");
+    let (s, page) = call(&ctx.app, "GET", &public, Value::Null, None).await;
+    assert_eq!(s, StatusCode::OK, "{page}");
+    assert_eq!(page["name"], name.as_str());
+    assert_eq!(page["bio"], "도시의 하루를 음악으로 기록해요.");
+    assert_eq!(page["releases"].as_array().unwrap().len(), 0, "{page}");
+
+    let link_path = format!("/api/orgs/{}/releases/{}/smart-link", ctx.org, ctx.release);
+    let links = json!({"melon": "https://www.melon.com/album/detail.htm?albumId=1"});
+    let (_, v) = call(
+        &ctx.app,
+        "PUT",
+        &link_path,
+        json!({"links": links}),
+        Some(&ctx.user),
+    )
+    .await;
+    let link_slug = v["slug"].as_str().unwrap().to_string();
+    let (_, page) = call(&ctx.app, "GET", &public, Value::Null, None).await;
+    let releases = page["releases"].as_array().unwrap();
+    assert_eq!(releases.len(), 1, "{page}");
+    assert_eq!(releases[0]["slug"], link_slug.as_str());
+    assert!(
+        releases[0]["title"].is_string() && releases[0]["type"].is_string(),
+        "{page}"
+    );
+
+    let (_, v) = call(&ctx.app, "GET", &list, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(v["items"][0]["releases"], 1, "{v}");
+    assert_eq!(v["items"][0]["link"]["slug"], slug.as_str());
+    assert_eq!(v["items"][0]["link"]["views"], 2, "two visits counted: {v}");
+
+    // The smart link switched off takes the release off the page.
+    call(
+        &ctx.app,
+        "PUT",
+        &link_path,
+        json!({"enabled": false, "links": links}),
+        Some(&ctx.user),
+    )
+    .await;
+    let (_, page) = call(&ctx.app, "GET", &public, Value::Null, None).await;
+    assert_eq!(page["releases"].as_array().unwrap().len(), 0, "{page}");
+
+    // Another org cannot change it or read the list.
+    let other = user(&ctx.app).await;
+    let (s, _) = call(&ctx.app, "PUT", &save, json!({"bio": ""}), Some(&other)).await;
+    assert_ne!(s, StatusCode::OK);
+    let foreign = format!("/api/orgs/{}/artists/{artist}/link", other.org);
+    let (s, _) = call(&ctx.app, "PUT", &foreign, json!({"bio": ""}), Some(&other)).await;
+    assert_eq!(s, StatusCode::NOT_FOUND, "artist of another org");
+    let (s, _) = call(&ctx.app, "GET", &list, Value::Null, Some(&other)).await;
+    assert_ne!(s, StatusCode::OK);
+
+    // Switched off: gone; same slug when switched back on.
+    let (_, v) = call(
+        &ctx.app,
+        "PUT",
+        &save,
+        json!({"enabled": false, "bio": ""}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["slug"], slug.as_str());
+    let (s, _) = call(&ctx.app, "GET", &public, Value::Null, None).await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+    for bad in ["zzzzzzzz", "..%2Fx"] {
+        let (s, _) = call(
+            &ctx.app,
+            "GET",
+            &format!("/api/artist-links/{bad}"),
+            Value::Null,
+            None,
+        )
+        .await;
+        assert_eq!(s, StatusCode::NOT_FOUND, "{bad}");
+    }
+}
+
 /// The org's codes: each submitted release with its UPC and track ISRCs,
 /// virtual (test-range) codes flagged, also as CSV; other orgs see nothing.
 #[sqlx::test]

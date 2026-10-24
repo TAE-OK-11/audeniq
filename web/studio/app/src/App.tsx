@@ -47,6 +47,7 @@ const Terms = lazyPage(pageLoaders.Terms, m => m.Terms);
 const Verify = lazyPage(pageLoaders.Verify, m => m.Verify);
 const RightsReport = lazyPage(pageLoaders.RightsReport, m => m.RightsReport);
 const SmartLink = lazyPage(pageLoaders.SmartLink, m => m.SmartLink);
+const ArtistPage = lazyPage(pageLoaders.ArtistPage, m => m.ArtistPage);
 const SplitInvite = lazyPage(pageLoaders.SplitInvite, m => m.SplitInvite);
 const SettlementTerms = lazyPage(pageLoaders.Terms, m => m.SettlementTerms);
 const PrivacyPolicy = lazyPage(pageLoaders.Terms, m => m.PrivacyPolicy);
@@ -193,6 +194,8 @@ export function App() {
                     <Route path="/rights-report" element={<RightsReport />} />
                     {/* 스마트링크 — 발매 공유 페이지, 로그인 없이 */}
                     <Route path="/l/:slug" element={<SmartLink />} />
+                    {/* 아티스트 소개 페이지 — 이름·소개·발매, 발매는 스마트링크로 */}
+                    <Route path="/a/:slug" element={<ArtistPage />} />
                     {/* 공동작업 수익 분배 요청 — 메일 링크, 수락은 로그인 후 */}
                     <Route path="/splits/:token" element={<SplitInvite />} />
                     <Route path="/terms/privacy" element={<Navigate to="/privacy" replace />} />

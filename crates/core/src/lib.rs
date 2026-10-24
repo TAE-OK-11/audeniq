@@ -4,6 +4,7 @@ pub mod allocator;
 pub mod api;
 pub mod archive;
 pub mod artifacts;
+pub mod artist_links;
 pub mod artist_pages;
 pub mod artwork_policy;
 pub mod auth;

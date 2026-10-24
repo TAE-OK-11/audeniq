@@ -952,3 +952,46 @@ body.wizard-mode .portal-header,.portal-header:has(#portalNav:not([hidden])){box
   #portalNav>*,.aq-sidebar>*,.aq-tabbar,.aq-faq-item[open]>:not(summary){animation:none!important}
   .portal-header{transition:none}
 }
+
+/* ==========================================================================
+   아티스트 소개 페이지 (/a/:slug, pages/ArtistPage.tsx) — 스마트링크 공개 페이지와 같은 카드.
+   아바타 · 이름 · 소개 · 플랫폼 로고 줄, 아래에 발매 두 칸 그리드(커버 · 제목 · 유형·해)
+   ========================================================================== */
+.aq-artistpage{align-items:flex-start}
+.aq-artist-card{max-width:440px;margin:clamp(0px,4vh,40px) 0}
+.aq-artist-avatar{display:grid;place-items:center;width:96px;height:96px;margin:8px auto 0;border-radius:50%;color:#fff;font-size:38px;font-weight:var(--aq-fw-heavy,800);box-shadow:0 0 0 4px #fff,0 10px 28px -12px rgba(27,51,104,.45)}
+.aq-artist-card h1{margin-top:18px;font-size:24px}
+.aq-artist-bio{margin:8px 0 0;font-size:14px;line-height:1.7;color:var(--aq-text-2);white-space:pre-line;word-break:keep-all;overflow-wrap:anywhere}
+.aq-artist-platforms{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin:18px 0 0;padding:0;list-style:none}
+.aq-artist-platforms a{display:block;border-radius:12px;transition:transform var(--aq-press-out) var(--aq-press-spring)}
+.aq-artist-platforms a:is(:active,.is-pressed){transform:scale(var(--aq-press-btn));transition-duration:var(--aq-press-in)}
+.aq-artist-platforms a:focus-visible{outline:var(--aq-focus);outline-offset:2px}
+.aq-artist-releases{margin:26px 0 0;text-align:left}
+.aq-artist-releases .aq-smartlink-list-title span{margin-left:4px;color:var(--aq-primary)}
+.aq-artist-release-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 12px;margin:0;padding:0;list-style:none}
+.aq-artist-release{display:grid;gap:4px;min-width:0;color:inherit;text-decoration:none;border-radius:var(--aq-r-lg);transition:transform var(--aq-press-out) var(--aq-press-spring)}
+.aq-artist-release:is(:active,.is-pressed){transform:scale(var(--aq-press-row,.99));transition-duration:var(--aq-press-in)}
+.aq-artist-release:focus-visible{outline:var(--aq-focus);outline-offset:3px}
+.aq-artist-release-cover{display:grid;place-items:center;width:100%;aspect-ratio:1;object-fit:cover;margin-bottom:6px;border-radius:var(--aq-r-lg);background:var(--aq-gray-100)}
+.aq-artist-release-cover.is-empty .aq-cover-glyph{width:34%;height:34%;color:#fff}
+@media (hover:hover){.aq-artist-release:hover .aq-artist-release-title{color:var(--aq-primary)}}
+.aq-artist-release-title{font-size:15px;font-weight:700;line-height:1.35;color:var(--aq-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:color var(--aq-dur) var(--aq-ease)}
+.aq-artist-release-meta{font-size:12px;font-weight:600;color:var(--aq-text-4)}
+.aq-artist-release-meta.is-soon{color:var(--aq-blue-500)}
+/* 랜딩처럼 처음 열 때 카드 안 덩어리가 차례로 떠오른다 */
+.aq-artist-card>*{animation:aq-land-fade .6s cubic-bezier(.22,.61,.36,1) backwards}
+.aq-artist-card>:nth-child(2){animation-delay:50ms}.aq-artist-card>:nth-child(3){animation-delay:100ms}
+.aq-artist-card>:nth-child(4){animation-delay:140ms}.aq-artist-card>:nth-child(n+5){animation-delay:200ms}
+.aq-artist-release-grid>li{animation:aq-land-fade .6s cubic-bezier(.22,.61,.36,1) backwards;animation-delay:260ms}
+.aq-artist-release-grid>li:nth-child(2){animation-delay:320ms}.aq-artist-release-grid>li:nth-child(n+3){animation-delay:380ms}
+@media (prefers-reduced-motion:reduce){.aq-artist-card>*,.aq-artist-release-grid>li{animation:none}}
+/* 아티스트 페이지에서 들어온 스마트링크 — 카드 왼쪽 위 돌아가기 */
+.aq-smartlink-back{display:inline-flex;align-items:center;gap:2px;align-self:flex-start;margin:-6px 0 12px -6px;padding:6px 10px 6px 4px;border-radius:var(--aq-r-pill);color:var(--aq-text-2);font-size:14px;font-weight:700;text-decoration:none;float:left}
+.aq-smartlink-back+*{clear:both}
+@media (hover:hover){.aq-smartlink-back:hover{background:var(--aq-gray-50);color:var(--aq-primary)}}
+/* 계정 정보 > 아티스트 소개 페이지 편집 창 — 주소 · 소개 글 · 공개 스위치 */
+.aq-artist-link-editor{display:grid;gap:16px}
+.aq-artist-link-editor .aq-smartlink-url{display:grid;gap:10px;margin:0}
+.aq-artist-link-editor .aq-smartlink-url code{display:block;padding:12px 14px;border-radius:var(--aq-r-md);background:var(--aq-surface);font:600 14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--aq-text-2);overflow-wrap:anywhere}
+.aq-artist-link-editor .aq-smartlink-url .ui-actions{display:flex;gap:8px}
+.aq-artist-link-editor .aq-smartlink-url .ui-actions>*{flex:1}

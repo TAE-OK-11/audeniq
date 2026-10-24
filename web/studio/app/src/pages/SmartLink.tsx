@@ -1,7 +1,7 @@
 // 스마트링크 (/l/:slug) — 로그인 없이 누구나. 발매 하나의 공유 페이지: 커버·제목·아티스트와 플랫폼별 듣기 링크.
 // 아티스트가 발매 상세에서 링크를 넣고 켜 둔 동안만 보인다. 조회·클릭 수는 아티스트에게 보인다.
 import { useEffect, useState } from 'react';
-import { useParams } from '../lib/router';
+import { Link, useLocation, useParams } from '../lib/router';
 import { API_BASE, req } from '../api/http';
 import { errorMessage } from '../api/errors';
 import { MOCK } from '../lib/mode';
@@ -22,6 +22,8 @@ const MOCK_PAGE: Page = {
 
 export function SmartLink() {
   const { slug = '' } = useParams<{ slug: string }>();
+  // 아티스트 소개 페이지에서 눌러 들어왔으면 돌아가는 길을 위에 둔다
+  const from = (useLocation().state as { artist?: { path: string; name: string } } | null)?.artist;
   const [page, setPage] = useState<Page | null>(null);
   const [missing, setMissing] = useState(false);
   const [coverOk, setCoverOk] = useState(true);
@@ -78,6 +80,7 @@ export function SmartLink() {
     <main className="aq-smartlink">
       {cover && <div className="aq-smartlink-bg" style={{ backgroundImage: `url("${cover}")` }} aria-hidden="true" />}
       <div className="aq-smartlink-card">
+        {from && <Link to={from.path} className="aq-smartlink-back"><Glyph name="chevron-left" size={16} />{from.name}</Link>}
         {cover ? <img className="aq-smartlink-cover" src={cover} alt={`${page.title} 커버`} onError={() => setCoverOk(false)} />
           // 커버가 없어도 빈 회색 사각형 대신 스튜디오와 같은 발매별 그라데이션 커버 — 팬이 처음 보는 화면이 비어 보였다
           : <div className="aq-smartlink-cover is-empty" aria-hidden="true" style={{ background: gradientFor(slug) }}><Glyph name="music" className="aq-cover-glyph" /></div>}

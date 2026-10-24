@@ -31,6 +31,7 @@ export const pageLoaders = {
   Verify: () => import('./pages/Verify'),
   RightsReport: () => import('./pages/RightsReport'),
   SmartLink: () => import('./pages/SmartLink'),
+  ArtistPage: () => import('./pages/ArtistPage'),
   SplitInvite: () => import('./pages/SplitInvite'),
   Admin: () => import('./admin/AdminApp'),
 };
