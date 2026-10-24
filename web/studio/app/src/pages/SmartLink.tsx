@@ -2,6 +2,7 @@
 // 아티스트가 발매 상세에서 링크를 넣고 켜 둔 동안만 보인다. 조회·클릭 수는 아티스트에게 보인다.
 import { useEffect, useState } from 'react';
 import { countdownLabel, releaseMoment } from '../lib/countdown';
+import { preReleaseAction } from '../lib/preRelease';
 import { presaveResult, releaseIcs, withoutPresaveQuery, type PresaveResult } from '../lib/presave';
 import { Link, useLocation, useParams } from '../lib/router';
 import { API_BASE, req } from '../api/http';
@@ -210,21 +211,23 @@ export function SmartLink() {
         )}
         {page.links.length > 0 ? (
           <section className="aq-smartlink-links" aria-labelledby="slListTitle">
-            <h2 id="slListTitle" className="aq-smartlink-list-title">{page.released ? '어디서 들을까요?' : '플랫폼에서 미리 보기'}</h2>
+            <h2 id="slListTitle" className="aq-smartlink-list-title">{page.released ? '어디서 들을까요?' : page.links.some(l => { const a = preReleaseAction(l.platform); return a && a !== '미리 보기'; }) ? '앱에서 미리 저장하기' : '플랫폼에서 미리 보기'}</h2>
             <ul className="aq-smartlink-list">
               {page.links.map(l => {
                 const name = PLATFORM_NAMES[l.platform] ?? l.platform;
+                // 발매 전 — 그 앱의 발매 예정 페이지에서 미리 저장·추가 (플랫폼 사전 공개)
+                const pre = page.released ? null : preReleaseAction(l.platform);
                 return (
                   <li key={l.platform}>
                     <a href={l.url} target="_blank" rel="noopener noreferrer nofollow" onClick={() => open(l.platform)}
-                      aria-label={`${name}에서 ${page.released ? '듣기' : '보기'}`}>
+                      aria-label={`${name}에서 ${page.released ? '듣기' : pre ?? '보기'}`}>
                       <BrandMark id={l.platform} label={name} size={44} className="aq-smartlink-logo" />
                       <span className="aq-smartlink-name">
                         <strong>{name}</strong>
-                        <small>{page.released ? '지금 바로 들을 수 있어요' : '발매 예정 페이지'}</small>
+                        <small>{page.released ? '지금 바로 들을 수 있어요' : pre && pre !== '미리 보기' ? '발매되면 보관함에 들어가요' : '발매 예정 페이지'}</small>
                       </span>
                       <span className="aq-smartlink-go">
-                        {page.released ? '들으러 가기' : '보러 가기'}
+                        {page.released ? '들으러 가기' : pre && pre !== '미리 보기' ? pre : '보러 가기'}
                         <Glyph name="chevron-right" size={14} />
                       </span>
                     </a>

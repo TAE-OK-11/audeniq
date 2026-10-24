@@ -1053,6 +1053,19 @@ body.wizard-mode .portal-header,.portal-header:has(#portalNav:not([hidden])){box
 .aq-smartlink-countdown{display:grid;gap:2px;margin:14px auto 0;padding:12px 18px;border-radius:var(--aq-r-lg);background:var(--aq-blue-50);width:max-content;max-width:100%}
 .aq-smartlink-countdown small{font-size:12px;font-weight:700;color:var(--aq-blue-500)}
 .aq-smartlink-countdown strong{font-size:24px;font-weight:800;letter-spacing:-.01em;color:var(--aq-text);font-variant-numeric:tabular-nums}
+/* 신청서 사전 공개 빠른 선택, 발매 상세 '플랫폼 사전 공개' 카드 */
+.aq-preorder-picks{padding-bottom:0;margin-top:8px}
+.aq-prerelease-steps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.aq-prerelease-steps li{display:grid;gap:2px;padding:12px 14px;border-radius:var(--aq-r-lg);background:#fff}
+.aq-prerelease-steps strong{font-size:15px;font-weight:800;color:var(--aq-text)}
+.aq-prerelease-steps span{font-size:13px;color:var(--aq-text-3)}
+.aq-prerelease-steps li.is-now{box-shadow:inset 0 0 0 2px var(--aq-primary)}
+.aq-prerelease-steps li.is-now span{color:var(--aq-primary);font-weight:700}
+.aq-prerelease-steps li.is-done strong{color:var(--aq-text-3)}
+.aq-prerelease-platform{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:12px;padding:10px 12px}
+.aq-prerelease-platform strong{display:block;font-size:14px}
+.aq-prerelease-platform small{display:block;font-size:12px;color:var(--aq-text-3);line-height:1.45}
+
 /* 스마트링크 카드 — 홍보 도구 (같은 주소로 만드는 이미지·문구·링크를 한 묶음 타일로) */
 .aq-promo-tools{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0 4px}
 .aq-promo-tool{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:72px;padding:12px 6px;border:0;border-radius:var(--aq-r-lg);background:#fff;color:var(--aq-text);font:inherit;font-size:13px;font-weight:700;cursor:pointer;
