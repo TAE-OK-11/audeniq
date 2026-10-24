@@ -82,6 +82,8 @@ GRANT SELECT,INSERT,UPDATE,DELETE ON portal.release_alerts TO audeniq_api;
 GRANT SELECT,INSERT,UPDATE ON portal.artist_links, portal.artist_link_stats TO audeniq_api;
 -- 프리세이브 (0152): 한 번 쓰는 시작 상태, 봉인한 플랫폼 토큰은 저장·실패·만료되면 바로 지운다
 GRANT SELECT,INSERT,UPDATE,DELETE ON portal.presave_starts, portal.presaves TO audeniq_api;
+-- 아티스트 페이지 소식·팬 응원 (0154): 아티스트가 고치고 지우며, 팬 응원은 숨기기·지우기
+GRANT SELECT,INSERT,UPDATE,DELETE ON portal.artist_posts, portal.artist_cheers TO audeniq_api;
 -- 발매 후 정보 수정 (0115): 크레딧·장르만. 승인되면 수정 메시지 작업을 넣는다
 GRANT SELECT,INSERT,UPDATE ON portal.metadata_corrections TO audeniq_api;
 GRANT USAGE ON SCHEMA portal TO audeniq_worker;
