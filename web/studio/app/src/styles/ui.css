@@ -271,7 +271,9 @@
 .ui-tab:focus-visible{outline:var(--aq-focus);outline-offset:-3px;border-radius:8px}
 .ui-tabs-bar{position:absolute;left:0;bottom:0;z-index:1;width:100px;height:3px;transform:translate3d(var(--pill-x),0,0) scaleX(var(--pill-sx,0));transform-origin:0 50%;border-radius:2px;background:var(--aq-primary);pointer-events:none}
 .ui-tabs.is-live .ui-tabs-bar{transition:transform var(--aq-dur-slow) var(--aq-glide),opacity var(--aq-dur)}
-.ui-tab-panel{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) both}
+/* 탭 패널은 투명도 0이 아니라 옅게(.35)부터 — 이전 내용이 사라진 자리가 몇 프레임 텅 비어 깜빡여 보였다 */
+@keyframes aq-panel-in{from{opacity:.35;transform:translate3d(0,6px,0)}}
+.ui-tab-panel{animation:aq-panel-in var(--aq-motion-long) var(--aq-enter) both}
 
 /* ---------- 화면 머리 (PageHeader) ---------- */
 .ui-page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px 20px;flex-wrap:wrap;margin:0 0 28px}
@@ -1101,8 +1103,8 @@ legend{padding:0}
 @media (prefers-reduced-motion:reduce){.aq-picker.is-leaving{display:none}}
 
 /* 탭 내용 — 누른 탭이 있는 쪽에서 들어온다 (lib/rowNav.ts가 is-from-right / is-from-left를 단다) */
-@keyframes aq-panel-from-right{from{opacity:0;transform:translate3d(18px,0,0)}}
-@keyframes aq-panel-from-left{from{opacity:0;transform:translate3d(-18px,0,0)}}
+@keyframes aq-panel-from-right{from{opacity:.35;transform:translate3d(14px,0,0)}}
+@keyframes aq-panel-from-left{from{opacity:.35;transform:translate3d(-14px,0,0)}}
 .ui-tab-panel.is-from-right{animation:aq-panel-from-right .34s var(--aq-ease) both}
 .ui-tab-panel.is-from-left{animation:aq-panel-from-left .34s var(--aq-ease) both}
 @media (prefers-reduced-motion:reduce){.ui-tab-panel:is(.is-from-right,.is-from-left){animation:none}}

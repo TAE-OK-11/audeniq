@@ -502,7 +502,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 
 /* ---------- 발매 상세 '관리' 탭 카드 — 한 틀 ----------
    머리(아이콘 칸 · 제목 · 상태 배지) → 설명 → 내용 → 버튼. 모든 칸 사이 간격은 같고, 버튼이 설명에 붙지 않는다. */
-#view-release .aq-manage-card{display:grid;gap:14px;align-content:start;padding:22px 22px 24px;margin:0}
+#view-release .aq-manage-card{display:flex;flex-direction:column;gap:14px;padding:22px 22px 24px;margin:0}
 #view-release .aq-manage-card>*{margin:0}
 #view-release .aq-manage-card{--reveal-gap:14px}
 #view-release .aq-manage-card .ui-reveal .aq-correction-form{margin-top:0}
