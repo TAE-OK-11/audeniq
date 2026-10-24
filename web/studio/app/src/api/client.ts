@@ -14,6 +14,7 @@ export { ApiError };
 
 import { MOCK } from '../lib/mode';
 import { DSP } from '../lib/catalog';
+import type { CreditHistory } from '../lib/credits';
 export { MOCK };
 
 /** 체험 모드는 비밀번호 8자, 실서버는 12자 이상 (서버 정책) */
@@ -49,6 +50,7 @@ export const api = {
   assetChecks: (assetId: string): Promise<AssetChecks> => (MOCK ? mockApi.assetChecks(assetId) : remoteApi.assetChecks(assetId)),
 
   listReleases: (): Promise<Release[]> => (MOCK ? mockApi.listReleases() : remoteApi.listReleases()),
+  creditHistory: (): Promise<CreditHistory> => (MOCK ? mockApi.creditHistory() : remoteApi.creditHistory()),
   listDsps: (): Promise<DspAvailability[]> => (MOCK ? Promise.resolve(DSP.map(([slug, name], i) => ({ slug, name, region: i < 4 ? 'KR' : 'GLOBAL', category: [24, 25, 26, 27, 31, 32, 35, 38, 39].includes(i) ? 'SOCIAL' : [28, 29, 33].includes(i) ? 'STORE' : [40, 41, 42, 43, 44].includes(i) ? 'LICENSING' : 'STREAMING', available: true }))) : remoteApi.listDsps()),
   getRelease: (id: string): Promise<ReleaseDetail> => (MOCK ? mockApi.getRelease(id) : remoteApi.getRelease(id)),
   /** 임시 저장 — id가 없으면 새 draft를 만들고, 있으면 같은 draft를 갱신 */
