@@ -8,11 +8,12 @@ import { MOCK } from '../lib/mode';
 import { PLATFORM_NAMES } from '../lib/platformNames';
 import { gradientFor } from '../lib/catalog';
 import { linkBrand, shortUrl } from '../lib/ownLinks';
-import { artistPath, releasePath, releaseUrl } from '../lib/publicLinks';
+import { releasePath, releaseUrl } from '../lib/publicLinks';
 import { BrandMark } from '../components/BrandMark';
 import { Glyph } from '../components/Glyph';
 import { PromoImageButton } from '../components/PromoImageButton';
-import { RELEASE_TYPE, useArtistPage, type ArtistRelease } from './ArtistPage';
+import { RELEASE_TYPE, artistBackdrop, useArtistPage, type ArtistRelease } from './ArtistPage';
+import { ArtistSubHead, PublicFoot, PublicLoading, PublicMissing, PublicShell } from '../components/PublicPage';
 
 const coverUrl = (slug: string) => `${API_BASE}/api/smart-links/${encodeURIComponent(slug)}/cover`;
 const dotted = (d: string | null) => (d ? d.replace(/-/g, '.') : '발매일 미정');
@@ -43,30 +44,17 @@ export function ArtistPress() {
   const { slug = '' } = useParams<{ slug: string }>();
   const { page, missing } = useArtistPage(slug, '보도자료 · AUDENIQ');
 
-  if (missing) {
-    return (
-      <main className="aq-smartlink is-missing">
-        <div className="aq-smartlink-card"><h1>페이지를 찾을 수 없어요</h1><p className="muted">페이지가 꺼졌거나 주소가 잘못됐어요.</p></div>
-      </main>
-    );
-  }
-  if (!page) return <main className="aq-smartlink" aria-busy="true" />;
+  if (missing) return <PublicMissing />;
+  if (!page) return <PublicLoading />;
   const latest = page.releases[0];
 
   return (
-    <main className="aq-smartlink aq-artistpage aq-presspage">
-      <article className="aq-smartlink-card aq-artist-card aq-press-card">
-        <p className="aq-press-eyebrow">PRESS KIT · 보도자료</p>
-        <header className="aq-press-head">
-          <span className="aq-artist-avatar" style={{ background: gradientFor(slug) }} aria-hidden="true">{page.name.trim().charAt(0)}</span>
-          <div className="min-0">
-            <h1>{page.name}</h1>
-            <p className="ui-row-meta">
-              <span>발매 {page.releases.length}개</span>
-              {latest && <span>최근 ‘{latest.title}’ {dotted(latest.release_date)}</span>}
-            </p>
-          </div>
-        </header>
+    <PublicShell bg={artistBackdrop(page)} className="aq-artistpage aq-presspage" cardClass="aq-artist-card aq-artist-sub aq-press-card">
+        <ArtistSubHead slug={slug} name={page.name} title="보도자료 · PRESS KIT" />
+        <p className="ui-row-meta aq-press-meta">
+          <span>발매 {page.releases.length}개</span>
+          {latest && <span>최근 ‘{latest.title}’ {dotted(latest.release_date)}</span>}
+        </p>
         {page.contact && (
           <div className="aq-press-contact">
             <a className="ui-btn is-primary is-block" href={`mailto:${page.contact}?subject=${encodeURIComponent(`[${page.name}] 문의`)}`}>
@@ -119,8 +107,7 @@ export function ArtistPress() {
             </ul>
           </section>
         )}
-        <p className="aq-smartlink-foot"><Link to={artistPath(slug)}>아티스트 페이지</Link> · Distributed by AUDENIQ</p>
-      </article>
-    </main>
+        <PublicFoot here="press" artist={{ slug, name: page.name, news: (page.community?.posts_total ?? 0) > 0, releases: page.releases.length > 0 }} />
+    </PublicShell>
   );
 }

@@ -5,7 +5,7 @@ import { countdownLabel, releaseMoment } from '../lib/countdown';
 import { preReleaseAction } from '../lib/preRelease';
 import { releaseUrl } from '../lib/publicLinks';
 import { presaveResult, releaseIcs, withoutPresaveQuery, type PresaveResult } from '../lib/presave';
-import { Link, useLocation, useParams } from '../lib/router';
+import { useLocation, useParams } from '../lib/router';
 import { API_BASE, req } from '../api/http';
 import { errorMessage } from '../api/errors';
 import { MOCK } from '../lib/mode';
@@ -13,6 +13,7 @@ import { PLATFORM_NAMES } from '../lib/platformNames';
 import { BrandMark } from '../components/BrandMark';
 import { Glyph } from '../components/Glyph';
 import { gradientFor } from '../lib/catalog';
+import { ArtistSubHead, PublicFoot, PublicLoading, PublicMissing, PublicShell } from '../components/PublicPage';
 
 interface Page {
   title: string; artist: string | null; release_date: string | null; release_time?: string | null; released: boolean; cover: boolean;
@@ -136,21 +137,15 @@ export function SmartLink() {
     }
   };
 
-  if (missing) {
-    return (
-      <main className="aq-smartlink is-missing">
-        <div className="aq-smartlink-card"><h1>페이지를 찾을 수 없어요</h1><p className="muted">링크가 꺼졌거나 주소가 잘못됐어요.</p></div>
-      </main>
-    );
-  }
-  if (!page) return <main className="aq-smartlink" aria-busy="true" />;
+  if (missing) return <PublicMissing text="링크가 꺼졌거나 주소가 잘못됐어요." />;
+  if (!page) return <PublicLoading hero="cover" />;
   const cover = page.cover && coverOk ? `${API_BASE}${base}/cover` : '';
+  const fromArtist = from && /^\/link\/artist\/([^/]+)$/.exec(from.path)?.[1];
 
   return (
-    <main className="aq-smartlink">
-      {cover && <div className="aq-smartlink-bg" style={{ backgroundImage: `url("${cover}")` }} aria-hidden="true" />}
-      <div className="aq-smartlink-card">
-        {from && <Link to={from.path} className="aq-smartlink-back"><Glyph name="chevron-left" size={16} />{from.name}</Link>}
+    <PublicShell bg={cover || undefined} className="aq-releasepage" cardClass="aq-smartlink-release">
+        {/* 아티스트 페이지에서 들어왔으면 하위 화면과 같은 머리로 돌아간다 */}
+        {fromArtist && <ArtistSubHead slug={fromArtist} name={from!.name} title="발매" to={from!.path} />}
         {cover ? <img className="aq-smartlink-cover" src={cover} alt={`${page.title} 커버`} onError={() => setCoverOk(false)} />
           // 커버가 없어도 빈 회색 사각형 대신 스튜디오와 같은 발매별 그라데이션 커버 — 팬이 처음 보는 화면이 비어 보였다
           : <div className="aq-smartlink-cover is-empty" aria-hidden="true" style={{ background: gradientFor(slug) }}><Glyph name="music" className="aq-cover-glyph" /></div>}
@@ -249,8 +244,7 @@ export function SmartLink() {
             ))}
           </section>
         )}
-        <p className="aq-smartlink-foot">Distributed by AUDENIQ</p>
-      </div>
-    </main>
+        <PublicFoot artist={fromArtist ? { slug: fromArtist, name: from!.name, releases: true } : undefined} />
+    </PublicShell>
   );
 }

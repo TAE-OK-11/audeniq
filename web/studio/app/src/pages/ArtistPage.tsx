@@ -4,7 +4,7 @@
 // 아티스트가 올린 소식(공지·이벤트, 고정·다가오는 이벤트 먼저 세 개)과 팬 응원도 여기에 — 전체 소식은 ArtistNews.tsx,
 // 수록곡까지 보는 디스코그래피는 ArtistDiscography.tsx.
 // 아티스트가 계정 정보에서 켜 둔 동안만 보인다. 조회 수는 아티스트에게 보인다. 보도자료 페이지는 ArtistPress.tsx.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from '../lib/router';
 import { API_BASE, req } from '../api/http';
 import { MOCK } from '../lib/mode';
@@ -13,13 +13,16 @@ import { BrandMark } from '../components/BrandMark';
 import { Glyph } from '../components/Glyph';
 import { gradientFor } from '../lib/catalog';
 import { linkBrand, shortUrl, type OwnLink } from '../lib/ownLinks';
-import { artistDiscographyPath, artistNewsPath, artistPath, artistPressPath, releasePath } from '../lib/publicLinks';
+import { artistDiscographyPath, artistNewsPath, artistPath, releasePath } from '../lib/publicLinks';
 import { MOCK_CHEERS, MOCK_POSTS, type Community } from '../lib/artistCommunity';
 import { CheerBoard, PostCard } from '../components/ArtistCommunity';
-import { usePublicReveal } from '../hooks/usePublicReveal';
+import { PublicFoot, PublicLoading, PublicMissing, PublicShell } from '../components/PublicPage';
 
-/** 스크롤로 떠오르는 덩어리 — 소식 카드, 발매 칸, 응원 폼·줄 */
-export const PUBLIC_UNITS = '.aq-artist-section-head, .aq-post-list>li, .aq-artist-release-grid>li, .aq-cheers>h2, .aq-cheer-form, .aq-cheer-list:not(.is-skeleton)>li, .aq-disco-item, .aq-disco-year>h2';
+/** 바탕에 흐리게 깔 커버 — 가장 최근 발매의 커버 (소개·소식·디스코그래피·보도자료가 같은 바탕) */
+export function artistBackdrop(page: { releases: { slug: string; cover: boolean }[] } | null): string | undefined {
+  const latest = page?.releases.find(r => r.cover);
+  return latest && !MOCK ? `${API_BASE}/api/smart-links/${encodeURIComponent(latest.slug)}/cover` : undefined;
+}
 
 export interface ArtistRelease { slug: string; title: string; type: string; release_date: string | null; released: boolean; cover: boolean }
 type Release = ArtistRelease;
@@ -93,26 +96,13 @@ export function useArtistPage(slug: string, titleSuffix = 'AUDENIQ') {
 export function ArtistPage() {
   const { slug = '' } = useParams<{ slug: string }>();
   const { page, missing } = useArtistPage(slug);
-  const cardRef = useRef<HTMLDivElement>(null);
-  usePublicReveal(cardRef, PUBLIC_UNITS, !!page);
 
-  if (missing) {
-    return (
-      <main className="aq-smartlink is-missing">
-        <div className="aq-smartlink-card"><h1>페이지를 찾을 수 없어요</h1><p className="muted">페이지가 꺼졌거나 주소가 잘못됐어요.</p></div>
-      </main>
-    );
-  }
-  if (!page) return <main className="aq-smartlink" aria-busy="true" />;
-  // 가장 최근 발매의 커버를 흐리게 깔아 스마트링크 페이지와 같은 분위기로
-  const latest = page.releases.find(r => r.cover);
-  const bg = latest && !MOCK ? `${API_BASE}/api/smart-links/${encodeURIComponent(latest.slug)}/cover` : '';
+  if (missing) return <PublicMissing />;
+  if (!page) return <PublicLoading />;
   const news = page.community;
 
   return (
-    <main className="aq-smartlink aq-artistpage">
-      {bg && <div className="aq-smartlink-bg" style={{ backgroundImage: `url("${bg}")` }} aria-hidden="true" />}
-      <div ref={cardRef} className="aq-smartlink-card aq-artist-card">
+    <PublicShell bg={artistBackdrop(page)} className="aq-artistpage" cardClass="aq-artist-card">
         <span className="aq-artist-avatar" style={{ background: gradientFor(slug) }} aria-hidden="true">{page.name.trim().charAt(0)}</span>
         <h1>{page.name}</h1>
         {page.bio && <p className="aq-artist-bio">{page.bio}</p>}
@@ -170,12 +160,7 @@ export function ArtistPage() {
           ) : <p className="muted small">아직 공개된 발매가 없어요.</p>}
         </section>
         {news && <CheerBoard slug={slug} artist={page.name} total={news.cheers_total} enabled={news.cheers_enabled} />}
-        <p className="aq-smartlink-foot">
-          {news && news.posts_total > 0 && <><Link to={artistNewsPath(slug)}>소식</Link> · </>}
-          {page.releases.length > 0 && <><Link to={artistDiscographyPath(slug)}>디스코그래피</Link> · </>}
-          <Link to={artistPressPath(slug)}>보도자료</Link> · Distributed by AUDENIQ
-        </p>
-      </div>
-    </main>
+        <PublicFoot here="home" artist={{ slug, name: page.name, news: (news?.posts_total ?? 0) > 0, releases: page.releases.length > 0 }} />
+    </PublicShell>
   );
 }

@@ -1357,3 +1357,42 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
 .aq-cheer+.aq-cheer{box-shadow:none}
 .aq-cheer+.aq-cheer::before{content:'';position:absolute;top:0;left:56px;right:8px;height:1px;background:var(--aq-line)}
 .aq-cheer.is-fresh+.aq-cheer::before,.aq-cheer.is-fresh::before{opacity:0;transition:opacity 1.8s ease-in}
+
+/* ── 공개 화면 공통 바탕 (components/PublicPage.tsx) ──
+   발매(스마트링크)·아티스트 소개·소식·디스코그래피·보도자료가 같은 카드 폭·여백·모서리, 같은 섹션 제목·머리·맨 아래를 쓴다.
+   휴대폰에서는 카드가 화면 양옆 12px만 남기고 위에 붙어, 화면마다 카드 위치가 달라 보이지 않게 */
+.aq-smartlink.aq-pub{align-items:flex-start}
+.aq-smartlink .aq-pub-card{width:100%;max-width:440px;margin:clamp(0px,4vh,40px) 0}
+@media (min-width:768px){.aq-smartlink .aq-pub-card.aq-press-card{max-width:600px}}
+@media (max-width:560px){
+  .aq-smartlink.aq-pub{padding:12px 12px calc(28px + env(safe-area-inset-bottom,0px))}
+  .aq-smartlink .aq-pub-card{margin:0;padding:22px 18px 20px;border-radius:28px}
+}
+.aq-pub-card>section,.aq-pub-card>.aq-cheers{margin:28px 0 0}
+.aq-pub-card .aq-smartlink-list-title{margin:0 0 12px;font-size:15px;font-weight:800;color:var(--aq-text);text-align:left}
+.aq-pub-card .aq-smartlink-list-title span{margin-left:4px;color:var(--aq-primary)}
+.aq-pub-card .aq-artist-section-head .aq-smartlink-list-title{margin:0}
+.aq-pub-card .aq-artist-subhead{margin:-4px 0 18px;text-align:left}
+/* 보도자료 — 같은 머리 아래 한 줄 요약, 칸 사이는 카드 grid 간격으로 */
+.aq-pub-card.aq-press-card>section{margin:0}
+.aq-press-meta{display:flex;justify-content:flex-start;margin:-14px 0 0;padding-left:82px;text-align:left}
+/* 맨 아래 — 같은 아티스트의 다른 화면 알약 + Distributed by AUDENIQ */
+.aq-pub-foot{display:grid;justify-items:center;gap:12px;margin:28px 0 0;padding:0;border:0;background:none;box-shadow:none}
+.aq-pub-card.aq-press-card>.aq-pub-foot{margin-top:6px}
+.aq-pub-foot nav{display:flex;flex-wrap:wrap;justify-content:center;gap:6px}
+.aq-pub-foot nav a{display:inline-flex;align-items:center;min-height:32px;padding:0 12px;border-radius:var(--aq-r-pill);background:var(--aq-surface);font-size:13px;font-weight:700;color:var(--aq-text-2);text-decoration:none;transition:background-color var(--aq-dur) var(--aq-ease),color var(--aq-dur) var(--aq-ease),transform var(--aq-press-out) var(--aq-press-spring)}
+.aq-pub-foot nav a:is(:active,.is-pressed){transform:scale(var(--aq-press-btn));transition-duration:var(--aq-press-in)}
+.aq-pub-foot nav a:focus-visible{outline:var(--aq-focus);outline-offset:2px}
+@media (hover:hover){.aq-pub-foot nav a:hover{background:var(--aq-blue-50);color:var(--aq-primary)}}
+.aq-pub-foot .aq-smartlink-foot{margin:0;text-align:center}
+/* 불러오는 동안 — 카드 틀 그대로 */
+.aq-pub-loading{display:grid;justify-items:center;gap:10px}
+.aq-pub-loading-hero.is-avatar{width:96px;height:96px;margin-top:8px;border-radius:50%}
+.aq-pub-loading-hero.is-cover{width:100%;aspect-ratio:1;border-radius:var(--aq-r-xl)}
+.aq-pub-loading-title{width:140px;height:22px;margin-top:8px}
+.aq-pub-loading-sub{width:90px;height:14px;margin-bottom:12px}
+.aq-pub-loading-row{width:100%;height:64px;border-radius:var(--aq-r-xl)}
+/* 없는 페이지 */
+.aq-pub-missing{display:grid;justify-items:center;gap:6px;text-align:center}
+.aq-pub-missing h1{margin:8px 0 0}
+.aq-pub-missing-icon{display:grid;place-items:center;width:52px;height:52px;border-radius:16px;background:var(--aq-blue-50);color:var(--aq-primary)}
