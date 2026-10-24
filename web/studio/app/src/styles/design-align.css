@@ -139,7 +139,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 
 /* 발매 상세 트랙 — 크레딧 한 줄 + 식별자·파일 이름표 줄, 잘리지 않게 */
 #view-release .aq-track-card{grid-template-columns:44px minmax(0,1fr);align-items:start;background:var(--aq-surface)}
-#view-release .aq-track-card .aq-track-credit{white-space:normal;overflow:visible}
+#view-release .aq-track-card .aq-track-credit{display:flex;white-space:normal;overflow:visible}
 .aq-track-facts{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .aq-track-facts .ui-tag{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#fff}
 .aq-track-file{display:inline-flex;align-items:center;gap:4px;color:var(--aq-green-700,#1f7a4d)}
@@ -829,9 +829,11 @@ button.settle-hero-account.is-button .min-0{display:grid}
   @supports (-webkit-touch-callout:none){
     @media not all and (display-mode:standalone){
       .aq-tabbar{display:none!important}
-      body:not(.wizard-mode) #main{padding-bottom:0}
+      /* 탭 바는 없지만 사파리 주소 막대가 화면 아래에 떠 있어(iOS 26) 맨 끝 내용이 그 뒤에 가려졌다 — 막대 높이만큼 비워 둔다 */
+      body:not(.wizard-mode) #main{padding-bottom:calc(72px + env(safe-area-inset-bottom))}
       body:not(.wizard-mode) .portal-header .menu-toggle{display:flex!important}
-      body:has(.aq-tabbar) .aq-toast-stack{bottom:calc(16px + env(safe-area-inset-bottom))}
+      /* 알림도 떠 있는 주소 막대 위에 */
+      body:has(.aq-tabbar) .aq-toast-stack{bottom:calc(76px + env(safe-area-inset-bottom))}
       body:not(.wizard-mode) .aq-form-actions.is-pinned{bottom:0}
     }
   }
