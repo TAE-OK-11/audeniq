@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from '../lib/router';
+import { Link, useNavigate, useParams, useSearchParams } from '../lib/router';
 import { api, type DeliveryItem } from '../api/client';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
@@ -31,21 +31,9 @@ import { ContractBundle } from '../components/ContractBundle';
 /** 아직 없는 값 — 실제 값처럼 진하게 보이지 않도록 흐리게 */
 const Empty = ({ children }: { children: string }) => <span className="aq-empty-val">{children}</span>;
 import { Badge, Tabs } from '../ui';
-import type { Tone } from '../ui/tone';
 import { territorySummary } from '../lib/territories';
+import { DELIVERY_STAGE, DELIVERY_TONE } from '../lib/delivery';
 
-// 플랫폼별 배급 진행 단계 (서버 delivery_staging 기준)
-const DELIVERY_STAGE: Record<string, string> = {
-  NEEDS_CORRECTION: '보완 필요',
-  IN_REVIEW: '배급 검토 중',
-  PREPARING: '플랫폼 연결 준비 중',
-  SCHEDULED: '전송 대기',
-  ON_HOLD: '보류',
-  SENDING: '전송 중',
-  DELIVERED: '전송 완료',
-  LIVE: '공개됨',
-  TAKEN_DOWN: '내려감',
-};
 
 // 플랫폼 기준으로 고쳐야 하는 항목 안내
 const DELIVERY_ISSUE: Record<string, string> = {
@@ -74,10 +62,6 @@ const DETAIL_TABS = [
   { value: 'history', label: '기록' },
 ];
 
-const DELIVERY_TONE: Record<string, Tone> = {
-  NEEDS_CORRECTION: 'amber', ON_HOLD: 'amber', IN_REVIEW: 'violet', PREPARING: 'blue', SCHEDULED: 'blue', SENDING: 'blue',
-  DELIVERED: 'green', LIVE: 'green', TAKEN_DOWN: 'gray',
-};
 
 // 진행 단계 표시 — 상태별로 어디까지 왔는지 보여준다
 const PIPELINE = [
@@ -116,7 +100,12 @@ export function ReleaseDetail() {
   const allDocs = useDocs();
   // 계약서·서류 상태는 담당자 처리로 바뀐다 — 발매를 열 때 새로 받는다
   useEffect(() => { if (!MOCK) void refreshDocs(); }, [id]);
-  const [tab, setTab] = useState('overview');
+  // 홈 카드(플랫폼 반영·피칭·홍보 성과)에서 ?tab=으로 바로 그 탭을 연다
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState(() => {
+    const t = params.get('tab');
+    return t && DETAIL_TABS.some(x => x.value === t) ? t : 'overview';
+  });
   // 탭은 머리글 바로 아래에 붙는다 — 큰 머리(표지·버튼·진행 단계) 아래에 있어 내려 읽다 보면 화면 밖으로 사라졌고,
   // 바꾸려면 맨 위까지 올라가야 했다. 바꿀 때는 새 내용의 첫 줄이 탭 바로 아래에 오게(맨 위로 튀지 않게) 자리를 맞춘다
   const tabsAnchor = useRef<HTMLDivElement>(null);

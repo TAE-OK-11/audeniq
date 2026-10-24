@@ -450,6 +450,15 @@ button.ui-avatar:hover{transform:scale(1.06);background:var(--aq-blue-200)}
 .ui-steps>li.is-warn{font-weight:700;color:var(--aq-tone-amber-fg)}
 .ui-steps>li.is-warn::before{background:var(--aq-amber-500)}
 
+/* 한 줄 막대 (ui/Data.tsx Meter) — 카드 면 위 흰 바탕에 덩어리. 채워질 때만 왼쪽에서 자란다(정보를 전하는 움직임) */
+.ui-meter{display:flex;gap:3px;height:8px;border-radius:var(--aq-r-pill);overflow:hidden;background:#fff}
+.ui-meter>i{display:block;min-width:4px;background:var(--aq-primary);transform-origin:left center;animation:ui-meter-grow var(--aq-motion-long) var(--aq-enter) backwards}
+.ui-meter>i.is-soft{background:var(--aq-blue-300)}
+.ui-meter>i.is-green{background:var(--aq-green-500)}
+.ui-meter>i.is-amber{background:var(--aq-amber-500)}
+@keyframes ui-meter-grow{from{transform:scaleX(0)}}
+@media (prefers-reduced-motion:reduce){.ui-meter>i{animation:none}}
+
 /* 그 자리에서 펼치기 (ui/Reveal.tsx) — 높이 0→내용, 위로 6px에서 내려오며 나타난다. 닫힐 때는 나가는 곡선으로 조금 더 빨리.
    부모가 gap을 쓰면 --reveal-gap에 같은 값을 주어, 접힌 동안 그 틈도 함께 접히게 한다(다 접힌 뒤 틈만큼 툭 튀지 않게) */
 .ui-reveal{display:grid;grid-template-rows:0fr;margin-top:calc(-1 * var(--reveal-gap,0px));opacity:0;outline:none;

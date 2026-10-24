@@ -5,7 +5,7 @@ import { Glyph } from '../../components/Glyph';
 import { CheckIcon } from '../../components/Check';
 import {
   Avatar, Badge, Button, ButtonArrow, Callout, Card, ChipGroup, Count, Cover, EmptyState, Field, IconTile, KeyValue,
-  PageHeader, Section, SectionHeader, Reveal, Segmented, SkeletonList, StatGrid, StatTile, Steps, Tabs, Tag, type Tone,
+  PageHeader, Section, SectionHeader, Meter, Reveal, Segmented, SkeletonList, StatGrid, StatTile, Steps, Tabs, Tag, type Tone,
 } from '../../ui';
 
 type View = 'tokens' | 'components' | 'decisions';
@@ -177,6 +177,11 @@ function Components() {
         </div>
         <div className="ds-mini">
           <Steps steps={['접수', '보완 필요', '배급 승인', '발매']} current={1} warn label="보완이 필요한 발매" />
+        </div>
+      </Demo>
+      <Demo title="Meter" note="전체 가운데 어디까지 왔는지 · 덩어리는 두세 개까지" code={'<Meter total={7} parts={[{ value: 5, tone: \'green\' }, { value: 1, tone: \'soft\' }]} label="7곳 중 5곳 공개" />'}>
+        <div className="ds-mini ui-card">
+          <Meter total={7} parts={[{ value: 5, tone: 'green' }, { value: 1, tone: 'soft' }]} label="7곳 중 5곳 공개, 1곳 전송 완료" />
         </div>
       </Demo>
       <Demo title="Reveal" note="그 자리에서 펼치는 폼 · 버튼은 접히고 폼은 펼쳐진다" code={'<Reveal open={!open} focus="first"><Button>종료일 정하기</Button></Reveal>\n<Reveal open={open}>…폼…</Reveal>'}>
