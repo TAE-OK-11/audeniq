@@ -2,6 +2,8 @@
 // 머리(작은 제목 → 제목 → 설명 → 버튼)가 몇십 ms씩 차례로 16px 아래에서 떠오르고, 이어서 카드·목록 줄·섹션 머리가 나온다.
 // 처음부터 화면 안에 있던 덩어리는 0.6초 동안 차례로, 화면 밖 덩어리는 스크롤로 닿기 조금 전에 시작해 0.48초.
 // 늦게 그려지는 목록(불러오기 뒤)도 잠시 지켜보다 같은 방식으로 맡는다. 바깥 덩어리를 맡으면 그 안쪽은 따로 움직이지 않는다.
+// 사용자가 화면을 누르거나 키를 치면 지켜보기를 그만둔다 — 탭·필터로 바뀐 내용까지 맡으면 한 번 사라졌다가
+// 다시 떠올라 튀어 보였다(탭 패널은 자체 전환이 있다). 그 뒤로 바뀌는 내용은 바로 보인다.
 // 초점이 들어가면 바로 제자리, 탭을 숨기면 진행 중인 연출을 끝낸다. 동작 줄이기·미지원 브라우저에서는 아무것도 하지 않는다.
 // 숨기기는 그리기 전에(useLayoutEffect·MutationObserver) — 한 프레임이라도 보였다가 사라지지 않게.
 import { useLayoutEffect } from 'react';
@@ -105,7 +107,10 @@ export function useScrollReveal(key: string) {
     // 늦게 그려지는 목록·카드도 맡는다 — 바뀐 내용은 그리기 전에(마이크로태스크) 훑는다
     const mo = new MutationObserver(scan);
     mo.observe(root, { childList: true, subtree: true });
-    const stop = window.setTimeout(() => mo.disconnect(), WATCH_MS);
+    const stopWatching = () => mo.disconnect();
+    const stop = window.setTimeout(stopWatching, WATCH_MS);
+    root.addEventListener('pointerdown', stopWatching, { capture: true, once: true });
+    root.addEventListener('keydown', stopWatching, { capture: true, once: true });
 
     const settle = () => { active.forEach(a => a.cancel()); active.clear(); };
     const onFocus = (e: FocusEvent) => {
@@ -122,6 +127,8 @@ export function useScrollReveal(key: string) {
     return () => {
       window.clearTimeout(stop);
       mo.disconnect();
+      root.removeEventListener('pointerdown', stopWatching, { capture: true });
+      root.removeEventListener('keydown', stopWatching, { capture: true });
       io.disconnect();
       document.removeEventListener('focusin', onFocus);
       document.removeEventListener('visibilitychange', onVisibility);
