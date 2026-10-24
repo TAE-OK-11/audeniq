@@ -829,7 +829,8 @@ button.settle-hero-account.is-button .min-0{display:grid}
   @supports (-webkit-touch-callout:none){
     @media not all and (display-mode:standalone){
       .aq-tabbar{display:none!important}
-      body:not(.wizard-mode) #main{padding-bottom:0}
+      /* 탭 바는 없지만 사파리 주소 막대가 화면 아래에 떠 있어(iOS 26) 맨 끝 내용이 그 뒤에 가려졌다 — 막대 높이만큼 비워 둔다 */
+      body:not(.wizard-mode) #main{padding-bottom:calc(72px + env(safe-area-inset-bottom))}
       body:not(.wizard-mode) .portal-header .menu-toggle{display:flex!important}
       body:has(.aq-tabbar) .aq-toast-stack{bottom:calc(16px + env(safe-area-inset-bottom))}
       body:not(.wizard-mode) .aq-form-actions.is-pinned{bottom:0}
