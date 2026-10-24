@@ -1,7 +1,7 @@
 import { isrcValid, normalizeIsrc, upcValid } from './dsp';
 import { josa } from './josa';
 
-export const RERELEASE_KINDS = { transfer: '유통사를 AUDENIQ로 이전', redistribute: '서비스가 종료된 음원 재발매', new_version: '새 녹음·리믹스·변경 버전 발매' } as const;
+export const RERELEASE_KINDS = { transfer: '유통사를 AUDENIQ으로 이전', redistribute: '서비스가 종료된 음원 재발매', new_version: '새 녹음·리믹스·변경 버전 발매' } as const;
 export const RERELEASE_AVAILABILITY = { live: '현재 서비스 중', takedown_requested: '이전 유통사에 서비스 종료 요청', removed: '서비스 종료됨', unknown: '확인이 필요해요' } as const;
 export interface RereleaseData {
   rereleaseKind?: keyof typeof RERELEASE_KINDS | '';

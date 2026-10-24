@@ -368,7 +368,7 @@
     ]
   },
   "q13": {
-    "title": "배급·정산·권리 관리를 한곳에서 제공하는 AUDENIQ를 이용해 볼 의향이 있으신가요?",
+    "title": "배급·정산·권리 관리를 한곳에서 제공하는 AUDENIQ을 이용해 볼 의향이 있으신가요?",
     "type": "single",
     "required": true,
     "max": null,

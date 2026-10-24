@@ -54,7 +54,7 @@ robots 외 차단 요소: 실서비스는 Cloudflare가 응답에 챌린지 스�
 | 기술 SEO 회귀 | `npm run check`(CI), 배포 후 `npm run verify:live` | 저장소 |
 | 랩 성능 | Lighthouse 모바일(랩)과 실사용 CWV(Search Console CWV·CrUX, 75번째 백분위)를 구분해 기록 | 실사용은 트래픽 필요 |
 
-AI 인용 기준 질문(언어별로 같은 의미로 입력): "AUDENIQ가 뭐야/What is AUDENIQ", "어데닉은 음원 배급사야/Is AUDENIQ a music distributor", "AUDENIQ Publishing은 뭐야", "지금 AUDENIQ로 음원 발매할 수 있어/Is AUDENIQ accepting releases", "음원 배급과 음악 퍼블리싱 차이". 기대 답: 출시 준비 중, 아직 신청 불가, 배급·퍼블리싱 별도, 지원 플랫폼 미확정. 틀린 답(이미 운영 중, 특정 DSP 지원 등)도 기록해 콘텐츠 보강에 쓴다.
+AI 인용 기준 질문(언어별로 같은 의미로 입력): "AUDENIQ이 뭐야/What is AUDENIQ", "어데닉은 음원 배급사야/Is AUDENIQ a music distributor", "AUDENIQ Publishing은 뭐야", "지금 AUDENIQ으로 음원 발매할 수 있어/Is AUDENIQ accepting releases", "음원 배급과 음악 퍼블리싱 차이". 기대 답: 출시 준비 중, 아직 신청 불가, 배급·퍼블리싱 별도, 지원 플랫폼 미확정. 틀린 답(이미 운영 중, 특정 DSP 지원 등)도 기록해 콘텐츠 보강에 쓴다.
 
 전환은 설문 링크(https://survey.audeniq.com/) 클릭과 설문 완료를 구분한다. 완료 수는 설문 서비스의 응답 수로 확인한다.
 

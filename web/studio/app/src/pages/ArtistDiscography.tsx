@@ -8,6 +8,7 @@ import { gradientFor } from '../lib/catalog';
 import { releasePath } from '../lib/publicLinks';
 import type { DiscoTrack } from '../lib/artistCommunity';
 import { Glyph } from '../components/Glyph';
+import { Tag } from '../ui';
 import { ArtistSubHead, PublicFoot, PublicLoading, PublicMissing, PublicShell } from '../components/PublicPage';
 import { RELEASE_TYPE, artistBackdrop, releaseWhen, useArtistPage, type ArtistRelease } from './ArtistPage';
 import { CardSkeleton } from './ArtistNews';
@@ -105,10 +106,10 @@ export function ArtistDiscography() {
       <ArtistSubHead slug={slug} name={page.name} title="디스코그래피" />
       {items === null && <CardSkeleton rows={3} tall />}
       {list.length > 0 && (
-        <ul className="aq-disco-stats" aria-label="요약">
-          {summary.map(x => <li key={x}>{x}</li>)}
-          <li>수록곡 {tracks}</li>
-        </ul>
+        <p className="aq-disco-stats" aria-label="요약">
+          {summary.map(x => <Tag key={x}>{x}</Tag>)}
+          <Tag>수록곡 {tracks}</Tag>
+        </p>
       )}
       {items && list.length === 0 && <p className="aq-cheer-empty"><Glyph name="music" size={18} />아직 공개된 발매가 없어요.</p>}
       {groupByYear(list).map(g => (

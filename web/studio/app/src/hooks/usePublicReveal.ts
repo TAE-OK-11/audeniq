@@ -15,19 +15,14 @@ export function usePublicReveal(root: RefObject<HTMLElement | null>, selector: s
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || typeof IntersectionObserver === 'undefined' || !Element.prototype.animate) return;
     const seen = new WeakSet<Element>();
     const pending = new Set<HTMLElement>();
-    let batch = 0;
-    let batchAt = 0;
 
     const show = (el: HTMLElement, animate = true) => {
       if (!pending.delete(el)) return;
       io.unobserve(el);
       el.classList.remove(WAITING);
       if (!animate || document.hidden) return;
-      // 한꺼번에 닿은 줄은 50ms씩 차례로 (네 개마다 다시)
-      const now = performance.now();
-      if (now - batchAt > 120) batch = 0;
-      batchAt = now;
-      el.animate(KEYFRAMES, { duration: 480, easing: 'cubic-bezier(.22,.61,.36,1)', fill: 'backwards', delay: (batch++ % 4) * 50 });
+      // 스크롤로 닿은 덩어리는 차례 없이 한 번에 (디자인 시스템 19 — 0.48초, 16px)
+      el.animate(KEYFRAMES, { duration: 480, easing: 'cubic-bezier(.22,.61,.36,1)', fill: 'backwards' });
     };
     const io = new IntersectionObserver(entries => {
       entries.forEach(e => { if (e.isIntersecting) show(e.target as HTMLElement); });

@@ -328,7 +328,7 @@ export function App() {
                         </label>
                         <div className="privacy">
                           <div className="privacy-title">개인정보 및 응답 수집 안내</div>
-                          <p>수집 주체는 AUDENIQ예요. 설문 답변(자유입력 포함)은 서비스 기획·시장 수요 분석과 관련 업체 협의를 위한 통계에 사용해요. 선택적으로 입력한 연락처는 별도 동의한 경우에만 베타테스트·서비스 출시 안내에 사용해요. 제출일부터 최대 12개월간 보관하며 목적을 달성하면 더 일찍 삭제할 수 있어요. 열람·삭제 문의: <a href="mailto:audeniq.official@gmail.com">audeniq.official@gmail.com</a>. 제출 후 표시되는 접수번호를 알려주시면 응답을 찾는 데 도움이 돼요. 외부에 통계 결과를 제공할 때는 개별 연락처를 포함하지 않아요. 연락처 제공에 동의하지 않아도 설문에 참여할 수 있지만, 베타·출시 안내는 받을 수 없어요.</p>
+                          <p>수집 주체는 AUDENIQ이에요. 설문 답변(자유입력 포함)은 서비스 기획·시장 수요 분석과 관련 업체 협의를 위한 통계에 사용해요. 선택적으로 입력한 연락처는 별도 동의한 경우에만 베타테스트·서비스 출시 안내에 사용해요. 제출일부터 최대 12개월간 보관하며 목적을 달성하면 더 일찍 삭제할 수 있어요. 열람·삭제 문의: <a href="mailto:audeniq.official@gmail.com">audeniq.official@gmail.com</a>. 제출 후 표시되는 접수번호를 알려주시면 응답을 찾는 데 도움이 돼요. 외부에 통계 결과를 제공할 때는 개별 연락처를 포함하지 않아요. 연락처 제공에 동의하지 않아도 설문에 참여할 수 있지만, 베타·출시 안내는 받을 수 없어요.</p>
                         </div>
                         <label className="agree required-agree">
                           <input
