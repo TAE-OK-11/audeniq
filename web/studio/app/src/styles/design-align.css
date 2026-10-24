@@ -1010,17 +1010,11 @@ body.wizard-mode .portal-header,.portal-header:has(#portalNav:not([hidden])){box
 .aq-al-note{margin:0;font-size:13px;color:var(--aq-text-3)}
 .aq-al-section{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
 /* 주소 칸 — 앞부분(studio.audeniq.com/link/artist/)은 고정 글자, 뒤에 주소 이름 */
-.aq-al-handle{display:flex;align-items:center;min-height:var(--aq-field-h,var(--aq-h-md));padding:0 16px;border-radius:var(--aq-field-r,var(--aq-r-ctl-md));background-color:var(--aq-field-bg,var(--aq-field));transition:background-color var(--aq-dur) var(--aq-ease),box-shadow var(--aq-dur) var(--aq-ease)}
-.aq-al-handle:focus-within{background-color:var(--aq-field-focus-bg)}
-.aq-al-handle:focus-within{box-shadow:inset 0 0 0 1.5px var(--aq-primary)}
-.aq-al-handle.is-error{box-shadow:inset 0 0 0 1.5px var(--aq-red-500)}
-.aq-al-handle-prefix{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--aq-fs-lg);color:var(--aq-text-4)}
-.aq-al-handle input{flex:1 1 40%;min-width:72px;border:0;padding:0;background:transparent;font:inherit;font-size:var(--aq-fs-lg);font-weight:700;color:var(--aq-text);outline:none}
-.aq-al-handle input[aria-invalid]{background:transparent;box-shadow:none}
-.aq-al-handle input::placeholder{font-weight:500;color:var(--aq-text-4)}
 .aq-al-section-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
 .aq-al-section-head h3{margin:0;font-size:15px;font-weight:800;color:var(--aq-text)}
 .aq-al-section-head label{cursor:default}
+.aq-al-handle-url{margin-top:-4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--aq-text-4)}
+.aq-al-handle-url b{font-weight:700;color:var(--aq-text-2)}
 .aq-al-count{font-size:12px;font-weight:600;color:var(--aq-text-4);font-variant-numeric:tabular-nums}
 textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:vertical}
 .aq-al-links{list-style:none;margin:0;padding:0;display:grid;gap:8px}

@@ -114,12 +114,10 @@ export function LinkEditor({ artist, onSaved }: { artist: ArtistLinkRow; onSaved
           <h3 id="alHandleTitle"><label htmlFor="alHandle">주소</label></h3>
           <span className="aq-al-count">{h.length} / {HANDLE_MAX}</span>
         </div>
-        <div className={`aq-al-handle${handleMsg ? ' is-error' : ''}`}>
-          <span className="aq-al-handle-prefix" aria-hidden="true">{window.location.host}/link/artist/</span>
-          <input id="alHandle" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={HANDLE_MAX + 1}
-            value={handle} onChange={e => setHandle(e.target.value)} onBlur={() => setHandle(h)} placeholder={slug ? undefined : '예: serin_official'}
-            aria-invalid={!!handleMsg || undefined} aria-describedby="alHandleHelp" />
-        </div>
+        <input id="alHandle" className="ui-input" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={HANDLE_MAX + 1}
+          value={handle} onChange={e => setHandle(e.target.value)} onBlur={() => setHandle(h)} placeholder={slug ? undefined : '예: serin_official'}
+          aria-invalid={!!handleMsg || undefined} aria-describedby="alHandleUrl alHandleHelp" />
+        <small id="alHandleUrl" className="ui-field-help aq-al-handle-url">{window.location.host}/link/artist/<b>{h || '…'}</b></small>
         <small id="alHandleHelp" className={`ui-field-help${handleMsg ? ' aq-help-error' : ''}`} role={handleMsg ? 'alert' : undefined}>
           {handleMsg
             ?? (checking ? '확인하는 중…'
