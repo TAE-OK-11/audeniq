@@ -379,6 +379,12 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 /* 화면 이동은 하루에도 수십 번 보는 움직임이라 짧게(--aq-motion-base) */
 .view-enter>.view:not(#view-new)>:not(.aq-stagger):nth-child(-n+10){animation:aq-section-in var(--aq-motion-base) var(--aq-enter) backwards}
 @media (prefers-reduced-motion:reduce){.view-enter,.view-enter>.view>*{animation:none!important}}
+/* 홈은 audeniq.com 랜딩과 같은 등장 연출을 따로 쓴다(hooks/useLandingReveal.ts) — 짧은 섹션 움직임·바로가기 줄 움직임과 겹치지 않게 끈다.
+   aq-motion-waiting은 화면 밖이라 아직 나타나지 않은 덩어리 (스크롤해서 보이면 16px 아래에서 떠오른다) */
+.view-enter>#view-home.view>:not(.aq-stagger):nth-child(n),#view-home .aq-home-shortcuts>*{animation:none}
+#view-home .aq-motion-waiting{opacity:0;transform:translateY(16px)}
+@media (prefers-reduced-motion:reduce){#view-home .aq-motion-waiting{opacity:1;transform:none}}
+@media print{#view-home .aq-motion-waiting{opacity:1!important;transform:none!important}}
 
 /* 휴대폰 전체 메뉴가 열려 있는 동안 뒤 화면이 같이 스크롤되지 않게.
    html에만 건다: body까지 막으면 body가 따로 스크롤 상자가 돼 고정 머리글(과 그 안의 메뉴)이
