@@ -112,7 +112,7 @@ export function Notices() {
                   <em className="aq-nboard-tag">중요</em>
                   <span className="aq-nhero-pin-title">{n.title}</span>
                   <span className="aq-nhero-pin-date">{dotted(n.date)}</span>
-                  <span className="aq-nhero-pin-arrow" aria-hidden="true"><Glyph name="arrow-right" size={15} /></span>
+                  <span className="aq-nhero-pin-arrow" aria-hidden="true"><Glyph name="chevron-right" size={16} /></span>
                 </Link>
               </li>
             ))}

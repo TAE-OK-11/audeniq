@@ -492,9 +492,6 @@ body:has(.aq-payout-setup-mode) .aq-toast-stack{bottom:calc(104px + env(safe-are
 /* ==========================================================================
    홍보 페이지(web/landing) 디자인 언어 반영
    ========================================================================== */
-/* 스크롤 등장 대기 (IntersectionObserver가 보일 때 떠오르게 함) */
-.aq-reveal-wait{opacity:0}
-@media(prefers-reduced-motion:reduce){.aq-reveal-wait{opacity:1!important}}
 /* 제목 마지막 줄 파란 강조 — 홍보 페이지 히어로 '더 넓은 세상으로.' */
 .aq-accent{color:var(--aq-e-blue)}
 /* 헤더 STUDIO 표시를 홍보 페이지 메뉴의 pill(사전 설문 안내)처럼 */
@@ -502,7 +499,6 @@ body:has(.aq-payout-setup-mode) .aq-toast-stack{bottom:calc(104px + env(safe-are
 .aq-service-top{display:flex;align-items:flex-start;justify-content:space-between;width:100%}
 .aq-service-no{font-size:13px;font-weight:600;color:var(--aq-text-4);letter-spacing:.02em;font-variant-numeric:tabular-nums}
 /* 기본 버튼: 홍보 페이지처럼 호버 시 진한 파랑 + 살짝 떠오름 */
-@media print{.aq-reveal-wait{opacity:1!important}}
 
 /* ---------- 계약서 서명: 검토 대기 화면, 다시 그리기 위치 ---------- */
 .aq-sign-sheet{position:relative}
@@ -893,12 +889,13 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 .aq-nhero h1 em{font-style:normal;color:var(--aq-e-blue)}
 .aq-nhero-desc{margin:20px 0 0;font-size:15px;line-height:1.8;color:var(--n-weak)}
 .aq-br-wide{display:none}
-.aq-nhero-pins{list-style:none;margin:32px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
-.aq-nhero-pin{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:start!important;grid-template-areas:"tag title arrow" ". date arrow";column-gap:10px;row-gap:4px;align-items:center;padding:18px 20px;border-radius:var(--aq-r-lg);background:#fff;text-decoration:none;color:var(--aq-e-ink);transition:background-color .2s var(--aq-e-ease)}
+.aq-nhero-pins{list-style:none;margin:28px 0 0;padding:0;display:flex;flex-direction:column;gap:0}
+/* 중요 공지 — 카드 안에 흰 칸을 또 두지 않고, 카드 면 위 구분선 줄 + 꺾쇠 (다른 목록 줄과 같은 모양) */
+.aq-nhero-pin{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:start!important;grid-template-areas:"tag title arrow" ". date arrow";column-gap:10px;row-gap:4px;align-items:center;padding:16px 2px;border-radius:0;background:none;box-shadow:inset 0 1px 0 var(--aq-line);text-decoration:none;color:var(--aq-e-ink);transition:color .2s var(--aq-e-ease)}
 .aq-nhero-pin .aq-nboard-tag{grid-area:tag;margin:0}
 .aq-nhero-pin-title{grid-area:title;min-width:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.45;font-size:16px;font-weight:700;letter-spacing:-.01em;transition:color .2s var(--aq-e-ease)}
 .aq-nhero-pin-date{grid-area:date;font-size:13px;color:var(--n-weak);font-variant-numeric:tabular-nums}
-.aq-nhero-pin-arrow{grid-area:arrow;align-self:center;color:var(--aq-e-blue);font-weight:700;transition:transform .25s var(--aq-e-ease)}
+.aq-nhero-pin-arrow{grid-area:arrow;align-self:center;color:var(--aq-text-disabled);transition:transform .25s var(--aq-e-ease)}
 @media (hover:hover){.aq-nhero-pin:hover .aq-nhero-pin-title{color:var(--aq-e-blue)}.aq-nhero-pin:hover .aq-nhero-pin-arrow{transform:translateX(4px)}}
 
 .aq-nboard{margin:0 0 24px}
