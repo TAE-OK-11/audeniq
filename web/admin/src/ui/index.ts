@@ -11,3 +11,4 @@ export { Callout, EmptyState, SkeletonList, type CalloutTone } from './Feedback'
 export { StatTile, StatGrid, KeyValue, Card, Steps, type StatTone } from './Data';
 export { Field, inputClass, selectClass } from './Field';
 export { CountUp } from './CountUp';
+export { Reveal } from './Reveal';

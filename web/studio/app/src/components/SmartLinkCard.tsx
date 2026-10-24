@@ -9,6 +9,7 @@ import { MOCK } from '../lib/mode';
 import { PLATFORM_NAMES } from '../lib/platformNames';
 import { useToast } from './Toast';
 import { ManageHead } from './ManageHead';
+import { Reveal } from '../ui';
 import { Glyph } from './Glyph';
 import { CopyButton } from './CopyButton';
 
@@ -114,13 +115,13 @@ export function SmartLinkCard({ releaseId }: { releaseId: string }) {
           )}
         </>
       )}
-      {!edit && (
+      <Reveal open={!edit} focus="first">
         <div className="ui-actions">
-          <button type="button" className={`ui-btn${l ? '' : ' is-primary'}`} onClick={start}>{l ? '링크 수정' : '스마트링크 만들기'}</button>
+          <button type="button" className={`ui-btn${l ? '' : ' is-primary'}`} aria-expanded={edit} onClick={start}>{l ? '링크 수정' : '스마트링크 만들기'}</button>
           {l && <button type="button" className="ui-btn is-text is-muted" disabled={busy} onClick={() => void save(!l.enabled, l.links)}>{l.enabled ? '공개 끄기' : '다시 공개'}</button>}
         </div>
-      )}
-      {edit && (
+      </Reveal>
+      <Reveal open={edit}>
         <div className="aq-correction-form">
           <div className="aq-smartlink-rows">
             {st.platforms.map(p => {
@@ -148,7 +149,7 @@ export function SmartLinkCard({ releaseId }: { releaseId: string }) {
             <button type="button" className="ui-btn is-primary" onClick={() => void save(l?.enabled ?? true, links)} disabled={busy || blocked}>{busy ? '저장 중' : '저장'}</button>
           </div>
         </div>
-      )}
+      </Reveal>
     </section>
   );
 }

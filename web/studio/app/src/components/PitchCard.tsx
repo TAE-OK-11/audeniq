@@ -7,7 +7,7 @@ import { MOCK } from '../lib/mode';
 import { useToast } from './Toast';
 import { ManageHead } from './ManageHead';
 import { Glyph } from './Glyph';
-import { Callout, IconTile, Steps, Tag } from '../ui';
+import { Callout, IconTile, Steps, Tag, Reveal } from '../ui';
 
 interface Pitch {
   id: string; track_id: string; track_title: string; description: string; status: string;
@@ -110,8 +110,12 @@ export function PitchCard({ releaseId }: { releaseId: string }) {
         </div>
       )}
       {tooLate && <p className="small muted">발매일까지 {Math.max(st.days_until_release ?? 0, 0)}일 남아 이번 발매는 피칭할 수 없어요. 다음 발매는 일찍 신청해 주세요.</p>}
-      {st.can_pitch && !open && <button type="button" className="ui-btn is-primary" onClick={start}>피칭하기</button>}
-      {open && (
+      {st.can_pitch && (
+        <Reveal open={!open} focus="first">
+          <button type="button" className="ui-btn is-primary" aria-expanded={open} onClick={start}>피칭하기</button>
+        </Reveal>
+      )}
+      <Reveal open={open}>
         <div className="aq-correction-form">
           <div className="ui-field">
             <label htmlFor="pitchTrack">대표곡</label>
@@ -143,7 +147,7 @@ export function PitchCard({ releaseId }: { releaseId: string }) {
             <button type="button" className="ui-btn is-primary" onClick={() => void submit()} disabled={busy || !track}>{busy ? '보내는 중' : '피칭 보내기'}</button>
           </div>
         </div>
-      )}
+      </Reveal>
     </section>
   );
 }

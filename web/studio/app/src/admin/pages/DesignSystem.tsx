@@ -5,7 +5,7 @@ import { Glyph } from '../../components/Glyph';
 import { CheckIcon } from '../../components/Check';
 import {
   Avatar, Badge, Button, ButtonArrow, Callout, Card, ChipGroup, Count, Cover, EmptyState, Field, IconTile, KeyValue,
-  PageHeader, Section, SectionHeader, Segmented, SkeletonList, StatGrid, StatTile, Steps, Tabs, Tag, type Tone,
+  PageHeader, Section, SectionHeader, Reveal, Segmented, SkeletonList, StatGrid, StatTile, Steps, Tabs, Tag, type Tone,
 } from '../../ui';
 
 type View = 'tokens' | 'components' | 'decisions';
@@ -179,6 +179,9 @@ function Components() {
           <Steps steps={['접수', '보완 필요', '배급 승인', '발매']} current={1} warn label="보완이 필요한 발매" />
         </div>
       </Demo>
+      <Demo title="Reveal" note="그 자리에서 펼치는 폼 · 버튼은 접히고 폼은 펼쳐진다" code={'<Reveal open={!open} focus="first"><Button>종료일 정하기</Button></Reveal>\n<Reveal open={open}>…폼…</Reveal>'}>
+        <RevealDemo />
+      </Demo>
       <Demo title="목록 줄 (ui-row)" note="카드 목록 · 카드 안 목록(is-inset)">
         <div className="ui-list">
           <a className="ui-row" href="#row" onClick={e => e.preventDefault()}>
@@ -271,6 +274,25 @@ export function DesignSystem() {
       <div className="ui-tab-panel" key={view}>
         {view === 'tokens' ? <Tokens /> : view === 'components' ? <Components /> : <Decisions />}
       </div>
+    </div>
+  );
+}
+
+function RevealDemo() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="ds-mini ui-card">
+      <p className="ui-field-help">버튼을 누르면 폼이 부드럽게 열리고, 닫으면 버튼이 다시 나타나요.</p>
+      <Reveal open={!open} focus="first">
+        <button type="button" className="ui-btn is-soft" aria-expanded={open} onClick={() => setOpen(true)}>종료일 정하기</button>
+      </Reveal>
+      <Reveal open={open}>
+        <div className="ui-field"><label htmlFor="dsRevealNote">메모</label><input id="dsRevealNote" className="ui-input" placeholder="예: 라이선스 만료" /></div>
+        <div className="aq-confirm-actions">
+          <button type="button" className="ui-btn is-soft" onClick={() => setOpen(false)}>닫기</button>
+          <button type="button" className="ui-btn is-primary" onClick={() => setOpen(false)}>저장</button>
+        </div>
+      </Reveal>
     </div>
   );
 }

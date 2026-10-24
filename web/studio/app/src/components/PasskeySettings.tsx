@@ -5,6 +5,7 @@ import { useConfirm } from './Confirm';
 import { addPasskey, defaultPasskeyName, listPasskeys, passkeySupported, removePasskey, type Passkey } from '../api/passkey';
 import { errorMessage } from '../api/errors';
 import { PasswordInput } from './AuthLayout';
+import { Reveal } from '../ui';
 
 const day = (iso: string) => new Date(iso).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
 
@@ -82,10 +83,12 @@ export function PasskeySettings() {
       )}
       {items && items.length === 0 && <p>아직 등록한 패스키가 없어요.</p>}
       {!supported && <div className="ui-callout">이 브라우저에서는 패스키를 등록할 수 없어요. 최신 Chrome·Safari·Edge·Firefox에서 열어 주세요.</div>}
-      {supported && items && items.length < limit && !adding && (
-        <button type="button" className="ui-btn is-primary" onClick={() => { setAdding(true); setError(''); }}>패스키 추가</button>
+      {supported && items && items.length < limit && (
+        <Reveal open={!adding} focus="first">
+          <button type="button" className="ui-btn is-primary" aria-expanded={adding} onClick={() => { setAdding(true); setError(''); }}>패스키 추가</button>
+        </Reveal>
       )}
-      {adding && (
+      <Reveal open={adding}>
         <form onSubmit={add}>
           <div className="ui-field">
             <label htmlFor="passkeyName">이름</label>
@@ -106,7 +109,7 @@ export function PasskeySettings() {
             </button>
           </div>
         </form>
-      )}
+      </Reveal>
     </div>
   );
 }
