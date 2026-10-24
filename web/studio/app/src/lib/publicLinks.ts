@@ -1,8 +1,10 @@
-// 공개 페이지 주소 — 발매 스마트링크 /link/release/{코드}, 아티스트 소개 /link/artist/{주소 이름}(+ /press).
+// 공개 페이지 주소 — 발매 스마트링크 /link/release/{코드}, 아티스트 소개 /link/artist/{주소 이름}(+ /press·/news·/discography).
 // 예전 주소(/l/{코드}, /a/{코드})는 App.tsx에서 새 주소로 넘긴다 (이미 나간 QR·링크가 계속 열리게).
 export const releasePath = (slug: string) => `/link/release/${encodeURIComponent(slug)}`;
 export const artistPath = (handle: string) => `/link/artist/${encodeURIComponent(handle)}`;
 export const artistPressPath = (handle: string) => `${artistPath(handle)}/press`;
+export const artistNewsPath = (handle: string) => `${artistPath(handle)}/news`;
+export const artistDiscographyPath = (handle: string) => `${artistPath(handle)}/discography`;
 
 export const releaseUrl = (slug: string) => `${window.location.origin}${releasePath(slug)}`;
 export const artistUrl = (handle: string) => `${window.location.origin}${artistPath(handle)}`;

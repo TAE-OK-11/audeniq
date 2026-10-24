@@ -5692,6 +5692,362 @@ async fn artist_page_lists_releases_with_smart_links(pool: PgPool) {
 
 /// The org's codes: each submitted release with its UPC and track ISRCs,
 /// virtual (test-range) codes flagged, also as CSV; other orgs see nothing.
+/// Artist page news, fan cheers and discography: the artist posts notices
+/// and events (pinned first, then upcoming events, then the newest); fans
+/// leave cheers without an account, limited per address; the artist hides,
+/// hearts, deletes and can switch cheers off; the discography lists the
+/// page's releases with their tracks.
+#[sqlx::test]
+async fn artist_page_news_cheers_and_discography(pool: PgPool) {
+    let d = draft_package(&pool).await;
+    consent_and_submit(&d.app, &d.u, d.release, &format!("k-ac-{}", Uuid::new_v4())).await;
+    let org = d.u.org;
+    let (app, u) = (d.app, d.u);
+    let (_, v) = call(
+        &app,
+        "GET",
+        &format!("/api/orgs/{org}/artist-links"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    let artist = v["items"][0]["artist_id"].as_str().unwrap().to_string();
+    let base = format!("/api/orgs/{org}/artists/{artist}/link");
+    let posts = format!("{base}/posts");
+
+    // No page yet: nothing to post on.
+    let notice =
+        json!({"kind": "NOTICE", "title": "새 앨범 작업 중", "body": "곧 만나요.\n기대해 주세요."});
+    let (_, v) = call(&app, "POST", &posts, notice.clone(), Some(&u)).await;
+    assert_eq!(v["error"]["code"], "ARTIST_LINK_REQUIRED", "{v}");
+    let (_, v) = call(
+        &app,
+        "PUT",
+        &base,
+        json!({"handle": "news_artist"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["slug"], "news_artist", "{v}");
+    let (_, v) = call(
+        &app,
+        "PUT",
+        &format!("/api/orgs/{org}/releases/{}/smart-link", d.release),
+        json!({"links": {"melon": "https://www.melon.com/album/detail.htm?albumId=1"}}),
+        Some(&u),
+    )
+    .await;
+    let release_slug = v["slug"].as_str().unwrap().to_string();
+
+    for (bad, code) in [
+        (
+            json!({"kind": "BLOG", "title": "x"}),
+            "ARTIST_POST_KIND_INVALID",
+        ),
+        (
+            json!({"kind": "NOTICE", "title": "  "}),
+            "ARTIST_POST_TITLE_INVALID",
+        ),
+        (
+            json!({"kind": "EVENT", "title": "공연"}),
+            "ARTIST_POST_DATE_REQUIRED",
+        ),
+        (
+            json!({"kind": "NOTICE", "title": "x", "url": "http://tickets.example/1"}),
+            "ARTIST_LINK_URL_INVALID",
+        ),
+    ] {
+        let (_, v) = call(&app, "POST", &posts, bad.clone(), Some(&u)).await;
+        assert_eq!(v["error"]["code"], code, "{bad}: {v}");
+    }
+    let (s, n) = call(&app, "POST", &posts, notice, Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{n}");
+    assert_eq!(n["body"], "곧 만나요.\n기대해 주세요.");
+    let event = json!({"kind": "EVENT", "title": "단독 공연", "starts_at": "2099-05-01T19:00:00+09:00",
+                       "place": "홍대 롤링홀", "url": "https://tickets.example/1"});
+    let (_, e) = call(&app, "POST", &posts, event, Some(&u)).await;
+    assert_eq!(e["place"], "홍대 롤링홀", "{e}");
+    let (_, p) = call(
+        &app,
+        "POST",
+        &posts,
+        json!({"kind": "NOTICE", "title": "팬미팅 안내", "pinned": true, "place": "ignored"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(p["place"], "", "place only for events: {p}");
+    let (_, v) = call(&app, "GET", &posts, Value::Null, Some(&u)).await;
+    let order: Vec<&str> = v["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x["title"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        order,
+        ["팬미팅 안내", "단독 공연", "새 앨범 작업 중"],
+        "{v}"
+    );
+
+    // Public: the page carries the first posts; /posts lists all.
+    let (_, page) = call(
+        &app,
+        "GET",
+        "/api/artist-links/news_artist",
+        Value::Null,
+        None,
+    )
+    .await;
+    assert_eq!(page["community"]["posts_total"], 3, "{page}");
+    assert_eq!(
+        page["community"]["posts"][0]["title"], "팬미팅 안내",
+        "{page}"
+    );
+    assert_eq!(page["community"]["cheers_enabled"], true, "{page}");
+    let (_, v) = call(
+        &app,
+        "GET",
+        "/api/artist-links/news_artist/posts",
+        Value::Null,
+        None,
+    )
+    .await;
+    assert_eq!(v["items"].as_array().unwrap().len(), 3, "{v}");
+
+    // Edit and delete; another org cannot.
+    let one = format!("{posts}/{}", n["id"].as_str().unwrap());
+    let (_, v) = call(
+        &app,
+        "PUT",
+        &one,
+        json!({"kind": "NOTICE", "title": "새 앨범 마무리 중"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["title"], "새 앨범 마무리 중", "{v}");
+    let other = user(&app).await;
+    let (s, _) = call(&app, "DELETE", &one, Value::Null, Some(&other)).await;
+    assert_ne!(s, StatusCode::OK);
+    let (s, _) = call(&app, "DELETE", &one, Value::Null, Some(&u)).await;
+    assert_eq!(s, StatusCode::OK);
+    let (s, _) = call(&app, "DELETE", &one, Value::Null, Some(&u)).await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+
+    // Cheers: no account; checked; limited per address.
+    let cheers = "/api/artist-links/news_artist/cheers";
+    for (bad, code) in [
+        (
+            json!({"nickname": " ", "message": "응원해요"}),
+            "CHEER_NICKNAME_INVALID",
+        ),
+        (
+            json!({"nickname": "팬", "message": "x".repeat(301)}),
+            "CHEER_MESSAGE_INVALID",
+        ),
+    ] {
+        let (_, v) = call(&app, "POST", cheers, bad.clone(), None).await;
+        assert_eq!(v["error"]["code"], code, "{bad}: {v}");
+    }
+    let mut ids = Vec::new();
+    for i in 0..5 {
+        let (s, v) = call(
+            &app,
+            "POST",
+            cheers,
+            json!({"nickname": format!(" 팬{i} "), "message": "늘 응원해요!\n💜"}),
+            None,
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK, "{v}");
+        assert_eq!(v["nickname"], format!("팬{i}"));
+        ids.push(v["id"].as_str().unwrap().to_string());
+    }
+    let (s, _) = call(
+        &app,
+        "POST",
+        cheers,
+        json!({"nickname": "팬", "message": "또"}),
+        None,
+    )
+    .await;
+    assert_eq!(
+        s,
+        StatusCode::TOO_MANY_REQUESTS,
+        "five per address per 15 minutes"
+    );
+    let (_, v) = call(&app, "GET", cheers, Value::Null, None).await;
+    assert_eq!(v["items"].as_array().unwrap().len(), 5, "{v}");
+    assert_eq!(v["items"][0]["nickname"], "팬4", "newest first: {v}");
+    assert!(v["items"][0].get("hidden").is_none(), "{v}");
+
+    // The artist hides, hearts and deletes; the public sees the result.
+    let mine = format!("{base}/cheers");
+    let (_, v) = call(
+        &app,
+        "PUT",
+        &format!("{mine}/{}", ids[0]),
+        json!({"hidden": true}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["hidden"], true, "{v}");
+    let (_, v) = call(
+        &app,
+        "PUT",
+        &format!("{mine}/{}", ids[1]),
+        json!({"heart": true}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (v["heart"].as_bool(), v["hidden"].as_bool()),
+        (Some(true), Some(false)),
+        "{v}"
+    );
+    let (s, _) = call(
+        &app,
+        "DELETE",
+        &format!("{mine}/{}", ids[2]),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (s, _) = call(
+        &app,
+        "PUT",
+        &format!("{mine}/{}", ids[1]),
+        json!({"heart": false}),
+        Some(&other),
+    )
+    .await;
+    assert_ne!(s, StatusCode::OK);
+    let (_, v) = call(&app, "GET", &mine, Value::Null, Some(&u)).await;
+    assert_eq!(
+        (v["total"].as_i64(), v["hidden"].as_i64()),
+        (Some(4), Some(1)),
+        "{v}"
+    );
+    let (_, v) = call(&app, "GET", cheers, Value::Null, None).await;
+    let shown: Vec<&str> = v["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x["nickname"].as_str().unwrap())
+        .collect();
+    assert_eq!(shown, ["팬4", "팬3", "팬1"], "{v}");
+    assert_eq!(v["items"][2]["heart"], true, "{v}");
+    let (_, page) = call(
+        &app,
+        "GET",
+        "/api/artist-links/news_artist",
+        Value::Null,
+        None,
+    )
+    .await;
+    assert_eq!(page["community"]["cheers_total"], 3, "{page}");
+
+    // Pages of thirty, older ones by `before`.
+    let link: Uuid =
+        sqlx::query_scalar("SELECT id FROM portal.artist_links WHERE slug='news_artist'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    sqlx::query(
+        "INSERT INTO portal.artist_cheers(id, link_id, nickname, message, created_at)
+         SELECT gen_random_uuid(), $1, '옛 팬', '예전 응원', now() - make_interval(hours => g) FROM generate_series(1, 30) g",
+    )
+    .bind(link)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (_, v) = call(&app, "GET", cheers, Value::Null, None).await;
+    assert_eq!(
+        (v["items"].as_array().unwrap().len(), v["more"].as_bool()),
+        (30, Some(true)),
+        "{v}"
+    );
+    let last = v["items"][29]["id"].as_str().unwrap();
+    let (_, v) = call(
+        &app,
+        "GET",
+        &format!("{cheers}?before={last}"),
+        Value::Null,
+        None,
+    )
+    .await;
+    assert_eq!(
+        (v["items"].as_array().unwrap().len(), v["more"].as_bool()),
+        (3, Some(false)),
+        "{v}"
+    );
+
+    // Cheers switched off: hidden from the page and closed; saving without the field keeps it.
+    call(&app, "PUT", &base, json!({"cheers": false}), Some(&u)).await;
+    call(&app, "PUT", &base, json!({"bio": "소개"}), Some(&u)).await;
+    let (_, v) = call(&app, "GET", cheers, Value::Null, None).await;
+    assert_eq!(
+        (v["enabled"].as_bool(), v["items"].as_array().unwrap().len()),
+        (Some(false), 0),
+        "{v}"
+    );
+    let (_, v) = call(
+        &app,
+        "POST",
+        cheers,
+        json!({"nickname": "팬", "message": "응원"}),
+        None,
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "CHEERS_CLOSED", "{v}");
+    let (_, v) = call(
+        &app,
+        "GET",
+        &format!("/api/orgs/{org}/artist-links"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["items"][0]["link"]["cheers_enabled"], false, "{v}");
+    assert_eq!(v["items"][0]["link"]["posts"], 2, "{v}");
+
+    // Discography: the page's releases with their tracks.
+    let (_, v) = call(
+        &app,
+        "GET",
+        "/api/artist-links/news_artist/discography",
+        Value::Null,
+        None,
+    )
+    .await;
+    let items = v["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "{v}");
+    assert_eq!(items[0]["slug"], release_slug.as_str());
+    let tracks = items[0]["tracks"].as_array().unwrap();
+    assert!(
+        !tracks.is_empty() && tracks[0]["title"].is_string() && tracks[0]["number"] == 1,
+        "{v}"
+    );
+    assert!(
+        tracks[0]["artist"].is_null(),
+        "the page's own artist is not repeated: {v}"
+    );
+
+    // Page switched off: everything public is gone.
+    call(&app, "PUT", &base, json!({"enabled": false}), Some(&u)).await;
+    for path in ["/posts", "/cheers", "/discography"] {
+        let (s, _) = call(
+            &app,
+            "GET",
+            &format!("/api/artist-links/news_artist{path}"),
+            Value::Null,
+            None,
+        )
+        .await;
+        assert_eq!(s, StatusCode::NOT_FOUND, "{path}");
+    }
+}
+
 #[sqlx::test]
 async fn codes_list_and_csv(pool: PgPool) {
     let ctx = ready_package(&pool).await;

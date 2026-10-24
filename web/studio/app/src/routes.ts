@@ -33,6 +33,8 @@ export const pageLoaders = {
   SmartLink: () => import('./pages/SmartLink'),
   ArtistPage: () => import('./pages/ArtistPage'),
   ArtistPress: () => import('./pages/ArtistPress'),
+  ArtistNews: () => import('./pages/ArtistNews'),
+  ArtistDiscography: () => import('./pages/ArtistDiscography'),
   SplitInvite: () => import('./pages/SplitInvite'),
   Admin: () => import('./admin/AdminApp'),
 };
