@@ -1430,24 +1430,22 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-press-actions{gap:6px;margin-top:8px}
 .aq-press-actions .ui-btn.is-sm{min-height:32px;padding:0 10px;font-size:12.5px;gap:4px}
 
-/* 발매 카운트다운 — 일·시간·분·초 흰 칸, 숫자는 바뀔 때 아래에서 굴러 올라온다 (SmartLink.tsx RollDigit) */
-.aq-smartlink-countdown{gap:10px;padding:14px 14px 16px;justify-items:center}
-.aq-cd-tiles{display:flex;justify-content:center;gap:8px}
-.aq-cd-tile{display:grid;justify-items:center;gap:2px;min-width:60px;padding:10px 8px 8px;border-radius:14px;background:#fff;box-shadow:0 1px 0 rgba(15,23,42,.04),0 6px 16px -10px rgba(27,51,104,.35)}
-.aq-cd-tile strong{display:flex;font-size:26px;font-weight:800;line-height:1.1;letter-spacing:-.01em;color:var(--aq-text);font-variant-numeric:tabular-nums}
-.aq-cd-tile small{font-size:11px;font-weight:700;color:var(--aq-text-4)}
+
+/* 발매 카운트다운 — AUDENIQ 숫자 표기: 큰 굵은 숫자 + 작은 회색 단위를 한 줄로(13일 17시간 13분 35초).
+   칸·그림자 없이 옅은 바탕 하나, 숫자는 바뀔 때 아래에서 굴러 올라온다 (SmartLink.tsx RollDigit) */
+.aq-smartlink-countdown{gap:6px;padding:14px 18px 16px;justify-items:center;background:var(--aq-surface)}
+.aq-smartlink-countdown>small{font-size:12px;font-weight:700;color:var(--aq-primary)}
+.aq-cd-tiles{display:flex;flex-wrap:wrap;justify-content:center;align-items:baseline;column-gap:10px;row-gap:2px}
+.aq-cd-tile{display:inline-flex;align-items:baseline;gap:2px;white-space:nowrap}
+.aq-cd-tile strong{display:inline-flex;font-size:28px;font-weight:800;line-height:1.15;letter-spacing:-.02em;color:var(--aq-text);font-variant-numeric:tabular-nums}
+.aq-cd-tile small{font-size:14px;font-weight:700;color:var(--aq-text-4)}
+.aq-cd-tile.is-long strong{font-size:26px}
+.aq-cd-tile.is-xlong strong{font-size:22px}
 .aq-roll{position:relative;display:inline-block;overflow:hidden}
 .aq-roll-d{display:block}
 .aq-roll-d.is-in{animation:aq-roll-in .42s cubic-bezier(.32,.72,0,1) both}
 .aq-roll-d.is-out{position:absolute;inset:0;animation:aq-roll-out .42s cubic-bezier(.32,.72,0,1) both}
-@keyframes aq-roll-in{from{transform:translateY(75%);opacity:0}to{transform:none;opacity:1}}
-@keyframes aq-roll-out{from{transform:none;opacity:1}to{transform:translateY(-75%);opacity:0}}
-@media (max-width:360px){.aq-cd-tile{min-width:52px}.aq-cd-tile strong{font-size:22px}}
+@keyframes aq-roll-in{from{transform:translateY(70%);opacity:0}to{transform:none;opacity:1}}
+@keyframes aq-roll-out{from{transform:none;opacity:1}to{transform:translateY(-70%);opacity:0}}
+@media (max-width:360px){.aq-cd-tile strong{font-size:24px}}
 @media (prefers-reduced-motion:reduce){.aq-roll-d.is-in,.aq-roll-d.is-out{animation:none}.aq-roll-d.is-out{display:none}}
-/* 칸은 상자 폭을 나눠 쓴다 — 일 수가 길어도(수백 일) 넘치지 않게 */
-.aq-smartlink-countdown{width:100%;box-sizing:border-box}
-.aq-cd-tiles{width:100%}
-.aq-cd-tile{flex:1 1 0;min-width:0;max-width:88px}
-.aq-cd-tile:first-child:not(:only-child){flex-grow:1.3;max-width:110px}
-.aq-cd-tile.is-long strong{font-size:22px}
-.aq-cd-tile.is-xlong strong{font-size:16px;padding-block:4px}
