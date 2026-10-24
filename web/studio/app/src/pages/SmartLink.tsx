@@ -1,8 +1,9 @@
-// 스마트링크 (/l/:slug) — 로그인 없이 누구나. 발매 하나의 공유 페이지: 커버·제목·아티스트와 플랫폼별 듣기 링크.
+// 스마트링크 (/link/release/:slug) — 로그인 없이 누구나. 발매 하나의 공유 페이지: 커버·제목·아티스트와 플랫폼별 듣기 링크.
 // 아티스트가 발매 상세에서 링크를 넣고 켜 둔 동안만 보인다. 조회·클릭 수는 아티스트에게 보인다.
 import { useEffect, useState } from 'react';
 import { countdownLabel, releaseMoment } from '../lib/countdown';
 import { preReleaseAction } from '../lib/preRelease';
+import { releaseUrl } from '../lib/publicLinks';
 import { presaveResult, releaseIcs, withoutPresaveQuery, type PresaveResult } from '../lib/presave';
 import { Link, useLocation, useParams } from '../lib/router';
 import { API_BASE, req } from '../api/http';
@@ -46,7 +47,7 @@ function Countdown({ date, time, onDone }: { date: string; time?: string | null;
 /** 발매 순간을 캘린더 일정 파일로 — 휴대폰에서 열면 캘린더 앱이 '추가'를 묻는다 */
 function saveCalendar(page: Page, slug: string) {
   if (!page.release_date) return;
-  const ics = releaseIcs({ title: page.title, artist: page.artist, date: page.release_date, time: page.release_time, url: `${window.location.origin}/l/${slug}` });
+  const ics = releaseIcs({ title: page.title, artist: page.artist, date: page.release_date, time: page.release_time, url: releaseUrl(slug) });
   const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
   const a = document.createElement('a');
   a.href = url;

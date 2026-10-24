@@ -102,7 +102,7 @@ pub async fn sign_up(s: &AppState, h: &HeaderMap, slug: &str, i: SignUp) -> Resu
 pub fn render(origin: &str, slug: &str, title: &str, artist: Option<&str>) -> Rendered {
     let title = one_line(title);
     let artist = artist.map(one_line).filter(|a| !a.is_empty());
-    let url = format!("{origin}/l/{slug}");
+    let url = format!("{origin}/link/release/{slug}");
     let who = artist
         .as_deref()
         .map(|a| format!("{a}의 "))
