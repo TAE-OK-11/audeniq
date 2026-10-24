@@ -1397,8 +1397,12 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
    튕기는 동안 그 아래 body의 흰 바탕이 드러났다. 바탕을 화면에 고정(fixed)해 늘 화면 전체를 덮고,
    그 아래 html·body도 같은 옅은 회색으로 둔다 */
 html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50)}
-.aq-smartlink>.aq-smartlink-bg{position:fixed;inset:-60px;z-index:0}
+/* 바탕은 원래처럼 내용 길이만큼(absolute) — 화면 맨 위(상태 표시줄 칸)에는 커버 빛이 그대로 비친다.
+   고정(fixed) 바탕은 아이폰 사파리가 상태 표시줄 칸을 그 요소의 단색(없으면 옅은 회색)으로 칠해 위에 회색 띠가 생겼다.
+   맨 아래를 지나 튕길 때만 보이는 칸은 화면 아래쪽 절반에만 붙인 고정 층(::after)이 같은 커버 빛으로 채운다 —
+   위 끝에 닿지 않아 상태 표시줄 색에 쓰이지 않고, 내용 영역에서는 회색 바탕 뒤(z-index:-1)라 보이지 않는다 */
 .aq-smartlink>.aq-smartlink-card{position:relative;z-index:1}
+.aq-smartlink.aq-pub[style*="--aq-pub-bg"]::after{content:"";position:fixed;left:-60px;right:-60px;top:45vh;bottom:-160px;z-index:-1;background:var(--aq-pub-bg) center/cover no-repeat;filter:blur(40px) saturate(1.2);opacity:.45;transform:scale(1.1);pointer-events:none}
 
 /* 맨 아래 다듬기 — 위에 옅은 구분선, 형제 화면 알약, 그 아래 ‘Distributed by’ + AUDENIQ 로고(누르면 audeniq.com) */
 .aq-pub-foot{gap:16px;margin-top:32px;padding-top:20px;position:relative}
@@ -1410,3 +1414,18 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 @media (hover:hover){.aq-pub-brand:hover{opacity:1}}
 .aq-pub-brand:is(:active,.is-pressed){opacity:1}
 .aq-pub-brand:focus-visible{outline:var(--aq-focus);outline-offset:2px;opacity:1}
+
+/* ── 마지막 다듬기 ── */
+/* 발매가 하나뿐이면 칸 반쪽에 홀로 두지 않고 한 줄 카드로 */
+.aq-artist-release-grid.is-single{grid-template-columns:minmax(0,1fr)}
+.aq-artist-release-grid.is-single .aq-artist-release{grid-template-columns:76px minmax(0,1fr);grid-template-rows:auto auto;column-gap:14px;row-gap:2px;align-items:center;padding:10px;border-radius:var(--aq-r-xl);background:var(--aq-surface)}
+.aq-artist-release-grid.is-single .aq-artist-release-cover{grid-row:1 / span 2;width:76px;margin:0;border-radius:var(--aq-r-md)}
+.aq-artist-release-grid.is-single .aq-artist-release-title{align-self:end}
+.aq-artist-release-grid.is-single .aq-artist-release-meta{align-self:start}
+/* 보도자료 — 섹션 제목과 내용 사이를 다른 화면과 같게, 플랫폼 줄 위 빈칸 없애기, 발매 버튼 세 개가 한 줄에 */
+.aq-pub-card.aq-press-card>section{gap:0}
+.aq-pub-card.aq-press-card .aq-press-bio{margin:0;color:var(--aq-text-2)}
+.aq-pub-card.aq-press-card .aq-press-links{margin:0;padding:0}
+.aq-pub-card.aq-press-card .aq-press-links .ui-row{padding-inline:0}
+.aq-press-actions{gap:6px;margin-top:8px}
+.aq-press-actions .ui-btn.is-sm{min-height:32px;padding:0 10px;font-size:12.5px;gap:4px}

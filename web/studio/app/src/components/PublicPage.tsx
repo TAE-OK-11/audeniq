@@ -1,7 +1,7 @@
 // 공개 화면 공통 바탕 — 스마트링크(발매), 아티스트 소개·소식·디스코그래피·보도자료가 같은 틀을 쓴다.
 // 흐린 커버 바탕, 같은 폭·여백·모서리의 카드, 같은 불러오는 모양·없는 페이지 안내, 하위 화면 머리(돌아가기·아바타·이름),
 // 맨 아래 형제 화면 링크(소개·소식·디스코그래피·보도자료)와 ‘Distributed by AUDENIQ’. 화면 아래 덩어리는 스크롤로 떠오른다.
-import { useRef, type ReactNode } from 'react';
+import { useRef, type CSSProperties, type ReactNode } from 'react';
 import { Link } from '../lib/router';
 import { gradientFor } from '../lib/catalog';
 import { artistDiscographyPath, artistNewsPath, artistPath, artistPressPath } from '../lib/publicLinks';
@@ -22,7 +22,8 @@ export function PublicShell({ bg, className, cardClass, ready = true, children }
   const card = useRef<HTMLDivElement>(null);
   usePublicReveal(card, PUBLIC_UNITS, ready);
   return (
-    <main className={`aq-smartlink aq-pub${className ? ` ${className}` : ''}`}>
+    <main className={`aq-smartlink aq-pub${className ? ` ${className}` : ''}`}
+      style={bg ? ({ '--aq-pub-bg': `url("${bg}")` } as CSSProperties) : undefined}>
       {bg && <div className="aq-smartlink-bg" style={{ backgroundImage: `url("${bg}")` }} aria-hidden="true" />}
       <div ref={card} className={`aq-smartlink-card aq-pub-card${cardClass ? ` ${cardClass}` : ''}`}>{children}</div>
     </main>
