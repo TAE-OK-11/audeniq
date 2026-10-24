@@ -26,7 +26,7 @@ export function ArtistNews() {
   const { page, missing } = useArtistPage(slug, '소식 · AUDENIQ');
   const [posts, setPosts] = useState<ArtistPost[] | null>(null);
   const [filter, setFilter] = useState<'ALL' | PostKind>('ALL');
-  // 거르기를 바꾸면 목록을 새로 그리며 줄이 차례로 떠오른다 (처음 열 때는 카드 등장에 맡긴다)
+  // 거르기를 바꾸면 목록 전체가 한 번에 옅게 나타난다 — 줄마다 차례로 띄우지 않는다 (처음 열 때는 카드 등장에 맡긴다)
   const [changed, setChanged] = useState(false);
   useEffect(() => {
     if (MOCK) { const t = window.setTimeout(() => setPosts(MOCK_POSTS), 300); return () => window.clearTimeout(t); }
@@ -41,7 +41,7 @@ export function ArtistNews() {
   const upcoming = all.filter(p => p.kind === 'EVENT' && p.starts_at && !dday(p.starts_at).past).length;
 
   return (
-    <PublicShell bg={artistBackdrop(page)} className="aq-artistpage" cardClass="aq-artist-card aq-artist-sub" ready={!!posts}>
+    <PublicShell bg={artistBackdrop(page)} className="aq-artistpage" cardClass="aq-artist-card aq-artist-sub">
       <ArtistSubHead slug={slug} name={page.name} title={upcoming ? `소식 · 다가오는 이벤트 ${upcoming}개` : '소식'} />
       {posts === null && <CardSkeleton />}
       {all.length > 0 && (
@@ -54,7 +54,7 @@ export function ArtistNews() {
         </div>
       )}
       {posts && (shown.length > 0
-        ? <ul key={filter} className={`aq-post-list${changed ? ' aq-stagger' : ''}`}>{shown.map(p => <li key={p.id}><PostCard post={p} artist={page.name} /></li>)}</ul>
+        ? <ul key={filter} className={`aq-post-list${changed ? ' aq-soft-in' : ''}`}>{shown.map(p => <li key={p.id}><PostCard post={p} artist={page.name} /></li>)}</ul>
         : <p key={filter} className={`aq-cheer-empty${changed ? ' aq-soft-in' : ''}`}><Glyph name="megaphone" size={18} />{all.length ? '이 종류의 소식은 아직 없어요.' : '아직 올라온 소식이 없어요.'}</p>)}
       <PublicFoot here="news" artist={{ slug, name: page.name, news: true, releases: page.releases.length > 0 }} />
     </PublicShell>

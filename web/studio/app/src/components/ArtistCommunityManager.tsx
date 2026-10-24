@@ -69,19 +69,19 @@ function PostForm({ artistId, post, onSaved, onCancel }: { artistId: string; pos
             <DateTimeField id="postWhen" className="ui-input" value={d.when} onChange={v => set('when', v)} required />
           </div>
           <div className="ui-field">
-            <label htmlFor="postPlace">장소 <span className="muted small">(선택)</span></label>
+            <label htmlFor="postPlace">장소 <span className="aq-optional">선택</span></label>
             <input id="postPlace" className="ui-input" maxLength={POST_PLACE_MAX} value={d.place} onChange={e => set('place', e.target.value)} placeholder="예: 홍대 롤링홀 · 온라인" />
           </div>
         </div>
       </Reveal>
       <div className="ui-field">
-        <label htmlFor="postBody">내용 <span className="muted small">(선택)</span></label>
+        <label htmlFor="postBody">내용 <span className="aq-optional">선택</span></label>
         <textarea id="postBody" className="ui-input" rows={4} maxLength={POST_BODY_MAX} value={d.body} onChange={e => set('body', e.target.value)}
           placeholder="팬에게 전하고 싶은 이야기를 적어 주세요." />
         <small className="ui-field-help aq-post-count">{d.body.length.toLocaleString()} / {POST_BODY_MAX.toLocaleString()}</small>
       </div>
       <div className="ui-field">
-        <label htmlFor="postUrl">{event ? '예매·자세히 링크' : '링크'} <span className="muted small">(선택)</span></label>
+        <label htmlFor="postUrl">{event ? '예매·자세히 링크' : '링크'} <span className="aq-optional">선택</span></label>
         <input id="postUrl" className="ui-input" type="url" inputMode="url" maxLength={500} value={d.url} onChange={e => set('url', e.target.value)} placeholder="https://" />
       </div>
       <div className="aq-alert-pref">
@@ -94,7 +94,7 @@ function PostForm({ artistId, post, onSaved, onCancel }: { artistId: string; pos
       </div>
       {error && <p className="ui-field-help is-error" role="alert">{error}</p>}
       <div className="aq-post-form-actions">
-        <button type="button" className="ui-btn is-soft" onClick={onCancel}>취소</button>
+        <button type="button" className="ui-btn is-soft" onClick={onCancel}>닫기</button>
         <button type="submit" className={`ui-btn is-primary${busy ? ' is-busy' : ''}`} disabled={busy}>{busy ? '저장하는 중' : post ? '저장' : '올리기'}</button>
       </div>
     </form>

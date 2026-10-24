@@ -1,4 +1,4 @@
-// 권리침해 신고 (/rights-report) — 계정 없이 누구나. AUDENIQ로 배급된 음원이 내 권리를 침해한다고 알릴 때.
+// 권리침해 신고 (/rights-report) — 계정 없이 누구나. AUDENIQ으로 배급된 음원이 내 권리를 침해한다고 알릴 때.
 // 연락처는 서버에서 바로 암호화해 보관하고, 담당자만 연락에 쓴다 (아티스트에게는 보이지 않는다).
 import { useState } from 'react';
 import { Link } from '../lib/router';
@@ -69,7 +69,7 @@ export function RightsReport() {
           </div>
         ) : (
           <form className="aq-report-form" onSubmit={e => { e.preventDefault(); void submit(); }}>
-            <p>AUDENIQ를 통해 배급된 음원이 내 저작권·저작인접권 등 권리를 침해한다면 알려 주세요. 담당자가 확인한 뒤 해당 음원의 배급 중단 여부를 정해요.</p>
+            <p>AUDENIQ을 통해 배급된 음원이 내 저작권·저작인접권 등 권리를 침해한다면 알려 주세요. 담당자가 확인한 뒤 해당 음원의 배급 중단 여부를 정해요.</p>
             <fieldset>
               <legend>신고하는 분</legend>
               <div className="ui-field"><label htmlFor="rrName">이름 또는 회사명</label>

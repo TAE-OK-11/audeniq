@@ -987,13 +987,7 @@ body.wizard-mode .portal-header,.portal-header:has(#portalNav:not([hidden])){box
 .aq-artist-release-title{font-size:15px;font-weight:700;line-height:1.35;color:var(--aq-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:color var(--aq-dur) var(--aq-ease)}
 .aq-artist-release-meta{font-size:12px;font-weight:600;color:var(--aq-text-4)}
 .aq-artist-release-meta.is-soon{color:var(--aq-blue-500)}
-/* 랜딩처럼 처음 열 때 카드 안 덩어리가 차례로 떠오른다 */
-.aq-artist-card>*{animation:aq-land-fade .6s cubic-bezier(.22,.61,.36,1) backwards}
-.aq-artist-card>:nth-child(2){animation-delay:50ms}.aq-artist-card>:nth-child(3){animation-delay:100ms}
-.aq-artist-card>:nth-child(4){animation-delay:140ms}.aq-artist-card>:nth-child(n+5){animation-delay:200ms}
-.aq-artist-release-grid>li{animation:aq-land-fade .6s cubic-bezier(.22,.61,.36,1) backwards;animation-delay:260ms}
-.aq-artist-release-grid>li:nth-child(2){animation-delay:320ms}.aq-artist-release-grid>li:nth-child(n+3){animation-delay:380ms}
-@media (prefers-reduced-motion:reduce){.aq-artist-card>*,.aq-artist-release-grid>li{animation:none}}
+/* 처음 열 때·스크롤 등장은 hooks/usePublicReveal.ts가 다섯 공개 화면에 같이 맡는다 (스튜디오 useScrollReveal과 같은 움직임) */
 /* 아티스트 페이지에서 들어온 스마트링크 — 카드 왼쪽 위 돌아가기 */
 .aq-smartlink-back{display:inline-flex;align-items:center;gap:2px;align-self:flex-start;margin:-6px 0 12px -6px;padding:6px 10px 6px 4px;border-radius:var(--aq-r-pill);color:var(--aq-text-2);font-size:14px;font-weight:700;text-decoration:none;float:left}
 .aq-smartlink-back+*{clear:both}
@@ -1275,17 +1269,17 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
 .aq-pub-waiting{opacity:0;transform:translateY(16px)}
 @media (prefers-reduced-motion:reduce){.aq-pub-waiting{opacity:1;transform:none}}
 @media print{.aq-pub-waiting{opacity:1!important;transform:none!important}}
-@keyframes aq-heart-pop{0%{transform:scale(1)}35%{transform:scale(1.35)}65%{transform:scale(.92)}100%{transform:scale(1)}}
+@keyframes aq-heart-pop{from{transform:scale(.6);opacity:.3}to{transform:none;opacity:1}}
 @keyframes aq-cheer-glow{0%,30%{background-color:var(--aq-blue-50)}100%{background-color:transparent}}
 @keyframes aq-leave{to{opacity:0;transform:translate3d(0,-4px,0) scale(.98)}}
-@keyframes aq-saved-ring{0%{box-shadow:0 0 0 0 rgba(49,130,246,.35)}100%{box-shadow:0 0 0 8px rgba(49,130,246,0)}}
+@keyframes aq-saved-ring{0%,30%{background-color:var(--aq-blue-100)}100%{background-color:var(--aq-surface)}}
 
 /* 소식 카드 — 고정 글은 옅은 파랑, 이벤트는 날짜 칸 */
 .aq-post{transition:background-color var(--aq-dur) var(--aq-ease)}
 .aq-post.is-pinned{background:linear-gradient(180deg,var(--aq-blue-50),var(--aq-surface) 70%)}
 .aq-post-top{display:flex;align-items:flex-start;gap:12px}
 .aq-post-headline{flex:1;min-width:0;display:grid;gap:6px}
-.aq-post-date{flex:none;display:grid;justify-items:center;align-content:center;width:52px;padding:6px 0 7px;border-radius:var(--aq-r-lg);background:#fff;box-shadow:0 1px 0 rgba(15,23,42,.04),0 4px 12px -8px rgba(27,51,104,.35);line-height:1}
+.aq-post-date{flex:none;display:grid;justify-items:center;align-content:center;width:52px;padding:6px 0 7px;border-radius:var(--aq-r-lg);background:#fff;line-height:1}
 .aq-post-date small{font-size:11px;font-weight:700;color:var(--aq-primary)}
 .aq-post-date small:last-child{margin-top:3px;color:var(--aq-text-4)}
 .aq-post-date strong{margin-top:3px;font-size:22px;font-weight:800;color:var(--aq-text);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
@@ -1331,7 +1325,7 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
 /* 디스코그래피 — 나머지 곡은 높이가 부드럽게 열린다 */
 .aq-disco-item{transition:background-color var(--aq-dur) var(--aq-ease)}
 .aq-disco-cover{transition:transform var(--aq-motion-long) var(--aq-enter),box-shadow var(--aq-motion-long) var(--aq-enter)}
-@media (hover:hover){.aq-disco-head:hover .aq-disco-cover{transform:translateY(-2px);box-shadow:0 10px 20px -12px rgba(27,51,104,.5)}}
+
 .aq-disco-go{transition:background-color var(--aq-dur) var(--aq-ease),color var(--aq-dur) var(--aq-ease)}
 @media (hover:hover){.aq-disco-head:hover .aq-disco-go{background:var(--aq-primary);color:#fff}}
 .aq-disco-rest{display:grid;grid-template-rows:0fr;transition:grid-template-rows var(--aq-motion-long) var(--aq-enter)}
@@ -1443,9 +1437,37 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-cd-tile.is-xlong strong{font-size:22px}
 .aq-roll{position:relative;display:inline-block;overflow:hidden}
 .aq-roll-d{display:block}
-.aq-roll-d.is-in{animation:aq-roll-in .42s cubic-bezier(.32,.72,0,1) both}
-.aq-roll-d.is-out{position:absolute;inset:0;animation:aq-roll-out .42s cubic-bezier(.32,.72,0,1) both}
+.aq-roll-d.is-in{animation:aq-roll-in var(--aq-motion-long) var(--aq-enter) both}
+.aq-roll-d.is-out{position:absolute;inset:0;animation:aq-roll-out var(--aq-motion-base) var(--aq-exit,var(--aq-enter)) both}
 @keyframes aq-roll-in{from{transform:translateY(70%);opacity:0}to{transform:none;opacity:1}}
 @keyframes aq-roll-out{from{transform:none;opacity:1}to{transform:translateY(-70%);opacity:0}}
 @media (max-width:360px){.aq-cd-tile strong{font-size:24px}}
 @media (prefers-reduced-motion:reduce){.aq-roll-d.is-in,.aq-roll-d.is-out{animation:none}.aq-roll-d.is-out{display:none}}
+
+/* ── 디자인 시스템 규칙 맞추기 (docs/DESIGN_SYSTEM.md) ── */
+/* 4 면 구분: 아바타 그림자·흰 고리 없이 면 색만 */
+.aq-pub-card .aq-artist-avatar{box-shadow:none}
+/* 5 상태 알약은 Badge 하나 — 소식 종류·고정·D-day·숨김·좋아해요 */
+.aq-post-tags .ui-badge{gap:3px}
+.aq-cheer-heart{margin:6px 0 0}
+.aq-cheer-head .ui-badge{flex:none}
+.aq-disco-stats{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px}
+/* 9 글자 단계 (11·12·13·14·15·16·18·22) · 굵기 (400·600·700·800) */
+.aq-pub-foot nav a,.aq-press-actions .ui-btn.is-sm{font-size:13px}
+.aq-artist-back strong{font-size:18px}
+.aq-artist-card h1{font-size:22px}
+.aq-pub-brand{opacity:1}
+.aq-pub-brand small{font-weight:400;color:var(--aq-text-4)}
+/* 16 누르는 칸 — 보이는 크기는 그대로, 터치 기기에서 누르는 영역만 44px */
+@media (pointer:coarse){
+  :is(.aq-pub-foot nav a,.aq-pub-brand,.aq-artist-more,.aq-disco-all,.aq-post-more,.aq-press-actions .ui-btn,.aq-news-filter .ui-chip,.aq-smartlink-cal){position:relative}
+  :is(.aq-pub-foot nav a,.aq-pub-brand,.aq-artist-more,.aq-disco-all,.aq-post-more,.aq-press-actions .ui-btn,.aq-news-filter .ui-chip,.aq-smartlink-cal)::after{content:"";position:absolute;left:50%;top:50%;width:max(100%,44px);height:max(100%,44px);transform:translate(-50%,-50%)}
+}
+/* 응원 — 평소엔 버튼 하나, 펼친 폼 아래 닫기·남기기 */
+.aq-cheer-open{gap:6px}
+.aq-cheer-actions{display:inline-flex;gap:6px}
+.aq-cheer-done{margin:10px 0 0;text-align:center}
+.aq-cheers .ui-reveal+.ui-reveal .aq-cheer-form{margin-top:0}
+/* 발매 메일 알림 — 접어 둔 버튼, 펼치면 폼 */
+.aq-smartlink-alert-open{margin-top:24px;gap:6px}
+.aq-pub-card .ui-reveal .aq-smartlink-alert{margin-top:24px}

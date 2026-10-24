@@ -1,6 +1,6 @@
 {
   "updated": "2026-10-10",
-  "hash": "919adb87065e350063d49b087e65fd2318140ad6054dfd86cfa374c01c4d8091",
+  "hash": "5e333ad0b6b8a5fb0c1976c9e0dbdac9deb4d6da83f3bc3f91cf69cfff39d590",
   "pages": [
     "/",
     "/music-distribution/",
@@ -28,12 +28,12 @@
     "/ar/"
   ],
   "pageHashes": {
-    "/": "dd66dd4601940629",
-    "/music-distribution/": "390c57ce4ab9c1a4",
-    "/publishing/": "71cdce7e500ca260",
-    "/label-services/": "d203b284f09431e0",
-    "/about/": "31b01ea673949292",
-    "/faq/": "80d72b7a7e756735",
+    "/": "90809b1511c426eb",
+    "/music-distribution/": "54e6f5e51a9e272e",
+    "/publishing/": "f42cc4ce45e4e476",
+    "/label-services/": "425a33ca5392a0d7",
+    "/about/": "eed37d8f0ead8e77",
+    "/faq/": "86ae2d816971bbf2",
     "/en/": "edc33220b59adbf7",
     "/en/music-distribution/": "75c1cc430c572380",
     "/en/publishing/": "a52698f7cedee0d2",
