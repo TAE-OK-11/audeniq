@@ -375,9 +375,8 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
    예전의 화면 전체 4px 움직임·목록(.aq-stagger) 줄 움직임과 겹치지 않게 끈다. 발매 신청 위자드는 자체 단계 모션을 그대로 쓴다.
    화면 전체의 짧은 페이드(.view-enter)는 남긴다 — 덩어리가 맡기기 전 한순간도 깔끔하게. */
 @keyframes aq-view-fade{from{opacity:0}}
-@keyframes aq-section-in{from{transform:translate3d(0,4px,0)}}
 .view-enter{animation:aq-view-fade var(--aq-motion-short) ease-out backwards}
-.view-enter>#view-new.view>:nth-child(-n+10){animation:aq-section-in var(--aq-motion-base) var(--aq-enter) backwards}
+/* 발매 신청 위자드는 머리·단계가 자체 등장(wizard-motion.css)을 하므로 틀 전체를 또 움직이지 않는다 — 겹쳐 두 번 떠올랐다 */
 @media (prefers-reduced-motion:reduce){.view-enter,.view-enter>.view>*{animation:none!important}}
 #main .view:not(#view-new) .aq-stagger>*{animation:none}
 /* 탭을 바꾼 뒤 잠깐(0.3초 안) 기다리는 자리 — 스켈레톤 대신 빈 높이만 */
@@ -937,25 +936,22 @@ button.settle-hero-account.is-button .min-0{display:grid}
 .portal-header.is-scrolled{box-shadow:0 5px 24px -14px #171B2930!important}
 body.wizard-mode .portal-header,.portal-header:has(#portalNav:not([hidden])){box-shadow:none!important}
 
-@keyframes aq-land-in{from{opacity:.3;transform:translate3d(0,8px,0)}}
-@keyframes aq-land-fade{from{opacity:0;transform:translate3d(0,8px,0)}}
-#portalNav>.aq-nav-me,#portalNav>.aq-nav-card,#portalNav>.aq-nav-foot{animation:aq-land-in .7s cubic-bezier(.22,.61,.36,1) backwards}
-#portalNav>:nth-child(2){animation-delay:30ms}#portalNav>:nth-child(3){animation-delay:60ms}#portalNav>:nth-child(4){animation-delay:90ms}
-#portalNav>:nth-child(5){animation-delay:120ms}#portalNav>:nth-child(n+6){animation-delay:150ms}
+/* 전체 메뉴 묶음 — 판이 열리는 동안(0.16~0.24초) 바로 뒤따라 6px 아래에서 25ms씩 떠올라 0.32초 안에 끝난다.
+   예전엔 0.7초에 옅은 30%부터 시작해 판이 다 열린 뒤에도 1초 가까이 꼬리를 끌었다 */
+@keyframes aq-land-fade{from{opacity:0;transform:translate3d(0,6px,0)}}
+#portalNav>.aq-nav-me,#portalNav>.aq-nav-card,#portalNav>.aq-nav-foot{animation:aq-land-fade var(--aq-motion-long) var(--aq-enter) backwards}
+#portalNav>:nth-child(2){animation-delay:25ms}#portalNav>:nth-child(3){animation-delay:50ms}#portalNav>:nth-child(4){animation-delay:75ms}
+#portalNav>:nth-child(n+5){animation-delay:100ms}
 @media (max-width:760px){
   /* 판(흰 바탕)이 먼저 짧게 차오른 뒤 — 함께 나타나면 메뉴 글자가 뒤 화면 글자 위에 반투명하게 겹쳐 보였다 */
-  #portalNav>.aq-nav-me,#portalNav>.aq-nav-card,#portalNav>.aq-nav-foot{animation-name:aq-land-fade}
-  #portalNav>:first-child{animation-delay:.12s}#portalNav>:nth-child(2){animation-delay:.15s}#portalNav>:nth-child(3){animation-delay:.18s}
-  #portalNav>:nth-child(4){animation-delay:.21s}#portalNav>:nth-child(5){animation-delay:.24s}#portalNav>:nth-child(n+6){animation-delay:.27s}
+  #portalNav>:first-child{animation-delay:.08s}#portalNav>:nth-child(2){animation-delay:.105s}#portalNav>:nth-child(3){animation-delay:.13s}
+  #portalNav>:nth-child(4){animation-delay:.155s}#portalNav>:nth-child(n+5){animation-delay:.18s}
 }
 #portalNav.is-closing>*{animation:none}
-
-.aq-sidebar>*{animation:aq-land-in .7s cubic-bezier(.22,.61,.36,1) backwards}
-.aq-sidebar>:nth-child(2){animation-delay:30ms}.aq-sidebar>:nth-child(3){animation-delay:60ms}.aq-sidebar>:nth-child(n+4){animation-delay:90ms}
-.aq-tabbar{animation:aq-land-in .7s cubic-bezier(.22,.61,.36,1) backwards}
+/* 왼쪽 메뉴·아래 탭 바는 화면의 틀 — 새로고침·로그인 때마다 떠오르면 틀이 흔들려 보여 움직이지 않는다 (내용만 들어온다) */
 
 @keyframes aq-faq-open{from{opacity:0;transform:translate3d(0,6px,0)}}
-.aq-faq-item[open]>:not(summary){animation:aq-faq-open .5s cubic-bezier(.22,.61,.36,1) backwards}
+.aq-faq-item[open]>:not(summary){animation:aq-faq-open var(--aq-motion-long) var(--aq-enter) backwards}
 
 @media (prefers-reduced-motion:reduce){
   #portalNav>*,.aq-sidebar>*,.aq-tabbar,.aq-faq-item[open]>:not(summary){animation:none!important}

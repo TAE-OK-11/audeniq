@@ -1,6 +1,7 @@
 // 화면 등장 연출 — audeniq.com 랜딩과 같은 움직임을 모든 화면에 (홈은 useLandingReveal, 발매 신청은 자체 단계 모션).
 // 머리(작은 제목 → 제목 → 설명 → 버튼)가 몇십 ms씩 차례로 16px 아래에서 떠오르고, 이어서 카드·목록 줄·섹션 머리가 나온다.
-// 처음부터 화면 안에 있던 덩어리는 0.6초 동안 차례로, 화면 밖 덩어리는 스크롤로 닿기 조금 전에 시작해 0.48초.
+// 처음부터 화면 안에 있던 덩어리는 0.6초 동안 차례로(앱을 연 첫 화면 — 화면을 옮겨 다닐 때는 0.36초로 짧게, entryMotion),
+// 화면 밖 덩어리는 스크롤로 닿기 조금 전에 시작해 0.48초.
 // 늦게 그려지는 목록(불러오기 뒤)도 잠시 지켜보다 같은 방식으로 맡는다. 바깥 덩어리를 맡으면 그 안쪽은 따로 움직이지 않는다.
 // 사용자가 화면을 누르거나 키를 치면 지켜보기를 그만둔다 — 탭·필터로 바뀐 내용까지 맡으면 한 번 사라졌다가
 // 다시 떠올라 튀어 보였다(탭 패널은 자체 전환이 있다). 그 뒤로 바뀌는 내용은 바로 보인다.
@@ -22,10 +23,24 @@ const UNITS = [
   '.surface', '.aq-report-card', '.aq-rp-card', '.aq-profile-card', '.aq-doc-list', '.aq-settings > *',
 ].join(',');
 
-const KEYFRAMES: Keyframe[] = [{ opacity: 0, transform: 'translateY(16px)' }, { opacity: 1, transform: 'none' }];
+/** 아래에서 떠오르는 등장 */
+export const rise = (px: number): Keyframe[] => [{ opacity: 0, transform: `translateY(${px}px)` }, { opacity: 1, transform: 'none' }];
 const EASING = 'cubic-bezier(.22,.61,.36,1)';
-const FIRST_MS = 600;
 const SCROLL_MS = 480;
+const SCROLL_RISE = rise(16);
+
+/** 화면 첫 등장의 크기 — 앱을 연 뒤 첫 화면은 랜딩처럼 길게(0.6초·16px), 그 뒤 탭·메뉴로 화면을 옮길 때는 짧고 작게
+ * (0.36초·10px, 차례 간격도 절반쯤). 자주 오가는 화면마다 0.6초 계단을 다시 보면 느리고 꾸민 티가 났다.
+ * 처음 부른 뒤 잠깐(개발 모드에서 효과가 두 번 도는 사이) 안의 호출도 첫 화면으로 친다. */
+export interface EntryMotion { ms: number; keyframes: Keyframe[]; pace: number }
+const FULL_ENTRY: EntryMotion = { ms: 600, keyframes: rise(16), pace: 1 };
+const NAV_ENTRY: EntryMotion = { ms: 360, keyframes: rise(10), pace: 0.6 };
+let firstEntryAt = -1;
+export function entryMotion(): EntryMotion {
+  const now = performance.now();
+  if (firstEntryAt < 0) firstEntryAt = now;
+  return now - firstEntryAt < 400 ? FULL_ENTRY : NAV_ENTRY;
+}
 const WAITING = 'aq-motion-waiting';
 /** 화면을 연 뒤 이 시간 안에 화면 안에 그려진 덩어리는 첫 화면 흐름(차례)을 탄다 */
 const FIRST_WINDOW = 1500;
@@ -44,6 +59,7 @@ export function useScrollReveal(key: string) {
     const root = document.getElementById('main');
     if (!root) return;
     const started = performance.now();
+    const entry = entryMotion();
     const seen = new WeakSet<Element>();
     const pending = new Set<HTMLElement>();
     const active = new Map<HTMLElement, Animation>();
@@ -55,7 +71,7 @@ export function useScrollReveal(key: string) {
       io.unobserve(el);
       const m = meta.get(el);
       if (!now && !document.hidden && m) {
-        const a = el.animate(KEYFRAMES, { duration: m.first ? FIRST_MS : SCROLL_MS, easing: EASING, fill: 'backwards', delay: m.delay });
+        const a = el.animate(m.first ? entry.keyframes : SCROLL_RISE, { duration: m.first ? entry.ms : SCROLL_MS, easing: EASING, fill: 'backwards', delay: m.delay });
         active.set(el, a);
         a.finished.then(() => { if (active.get(el) === a) active.delete(el); }, () => {});
       }
@@ -81,7 +97,7 @@ export function useScrollReveal(key: string) {
         if (!r.width && !r.height) return; // 숨겨진 것
         const first = now && r.top < vh;
         // 첫 화면: 머리 다음에 덩어리를 60ms씩, 네 개마다 다시 (길게 늘어지지 않게)
-        const delay = headDelay ?? (first ? 150 + (firstCount++ % 4) * 60 : 0);
+        const delay = Math.round((headDelay ?? (first ? 150 + (firstCount++ % 4) * 60 : 0)) * entry.pace);
         meta.set(el, { delay, first });
         // 자체 CSS 등장 애니메이션이 있으면 끈다 — 둘이 겹치면 CSS로 먼저 다 나타났다가 이 연출이 다시 숨겼다
         if (cssEntrance[i]) el.style.animation = 'none';
@@ -116,6 +132,11 @@ export function useScrollReveal(key: string) {
         list.push([el, undefined]);
       });
       takeAll(list);
+      // 처음 그려진 탭 내용은 안쪽 덩어리가 떠오르므로 탭 내용 자체의 등장(옅게 6px)은 끈다 — 둘이 겹쳐 두 번 움직였다.
+      // 탭을 바꿀 때 새로 붙는 내용(누른 쪽에서 들어오는 연출)은 그대로 둔다
+      if (performance.now() - started < FIRST_WINDOW) {
+        view.querySelectorAll<HTMLElement>('.ui-tab-panel:not(.is-from-right):not(.is-from-left)').forEach(el => { el.style.animation = 'none'; });
+      }
     };
 
     scan();
