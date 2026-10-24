@@ -19,6 +19,7 @@ import { STATUS_LABEL, localStamp, statusTone } from '../lib/format';
 import { dspLabel, durationLabel, genreLabel, kindLabel, languageLabel } from '../lib/catalog';
 import { docBadgeTone, docState, docsForRelease, openFixes, pendingProofs, proofPath, useDocs } from '../store/docs';
 import { refreshDocs } from '../store/portalSync';
+import { creditParts } from '../lib/credits';
 import { MOCK } from '../lib/mode';
 import { ApiError, errorMessage } from '../api/errors';
 import { CorrectionList, ReviewNote } from '../components/CorrectionList';
@@ -123,10 +124,15 @@ export function ReleaseDetail() {
   const [stickTop, setStickTop] = useState(0);
   const [keepY, setKeepY] = useState<number | null>(null);
   useLayoutEffect(() => {
-    const measure = () => setStickTop(Math.round(document.querySelector('.portal-header')?.getBoundingClientRect().bottom ?? 0));
+    // 머리글 높이를 따라간다 — 아이폰 사파리(iOS 26)는 스크롤하면 위쪽 안전 영역이 바뀌어 머리글 높이가 달라지는데
+    // resize가 오지 않아, 처음 잰 값에 머물러 탭 글자가 머리글 밑에 가려졌다
+    const header = document.querySelector<HTMLElement>('.portal-header');
+    const measure = () => setStickTop(Math.round(header?.getBoundingClientRect().height ?? 0));
     measure();
+    const ro = header && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    if (header) ro?.observe(header);
     window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
+    return () => { ro?.disconnect(); window.removeEventListener('resize', measure); };
   }, []);
   const changeTab = (next: string) => {
     const anchor = tabsAnchor.current;
@@ -483,8 +489,8 @@ export function ReleaseDetail() {
                         </span>
                         {/* 크레딧 · 길이 / 식별자 · 파일 — 잘리지 않게 두 줄로 나눈다 */}
                         <span className="ui-row-meta aq-track-credit">
-                          작곡 {t.composers || '입력 전'} · 작사 {t.lyricists || '입력 전'}
-                          {t.duration_ms ? ` · ${durationLabel(t.duration_ms)}` : ''}
+                          {creditParts(t.composers, t.lyricists).map(c => <span key={c}>{c}</span>)}
+                          {t.duration_ms ? <span>{durationLabel(t.duration_ms)}</span> : null}
                         </span>
                         <span className="aq-track-facts">
                           <span className="ui-tag">ISRC {t.isrc || '등록 전'}</span>
