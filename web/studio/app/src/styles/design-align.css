@@ -36,7 +36,9 @@
 .aq-report-rows b.is-down{color:var(--aq-red-500)}
 .aq-report-rows.is-compact li{min-height:44px;padding:8px 14px}
 .aq-report-rows.is-compact strong{font-size:14px}
-.aq-report-note{margin:8px 8px 4px;padding:12px 14px;border-radius:var(--aq-r-md);background:#fff;font-size:13px;line-height:1.65;color:var(--aq-text-2)}
+/* 카드 안에 흰 칸을 또 두지 않는다 — 줄 아래 설명 글로 */
+.aq-report-note{margin:10px 14px 2px;padding:0;background:none;font-size:13px;line-height:1.65;color:var(--aq-text-3)}
+.aq-report-plat{display:inline-flex;align-items:center;gap:8px;min-width:0}
 .aq-report-note b{color:var(--portal-ink)}
 .aq-rp-card .aq-platform-bars{gap:18px;padding:8px 14px 10px}
 .aq-rp-card .aq-platform-track{background:#fff}
@@ -180,11 +182,10 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .aq-doc-copy em{font-style:normal;font-size:12px;line-height:1.5;color:var(--aq-amber-700)}
 .aq-doc-state{flex:none}
 .aq-doc-chev{color:var(--aq-text-disabled)}
+/* 휴대폰도 '내 발매' 목록처럼 상태 배지는 오른쪽에 — 아래 줄로 내리면 줄마다 높이가 들쭉날쭉했다. 꺾쇠는 줄 전체가 눌리니 뺀다 */
 @media(max-width:560px){
-  .aq-doc-row{grid-template-columns:40px minmax(0,1fr) auto;align-items:start}
-  .aq-doc-row>.aq-doc-ico{grid-row:1/3}
-  .aq-doc-row .aq-doc-state{grid-column:2;grid-row:2;justify-self:start;margin-top:-4px}
-  .aq-doc-row .aq-doc-chev{grid-column:3;grid-row:1/3;align-self:center}
+  .aq-doc-row{grid-template-columns:40px minmax(0,1fr) auto;gap:10px}
+  .aq-doc-row .aq-doc-chev{display:none}
 }
 
 /* 내 음악 — 휴대폰에서도 검색과 정렬을 한 줄로 (정렬은 좁게) */

@@ -13,6 +13,8 @@ import { MOCK } from '../lib/mode';
 import { downloadReportsCsv, type ReportRange } from '../api/portal';
 import { errorMessage } from '../api/errors';
 import { MonthField } from '../components/Picker';
+import { platformKey, platformLabel } from '../lib/platformNames';
+import { BrandMark } from '../components/BrandMark';
 
 // 서버에서 받아 올 기간 (월 단위, 한국 시간). 그 안에서 아래 PERIODS로 다시 좁힌다.
 type RangeKey = 'last12' | 'thisYear' | 'lastYear' | 'custom';
@@ -87,6 +89,13 @@ function Chart({ rows }: { rows: ReportRow[] }) {
 const DETAIL_PREVIEW = 6;
 const pctText = (v: number | null) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`);
 const changeTone = (v: number | null) => (v == null ? '' : v >= 0 ? 'is-up' : 'is-down');
+
+
+/** 플랫폼 로고 — 아는 곳만 (모르는 곳은 이름만) */
+function PlatformMark({ name }: { name: string }) {
+  const k = platformKey(name);
+  return k ? <BrandMark id={k} label={platformLabel(name)} size={22} /> : null;
+}
 
 export function Reports() {
   const toast = useToast();
@@ -284,16 +293,16 @@ export function Reports() {
             <ul className="aq-report-rows is-compact">
               {insight.platChanges.map(p => (
                 <li key={p.name}>
-                  <strong>{p.name}</strong>
+                  <span className="aq-report-plat"><PlatformMark name={p.name} /><strong>{platformLabel(p.name)}</strong></span>
                   {p.isNew ? <em className="aq-new-badge">신규 유입</em> : <b className={changeTone(p.change)}>{pctText(p.change)}</b>}
                 </li>
               ))}
             </ul>
             {insight.topDriver && (
               <p className="aq-report-note">
-                이번 달 성장을 이끈 곳은 <b>{insight.topDriver.name}</b>이에요.
+                이번 달 성장을 이끈 곳은 <b>{platformLabel(insight.topDriver.name)}</b>이에요.
                 {insight.platChanges.some(p => p.isNew) && (
-                  <> {insight.platChanges.filter(p => p.isNew).map(p => p.name).join(', ')}에서 신규 유입도 있었어요.</>
+                  <> {insight.platChanges.filter(p => p.isNew).map(p => platformLabel(p.name)).join(', ')}에서 신규 유입도 있었어요.</>
                 )}
               </p>
             )}
@@ -307,7 +316,7 @@ export function Reports() {
               {byPlatform.map(([name, v]) => (
                 <li key={name}>
                   <div className="aq-platform-row">
-                    <span>{name}</span>
+                    <span className="aq-report-plat"><PlatformMark name={name} /><span>{platformLabel(name)}</span></span>
                     <strong><Money value={v.revenue} /></strong>
                   </div>
                   <div className="aq-platform-track">
@@ -342,7 +351,7 @@ export function Reports() {
                 {(showAll ? filtered : filtered.slice(0, DETAIL_PREVIEW)).map((r, i) => (
                   <li key={i}>
                     <div className="min-0">
-                      <strong>{r.platform}</strong>
+                      <strong>{platformLabel(r.platform)}</strong>
                       <small>{r.release || '—'} / {r.track || '전체'} · {r.period} · {num(r.plays)}회 재생</small>
                     </div>
                     <b><Money value={r.revenue} /></b>
