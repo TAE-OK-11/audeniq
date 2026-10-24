@@ -5,7 +5,7 @@ import { countdownLabel, releaseMoment } from '../lib/countdown';
 import { preReleaseAction } from '../lib/preRelease';
 import { releaseUrl } from '../lib/publicLinks';
 import { presaveResult, releaseIcs, withoutPresaveQuery, type PresaveResult } from '../lib/presave';
-import { useLocation, useParams } from '../lib/router';
+import { Link, useLocation, useParams } from '../lib/router';
 import { API_BASE, req } from '../api/http';
 import { errorMessage } from '../api/errors';
 import { MOCK } from '../lib/mode';
@@ -13,7 +13,7 @@ import { PLATFORM_NAMES } from '../lib/platformNames';
 import { BrandMark } from '../components/BrandMark';
 import { Glyph } from '../components/Glyph';
 import { gradientFor } from '../lib/catalog';
-import { ArtistSubHead, PublicFoot, PublicLoading, PublicMissing, PublicShell } from '../components/PublicPage';
+import { PublicFoot, PublicLoading, PublicMissing, PublicShell } from '../components/PublicPage';
 
 interface Page {
   title: string; artist: string | null; release_date: string | null; release_time?: string | null; released: boolean; cover: boolean;
@@ -144,16 +144,12 @@ export function SmartLink() {
 
   return (
     <PublicShell bg={cover || undefined} className="aq-releasepage" cardClass="aq-smartlink-release">
-        {/* 아티스트 페이지에서 들어왔으면 하위 화면과 같은 머리로 돌아간다 */}
-        {fromArtist && <ArtistSubHead slug={fromArtist} name={from!.name} title="발매" to={from!.path} />}
+        {from && <Link to={from.path} className="aq-smartlink-back"><Glyph name="chevron-left" size={16} />{from.name}</Link>}
         {cover ? <img className="aq-smartlink-cover" src={cover} alt={`${page.title} 커버`} onError={() => setCoverOk(false)} />
           // 커버가 없어도 빈 회색 사각형 대신 스튜디오와 같은 발매별 그라데이션 커버 — 팬이 처음 보는 화면이 비어 보였다
           : <div className="aq-smartlink-cover is-empty" aria-hidden="true" style={{ background: gradientFor(slug) }}><Glyph name="music" className="aq-cover-glyph" /></div>}
-        <div className="aq-pub-titleblock">
-          <p className="aq-pub-eyebrow">{page.released ? (page.release_date ? `${page.release_date.replace(/-/g, '.')} 발매` : '발매') : '발매 예정'}</p>
-          <h1>{page.title}</h1>
-          {page.artist && <p className="aq-smartlink-artist">{page.artist}</p>}
-        </div>
+        <h1>{page.title}</h1>
+        {page.artist && <p className="aq-smartlink-artist">{page.artist}</p>}
         {!page.released && page.release_date && (
           <>
             <Countdown date={page.release_date} time={page.release_time} onDone={() => setReloadKey(k => k + 1)} />
