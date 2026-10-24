@@ -210,6 +210,14 @@ const TARGETS: &[Target] = &[
         subject: "id",
         columns: &[sealed_only(Field::ReleaseAlertEmail, "email_cipher")],
     },
+    // Pre-saves (0152): the fan's platform token, sealed until the album is saved.
+    Target {
+        name: "portal.presaves",
+        table: "portal.presaves",
+        id: "id",
+        subject: "id",
+        columns: &[sealed_only(Field::PresaveToken, "token_cipher")],
+    },
     // Split collaborators (0119): invite address, sealed until answered.
     Target {
         name: "portal.split_shares",

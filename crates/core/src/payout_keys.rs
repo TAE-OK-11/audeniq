@@ -47,6 +47,7 @@ pub enum Field {
     ClaimantPhone,
     ReleaseAlertEmail,
     SplitEmail,
+    PresaveToken,
 }
 impl Field {
     fn aad_prefix(self) -> &'static [u8] {
@@ -69,6 +70,7 @@ impl Field {
             Self::ClaimantPhone => b"audeniq:portal.infringement_claims:claimant_phone:",
             Self::ReleaseAlertEmail => b"audeniq:portal.release_alerts:email:",
             Self::SplitEmail => b"audeniq:portal.split_shares:email:",
+            Self::PresaveToken => b"audeniq:portal.presaves:token:",
         }
     }
 }

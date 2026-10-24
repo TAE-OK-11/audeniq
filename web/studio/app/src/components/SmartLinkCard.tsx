@@ -15,6 +15,10 @@ import { CopyButton } from './CopyButton';
 import { QrButton } from './QrButton';
 import { PromoImageButton } from './PromoImageButton';
 import { EmbedButton } from './EmbedButton';
+import { LyricCardButton, type LyricTrack } from './LyricCardButton';
+import { CaptionButton } from './CaptionButton';
+import { ChannelLinksButton } from './ChannelLinksButton';
+import { channelLabel, channelUrl } from '../lib/channels';
 import { todayStr } from '../lib/date';
 
 type Check = 'verified' | 'mismatch' | 'unverified' | 'not_release' | 'invalid';
@@ -23,7 +27,7 @@ interface State {
   auto?: Record<string, string>;
   checks?: Record<string, Check>;
   verify?: 'strict' | 'test';
-  stats: { views: number; clicks: Record<string, number>; days: number; alerts?: number; alerts_waiting?: number };
+  stats: { views: number; clicks: Record<string, number>; sources?: Record<string, number>; days: number; alerts?: number; alerts_waiting?: number; presaves?: Record<string, { total: number; saved: number }> };
   platforms: string[]; can_create: boolean;
 }
 
@@ -42,10 +46,18 @@ function checkNote(c: Check | undefined, strict: boolean): { tone: 'ok' | 'warn'
   }
 }
 
+const TOOL = 'aq-promo-tool';
 const pageUrl = (slug: string) => `${window.location.origin}/l/${slug}`;
 
 /** 홍보 이미지에 넣을 발매 정보 (발매 상세가 넘긴다) */
-export interface PromoRelease { title: string; artist: string; releaseDate: string | null; cover?: string }
+export interface PromoRelease {
+  title: string; artist: string; releaseDate: string | null; cover?: string;
+  releaseTime?: string | null;
+  /** 발매 형태 이름 (홍보 문구에) */
+  kind?: string;
+  /** 가사가 있는 곡 (가사 카드) */
+  lyrics?: LyricTrack[];
+}
 
 export function SmartLinkCard({ releaseId, promo }: { releaseId: string; promo?: PromoRelease }) {
   const toast = useToast();
@@ -94,6 +106,8 @@ export function SmartLinkCard({ releaseId, promo }: { releaseId: string; promo?:
   };
   const start = () => { setLinks({ ...(l?.links ?? {}) }); setLyrics(l?.show_lyrics ?? false); setChecks(st.checks ?? {}); setEdit(true); };
   const clicks = Object.values(st.stats.clicks).reduce((a, b) => a + b, 0);
+  const presaveTotal = Object.values(st.stats.presaves ?? {}).reduce((a, b) => a + b.total, 0);
+  const presaveSaved = Object.values(st.stats.presaves ?? {}).reduce((a, b) => a + b.saved, 0);
   const auto = st.auto ?? {};
   const autoCount = Object.keys(auto).filter(p => !l?.links[p]).length;
   const strict = st.verify === 'strict';
@@ -110,21 +124,37 @@ export function SmartLinkCard({ releaseId, promo }: { releaseId: string; promo?:
               <code>{pageUrl(l.slug)}</code>
               <span className="ui-actions">
                 <CopyButton text={pageUrl(l.slug)} />
-                <QrButton url={pageUrl(l.slug)} title="스마트링크 QR 코드" filename={`smartlink-${l.slug}.png`} />
-                {promo && <PromoImageButton input={{ ...promo, url: pageUrl(l.slug) }} filename={`audeniq-${l.slug}`} />}
-                {promo && <EmbedButton input={{ url: pageUrl(l.slug), title: promo.title, artist: promo.artist, released: !promo.releaseDate || promo.releaseDate <= todayStr(),
-                  cover: promo.cover ? `${API_BASE || window.location.origin}/api/smart-links/${l.slug}/cover` : undefined }} />}
                 <a className="ui-btn is-sm" href={`/l/${l.slug}`} target="_blank" rel="noopener noreferrer"><Glyph name="arrow-up-right" size={14} />열기</a>
               </span>
             </div>
           ) : <p className="small muted">꺼져 있어요. 켜면 같은 주소로 다시 열려요.</p>}
+          {l.enabled && (
+            // 홍보 도구 — 같은 스마트링크로 만드는 것들. QR·임베드는 채널 표시(qr·blog)가 붙은 주소라 어디서 왔는지 센다
+            <div className="aq-promo-tools" role="group" aria-label="홍보 도구">
+              {promo && <PromoImageButton className={TOOL} input={{ ...promo, url: pageUrl(l.slug) }} filename={`audeniq-${l.slug}`} />}
+              {promo?.lyrics && <LyricCardButton className={TOOL} tracks={promo.lyrics} artist={promo.artist} url={pageUrl(l.slug)} cover={promo.cover} filename={`audeniq-${l.slug}`} />}
+              {promo && <CaptionButton className={TOOL} input={{ title: promo.title, artist: promo.artist, releaseDate: promo.releaseDate, releaseTime: promo.releaseTime, kind: promo.kind, url: pageUrl(l.slug) }} />}
+              <ChannelLinksButton className={TOOL} url={pageUrl(l.slug)} views={st.stats.sources ?? {}} days={st.stats.days} />
+              <QrButton className={TOOL} url={channelUrl(pageUrl(l.slug), 'qr')} title="스마트링크 QR 코드" filename={`smartlink-${l.slug}.png`} />
+              {promo && <EmbedButton className={TOOL} input={{ url: channelUrl(pageUrl(l.slug), 'blog'), title: promo.title, artist: promo.artist, released: !promo.releaseDate || promo.releaseDate <= todayStr(),
+                cover: promo.cover ? `${API_BASE || window.location.origin}/api/smart-links/${l.slug}/cover` : undefined }} />}
+            </div>
+          )}
           <p className="small aq-manage-stat">최근 {st.stats.days}일 · 조회 <b>{st.stats.views.toLocaleString()}</b> · 클릭 <b>{clicks.toLocaleString()}</b>
             {clicks > 0 && <span className="muted"> ({Object.entries(st.stats.clicks).sort((a, b) => b[1] - a[1]).map(([p, n]) => `${PLATFORM_NAMES[p] ?? p} ${n}`).join(', ')})</span>}
           </p>
+          {Object.keys(st.stats.sources ?? {}).length > 0 && (
+            <p className="small muted">채널별 방문 {Object.entries(st.stats.sources ?? {}).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([c, n]) => `${channelLabel(c)} ${n.toLocaleString()}`).join(' · ')}</p>
+          )}
           {autoCount > 0 && <p className="small muted">플랫폼에 공개된 {autoCount}곳은 링크를 자동으로 채웠어요.</p>}
           {(st.stats.alerts ?? 0) > 0 && (
             <p className="small">발매 알림 신청 <b>{(st.stats.alerts ?? 0).toLocaleString()}</b>명
               {(st.stats.alerts_waiting ?? 0) > 0 && <span className="muted"> · 발매일에 {st.stats.alerts_waiting}명에게 메일을 보내요</span>}</p>
+          )}
+          {presaveTotal > 0 && (
+            <p className="small">미리 저장 <b>{presaveTotal.toLocaleString()}</b>명
+              <span className="muted"> ({Object.entries(st.stats.presaves ?? {}).sort((a, b) => b[1].total - a[1].total).map(([p, n]) => `${PLATFORM_NAMES[p] ?? p} ${n.total}`).join(', ')}
+                {presaveSaved > 0 ? ` · 보관함에 저장됨 ${presaveSaved}` : ' · 발매되는 순간 보관함에 저장돼요'})</span></p>
           )}
         </>
       )}

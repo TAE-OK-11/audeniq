@@ -78,6 +78,10 @@ GRANT SELECT ON distribution.identifier_assignments TO audeniq_api;
 GRANT SELECT ON catalog.artist_platform_pages TO audeniq_worker;
 -- 발매 알림 (0118): 팬 이메일은 봉인해 두고 보내면 바로 지운다. 끝난 줄은 정리
 GRANT SELECT,INSERT,UPDATE,DELETE ON portal.release_alerts TO audeniq_api;
+-- 아티스트 소개 페이지 (0151): 주소·소개·링크와 날마다 방문·클릭 수
+GRANT SELECT,INSERT,UPDATE ON portal.artist_links, portal.artist_link_stats TO audeniq_api;
+-- 프리세이브 (0152): 한 번 쓰는 시작 상태, 봉인한 플랫폼 토큰은 저장·실패·만료되면 바로 지운다
+GRANT SELECT,INSERT,UPDATE,DELETE ON portal.presave_starts, portal.presaves TO audeniq_api;
 -- 발매 후 정보 수정 (0115): 크레딧·장르만. 승인되면 수정 메시지 작업을 넣는다
 GRANT SELECT,INSERT,UPDATE ON portal.metadata_corrections TO audeniq_api;
 GRANT USAGE ON SCHEMA portal TO audeniq_worker;
