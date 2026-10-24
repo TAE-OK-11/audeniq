@@ -1396,37 +1396,3 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
 .aq-pub-missing{display:grid;justify-items:center;gap:6px;text-align:center}
 .aq-pub-missing h1{margin:8px 0 0}
 .aq-pub-missing-icon{display:grid;place-items:center;width:52px;height:52px;border-radius:16px;background:var(--aq-blue-50);color:var(--aq-primary)}
-
-/* ── 공개 화면 AUDENIQ 스타일 ── 스튜디오 화면 머리처럼 왼쪽 정렬(파란 작은 제목 · 큰 굵은 제목 · 회색 설명),
-   앱 아이콘처럼 둥근 사각 아바타, 섹션 제목은 스튜디오 ‘확인할 작업’과 같은 굵기, 커버가 없으면 로그인 화면의 푸른 빛 바탕 */
-.aq-pub-card{text-align:left}
-.aq-pub-eyebrow{margin:0;font-size:13px;font-weight:700;color:var(--aq-primary);letter-spacing:-.01em}
-.aq-pub-card h1{margin:2px 0 0;font-size:26px;font-weight:800;line-height:1.25;letter-spacing:-.035em;color:var(--aq-text);word-break:keep-all;overflow-wrap:anywhere}
-.aq-pub-hero{display:flex;align-items:center;gap:16px;margin-top:2px}
-.aq-pub-hero .aq-artist-avatar{flex:none;width:72px;height:72px;margin:0;border-radius:24px;font-size:28px;box-shadow:0 10px 24px -14px rgba(27,51,104,.55)}
-.aq-pub-card .aq-artist-bio{margin:14px 0 0;font-size:15px;line-height:1.7;color:var(--aq-text-3);text-align:left}
-.aq-pub-card .aq-artist-platforms{justify-content:flex-start;margin-top:16px}
-.aq-pub-card .aq-artist-avatar.is-sm{border-radius:14px}
-.aq-pub-titleblock{margin-top:18px}
-.aq-pub-titleblock .aq-smartlink-artist{margin:4px 0 0;font-size:15px;font-weight:600;color:var(--aq-text-3)}
-.aq-pub-card .aq-smartlink-countdown{width:100%;margin:16px 0 0;padding:14px 16px;border-radius:var(--aq-r-xl)}
-.aq-pub-card .aq-smartlink-cal{margin:10px 0 0}
-.aq-pub-card .aq-smartlink-list-title{font-size:17px;letter-spacing:-.02em}
-.aq-pub-card .aq-smartlink-presave-help,.aq-pub-card .aq-smartlink-presave-note{text-align:left}
-/* 맨 아래 — Distributed by + AUDENIQ 로고 */
-.aq-pub-brand{display:inline-flex;align-items:center;gap:6px;color:var(--aq-text-4);text-decoration:none;opacity:.85;transition:opacity var(--aq-dur) var(--aq-ease)}
-.aq-pub-brand small{font-size:11px;letter-spacing:.02em}
-.aq-pub-brand img{display:block;width:74px;height:auto}
-@media (hover:hover){.aq-pub-brand:hover{opacity:1}}
-.aq-pub-brand:focus-visible{outline:var(--aq-focus);outline-offset:3px;border-radius:6px}
-/* 없는 페이지 — 스튜디오 404와 같은 모양 */
-.aq-pub-missing-badge{display:inline-flex;align-items:center;gap:8px;margin:6px 0 0;font-size:13px;font-weight:700;color:var(--aq-primary)}
-.aq-pub-missing-badge b{padding:2px 8px;border-radius:var(--aq-r-pill);background:var(--aq-blue-50)}
-.aq-pub-missing{text-align:center}
-.aq-pub-missing h1{text-align:center}
-/* 커버가 없을 때 바탕 — 로그인 화면처럼 왼쪽 위 파랑, 오른쪽 아래 보라 빛 */
-.aq-smartlink.aq-pub:not(:has(>.aq-smartlink-bg)){background:#f6f8fd}
-.aq-smartlink.aq-pub:not(:has(>.aq-smartlink-bg))::before,.aq-smartlink.aq-pub:not(:has(>.aq-smartlink-bg))::after{content:"";position:absolute;z-index:0;border-radius:50%;filter:blur(80px);pointer-events:none}
-.aq-smartlink.aq-pub:not(:has(>.aq-smartlink-bg))::before{width:420px;height:420px;left:-140px;top:-160px;background:#c9d8ff;opacity:.8}
-.aq-smartlink.aq-pub:not(:has(>.aq-smartlink-bg))::after{width:400px;height:400px;right:-140px;top:420px;background:#e2d6ff;opacity:.7}
-.aq-smartlink.aq-pub>.aq-pub-card{position:relative;z-index:1}
