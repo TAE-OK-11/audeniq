@@ -15,3 +15,11 @@ export function countdownLabel(target: number, now = Date.now()): string | null 
   const clock = `${two(Math.floor((left % 86400) / 3600))}:${two(Math.floor((left % 3600) / 60))}:${two(left % 60)}`;
   return d > 0 ? `D-${d} · ${clock}` : clock;
 }
+
+/** 남은 시간을 칸별로 — 지났으면 null. 시·분·초는 두 자리 문자열 */
+export function countdownParts(target: number, now = Date.now()): { d: number; h: string; m: string; s: string } | null {
+  const left = Math.floor((target - now) / 1000);
+  if (left <= 0) return null;
+  const two = (n: number) => String(n).padStart(2, '0');
+  return { d: Math.floor(left / 86400), h: two(Math.floor((left % 86400) / 3600)), m: two(Math.floor((left % 3600) / 60)), s: two(left % 60) };
+}

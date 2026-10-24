@@ -1,7 +1,7 @@
 // 스마트링크 (/link/release/:slug) — 로그인 없이 누구나. 발매 하나의 공유 페이지: 커버·제목·아티스트와 플랫폼별 듣기 링크.
 // 아티스트가 발매 상세에서 링크를 넣고 켜 둔 동안만 보인다. 조회·클릭 수는 아티스트에게 보인다.
-import { useEffect, useState } from 'react';
-import { countdownLabel, releaseMoment } from '../lib/countdown';
+import { useEffect, useRef, useState } from 'react';
+import { countdownLabel, countdownParts, releaseMoment } from '../lib/countdown';
 import { preReleaseAction } from '../lib/preRelease';
 import { releaseUrl } from '../lib/publicLinks';
 import { presaveResult, releaseIcs, withoutPresaveQuery, type PresaveResult } from '../lib/presave';
@@ -24,23 +24,57 @@ interface Page {
   presave?: string[];
 }
 
-/** 발매 전 — 'D-3 · 12:04:31'이 1초마다 줄어들고, 0이 되면 onDone(페이지를 다시 읽어 '지금 들을 수 있어요'로) */
+/** 숫자 한 자리 — 바뀌면 이전 숫자는 위로 빠지고 새 숫자가 아래에서 올라온다 (동작 줄이기면 그냥 바뀐다) */
+function RollDigit({ ch }: { ch: string }) {
+  const last = useRef(ch);
+  const [prev, setPrev] = useState<string | null>(null);
+  useEffect(() => {
+    if (last.current === ch) return;
+    setPrev(last.current);
+    last.current = ch;
+    const t = window.setTimeout(() => setPrev(null), 450);
+    return () => window.clearTimeout(t);
+  }, [ch]);
+  return (
+    <span className="aq-roll">
+      <span key={`n${ch}`} className={`aq-roll-d${prev !== null ? ' is-in' : ''}`}>{ch}</span>
+      {prev !== null && <span key={`p${prev}`} className="aq-roll-d is-out" aria-hidden="true">{prev}</span>}
+    </span>
+  );
+}
+
+function Tile({ value, unit }: { value: string; unit: string }) {
+  return (
+    <span className={`aq-cd-tile${value.length >= 4 ? ' is-xlong' : value.length === 3 ? ' is-long' : ''}`}>
+      <strong>{value.split('').map((c, i) => <RollDigit key={value.length - i} ch={c} />)}</strong>
+      <small>{unit}</small>
+    </span>
+  );
+}
+
+/** 발매 전 — 일·시간·분·초 칸이 1초마다 줄어들고(숫자가 굴러 바뀐다), 0이 되면 onDone(페이지를 다시 읽어 '지금 들을 수 있어요'로) */
 function Countdown({ date, time, onDone }: { date: string; time?: string | null; onDone: () => void }) {
   const target = releaseMoment(date, time);
-  const [label, setLabel] = useState(() => countdownLabel(target));
+  const [parts, setParts] = useState(() => countdownParts(target));
   useEffect(() => {
     const t = window.setInterval(() => {
-      const next = countdownLabel(target);
-      setLabel(next);
+      const next = countdownParts(target);
+      setParts(next);
       if (!next) { window.clearInterval(t); onDone(); }
     }, 1000);
     return () => window.clearInterval(t);
   }, [target]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (!label) return null;
+  if (!parts) return null;
+  const label = countdownLabel(target) ?? '';
   return (
     <div className="aq-smartlink-countdown" role="timer" aria-label={`발매까지 ${label}`}>
       <small>{Number(date.slice(5, 7))}월 {Number(date.slice(8, 10))}일{time ? ` ${time}` : ''} 발매까지</small>
-      <strong aria-hidden="true">{label}</strong>
+      <div className="aq-cd-tiles" aria-hidden="true">
+        {parts.d > 0 && <Tile value={String(parts.d)} unit="일" />}
+        <Tile value={parts.h} unit="시간" />
+        <Tile value={parts.m} unit="분" />
+        <Tile value={parts.s} unit="초" />
+      </div>
     </div>
   );
 }
