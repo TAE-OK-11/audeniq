@@ -17,7 +17,7 @@ const HEAD: [string, number][] = [
 ];
 /** 덩어리 — 카드, 목록 줄, 섹션 머리, 안내 상자, 탭 */
 const UNITS = [
-  '.ui-card', '.ui-list > *', '.ui-section-head', '.ui-callout', '.ui-empty', '.ui-tabs', '.ui-hero',
+  '.ui-card', '.ui-list > *', '.ui-row', '.ui-section-head', '.ui-callout', '.ui-empty', '.ui-tabs', '.ui-hero',
   '.aq-bundle', '.aq-faq-item', '.aq-nboard-row', '.aq-nhero', '.aq-event-hero', '.settle-hero', '.aq-detail-hero',
   '.surface', '.aq-report-card', '.aq-rp-card', '.aq-profile-card', '.aq-doc-list', '.aq-settings > *',
 ].join(',');
@@ -99,10 +99,14 @@ export function useScrollReveal(key: string) {
       if (!view || view.id === 'view-home' || view.id === 'view-new') return;
       const list: [HTMLElement, number | undefined][] = [];
       for (const [sel, d] of HEAD) view.querySelectorAll<HTMLElement>(sel).forEach(el => list.push([el, d]));
+      const vh = window.innerHeight;
       view.querySelectorAll<HTMLElement>(UNITS).forEach(el => {
         if (el.closest('[data-no-reveal], .ui-page-head')) return;
-        // 바깥 덩어리를 맡았으면 안쪽은 따로 움직이지 않는다
-        if (el.parentElement?.closest(UNITS)) return;
+        // 바깥 덩어리를 맡았으면 안쪽은 따로 움직이지 않는다 — 다만 바깥이 화면 아래까지 길게 이어지면
+        // (발매 목록·정산 내역처럼 줄이 많은 카드) 화면 밖에 있던 안쪽 줄은 스크롤로 닿을 때 따로 떠오른다.
+        // 그러지 않으면 첫 화면만 움직이고 스크롤해 올라오는 줄은 처음부터 고정돼 있었다
+        const outer = el.parentElement?.closest<HTMLElement>(UNITS);
+        if (outer && (el.getBoundingClientRect().top < vh || outer.getBoundingClientRect().top >= vh)) return;
         list.push([el, undefined]);
       });
       // 덩어리가 하나도 없는 화면 조각(글 본문 등)은 그 조각을 통째로
