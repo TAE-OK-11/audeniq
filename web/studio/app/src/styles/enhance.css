@@ -1814,5 +1814,11 @@ a.aq-inline-link{display:inline-block;max-width:100%}
 .aq-find-panel{display:grid;gap:18px;margin-top:4px}
 
 /* 홈 추가 카드 — 플랫폼 반영의 '/ 전체' 숫자는 작고 흐리게, 플랫폼 줄은 카드 면 위에 바로(흰 칸 없음) */
-#view-home .aq-home-of{margin-left:4px;font-size:var(--aq-fs-md);font-weight:var(--aq-fw-medium);color:var(--aq-text-4)}
-#view-home .aq-home-platforms .ui-row{padding-block:12px}
+#view-home .aq-home-of{margin-left:6px;font-size:var(--aq-fs-lg,18px);font-weight:var(--aq-fw-bold);letter-spacing:0;color:var(--aq-text-4)}
+#view-home :is(.aq-home-delivery,.aq-home-promo){display:grid;gap:0;align-content:start}
+#view-home .aq-home-delivery .ui-meter{margin-top:16px}
+#view-home .aq-home-card-note{display:block;margin:10px 0 0;padding:0;clip-path:none}
+#view-home .aq-home-platforms{margin-top:14px}
+#view-home .aq-home-platforms .ui-row{gap:12px;padding-block:11px}
+#view-home .aq-home-promo .ui-btn.is-block{margin-top:20px}
+#view-home .aq-home-news .ui-row{gap:12px}

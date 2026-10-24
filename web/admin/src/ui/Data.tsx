@@ -56,3 +56,16 @@ export function Steps({ steps, current, warn, label, className }: { steps: reado
     </ol>
   );
 }
+
+/** 한 줄 막대 — 전체 가운데 어디까지 왔는지를 몇 덩어리로 (예: 7곳 중 공개 5 · 전송 1). 빈 곳은 흰 바탕 */
+export function Meter({ parts, total, label, className }: {
+  parts: readonly { value: number; tone?: 'primary' | 'soft' | 'green' | 'amber' }[]; total: number; label: string; className?: string;
+}) {
+  return (
+    <div className={cx('ui-meter', className)} role="img" aria-label={label}>
+      {total > 0 && parts.filter(p => p.value > 0).map((p, i) => (
+        <i key={i} className={p.tone && p.tone !== 'primary' ? `is-${p.tone}` : undefined} style={{ width: `${Math.min(100, (p.value / total) * 100)}%` }} />
+      ))}
+    </div>
+  );
+}

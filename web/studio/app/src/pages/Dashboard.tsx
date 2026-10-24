@@ -12,7 +12,7 @@ import { useAsync } from '../hooks/useAsync';
 import { SkeletonBlock, SkeletonRows } from '../components/Skeleton';
 import { useSmoothHeight } from '../hooks/useSmoothHeight';
 import { prefetchRelease } from '../api/prefetch';
-import { Badge, CountUp, EmptyState, IconTile, KeyValue, Steps } from '../ui';
+import { Badge, CountUp, EmptyState, IconTile, KeyValue, Meter, Steps } from '../ui';
 import { Money } from '../components/Money';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { listeningSummary, periodLabel } from '../data/reports';
@@ -31,6 +31,7 @@ import { PITCH_BADGE, PITCH_STEP, PITCH_STEPS } from '../lib/pitch';
 import { PLATFORM_NAMES } from '../lib/platformNames';
 import { dspLabel } from '../lib/catalog';
 import { CopyButton } from '../components/CopyButton';
+import { BrandMark } from '../components/BrandMark';
 import type { NewsItem } from '../lib/home';
 import { useLandingReveal, type RevealGroup } from '../hooks/useLandingReveal';
 import { MOCK } from '../lib/mode';
@@ -175,35 +176,42 @@ function UpcomingCard({ release: r }: { release: Release }) {
 
 const platformName = (slug: string) => PLATFORM_NAMES[slug] ?? dspLabel(slug);
 
-/** 플랫폼 반영 — '다가오는 발매'가 몇 곳에서 들을 수 있는지(없으면 몇 곳에 보냈는지). 공개된 곳부터 네 곳, 나머지는 '외 N곳' */
+/** 플랫폼 반영 — '다가오는 발매'를 몇 곳에서 들을 수 있는지(공개 전이면 몇 곳에 보냈는지).
+ *  리포트·정산과 같은 큰 숫자 + 막대(초록 공개 · 옅은 파랑 전송 완료), 아래에 공개된 곳부터 네 곳을 로고와 함께 */
 function DeliveryCard({ d }: { d: NonNullable<HomeCards['delivery']> }) {
   const navigate = useNavigate();
   const shown = d.items.slice(0, 4);
   const rest = d.items.length - shown.length;
   const done = d.live || d.sent;
-  const note = d.live ? `${d.total}곳 중 ${d.live}곳에서 들을 수 있어요.`
-    : d.sent ? `${d.total}곳 중 ${d.sent}곳에 보냈어요. 플랫폼마다 공개까지 며칠 걸릴 수 있어요.`
+  const note = d.live === d.total ? `${d.total}곳 모두에서 들을 수 있어요.`
+    : d.live ? `${d.total}곳 중 ${d.live}곳에서 들을 수 있어요. 나머지도 곧 공개돼요.`
+    : d.sent ? `${d.sent}곳에 보냈어요. 플랫폼마다 공개까지 며칠 걸릴 수 있어요.`
     : `${d.total}곳에 보낼 준비를 하고 있어요.`;
   return (
     <section className="ui-card aq-home-delivery" aria-labelledby="deliveryTitle">
-      <div className="ui-section-head">
-        <h2 id="deliveryTitle">플랫폼 반영</h2>
+      <div className="ui-section-head aq-report-head">
+        <h2 id="deliveryTitle">플랫폼 반영<small>{d.title || '제목 없는 발매'}</small></h2>
         <button type="button" className="aq-head-link" onClick={() => navigate(`/releases/${d.releaseId}?tab=delivery`)}>자세히<Glyph name="chevron-right" size={14} /></button>
       </div>
       <div className="aq-report-total">
-        <small>{d.title || '제목 없는 발매'}</small>
-        <strong>{done}곳<span className="aq-home-of"> / {d.total}곳</span></strong>
-        <p className="ui-row-meta">{note}</p>
+        <small>{d.live ? '지금 들을 수 있는 곳' : '플랫폼에 보낸 곳'}</small>
+        <strong>{done}곳<span className="aq-home-of">/ {d.total}곳</span></strong>
       </div>
+      <Meter total={d.total} parts={[{ value: d.live, tone: 'green' }, { value: d.sent - d.live, tone: 'soft' }]} label={note} />
+      <p className="ui-row-meta aq-home-card-note">{note}</p>
       <ul className="ui-list is-inset aq-home-platforms">
-        {shown.map(i => (
-          <li key={i.slug || i.dsp} className="ui-row is-flat">
-            <span className="ui-row-title">{platformName(i.slug || i.dsp)}</span>
-            <Badge tone={DELIVERY_TONE[i.stage] ?? 'blue'}>{DELIVERY_STAGE[i.stage] ?? '전송 준비'}</Badge>
-          </li>
-        ))}
+        {shown.map(i => {
+          const slug = i.slug || i.dsp;
+          return (
+            <li key={slug} className="ui-row">
+              <BrandMark id={slug} label={platformName(slug)} size={28} />
+              <span className="ui-row-title">{platformName(slug)}</span>
+              <Badge tone={DELIVERY_TONE[i.stage] ?? 'blue'}>{DELIVERY_STAGE[i.stage] ?? '전송 준비'}</Badge>
+            </li>
+          );
+        })}
       </ul>
-      {rest > 0 && <p className="ui-row-meta">외 {rest}곳</p>}
+      {rest > 0 && <p className="ui-row-meta aq-home-card-note">외 {rest}곳 · 전체는 ‘자세히’에서 볼 수 있어요.</p>}
     </section>
   );
 }
@@ -238,29 +246,35 @@ function PitchHomeCard({ p }: { p: PitchActive }) {
   );
 }
 
-/** 홍보 성과 — 공개 중인 스마트링크가 있을 때만. 리포트처럼 큰 숫자 하나(본 횟수) + 플랫폼으로 넘어간 횟수, 링크 복사 */
+/** 홍보 성과 — 공개 중인 스마트링크가 있을 때만. 리포트 카드와 같은 모양: 큰 숫자(본 횟수) + 두 칸(넘어간 횟수 · 가장 많이 간 곳) */
 function PromoCard({ p }: { p: NonNullable<HomeCards['promo']> }) {
   const navigate = useNavigate();
   const url = `${window.location.origin}/l/${p.slug}`;
+  const top = p.topPlatform ? platformName(p.topPlatform) : '';
   return (
     <section className="ui-card aq-home-promo" aria-labelledby="promoTitle">
       <div className="ui-section-head aq-report-head">
-        <h2 id="promoTitle">홍보 성과<small>최근 {p.days}일</small></h2>
+        <h2 id="promoTitle">홍보 성과<small>{p.title || '제목 없는 발매'}</small></h2>
         <button type="button" className="aq-head-link" onClick={() => navigate(`/releases/${p.releaseId}?tab=manage`)}>스마트링크<Glyph name="chevron-right" size={14} /></button>
       </div>
       <div className="aq-report-total">
-        <small>‘{p.title || '제목 없는 발매'}’ 스마트링크를 본 횟수</small>
+        <small>최근 {p.days}일 동안 본 횟수</small>
         <strong><CountUp value={p.views} format={n => `${num(n)}회`} /></strong>
-        <p className="ui-row-meta">
-          {p.clicks > 0 ? `플랫폼으로 넘어간 횟수 ${num(p.clicks)}회${p.topPlatform ? ` · ${platformName(p.topPlatform)}이 가장 많아요` : ''}` : '링크를 SNS·프로필에 공유해 보세요.'}
-        </p>
       </div>
-      <CopyButton text={url} label="링크 복사" className="ui-btn is-white is-block" />
+      {p.clicks > 0 ? (
+        <KeyValue className="aq-report-kv" cols={2} items={[
+          ['플랫폼으로 넘어간 횟수', <span className="aq-report-top"><IconTile size="sm"><Glyph name="arrow-up-right" size={16} /></IconTile><span>{num(p.clicks)}회</span></span>],
+          ['가장 많이 간 곳', <span className="aq-report-top">{p.topPlatform && <BrandMark id={p.topPlatform} label={top} size={28} />}<span>{top || '—'}</span></span>],
+        ]} />
+      ) : (
+        <p className="ui-row-meta aq-home-card-note">아직 플랫폼으로 넘어간 사람이 없어요. 링크를 SNS·프로필에 공유해 보세요.</p>
+      )}
+      <CopyButton text={url} label="스마트링크 복사" className="ui-btn is-white is-block" />
     </section>
   );
 }
 
-/** AUDENIQ 소식 — 진행 중인 이벤트와 중요 공지가 있을 때만, 한 줄씩 */
+/** AUDENIQ 소식 — 진행 중인 이벤트와 중요 공지가 있을 때만. '확인할 작업'과 같은 줄(아이콘 · 제목 · 설명 · 꺾쇠) */
 function NewsCard({ items }: { items: NewsItem[] }) {
   const navigate = useNavigate();
   return (
@@ -272,12 +286,13 @@ function NewsCard({ items }: { items: NewsItem[] }) {
       <ul className="ui-list is-inset">
         {items.map(n => (
           <li key={`${n.kind}:${n.id}`}>
-            <Link to={n.to} className="ui-row is-flat aq-row-link" onPointerEnter={() => prefetchRoute(n.to)}>
+            <Link to={n.to} className="ui-row aq-row-link" onPointerEnter={() => prefetchRoute(n.to)}>
+              <IconTile size="sm" tone={n.kind === 'event' ? 'green' : 'blue'}><Glyph name={n.kind === 'event' ? 'star' : 'antenna'} size={16} /></IconTile>
               <span className="min-0">
                 <span className="ui-row-title">{n.title}</span>
-                <span className="ui-row-meta"><span>{n.meta}</span></span>
+                <span className="ui-row-meta"><span>{n.kind === 'event' ? '진행 중인 이벤트' : '중요 공지'}</span><span>{n.meta}</span></span>
               </span>
-              <Badge tone={n.kind === 'event' ? 'green' : 'blue'}>{n.kind === 'event' ? '이벤트' : '중요'}</Badge>
+              <Glyph name="chevron-right" size={16} className="aq-set-chev" />
             </Link>
           </li>
         ))}
