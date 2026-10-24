@@ -13,6 +13,7 @@ import { useToast } from './Toast';
 import { LIVE_NOTICE_EVENT } from '../lib/liveEvents';
 import { prefetchCommonRoutes, prefetchRoute } from '../routes';
 import { useScrollReveal } from '../hooks/useScrollReveal';
+import { usePublicReveal } from '../hooks/usePublicReveal';
 import { useAsync } from '../hooks/useAsync';
 import { Glyph, type GlyphName } from './Glyph';
 
@@ -248,6 +249,9 @@ export function Layout({ children }: { children: ReactNode }) {
   const menuTodo = [toSign && `서명할 계약서 ${toSign}건`, docFix && `보완할 서류 ${docFix}건`, !isPaymentRegistered(payment) && '정산 계좌 등록 전'].filter(Boolean).join(', ');
   const initial = (profile.name || user?.email || 'A').slice(0, 1).toUpperCase();
   const navVisible = menuOpen || menuClosing;
+  // 전체 메뉴 — 처음 보이는 묶음은 메뉴 열림 연출 그대로, 화면 아래 묶음(정보·지원 등)은 스크롤로 닿을 때 떠오른다
+  const navRef = useRef<HTMLElement>(null);
+  usePublicReveal(navRef, '.aq-nav-card, .aq-nav-foot', menuOpen, { first: false });
 
   return (
     <>
@@ -294,6 +298,7 @@ export function Layout({ children }: { children: ReactNode }) {
           </div>
         </div>
         <nav
+          ref={navRef}
           className={`portal-nav${menuClosing && !menuOpen ? ' is-closing' : ''}`}
           id="portalNav"
           aria-label="아티스트 포털 전체 메뉴"

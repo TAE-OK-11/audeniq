@@ -283,7 +283,10 @@
 .ui-page-head>.ui-btn,.ui-page-head>a.ui-btn{flex:none}
 .ui-page-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .ui-back{display:inline-flex;align-items:center;gap:6px;margin:0 0 14px -6px;padding:6px 10px 6px 6px;border-radius:var(--aq-r-sm);color:var(--aq-text-3);font-size:13px;font-weight:700;transition:background-color var(--aq-dur),color var(--aq-dur),transform var(--aq-dur) var(--aq-ease)}
-.ui-back:hover{background:var(--aq-surface-2);color:var(--aq-text);transform:translateX(-2px)}
+/* 버튼은 제자리, 안쪽 화살표만 가는 쪽으로 (한 요소엔 움직임 하나 — 누름 피드백과 겹치지 않게) */
+.ui-back svg{transition:transform var(--aq-dur) var(--aq-ease)}
+.ui-back:hover{background:var(--aq-surface-2);color:var(--aq-text)}
+@media(hover:hover) and (pointer:fine){.ui-back:hover svg{transform:translateX(-2px)}}
 
 /* ---------- 섹션 머리 (SectionHeader) ---------- */
 .ui-section{margin:0 0 32px;min-width:0}
