@@ -17,6 +17,7 @@ import { artistDiscographyPath, artistNewsPath, artistPath, releasePath } from '
 import { MOCK_CHEERS, MOCK_POSTS, type Community } from '../lib/artistCommunity';
 import { CheerBoard, PostCard } from '../components/ArtistCommunity';
 import { PublicFoot, PublicLoading, PublicMissing, PublicShell } from '../components/PublicPage';
+import { CountUp } from '../ui';
 
 /** 바탕에 흐리게 깔 커버 — 가장 최근 발매의 커버 (소개·소식·디스코그래피·보도자료가 같은 바탕) */
 export function artistBackdrop(page: { releases: { slug: string; cover: boolean }[] } | null): string | undefined {
@@ -140,7 +141,7 @@ export function ArtistPage() {
         {news && news.posts_total > 0 && (
           <section className="aq-artist-news" aria-labelledby="artistNewsTitle">
             <div className="aq-artist-section-head">
-              <h2 id="artistNewsTitle" className="aq-smartlink-list-title">소식 <span>{news.posts_total}</span></h2>
+              <h2 id="artistNewsTitle" className="aq-smartlink-list-title">소식 <span><CountUp value={news.posts_total} /></span></h2>
               {news.posts_total > news.posts.length && <Link to={artistNewsPath(slug)} className="aq-artist-more">전체 보기<Glyph name="chevron-right" size={14} /></Link>}
             </div>
             <ul className="aq-post-list">
@@ -150,7 +151,7 @@ export function ArtistPage() {
         )}
         <section className="aq-artist-releases" aria-labelledby="artistReleasesTitle">
           <div className="aq-artist-section-head">
-            <h2 id="artistReleasesTitle" className="aq-smartlink-list-title">발매 <span>{page.releases.length}</span></h2>
+            <h2 id="artistReleasesTitle" className="aq-smartlink-list-title">발매 <span><CountUp value={page.releases.length} /></span></h2>
             {page.releases.length > 0 && <Link to={artistDiscographyPath(slug)} className="aq-artist-more">디스코그래피<Glyph name="chevron-right" size={14} /></Link>}
           </div>
           {page.releases.length > 0 ? (

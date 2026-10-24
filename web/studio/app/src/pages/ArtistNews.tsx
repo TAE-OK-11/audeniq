@@ -41,7 +41,7 @@ export function ArtistNews() {
   const upcoming = all.filter(p => p.kind === 'EVENT' && p.starts_at && !dday(p.starts_at).past).length;
 
   return (
-    <PublicShell bg={artistBackdrop(page)} className="aq-artistpage" cardClass="aq-artist-card aq-artist-sub" ready={!!posts}>
+    <PublicShell bg={artistBackdrop(page)} className="aq-artistpage" cardClass="aq-artist-card aq-artist-sub">
       <ArtistSubHead slug={slug} name={page.name} title={upcoming ? `소식 · 다가오는 이벤트 ${upcoming}개` : '소식'} />
       {posts === null && <CardSkeleton />}
       {all.length > 0 && (

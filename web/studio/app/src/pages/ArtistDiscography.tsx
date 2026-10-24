@@ -102,7 +102,7 @@ export function ArtistDiscography() {
   const tracks = list.reduce((n, r) => n + r.tracks.length, 0);
 
   return (
-    <PublicShell bg={artistBackdrop(page)} className="aq-artistpage" cardClass="aq-artist-card aq-artist-sub" ready={!!items}>
+    <PublicShell bg={artistBackdrop(page)} className="aq-artistpage" cardClass="aq-artist-card aq-artist-sub">
       <ArtistSubHead slug={slug} name={page.name} title="디스코그래피" />
       {items === null && <CardSkeleton rows={3} tall />}
       {list.length > 0 && (

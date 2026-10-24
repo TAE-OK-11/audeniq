@@ -987,13 +987,7 @@ body.wizard-mode .portal-header,.portal-header:has(#portalNav:not([hidden])){box
 .aq-artist-release-title{font-size:15px;font-weight:700;line-height:1.35;color:var(--aq-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:color var(--aq-dur) var(--aq-ease)}
 .aq-artist-release-meta{font-size:12px;font-weight:600;color:var(--aq-text-4)}
 .aq-artist-release-meta.is-soon{color:var(--aq-blue-500)}
-/* 랜딩처럼 처음 열 때 카드 안 덩어리가 차례로 떠오른다 */
-.aq-artist-card>*{animation:aq-land-fade .6s cubic-bezier(.22,.61,.36,1) backwards}
-.aq-artist-card>:nth-child(2){animation-delay:50ms}.aq-artist-card>:nth-child(3){animation-delay:100ms}
-.aq-artist-card>:nth-child(4){animation-delay:140ms}.aq-artist-card>:nth-child(n+5){animation-delay:200ms}
-.aq-artist-release-grid>li{animation:aq-land-fade .6s cubic-bezier(.22,.61,.36,1) backwards;animation-delay:260ms}
-.aq-artist-release-grid>li:nth-child(2){animation-delay:320ms}.aq-artist-release-grid>li:nth-child(n+3){animation-delay:380ms}
-@media (prefers-reduced-motion:reduce){.aq-artist-card>*,.aq-artist-release-grid>li{animation:none}}
+/* 처음 열 때·스크롤 등장은 hooks/usePublicReveal.ts가 다섯 공개 화면에 같이 맡는다 (스튜디오 useScrollReveal과 같은 움직임) */
 /* 아티스트 페이지에서 들어온 스마트링크 — 카드 왼쪽 위 돌아가기 */
 .aq-smartlink-back{display:inline-flex;align-items:center;gap:2px;align-self:flex-start;margin:-6px 0 12px -6px;padding:6px 10px 6px 4px;border-radius:var(--aq-r-pill);color:var(--aq-text-2);font-size:14px;font-weight:700;text-decoration:none;float:left}
 .aq-smartlink-back+*{clear:both}
