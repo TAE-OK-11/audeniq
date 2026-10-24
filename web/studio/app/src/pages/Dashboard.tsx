@@ -171,12 +171,13 @@ function UpcomingCard({ release: r }: { release: Release }) {
 const wide = () => matchMedia('(min-width: 901px)').matches;
 const HOME_REVEAL: RevealGroup[] = [
   { selector: '.aq-home-date' },
-  { selector: '.aq-home-title h1', delay: () => 70 },
-  { selector: '.aq-home-title h1 + p', delay: () => 140 },
-  { selector: '.aq-home-new', delay: () => 200 },
-  { selector: '.aq-home-hero', delay: (_i, _el, first) => (first ? 200 : 0) },
-  { selector: '.aq-home-shortcuts > *', delay: (i, _el, first) => (first ? 280 : 0) + (i % 4) * 60 },
-  { selector: '.aq-home-board .ui-card', delay: (_i, el, first) => (first ? 340 : 0) + (wide() && el.closest('.aq-home-side') ? 90 : 0) },
+  { selector: '.aq-home-title h1', delay: () => 50 },
+  { selector: '.aq-home-title h1 + p', delay: () => 100 },
+  { selector: '.aq-home-new', delay: () => 140 },
+  { selector: '.aq-home-hero', delay: (_i, _el, first) => (first ? 140 : 0) },
+  // 바로가기 네 칸은 함께 — 한 칸씩 늦추면 마지막 칸이 1초 넘게 흐린 채로 남았다
+  { selector: '.aq-home-shortcuts > *', delay: (_i, _el, first) => (first ? 200 : 0) },
+  { selector: '.aq-home-board .ui-card', delay: (_i, el, first) => (first ? 260 : 0) + (wide() && el.closest('.aq-home-side') ? 60 : 0) },
 ];
 
 export function Dashboard() {
