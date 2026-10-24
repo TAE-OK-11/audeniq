@@ -5403,6 +5403,12 @@ async fn artist_page_lists_releases_with_smart_links(pool: PgPool) {
         release: Uuid,
     }
     let d = draft_package(&pool).await;
+    // Lyrics are part of the submitted tracks (they cannot change after submission).
+    sqlx::query("UPDATE catalog.tracks SET lyrics='첫 줄\n둘째 줄' WHERE release_id=$1")
+        .bind(d.release)
+        .execute(&pool)
+        .await
+        .unwrap();
     consent_and_submit(&d.app, &d.u, d.release, &format!("k-al-{}", Uuid::new_v4())).await;
     let ctx = Ctx {
         org: d.u.org,
@@ -5429,11 +5435,27 @@ async fn artist_page_lists_releases_with_smart_links(pool: PgPool) {
     )
     .await;
     assert!(v["error"].is_object(), "too long: {v}");
+    for (bad, code) in [
+        (
+            json!({"links": [{"label": "인스타", "url": "http://instagram.com/x"}]}),
+            "ARTIST_LINK_URL_INVALID",
+        ),
+        (
+            json!({"links": [{"label": "", "url": "https://instagram.com/x"}]}),
+            "ARTIST_LINK_LABEL_INVALID",
+        ),
+        (json!({"contact": "not-an-email"}), "EMAIL_INVALID"),
+    ] {
+        let (_, v) = call(&ctx.app, "PUT", &save, bad.clone(), Some(&ctx.user)).await;
+        assert_eq!(v["error"]["code"], code, "{bad}: {v}");
+    }
     let (s, v) = call(
         &ctx.app,
         "PUT",
         &save,
-        json!({"bio": "  도시의 하루를 음악으로 기록해요.  "}),
+        json!({"bio": "  도시의 하루를 음악으로 기록해요.  ",
+               "links": [{"label": " 인스타그램 ", "url": "https://instagram.com/serin"}, {"label": "", "url": " "}],
+               "contact": "booking@example.test"}),
         Some(&ctx.user),
     )
     .await;
@@ -5447,6 +5469,12 @@ async fn artist_page_lists_releases_with_smart_links(pool: PgPool) {
     assert_eq!(s, StatusCode::OK, "{page}");
     assert_eq!(page["name"], name.as_str());
     assert_eq!(page["bio"], "도시의 하루를 음악으로 기록해요.");
+    assert_eq!(
+        page["links"],
+        json!([{"label": "인스타그램", "url": "https://instagram.com/serin"}]),
+        "empty rows dropped: {page}"
+    );
+    assert_eq!(page["contact"], "booking@example.test");
     assert_eq!(page["releases"].as_array().unwrap().len(), 0, "{page}");
 
     let link_path = format!("/api/orgs/{}/releases/{}/smart-link", ctx.org, ctx.release);
@@ -5460,6 +5488,33 @@ async fn artist_page_lists_releases_with_smart_links(pool: PgPool) {
     )
     .await;
     let link_slug = v["slug"].as_str().unwrap().to_string();
+
+    // Lyrics stay off until the artist shows them; then in track order.
+    let smart_public = format!("/api/smart-links/{link_slug}");
+    let (_, sp) = call(&ctx.app, "GET", &smart_public, Value::Null, None).await;
+    assert_eq!(sp["lyrics"], json!([]), "{sp}");
+    assert!(sp.get("release_time").is_some(), "{sp}");
+    call(
+        &ctx.app,
+        "PUT",
+        &link_path,
+        json!({"links": links, "show_lyrics": true}),
+        Some(&ctx.user),
+    )
+    .await;
+    let (_, sp) = call(&ctx.app, "GET", &smart_public, Value::Null, None).await;
+    assert_eq!(sp["lyrics"][0]["lyrics"], "첫 줄\n둘째 줄", "{sp}");
+    // Saving without the field keeps the choice (MCP and older studios).
+    call(
+        &ctx.app,
+        "PUT",
+        &link_path,
+        json!({"links": links}),
+        Some(&ctx.user),
+    )
+    .await;
+    let (_, st) = call(&ctx.app, "GET", &link_path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(st["link"]["show_lyrics"], true, "{st}");
     let (_, page) = call(&ctx.app, "GET", &public, Value::Null, None).await;
     let releases = page["releases"].as_array().unwrap();
     assert_eq!(releases.len(), 1, "{page}");

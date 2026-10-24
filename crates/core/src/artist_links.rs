@@ -9,6 +9,10 @@
 //! it; views are counted per day (once per visitor address every 15 minutes)
 //! and shown to the org for the last 30 days. The page disappears while it
 //! is switched off or the artist is archived.
+//!
+//! The artist adds their own links (social, tickets, shop: up to ten, https,
+//! with a short label) and an optional contact address, shown on the press
+//! page (`/a/{slug}/press`) for curators, press and promoters.
 use crate::{
     api::AppState,
     auth::{self, Actor},
@@ -29,6 +33,9 @@ use sqlx::Row;
 use uuid::Uuid;
 
 const BIO_MAX: usize = 1500;
+const LINKS_MAX: usize = 10;
+const LABEL_MAX: usize = 40;
+const URL_MAX: usize = 500;
 
 fn hidden() -> Vec<String> {
     HIDDEN_STATES.iter().map(|v| v.to_string()).collect()
@@ -45,7 +52,7 @@ pub async fn list(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
     auth::membership(&mut tx, a, org, false).await?;
     let items: Vec<Value> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT jsonb_build_object('artist_id', a.id, 'name', a.name,
-                'link', (SELECT jsonb_build_object('slug', k.slug, 'enabled', k.enabled, 'bio', k.bio,
+                'link', (SELECT jsonb_build_object('slug', k.slug, 'enabled', k.enabled, 'bio', k.bio, 'links', k.links, 'contact', k.contact,
                                   'views', COALESCE((SELECT sum(st.count) FROM portal.artist_link_stats st
                                                       WHERE st.link_id=k.id AND st.day > (now() AT TIME ZONE 'Asia/Seoul')::date - $3), 0))
                            FROM portal.artist_links k WHERE k.org_id=a.org_id AND k.artist_id=a.id),
@@ -73,6 +80,52 @@ pub struct LinkInput {
     pub enabled: bool,
     #[serde(default)]
     pub bio: String,
+    /// The artist's own links, in page order.
+    #[serde(default)]
+    pub links: Vec<OwnLink>,
+    /// Contact address for the press page; empty hides it.
+    #[serde(default)]
+    pub contact: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OwnLink {
+    pub label: String,
+    pub url: String,
+}
+
+/// Up to ten links, each an https address with a short label; empty rows are dropped.
+fn clean_links(links: &[OwnLink]) -> Result<Value> {
+    let mut out = Vec::new();
+    for l in links {
+        let (label, url) = (l.label.trim(), l.url.trim());
+        if label.is_empty() && url.is_empty() {
+            continue;
+        }
+        if label.is_empty() || label.chars().count() > LABEL_MAX {
+            return Err(Error::InvalidCode("ARTIST_LINK_LABEL_INVALID"));
+        }
+        text_policy::check(label)?;
+        let parsed =
+            url::Url::parse(url).map_err(|_| Error::InvalidCode("ARTIST_LINK_URL_INVALID"))?;
+        if parsed.scheme() != "https" || parsed.host_str().is_none() || url.len() > URL_MAX {
+            return Err(Error::InvalidCode("ARTIST_LINK_URL_INVALID"));
+        }
+        out.push(json!({"label": label, "url": parsed.as_str()}));
+    }
+    if out.len() > LINKS_MAX {
+        return Err(Error::InvalidCode("ARTIST_LINK_TOO_MANY"));
+    }
+    Ok(Value::Array(out))
+}
+
+fn clean_contact(v: &str) -> Result<String> {
+    let v = v.trim();
+    if !v.is_empty() && (v.len() > 254 || !v.contains('@') || v.contains(char::is_whitespace)) {
+        return Err(Error::InvalidCode("EMAIL_INVALID"));
+    }
+    Ok(v.to_string())
 }
 fn yes() -> bool {
     true
@@ -87,6 +140,8 @@ pub async fn save(s: &AppState, a: &Actor, org: Uuid, artist: Uuid, i: LinkInput
     if !bio.is_empty() {
         text_policy::check_multiline(bio)?;
     }
+    let links = clean_links(&i.links)?;
+    let contact = clean_contact(&i.contact)?;
     let mut tx = s.pool.begin().await?;
     auth::membership(&mut tx, a, org, true).await?;
     let known: Option<Uuid> = sqlx::query_scalar(
@@ -107,12 +162,14 @@ pub async fn save(s: &AppState, a: &Actor, org: Uuid, artist: Uuid, i: LinkInput
     let slug = match existing {
         Some(slug) => {
             sqlx::query(
-                "UPDATE portal.artist_links SET enabled=$3, bio=$4, updated_at=now() WHERE org_id=$1 AND artist_id=$2",
+                "UPDATE portal.artist_links SET enabled=$3, bio=$4, links=$5, contact=$6, updated_at=now() WHERE org_id=$1 AND artist_id=$2",
             )
             .bind(org)
             .bind(artist)
             .bind(i.enabled)
             .bind(bio)
+            .bind(&links)
+            .bind(&contact)
             .execute(&mut *tx)
             .await?;
             slug
@@ -122,8 +179,8 @@ pub async fn save(s: &AppState, a: &Actor, org: Uuid, artist: Uuid, i: LinkInput
             for _ in 0..5 {
                 let slug = smart_links::new_slug()?;
                 let ok: Option<String> = sqlx::query_scalar(
-                    "INSERT INTO portal.artist_links(id, org_id, artist_id, slug, enabled, bio, created_by)
-                     VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (slug) DO NOTHING RETURNING slug",
+                    "INSERT INTO portal.artist_links(id, org_id, artist_id, slug, enabled, bio, created_by, links, contact)
+                     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (slug) DO NOTHING RETURNING slug",
                 )
                 .bind(Uuid::new_v4())
                 .bind(org)
@@ -132,6 +189,8 @@ pub async fn save(s: &AppState, a: &Actor, org: Uuid, artist: Uuid, i: LinkInput
                 .bind(i.enabled)
                 .bind(bio)
                 .bind(a.user)
+                .bind(&links)
+                .bind(&contact)
                 .fetch_optional(&mut *tx)
                 .await?;
                 if ok.is_some() {
@@ -187,7 +246,7 @@ pub async fn public_page(s: &AppState, h: &HeaderMap, slug: &str) -> Result<Valu
         return Err(Error::NotFound);
     }
     let row = sqlx::query(
-        "SELECT k.id, k.org_id, k.artist_id, k.bio, a.name
+        "SELECT k.id, k.org_id, k.artist_id, k.bio, k.links, k.contact, a.name
            FROM portal.artist_links k
            JOIN catalog.artists a ON a.org_id=k.org_id AND a.id=k.artist_id
           WHERE k.slug=$1 AND k.enabled AND a.archived_at IS NULL",
@@ -257,6 +316,8 @@ pub async fn public_page(s: &AppState, h: &HeaderMap, slug: &str) -> Result<Valu
     Ok(json!({
         "name": row.get::<String, _>("name"),
         "bio": row.get::<String, _>("bio"),
+        "links": row.get::<Value, _>("links"),
+        "contact": row.get::<String, _>("contact"),
         "pages": pages,
         "releases": releases,
     }))

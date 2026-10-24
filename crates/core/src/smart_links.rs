@@ -360,7 +360,7 @@ pub async fn status(s: &AppState, a: &Actor, org: Uuid, release: Uuid) -> Result
     .await?
     .ok_or(Error::NotFound)?;
     let link = sqlx::query(
-        "SELECT id, slug, enabled, links FROM portal.smart_links WHERE org_id=$1 AND release_id=$2",
+        "SELECT id, slug, enabled, links, show_lyrics FROM portal.smart_links WHERE org_id=$1 AND release_id=$2",
     )
     .bind(org)
     .bind(release)
@@ -409,7 +409,8 @@ pub async fn status(s: &AppState, a: &Actor, org: Uuid, release: Uuid) -> Result
         })
         .unwrap_or_default();
     Ok(json!({
-        "link": link.map(|l| json!({"slug": l.get::<String, _>("slug"), "enabled": l.get::<bool, _>("enabled"), "links": l.get::<Value, _>("links")})),
+        "link": link.map(|l| json!({"slug": l.get::<String, _>("slug"), "enabled": l.get::<bool, _>("enabled"), "links": l.get::<Value, _>("links"),
+                                    "show_lyrics": l.get::<bool, _>("show_lyrics")})),
         "auto": auto_links(&known),
         "checks": checks,
         "verify": if strict() { "strict" } else { "test" },
@@ -426,6 +427,9 @@ pub struct LinkInput {
     pub enabled: bool,
     #[serde(default)]
     pub links: BTreeMap<String, String>,
+    /// Show the submitted lyrics on the page; left out keeps the current choice.
+    #[serde(default)]
+    pub show_lyrics: Option<bool>,
 }
 fn yes() -> bool {
     true
@@ -469,11 +473,12 @@ pub async fn save(
     .await?;
     let slug = match existing {
         Some(slug) => {
-            sqlx::query("UPDATE portal.smart_links SET enabled=$3, links=$4, updated_at=now() WHERE org_id=$1 AND release_id=$2")
+            sqlx::query("UPDATE portal.smart_links SET enabled=$3, links=$4, show_lyrics=COALESCE($5, show_lyrics), updated_at=now() WHERE org_id=$1 AND release_id=$2")
                 .bind(org)
                 .bind(release)
                 .bind(i.enabled)
                 .bind(Value::Object(links))
+                .bind(i.show_lyrics)
                 .execute(&mut *tx)
                 .await?;
             slug
@@ -486,8 +491,8 @@ pub async fn save(
             for _ in 0..5 {
                 let slug = new_slug()?;
                 let ok: Option<String> = sqlx::query_scalar(
-                    "INSERT INTO portal.smart_links(id, org_id, release_id, slug, enabled, links, created_by)
-                     VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (slug) DO NOTHING RETURNING slug",
+                    "INSERT INTO portal.smart_links(id, org_id, release_id, slug, enabled, links, created_by, show_lyrics)
+                     VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (slug) DO NOTHING RETURNING slug",
                 )
                 .bind(Uuid::new_v4())
                 .bind(org)
@@ -496,6 +501,7 @@ pub async fn save(
                 .bind(i.enabled)
                 .bind(Value::Object(links.clone()))
                 .bind(a.user)
+                .bind(i.show_lyrics.unwrap_or(false))
                 .fetch_optional(&mut *tx)
                 .await?;
                 if ok.is_some() {
@@ -625,7 +631,7 @@ async fn visible_where(
     value: &str,
 ) -> Result<sqlx::postgres::PgRow> {
     sqlx::query(sqlx::AssertSqlSafe(format!(
-        "SELECT l.id, l.slug, l.org_id, l.release_id, l.links, r.title, r.draft->>'artist' AS artist, r.draft->>'release_date' AS release_date,
+        "SELECT l.id, l.slug, l.org_id, l.release_id, l.links, l.show_lyrics, r.title, r.draft->>'artist' AS artist, r.draft->>'release_date' AS release_date,
                 r.draft->>'release_time' AS release_time, r.artwork_asset_id
            FROM portal.smart_links l
            JOIN catalog.releases r ON r.id=l.release_id AND r.org_id=l.org_id
@@ -679,14 +685,33 @@ pub async fn public_page(s: &AppState, h: &HeaderMap, slug: &str) -> Result<Valu
         release_date.as_deref(),
         row.get::<Option<String>, _>("release_time").as_deref(),
     );
+    // Lyrics the release was submitted with, track order, only when the artist shows them.
+    let lyrics: Vec<Value> = if row.get::<bool, _>("show_lyrics") {
+        sqlx::query(
+            "SELECT title, lyrics FROM catalog.tracks
+              WHERE org_id=$1 AND release_id=$2 AND archived_at IS NULL AND COALESCE(btrim(lyrics), '') <> ''
+              ORDER BY disc_number, track_number",
+        )
+        .bind(row.get::<Uuid, _>("org_id"))
+        .bind(row.get::<Uuid, _>("release_id"))
+        .fetch_all(&s.pool)
+        .await?
+        .iter()
+        .map(|t| json!({"title": t.get::<String, _>("title"), "lyrics": t.get::<String, _>("lyrics")}))
+        .collect()
+    } else {
+        Vec::new()
+    };
     count(s, h, row.get("id"), slug, VIEW).await;
     Ok(json!({
         "title": row.get::<String, _>("title"),
         "artist": row.get::<Option<String>, _>("artist"),
         "release_date": release_date,
+        "release_time": row.get::<Option<String>, _>("release_time"),
         "released": released,
         "cover": row.get::<Option<Uuid>, _>("artwork_asset_id").is_some(),
         "links": list,
+        "lyrics": lyrics,
     }))
 }
 
