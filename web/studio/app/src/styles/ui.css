@@ -450,6 +450,18 @@ button.ui-avatar:hover{transform:scale(1.06);background:var(--aq-blue-200)}
 .ui-steps>li.is-warn{font-weight:700;color:var(--aq-tone-amber-fg)}
 .ui-steps>li.is-warn::before{background:var(--aq-amber-500)}
 
+/* 그 자리에서 펼치기 (ui/Reveal.tsx) — 높이 0→내용, 위로 6px에서 내려오며 나타난다. 닫힐 때는 나가는 곡선으로 조금 더 빨리.
+   부모가 gap을 쓰면 --reveal-gap에 같은 값을 주어, 접힌 동안 그 틈도 함께 접히게 한다(다 접힌 뒤 틈만큼 툭 튀지 않게) */
+.ui-reveal{display:grid;grid-template-rows:0fr;margin-top:calc(-1 * var(--reveal-gap,0px));opacity:0;outline:none;
+  transition:grid-template-rows var(--aq-motion-base) var(--aq-exit),margin-top var(--aq-motion-base) var(--aq-exit),opacity var(--aq-motion-short) var(--aq-exit)}
+.ui-reveal.is-open{grid-template-rows:1fr;margin-top:0;opacity:1;
+  transition-duration:var(--aq-motion-long),var(--aq-motion-long),var(--aq-motion-base);transition-timing-function:var(--aq-enter)}
+/* 입력칸 초점 테두리가 잘리지 않게 4px 여유를 두고, 다 열린 뒤에는 넘침을 푼다(선택창·날짜 창이 밖으로 열린다) */
+.ui-reveal-inner{min-height:0;overflow:hidden;margin:-4px;padding:4px;transform:translateY(-6px);transition:transform var(--aq-motion-long) var(--aq-enter)}
+.ui-reveal.is-open>.ui-reveal-inner{transform:none}
+.ui-reveal.is-settled>.ui-reveal-inner{overflow:visible}
+@media (prefers-reduced-motion:reduce){.ui-reveal,.ui-reveal-inner{transition:none}}
+
 /* ---------- 타임라인 (Timeline) — 처리 이력·변경 기록 ----------
    점 색: is-staff(담당자·파랑) · is-check(검사) · is-dsp(플랫폼) · is-warn · is-bad · is-now(지금) */
 .ui-timeline{list-style:none;margin:0;padding:0;display:grid}

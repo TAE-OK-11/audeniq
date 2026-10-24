@@ -852,7 +852,9 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .aq-correction-track{border:0;padding:0;margin:0;display:grid;gap:8px}
 .aq-correction-track legend{font-weight:700;margin-bottom:6px}
 .aq-correction-row{display:grid;grid-template-columns:minmax(0,1fr) 150px auto;gap:8px;align-items:center}
-@media(max-width:560px){.aq-correction-row{grid-template-columns:1fr 1fr}.aq-correction-row .ui-btn{grid-column:1/-1;justify-self:end}}
+/* 휴대폰에서도 이름 · 역할 · 삭제를 한 줄에 — 삭제가 따로 한 줄을 차지해 목록이 두 배로 길어졌다 */
+@media(max-width:560px){.aq-correction-row{grid-template-columns:minmax(0,1fr) 104px auto;gap:6px}.aq-correction-row .ui-btn.is-text{padding-inline:6px}}
+.aq-correction-track>.ui-btn{justify-self:start}
 
 /* 스마트링크 공개 페이지 (/l/:slug) */
 .aq-smartlink{position:relative;min-height:100vh;min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:32px 16px;background:var(--aq-gray-50);overflow:hidden}
