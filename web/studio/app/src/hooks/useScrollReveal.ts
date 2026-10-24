@@ -31,6 +31,12 @@ const WAITING = 'aq-motion-waiting';
 const FIRST_WINDOW = 1500;
 const WATCH_MS = 4000;
 
+/** 한 번 재생되는 CSS 등장 애니메이션이 걸려 있는지 (반복 애니메이션 — 스켈레톤·스피너 — 은 그대로 둔다) */
+export function hasEntranceAnimation(el: HTMLElement): boolean {
+  const cs = getComputedStyle(el);
+  return cs.animationName !== 'none' && !cs.animationIterationCount.split(',').some(v => v.trim() === 'infinite');
+}
+
 export function useScrollReveal(key: string) {
   useLayoutEffect(() => {
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -69,6 +75,7 @@ export function useScrollReveal(key: string) {
       const now = performance.now() - started < FIRST_WINDOW && window.scrollY < 40;
       const vh = window.innerHeight;
       const rects = fresh.map(([el]) => el.getBoundingClientRect());
+      const cssEntrance = fresh.map(([el]) => hasEntranceAnimation(el));
       fresh.forEach(([el, headDelay], i) => {
         const r = rects[i];
         if (!r.width && !r.height) return; // 숨겨진 것
@@ -76,9 +83,13 @@ export function useScrollReveal(key: string) {
         // 첫 화면: 머리 다음에 덩어리를 60ms씩, 네 개마다 다시 (길게 늘어지지 않게)
         const delay = headDelay ?? (first ? 150 + (firstCount++ % 4) * 60 : 0);
         meta.set(el, { delay, first });
+        // 자체 CSS 등장 애니메이션이 있으면 끈다 — 둘이 겹치면 CSS로 먼저 다 나타났다가 이 연출이 다시 숨겼다
+        if (cssEntrance[i]) el.style.animation = 'none';
         pending.add(el);
         el.classList.add(WAITING);
-        io.observe(el);
+        // 이미 화면 안이면 보임 신호를 기다리지 않고 바로 시작한다 (아이폰은 당겨서 새로고침 직후 등 바쁠 때 신호가 0.4초쯤 늦었다)
+        if (r.top < vh && r.bottom > 0) show(el);
+        else io.observe(el);
       });
     };
 
