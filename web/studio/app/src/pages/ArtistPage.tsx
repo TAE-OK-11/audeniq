@@ -154,7 +154,7 @@ export function ArtistPage() {
             {page.releases.length > 0 && <Link to={artistDiscographyPath(slug)} className="aq-artist-more">디스코그래피<Glyph name="chevron-right" size={14} /></Link>}
           </div>
           {page.releases.length > 0 ? (
-            <ul className="aq-artist-release-grid">
+            <ul className={`aq-artist-release-grid${page.releases.length === 1 ? ' is-single' : ''}`}>
               {page.releases.map(r => <ReleaseCard key={r.slug} r={r} from={{ path: artistPath(slug), name: page.name }} />)}
             </ul>
           ) : <p className="muted small">아직 공개된 발매가 없어요.</p>}

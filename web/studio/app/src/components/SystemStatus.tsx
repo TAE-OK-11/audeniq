@@ -19,6 +19,8 @@ import { Glyph } from './Glyph';
 const STATUS_EVERY_MS = 60_000;
 const STATUS_DURING_MAINTENANCE_MS = 30_000;
 const VERSION_EVERY_MS = 5 * 60_000;
+/** ‘지금 새로고침’을 누른 대상 버전 — 새로고침 뒤에도 같은 차이면 다시 묻지 않는다 */
+const RELOADED_FOR_KEY = 'aq-update-reloaded-for';
 const SERVER_DIALOG_COOLDOWN_MS = 60_000;
 
 const DISMISS_KEY = 'aq.maintenance-dismissed';
@@ -56,7 +58,9 @@ function currentEntry(): string | null {
 }
 async function latestEntry(): Promise<string | null> {
   try {
-    const res = await fetch(import.meta.env.BASE_URL, { cache: 'no-store', credentials: 'same-origin', headers: { Accept: 'text/html' } });
+    // 주소마다 다른 쿼리를 붙여 CDN(Cloudflare) 캐시를 건너뛴다. '/'는 엣지에 캐시돼(cf-cache-status: HIT) 연달아 배포한 뒤
+    // 한동안 옛 index를 돌려줬다 — 새 버전 화면에서도 '다른 버전'으로 보여 새로고침해도 이 창이 계속 떴다
+    const res = await fetch(`${import.meta.env.BASE_URL}?__v=${Date.now()}`, { cache: 'no-store', credentials: 'same-origin', headers: { Accept: 'text/html' } });
     if (!res.ok) return null;
     const m = ENTRY_RE.exec(await res.text());
     return m ? new URL(m[1], window.location.href).pathname : null;
@@ -207,7 +211,9 @@ export function SystemStatus({ children }: { children: ReactNode }) {
       busy = true;
       const latest = await latestEntry();
       busy = false;
-      if (latest && latest !== mine && latest !== updateDismissedFor.current) setUpdateReady(true);
+      // 이 버전으로 가려고 이미 새로고침했는데도 그대로면(엣지·브라우저 캐시가 옛 화면을 준 경우) 다시 묻지 않는다 —
+      // 새로고침해도 창이 계속 떠 화면을 쓸 수 없었다
+      if (latest && latest !== mine && latest !== updateDismissedFor.current && safeGet('session', RELOADED_FOR_KEY) !== latest) setUpdateReady(true);
     };
     const t = window.setInterval(() => void check(), VERSION_EVERY_MS);
     const onVisible = () => void check();
@@ -302,7 +308,7 @@ export function SystemStatus({ children }: { children: ReactNode }) {
             body={<p>스튜디오가 업데이트됐어요. 새로고침하면 최신 기능과 수정 사항이 적용돼요. 작성 중인 내용이 있으면 저장한 뒤 새로고침해 주세요.</p>}
             actions={[
               { label: '나중에', onClick: () => { void latestEntry().then(v => { updateDismissedFor.current = v; }); setUpdateReady(false); } },
-              { label: '지금 새로고침', onClick: () => window.location.reload(), primary: true },
+              { label: '지금 새로고침', onClick: () => { void latestEntry().then(v => { if (v) safeSet('session', RELOADED_FOR_KEY, v); window.location.reload(); }); }, primary: true },
             ]}
           />
         </Modal>
