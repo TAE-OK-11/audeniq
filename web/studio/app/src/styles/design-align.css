@@ -687,6 +687,10 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
     body:has(.aq-smartlink)>.aq-tint-top{display:none}
   }
 }
+/* 공개 화면(스마트링크·아티스트 소개·소식·디스코그래피·보도자료)에는 위 흰 덮개(lib/topCover.ts)도 두지 않는다 —
+   덮개는 스크롤을 한 박자 늦게 따라가서, 위로 확 스크롤하면 화면 맨 위로 흰 띠가 내려와 보였다(녹화).
+   이 화면들은 키보드가 떠도 비쳐 보일 고정 머리가 없어 덮개가 필요 없다 */
+body:has(.aq-smartlink)>.aq-top-cover{display:none}
 
 /* 발매 신청 — 칸 바로 아래 안내(Upload.tsx showFieldError), Content ID 따로 켜기,
    아래 고정 버튼·위 고정 머리에 입력 칸이 가리지 않게 스크롤 여백 */
