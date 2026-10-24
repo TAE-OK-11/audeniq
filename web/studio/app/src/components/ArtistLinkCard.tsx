@@ -12,14 +12,16 @@ import { Glyph } from './Glyph';
 import { CopyButton } from './CopyButton';
 import { QrButton } from './QrButton';
 import { useToast } from './Toast';
+import { LINK_PRESETS, OWN_LABEL_MAX, OWN_LINKS_MAX, checkLinks, type OwnLink } from '../lib/ownLinks';
 
 export interface ArtistLinkRow {
   artist_id: string; name: string; releases: number;
-  link: { slug: string; enabled: boolean; bio: string; views: number } | null;
+  link: { slug: string; enabled: boolean; bio: string; views: number; links?: OwnLink[]; contact?: string } | null;
 }
 
 const BIO_MAX = 1500;
 const pageUrl = (slug: string) => `${window.location.origin}/a/${slug}`;
+const pressUrl = (slug: string) => `${window.location.origin}/a/${slug}/press`;
 
 /** 줄 오른쪽 글자 — 공개 중이면 조회 수, 꺼져 있으면 '꺼짐', 아직 없으면 '만들기' */
 export function linkSummary(a: ArtistLinkRow): { text: string; empty: boolean } {
@@ -35,17 +37,26 @@ function LinkEditor({ artist, onSaved }: { artist: ArtistLinkRow; onSaved: (row:
   // 처음 만들 때는 계정 정보의 아티스트 소개를 그대로 가져온다
   const [bio, setBio] = useState(artist.link?.bio ?? profile.bio ?? '');
   const [enabled, setEnabled] = useState(artist.link?.enabled ?? true);
+  const [links, setLinks] = useState<OwnLink[]>(() => artist.link?.links?.length ? artist.link.links : []);
+  const [contact, setContact] = useState(artist.link?.contact ?? '');
+  const [linkError, setLinkError] = useState<{ index: number; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const setLink = (i: number, patch: Partial<OwnLink>) => { setLinks(ls => ls.map((l, j) => (j === i ? { ...l, ...patch } : l))); setLinkError(null); };
+  const addLink = (label = '') => setLinks(ls => (ls.length >= OWN_LINKS_MAX ? ls : [...ls, { label, url: 'https://' }]));
   const slug = artist.link?.slug;
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
+    // 'https://'만 남은 줄은 빈 줄로 본다
+    const checked = checkLinks(links.map(l => (l.url.trim() === 'https://' && !l.label.trim() ? { label: '', url: '' } : l)));
+    if (checked.error) { setLinkError(checked.error); document.getElementById(`alLinkUrl${checked.error.index}`)?.focus(); return; }
     setBusy(true);
     try {
+      const body = { enabled, bio, links: checked.links, contact: contact.trim() };
       const r = MOCK
         ? { slug: slug ?? 'abcd2345', enabled }
-        : await req<{ slug: string; enabled: boolean }>(orgPath(`/artists/${encodeURIComponent(artist.artist_id)}/link`), { method: 'PUT', body: { enabled, bio } });
-      onSaved({ ...artist, link: { slug: r.slug, enabled: r.enabled, bio: bio.trim(), views: artist.link?.views ?? 0 } });
+        : await req<{ slug: string; enabled: boolean }>(orgPath(`/artists/${encodeURIComponent(artist.artist_id)}/link`), { method: 'PUT', body });
+      onSaved({ ...artist, link: { slug: r.slug, enabled: r.enabled, bio: bio.trim(), views: artist.link?.views ?? 0, links: checked.links, contact: body.contact } });
       toast(!slug ? '아티스트 소개 페이지를 만들었어요. 링크를 SNS·프로필에 걸어 보세요.' : r.enabled ? '저장했어요.' : '페이지를 껐어요. 다시 켜면 같은 링크로 열려요.', 'success');
       close();
     } catch (err) { toast(errorMessage(err), 'error'); } finally { setBusy(false); }
@@ -69,6 +80,36 @@ function LinkEditor({ artist, onSaved }: { artist: ArtistLinkRow; onSaved: (row:
           placeholder="어떤 음악을 만드는지, 팬에게 하고 싶은 말을 적어 주세요." />
         <small className="ui-field-help">{bio.length} / {BIO_MAX}</small>
       </div>
+      {/* 링크 모음 — 인스타·유튜브·공연 예매처럼 직접 넣는 링크. 페이지에 넣은 순서대로 보인다 */}
+      <fieldset className="aq-own-links">
+        <legend className="ui-field-label">링크<span className="aq-optional">선택 · {OWN_LINKS_MAX}개까지</span></legend>
+        {links.map((l, i) => (
+          <div key={i} className="aq-own-link-row">
+            <input className="ui-input" aria-label={`링크 ${i + 1} 이름`} maxLength={OWN_LABEL_MAX} placeholder="이름 (예: 인스타그램)"
+              value={l.label} onChange={e => setLink(i, { label: e.target.value })} />
+            <input id={`alLinkUrl${i}`} className="ui-input" type="url" inputMode="url" aria-label={`링크 ${i + 1} 주소`} maxLength={500}
+              aria-invalid={linkError?.index === i || undefined} placeholder="https://"
+              value={l.url} onChange={e => setLink(i, { url: e.target.value })} />
+            <button type="button" className="ui-btn is-text is-sm" aria-label={`링크 ${i + 1} 삭제`}
+              onClick={() => { setLinks(ls => ls.filter((_, j) => j !== i)); setLinkError(null); }}>삭제</button>
+          </div>
+        ))}
+        {linkError && <p className="ui-field-help aq-help-error" role="alert">{linkError.index + 1}번째 링크 · {linkError.message}</p>}
+        {links.length < OWN_LINKS_MAX && (
+          <div className="aq-credit-chips">
+            {LINK_PRESETS.filter(p => !links.some(l => l.label.trim() === p)).map(p => (
+              <button key={p} type="button" className="aq-credit-chip" onClick={() => addLink(p)}><Glyph name="plus" size={12} />{p}</button>
+            ))}
+            <button type="button" className="aq-credit-chip" onClick={() => addLink()}><Glyph name="plus" size={12} />직접 추가</button>
+          </div>
+        )}
+      </fieldset>
+      <div className="ui-field">
+        <label htmlFor="alContact">보도자료 문의 메일<span className="aq-optional">선택</span></label>
+        <input id="alContact" className="ui-input" type="email" inputMode="email" maxLength={254} value={contact}
+          onChange={e => setContact(e.target.value)} placeholder="booking@example.com" />
+        <small className="ui-field-help">보도자료 페이지에 공개돼요. 큐레이터·기자·공연 기획자가 연락할 때 써요.</small>
+      </div>
       <div className="aq-alert-pref">
         <span className="aq-alert-pref-icon" aria-hidden="true"><Glyph name="globe" size={18} /></span>
         <span className="min-0">
@@ -80,6 +121,16 @@ function LinkEditor({ artist, onSaved }: { artist: ArtistLinkRow; onSaved: (row:
           <span aria-hidden="true" />
         </label>
       </div>
+      {slug && (
+        <div className="aq-alert-pref">
+          <span className="aq-alert-pref-icon" aria-hidden="true"><Glyph name="doc" size={18} /></span>
+          <span className="min-0">
+            <strong>보도자료 페이지</strong>
+            <span>소개·연락처·발매(커버·홍보 이미지 받기)를 한 장으로 — 플레이리스트 피칭이나 공연 섭외 메일에 붙여요.</span>
+          </span>
+          <CopyButton text={pressUrl(slug)} label="주소 복사" />
+        </div>
+      )}
       <button type="submit" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={busy}>{busy ? '저장하는 중' : slug ? '저장' : '페이지 만들기'}</button>
     </form>
   );

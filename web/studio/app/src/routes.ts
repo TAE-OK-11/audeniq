@@ -32,6 +32,7 @@ export const pageLoaders = {
   RightsReport: () => import('./pages/RightsReport'),
   SmartLink: () => import('./pages/SmartLink'),
   ArtistPage: () => import('./pages/ArtistPage'),
+  ArtistPress: () => import('./pages/ArtistPress'),
   SplitInvite: () => import('./pages/SplitInvite'),
   Admin: () => import('./admin/AdminApp'),
 };

@@ -3,7 +3,7 @@
 // 플랫폼이 공개하며 알려 준 앨범 ID가 있으면 서버가 그 링크를 채우고(auto), 붙여 넣은 링크는 그 앨범과 맞는지 바로 확인한다.
 // 공식 오픈 전(verify=test)에는 다른 곡 링크도 저장되고 안내만 하며, 오픈 뒤(strict)에는 서버가 저장을 막는다.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { orgPath, req } from '../api/http';
+import { API_BASE, orgPath, req } from '../api/http';
 import { errorMessage } from '../api/errors';
 import { MOCK } from '../lib/mode';
 import { PLATFORM_NAMES } from '../lib/platformNames';
@@ -14,10 +14,12 @@ import { Glyph } from './Glyph';
 import { CopyButton } from './CopyButton';
 import { QrButton } from './QrButton';
 import { PromoImageButton } from './PromoImageButton';
+import { EmbedButton } from './EmbedButton';
+import { todayStr } from '../lib/date';
 
 type Check = 'verified' | 'mismatch' | 'unverified' | 'not_release' | 'invalid';
 interface State {
-  link: { slug: string; enabled: boolean; links: Record<string, string> } | null;
+  link: { slug: string; enabled: boolean; links: Record<string, string>; show_lyrics?: boolean } | null;
   auto?: Record<string, string>;
   checks?: Record<string, Check>;
   verify?: 'strict' | 'test';
@@ -51,6 +53,7 @@ export function SmartLinkCard({ releaseId, promo }: { releaseId: string; promo?:
   const [edit, setEdit] = useState(false);
   const [links, setLinks] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [lyrics, setLyrics] = useState(false);
   const [checks, setChecks] = useState<Record<string, Check>>({});
   const checkSeq = useRef(0);
   const base = useCallback(() => orgPath(`/releases/${encodeURIComponent(releaseId)}/smart-link`), [releaseId]);
@@ -75,10 +78,11 @@ export function SmartLinkCard({ releaseId, promo }: { releaseId: string; promo?:
   if (!st || (!st.link && !st.can_create)) return null;
   const l = st.link;
 
-  const save = async (enabled: boolean, next: Record<string, string>) => {
+  // showLyrics를 빼면 서버가 지금 선택을 그대로 둔다 (공개 끄기·다시 공개)
+  const save = async (enabled: boolean, next: Record<string, string>, showLyrics?: boolean) => {
     setBusy(true);
     try {
-      await req(base(), { method: 'PUT', body: { enabled, links: next } });
+      await req(base(), { method: 'PUT', body: { enabled, links: next, ...(showLyrics === undefined ? {} : { show_lyrics: showLyrics }) } });
       toast(enabled ? '스마트링크를 저장했어요.' : '스마트링크를 껐어요.', 'success');
       setEdit(false);
       await load();
@@ -88,7 +92,7 @@ export function SmartLinkCard({ releaseId, promo }: { releaseId: string; promo?:
       setBusy(false);
     }
   };
-  const start = () => { setLinks({ ...(l?.links ?? {}) }); setChecks(st.checks ?? {}); setEdit(true); };
+  const start = () => { setLinks({ ...(l?.links ?? {}) }); setLyrics(l?.show_lyrics ?? false); setChecks(st.checks ?? {}); setEdit(true); };
   const clicks = Object.values(st.stats.clicks).reduce((a, b) => a + b, 0);
   const auto = st.auto ?? {};
   const autoCount = Object.keys(auto).filter(p => !l?.links[p]).length;
@@ -108,6 +112,8 @@ export function SmartLinkCard({ releaseId, promo }: { releaseId: string; promo?:
                 <CopyButton text={pageUrl(l.slug)} />
                 <QrButton url={pageUrl(l.slug)} title="스마트링크 QR 코드" filename={`smartlink-${l.slug}.png`} />
                 {promo && <PromoImageButton input={{ ...promo, url: pageUrl(l.slug) }} filename={`audeniq-${l.slug}`} />}
+                {promo && <EmbedButton input={{ url: pageUrl(l.slug), title: promo.title, artist: promo.artist, released: !promo.releaseDate || promo.releaseDate <= todayStr(),
+                  cover: promo.cover ? `${API_BASE || window.location.origin}/api/smart-links/${l.slug}/cover` : undefined }} />}
                 <a className="ui-btn is-sm" href={`/l/${l.slug}`} target="_blank" rel="noopener noreferrer"><Glyph name="arrow-up-right" size={14} />열기</a>
               </span>
             </div>
@@ -151,9 +157,20 @@ export function SmartLinkCard({ releaseId, promo }: { releaseId: string; promo?:
             })}
           </div>
           <p className="small muted">발매 전이면 링크 없이 먼저 만들어 두세요. 플랫폼에 공개되면 링크가 자동으로 채워지고, 직접 넣은 링크가 있으면 그 링크를 먼저 보여 줘요.</p>
+          <div className="aq-alert-pref">
+            <span className="aq-alert-pref-icon" aria-hidden="true"><Glyph name="quote" size={18} /></span>
+            <span className="min-0">
+              <strong>가사 공개</strong>
+              <span>발매 신청 때 입력한 가사를 스마트링크에서 곡별로 펼쳐 볼 수 있어요.</span>
+            </span>
+            <label className="aq-switch">
+              <input type="checkbox" role="switch" aria-label="스마트링크에 가사 공개" checked={lyrics} onChange={e => setLyrics(e.target.checked)} />
+              <span aria-hidden="true" />
+            </label>
+          </div>
           <div className="aq-confirm-actions">
             <button type="button" className="ui-btn is-soft" onClick={() => setEdit(false)} disabled={busy}>닫기</button>
-            <button type="button" className="ui-btn is-primary" onClick={() => void save(l?.enabled ?? true, links)} disabled={busy || blocked}>{busy ? '저장 중' : '저장'}</button>
+            <button type="button" className="ui-btn is-primary" onClick={() => void save(l?.enabled ?? true, links, lyrics)} disabled={busy || blocked}>{busy ? '저장 중' : '저장'}</button>
           </div>
         </div>
       </Reveal>
