@@ -5,6 +5,7 @@
 // 초점이 들어가면 바로 제자리, 탭을 숨기면 진행 중인 연출을 끝낸다. 동작 줄이기·미지원 브라우저에서는 아무것도 하지 않는다.
 // (docs/DESIGN_SYSTEM.md 규칙 19의 예외 — 홈 첫 화면에만 쓴다. 다른 화면의 짧은 스크롤 등장은 useScrollReveal)
 import { useLayoutEffect, useRef, type RefObject } from 'react';
+import { hasEntranceAnimation } from './useScrollReveal';
 
 export interface RevealGroup {
   selector: string;
@@ -33,11 +34,16 @@ export function useLandingReveal(root: RefObject<HTMLElement | null>, groups: Re
 
     const delays = new Map<HTMLElement, number>();
     const firsts = new Set<HTMLElement>();
+    const onScreen = new Set<HTMLElement>();
+    const cssEntrance = new Set<HTMLElement>();
     for (const g of groups) {
       box.querySelectorAll<HTMLElement>(g.selector).forEach((el, i) => {
         if (seen.current.has(el) || delays.has(el)) return;
         // 처음 그릴 때 이미 보이는 덩어리만 첫 화면 순서를 따른다 (불러온 뒤 나타난 카드도 화면 안이면 같은 흐름)
-        const inView = el.getBoundingClientRect().top < window.innerHeight;
+        const r = el.getBoundingClientRect();
+        const inView = r.top < window.innerHeight;
+        if (inView && r.bottom > 0) onScreen.add(el);
+        if (hasEntranceAnimation(el)) cssEntrance.add(el);
         const first = inView && (initial || window.scrollY < 40);
         if (first) firsts.add(el);
         delays.set(el, g.delay?.(i, el, first) ?? 0);
@@ -64,9 +70,12 @@ export function useLandingReveal(root: RefObject<HTMLElement | null>, groups: Re
 
     delays.forEach((_, el) => {
       if (el.contains(document.activeElement)) { seen.current.add(el); return; }
+      // 자체 CSS 등장 애니메이션과 겹치지 않게 끄고, 이미 화면 안이면 보임 신호를 기다리지 않는다 (useScrollReveal과 같은 이유)
+      if (cssEntrance.has(el)) el.style.animation = 'none';
       pending.add(el);
       el.classList.add(WAITING);
-      io.observe(el);
+      if (onScreen.has(el)) show(el);
+      else io.observe(el);
     });
 
     const settle = () => { active.forEach(a => a.cancel()); active.clear(); };
