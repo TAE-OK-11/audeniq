@@ -4,6 +4,7 @@ import { ApiError } from './errors';
 import { createStore, uid } from '../lib/store';
 import { readJSON, removeKey, writeJSON } from '../lib/storage';
 import { stampNow, todayStr } from '../lib/date';
+import { creditHistory, type CreditHistory } from '../lib/credits';
 
 // 네트워크 흉내 지연 — 읽기는 거의 즉시, 인증·접수만 짧게 (버튼 진행 상태가 보이도록)
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -245,6 +246,10 @@ export const mockApi = {
     return db.get()
       .map(summary)
       .sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)));
+  },
+  creditHistory: async (): Promise<CreditHistory> => {
+    await delay(40);
+    return creditHistory(db.get().flatMap(r => r.tracks));
   },
   getRelease: async (id: string): Promise<ReleaseDetail> => {
     await delay(40);

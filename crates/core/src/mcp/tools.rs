@@ -2044,6 +2044,7 @@ async fn run(
             let input = crate::smart_links::LinkInput {
                 enabled: args.get("enabled").and_then(Value::as_bool).unwrap_or(true),
                 links,
+                show_lyrics: None,
             };
             crate::smart_links::save(s, a, org, release, input).await?;
             smart_link(s, a, org, release).await

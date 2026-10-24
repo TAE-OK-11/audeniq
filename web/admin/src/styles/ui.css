@@ -447,6 +447,8 @@ button.ui-avatar:hover{transform:scale(1.06);background:var(--aq-blue-200)}
 /* 입력칸 초점 테두리가 잘리지 않게 4px 여유를 두고, 다 열린 뒤에는 넘침을 푼다(선택창·날짜 창이 밖으로 열린다) */
 .ui-reveal-inner{min-height:0;overflow:hidden;margin:-4px;padding:4px;transform:translateY(-6px);transition:transform var(--aq-motion-long) var(--aq-enter)}
 .ui-reveal.is-open>.ui-reveal-inner{transform:none}
+/* 초점은 화면 읽기 프로그램이 따라오게만 — 펼친 묶음 전체에 테두리를 그리지 않는다 */
+.ui-reveal:is(:focus,:focus-visible){outline:none!important;box-shadow:none!important}
 .ui-reveal.is-settled>.ui-reveal-inner{overflow:visible}
 @media (prefers-reduced-motion:reduce){.ui-reveal,.ui-reveal-inner{transition:none}}
 

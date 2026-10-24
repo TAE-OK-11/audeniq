@@ -41,6 +41,7 @@ import { SplitsCard } from '../components/SplitsCard';
 import { fetchArtistPages, type ArtistPages } from '../lib/artistPages';
 import { TERRITORY_GROUPS, WORLD, parseTerritories, territoryName, territorySummary, worldExcept } from '../lib/territories';
 import { revealField } from '../lib/motion';
+import { addCredit, creditChips, type CreditHistory } from '../lib/credits';
 
 /** 동시 발매로 고를 수 있는 한국 시간 (서버는 정각·30분만 받는다) */
 const RELEASE_TIMES = ['00:00', '09:00', '12:00', '13:00', '18:00', '19:00', '20:00'];
@@ -1074,11 +1075,28 @@ function UploadStatus({ upload, idle }: { upload?: UploadState; idle: string }) 
 }
 
 // 트랙 입력 행 — memo로 감싸 한 곡 입력 시 다른 곡이 리렌더되지 않도록 분리
+/** 크레딧 칸 아래 — 예전 발매에 쓴 이름을 눌러서 덧붙인다 (칸에 이미 있는 이름은 빼고 다섯 개까지) */
+function CreditChips({ names, value, onAdd, label }: { names?: string[]; value: string; onAdd: (v: string) => void; label: string }) {
+  const chips = names ? creditChips(names, value) : [];
+  if (!chips.length) return null;
+  return (
+    <div className="aq-credit-chips" role="group" aria-label={`${label} — 예전에 쓴 이름`}>
+      {chips.map(n => (
+        <button key={n} type="button" className="aq-credit-chip" onClick={() => onAdd(addCredit(value, n))}>
+          <Glyph name="plus" size={12} />{n}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 const TrackEditor = memo(function TrackEditor({
   track: t, index: i, expanded, canDelete, upload, collapsed = false, complete = false, onOpen, onCollapse,
-  onToggleExpand, onDeleteTrack, setTrack, onTrackAudio,
+  onToggleExpand, onDeleteTrack, setTrack, onTrackAudio, credits,
 }: {
   track: Track; index: number; expanded: boolean; canDelete: boolean;
+  /** 예전 발매에 쓴 크레딧 이름 — 칸 아래 제안 칩 */
+  credits?: CreditHistory;
   /** 곡이 여럿일 때 지금 고치는 곡만 펼치고 나머지는 한 줄 요약으로 접는다 */
   collapsed?: boolean; complete?: boolean; onOpen?: (id: string) => void; onCollapse?: () => void;
   onToggleExpand: (id: string) => void; onDeleteTrack: (id: string) => void;
@@ -1125,6 +1143,7 @@ const TrackEditor = memo(function TrackEditor({
         <div className="ui-field">
           <label htmlFor={`tr-${i}-composers`}>작곡 <span className="required">*</span></label>
           <input id={`tr-${i}-composers`} value={t.composers} onChange={e => setTrack(t.id, 'composers', e.target.value)} placeholder="실명 또는 활동명, 쉼표로 구분" maxLength={200} />
+          <CreditChips names={credits?.composers} value={t.composers} label="작곡" onAdd={v => setTrack(t.id, 'composers', v)} />
         </div>
         <div className="ui-field">
           <label htmlFor={`tr-${i}-lyricists`}>작사 {!t.instrumental && <span className="required">*</span>}</label>
@@ -1133,6 +1152,7 @@ const TrackEditor = memo(function TrackEditor({
             onChange={e => setTrack(t.id, 'lyricists', e.target.value)}
             placeholder={t.instrumental ? '연주곡은 입력하지 않아요' : '실명 또는 활동명, 쉼표로 구분'} maxLength={200}
           />
+          {!t.instrumental && <CreditChips names={credits?.lyricists} value={t.lyricists} label="작사" onAdd={v => setTrack(t.id, 'lyricists', v)} />}
         </div>
       </div>
       <label className="ui-check is-plain aq-inst-line">
@@ -1176,6 +1196,7 @@ const TrackEditor = memo(function TrackEditor({
             <div className="ui-field">
               <label htmlFor={`tr-${i}-arrangers`}>편곡</label>
               <input id={`tr-${i}-arrangers`} value={t.arrangers} onChange={e => setTrack(t.id, 'arrangers', e.target.value)} placeholder="참여자 이름" maxLength={200} />
+              <CreditChips names={credits?.arrangers} value={t.arrangers} label="편곡" onAdd={v => setTrack(t.id, 'arrangers', v)} />
             </div>
             <div className="ui-field">
               <label htmlFor={`tr-${i}-performers`}>실연자 (보컬·연주)</label>
@@ -1388,6 +1409,9 @@ export function Upload() {
   const [signer, setSigner] = useState({ name: '', role: SIGNER_ROLES[0], touched: false });
   const [agreed, setAgreed] = useState<Record<string, boolean>>({});
   const [form, setForm] = useState<WizardForm>(() => ({ ...EMPTY, artist: profile.name || '', tracks: [newTrack()] }));
+  // 예전 발매에 쓴 크레딧 이름 — 곡 정보 칸 아래 제안 칩 (못 불러오면 칩만 없다)
+  const [creditNames, setCreditNames] = useState<CreditHistory | undefined>();
+  useEffect(() => { api.creditHistory().then(setCreditNames, () => undefined); }, []);
   const [dsps, setDsps] = useState<DspAvailability[] | null>(null);
   const [dspError, setDspError] = useState('');
   useEffect(() => {
@@ -2448,6 +2472,7 @@ export function Upload() {
                   onDeleteTrack={deleteTrack}
                   setTrack={setTrack}
                   onTrackAudio={onTrackAudio}
+                  credits={creditNames}
                   upload={uploads[t.id]}
                 />
               ))}
