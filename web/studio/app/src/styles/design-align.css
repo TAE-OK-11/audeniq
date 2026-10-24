@@ -992,7 +992,41 @@ body.wizard-mode .portal-header,.portal-header:has(#portalNav:not([hidden])){box
 .aq-smartlink-back+*{clear:both}
 @media (hover:hover){.aq-smartlink-back:hover{background:var(--aq-gray-50);color:var(--aq-primary)}}
 /* 계정 정보 > 아티스트 소개 페이지 편집 창 — 주소 · 소개 글 · 공개 스위치 */
-.aq-artist-link-editor{display:grid;gap:16px}
+.aq-artist-link-editor{display:grid;gap:20px}
+/* 아티스트 소개 페이지 편집 — 맨 위 공유 카드(이름·상태·주소 + 도구 타일), 섹션은 제목 줄 + 내용 */
+.aq-al-share{display:grid;gap:14px;padding:18px;border-radius:var(--aq-r-xl);background:var(--aq-blue-50)}
+.aq-al-head{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px}
+.aq-al-avatar{display:grid;place-items:center;width:48px;height:48px;border-radius:var(--aq-r-lg);color:#fff;font-size:20px;font-weight:800}
+.aq-al-head strong{display:block;font-size:17px;font-weight:800;color:var(--aq-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-al-url{display:block;margin-top:2px;font-size:13px;font-weight:600;color:var(--aq-text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-promo-tools.aq-al-tools{grid-template-columns:repeat(4,minmax(0,1fr));margin:0}
+.aq-promo-tools.aq-al-tools .aq-promo-tool{min-height:64px;font-size:12px;text-decoration:none}
+.aq-al-note{margin:0;font-size:13px;color:var(--aq-text-3)}
+.aq-al-section{display:grid;gap:10px}
+.aq-al-section-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.aq-al-section-head h3{margin:0;font-size:15px;font-weight:800;color:var(--aq-text)}
+.aq-al-section-head label{cursor:default}
+.aq-al-count{font-size:12px;font-weight:600;color:var(--aq-text-4);font-variant-numeric:tabular-nums}
+textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:vertical}
+.aq-al-links{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.aq-al-links>li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;padding:10px 8px 10px 12px;border-radius:var(--aq-r-lg);background:var(--aq-surface)}
+.aq-al-link-icon{display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:#fff;color:var(--aq-blue-500)}
+.aq-al-link-fields{display:grid;gap:2px;min-width:0}
+.aq-al-link-fields input{width:100%;min-width:0;border:0;padding:2px 0;background:transparent;font:inherit;color:var(--aq-text);outline:none}
+.aq-al-link-fields .aq-al-link-label{font-size:15px;font-weight:700}
+.aq-al-link-fields .aq-al-link-url{font-size:13px;font-weight:500;color:var(--aq-text-3)}
+.aq-al-link-fields input[aria-invalid]{background:transparent;box-shadow:none}
+.aq-al-link-fields input::placeholder{color:var(--aq-text-4);font-weight:500}
+.aq-al-links>li:focus-within{box-shadow:inset 0 0 0 1.5px var(--aq-primary)}
+.aq-al-links>li.is-error,.aq-al-links>li.is-error:focus-within{box-shadow:inset 0 0 0 1.5px var(--aq-red-500,#e5484d)}
+.aq-al-link-del{display:grid;place-items:center;width:36px;height:36px;border:0;border-radius:var(--aq-r-pill);background:transparent;color:var(--aq-text-4);cursor:pointer;transition:background-color var(--aq-dur) var(--aq-ease),transform var(--aq-press-out) var(--aq-press-spring)}
+@media (hover:hover){.aq-al-link-del:hover{background:var(--aq-surface-hover);color:var(--aq-text-2)}}
+.aq-al-link-del:is(:active,.is-pressed){transform:scale(var(--aq-press-btn));transition-duration:var(--aq-press-in)}
+.aq-al-link-del:focus-visible{outline:var(--aq-focus);outline-offset:2px}
+.aq-al-chips{padding:0;margin:0}
+.aq-al-chips .ui-chip{gap:4px}
+.aq-al-public{margin:0}
+.aq-al-submit{padding-top:2px}
 .aq-artist-link-editor .aq-smartlink-url{display:grid;gap:10px;margin:0}
 .aq-artist-link-editor .aq-smartlink-url code{display:block;padding:12px 14px;border-radius:var(--aq-r-md);background:var(--aq-surface);font:600 14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--aq-text-2);overflow-wrap:anywhere}
 .aq-artist-link-editor .aq-smartlink-url .ui-actions{display:flex;gap:8px}
