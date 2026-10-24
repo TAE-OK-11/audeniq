@@ -1,4 +1,4 @@
-// 보도자료 페이지 (/a/:slug/press) — 아티스트 소개 페이지의 변형. 플레이리스트 큐레이터·기자·공연 기획자에게 보내는 한 장:
+// 보도자료 페이지 (/link/artist/:slug/press) — 아티스트 소개 페이지의 변형. 플레이리스트 큐레이터·기자·공연 기획자에게 보내는 한 장:
 // 소개, 연락처(아티스트가 넣었을 때만), 발매마다 스마트링크·커버 받기·홍보 이미지, 플랫폼 페이지와 링크.
 // 소개 페이지와 같은 데이터(useArtistPage)라 소개 페이지를 끄면 이 페이지도 닫힌다.
 import { useState } from 'react';
@@ -8,6 +8,7 @@ import { MOCK } from '../lib/mode';
 import { PLATFORM_NAMES } from '../lib/platformNames';
 import { gradientFor } from '../lib/catalog';
 import { linkBrand, shortUrl } from '../lib/ownLinks';
+import { artistPath, releasePath, releaseUrl } from '../lib/publicLinks';
 import { BrandMark } from '../components/BrandMark';
 import { Glyph } from '../components/Glyph';
 import { PromoImageButton } from '../components/PromoImageButton';
@@ -19,7 +20,7 @@ const dotted = (d: string | null) => (d ? d.replace(/-/g, '.') : '발매일 미�
 function PressRelease({ r, artist }: { r: ArtistRelease; artist: string }) {
   const [ok, setOk] = useState(true);
   const cover = r.cover && ok && !MOCK ? coverUrl(r.slug) : '';
-  const link = `${window.location.origin}/l/${r.slug}`;
+  const link = releaseUrl(r.slug);
   return (
     <li className="aq-press-release">
       {cover
@@ -29,7 +30,7 @@ function PressRelease({ r, artist }: { r: ArtistRelease; artist: string }) {
         <strong className="ui-row-title">{r.title}</strong>
         <span className="ui-row-meta"><span>{RELEASE_TYPE[r.type] ?? r.type}</span><span>{dotted(r.release_date)}{r.released ? '' : ' 발매 예정'}</span></span>
         <div className="aq-press-actions">
-          <Link to={`/l/${encodeURIComponent(r.slug)}`} className="ui-btn is-sm"><Glyph name="link" size={14} />스마트링크</Link>
+          <Link to={releasePath(r.slug)} className="ui-btn is-sm"><Glyph name="link" size={14} />스마트링크</Link>
           {cover && <a className="ui-btn is-sm" href={cover} download={`${r.title}-cover.jpg`} target="_blank" rel="noopener noreferrer"><Glyph name="download" size={14} />커버 받기</a>}
           <PromoImageButton input={{ title: r.title, artist, releaseDate: r.release_date, url: link, cover: cover || undefined }} filename={`audeniq-${r.slug}`} />
         </div>
@@ -118,7 +119,7 @@ export function ArtistPress() {
             </ul>
           </section>
         )}
-        <p className="aq-smartlink-foot"><Link to={`/a/${slug}`}>아티스트 페이지</Link> · Distributed by AUDENIQ</p>
+        <p className="aq-smartlink-foot"><Link to={artistPath(slug)}>아티스트 페이지</Link> · Distributed by AUDENIQ</p>
       </article>
     </main>
   );

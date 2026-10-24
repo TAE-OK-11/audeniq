@@ -5574,6 +5574,120 @@ async fn artist_page_lists_releases_with_smart_links(pool: PgPool) {
         .await;
         assert_eq!(s, StatusCode::NOT_FOUND, "{bad}");
     }
+
+    // The artist chooses the address (handle): checked live, unique across orgs,
+    // reserved words and protected names refused; the old random one stops working.
+    let check = |h: &str| {
+        format!(
+            "/api/orgs/{}/artists/{artist}/link/handle?handle={h}",
+            ctx.org
+        )
+    };
+    for (h, reason) in [
+        ("ab", "ARTIST_LINK_HANDLE_INVALID"),
+        ("Serin.Music", "ARTIST_LINK_HANDLE_INVALID"),
+        ("-serin", "ARTIST_LINK_HANDLE_INVALID"),
+        ("press", "ARTIST_LINK_HANDLE_RESERVED"),
+    ] {
+        let (_, v) = call(&ctx.app, "GET", &check(h), Value::Null, Some(&ctx.user)).await;
+        assert_eq!(
+            (v["available"].as_bool(), v["reason"].as_str()),
+            (Some(false), Some(reason)),
+            "{h}: {v}"
+        );
+    }
+    let (_, v) = call(
+        &ctx.app,
+        "GET",
+        &check("%40Serin_Official"),
+        Value::Null,
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(
+        (v["handle"].as_str(), v["available"].as_bool()),
+        (Some("serin_official"), Some(true)),
+        "{v}"
+    );
+    let (s, v) = call(
+        &ctx.app,
+        "PUT",
+        &save,
+        json!({"handle": "@Serin_Official", "bio": ""}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(
+        (s, v["slug"].as_str()),
+        (StatusCode::OK, Some("serin_official")),
+        "{v}"
+    );
+    let (s, _) = call(
+        &ctx.app,
+        "GET",
+        "/api/artist-links/serin_official",
+        Value::Null,
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "opens under the handle");
+    let (s, _) = call(&ctx.app, "GET", &public, Value::Null, None).await;
+    assert_eq!(
+        s,
+        StatusCode::NOT_FOUND,
+        "the old random address no longer opens"
+    );
+    let (_, v) = call(
+        &ctx.app,
+        "GET",
+        &check("serin_official"),
+        Value::Null,
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["available"], true, "its own handle: {v}");
+    // Another artist (here: of the same org) cannot take it.
+    let second = Uuid::new_v4();
+    sqlx::query("INSERT INTO identity.resources(org_id, id, kind) VALUES($1,$2,'artist')")
+        .bind(ctx.org)
+        .bind(second)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO catalog.artists(id, org_id, name) VALUES($1,$2,'둘째')")
+        .bind(second)
+        .bind(ctx.org)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let save2 = format!("/api/orgs/{}/artists/{second}/link", ctx.org);
+    let (_, v) = call(
+        &ctx.app,
+        "GET",
+        &format!("{save2}/handle?handle=serin_official"),
+        Value::Null,
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["reason"], "ARTIST_LINK_HANDLE_TAKEN", "{v}");
+    let (_, v) = call(
+        &ctx.app,
+        "PUT",
+        &save2,
+        json!({"handle": "serin_official"}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "ARTIST_LINK_HANDLE_TAKEN", "{v}");
+    let (_, v) = call(
+        &ctx.app,
+        "PUT",
+        &save2,
+        json!({"handle": "serin-2nd"}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["slug"], "serin-2nd", "{v}");
 }
 
 /// The org's codes: each submitted release with its UPC and track ISRCs,
@@ -7272,7 +7386,7 @@ async fn presave_saves_album_at_release_and_erases_tokens(pool: PgPool) {
                 .collect::<std::collections::HashMap<String, String>>()
         }
     };
-    let back = format!("/l/{slug}");
+    let back = format!("/link/release/{slug}");
 
     // Spotify: PKCE, the return saves a sealed refresh token; the state is single-use.
     let q = start("spotify").await;

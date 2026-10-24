@@ -3850,7 +3850,7 @@ async fn smart_link(
     let mut v = crate::smart_links::status(s, a, org, release).await?;
     let url = v["link"]["slug"]
         .as_str()
-        .map(|slug| format!("{}/l/{slug}", super::issuer(s)));
+        .map(|slug| format!("{}/link/release/{slug}", super::issuer(s)));
     v["view"] = json!("smart_link");
     v["release_id"] = json!(release);
     v["url"] = json!(url);

@@ -317,7 +317,7 @@ async fn exchange(s: &AppState, p: &Provider, code: &str, verifier: &str) -> Res
 pub async fn callback(s: &AppState, name: &str, q: CallbackParams) -> Response {
     let to = |slug: Option<&str>, query: &str| {
         let path = slug
-            .map(|sl| format!("/l/{sl}"))
+            .map(|sl| format!("/link/release/{sl}"))
             .unwrap_or_else(|| "/".into());
         let mut r = StatusCode::SEE_OTHER.into_response();
         if let Ok(v) = HeaderValue::from_str(&format!("{}{path}?{query}", s.config.origin)) {
