@@ -915,8 +915,8 @@ summary::-webkit-details-marker{display:none}
 
 /* ---------- 은행·플랫폼 로고 (components/BrandMark.tsx) ---------- */
 .aq-brand{display:inline-grid;place-items:center;flex:none;overflow:hidden;border-radius:28%;background:var(--brand);color:#fff;font-size:13px;font-weight:var(--aq-fw-heavy);line-height:1}
-.aq-brand.is-glyph>i{display:block;width:62%;height:62%;background:#fff;-webkit-mask:no-repeat center/contain;mask:no-repeat center/contain}
-.aq-brand.is-glyph.is-ink>i{background:#111}
+.aq-brand.is-glyph>img{display:block;width:62%;height:62%;object-fit:contain;filter:brightness(0) invert(1)}
+.aq-brand.is-glyph.is-ink>img{filter:brightness(0) invert(.07)}
 .aq-brand.is-image{background:#fff;box-shadow:inset 0 0 0 1px rgba(23,27,41,.06)}
 .aq-brand.is-image>img{width:100%;height:100%;object-fit:contain}
 .aq-brand.is-letter{border-radius:50%}

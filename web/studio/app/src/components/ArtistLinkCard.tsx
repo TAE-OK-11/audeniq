@@ -1,13 +1,13 @@
-// 계정 정보 > 아티스트 소개 페이지 — 아티스트마다 하나의 공개 주소(/a/코드): 이름·소개 글·플랫폼 아티스트 페이지와
-// 스마트링크를 켠 발매들. 계정 정보의 다른 항목과 같은 '줄 + ›' 모양이고, 줄을 누르면 소개 글·공개 여부를 고치는 창이 열린다.
+// 아티스트 소개 페이지 편집 창 — 아티스트마다 하나의 공개 주소(/a/코드): 이름·소개 글·플랫폼 아티스트 페이지와
+// 스마트링크를 켠 발매들. 계정 정보 > 아티스트 페이지(ArtistHubCard)의 '소개 페이지' 줄에서 열린다.
 // 처음 저장하면 주소가 만들어지고, 꺼도 주소는 그대로라 다시 켜면 같은 링크로 열린다.
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { orgPath, req } from '../api/http';
 import { errorMessage } from '../api/errors';
 import { MOCK } from '../lib/mode';
 import { num } from '../lib/format';
 import { useProfile } from '../store/profile';
-import { Modal, useModalClose } from './Modal';
+import { useModalClose } from './Modal';
 import { Glyph } from './Glyph';
 import { CopyButton } from './CopyButton';
 import { QrButton } from './QrButton';
@@ -33,7 +33,7 @@ export function linkSummary(a: ArtistLinkRow): { text: string; empty: boolean } 
   return { text: `공개 중 · 최근 30일 ${num(a.link.views)}회`, empty: false };
 }
 
-function LinkEditor({ artist, onSaved }: { artist: ArtistLinkRow; onSaved: (row: ArtistLinkRow) => void }) {
+export function LinkEditor({ artist, onSaved }: { artist: ArtistLinkRow; onSaved: (row: ArtistLinkRow) => void }) {
   const close = useModalClose();
   const toast = useToast();
   const profile = useProfile();
@@ -158,41 +158,5 @@ function LinkEditor({ artist, onSaved }: { artist: ArtistLinkRow; onSaved: (row:
         <button type="submit" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={busy}>{busy ? '저장하는 중' : slug ? '저장' : '페이지 만들기'}</button>
       </div>
     </form>
-  );
-}
-
-export function ArtistLinkCard() {
-  const profile = useProfile();
-  const [items, setItems] = useState<ArtistLinkRow[] | null>(null);
-  const [edit, setEdit] = useState<ArtistLinkRow | null>(null);
-  const load = useCallback(async () => {
-    // 체험 모드: 활동명으로 아티스트 하나 (저장은 이 화면 안에서만)
-    if (MOCK) { setItems(cur => cur ?? [{ artist_id: 'mock', name: profile.name.trim() || '서린', releases: 2, link: null }]); return; }
-    try { setItems((await req<{ items: ArtistLinkRow[] }>(orgPath('/artist-links'), { quiet401: true })).items); }
-    catch { setItems(null); }
-  }, [profile.name]);
-  useEffect(() => { void load(); }, [load]);
-  if (!items?.length) return null;
-
-  return (
-    <section className="aq-set-card" aria-labelledby="setArtistLink">
-      <h2 id="setArtistLink">아티스트 소개 페이지</h2>
-      <p className="ui-field-help aq-set-help">이름·소개 글과 발매를 한 주소로 모아 SNS·프로필에 걸 수 있어요. 발매를 누르면 그 발매의 스마트링크로 이동해요.</p>
-      {items.map(a => {
-        const s = linkSummary(a);
-        return (
-          <button key={a.artist_id} type="button" className="aq-set-row" onClick={() => setEdit(a)}>
-            <span className="aq-set-label">{a.name}</span>
-            <span className={`aq-set-value${s.empty ? ' is-empty' : ''}`}>{s.text}</span>
-            <Glyph name="chevron-right" size={16} className="aq-set-chev" />
-          </button>
-        );
-      })}
-      {edit && (
-        <Modal title={`${edit.name} 소개 페이지`} onClose={() => setEdit(null)} modalClass="aq-set-modal">
-          <LinkEditor artist={edit} onSaved={row => setItems(list => list?.map(x => (x.artist_id === row.artist_id ? row : x)) ?? null)} />
-        </Modal>
-      )}
-    </section>
   );
 }

@@ -682,6 +682,9 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
        고정(fixed) 띠는 화면에 붙어 바로 따라오고, 덮는 곳은 원래 흰 머리 여백이라 모양은 그대로다.
        창(Modal)이 열려 있으면 위쪽을 어두운 배경 색으로 덮어야 하므로 예전 크기로 둔다. 로그인 등 머리 없는 화면도 그대로 */
     body:has(.portal-header):not(:has(#modal))>.aq-tint-top{height:calc(env(safe-area-inset-top,0px) + 12px)}
+    /* 머리글이 없는 공개 화면(스마트링크·아티스트 소개·보도자료)은 흰 띠를 두지 않는다 — 바탕이 흐린 커버 색이라
+       상태 표시줄 칸만 흰색으로 칠해지고, 스크롤하면 그 흰 칸이 커졌다 줄었다 하며 움직여 보였다(녹화) */
+    body:has(.aq-smartlink)>.aq-tint-top{display:none}
   }
 }
 
@@ -993,6 +996,9 @@ body.wizard-mode .portal-header,.portal-header:has(#portalNav:not([hidden])){box
 @media (hover:hover){.aq-smartlink-back:hover{background:var(--aq-gray-50);color:var(--aq-primary)}}
 /* 계정 정보 > 아티스트 소개 페이지 편집 창 — 주소 · 소개 글 · 공개 스위치 */
 .aq-artist-link-editor{display:grid;gap:20px}
+/* 계정 정보 > 아티스트 페이지 — 아티스트 이름 아래에 플랫폼 페이지·소개 페이지 두 줄 */
+.aq-artist-hub-group+.aq-artist-hub-group{margin-top:6px;padding-top:6px;box-shadow:inset 0 1px 0 var(--aq-line)}
+.aq-artist-hub-name{margin:0;padding:10px 14px 2px;font-size:13px;font-weight:800;color:var(--aq-text-3)}
 /* 아티스트 소개 페이지 편집 — 맨 위 공유 카드(이름·상태·주소 + 도구 타일), 섹션은 제목 줄 + 내용 */
 .aq-al-share{display:grid;gap:14px;padding:18px;border-radius:var(--aq-r-xl);background:var(--aq-blue-50)}
 .aq-al-head{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px}
