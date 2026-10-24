@@ -9,6 +9,7 @@ import { useToast } from './Toast';
 import { useConfirm } from './Confirm';
 import { DateField } from './Picker';
 import { ManageHead } from './ManageHead';
+import { Reveal } from '../ui';
 
 interface Term {
   end_date: string; reason: string; note: string; status: string; set_by_staff: boolean; transfer_to?: string | null;
@@ -99,12 +100,14 @@ export function TermCard({ releaseId }: { releaseId: string }) {
             <button type="button" className="ui-btn is-text is-sm" onClick={() => void cancel()}>종료 예약 취소</button>
           )}
         </>
-      ) : !open ? (
-        <>
-          <p className="ui-field-help">배급을 끝내거나 라이선스가 만료되는 날을 정하면, 그날 모든 플랫폼에서 내려가고 90일 안에 최종 정산해요.</p>
-          <button type="button" className="ui-btn is-soft" onClick={() => setOpen(true)}>종료일 정하기</button>
-        </>
       ) : (
+        <>
+          {/* 설명은 펼친 뒤에도 남긴다 — 무엇을 정하는지 보면서 고르게 */}
+          <p className="ui-field-help">배급을 끝내거나 라이선스가 만료되는 날을 정하면, 그날 모든 플랫폼에서 내려가고 90일 안에 최종 정산해요.</p>
+          <Reveal open={!open} focus="first">
+            <button type="button" className="ui-btn is-soft" aria-expanded={open} onClick={() => setOpen(true)}>종료일 정하기</button>
+          </Reveal>
+          <Reveal open={open}>
         <div className="aq-correction-form">
           <div className="form-grid">
             <div className="ui-field">
@@ -136,6 +139,8 @@ export function TermCard({ releaseId }: { releaseId: string }) {
             <button type="button" className="ui-btn is-primary" onClick={() => void save()} disabled={busy}>{busy ? '저장 중' : '종료 예약'}</button>
           </div>
         </div>
+          </Reveal>
+        </>
       )}
     </section>
   );

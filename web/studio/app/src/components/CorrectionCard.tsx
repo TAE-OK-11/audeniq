@@ -7,6 +7,8 @@ import { errorMessage } from '../api/errors';
 import { MOCK } from '../lib/mode';
 import { useToast } from './Toast';
 import { ManageHead } from './ManageHead';
+import { Reveal } from '../ui';
+import { Glyph } from './Glyph';
 
 interface Credit { name: string; role: string }
 interface TrackRow { track_id: string; title: string; credits: Credit[] }
@@ -90,8 +92,12 @@ export function CorrectionCard({ releaseId }: { releaseId: string }) {
           {st.request.status === 'PENDING' && <button type="button" className="ui-btn is-text is-sm" onClick={() => void cancel()}>요청 취소</button>}
         </p>
       )}
-      {st.can_request && !open && <button type="button" className="ui-btn is-soft" onClick={start}>정보 수정 요청</button>}
-      {open && (
+      {st.can_request && (
+        <Reveal open={!open} focus="first">
+          <button type="button" className="ui-btn is-soft" aria-expanded={open} onClick={start}>정보 수정 요청</button>
+        </Reveal>
+      )}
+      <Reveal open={open}>
         <div className="aq-correction-form">
           <div className="ui-field">
             <label htmlFor="corrGenre">장르</label>
@@ -107,10 +113,10 @@ export function CorrectionCard({ releaseId }: { releaseId: string }) {
                     {!ROLES.includes(c.role) && <option value={c.role}>{c.role}</option>}
                     {ROLES.map(r => <option key={r} value={r}>{ROLE_KO[r]}</option>)}
                   </select>
-                  <button type="button" className="ui-btn is-text is-sm" onClick={() => setTracks(ts => ts.map((x, i) => (i === ti ? { ...x, credits: x.credits.filter((_, j) => j !== ci) } : x)))}>삭제</button>
+                  <button type="button" className="ui-btn is-text is-sm" aria-label={`${c.name || '크레딧'} 삭제`} onClick={() => setTracks(ts => ts.map((x, i) => (i === ti ? { ...x, credits: x.credits.filter((_, j) => j !== ci) } : x)))}>삭제</button>
                 </div>
               ))}
-              <button type="button" className="ui-btn is-soft is-sm" onClick={() => setTracks(ts => ts.map((x, i) => (i === ti ? { ...x, credits: [...x.credits, { name: '', role: 'Composer' }] } : x)))}>크레딧 추가</button>
+              <button type="button" className="ui-btn is-soft is-sm" onClick={() => setTracks(ts => ts.map((x, i) => (i === ti ? { ...x, credits: [...x.credits, { name: '', role: 'Composer' }] } : x)))}><Glyph name="plus" size={14} className="aq-glyph-lead" />크레딧 추가</button>
             </fieldset>
           ))}
           <div className="ui-field">
@@ -122,7 +128,7 @@ export function CorrectionCard({ releaseId }: { releaseId: string }) {
             <button type="button" className="ui-btn is-primary" onClick={() => void submit()} disabled={busy}>{busy ? '보내는 중' : '수정 요청'}</button>
           </div>
         </div>
-      )}
+      </Reveal>
     </section>
   );
 }

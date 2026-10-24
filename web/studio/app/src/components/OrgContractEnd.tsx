@@ -8,6 +8,7 @@ import { MOCK } from '../lib/mode';
 import { useToast } from './Toast';
 import { useConfirm } from './Confirm';
 import { DateField } from './Picker';
+import { Reveal } from '../ui';
 
 interface OrgTerm { end_date: string; note: string; status: string; set_by_staff: boolean }
 interface ReleaseTerm { release_id: string; title: string; end_date: string; reason: string; status: string; final_settlement_due: string | null }
@@ -48,15 +49,26 @@ export function OrgContractEnd() {
       {t ? (
         <p>{t.status === 'ENDED' ? `${t.end_date}에 배급 계약이 끝났어요.` : `${t.end_date}에 배급 계약이 끝나요. 새 발매 신청은 받지 않아요.`}
           {t.status === 'SCHEDULED' && owner && !t.set_by_staff && <button type="button" className="ui-btn is-text is-sm" onClick={() => void cancel()}>종료 취소</button>}</p>
-      ) : owner && (open ? (
-        <div className="aq-confirm-actions" style={{ justifyContent: 'flex-start' }}>
-          <DateField aria-label="계약 종료일" min={plus(30)} value={date} onChange={setDate} />
-          <button type="button" className="ui-btn is-soft" onClick={() => setOpen(false)}>닫기</button>
-          <button type="button" className="ui-btn is-primary" onClick={() => void save()}>종료 예약</button>
-        </div>
-      ) : (
-        <p className="small muted">배급을 그만두려면 30일 전에 종료일을 정해 주세요. <button type="button" className="ui-btn is-text is-sm" onClick={() => setOpen(true)}>종료일 정하기</button></p>
-      ))}
+      ) : owner && (
+        <>
+          <p className="small muted">배급을 그만두려면 30일 전에 종료일을 정해 주세요.</p>
+          <Reveal open={!open} focus="first">
+            <button type="button" className="ui-btn is-soft is-sm" aria-expanded={open} onClick={() => setOpen(true)}>종료일 정하기</button>
+          </Reveal>
+          <Reveal open={open}>
+            <div className="aq-correction-form">
+              <div className="ui-field">
+                <label htmlFor="orgEndDate">계약 종료일</label>
+                <DateField id="orgEndDate" min={plus(30)} value={date} onChange={setDate} />
+              </div>
+              <div className="aq-confirm-actions">
+                <button type="button" className="ui-btn is-soft" onClick={() => setOpen(false)}>닫기</button>
+                <button type="button" className="ui-btn is-primary" onClick={() => void save()}>종료 예약</button>
+              </div>
+            </div>
+          </Reveal>
+        </>
+      )}
       {data.releases.length > 0 && (
         <ul className="ui-list">
           {data.releases.map(r => (
