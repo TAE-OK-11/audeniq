@@ -182,7 +182,7 @@ function TaxEditor({ current, onSaved }: { current: TaxResidency | null; onSaved
         </div>
       )}
       {error && <p className="ui-field-help aq-help-error" role="alert">{error}</p>}
-      <button type="submit" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={busy}>저장하기</button>
+      <button type="submit" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={busy}>저장</button>
     </form>
   );
 }

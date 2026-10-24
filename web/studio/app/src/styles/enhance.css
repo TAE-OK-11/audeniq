@@ -238,7 +238,6 @@ img{max-width:100%}
 .aq-auth-brand span{font-size:10px;font-weight:800;letter-spacing:.2em;color:var(--aq-e-blue);padding:4px 8px;border-radius:var(--aq-r-xs);background:var(--aq-e-blue-soft)}
 .auth-foot{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
 .aq-done-icon{display:grid;place-items:center;width:44px;height:44px;margin:0 auto 12px;border-radius:50%;background:var(--aq-e-blue-soft);color:var(--aq-e-blue);font-weight:800;animation:aq-soft-pop var(--aq-motion-long) var(--aq-enter) both}
-.auth-done{text-align:center;animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) both}
 
 /* ---------- 위자드 ---------- */
 .wizard-topbar{position:relative}
@@ -1810,3 +1809,6 @@ a.aq-inline-link{display:inline-block;max-width:100%}
 .aq-verify-dl{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;margin:10px 0 0}
 .aq-verify-dl dt{color:var(--aq-text-3);font-weight:600}
 .aq-verify-dl dd{margin:0;word-break:break-all}
+
+/* 계정 찾기 — 카드 안에 흰 칸을 겹치지 않고 안내 글 + 버튼만 */
+.aq-find-panel{display:grid;gap:18px;margin-top:4px}
