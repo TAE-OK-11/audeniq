@@ -1053,6 +1053,25 @@ body.wizard-mode .portal-header,.portal-header:has(#portalNav:not([hidden])){box
 .aq-smartlink-countdown{display:grid;gap:2px;margin:14px auto 0;padding:12px 18px;border-radius:var(--aq-r-lg);background:var(--aq-blue-50);width:max-content;max-width:100%}
 .aq-smartlink-countdown small{font-size:12px;font-weight:700;color:var(--aq-blue-500)}
 .aq-smartlink-countdown strong{font-size:24px;font-weight:800;letter-spacing:-.01em;color:var(--aq-text);font-variant-numeric:tabular-nums}
+/* 발매 전 — 캘린더 추가, 프리세이브(플랫폼별 버튼 한 줄씩, 듣기 목록과 같은 결) */
+.aq-smartlink-cal{margin:10px auto 0}
+.aq-smartlink-presave-result{display:flex;align-items:flex-start;gap:8px;margin:16px 0 0;padding:10px 12px;border-radius:var(--aq-r-lg);background:var(--aq-blue-50);color:var(--aq-blue-500);font-size:14px;font-weight:700;text-align:left;line-height:1.5}
+.aq-smartlink-presave-result svg{flex:none;margin-top:2px}
+.aq-smartlink-presave-result.is-error{background:#fef3f2;color:#d92d20}
+.aq-smartlink-presave{margin:22px 0 0;text-align:left}
+.aq-smartlink-presave .aq-smartlink-list-title{margin-bottom:4px}
+.aq-smartlink-presave-help{margin:0 0 10px;font-size:13px;color:var(--aq-text-3)}
+.aq-smartlink-presave-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.aq-smartlink-presave-btn{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;width:100%;min-height:56px;padding:10px 12px;border:0;border-radius:var(--aq-r-xl);background:var(--aq-surface);color:var(--aq-text);font:inherit;font-weight:700;text-align:left;cursor:pointer;
+  transition:background var(--aq-dur-fast,.15s) ease,transform var(--aq-press-out,.2s) var(--aq-ease-out,ease)}
+.aq-smartlink-presave-btn:hover:not(:disabled){background:var(--aq-surface-hover)}
+.aq-smartlink-presave-btn:active:not(:disabled){transform:scale(var(--aq-press-row,.985));transition-duration:var(--aq-press-in,.06s)}
+.aq-smartlink-presave-btn:focus-visible{outline:var(--aq-focus);outline-offset:2px}
+.aq-smartlink-presave-btn:disabled{cursor:default;opacity:.6}
+.aq-smartlink-presave-btn[aria-busy="true"]{opacity:1}
+.aq-smartlink-presave-btn small{padding:6px 12px;border-radius:999px;background:var(--aq-primary);color:#fff;font-size:13px;font-weight:700}
+.aq-smartlink-presave-note{margin:8px 0 0;font-size:12px;color:var(--aq-text-4);line-height:1.5}
+@media (prefers-reduced-motion:reduce){.aq-smartlink-presave-btn:active:not(:disabled){transform:none}}
 .aq-smartlink-lyrics{display:grid;gap:8px;margin:22px 0 0;text-align:left}
 .aq-smartlink-lyrics .aq-faq-item{background:var(--aq-surface);border-radius:var(--aq-r-lg)}
 .aq-smartlink-lyrics .aq-faq-item p{white-space:pre-line;line-height:1.85}

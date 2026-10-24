@@ -228,7 +228,7 @@ pub(crate) fn album_url(platform: &str, id: &str) -> Option<String> {
 
 /// Album ids the platforms reported for this release when it went live,
 /// by smart link platform. Ids may come as URIs (`spotify:album:{id}`).
-async fn known_ids(
+pub(crate) async fn known_ids(
     c: &mut sqlx::PgConnection,
     org: Uuid,
     release: Uuid,
@@ -367,8 +367,7 @@ pub async fn status(s: &AppState, a: &Actor, org: Uuid, release: Uuid) -> Result
     .fetch_optional(&mut *tx)
     .await?;
     let known = known_ids(&mut tx, org, release).await?;
-    let mut stats =
-        json!({"views": 0, "clicks": {}, "days": STATS_DAYS, "alerts": 0, "alerts_waiting": 0});
+    let mut stats = json!({"views": 0, "clicks": {}, "days": STATS_DAYS, "alerts": 0, "alerts_waiting": 0, "presaves": {}});
     if let Some(l) = &link {
         let rows = sqlx::query(
             "SELECT platform, sum(count)::bigint AS n FROM portal.smart_link_stats
@@ -398,6 +397,7 @@ pub async fn status(s: &AppState, a: &Actor, org: Uuid, release: Uuid) -> Result
         .await?;
         stats["alerts"] = json!(alerts);
         stats["alerts_waiting"] = json!(waiting);
+        stats["presaves"] = crate::presave::counts_in(&mut tx, l.get::<Uuid, _>("id")).await?;
     }
     tx.commit().await?;
     let checks = link
@@ -712,6 +712,8 @@ pub async fn public_page(s: &AppState, h: &HeaderMap, slug: &str) -> Result<Valu
         "cover": row.get::<Option<Uuid>, _>("artwork_asset_id").is_some(),
         "links": list,
         "lyrics": lyrics,
+        // Pre-save platforms (settings complete) until the release is out.
+        "presave": if released { Vec::new() } else { crate::presave::offered() },
     }))
 }
 

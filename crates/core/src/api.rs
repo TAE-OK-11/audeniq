@@ -198,6 +198,7 @@ pub fn router(s: AppState) -> Router {
         .merge(crate::smart_links::routes())
         .merge(crate::codes::routes())
         .merge(crate::release_alerts::routes())
+        .merge(crate::presave::routes())
         .merge(crate::splits::routes())
         .merge(crate::platform_requests::routes())
         .merge(crate::contract_terms::routes())

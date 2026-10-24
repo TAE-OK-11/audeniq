@@ -23,7 +23,7 @@ interface State {
   auto?: Record<string, string>;
   checks?: Record<string, Check>;
   verify?: 'strict' | 'test';
-  stats: { views: number; clicks: Record<string, number>; days: number; alerts?: number; alerts_waiting?: number };
+  stats: { views: number; clicks: Record<string, number>; days: number; alerts?: number; alerts_waiting?: number; presaves?: Record<string, { total: number; saved: number }> };
   platforms: string[]; can_create: boolean;
 }
 
@@ -94,6 +94,8 @@ export function SmartLinkCard({ releaseId, promo }: { releaseId: string; promo?:
   };
   const start = () => { setLinks({ ...(l?.links ?? {}) }); setLyrics(l?.show_lyrics ?? false); setChecks(st.checks ?? {}); setEdit(true); };
   const clicks = Object.values(st.stats.clicks).reduce((a, b) => a + b, 0);
+  const presaveTotal = Object.values(st.stats.presaves ?? {}).reduce((a, b) => a + b.total, 0);
+  const presaveSaved = Object.values(st.stats.presaves ?? {}).reduce((a, b) => a + b.saved, 0);
   const auto = st.auto ?? {};
   const autoCount = Object.keys(auto).filter(p => !l?.links[p]).length;
   const strict = st.verify === 'strict';
@@ -125,6 +127,11 @@ export function SmartLinkCard({ releaseId, promo }: { releaseId: string; promo?:
           {(st.stats.alerts ?? 0) > 0 && (
             <p className="small">발매 알림 신청 <b>{(st.stats.alerts ?? 0).toLocaleString()}</b>명
               {(st.stats.alerts_waiting ?? 0) > 0 && <span className="muted"> · 발매일에 {st.stats.alerts_waiting}명에게 메일을 보내요</span>}</p>
+          )}
+          {presaveTotal > 0 && (
+            <p className="small">미리 저장 <b>{presaveTotal.toLocaleString()}</b>명
+              <span className="muted"> ({Object.entries(st.stats.presaves ?? {}).sort((a, b) => b[1].total - a[1].total).map(([p, n]) => `${PLATFORM_NAMES[p] ?? p} ${n.total}`).join(', ')}
+                {presaveSaved > 0 ? ` · 보관함에 저장됨 ${presaveSaved}` : ' · 발매되는 순간 보관함에 저장돼요'})</span></p>
           )}
         </>
       )}

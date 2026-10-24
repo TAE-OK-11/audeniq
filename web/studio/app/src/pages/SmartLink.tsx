@@ -2,6 +2,7 @@
 // 아티스트가 발매 상세에서 링크를 넣고 켜 둔 동안만 보인다. 조회·클릭 수는 아티스트에게 보인다.
 import { useEffect, useState } from 'react';
 import { countdownLabel, releaseMoment } from '../lib/countdown';
+import { presaveResult, releaseIcs, withoutPresaveQuery, type PresaveResult } from '../lib/presave';
 import { Link, useLocation, useParams } from '../lib/router';
 import { API_BASE, req } from '../api/http';
 import { errorMessage } from '../api/errors';
@@ -16,6 +17,8 @@ interface Page {
   links: { platform: string; url: string }[];
   /** 아티스트가 켠 경우만 — 곡 순서대로 */
   lyrics?: { title: string; lyrics: string }[];
+  /** 발매 전에만 — 미리 저장할 수 있는 플랫폼 (운영 설정이 된 곳) */
+  presave?: string[];
 }
 
 /** 발매 전 — 'D-3 · 12:04:31'이 1초마다 줄어들고, 0이 되면 onDone(페이지를 다시 읽어 '지금 들을 수 있어요'로) */
@@ -39,6 +42,20 @@ function Countdown({ date, time, onDone }: { date: string; time?: string | null;
   );
 }
 
+/** 발매 순간을 캘린더 일정 파일로 — 휴대폰에서 열면 캘린더 앱이 '추가'를 묻는다 */
+function saveCalendar(page: Page, slug: string) {
+  if (!page.release_date) return;
+  const ics = releaseIcs({ title: page.title, artist: page.artist, date: page.release_date, time: page.release_time, url: `${window.location.origin}/l/${slug}` });
+  const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${page.title}-발매.ics`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 const MOCK_PAGE: Page = {
   title: '여름의 끝', artist: '한결', release_date: '2026-08-01', released: true, cover: false,
   lyrics: [{ title: '여름의 끝', lyrics: '바람이 식어 가는 저녁\n우리는 아무 말 없이 걸었지' }],
@@ -58,11 +75,17 @@ export function SmartLink() {
   const [alertError, setAlertError] = useState('');
   // 카운트다운이 끝나면 다시 읽어 발매된 화면으로
   const [reloadKey, setReloadKey] = useState(0);
+  // 플랫폼에서 돌아온 결과 — 한 번 보여 주고 주소에서는 지운다
+  const [presaved, setPresaved] = useState<PresaveResult | null>(() => presaveResult(window.location.search));
+  const [presaveBusy, setPresaveBusy] = useState('');
+  useEffect(() => {
+    if (presaved) window.history.replaceState(window.history.state, '', `${window.location.pathname}${withoutPresaveQuery(window.location.search)}${window.location.hash}`);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const base = `/api/smart-links/${encodeURIComponent(slug)}`;
 
   useEffect(() => {
     // 체험 모드: 'soon'으로 시작하는 코드는 발매 전 화면
-    if (MOCK) { setPage(slug.startsWith('soon') ? { ...MOCK_PAGE, released: false, release_date: '2099-01-01' } : MOCK_PAGE); return; }
+    if (MOCK) { setPage(slug.startsWith('soon') ? { ...MOCK_PAGE, released: false, release_date: '2099-01-01', presave: ['spotify', 'deezer', 'tidal'] } : MOCK_PAGE); return; }
     req<Page>(base, { quiet401: true }).then(setPage, () => setMissing(true));
   }, [base, slug, reloadKey]);
   useEffect(() => {
@@ -93,6 +116,21 @@ export function SmartLink() {
     }
   };
 
+  // 플랫폼 로그인·허락 화면으로 — 돌아오면 ?presave= 로 결과가 붙는다
+  const presave = async (platform: string) => {
+    setPresaved(null);
+    if (MOCK) { setPresaved(presaveResult(`?presave=${platform}`)); return; }
+    setPresaveBusy(platform);
+    try {
+      const r = await req<{ url: string }>(`${base}/presave/${platform}`, { method: 'POST', body: {} });
+      if (!/^https?:\/\//.test(r.url)) throw new Error('');
+      window.location.assign(r.url);
+    } catch (e) {
+      setPresaved({ ok: false, text: errorMessage(e, '미리 저장을 시작하지 못했어요. 잠시 뒤 다시 시도해 주세요.') });
+      setPresaveBusy('');
+    }
+  };
+
   if (missing) {
     return (
       <main className="aq-smartlink is-missing">
@@ -114,7 +152,39 @@ export function SmartLink() {
         <h1>{page.title}</h1>
         {page.artist && <p className="aq-smartlink-artist">{page.artist}</p>}
         {!page.released && page.release_date && (
-          <Countdown date={page.release_date} time={page.release_time} onDone={() => setReloadKey(k => k + 1)} />
+          <>
+            <Countdown date={page.release_date} time={page.release_time} onDone={() => setReloadKey(k => k + 1)} />
+            <button type="button" className="ui-btn is-sm aq-smartlink-cal" onClick={() => saveCalendar(page, slug)}>
+              <Glyph name="calendar" size={14} />캘린더에 추가
+            </button>
+          </>
+        )}
+        {presaved && (
+          <p className={`aq-smartlink-presave-result${presaved.ok ? '' : ' is-error'}`} role={presaved.ok ? 'status' : 'alert'}>
+            <Glyph name={presaved.ok ? 'check' : 'alert'} size={16} />{presaved.text}
+          </p>
+        )}
+        {!page.released && (page.presave?.length ?? 0) > 0 && (
+          <section className="aq-smartlink-presave" aria-labelledby="slPresaveTitle">
+            <h2 id="slPresaveTitle" className="aq-smartlink-list-title">발매 전에 미리 저장</h2>
+            <p className="aq-smartlink-presave-help">한 번 허락해 두면 발매되는 순간 내 보관함에 자동으로 들어가요.</p>
+            <ul className="aq-smartlink-presave-list">
+              {page.presave!.map(p => {
+                const name = PLATFORM_NAMES[p] ?? p;
+                return (
+                  <li key={p}>
+                    <button type="button" className="aq-smartlink-presave-btn" disabled={!!presaveBusy} aria-busy={presaveBusy === p}
+                      onClick={() => void presave(p)} aria-label={`${name}에 미리 저장`}>
+                      <BrandMark id={p} label={name} size={28} />
+                      <span>{name}</span>
+                      <small>{presaveBusy === p ? '여는 중' : '미리 저장'}</small>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="aq-smartlink-presave-note">AUDENIQ는 계정 정보를 받지 않아요. 저장에만 쓰고, 저장하면 권한을 바로 지워요.</p>
+          </section>
         )}
         {!page.released && page.release_date && (
           alertState === 'done' ? (

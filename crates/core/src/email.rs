@@ -482,12 +482,22 @@ pub fn spawn(state: AppState, mailer: Option<Mailer>) {
                 if let Err(error) = crate::release_alerts::sweep(&state.pool).await {
                     tracing::warn!(%error, "release alert sweep failed");
                 }
+                if let Err(error) = crate::presave::sweep(&state.pool).await {
+                    tracing::warn!(%error, "presave sweep failed");
+                }
                 last_sweep = Some(tokio::time::Instant::now());
             }
+            // Pre-saves need no mail, only the platforms' settings.
             let mut busy = false;
+            if !crate::presave::offered().is_empty() {
+                match crate::presave::dispatch_once(&state.pool, &state.payout_keys).await {
+                    Ok(n) => busy = n as i64 >= crate::presave::BATCH,
+                    Err(error) => tracing::warn!(%error, "presave dispatch failed"),
+                }
+            }
             if let Some(m) = &mailer {
                 match dispatch_once(&state.pool, &state.payout_keys, m).await {
-                    Ok(n) => busy = n as i64 >= BATCH,
+                    Ok(n) => busy |= n as i64 >= BATCH,
                     Err(error) => tracing::warn!(%error, "notification email dispatch failed"),
                 }
                 match crate::release_alerts::dispatch_once(&state.pool, &state.payout_keys, m).await
