@@ -4608,7 +4608,7 @@ async fn infringement_claim_suspends_release_and_takes_counter_notice(pool: PgPo
     let claim = json!({
         "claimant_name": "권리자 주식회사", "claimant_email": "Legal@Rights.example",
         "claimant_phone": "02-123-4567", "claimant_role": "RIGHTS_HOLDER", "right_type": "COPYRIGHT",
-        "work": "우리 회사가 작곡한 '봄비' (2024)", "target": "AUDENIQ로 배급된 같은 멜로디의 곡",
+        "work": "우리 회사가 작곡한 '봄비' (2024)", "target": "AUDENIQ으로 배급된 같은 멜로디의 곡",
         "evidence_urls": ["https://rights.example/proof"], "statement_accepted": true
     });
     let mut no_statement = claim.clone();

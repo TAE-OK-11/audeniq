@@ -401,7 +401,7 @@ export const STEPS: Step[] = [
         "required": true,
         "tag": "필수",
         "title": "플랫폼 매출이 보고되고 정산금이 확정된 뒤, 어떤 지급 주기를 선호하시나요?",
-        "hint": "한 가지 선택해 주세요 · AUDENIQ는 출금 신청 방식을 준비하고 있어요. 출금 가능 시점은 플랫폼의 보고·지급 일정에 따라 달라져요",
+        "hint": "한 가지 선택해 주세요 · AUDENIQ은 출금 신청 방식을 준비하고 있어요. 출금 가능 시점은 플랫폼의 보고·지급 일정에 따라 달라져요",
         "twoCols": true,
         "options": [
           "월 1회",
@@ -537,7 +537,7 @@ export const STEPS: Step[] = [
         "kind": "single",
         "required": true,
         "tag": "필수",
-        "title": "배급·정산·권리 관리를 한곳에서 제공하는 AUDENIQ를 이용해 볼 의향이 있으신가요?",
+        "title": "배급·정산·권리 관리를 한곳에서 제공하는 AUDENIQ을 이용해 볼 의향이 있으신가요?",
         "hint": "한 가지 선택해 주세요",
         "options": [
           "적극적으로 이용해 보고 싶어요",

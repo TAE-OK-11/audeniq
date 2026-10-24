@@ -14,6 +14,7 @@ import { BrandMark } from '../components/BrandMark';
 import { Glyph } from '../components/Glyph';
 import { gradientFor } from '../lib/catalog';
 import { PublicFoot, PublicLoading, PublicMissing, PublicShell } from '../components/PublicPage';
+import { Reveal } from '../ui';
 
 interface Page {
   title: string; artist: string | null; release_date: string | null; release_time?: string | null; released: boolean; cover: boolean;
@@ -107,6 +108,7 @@ export function SmartLink() {
   const [missing, setMissing] = useState(false);
   const [coverOk, setCoverOk] = useState(true);
   const [email, setEmail] = useState('');
+  const [alertOpen, setAlertOpen] = useState(false);
   const [agree, setAgree] = useState(false);
   const [alertState, setAlertState] = useState<'idle' | 'busy' | 'done'>('idle');
   const [alertError, setAlertError] = useState('');
@@ -216,27 +218,8 @@ export function SmartLink() {
                 );
               })}
             </ul>
-            <p className="aq-smartlink-presave-note">AUDENIQ는 계정 정보를 받지 않아요. 저장에만 쓰고, 저장하면 권한을 바로 지워요.</p>
+            <p className="aq-smartlink-presave-note">AUDENIQ은 계정 정보를 받지 않아요. 저장에만 쓰고, 저장하면 권한을 바로 지워요.</p>
           </section>
-        )}
-        {!page.released && page.release_date && (
-          alertState === 'done' ? (
-            <p className="aq-smartlink-alert-done" role="status">발매되면 메일로 한 번 알려 드릴게요.</p>
-          ) : (
-            <form className="aq-smartlink-alert" onSubmit={e => { e.preventDefault(); void signUp(); }}>
-              <label htmlFor="slAlertEmail">발매되면 알림 받기</label>
-              <div className="aq-smartlink-alert-row">
-                <input id="slAlertEmail" className="ui-input" type="email" inputMode="email" autoComplete="email" maxLength={254}
-                  placeholder="이메일 주소" value={email} onChange={e => setEmail(e.target.value)} />
-                <button type="submit" className="ui-btn is-primary" disabled={alertState === 'busy'}>{alertState === 'busy' ? '신청 중' : '신청'}</button>
-              </div>
-              <label className="aq-smartlink-consent">
-                <input type="checkbox" checked={agree} onChange={e => setAgree(e.target.checked)} />
-                <span>발매 알림 메일 1회 발송을 위해 이메일을 받는 데 동의해요. 메일을 보내면 주소는 바로 지워요. (발매일 1주 뒤까지 못 보내면 그때 지워요)</span>
-              </label>
-              {alertError && <p className="aq-smartlink-alert-err" role="alert">{alertError}</p>}
-            </form>
-          )
         )}
         {page.links.length > 0 ? (
           <section className="aq-smartlink-links" aria-labelledby="slListTitle">
@@ -266,6 +249,35 @@ export function SmartLink() {
             </ul>
           </section>
         ) : <p className="muted small">아직 등록된 플랫폼 링크가 없어요.</p>}
+        {/* 메일 알림은 다른 방법 — 미리 저장·플랫폼 다음에, 접어 두었다가 누르면 펼친다 (한 화면에 판단 하나) */}
+        {!page.released && page.release_date && (
+          alertState === 'done' ? (
+            <p className="aq-smartlink-alert-done" role="status">발매되면 메일로 한 번 알려 드릴게요.</p>
+          ) : (
+            <>
+              <Reveal open={!alertOpen}>
+                <button type="button" className="ui-btn is-soft is-block aq-smartlink-alert-open" onClick={() => setAlertOpen(true)}>
+                  <Glyph name="mail" size={16} />발매되면 메일로 알림 받기
+                </button>
+              </Reveal>
+              <Reveal open={alertOpen}>
+                <form className="aq-smartlink-alert" onSubmit={e => { e.preventDefault(); void signUp(); }}>
+                  <label htmlFor="slAlertEmail">발매되면 알림 받기</label>
+                  <div className="aq-smartlink-alert-row">
+                    <input id="slAlertEmail" className="ui-input" type="email" inputMode="email" autoComplete="email" maxLength={254}
+                      placeholder="이메일 주소" value={email} onChange={e => setEmail(e.target.value)} />
+                    <button type="submit" className="ui-btn is-primary" disabled={alertState === 'busy'}>{alertState === 'busy' ? '신청 중' : '신청'}</button>
+                  </div>
+                  <label className="aq-smartlink-consent">
+                    <input type="checkbox" checked={agree} onChange={e => setAgree(e.target.checked)} />
+                    <span>발매 알림 메일 1회 발송을 위해 이메일을 받는 데 동의해요. 메일을 보내면 주소는 바로 지워요. (발매일 1주 뒤까지 못 보내면 그때 지워요)</span>
+                  </label>
+                  {alertError && <p className="aq-smartlink-alert-err" role="alert">{alertError}</p>}
+                </form>
+              </Reveal>
+            </>
+          )
+        )}
         {(page.lyrics?.length ?? 0) > 0 && (
           <section className="aq-smartlink-lyrics" aria-labelledby="slLyricsTitle">
             <h2 id="slLyricsTitle" className="aq-smartlink-list-title">가사</h2>

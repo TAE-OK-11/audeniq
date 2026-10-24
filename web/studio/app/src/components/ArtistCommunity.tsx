@@ -9,10 +9,10 @@ import { MOCK } from '../lib/mode';
 import { gradientFor } from '../lib/catalog';
 import { shortUrl } from '../lib/ownLinks';
 import {
-  CHEER_MAX, KIND_LABEL, MOCK_CHEERS, NICK_MAX, ago, dday, eventDay, eventWhen,
+  CHEER_MAX, KIND_LABEL, MOCK_CHEERS, NICK_MAX, ago, dday, eventDay, eventTime, eventWhen,
   type ArtistPost, type Cheer,
 } from '../lib/artistCommunity';
-import { CountUp } from '../ui';
+import { Badge, CountUp, Reveal } from '../ui';
 import { Glyph } from './Glyph';
 
 /** 세 줄 넘는 글 — 접어 두고 ‘더 보기’로 높이를 늘려 편다 */
@@ -61,11 +61,9 @@ export function PostCard({ post, artist, clamp = false }: { post: ArtistPost; ar
         )}
         <div className="aq-post-headline">
           <div className="aq-post-tags">
-            <span className={`aq-post-kind is-${post.kind.toLowerCase()}`}>
-              <Glyph name={event ? 'calendar' : 'megaphone'} size={12} />{KIND_LABEL[post.kind]}
-            </span>
-            {post.pinned && <span className="aq-post-pin"><Glyph name="pin" size={12} />고정</span>}
-            {d && <span className={`aq-post-dday${d.past ? ' is-past' : d.text === '오늘' ? ' is-today' : ''}`}>{d.text}</span>}
+            <Badge tone={event ? 'green' : 'blue'}>{KIND_LABEL[post.kind]}</Badge>
+            {post.pinned && <Badge tone="gray"><Glyph name="pin" size={12} />고정</Badge>}
+            {d && <Badge tone={d.past ? 'gray' : d.text === '오늘' ? 'red' : 'blue'}>{d.text}</Badge>}
             {!event && <time className="aq-post-ago" dateTime={post.created_at}>{ago(post.created_at)}</time>}
           </div>
           <h3 className="aq-post-title">{post.title}</h3>
@@ -73,7 +71,7 @@ export function PostCard({ post, artist, clamp = false }: { post: ArtistPost; ar
       </div>
       {event && (
         <p className="aq-post-when">
-          <span><Glyph name="clock" size={14} /><time dateTime={event}>{eventWhen(event)}</time></span>
+          <span><Glyph name="clock" size={14} /><time dateTime={event} aria-label={eventWhen(event)}>{eventTime(event)}</time></span>
           {post.place && <span><Glyph name="globe" size={14} />{post.place}</span>}
         </p>
       )}
@@ -122,6 +120,8 @@ export function CheerBoard({ slug, artist, total, enabled }: { slug: string; art
   const path = `/api/artist-links/${encodeURIComponent(slug)}/cheers`;
   const msgRef = useRef<HTMLTextAreaElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  // 평소엔 ‘응원 남기기’ 버튼 하나 — 누르면 폼이 그 자리에서 펼쳐진다 (페이지가 길어지지 않게)
+  const [writing, setWriting] = useState(false);
 
   useEffect(() => {
     if (!enabled) return;
@@ -165,6 +165,7 @@ export function CheerBoard({ slug, artist, total, enabled }: { slug: string; art
       setMessage('');
       remember(nick);
       setSent(c.id);
+      setWriting(false);
     } catch (err) { fail(errorMessage(err)); } finally { setBusy(false); }
   };
 
@@ -173,25 +174,35 @@ export function CheerBoard({ slug, artist, total, enabled }: { slug: string; art
   return (
     <section className="aq-cheers" aria-labelledby="cheersTitle">
       <h2 id="cheersTitle" className="aq-smartlink-list-title">팬 응원{count > 0 && <> <span><CountUp value={count} format={n => n.toLocaleString()} /></span></>}</h2>
-      <form ref={formRef} className="aq-cheer-form" onSubmit={send} noValidate>
-        <input id="cheerNick" className="ui-input" aria-label="닉네임" placeholder="닉네임" maxLength={NICK_MAX}
-          value={nickname} onChange={e => { setNickname(e.target.value); setError(''); }} autoComplete="nickname" />
-        <textarea ref={msgRef} className="ui-input aq-cheer-msg" aria-label={`${artist}에게 응원 메시지`} rows={3} maxLength={CHEER_MAX}
-          placeholder={count > 0 ? `${artist}에게 응원 한마디를 남겨 주세요.` : `${artist}에게 첫 응원을 남겨 주세요.`} value={message}
-          onChange={e => { setMessage(e.target.value); setError(''); setSent(null); }} />
-        <div className="aq-cheer-foot">
-          <span className={`aq-cheer-count${left <= 30 ? ' is-near' : ''}`}>{message.length} / {CHEER_MAX}</span>
-          <button type="submit" className={`ui-btn is-primary is-sm aq-cheer-send${busy ? ' is-busy' : ''}`} disabled={busy}>
-            <span key={sent ?? 'idle'} className={`aq-cheer-send-heart${sent ? ' is-pop' : ''}`}><Glyph name={sent ? 'heart-fill' : 'heart'} size={14} /></span>
-            {busy ? '남기는 중' : '응원 남기기'}
-          </button>
-        </div>
-        {error && <p className="aq-smartlink-alert-err" role="alert">{error}</p>}
-        {sent && !error && <p className="aq-cheer-done" role="status">응원을 남겼어요. 고마워요!</p>}
-        <p className="aq-cheer-note">누구나 볼 수 있어요. 아티스트가 숨기거나 지울 수 있어요.</p>
-      </form>
+      <Reveal open={!writing}>
+        <button type="button" className="ui-btn is-primary is-block aq-cheer-open" onClick={() => setWriting(true)}>
+          <span key={sent ?? 'idle'} className={`aq-cheer-send-heart${sent ? ' is-pop' : ''}`}><Glyph name={sent ? 'heart-fill' : 'heart'} size={16} /></span>
+          {count > 0 ? '응원 남기기' : '첫 응원 남기기'}
+        </button>
+        {sent && <p className="aq-cheer-done" role="status">응원을 남겼어요. 고마워요!</p>}
+      </Reveal>
+      <Reveal open={writing}>
+        <form ref={formRef} className="aq-cheer-form" onSubmit={send} noValidate>
+          <input id="cheerNick" className="ui-input" aria-label="닉네임" placeholder="닉네임" maxLength={NICK_MAX}
+            value={nickname} onChange={e => { setNickname(e.target.value); setError(''); }} autoComplete="nickname" />
+          <textarea ref={msgRef} className="ui-input aq-cheer-msg" aria-label={`${artist}에게 응원 메시지`} rows={3} maxLength={CHEER_MAX}
+            placeholder={count > 0 ? `${artist}에게 응원 한마디를 남겨 주세요.` : `${artist}에게 첫 응원을 남겨 주세요.`} value={message}
+            onChange={e => { setMessage(e.target.value); setError(''); setSent(null); }} />
+          <div className="aq-cheer-foot">
+            <span className={`aq-cheer-count${left <= 30 ? ' is-near' : ''}`}>{message.length} / {CHEER_MAX}</span>
+            <span className="aq-cheer-actions">
+              <button type="button" className="ui-btn is-soft is-sm" onClick={() => { setWriting(false); setError(''); }}>닫기</button>
+              <button type="submit" className={`ui-btn is-primary is-sm aq-cheer-send${busy ? ' is-busy' : ''}`} disabled={busy}>
+                {busy ? '남기는 중' : '남기기'}
+              </button>
+            </span>
+          </div>
+          {error && <p className="aq-smartlink-alert-err" role="alert">{error}</p>}
+          <p className="aq-cheer-note">누구나 볼 수 있어요. 아티스트가 숨기거나 지울 수 있어요.</p>
+        </form>
+      </Reveal>
       {items === null ? <CheerSkeleton />
-        // 아직 없으면 빈 상자를 두지 않는다 — 바로 위 폼이 이미 ‘응원을 남겨 주세요’라고 말한다
+        // 아직 없으면 빈 상자를 두지 않는다 — 바로 위 ‘첫 응원 남기기’ 버튼이 이미 말한다
         : items.length === 0 ? null
         : (
           <ul className="aq-cheer-list">
@@ -217,10 +228,10 @@ export function CheerItem({ c, artist, fresh = false, leaving = false, children 
         <p className="aq-cheer-head">
           <strong>{c.nickname}</strong>
           <time dateTime={c.created_at}>{ago(c.created_at)}</time>
-          {c.hidden && <span className="aq-cheer-hidden-tag">숨김</span>}
+          {c.hidden && <Badge tone="gray">숨김</Badge>}
         </p>
         <p className="aq-cheer-text">{c.message}</p>
-        {c.heart && <p className="aq-cheer-heart"><Glyph name="heart-fill" size={12} />{artist}님이 좋아해요</p>}
+        {c.heart && <p className="aq-cheer-heart"><Badge tone="red"><Glyph name="heart-fill" size={12} />{artist}님이 좋아해요</Badge></p>}
       </div>
       {children}
     </li>

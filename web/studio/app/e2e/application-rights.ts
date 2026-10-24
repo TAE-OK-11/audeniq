@@ -72,7 +72,7 @@ try {
     if (width === 1280) {
       await page.goto(`${base}/upload?edit=rights-test`);
       await page.getByRole('checkbox', { name: '기존 발매 이전·재발매', exact: true }).check();
-      await page.getByRole('button', { name: '유통사를 AUDENIQ로 이전', exact: true }).click();
+      await page.getByRole('button', { name: '유통사를 AUDENIQ으로 이전', exact: true }).click();
       await page.selectOption('#aqRereleaseAudio', 'same'); await page.fill('#aqPreviousIsrc-0', 'KR-ABC-26-00001');
       await page.getByRole('button', { name: '기존 ISRC를 트랙 등록에 적용', exact: true }).click();
       await page.locator('.aq-wiz-steps').getByRole('button', { name: '트랙 등록', exact: true }).click();

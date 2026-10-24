@@ -261,7 +261,7 @@ function optionDetail(key: keyof StudioOptions, o: StudioOptions, tracks: Studio
   }
 }
 
-const RERELEASE_KIND: Record<string, string> = { transfer: '유통사를 AUDENIQ로 이전', redistribute: '서비스 종료된 음원 재발매', new_version: '새 녹음·변경 버전 발매' };
+const RERELEASE_KIND: Record<string, string> = { transfer: '유통사를 AUDENIQ으로 이전', redistribute: '서비스 종료된 음원 재발매', new_version: '새 녹음·변경 버전 발매' };
 const RERELEASE_AVAILABILITY: Record<string, string> = { live: '현재 서비스 중', takedown_requested: '이전 유통사에 종료 요청', removed: '서비스 종료됨', unknown: '서비스 상태 확인 필요' };
 const RERELEASE_AUDIO: Record<string, string> = { same: '기존 녹음 그대로 (기존 ISRC 유지)', changed: '음악 내용 변경 (새 ISRC)', unknown: '녹음 동일 여부 확인 필요' };
 const RERELEASE_RIGHTS: Record<string, string> = { owned: '권리자 본인', permission: '배급 허락 확보', pending: '권한 확인 중' };

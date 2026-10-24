@@ -30,6 +30,12 @@ export function eventWhen(iso: string, now = new Date()): string {
   return `${year}${p.month}월 ${p.day}일 (${p.weekday}) ${p.dayPeriod} ${p.hour}:${p.minute}`;
 }
 
+/** '오후 7:00' — 날짜는 이벤트 카드의 날짜 칸이 보여 주므로 시간만 */
+export function eventTime(iso: string): string {
+  const p = parts(new Date(iso));
+  return `${p.dayPeriod} ${p.hour}:${p.minute}`;
+}
+
 /** 날짜 칸 — { month: '11', day: '1', weekday: '일' } (한국 시간) */
 export function eventDay(iso: string): { month: string; day: string; weekday: string } {
   const p = parts(new Date(iso));
