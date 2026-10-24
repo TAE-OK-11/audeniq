@@ -8,6 +8,7 @@ import { useToast } from './Toast';
 import { ManageHead } from './ManageHead';
 import { Glyph } from './Glyph';
 import { Callout, IconTile, Steps, Tag, Reveal } from '../ui';
+import { PITCH_BADGE as BADGE, PITCH_STEP, PITCH_STEPS, PLATFORM_KO } from '../lib/pitch';
 
 interface Pitch {
   id: string; track_id: string; track_title: string; description: string; status: string;
@@ -25,18 +26,6 @@ const STATUS: Record<string, string> = {
   SELECTED: '플레이리스트에 선정됐어요!',
   NOT_SELECTED: '이번에는 선정되지 않았어요.',
   WITHDRAWN: '피칭을 취소했어요.',
-};
-/** 머리 상태 배지 — 짧게 */
-const BADGE: Record<string, { tone: 'blue' | 'violet' | 'green' | 'gray'; label: string }> = {
-  SUBMITTED: { tone: 'violet', label: '접수' }, IN_REVIEW: { tone: 'violet', label: '검토 중' },
-  PITCHED: { tone: 'blue', label: '플랫폼 전달' }, SELECTED: { tone: 'green', label: '선정' },
-  NOT_SELECTED: { tone: 'gray', label: '미선정' },
-};
-/** 보낸 피칭이 지나는 길 — 선정·미선정은 마지막 단계의 결과 */
-const PITCH_STEPS = ['접수', '담당자 검토', '플랫폼 전달', '선정 결과'];
-const PITCH_STEP: Record<string, number> = { SUBMITTED: 0, IN_REVIEW: 1, PITCHED: 2, SELECTED: 3, NOT_SELECTED: 3 };
-const PLATFORM_KO: Record<string, string> = {
-  spotify: 'Spotify', apple: 'Apple Music', melon: '멜론', genie: '지니', bugs: '벅스', flo: 'FLO', vibe: 'VIBE', youtube: 'YouTube Music',
 };
 
 const EMPTY = { description: '', genres: '', moods: '', instruments: '', similar_artists: '', marketing: '' };

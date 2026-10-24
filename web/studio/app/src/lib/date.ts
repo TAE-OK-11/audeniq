@@ -65,3 +65,10 @@ export function toKstDate(iso: string): string {
   const d = new Date(t + 9 * 3_600_000);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
 }
+
+/** 'YYYY-MM-DD'에서 n일 더하거나 뺀 날 (달력 날짜만 — 시간대와 상관없이) */
+export function shiftDate(day: string, n: number): string {
+  const t = new Date(`${day}T00:00:00Z`);
+  t.setUTCDate(t.getUTCDate() + n);
+  return t.toISOString().slice(0, 10);
+}
