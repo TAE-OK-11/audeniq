@@ -8,7 +8,7 @@ export { Tabs, LinkTabs, type TabItem } from './Tabs';
 export { PageHeader, SectionHeader, Section } from './Header';
 export { Avatar, Cover, IconTile } from './Media';
 export { Callout, EmptyState, SkeletonList, type CalloutTone } from './Feedback';
-export { StatTile, StatGrid, KeyValue, Card, Steps, type StatTone } from './Data';
+export { StatTile, StatGrid, KeyValue, Card, Steps, Meter, type StatTone } from './Data';
 export { Field, inputClass, selectClass } from './Field';
 export { CountUp } from './CountUp';
 export { Reveal } from './Reveal';

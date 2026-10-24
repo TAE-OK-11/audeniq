@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatKoreanDate, monthKey, parseStamp, relativeTime, stampNow, todayStr } from './date';
+import { formatKoreanDate, monthKey, parseStamp, relativeTime, shiftDate, stampNow, todayStr } from './date';
 
 describe('date utils', () => {
   it('Safari에서 실패하던 공백 구분 스탬프를 파싱한다', () => {
@@ -27,5 +27,13 @@ describe('date utils', () => {
     expect(relativeTime('2026-09-24 12:00', now)).toBe('2일 전');
     expect(relativeTime('2026-08-01', now)).toBe('8월 1일');
     expect(relativeTime('2025-12-31', now)).toBe('2025년 12월 31일');
+  });
+});
+
+describe('shiftDate', () => {
+  it('달·해를 넘겨 더하고 뺀다', () => {
+    expect(shiftDate('2026-10-24', -30)).toBe('2026-09-24');
+    expect(shiftDate('2026-12-31', 1)).toBe('2027-01-01');
+    expect(shiftDate('2026-03-01', -1)).toBe('2026-02-28');
   });
 });
