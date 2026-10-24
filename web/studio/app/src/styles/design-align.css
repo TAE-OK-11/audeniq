@@ -1396,3 +1396,10 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
 .aq-pub-missing{display:grid;justify-items:center;gap:6px;text-align:center}
 .aq-pub-missing h1{margin:8px 0 0}
 .aq-pub-missing-icon{display:grid;place-items:center;width:52px;height:52px;border-radius:16px;background:var(--aq-blue-50);color:var(--aq-primary)}
+
+/* 공개 화면 끝까지 스크롤해 튕길 때 아래로 흰 칸이 보였다 — 흐린 커버 바탕이 내용 길이만큼(absolute)만 깔려 있어서
+   튕기는 동안 그 아래 body의 흰 바탕이 드러났다. 바탕을 화면에 고정(fixed)해 늘 화면 전체를 덮고,
+   그 아래 html·body도 같은 옅은 회색으로 둔다 */
+html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50)}
+.aq-smartlink>.aq-smartlink-bg{position:fixed;inset:-60px;z-index:0}
+.aq-smartlink>.aq-smartlink-card{position:relative;z-index:1}
