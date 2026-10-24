@@ -11,6 +11,13 @@ import { DocumentModal } from '../components/DocumentModal';
 import { SignatureModal } from '../components/SignatureModal';
 import { refreshDocs } from '../store/portalSync';
 import { MOCK } from '../lib/mode';
+import { IconTile } from '../ui';
+
+const DOC_PATH = [
+  ['배급 신청서 서명', '발매를 접수할 때'],
+  ['담당자 검토', '수수료·배급 조건 확정'],
+  ['배급 계약서 서명', '권리를 확인하고 서명하면 배급 시작'],
+] as const;
 
 export function Contracts() {
   const docs = useDocs();
@@ -71,23 +78,18 @@ export function Contracts() {
       {/* 진행 순서는 처음 한 번 읽으면 되는 설명 — 서명할 계약서보다 위에 있어 매번 지나쳐야 했다 */}
       <section className="aq-doc-path-wrap" aria-labelledby="docPathTitle">
         <h2 id="docPathTitle">계약은 이렇게 진행돼요</h2>
-        <div className="studio-doc-path">
-          <div>
-            <span className="studio-path-n">1단계</span>
-            <strong>배급 신청서 서명</strong>
-            <small>발매를 접수할 때</small>
-          </div>
-          <div>
-            <span className="studio-path-n">2단계</span>
-            <strong>담당자 검토</strong>
-            <small>수수료·배급 조건 확정</small>
-          </div>
-          <div>
-            <span className="studio-path-n">3단계</span>
-            <strong>배급 계약서 서명</strong>
-            <small>권리를 확인하고 서명하면 배급 시작</small>
-          </div>
-        </div>
+        {/* 다른 목록과 같은 줄 — 번호 · 단계 · 언제. 카드 안에 흰 박스를 또 겹치지 않는다 */}
+        <ol className="ui-card ui-list is-inset aq-doc-path">
+          {DOC_PATH.map(([title, when], i) => (
+            <li key={title} className="ui-row">
+              <IconTile size="sm"><span className="aq-preview-no">{i + 1}</span></IconTile>
+              <span className="ui-row-body min-0">
+                <b className="ui-row-title">{title}</b>
+                <span className="ui-row-meta">{when}</span>
+              </span>
+            </li>
+          ))}
+        </ol>
       </section>
 
       <OrgContractEnd />
