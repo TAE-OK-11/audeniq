@@ -30,6 +30,12 @@ export function eventWhen(iso: string, now = new Date()): string {
   return `${year}${p.month}월 ${p.day}일 (${p.weekday}) ${p.dayPeriod} ${p.hour}:${p.minute}`;
 }
 
+/** 날짜 칸 — { month: '11', day: '1', weekday: '일' } (한국 시간) */
+export function eventDay(iso: string): { month: string; day: string; weekday: string } {
+  const p = parts(new Date(iso));
+  return { month: p.month, day: p.day, weekday: p.weekday };
+}
+
 /** 한국 날짜 기준 남은 날 — 0이면 오늘, 음수면 지남 */
 export function daysUntil(iso: string, now = new Date()): number {
   const day = (d: Date) => {

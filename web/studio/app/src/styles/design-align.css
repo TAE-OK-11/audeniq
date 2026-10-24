@@ -1265,3 +1265,95 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
 @media (min-width:560px){.aq-post-form-row{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .aq-post-count{text-align:right}
 .aq-post-form-actions{display:grid;grid-template-columns:1fr 2fr;gap:8px}
+
+/* ── 소식·팬 응원·디스코그래피 다듬기: 움직임 ── */
+/* 공개 페이지 스크롤 등장 (usePublicReveal) — 화면 아래 덩어리는 닿기 전까지 숨겨 둔다 */
+.aq-pub-waiting{opacity:0;transform:translateY(16px)}
+@media (prefers-reduced-motion:reduce){.aq-pub-waiting{opacity:1;transform:none}}
+@media print{.aq-pub-waiting{opacity:1!important;transform:none!important}}
+@keyframes aq-heart-pop{0%{transform:scale(1)}35%{transform:scale(1.35)}65%{transform:scale(.92)}100%{transform:scale(1)}}
+@keyframes aq-cheer-glow{0%,30%{background-color:var(--aq-blue-50)}100%{background-color:transparent}}
+@keyframes aq-leave{to{opacity:0;transform:translate3d(0,-4px,0) scale(.98)}}
+@keyframes aq-saved-ring{0%{box-shadow:0 0 0 0 rgba(49,130,246,.35)}100%{box-shadow:0 0 0 8px rgba(49,130,246,0)}}
+
+/* 소식 카드 — 고정 글은 옅은 파랑, 이벤트는 날짜 칸 */
+.aq-post{transition:background-color var(--aq-dur) var(--aq-ease)}
+.aq-post.is-pinned{background:linear-gradient(180deg,var(--aq-blue-50),var(--aq-surface) 70%)}
+.aq-post-top{display:flex;align-items:flex-start;gap:12px}
+.aq-post-headline{flex:1;min-width:0;display:grid;gap:6px}
+.aq-post-date{flex:none;display:grid;justify-items:center;align-content:center;width:52px;padding:6px 0 7px;border-radius:var(--aq-r-lg);background:#fff;box-shadow:0 1px 0 rgba(15,23,42,.04),0 4px 12px -8px rgba(27,51,104,.35);line-height:1}
+.aq-post-date small{font-size:11px;font-weight:700;color:var(--aq-primary)}
+.aq-post-date small:last-child{margin-top:3px;color:var(--aq-text-4)}
+.aq-post-date strong{margin-top:3px;font-size:22px;font-weight:800;color:var(--aq-text);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.aq-post.is-past .aq-post-date small:first-child{color:var(--aq-text-4)}
+.aq-post-dday.is-today{background:var(--aq-red-500)}
+.aq-post-kind.is-notice{background:#fff}
+.aq-post.is-pinned .aq-post-kind.is-notice,.aq-post.is-pinned .aq-post-pin{background:#fff}
+.aq-post-more{justify-self:start;display:inline-flex;align-items:center;gap:2px;margin-top:-4px;padding:2px 0;border:0;background:none;font:inherit;font-size:13px;font-weight:700;color:var(--aq-primary);cursor:pointer}
+.aq-post-more:focus-visible{outline:var(--aq-focus);outline-offset:2px;border-radius:6px}
+.aq-post-body{overflow:hidden}
+.aq-artist-more .aq-glyph{transition:transform var(--aq-dur) var(--aq-ease)}
+@media (hover:hover){.aq-artist-more:hover .aq-glyph{transform:translateX(2px)}}
+/* 거르기를 바꾸면 줄이 차례로 */
+.aq-post-list.aq-stagger>li:nth-child(2){animation-delay:40ms}.aq-post-list.aq-stagger>li:nth-child(3){animation-delay:80ms}
+.aq-post-list.aq-stagger>li:nth-child(n+4){animation-delay:120ms}
+.aq-soft-in{animation:aq-soft-pop var(--aq-motion-base) var(--aq-enter) both}
+
+/* 팬 응원 — 남기면 하트가 톡, 새 응원은 옅은 파랑으로 들어왔다 사라진다 */
+.aq-cheer-form{transition:box-shadow var(--aq-dur) var(--aq-ease)}
+.aq-cheer-form:focus-within{box-shadow:0 0 0 1.5px rgba(49,130,246,.28)}
+.aq-cheer-msg{transition:min-height var(--aq-motion-long) var(--aq-enter)}
+.aq-cheer-form:focus-within .aq-cheer-msg{min-height:104px}
+.aq-cheer-count{transition:color var(--aq-dur) var(--aq-ease)}
+.aq-cheer-count.is-near{color:var(--aq-amber-600)}
+.aq-cheer-send-heart{display:inline-flex}
+.aq-cheer-send-heart.is-pop{animation:aq-heart-pop .5s var(--aq-enter)}
+.aq-cheer-done{animation:aq-soft-pop var(--aq-motion-base) var(--aq-enter) both}
+.aq-cheer{border-radius:var(--aq-r-lg)}
+.aq-cheer.is-fresh{animation:aq-land-fade .5s cubic-bezier(.22,.61,.36,1) both,aq-cheer-glow 1.8s ease-out}
+.aq-cheer.is-leaving{animation:aq-leave .26s var(--aq-enter) forwards;pointer-events:none}
+.aq-cheer.is-hidden{transition:opacity var(--aq-dur) var(--aq-ease)}
+.aq-cheer-heart{animation:aq-soft-pop var(--aq-motion-base) var(--aq-enter) both}
+.aq-cheer-empty{display:grid;justify-items:center;gap:6px}
+.aq-cheer-empty>.aq-glyph{color:var(--aq-primary);opacity:.7}
+/* 불러오는 동안 — 실제 줄 모양 그대로 */
+.aq-skel{display:block;border-radius:8px;background:linear-gradient(90deg,#F3F6FB 25%,#EAF0F8 37%,#F3F6FB 63%);background-size:400% 100%;animation:aq-shimmer 1.4s ease-in-out infinite}
+.aq-cheer-list.is-skeleton .aq-cheer-avatar{background:none}
+.aq-cheer-list.is-skeleton .aq-cheer-avatar.aq-skel{border-radius:50%}
+.aq-skel-lines{display:grid;gap:8px;padding-top:4px}
+.aq-skel-lines>.aq-skel{height:12px;width:40%}
+.aq-skel-lines>.aq-skel+.aq-skel{width:85%}
+.aq-pub-skel{display:grid;gap:10px}
+.aq-pub-skel>.aq-skel{height:112px;border-radius:var(--aq-r-xl)}
+.aq-pub-skel.is-tall>.aq-skel{height:168px}
+@media (prefers-reduced-motion:reduce){.aq-skel,.aq-cheer.is-fresh,.aq-cheer-send-heart.is-pop,.aq-cheer.is-leaving,.aq-soft-in,.aq-cheer-done,.aq-cheer-heart{animation:none}}
+
+/* 디스코그래피 — 나머지 곡은 높이가 부드럽게 열린다 */
+.aq-disco-item{transition:background-color var(--aq-dur) var(--aq-ease)}
+.aq-disco-cover{transition:transform var(--aq-motion-long) var(--aq-enter),box-shadow var(--aq-motion-long) var(--aq-enter)}
+@media (hover:hover){.aq-disco-head:hover .aq-disco-cover{transform:translateY(-2px);box-shadow:0 10px 20px -12px rgba(27,51,104,.5)}}
+.aq-disco-go{transition:background-color var(--aq-dur) var(--aq-ease),color var(--aq-dur) var(--aq-ease)}
+@media (hover:hover){.aq-disco-head:hover .aq-disco-go{background:var(--aq-primary);color:#fff}}
+.aq-disco-rest{display:grid;grid-template-rows:0fr;transition:grid-template-rows var(--aq-motion-long) var(--aq-enter)}
+.aq-disco-rest.is-open{grid-template-rows:1fr}
+.aq-disco-rest>ol{min-height:0;overflow:hidden}
+.aq-disco-tracks.is-rest{margin:0;padding:0;box-shadow:none}
+.aq-disco-rest>ol>li{opacity:0;transition:opacity var(--aq-motion-long) var(--aq-ease)}
+.aq-disco-rest.is-open>ol>li{opacity:1}
+.aq-disco-all .aq-glyph{transition:transform var(--aq-motion-long) var(--aq-enter)}
+.aq-disco-all.is-open .aq-glyph{transform:rotate(180deg)}
+@media (prefers-reduced-motion:reduce){.aq-disco-rest,.aq-disco-rest>ol>li,.aq-disco-all .aq-glyph{transition:none}}
+
+/* 스튜디오 관리 창 — 글쓰기↔목록이 부드럽게 바뀌고, 지운 줄은 접히듯 사라진다 */
+.aq-mgr-swap{animation:aq-soft-pop var(--aq-motion-long) var(--aq-enter) both}
+.aq-mgr-post.is-leaving{animation:aq-leave .26s var(--aq-enter) forwards;pointer-events:none}
+.aq-mgr-post.is-saved>.aq-post{animation:aq-saved-ring .9s ease-out .15s}
+.aq-mgr-actions .ui-btn{transition:background-color var(--aq-dur) var(--aq-ease),transform var(--aq-press-out) var(--aq-press-spring)}
+.aq-heart-pop{display:inline-flex;animation:aq-heart-pop .45s var(--aq-enter)}
+.aq-post-form .ui-reveal .aq-post-form-row{padding-bottom:2px}
+@media (prefers-reduced-motion:reduce){.aq-mgr-swap,.aq-mgr-post.is-leaving,.aq-mgr-post.is-saved>.aq-post,.aq-heart-pop{animation:none}}
+/* 줄 사이 선 — 둥근 모서리(새 응원 빛남용)에 휘지 않게 이름 아래부터 곧게 */
+.aq-cheer{position:relative;padding:12px 8px}
+.aq-cheer+.aq-cheer{box-shadow:none}
+.aq-cheer+.aq-cheer::before{content:'';position:absolute;top:0;left:56px;right:8px;height:1px;background:var(--aq-line)}
+.aq-cheer.is-fresh+.aq-cheer::before,.aq-cheer.is-fresh::before{opacity:0;transition:opacity 1.8s ease-in}
