@@ -3,6 +3,7 @@ import { Link, useNavigate } from '../lib/router';
 import { fixPath, resolveCorrection, splitCorrections } from '../lib/corrections';
 import { api } from '../api/client';
 import { STATUS_LABEL, money, num, statusTone } from '../lib/format';
+import { releaseUrl } from '../lib/publicLinks';
 import { useProfile } from '../store/profile';
 import { isPaymentRegistered, usePayment } from '../store/payment';
 import { useAccount } from '../store/account';
@@ -249,7 +250,7 @@ function PitchHomeCard({ p }: { p: PitchActive }) {
 /** 홍보 성과 — 공개 중인 스마트링크가 있을 때만. 리포트 카드와 같은 모양: 큰 숫자(본 횟수) + 두 칸(넘어간 횟수 · 가장 많이 간 곳) */
 function PromoCard({ p }: { p: NonNullable<HomeCards['promo']> }) {
   const navigate = useNavigate();
-  const url = `${window.location.origin}/l/${p.slug}`;
+  const url = releaseUrl(p.slug);
   const top = p.topPlatform ? platformName(p.topPlatform) : '';
   return (
     <section className="ui-card aq-home-promo" aria-labelledby="promoTitle">

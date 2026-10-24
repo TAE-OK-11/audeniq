@@ -1,6 +1,6 @@
 //! Smart links (migration 0117).
 //!
-//! One public landing page per submitted release, `/l/{slug}`: cover,
+//! One public landing page per submitted release, `/link/release/{slug}`: cover,
 //! title, artist, release date and the platform links the artist pasted
 //! (each checked against that platform's hosts, https only). Where a
 //! platform reported its own album id for the release when it went live
@@ -50,7 +50,7 @@ pub const PLATFORMS: &[(&str, &[&str])] = &[
 
 const VIEW: &str = "_view";
 
-/// Channels an artist can tag a shared link with (`/l/{slug}?src=instagram`);
+/// Channels an artist can tag a shared link with (`/link/release/{slug}?src=instagram`);
 /// a view from one is also counted as `src_{channel}`.
 pub const SOURCES: &[&str] = &[
     "instagram",

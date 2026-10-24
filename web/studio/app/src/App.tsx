@@ -3,6 +3,7 @@ import { loginRedirect } from './lib/loginRedirect';
 import { rememberAiConnectReturn, takeAiConnectReturn } from './lib/aiConnectReturn';
 import { Suspense, lazy, useEffect, useState, type ComponentType, type ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from './lib/router';
+import { artistPath, artistPressPath, releasePath } from './lib/publicLinks';
 import { AuthProvider, useAuth } from './api/auth';
 import { Layout } from './components/Layout';
 import { ToastProvider } from './components/Toast';
@@ -114,6 +115,13 @@ function GuestOnly({ children }: { children: ReactNode }) {
 }
 
 /** 다른 발매로 바로 옮겨 가면(알림 클릭 등) 앞 발매 내용·탭이 남지 않게 새로 그린다 */
+/** 예전 공개 주소(/l/·/a/) → 새 주소, 쿼리·해시는 그대로 */
+function MovedLink({ to }: { to: (slug: string) => string }) {
+  const { slug = '' } = useParams();
+  const loc = useLocation();
+  return <Navigate to={`${to(slug)}${loc.search}${loc.hash ?? ''}`} replace />;
+}
+
 function ReleaseDetailRoute() {
   const { id = '' } = useParams();
   return <ReleaseDetail key={id} />;
@@ -194,11 +202,15 @@ export function App() {
                     {/* 권리침해 신고 — 계정 없이 누구나 */}
                     <Route path="/rights-report" element={<RightsReport />} />
                     {/* 스마트링크 — 발매 공유 페이지, 로그인 없이 */}
-                    <Route path="/l/:slug" element={<SmartLink />} />
-                    {/* 아티스트 소개 페이지 — 이름·소개·발매, 발매는 스마트링크로 */}
-                    <Route path="/a/:slug" element={<ArtistPage />} />
+                    <Route path="/link/release/:slug" element={<SmartLink />} />
+                    {/* 아티스트 소개 페이지 — 이름·소개·발매, 발매는 스마트링크로. 주소 이름은 아티스트가 고른다 */}
+                    <Route path="/link/artist/:slug" element={<ArtistPage />} />
                     {/* 보도자료 — 같은 아티스트 페이지의 큐레이터·기자용 */}
-                    <Route path="/a/:slug/press" element={<ArtistPress />} />
+                    <Route path="/link/artist/:slug/press" element={<ArtistPress />} />
+                    {/* 예전 주소 — 이미 나간 QR·링크가 계속 열리게 새 주소로 넘긴다 (?src= 등은 그대로) */}
+                    <Route path="/l/:slug" element={<MovedLink to={releasePath} />} />
+                    <Route path="/a/:slug" element={<MovedLink to={artistPath} />} />
+                    <Route path="/a/:slug/press" element={<MovedLink to={artistPressPath} />} />
                     {/* 공동작업 수익 분배 요청 — 메일 링크, 수락은 로그인 후 */}
                     <Route path="/splits/:token" element={<SplitInvite />} />
                     <Route path="/terms/privacy" element={<Navigate to="/privacy" replace />} />

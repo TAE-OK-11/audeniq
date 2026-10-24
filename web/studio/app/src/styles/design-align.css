@@ -995,7 +995,7 @@ body.wizard-mode .portal-header,.portal-header:has(#portalNav:not([hidden])){box
 .aq-smartlink-back+*{clear:both}
 @media (hover:hover){.aq-smartlink-back:hover{background:var(--aq-gray-50);color:var(--aq-primary)}}
 /* 계정 정보 > 아티스트 소개 페이지 편집 창 — 주소 · 소개 글 · 공개 스위치 */
-.aq-artist-link-editor{display:grid;gap:20px}
+.aq-artist-link-editor{display:grid;grid-template-columns:minmax(0,1fr);gap:20px}
 /* 계정 정보 > 아티스트 페이지 — 아티스트 이름 아래에 플랫폼 페이지·소개 페이지 두 줄 */
 .aq-artist-hub-group+.aq-artist-hub-group{margin-top:6px;padding-top:6px;box-shadow:inset 0 1px 0 var(--aq-line)}
 .aq-artist-hub-name{margin:0;padding:10px 14px 2px;font-size:13px;font-weight:800;color:var(--aq-text-3)}
@@ -1008,7 +1008,16 @@ body.wizard-mode .portal-header,.portal-header:has(#portalNav:not([hidden])){box
 .aq-promo-tools.aq-al-tools{grid-template-columns:repeat(4,minmax(0,1fr));margin:0}
 .aq-promo-tools.aq-al-tools .aq-promo-tool{min-height:64px;font-size:12px;text-decoration:none}
 .aq-al-note{margin:0;font-size:13px;color:var(--aq-text-3)}
-.aq-al-section{display:grid;gap:10px}
+.aq-al-section{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
+/* 주소 칸 — 앞부분(studio.audeniq.com/link/artist/)은 고정 글자, 뒤에 주소 이름 */
+.aq-al-handle{display:flex;align-items:center;min-height:var(--aq-field-h,var(--aq-h-md));padding:0 16px;border-radius:var(--aq-field-r,var(--aq-r-ctl-md));background-color:var(--aq-field-bg,var(--aq-field));transition:background-color var(--aq-dur) var(--aq-ease),box-shadow var(--aq-dur) var(--aq-ease)}
+.aq-al-handle:focus-within{background-color:var(--aq-field-focus-bg)}
+.aq-al-handle:focus-within{box-shadow:inset 0 0 0 1.5px var(--aq-primary)}
+.aq-al-handle.is-error{box-shadow:inset 0 0 0 1.5px var(--aq-red-500)}
+.aq-al-handle-prefix{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--aq-fs-lg);color:var(--aq-text-4)}
+.aq-al-handle input{flex:1 1 40%;min-width:72px;border:0;padding:0;background:transparent;font:inherit;font-size:var(--aq-fs-lg);font-weight:700;color:var(--aq-text);outline:none}
+.aq-al-handle input[aria-invalid]{background:transparent;box-shadow:none}
+.aq-al-handle input::placeholder{font-weight:500;color:var(--aq-text-4)}
 .aq-al-section-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
 .aq-al-section-head h3{margin:0;font-size:15px;font-weight:800;color:var(--aq-text)}
 .aq-al-section-head label{cursor:default}

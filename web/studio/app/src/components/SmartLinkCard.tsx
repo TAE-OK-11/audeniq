@@ -19,6 +19,7 @@ import { LyricCardButton, type LyricTrack } from './LyricCardButton';
 import { CaptionButton } from './CaptionButton';
 import { ChannelLinksButton } from './ChannelLinksButton';
 import { channelLabel, channelUrl } from '../lib/channels';
+import { releasePath, releaseUrl } from '../lib/publicLinks';
 import { todayStr } from '../lib/date';
 
 type Check = 'verified' | 'mismatch' | 'unverified' | 'not_release' | 'invalid';
@@ -47,7 +48,7 @@ function checkNote(c: Check | undefined, strict: boolean): { tone: 'ok' | 'warn'
 }
 
 const TOOL = 'aq-promo-tool';
-const pageUrl = (slug: string) => `${window.location.origin}/l/${slug}`;
+const pageUrl = releaseUrl;
 
 /** 홍보 이미지에 넣을 발매 정보 (발매 상세가 넘긴다) */
 export interface PromoRelease {
@@ -124,7 +125,7 @@ export function SmartLinkCard({ releaseId, promo }: { releaseId: string; promo?:
               <code>{pageUrl(l.slug)}</code>
               <span className="ui-actions">
                 <CopyButton text={pageUrl(l.slug)} />
-                <a className="ui-btn is-sm" href={`/l/${l.slug}`} target="_blank" rel="noopener noreferrer"><Glyph name="arrow-up-right" size={14} />열기</a>
+                <a className="ui-btn is-sm" href={releasePath(l.slug)} target="_blank" rel="noopener noreferrer"><Glyph name="arrow-up-right" size={14} />열기</a>
               </span>
             </div>
           ) : <p className="small muted">꺼져 있어요. 켜면 같은 주소로 다시 열려요.</p>}
