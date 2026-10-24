@@ -15,8 +15,7 @@ import { ConnectedAccounts } from '../components/ConnectedAccounts';
 import { AiConnections } from '../components/AiConnections';
 import { DeveloperApps } from '../developer/DeveloperApps';
 import { TeamSettings } from '../components/TeamSettings';
-import { ArtistPagesCard } from '../components/ArtistPagesCard';
-import { ArtistLinkCard } from '../components/ArtistLinkCard';
+import { ArtistHubCard } from '../components/ArtistHubCard';
 import { OAUTH_LABEL, takeOAuthResult } from '../api/oauth';
 import { messageForCode } from '../api/errors';
 import { useAuth } from '../api/auth';
@@ -297,8 +296,7 @@ export function Profile() {
         <SetRow id="profileRowCountry" label="활동 국가" value={country} onClick={() => setEditing('country')} />
       </section>
 
-      <ArtistPagesCard />
-      <ArtistLinkCard />
+      <ArtistHubCard />
 
       <section className="aq-set-card" aria-labelledby="setPayout">
         <h2 id="setPayout">수익 받기</h2>

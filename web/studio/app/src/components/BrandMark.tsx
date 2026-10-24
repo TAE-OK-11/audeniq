@@ -21,7 +21,8 @@ export function BrandMark({ id, label, color = '#3B63F3', size = 32, className }
   if (a?.kind === 'glyph') {
     return (
       <span className={`${cls} is-glyph${darkInk(a.color ?? color) ? ' is-ink' : ''}`} style={style} aria-hidden="true">
-        <i style={{ WebkitMaskImage: `url(${base}${a.file})`, maskImage: `url(${base}${a.file})` }} />
+        {/* CSS 마스크 대신 그림 + 색 필터 — 아이폰 사파리의 '전체 페이지' 캡처(PDF)는 마스크를 버려 로고가 검은 덩어리로 찍혔다 */}
+        <img src={`${base}${a.file}`} alt="" loading="lazy" decoding="async" draggable={false} />
       </span>
     );
   }
