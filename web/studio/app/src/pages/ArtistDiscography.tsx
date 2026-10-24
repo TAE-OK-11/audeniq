@@ -1,6 +1,6 @@
 // 아티스트 디스코그래피 (/link/artist/:slug/discography) — 소개 페이지에 보이는 발매(스마트링크를 켠 것)를 연도별로, 수록곡까지.
 // 발매를 누르면 그 스마트링크로. 다른 아티스트의 곡(피처링·컴필레이션)은 곡 옆에 아티스트 이름을 붙인다.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from '../lib/router';
 import { API_BASE, req } from '../api/http';
 import { MOCK } from '../lib/mode';
@@ -8,8 +8,9 @@ import { gradientFor } from '../lib/catalog';
 import { artistPath, releasePath } from '../lib/publicLinks';
 import type { DiscoTrack } from '../lib/artistCommunity';
 import { Glyph } from '../components/Glyph';
-import { RELEASE_TYPE, releaseWhen, useArtistPage, type ArtistRelease } from './ArtistPage';
-import { ArtistSubHead, PageMissing } from './ArtistNews';
+import { PUBLIC_UNITS, RELEASE_TYPE, releaseWhen, useArtistPage, type ArtistRelease } from './ArtistPage';
+import { ArtistSubHead, CardSkeleton, PageMissing } from './ArtistNews';
+import { usePublicReveal } from '../hooks/usePublicReveal';
 
 export interface DiscoRelease extends ArtistRelease { tracks: DiscoTrack[] }
 
@@ -18,6 +19,8 @@ const MOCK_DISCO: DiscoRelease[] = [
   { slug: 'mock0001', title: '여름의 끝', type: 'EP', release_date: '2026-08-01', released: true, cover: false, tracks: [
     { title: '여름의 끝', disc: 1, number: 1, artist: null }, { title: '밤의 도시', disc: 1, number: 2, artist: null },
     { title: '파도 (Feat. 서린)', disc: 1, number: 3, artist: null }, { title: '안녕, 여름', disc: 1, number: 4, artist: null },
+    { title: '늦은 오후', disc: 1, number: 5, artist: null }, { title: '바다로 가는 길', disc: 1, number: 6, artist: null },
+    { title: '여름의 끝 (Acoustic)', disc: 1, number: 7, artist: null }, { title: '여름의 끝 (Inst.)', disc: 1, number: 8, artist: null },
   ] },
   { slug: 'mock0002', title: '첫 번째 싱글', type: 'SINGLE', release_date: '2026-03-14', released: true, cover: false, tracks: [{ title: '첫 번째 싱글', disc: 1, number: 1, artist: null }, { title: '첫 번째 싱글 (Inst.)', disc: 1, number: 2, artist: null }] },
 ];
@@ -36,10 +39,16 @@ export function groupByYear(items: DiscoRelease[]): { label: string; items: Disc
 
 function DiscoItem({ r }: { r: DiscoRelease }) {
   const [ok, setOk] = useState(true);
-  const [open, setOpen] = useState(r.tracks.length <= 6);
+  const [open, setOpen] = useState(false);
+  const fold = r.tracks.length > 6;
   const cover = r.cover && ok && !MOCK ? `${API_BASE}/api/smart-links/${encodeURIComponent(r.slug)}/cover` : '';
   const discs = new Set(r.tracks.map(t => t.disc)).size;
-  const shown = open ? r.tracks : r.tracks.slice(0, 5);
+  const row = (t: DiscoTrack) => (
+    <li key={`${t.disc}-${t.number}`}>
+      <span className="aq-disco-no">{discs > 1 ? `${t.disc}-${t.number}` : t.number}</span>
+      <span className="aq-disco-title">{t.title}{t.artist && <small> · {t.artist}</small>}</span>
+    </li>
+  );
   return (
     <li className="aq-disco-item">
       <Link to={releasePath(r.slug)} className="aq-disco-head">
@@ -55,18 +64,19 @@ function DiscoItem({ r }: { r: DiscoRelease }) {
       </Link>
       {r.tracks.length > 0 && (
         <ol className="aq-disco-tracks" aria-label={`${r.title} 수록곡`}>
-          {shown.map(t => (
-            <li key={`${t.disc}-${t.number}`}>
-              <span className="aq-disco-no">{discs > 1 ? `${t.disc}-${t.number}` : t.number}</span>
-              <span className="aq-disco-title">{t.title}{t.artist && <small> · {t.artist}</small>}</span>
-            </li>
-          ))}
+          {(fold ? r.tracks.slice(0, 5) : r.tracks).map(row)}
         </ol>
       )}
-      {!open && (
-        <button type="button" className="aq-disco-all" onClick={() => setOpen(true)}>
-          수록곡 {r.tracks.length}곡 모두 보기<Glyph name="chevron-down" size={14} />
-        </button>
+      {fold && (
+        <>
+          {/* 나머지 곡 — 높이가 0에서 부드럽게 열린다 (grid 0fr → 1fr) */}
+          <div className={`aq-disco-rest${open ? ' is-open' : ''}`} inert={!open}>
+            <ol className="aq-disco-tracks is-rest" start={6}>{r.tracks.slice(5).map(row)}</ol>
+          </div>
+          <button type="button" className={`aq-disco-all${open ? ' is-open' : ''}`} aria-expanded={open} onClick={() => setOpen(o => !o)}>
+            {open ? '접기' : `수록곡 ${r.tracks.length}곡 모두 보기`}<Glyph name="chevron-down" size={14} />
+          </button>
+        </>
       )}
     </li>
   );
@@ -76,14 +86,26 @@ export function ArtistDiscography() {
   const { slug = '' } = useParams<{ slug: string }>();
   const { page, missing } = useArtistPage(slug, '디스코그래피 · AUDENIQ');
   const [items, setItems] = useState<DiscoRelease[] | null>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  usePublicReveal(cardRef, PUBLIC_UNITS, !!page && !!items);
   useEffect(() => {
-    if (MOCK) { setItems(MOCK_DISCO); return; }
+    if (MOCK) { const t = window.setTimeout(() => setItems(MOCK_DISCO), 300); return () => window.clearTimeout(t); }
     req<{ items: DiscoRelease[] }>(`/api/artist-links/${encodeURIComponent(slug)}/discography`, { quiet401: true })
       .then(r => setItems(r.items), () => setItems([]));
   }, [slug]);
 
   if (missing) return <PageMissing />;
-  if (!page || !items) return <main className="aq-smartlink" aria-busy="true" />;
+  if (!page) return <main className="aq-smartlink" aria-busy="true" />;
+  if (!items) {
+    return (
+      <main className="aq-smartlink aq-artistpage">
+        <div className="aq-smartlink-card aq-artist-card aq-artist-sub">
+          <ArtistSubHead slug={slug} name={page.name} title="디스코그래피" />
+          <CardSkeleton rows={3} tall />
+        </div>
+      </main>
+    );
+  }
   const count = (t: string) => items.filter(r => r.type === t).length;
   const summary = [['ALBUM', '정규'], ['EP', 'EP'], ['SINGLE', '싱글']]
     .filter(([t]) => count(t) > 0).map(([t, l]) => `${l} ${count(t)}`);
@@ -91,7 +113,7 @@ export function ArtistDiscography() {
 
   return (
     <main className="aq-smartlink aq-artistpage">
-      <div className="aq-smartlink-card aq-artist-card aq-artist-sub">
+      <div ref={cardRef} className="aq-smartlink-card aq-artist-card aq-artist-sub">
         <ArtistSubHead slug={slug} name={page.name} title="디스코그래피" />
         {items.length > 0 && (
           <ul className="aq-disco-stats" aria-label="요약">

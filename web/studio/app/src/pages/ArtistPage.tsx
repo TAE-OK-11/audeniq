@@ -4,7 +4,7 @@
 // 아티스트가 올린 소식(공지·이벤트, 고정·다가오는 이벤트 먼저 세 개)과 팬 응원도 여기에 — 전체 소식은 ArtistNews.tsx,
 // 수록곡까지 보는 디스코그래피는 ArtistDiscography.tsx.
 // 아티스트가 계정 정보에서 켜 둔 동안만 보인다. 조회 수는 아티스트에게 보인다. 보도자료 페이지는 ArtistPress.tsx.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from '../lib/router';
 import { API_BASE, req } from '../api/http';
 import { MOCK } from '../lib/mode';
@@ -16,6 +16,10 @@ import { linkBrand, shortUrl, type OwnLink } from '../lib/ownLinks';
 import { artistDiscographyPath, artistNewsPath, artistPath, artistPressPath, releasePath } from '../lib/publicLinks';
 import { MOCK_CHEERS, MOCK_POSTS, type Community } from '../lib/artistCommunity';
 import { CheerBoard, PostCard } from '../components/ArtistCommunity';
+import { usePublicReveal } from '../hooks/usePublicReveal';
+
+/** 스크롤로 떠오르는 덩어리 — 소식 카드, 발매 칸, 응원 폼·줄 */
+export const PUBLIC_UNITS = '.aq-artist-section-head, .aq-post-list>li, .aq-artist-release-grid>li, .aq-cheers>h2, .aq-cheer-form, .aq-cheer-list:not(.is-skeleton)>li, .aq-disco-item, .aq-disco-year>h2';
 
 export interface ArtistRelease { slug: string; title: string; type: string; release_date: string | null; released: boolean; cover: boolean }
 type Release = ArtistRelease;
@@ -89,6 +93,8 @@ export function useArtistPage(slug: string, titleSuffix = 'AUDENIQ') {
 export function ArtistPage() {
   const { slug = '' } = useParams<{ slug: string }>();
   const { page, missing } = useArtistPage(slug);
+  const cardRef = useRef<HTMLDivElement>(null);
+  usePublicReveal(cardRef, PUBLIC_UNITS, !!page);
 
   if (missing) {
     return (
@@ -106,7 +112,7 @@ export function ArtistPage() {
   return (
     <main className="aq-smartlink aq-artistpage">
       {bg && <div className="aq-smartlink-bg" style={{ backgroundImage: `url("${bg}")` }} aria-hidden="true" />}
-      <div className="aq-smartlink-card aq-artist-card">
+      <div ref={cardRef} className="aq-smartlink-card aq-artist-card">
         <span className="aq-artist-avatar" style={{ background: gradientFor(slug) }} aria-hidden="true">{page.name.trim().charAt(0)}</span>
         <h1>{page.name}</h1>
         {page.bio && <p className="aq-artist-bio">{page.bio}</p>}
