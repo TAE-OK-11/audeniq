@@ -87,7 +87,15 @@ export function Releases() {
   }, [tracksWanted, listData], { key: tracksWanted && listData ? 'release-tracks' : undefined });
   const tracks = useMemo(() => trackData ?? [], [trackData]);
   const trackCount = useMemo(() => list.reduce((n, r) => n + (r.track_count || 0), 0), [list]);
-  const loading = listLoading || (tab === 'tracks' && (tracksLoading || (!trackData && !tracksError)));
+  const tracksPending = tab === 'tracks' && (tracksLoading || (!trackData && !tracksError));
+  // 탭을 바꾼 뒤 트랙이 금방 오면 스켈레톤을 그리지 않는다 — 회색 줄이 한 번 번쩍였다가 바뀌어 튀어 보였다
+  const [slowTracks, setSlowTracks] = useState(false);
+  useEffect(() => {
+    if (!tracksPending) { setSlowTracks(false); return; }
+    const t = window.setTimeout(() => setSlowTracks(true), 300);
+    return () => window.clearTimeout(t);
+  }, [tracksPending]);
+  const loading = listLoading || tracksPending;
   const error = listError || (tab === 'tracks' ? tracksError : '');
 
 
@@ -142,7 +150,7 @@ export function Releases() {
       />
 
       {loading ? (
-        <SkeletonRows count={4} />
+        listLoading || slowTracks ? <SkeletonRows count={4} /> : <div className="aq-tab-wait" aria-busy="true" />
       ) : error ? (
         <div className="ui-empty">
           <h2>발매 목록을 불러오지 못했어요.</h2>

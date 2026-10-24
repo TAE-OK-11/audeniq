@@ -380,6 +380,8 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .view-enter>#view-new.view>:nth-child(-n+10){animation:aq-section-in var(--aq-motion-base) var(--aq-enter) backwards}
 @media (prefers-reduced-motion:reduce){.view-enter,.view-enter>.view>*{animation:none!important}}
 #main .view:not(#view-new) .aq-stagger>*{animation:none}
+/* 탭을 바꾼 뒤 잠깐(0.3초 안) 기다리는 자리 — 스켈레톤 대신 빈 높이만 */
+.aq-tab-wait{min-height:240px}
 /* aq-motion-waiting: 아직 나타나지 않은 덩어리 (화면에 닿으면 16px 아래에서 떠오른다) */
 #main .aq-motion-waiting{opacity:0;transform:translateY(16px)}
 @media (prefers-reduced-motion:reduce){#main .aq-motion-waiting{opacity:1;transform:none}}
