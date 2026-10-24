@@ -901,3 +901,18 @@ button.settle-hero-account.is-button .min-0{display:grid}
 
 /* 화면 머리는 불투명한 흰색 — 스크롤하면 반투명 + 흐림(유리 효과)으로 아래 내용이 비쳐 보였다 */
 .portal-header,.portal-header.is-scrolled{background:#fff!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+
+/* ---------- 계약서 서명 — 계좌 등록처럼 전체 화면 ----------
+   떠 있는 카드였을 때는 아래가 잘리고(사파리 하단 막대) 배경이 비쳐 따로 노는 창처럼 보였다. 아래에서 올라오는 창은
+   끌어 내리면 닫혀서, 손가락으로 서명을 그리다 창이 흔들릴 수 있다 — 법적 서명은 화면 전체를 쓰는 흐름으로.
+   머리(제목·닫기)는 위에, 버튼 줄은 아래에 붙고, 내용은 가운데 700px 안에서 스크롤된다 */
+#modal.aq-signature-mode{--sx:max(20px,calc((100vw - 700px) / 2));padding:0!important;background:#fff!important;z-index:150!important;overflow:hidden!important}
+#modal.aq-signature-mode .modal-inner{position:fixed!important;inset:0!important;width:100%!important;max-width:none!important;height:100dvh!important;max-height:none!important;min-height:0!important;margin:0!important;
+  padding:0 var(--sx)!important;border-radius:0!important;box-shadow:none!important;background:#fff!important;overflow-y:auto!important;overscroll-behavior:contain!important;animation:aq-fade-in var(--aq-motion-base) var(--aq-enter) both!important}
+#modal.aq-signature-mode .modal-top{position:sticky;top:0;z-index:6;margin:0 calc(-1 * var(--sx)) 8px!important;padding:max(14px,env(safe-area-inset-top)) var(--sx) 12px!important;background:#fff}
+#modal.aq-signature-mode .aq-sign-foot{margin:20px calc(-1 * var(--sx)) 0!important;padding:14px var(--sx) calc(16px + env(safe-area-inset-bottom,0px))!important;border-radius:0!important;border-top:0!important;box-shadow:0 -1px 0 var(--aq-gray-100)}
+/* 내용이 짧아도 버튼 줄은 화면 맨 아래에 */
+#modal.aq-signature-mode .modal-inner{display:flex!important;flex-direction:column}
+#modal.aq-signature-mode #modalBody{flex:1 0 auto;display:flex;flex-direction:column}
+#modal.aq-signature-mode #modalBody>.aq-sign-foot{margin-top:auto!important}
+@media (prefers-reduced-motion:reduce){#modal.aq-signature-mode .modal-inner{animation:none!important}}
