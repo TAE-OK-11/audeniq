@@ -1195,7 +1195,7 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
 .aq-cheers{margin:28px 0 0;text-align:left}
 .aq-cheer-form{display:grid;gap:8px;padding:14px;border-radius:var(--aq-r-xl);background:var(--aq-surface)}
 .aq-cheer-form .ui-input{background-color:#fff}
-.aq-cheer-msg{min-height:84px;resize:vertical}
+.aq-cheer-msg{min-height:84px;resize:none}
 .aq-cheer-foot{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .aq-cheer-count{font-size:12px;color:var(--aq-text-4);font-variant-numeric:tabular-nums}
 .aq-cheer-done{margin:0;font-size:13px;font-weight:700;color:var(--aq-blue-500)}
@@ -1300,10 +1300,6 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
 .aq-soft-in{animation:aq-soft-pop var(--aq-motion-base) var(--aq-enter) both}
 
 /* 팬 응원 — 남기면 하트가 톡, 새 응원은 옅은 파랑으로 들어왔다 사라진다 */
-.aq-cheer-form{transition:box-shadow var(--aq-dur) var(--aq-ease)}
-.aq-cheer-form:focus-within{box-shadow:0 0 0 1.5px rgba(49,130,246,.28)}
-.aq-cheer-msg{transition:min-height var(--aq-motion-long) var(--aq-enter)}
-.aq-cheer-form:focus-within .aq-cheer-msg{min-height:104px}
 .aq-cheer-count{transition:color var(--aq-dur) var(--aq-ease)}
 .aq-cheer-count.is-near{color:var(--aq-amber-600)}
 .aq-cheer-send-heart{display:inline-flex}
