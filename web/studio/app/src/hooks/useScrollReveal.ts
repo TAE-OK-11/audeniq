@@ -35,7 +35,8 @@ export function useScrollReveal(key: string) {
       const vh = window.innerHeight;
       const fresh: HTMLElement[] = [];
       root.querySelectorAll<HTMLElement>(TARGETS).forEach(el => {
-        if (seen.has(el)) return;
+        // 홈은 랜딩과 같은 등장 연출(useLandingReveal)을 따로 쓴다
+        if (seen.has(el) || el.closest('#view-home')) return;
         seen.add(el);
         fresh.push(el);
       });
