@@ -1,6 +1,8 @@
 // 아티스트 소개 페이지 (/link/artist/:slug) — 로그인 없이 누구나. 스마트링크처럼 SNS·프로필에 거는 한 주소:
 // 이름·소개 글, 플랫폼별 아티스트 페이지, 스마트링크가 있는 발매(최신순). 발매를 누르면 그 스마트링크(/l/코드)로 간다.
 // 아티스트가 직접 넣은 링크(인스타·유튜브·공연 예매…)도 줄로 — 프로필 링크 하나로 끝나게.
+// 아티스트가 올린 소식(공지·이벤트, 고정·다가오는 이벤트 먼저 세 개)과 팬 응원도 여기에 — 전체 소식은 ArtistNews.tsx,
+// 수록곡까지 보는 디스코그래피는 ArtistDiscography.tsx.
 // 아티스트가 계정 정보에서 켜 둔 동안만 보인다. 조회 수는 아티스트에게 보인다. 보도자료 페이지는 ArtistPress.tsx.
 import { useEffect, useState } from 'react';
 import { Link, useParams } from '../lib/router';
@@ -11,13 +13,16 @@ import { BrandMark } from '../components/BrandMark';
 import { Glyph } from '../components/Glyph';
 import { gradientFor } from '../lib/catalog';
 import { linkBrand, shortUrl, type OwnLink } from '../lib/ownLinks';
-import { artistPath, artistPressPath, releasePath } from '../lib/publicLinks';
+import { artistDiscographyPath, artistNewsPath, artistPath, artistPressPath, releasePath } from '../lib/publicLinks';
+import { MOCK_CHEERS, MOCK_POSTS, type Community } from '../lib/artistCommunity';
+import { CheerBoard, PostCard } from '../components/ArtistCommunity';
 
 export interface ArtistRelease { slug: string; title: string; type: string; release_date: string | null; released: boolean; cover: boolean }
 type Release = ArtistRelease;
 export interface ArtistPageData {
   name: string; bio: string; links: OwnLink[]; contact: string;
   pages: { platform: string; url: string }[]; releases: Release[];
+  community?: Community;
 }
 type Page = ArtistPageData;
 
@@ -35,6 +40,7 @@ const MOCK_PAGE: Page = {
     { slug: 'mock0001', title: '여름의 끝', type: 'EP', release_date: '2026-08-01', released: true, cover: false },
     { slug: 'mock0002', title: '첫 번째 싱글', type: 'SINGLE', release_date: '2026-03-14', released: true, cover: false },
   ],
+  community: { posts: MOCK_POSTS, posts_total: MOCK_POSTS.length, cheers_enabled: true, cheers_total: MOCK_CHEERS.length },
 };
 
 /** 'EP · 2026' · 발매 예정이면 '11월 15일 발매 예정' (올해가 아니면 연도도) */
@@ -95,6 +101,7 @@ export function ArtistPage() {
   // 가장 최근 발매의 커버를 흐리게 깔아 스마트링크 페이지와 같은 분위기로
   const latest = page.releases.find(r => r.cover);
   const bg = latest && !MOCK ? `${API_BASE}/api/smart-links/${encodeURIComponent(latest.slug)}/cover` : '';
+  const news = page.community;
 
   return (
     <main className="aq-smartlink aq-artistpage">
@@ -134,15 +141,34 @@ export function ArtistPage() {
             })}
           </ul>
         )}
+        {news && news.posts_total > 0 && (
+          <section className="aq-artist-news" aria-labelledby="artistNewsTitle">
+            <div className="aq-artist-section-head">
+              <h2 id="artistNewsTitle" className="aq-smartlink-list-title">소식 <span>{news.posts_total}</span></h2>
+              {news.posts_total > news.posts.length && <Link to={artistNewsPath(slug)} className="aq-artist-more">전체 보기<Glyph name="chevron-right" size={14} /></Link>}
+            </div>
+            <ul className="aq-post-list">
+              {news.posts.map(p => <li key={p.id}><PostCard post={p} artist={page.name} clamp /></li>)}
+            </ul>
+          </section>
+        )}
         <section className="aq-artist-releases" aria-labelledby="artistReleasesTitle">
-          <h2 id="artistReleasesTitle" className="aq-smartlink-list-title">발매 <span>{page.releases.length}</span></h2>
+          <div className="aq-artist-section-head">
+            <h2 id="artistReleasesTitle" className="aq-smartlink-list-title">발매 <span>{page.releases.length}</span></h2>
+            {page.releases.length > 0 && <Link to={artistDiscographyPath(slug)} className="aq-artist-more">디스코그래피<Glyph name="chevron-right" size={14} /></Link>}
+          </div>
           {page.releases.length > 0 ? (
             <ul className="aq-artist-release-grid">
               {page.releases.map(r => <ReleaseCard key={r.slug} r={r} from={{ path: artistPath(slug), name: page.name }} />)}
             </ul>
           ) : <p className="muted small">아직 공개된 발매가 없어요.</p>}
         </section>
-        <p className="aq-smartlink-foot"><Link to={artistPressPath(slug)}>보도자료</Link> · Distributed by AUDENIQ</p>
+        {news && <CheerBoard slug={slug} artist={page.name} total={news.cheers_total} enabled={news.cheers_enabled} />}
+        <p className="aq-smartlink-foot">
+          {news && news.posts_total > 0 && <><Link to={artistNewsPath(slug)}>소식</Link> · </>}
+          {page.releases.length > 0 && <><Link to={artistDiscographyPath(slug)}>디스코그래피</Link> · </>}
+          <Link to={artistPressPath(slug)}>보도자료</Link> · Distributed by AUDENIQ
+        </p>
       </div>
     </main>
   );

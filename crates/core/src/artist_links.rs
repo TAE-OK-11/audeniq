@@ -112,6 +112,9 @@ pub async fn list(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
     let items: Vec<Value> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT jsonb_build_object('artist_id', a.id, 'name', a.name,
                 'link', (SELECT jsonb_build_object('slug', k.slug, 'enabled', k.enabled, 'bio', k.bio, 'links', k.links, 'contact', k.contact,
+                                  'cheers_enabled', k.cheers_enabled,
+                                  'posts', (SELECT count(*) FROM portal.artist_posts p WHERE p.link_id=k.id),
+                                  'cheers', (SELECT count(*) FROM portal.artist_cheers c WHERE c.link_id=k.id),
                                   'views', COALESCE((SELECT sum(st.count) FROM portal.artist_link_stats st
                                                       WHERE st.link_id=k.id AND st.day > (now() AT TIME ZONE 'Asia/Seoul')::date - $3), 0))
                            FROM portal.artist_links k WHERE k.org_id=a.org_id AND k.artist_id=a.id),
@@ -149,6 +152,9 @@ pub struct LinkInput {
     /// (or makes a random one).
     #[serde(default)]
     pub handle: String,
+    /// Fans can leave cheers on the page; absent keeps the current setting.
+    #[serde(default)]
+    pub cheers: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -231,7 +237,8 @@ pub async fn save(s: &AppState, a: &Actor, org: Uuid, artist: Uuid, i: LinkInput
         Some(slug) => {
             let next = handle.clone().unwrap_or(slug);
             sqlx::query(
-                "UPDATE portal.artist_links SET enabled=$3, bio=$4, links=$5, contact=$6, slug=$7, updated_at=now() WHERE org_id=$1 AND artist_id=$2",
+                "UPDATE portal.artist_links SET enabled=$3, bio=$4, links=$5, contact=$6, slug=$7,
+                        cheers_enabled=COALESCE($8, cheers_enabled), updated_at=now() WHERE org_id=$1 AND artist_id=$2",
             )
             .bind(org)
             .bind(artist)
@@ -240,6 +247,7 @@ pub async fn save(s: &AppState, a: &Actor, org: Uuid, artist: Uuid, i: LinkInput
             .bind(&links)
             .bind(&contact)
             .bind(&next)
+            .bind(i.cheers)
             .execute(&mut *tx)
             .await
             .map_err(taken)?;
@@ -248,8 +256,8 @@ pub async fn save(s: &AppState, a: &Actor, org: Uuid, artist: Uuid, i: LinkInput
         None if handle.is_some() => {
             let h = handle.clone().unwrap_or_default();
             sqlx::query(
-                "INSERT INTO portal.artist_links(id, org_id, artist_id, slug, enabled, bio, created_by, links, contact)
-                 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+                "INSERT INTO portal.artist_links(id, org_id, artist_id, slug, enabled, bio, created_by, links, contact, cheers_enabled)
+                 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
             )
             .bind(Uuid::new_v4())
             .bind(org)
@@ -260,6 +268,7 @@ pub async fn save(s: &AppState, a: &Actor, org: Uuid, artist: Uuid, i: LinkInput
             .bind(a.user)
             .bind(&links)
             .bind(&contact)
+            .bind(i.cheers.unwrap_or(true))
             .execute(&mut *tx)
             .await
             .map_err(taken)?;
@@ -270,8 +279,8 @@ pub async fn save(s: &AppState, a: &Actor, org: Uuid, artist: Uuid, i: LinkInput
             for _ in 0..5 {
                 let slug = smart_links::new_slug()?;
                 let ok: Option<String> = sqlx::query_scalar(
-                    "INSERT INTO portal.artist_links(id, org_id, artist_id, slug, enabled, bio, created_by, links, contact)
-                     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (slug) DO NOTHING RETURNING slug",
+                    "INSERT INTO portal.artist_links(id, org_id, artist_id, slug, enabled, bio, created_by, links, contact, cheers_enabled)
+                     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (slug) DO NOTHING RETURNING slug",
                 )
                 .bind(Uuid::new_v4())
                 .bind(org)
@@ -282,6 +291,7 @@ pub async fn save(s: &AppState, a: &Actor, org: Uuid, artist: Uuid, i: LinkInput
                 .bind(a.user)
                 .bind(&links)
                 .bind(&contact)
+                .bind(i.cheers.unwrap_or(true))
                 .fetch_optional(&mut *tx)
                 .await?;
                 if ok.is_some() {
@@ -383,7 +393,7 @@ pub async fn public_page(s: &AppState, h: &HeaderMap, slug: &str) -> Result<Valu
         return Err(Error::NotFound);
     }
     let row = sqlx::query(
-        "SELECT k.id, k.org_id, k.artist_id, k.bio, k.links, k.contact, a.name
+        "SELECT k.id, k.org_id, k.artist_id, k.bio, k.links, k.contact, k.cheers_enabled, a.name
            FROM portal.artist_links k
            JOIN catalog.artists a ON a.org_id=k.org_id AND a.id=k.artist_id
           WHERE k.slug=$1 AND k.enabled AND a.archived_at IS NULL",
@@ -449,8 +459,11 @@ pub async fn public_page(s: &AppState, h: &HeaderMap, slug: &str) -> Result<Valu
             })
         })
         .collect();
+    let community =
+        crate::artist_community::preview(s, row.get("id"), row.get("cheers_enabled")).await?;
     count(s, h, row.get("id"), slug).await;
     Ok(json!({
+        "community": community,
         "name": row.get::<String, _>("name"),
         "bio": row.get::<String, _>("bio"),
         "links": row.get::<Value, _>("links"),

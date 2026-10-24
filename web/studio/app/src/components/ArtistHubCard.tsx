@@ -1,6 +1,7 @@
 // 계정 정보 > 아티스트 페이지 — 아티스트마다 두 가지를 한 묶음으로: 플랫폼(Spotify·멜론 등) 아티스트 페이지 등록과
 // 팬에게 보여 줄 소개 페이지(/a/코드). 예전엔 '아티스트 페이지'와 '아티스트 소개 페이지' 두 카드에 같은 이름이
 // 두 번씩 나와 무엇이 무엇인지 헷갈렸다. 줄을 누르면 각자의 편집 창이 열린다 (ArtistPagesCard·ArtistLinkCard의 편집 창).
+// 소개 페이지가 있으면 ‘소식’(공지·이벤트 올리기)과 ‘팬 응원’(숨기기·하트·받기 끄기) 줄도 (ArtistCommunityManager).
 import { useCallback, useEffect, useState } from 'react';
 import { orgPath, req } from '../api/http';
 import { MOCK } from '../lib/mode';
@@ -9,6 +10,8 @@ import { Modal } from './Modal';
 import { Glyph } from './Glyph';
 import { PagesEditor, pagesSummary, type ArtistRow } from './ArtistPagesCard';
 import { LinkEditor, linkSummary, type ArtistLinkRow } from './ArtistLinkCard';
+import { CheersManager, PostsManager } from './ArtistCommunityManager';
+import { num } from '../lib/format';
 
 export function ArtistHubCard() {
   const profile = useProfile();
@@ -16,6 +19,24 @@ export function ArtistHubCard() {
   const [links, setLinks] = useState<ArtistLinkRow[]>([]);
   const [editPages, setEditPages] = useState<ArtistRow | null>(null);
   const [editLink, setEditLink] = useState<ArtistLinkRow | null>(null);
+  const [news, setNews] = useState<ArtistLinkRow | null>(null);
+  const [cheers, setCheers] = useState<ArtistLinkRow | null>(null);
+  const patchLink = useCallback((id: string, patch: Partial<NonNullable<ArtistLinkRow['link']>>) =>
+    setLinks(list => list.map(x => (x.artist_id === id && x.link ? { ...x, link: { ...x.link, ...patch } } : x))), []);
+  const setPostCount = useCallback((n: number) => { if (news) patchLink(news.artist_id, { posts: n }); }, [news, patchLink]);
+  const setCheerCount = useCallback((n: number) => { if (cheers) patchLink(cheers.artist_id, { cheers: n }); }, [cheers, patchLink]);
+  // 받기 켜고 끄기 — 소개 페이지 저장(PUT)은 빠진 칸을 비우므로 지금 값을 함께 보낸다
+  const setCheersEnabled = async (v: boolean) => {
+    const row = links.find(x => x.artist_id === cheers?.artist_id);
+    const l = row?.link;
+    if (!row || !l) return;
+    if (!MOCK) {
+      await req(orgPath(`/artists/${encodeURIComponent(row.artist_id)}/link`), {
+        method: 'PUT', body: { enabled: l.enabled, bio: l.bio, links: l.links ?? [], contact: l.contact ?? '', cheers: v },
+      });
+    }
+    patchLink(row.artist_id, { cheers_enabled: v });
+  };
 
   const loadPages = useCallback(async () => {
     if (MOCK) return;
@@ -63,6 +84,22 @@ export function ArtistHubCard() {
                 <Glyph name="chevron-right" size={16} className="aq-set-chev" />
               </button>
             )}
+            {ln?.link && (
+              <>
+                <button type="button" className="aq-set-row" onClick={() => setNews(ln)}>
+                  <span className="aq-set-label">소식</span>
+                  <span className={`aq-set-value${ln.link.posts ? '' : ' is-empty'}`}>{ln.link.posts ? `${num(ln.link.posts)}개` : '공지·이벤트 올리기'}</span>
+                  <Glyph name="chevron-right" size={16} className="aq-set-chev" />
+                </button>
+                <button type="button" className="aq-set-row" onClick={() => setCheers(ln)}>
+                  <span className="aq-set-label">팬 응원</span>
+                  <span className={`aq-set-value${ln.link.cheers ? '' : ' is-empty'}`}>
+                    {ln.link.cheers_enabled === false ? '꺼짐' : ln.link.cheers ? `${num(ln.link.cheers)}개` : '아직 없어요'}
+                  </span>
+                  <Glyph name="chevron-right" size={16} className="aq-set-chev" />
+                </button>
+              </>
+            )}
           </div>
         );
       })}
@@ -74,6 +111,18 @@ export function ArtistHubCard() {
       {editLink && (
         <Modal title={`${editLink.name} 소개 페이지`} onClose={() => setEditLink(null)} modalClass="aq-set-modal">
           <LinkEditor artist={editLink} onSaved={row => setLinks(list => list.map(x => (x.artist_id === row.artist_id ? row : x)))} />
+        </Modal>
+      )}
+      {news?.link && (
+        <Modal title={`${news.name} 소식`} onClose={() => setNews(null)} modalClass="aq-set-modal">
+          <PostsManager artistId={news.artist_id} artist={news.name} slug={news.link.slug} onCount={setPostCount} />
+        </Modal>
+      )}
+      {cheers?.link && (
+        <Modal title={`${cheers.name} 팬 응원`} onClose={() => setCheers(null)} modalClass="aq-set-modal">
+          <CheersManager artistId={cheers.artist_id} artist={cheers.name}
+            enabled={links.find(x => x.artist_id === cheers.artist_id)?.link?.cheers_enabled !== false}
+            onEnabled={setCheersEnabled} onCount={setCheerCount} />
         </Modal>
       )}
     </section>
