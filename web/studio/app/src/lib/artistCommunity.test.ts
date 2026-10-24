@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { ago, dday, eventWhen, isoToLocal, localToIso } from './artistCommunity';
+import { ago, dday, eventDay, eventWhen, isoToLocal, localToIso } from './artistCommunity';
 
 describe('artist community helpers', () => {
   const now = new Date('2026-10-24T03:00:00Z'); // 한국 10월 24일 정오
   it('formats event time in Korea time, year only when not this year', () => {
     expect(eventWhen('2026-11-01T10:00:00Z', now)).toBe('11월 1일 (일) 오후 7:00');
     expect(eventWhen('2027-01-02T01:30:00Z', now)).toBe('2027년 1월 2일 (토) 오전 10:30');
+    expect(eventDay('2026-10-31T16:00:00Z')).toEqual({ month: '11', day: '1', weekday: '일' });
   });
   it('counts days by the Korean calendar', () => {
     expect(dday('2026-10-24T16:00:00Z', now)).toEqual({ text: 'D-1', past: false }); // 25일 새벽 1시
