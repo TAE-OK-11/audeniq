@@ -84,7 +84,10 @@ export function PublicFoot({ artist, here }: { artist?: { slug: string; name: st
           {links.map(([k, label, to]) => <Link key={k} to={to}>{label}</Link>)}
         </nav>
       )}
-      <p className="aq-smartlink-foot">Distributed by AUDENIQ</p>
+      <a className="aq-pub-brand" href="https://audeniq.com" target="_blank" rel="noopener noreferrer" aria-label="Distributed by AUDENIQ">
+        <small>Distributed by</small>
+        <img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="" />
+      </a>
     </footer>
   );
 }

@@ -1399,3 +1399,14 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
 html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50)}
 .aq-smartlink>.aq-smartlink-bg{position:fixed;inset:-60px;z-index:0}
 .aq-smartlink>.aq-smartlink-card{position:relative;z-index:1}
+
+/* 맨 아래 다듬기 — 위에 옅은 구분선, 형제 화면 알약, 그 아래 ‘Distributed by’ + AUDENIQ 로고(누르면 audeniq.com) */
+.aq-pub-foot{gap:16px;margin-top:32px;padding-top:20px;position:relative}
+.aq-pub-foot::before{content:"";position:absolute;top:0;left:24px;right:24px;height:1px;background:var(--aq-line)}
+.aq-pub-foot nav a{min-height:30px;padding:0 12px;font-size:12.5px}
+.aq-pub-brand{display:inline-flex;align-items:center;gap:7px;padding:4px 6px;border-radius:8px;color:var(--aq-text-4);text-decoration:none;opacity:.7;transition:opacity var(--aq-dur) var(--aq-ease)}
+.aq-pub-brand small{font-size:11px;font-weight:500;letter-spacing:.02em;line-height:1}
+.aq-pub-brand img{display:block;width:72px;height:auto}
+@media (hover:hover){.aq-pub-brand:hover{opacity:1}}
+.aq-pub-brand:is(:active,.is-pressed){opacity:1}
+.aq-pub-brand:focus-visible{outline:var(--aq-focus);outline-offset:2px;opacity:1}
