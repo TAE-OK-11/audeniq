@@ -762,7 +762,6 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .auth-agree{display:flex;flex-direction:column;gap:10px;margin:6px 0 18px}
 .check-row{display:flex;align-items:flex-start;gap:10px;font-size:13px;color:var(--aq-text-2);cursor:pointer;line-height:1.5}
 .check-row input{width:18px;height:18px;margin-top:1px;accent-color:var(--portal-blue);flex-shrink:0}
-.auth-done p{font-size:14px;line-height:1.8;color:var(--aq-text-2);background:var(--aq-blue-50);border-radius:var(--aq-r-md);padding:18px;margin:0 0 18px}
 .auth-card .ui-tabs{margin-bottom:24px}
 .auth-foot{display:flex;align-items:center;gap:10px;margin-top:28px;font-size:12px;color:var(--aq-text-4)}
 .auth-foot a{color:var(--aq-text-4);text-decoration:none}
