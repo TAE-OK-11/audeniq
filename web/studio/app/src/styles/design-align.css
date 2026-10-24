@@ -36,7 +36,9 @@
 .aq-report-rows b.is-down{color:var(--aq-red-500)}
 .aq-report-rows.is-compact li{min-height:44px;padding:8px 14px}
 .aq-report-rows.is-compact strong{font-size:14px}
-.aq-report-note{margin:8px 8px 4px;padding:12px 14px;border-radius:var(--aq-r-md);background:#fff;font-size:13px;line-height:1.65;color:var(--aq-text-2)}
+/* 카드 안에 흰 칸을 또 두지 않는다 — 줄 아래 설명 글로 */
+.aq-report-note{margin:10px 14px 2px;padding:0;background:none;font-size:13px;line-height:1.65;color:var(--aq-text-3)}
+.aq-report-plat{display:inline-flex;align-items:center;gap:8px;min-width:0}
 .aq-report-note b{color:var(--portal-ink)}
 .aq-rp-card .aq-platform-bars{gap:18px;padding:8px 14px 10px}
 .aq-rp-card .aq-platform-track{background:#fff}
@@ -180,11 +182,10 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .aq-doc-copy em{font-style:normal;font-size:12px;line-height:1.5;color:var(--aq-amber-700)}
 .aq-doc-state{flex:none}
 .aq-doc-chev{color:var(--aq-text-disabled)}
+/* 휴대폰도 '내 발매' 목록처럼 상태 배지는 오른쪽에 — 아래 줄로 내리면 줄마다 높이가 들쭉날쭉했다. 꺾쇠는 줄 전체가 눌리니 뺀다 */
 @media(max-width:560px){
-  .aq-doc-row{grid-template-columns:40px minmax(0,1fr) auto;align-items:start}
-  .aq-doc-row>.aq-doc-ico{grid-row:1/3}
-  .aq-doc-row .aq-doc-state{grid-column:2;grid-row:2;justify-self:start;margin-top:-4px}
-  .aq-doc-row .aq-doc-chev{grid-column:3;grid-row:1/3;align-self:center}
+  .aq-doc-row{grid-template-columns:40px minmax(0,1fr) auto;gap:10px}
+  .aq-doc-row .aq-doc-chev{display:none}
 }
 
 /* 내 음악 — 휴대폰에서도 검색과 정렬을 한 줄로 (정렬은 좁게) */
@@ -369,22 +370,20 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 @keyframes aq-menu-out-full{to{opacity:0;transform:translate3d(0,-8px,0)}}
 @media (prefers-reduced-motion:reduce){.portal-header #portalNav,#portalNav>*{animation:none!important}}
 
-/* ---------- 화면 들어올 때 — 화면 전체가 한 덩어리로 살짝 나타나며 4px 떠오른다 ----------
-   섹션마다 차례로 올라오던 연출은 번잡해 보여 없앴다. 목록(.aq-stagger)은 자체 모션이 있어 여기서 다시 움직이지 않는다. 발매 신청 위자드는 자체 단계 모션을 쓴다.
-   backwards라 끝난 뒤에는 transform이 남지 않는다(안쪽 sticky·fixed 요소 영향 없음). */
+/* ---------- 화면 들어올 때 — audeniq.com 랜딩과 같은 등장 연출 ----------
+   홈은 hooks/useLandingReveal.ts, 다른 화면은 hooks/useScrollReveal.ts가 덩어리(머리·카드·목록 줄)마다 16px 아래에서 떠오르게 한다.
+   예전의 화면 전체 4px 움직임·목록(.aq-stagger) 줄 움직임과 겹치지 않게 끈다. 발매 신청 위자드는 자체 단계 모션을 그대로 쓴다.
+   화면 전체의 짧은 페이드(.view-enter)는 남긴다 — 덩어리가 맡기기 전 한순간도 깔끔하게. */
 @keyframes aq-view-fade{from{opacity:0}}
-/* 섹션은 움직임만 — 투명도는 화면 전체(.view-enter) 한 번만. 둘 다 서서히 나타나면 투명도가 곱해져 첫 순간 화면이 하얗게 비어 보였다 */
 @keyframes aq-section-in{from{transform:translate3d(0,4px,0)}}
 .view-enter{animation:aq-view-fade var(--aq-motion-short) ease-out backwards}
-/* 화면 이동은 하루에도 수십 번 보는 움직임이라 짧게(--aq-motion-base) */
-.view-enter>.view:not(#view-new)>:not(.aq-stagger):nth-child(-n+10){animation:aq-section-in var(--aq-motion-base) var(--aq-enter) backwards}
+.view-enter>#view-new.view>:nth-child(-n+10){animation:aq-section-in var(--aq-motion-base) var(--aq-enter) backwards}
 @media (prefers-reduced-motion:reduce){.view-enter,.view-enter>.view>*{animation:none!important}}
-/* 홈은 audeniq.com 랜딩과 같은 등장 연출을 따로 쓴다(hooks/useLandingReveal.ts) — 짧은 섹션 움직임·바로가기 줄 움직임과 겹치지 않게 끈다.
-   aq-motion-waiting은 화면 밖이라 아직 나타나지 않은 덩어리 (스크롤해서 보이면 16px 아래에서 떠오른다) */
-.view-enter>#view-home.view>:not(.aq-stagger):nth-child(n),#view-home .aq-home-shortcuts>*{animation:none}
-#view-home .aq-motion-waiting{opacity:0;transform:translateY(16px)}
-@media (prefers-reduced-motion:reduce){#view-home .aq-motion-waiting{opacity:1;transform:none}}
-@media print{#view-home .aq-motion-waiting{opacity:1!important;transform:none!important}}
+#main .view:not(#view-new) .aq-stagger>*{animation:none}
+/* aq-motion-waiting: 아직 나타나지 않은 덩어리 (화면에 닿으면 16px 아래에서 떠오른다) */
+#main .aq-motion-waiting{opacity:0;transform:translateY(16px)}
+@media (prefers-reduced-motion:reduce){#main .aq-motion-waiting{opacity:1;transform:none}}
+@media print{#main .aq-motion-waiting{opacity:1!important;transform:none!important}}
 
 /* 휴대폰 전체 메뉴가 열려 있는 동안 뒤 화면이 같이 스크롤되지 않게.
    html에만 건다: body까지 막으면 body가 따로 스크롤 상자가 돼 고정 머리글(과 그 안의 메뉴)이
@@ -917,3 +916,39 @@ button.settle-hero-account.is-button .min-0{display:grid}
 #modal.aq-signature-mode #modalBody{flex:1 0 auto;display:flex;flex-direction:column}
 #modal.aq-signature-mode #modalBody>.aq-sign-foot{margin-top:auto!important}
 @media (prefers-reduced-motion:reduce){#modal.aq-signature-mode .modal-inner{animation:none!important}}
+
+/* ==========================================================================
+   메뉴도 audeniq.com 랜딩과 같은 움직임
+   - 머리글: 평소엔 선 없이 화면과 이어지고, 내려가면 그림자가 부드럽게(0.28초)
+   - 휴대폰 전체 메뉴: 판이 내려온 뒤 묶음이 30ms씩 차례로 8px 아래에서 떠오른다(0.7초, 처음 투명도 .3)
+   - 넓은 화면 왼쪽 메뉴·휴대폰 아래 탭 바: 처음 열 때 한 번 같은 움직임
+   - 자주 묻는 질문: 펼치면 답이 6px 아래에서 나타난다
+   ========================================================================== */
+.portal-header{border-bottom-color:transparent!important;transition:box-shadow .28s var(--aq-enter)}
+.portal-header.is-scrolled{box-shadow:0 5px 24px -14px #171B2930!important}
+body.wizard-mode .portal-header,.portal-header:has(#portalNav:not([hidden])){box-shadow:none!important}
+
+@keyframes aq-land-in{from{opacity:.3;transform:translate3d(0,8px,0)}}
+@keyframes aq-land-fade{from{opacity:0;transform:translate3d(0,8px,0)}}
+#portalNav>.aq-nav-me,#portalNav>.aq-nav-card,#portalNav>.aq-nav-foot{animation:aq-land-in .7s cubic-bezier(.22,.61,.36,1) backwards}
+#portalNav>:nth-child(2){animation-delay:30ms}#portalNav>:nth-child(3){animation-delay:60ms}#portalNav>:nth-child(4){animation-delay:90ms}
+#portalNav>:nth-child(5){animation-delay:120ms}#portalNav>:nth-child(n+6){animation-delay:150ms}
+@media (max-width:760px){
+  /* 판(흰 바탕)이 먼저 짧게 차오른 뒤 — 함께 나타나면 메뉴 글자가 뒤 화면 글자 위에 반투명하게 겹쳐 보였다 */
+  #portalNav>.aq-nav-me,#portalNav>.aq-nav-card,#portalNav>.aq-nav-foot{animation-name:aq-land-fade}
+  #portalNav>:first-child{animation-delay:.12s}#portalNav>:nth-child(2){animation-delay:.15s}#portalNav>:nth-child(3){animation-delay:.18s}
+  #portalNav>:nth-child(4){animation-delay:.21s}#portalNav>:nth-child(5){animation-delay:.24s}#portalNav>:nth-child(n+6){animation-delay:.27s}
+}
+#portalNav.is-closing>*{animation:none}
+
+.aq-sidebar>*{animation:aq-land-in .7s cubic-bezier(.22,.61,.36,1) backwards}
+.aq-sidebar>:nth-child(2){animation-delay:30ms}.aq-sidebar>:nth-child(3){animation-delay:60ms}.aq-sidebar>:nth-child(n+4){animation-delay:90ms}
+.aq-tabbar{animation:aq-land-in .7s cubic-bezier(.22,.61,.36,1) backwards}
+
+@keyframes aq-faq-open{from{opacity:0;transform:translate3d(0,6px,0)}}
+.aq-faq-item[open]>:not(summary){animation:aq-faq-open .5s cubic-bezier(.22,.61,.36,1) backwards}
+
+@media (prefers-reduced-motion:reduce){
+  #portalNav>*,.aq-sidebar>*,.aq-tabbar,.aq-faq-item[open]>:not(summary){animation:none!important}
+  .portal-header{transition:none}
+}

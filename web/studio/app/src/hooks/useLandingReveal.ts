@@ -4,7 +4,7 @@
 // 내리는 동안 카드가 흐린 채로 보여 덜 불러온 것처럼 느껴졌다.
 // 초점이 들어가면 바로 제자리, 탭을 숨기면 진행 중인 연출을 끝낸다. 동작 줄이기·미지원 브라우저에서는 아무것도 하지 않는다.
 // (docs/DESIGN_SYSTEM.md 규칙 19의 예외 — 홈 첫 화면에만 쓴다. 다른 화면의 짧은 스크롤 등장은 useScrollReveal)
-import { useEffect, useRef, type RefObject } from 'react';
+import { useLayoutEffect, useRef, type RefObject } from 'react';
 
 export interface RevealGroup {
   selector: string;
@@ -23,7 +23,8 @@ export function useLandingReveal(root: RefObject<HTMLElement | null>, groups: Re
   const seen = useRef(new WeakSet<HTMLElement>());
   const firstRun = useRef(true);
 
-  useEffect(() => {
+  // 그리기 전에 숨긴다 — 한 프레임이라도 제자리에 보였다가 사라지지 않게
+  useLayoutEffect(() => {
     const box = root.current;
     const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (!box || reduced || typeof IntersectionObserver === 'undefined' || !box.animate) return;

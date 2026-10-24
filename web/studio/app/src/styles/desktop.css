@@ -79,7 +79,7 @@
   #view-notices > .aq-nhero .aq-nhero-pins { margin-top: 32px; }
   #view-notices > .aq-nhero .aq-nhero-pin {
     align-items: start !important; grid-template-columns: auto minmax(0, 1fr) auto;
-    grid-template-areas: 'tag title arrow' '. date arrow'; column-gap: 10px; padding: 18px 20px;
+    grid-template-areas: 'tag title arrow' '. date arrow'; column-gap: 10px; padding: 16px 2px;
   }
   #view-notices > .aq-nhero .aq-nhero-pin-title { font-size: 16px; }
 

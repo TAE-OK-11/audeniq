@@ -1,65 +1,132 @@
-// 스크롤 등장 모션 — 처음 화면 아래에 있던 카드·섹션만 한 번 떠오른다 (위쪽 콘텐츠는 지연 없이 바로 표시).
-// 화면에 들어오기 120px 전부터 미리 시작하고(빠르게 내려도 빈 바탕이 먼저 보이지 않게) 0.32초 동안 4px만 조용히,
-// 한꺼번에 들어오는 카드는 차례 없이 함께 나온다.
-import { useEffect } from 'react';
+// 화면 등장 연출 — audeniq.com 랜딩과 같은 움직임을 모든 화면에 (홈은 useLandingReveal, 발매 신청은 자체 단계 모션).
+// 머리(작은 제목 → 제목 → 설명 → 버튼)가 몇십 ms씩 차례로 16px 아래에서 떠오르고, 이어서 카드·목록 줄·섹션 머리가 나온다.
+// 처음부터 화면 안에 있던 덩어리는 0.6초 동안 차례로, 화면 밖 덩어리는 스크롤로 닿기 조금 전에 시작해 0.48초.
+// 늦게 그려지는 목록(불러오기 뒤)도 잠시 지켜보다 같은 방식으로 맡는다. 바깥 덩어리를 맡으면 그 안쪽은 따로 움직이지 않는다.
+// 초점이 들어가면 바로 제자리, 탭을 숨기면 진행 중인 연출을 끝낸다. 동작 줄이기·미지원 브라우저에서는 아무것도 하지 않는다.
+// 숨기기는 그리기 전에(useLayoutEffect·MutationObserver) — 한 프레임이라도 보였다가 사라지지 않게.
+import { useLayoutEffect } from 'react';
 
-const TARGETS = [
-  '.surface', '.aq-report-card', '.section-top', '.aq-rp-card',
-  '.aq-doc-list', '.studio-doc-path', '.aq-profile-card', '.aq-event-hero',
-  '.aq-notice-featured-list', '.settle-hero', '.aq-detail-hero', '.split > *',
+/** 머리 — 차례로 */
+const HEAD: [string, number][] = [
+  ['.ui-page-head .eyebrow', 0],
+  ['.ui-page-head h1', 50],
+  ['.ui-page-head h1 ~ p, .ui-page-head h1 ~ div', 100],
+  ['.ui-page-head > :not(:first-child)', 140],
+];
+/** 덩어리 — 카드, 목록 줄, 섹션 머리, 안내 상자, 탭 */
+const UNITS = [
+  '.ui-card', '.ui-list > *', '.ui-section-head', '.ui-callout', '.ui-empty', '.ui-tabs', '.ui-hero',
+  '.aq-bundle', '.aq-faq-item', '.aq-nboard-row', '.aq-nhero', '.aq-event-hero', '.settle-hero', '.aq-detail-hero',
+  '.surface', '.aq-report-card', '.aq-rp-card', '.aq-profile-card', '.aq-doc-list', '.aq-settings > *',
 ].join(',');
-const EASE = 'cubic-bezier(.32,.72,0,1)'; // --aq-enter
+
+const KEYFRAMES: Keyframe[] = [{ opacity: 0, transform: 'translateY(16px)' }, { opacity: 1, transform: 'none' }];
+const EASING = 'cubic-bezier(.22,.61,.36,1)';
+const FIRST_MS = 600;
+const SCROLL_MS = 480;
+const WAITING = 'aq-motion-waiting';
+/** 화면을 연 뒤 이 시간 안에 화면 안에 그려진 덩어리는 첫 화면 흐름(차례)을 탄다 */
+const FIRST_WINDOW = 1500;
+const WATCH_MS = 4000;
 
 export function useScrollReveal(key: string) {
-  useEffect(() => {
+  useLayoutEffect(() => {
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    if (reduced || !('IntersectionObserver' in window) || !Element.prototype.animate) return;
+    if (reduced || typeof IntersectionObserver === 'undefined' || !Element.prototype.animate) return;
     const root = document.getElementById('main');
     if (!root) return;
+    const started = performance.now();
     const seen = new WeakSet<Element>();
-    const io = new IntersectionObserver(entries => {
-      for (const e of entries) {
-        if (!e.isIntersecting) continue;
-        io.unobserve(e.target);
-        const el = e.target as HTMLElement;
-        el.classList.remove('aq-reveal-wait');
-        el.animate(
-          [{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }],
-          { duration: 320, easing: EASE, fill: 'backwards' },
-        );
-      }
-    }, { rootMargin: '0px 0px 120px 0px', threshold: 0.01 });
+    const pending = new Set<HTMLElement>();
+    const active = new Map<HTMLElement, Animation>();
+    const meta = new Map<HTMLElement, { delay: number; first: boolean }>();
+    let firstCount = 0;
 
-    // 읽기(위치 재기)를 모두 끝낸 뒤 쓰기(클래스 달기)를 한다 — 섞으면 요소마다 레이아웃을 다시 계산해 화면 진입이 멈칫했다
-    const scan = () => {
-      const vh = window.innerHeight;
-      const fresh: HTMLElement[] = [];
-      root.querySelectorAll<HTMLElement>(TARGETS).forEach(el => {
-        // 홈은 랜딩과 같은 등장 연출(useLandingReveal)을 따로 쓴다
-        if (seen.has(el) || el.closest('#view-home')) return;
-        seen.add(el);
-        fresh.push(el);
-      });
-      // 이미 화면 안에 있는 요소는 건드리지 않는다
-      const below = fresh.filter(el => el.getBoundingClientRect().top >= vh * 0.92);
-      for (const el of below) {
-        // 부모가 이미 등장 대상이면 중복 모션을 피한다
-        if (el.parentElement?.closest('.aq-reveal-wait')) continue;
-        el.classList.add('aq-reveal-wait');
-        io.observe(el);
+    const show = (el: HTMLElement, now = false) => {
+      if (!pending.delete(el)) return;
+      io.unobserve(el);
+      const m = meta.get(el);
+      if (!now && !document.hidden && m) {
+        const a = el.animate(KEYFRAMES, { duration: m.first ? FIRST_MS : SCROLL_MS, easing: EASING, fill: 'backwards', delay: m.delay });
+        active.set(el, a);
+        a.finished.then(() => { if (active.get(el) === a) active.delete(el); }, () => {});
       }
+      el.classList.remove(WAITING);
     };
-    // 비동기로 그려지는 목록도 잡기 위해 잠시 동안 DOM 변화를 지켜본다 — 변화가 몰려도 한 프레임에 한 번만 훑는다
-    let raf = 0;
-    const schedule = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; scan(); }); };
-    const t = window.setTimeout(schedule, 60);
-    const mo = new MutationObserver(schedule);
+    const io = new IntersectionObserver(entries => {
+      entries.forEach(e => { if (e.isIntersecting) show(e.target as HTMLElement); });
+    }, { threshold: 0, rootMargin: '0px 0px 64px 0px' });
+
+    // 읽기(위치)를 모두 끝낸 뒤 쓰기(숨김 클래스)를 한다 — 섞으면 요소마다 레이아웃을 다시 계산해 화면 진입이 멈칫한다
+    const takeAll = (list: [HTMLElement, number | undefined][]) => {
+      const fresh = list.filter(([el]) => {
+        if (seen.has(el)) return false;
+        seen.add(el);
+        return !el.contains(document.activeElement);
+      });
+      const now = performance.now() - started < FIRST_WINDOW && window.scrollY < 40;
+      const vh = window.innerHeight;
+      const rects = fresh.map(([el]) => el.getBoundingClientRect());
+      fresh.forEach(([el, headDelay], i) => {
+        const r = rects[i];
+        if (!r.width && !r.height) return; // 숨겨진 것
+        const first = now && r.top < vh;
+        // 첫 화면: 머리 다음에 덩어리를 60ms씩, 네 개마다 다시 (길게 늘어지지 않게)
+        const delay = headDelay ?? (first ? 150 + (firstCount++ % 4) * 60 : 0);
+        meta.set(el, { delay, first });
+        pending.add(el);
+        el.classList.add(WAITING);
+        io.observe(el);
+      });
+    };
+
+    const scan = () => {
+      const view = root.querySelector<HTMLElement>(':scope .view');
+      // 홈은 자체 연출, 발매 신청은 단계 모션
+      if (!view || view.id === 'view-home' || view.id === 'view-new') return;
+      const list: [HTMLElement, number | undefined][] = [];
+      for (const [sel, d] of HEAD) view.querySelectorAll<HTMLElement>(sel).forEach(el => list.push([el, d]));
+      view.querySelectorAll<HTMLElement>(UNITS).forEach(el => {
+        if (el.closest('[data-no-reveal], .ui-page-head')) return;
+        // 바깥 덩어리를 맡았으면 안쪽은 따로 움직이지 않는다
+        if (el.parentElement?.closest(UNITS)) return;
+        list.push([el, undefined]);
+      });
+      // 덩어리가 하나도 없는 화면 조각(글 본문 등)은 그 조각을 통째로
+      Array.from(view.children).forEach(c => {
+        const el = c as HTMLElement;
+        if (el.matches('.ui-page-head') || el.matches(UNITS) || el.querySelector(UNITS)) return;
+        list.push([el, undefined]);
+      });
+      takeAll(list);
+    };
+
+    scan();
+    // 늦게 그려지는 목록·카드도 맡는다 — 바뀐 내용은 그리기 전에(마이크로태스크) 훑는다
+    const mo = new MutationObserver(scan);
     mo.observe(root, { childList: true, subtree: true });
-    const stop = window.setTimeout(() => mo.disconnect(), 4000);
+    const stop = window.setTimeout(() => mo.disconnect(), WATCH_MS);
+
+    const settle = () => { active.forEach(a => a.cancel()); active.clear(); };
+    const onFocus = (e: FocusEvent) => {
+      const t = e.target as Node;
+      [...pending].forEach(el => { if (el.contains(t)) show(el, true); });
+      active.forEach((a, el) => { if (el.contains(t)) { a.cancel(); active.delete(el); } });
+    };
+    const onVisibility = () => { if (document.hidden) settle(); };
+    const showAll = () => { [...pending].forEach(el => show(el, true)); settle(); };
+    document.addEventListener('focusin', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('beforeprint', showAll);
+
     return () => {
-      window.clearTimeout(t); window.clearTimeout(stop); cancelAnimationFrame(raf);
-      mo.disconnect(); io.disconnect();
-      root.querySelectorAll('.aq-reveal-wait').forEach(el => el.classList.remove('aq-reveal-wait'));
+      window.clearTimeout(stop);
+      mo.disconnect();
+      io.disconnect();
+      document.removeEventListener('focusin', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('beforeprint', showAll);
+      pending.forEach(el => el.classList.remove(WAITING));
     };
   }, [key]);
 }

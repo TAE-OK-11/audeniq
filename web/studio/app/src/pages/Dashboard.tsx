@@ -28,7 +28,7 @@ import { useHomeSignals, type PitchActive } from '../hooks/useHomeSignals';
 import { useHomeCards, type HomeCards } from '../hooks/useHomeCards';
 import { DELIVERY_STAGE, DELIVERY_TONE } from '../lib/delivery';
 import { PITCH_BADGE, PITCH_STEP, PITCH_STEPS } from '../lib/pitch';
-import { PLATFORM_NAMES } from '../lib/platformNames';
+import { PLATFORM_NAMES, platformKey, platformLabel } from '../lib/platformNames';
 import { dspLabel } from '../lib/catalog';
 import { CopyButton } from '../components/CopyButton';
 import { BrandMark } from '../components/BrandMark';
@@ -586,7 +586,9 @@ export function Dashboard() {
             <MiniTrend data={report.trend} />
             <KeyValue className="aq-report-kv" cols={2} items={[
               ['많이 들은 곡', <span className="aq-report-top"><IconTile size="sm"><Glyph name="music" size={16} /></IconTile><span>{report.topTrack || '—'}</span></span>],
-              ['많이 들은 플랫폼', <span className="aq-report-top"><IconTile size="sm"><Glyph name="globe" size={16} /></IconTile><span>{report.topPlatform || '—'}</span></span>],
+              ['많이 들은 플랫폼', <span className="aq-report-top">{report.topPlatform && platformKey(report.topPlatform)
+                ? <BrandMark id={platformKey(report.topPlatform)!} label={platformLabel(report.topPlatform)} size={28} />
+                : <IconTile size="sm"><Glyph name="globe" size={16} /></IconTile>}<span>{report.topPlatform ? platformLabel(report.topPlatform) : '—'}</span></span>],
             ]} />
             <p className="ui-row-meta aq-report-foot">플랫폼이 보낸 리포트 기준이라 한 달쯤 늦게 들어와요. 수익은 리포트에서 볼 수 있어요.</p>
             </>)}
