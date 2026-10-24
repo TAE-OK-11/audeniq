@@ -86,7 +86,10 @@ export function SmartLink() {
   useEffect(() => {
     // 체험 모드: 'soon'으로 시작하는 코드는 발매 전 화면
     if (MOCK) { setPage(slug.startsWith('soon') ? { ...MOCK_PAGE, released: false, release_date: '2099-01-01', presave: ['spotify', 'deezer', 'tidal'] } : MOCK_PAGE); return; }
-    req<Page>(base, { quiet401: true }).then(setPage, () => setMissing(true));
+    // 채널 표시(?src=instagram)가 붙어 들어왔으면 같이 보내 채널별 방문으로 센다
+    const src = new URLSearchParams(window.location.search).get('src');
+    const q = src && /^[a-z]{1,20}$/.test(src) ? `?src=${src}` : '';
+    req<Page>(`${base}${q}`, { quiet401: true }).then(setPage, () => setMissing(true));
   }, [base, slug, reloadKey]);
   useEffect(() => {
     if (page) document.title = `${page.title}${page.artist ? ` · ${page.artist}` : ''}`;

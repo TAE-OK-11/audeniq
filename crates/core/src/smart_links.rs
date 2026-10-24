@@ -22,7 +22,7 @@ use crate::{
 };
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::HeaderMap,
     response::Response,
     routing::{get, post},
@@ -49,6 +49,24 @@ pub const PLATFORMS: &[(&str, &[&str])] = &[
 ];
 
 const VIEW: &str = "_view";
+
+/// Channels an artist can tag a shared link with (`/l/{slug}?src=instagram`);
+/// a view from one is also counted as `src_{channel}`.
+pub const SOURCES: &[&str] = &[
+    "instagram",
+    "youtube",
+    "tiktok",
+    "x",
+    "threads",
+    "facebook",
+    "kakao",
+    "naver",
+    "blog",
+    "email",
+    "qr",
+    "poster",
+];
+const SOURCE_PREFIX: &str = "src_";
 
 /// `strict` turns release checks on early, `test` keeps them off after
 /// launch. Unset follows the launch switch ([`crate::launch`]): testers can
@@ -367,7 +385,7 @@ pub async fn status(s: &AppState, a: &Actor, org: Uuid, release: Uuid) -> Result
     .fetch_optional(&mut *tx)
     .await?;
     let known = known_ids(&mut tx, org, release).await?;
-    let mut stats = json!({"views": 0, "clicks": {}, "days": STATS_DAYS, "alerts": 0, "alerts_waiting": 0, "presaves": {}});
+    let mut stats = json!({"views": 0, "clicks": {}, "sources": {}, "days": STATS_DAYS, "alerts": 0, "alerts_waiting": 0, "presaves": {}});
     if let Some(l) = &link {
         let rows = sqlx::query(
             "SELECT platform, sum(count)::bigint AS n FROM portal.smart_link_stats
@@ -378,16 +396,20 @@ pub async fn status(s: &AppState, a: &Actor, org: Uuid, release: Uuid) -> Result
         .fetch_all(&mut *tx)
         .await?;
         let mut clicks = Map::new();
+        let mut sources = Map::new();
         for r in rows {
             let p: String = r.get("platform");
             let n: i64 = r.get("n");
             if p == VIEW {
                 stats["views"] = json!(n);
+            } else if let Some(src) = p.strip_prefix(SOURCE_PREFIX) {
+                sources.insert(src.to_string(), json!(n));
             } else {
                 clicks.insert(p, json!(n));
             }
         }
         stats["clicks"] = Value::Object(clicks);
+        stats["sources"] = Value::Object(sources);
         // Release alert sign-ups (all time) and how many still wait.
         let (alerts, waiting): (i64, i64) = sqlx::query_as(
             "SELECT count(*), count(*) FILTER (WHERE status='PENDING') FROM portal.release_alerts WHERE link_id=$1",
@@ -416,6 +438,7 @@ pub async fn status(s: &AppState, a: &Actor, org: Uuid, release: Uuid) -> Result
         "verify": if strict() { "strict" } else { "test" },
         "stats": stats,
         "platforms": PLATFORMS.iter().map(|(p, _)| *p).collect::<Vec<_>>(),
+        "sources": SOURCES,
         "can_create": !HIDDEN_STATES.contains(&state.as_str()),
     }))
 }
@@ -668,7 +691,12 @@ async fn count(s: &AppState, h: &HeaderMap, link: Uuid, slug: &str, platform: &s
     }
 }
 
-pub async fn public_page(s: &AppState, h: &HeaderMap, slug: &str) -> Result<Value> {
+pub async fn public_page(
+    s: &AppState,
+    h: &HeaderMap,
+    slug: &str,
+    src: Option<&str>,
+) -> Result<Value> {
     let row = visible(s, slug).await?;
     let links = page_links(s, &row).await?;
     let list: Vec<Value> = PLATFORMS
@@ -703,6 +731,10 @@ pub async fn public_page(s: &AppState, h: &HeaderMap, slug: &str) -> Result<Valu
         Vec::new()
     };
     count(s, h, row.get("id"), slug, VIEW).await;
+    // Unknown channels are ignored (the page still opens).
+    if let Some(src) = src.filter(|v| SOURCES.contains(v)) {
+        count(s, h, row.get("id"), slug, &format!("{SOURCE_PREFIX}{src}")).await;
+    }
     Ok(json!({
         "title": row.get::<String, _>("title"),
         "artist": row.get::<Option<String>, _>("artist"),
@@ -770,12 +802,17 @@ async fn h_check(
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
     Ok(Json(check(&s, &a, org, id, i).await?))
 }
+#[derive(Deserialize, Default)]
+pub struct PublicParams {
+    pub src: Option<String>,
+}
 async fn h_public(
     State(s): State<AppState>,
     Path(slug): Path<String>,
+    Query(q): Query<PublicParams>,
     h: HeaderMap,
 ) -> Result<Json<Value>> {
-    Ok(Json(public_page(&s, &h, &slug).await?))
+    Ok(Json(public_page(&s, &h, &slug, q.src.as_deref()).await?))
 }
 async fn h_cover(
     State(s): State<AppState>,

@@ -7233,6 +7233,22 @@ async fn presave_saves_album_at_release_and_erases_tokens(pool: PgPool) {
         json!(["spotify", "deezer", "tidal"]),
         "{page}"
     );
+    // A link shared with a channel tag counts that channel too; unknown tags are ignored.
+    for src in ["instagram", "instagram", "bogus"] {
+        let (s, _) = call(
+            &app,
+            "GET",
+            &format!("/api/smart-links/{slug}?src={src}"),
+            Value::Null,
+            None,
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+    }
+    let (_, st) = call(&app, "GET", &link_path, Value::Null, Some(&user)).await;
+    assert_eq!(st["stats"]["sources"], json!({"instagram": 2}), "{st}");
+    assert_eq!(st["stats"]["clicks"], json!({}), "channels are not clicks");
+    assert!(st["sources"].as_array().unwrap().contains(&json!("tiktok")));
 
     let start = |provider: &'static str| {
         let (app, slug, base) = (app.clone(), slug.clone(), base.clone());
