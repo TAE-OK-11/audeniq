@@ -1762,3 +1762,27 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
   .aq-detail-when{font-size:13px}
 }
 @media(max-width:760px){.aq-when-label{display:none}}
+
+/* ---------- 발매 상세 움직임·디테일 (DESIGN_SYSTEM 18·19: 토큰 시간·곡선, 튀지 않게, 동작 줄이기면 멈춤) ---------- */
+/* 발매 준비 막대는 정보를 전하는 움직임이라 조금 길게 차오른다 */
+.aq-prep-bar i{transform-origin:left center;animation:aq-grow-x var(--aq-motion-page) var(--aq-enter) var(--aq-motion-short) both}
+.aq-prep-count b{display:inline-block;animation:aq-badge-pop var(--aq-motion-base) var(--aq-pop) both}
+/* 끝난 일 체크는 처음 보일 때 작게 확인 표시 */
+.aq-prep-list li.is-done .ui-icon svg{animation:aq-pop var(--aq-motion-base) var(--aq-pop) var(--aq-motion-short) both}
+/* 트랙 줄 — 누름 피드백(줄 단위)과 호버 때 번호가 파랗게 */
+.aq-trackrow{transition:background-color var(--aq-motion-short) var(--aq-enter),transform var(--aq-press-out) var(--aq-press-spring)}
+.aq-trackrow:is(:active,.is-pressed){transform:scale(var(--aq-press-row));transition-duration:var(--aq-press-in)}
+.aq-trackrow-no{transition:color var(--aq-motion-short) var(--aq-enter)}
+@media(hover:hover){.aq-trackrow:hover .aq-trackrow-no{color:var(--aq-primary)}}
+/* 발매 준비 줄도 같은 누름 */
+.aq-prep-list button.aq-task:is(:active,.is-pressed){transform:scale(var(--aq-press-row));transition-duration:var(--aq-press-in)}
+/* 일주일 안 D-day는 진한 파랑 알약이 한 번 반짝이며 자리 잡는다 */
+.aq-detail-when .aq-dday.is-soon{animation:aq-badge-pop var(--aq-motion-base) var(--aq-pop) var(--aq-motion-long) both}
+/* 복사됨 체크 */
+.aq-copy-btn.is-copied .aq-glyph{animation:aq-pop var(--aq-motion-base) var(--aq-pop) both}
+/* 곡 상세 창 — 긴 가사는 아래가 흐려져 더 있다는 걸 알린다 */
+.aq-track-sheet-lyrics{-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 28px),transparent);padding-bottom:28px}
+@media(prefers-reduced-motion:reduce){
+  .aq-prep-bar i,.aq-prep-count b,.aq-prep-list li.is-done .ui-icon svg,.aq-detail-when .aq-dday.is-soon,.aq-copy-btn.is-copied .aq-glyph{animation:none}
+  .aq-trackrow:is(:active,.is-pressed),.aq-prep-list button.aq-task:is(:active,.is-pressed){transform:none}
+}
