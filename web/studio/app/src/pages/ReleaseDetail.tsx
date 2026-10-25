@@ -31,7 +31,9 @@ import { ContractBundle } from '../components/ContractBundle';
 
 /** 아직 없는 값 — 실제 값처럼 진하게 보이지 않도록 흐리게 */
 const Empty = ({ children }: { children: string }) => <span className="aq-empty-val">{children}</span>;
-import { Badge, Tabs } from '../ui';
+import { Badge, Callout, Tabs } from '../ui';
+import { fetchAddons } from '../lib/addons';
+import { money } from '../lib/format';
 import { territorySummary } from '../lib/territories';
 import { DELIVERY_STAGE, DELIVERY_TONE } from '../lib/delivery';
 
@@ -341,6 +343,8 @@ export function ReleaseDetail() {
         />
       )}
 
+      <ExpressPayment releaseId={rel.id} />
+
       {rejected && (
         <section className="aq-fix-panel is-rejected" aria-labelledby="aqRejectHead">
           <div className="aq-fix-top"><Badge tone="red">배급 거절</Badge></div>
@@ -614,5 +618,17 @@ export function ReleaseDetail() {
         )}
       </div>
     </div>
+  );
+}
+
+/** 신속 발매를 골라 신청했는데 아직 결제 전이면 — 결제해야 먼저 검토가 시작된다 (부가서비스로) */
+function ExpressPayment({ releaseId }: { releaseId: string }) {
+  const { data } = useAsync(() => fetchAddons(), [releaseId], { key: 'addons' });
+  const o = data?.items.find(x => x.service === 'EXPRESS_RELEASE' && x.release_id === releaseId && x.status === 'AWAITING_PAYMENT');
+  if (!o) return null;
+  return (
+    <Callout tone="warn" action={<Link className="ui-btn is-sm" to={`/services?order=${encodeURIComponent(o.id)}`}>결제하기</Link>}>
+      신속 발매 {money(o.amount)} 결제가 필요해요. 결제하면 담당자가 먼저 검토해 3영업일 안에 발매되도록 진행해요.
+    </Callout>
   );
 }

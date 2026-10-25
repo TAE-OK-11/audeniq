@@ -195,7 +195,7 @@ const EMPTY: WizardForm = {
 };
 
 const SERVICE_OPTIONS: [keyof ReleaseOptions, string, string][] = [
-  ['express', '신속 발매 요청', '원하는 일정에 먼저 검토할 수 있는지 확인해요.'],
+  ['express', '신속 발매 · 10,000원', '심사와 전송을 먼저 처리해 3영업일 안에 발매해요.'],
 ];
 
 const RIGHTS_OPTIONS: [keyof ReleaseOptions, string, string][] = [
@@ -615,8 +615,8 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
   const detail: Partial<Record<keyof ReleaseOptions, React.ReactNode>> = {
     express: (
       <div className="aq-option-detail">
-        <h3>신속 발매 요청</h3>
-        <p className="aq-option-intro">신속 발매는 가능 여부와 조건을 확인한 뒤 진행해요. 특정 발매일이나 플랫폼 송출을 보장하지 않아요.</p>
+        <h3>신속 발매 · 10,000원</h3>
+        <p className="aq-option-intro">신청 후 3영업일 안에 발매되도록 심사와 플랫폼 전송을 먼저 처리해요. 신청을 마치면 부가서비스에서 정산금이나 카드로 결제해요. 보완이 필요하거나 일정을 맞출 수 없으면 담당자가 연락하고, 진행하지 못하면 전액 환불해요.</p>
         <div className="ui-field">
           <label htmlFor="aqExpressReason">신속 발매가 필요한 이유<span className="aq-optional">선택</span></label>
           <ChipPicker
@@ -633,7 +633,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
             checked={o.expressAck}
             onChange={e => setOpt('expressAck', e.target.checked)}
           />
-          <span>가능한 일정과 비용 등 별도 안내를 확인한 후 진행할게요.<small>신청 단계에서 추가 비용이 자동 결제되지는 않아요.</small></span>
+          <span>신속 발매 비용 10,000원을 결제할게요.<small>신청을 마친 뒤 부가서비스에서 결제해요. 자동으로 결제되지는 않아요.</small></span>
           <span className="aq-pick-mark" aria-hidden="true">{o.expressAck && <CheckIcon size={12} />}</span>
         </label>
       </div>
@@ -1878,7 +1878,7 @@ export function Upload() {
       if (form.releaseDate < minReleaseDate(form.options.express) && form.releaseDate !== origDate) {
         return fail(form.options.express
           ? '신속 발매도 플랫폼 납품에 최소 3일이 필요해요. 3일 뒤 이후 날짜를 선택해 주세요.'
-          : '플랫폼 납품·검수에 2주가 필요해요. 오늘부터 14일 뒤 이후로 선택하거나, 급하면 아래 ‘신속 발매 요청’을 선택해 주세요.', '#f-releaseDate');
+          : '플랫폼 납품·검수에 2주가 필요해요. 오늘부터 14일 뒤 이후로 선택하거나, 급하면 아래 ‘신속 발매’(10,000원)를 선택해 주세요.', '#f-releaseDate');
       }
       if (form.preorderStart && (form.preorderStart >= form.releaseDate || form.preorderStart < shiftDate(form.releaseDate, -90))) {
         return fail('사전 공개 시작일은 발매일 1–90일 전으로 골라 주세요.', '#f-preorder');

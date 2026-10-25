@@ -1641,3 +1641,46 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-thread-reply .aq-thread-compose textarea{min-height:48px;max-height:180px;margin:0;background:transparent;resize:none}
 .aq-thread-compose .ui-btn.is-icon{width:44px;height:44px;border-radius:50%}
 .aq-thread-end{justify-self:center;color:var(--aq-text-3)}
+/* 부가서비스 (/services) — 유료 서비스 카드 세 장 · 내 신청 · 전체 요금 · 신청서 · 결제 */
+.aq-svc-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 28px}
+.aq-svc-card{display:flex;flex-direction:column;gap:6px;min-width:0;padding:20px;border-radius:var(--aq-r-xl);background:var(--aq-surface)}
+.aq-svc-icon{display:grid;place-items:center;width:44px;height:44px;margin-bottom:6px;border-radius:var(--aq-r-md);background:#fff;color:var(--aq-primary)}
+.aq-svc-card h3{margin:0;font-size:var(--aq-fs-lg);font-weight:var(--aq-fw-bold);color:var(--aq-text)}
+.aq-svc-card-price{margin:0;color:var(--aq-primary);font-size:15px;font-weight:var(--aq-fw-bold)}
+.aq-svc-card-desc{flex:1;margin:4px 0 0;color:var(--aq-text-3);font-size:14px;line-height:1.6}
+.aq-svc-card-action{margin-top:10px}
+.aq-svc-mine{margin:0 0 28px}
+.aq-svc-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:0 0 12px}
+.aq-svc-head h2{margin:0;font-size:var(--aq-fs-lg);font-weight:var(--aq-fw-bold)}
+.aq-svc-balance{color:var(--aq-text-3);font-size:13px}
+.aq-svc-balance b{margin-left:4px;color:var(--aq-text);font-variant-numeric:tabular-nums}
+.aq-svc-price-row{text-decoration:none}
+.aq-svc-price-row.is-static{cursor:default}
+.aq-svc-price-name{flex:1}
+.aq-svc-price-name strong{display:block;color:var(--aq-text);font-size:15px;font-weight:var(--aq-fw-semibold,600)}
+.aq-svc-price-name small{display:block;margin-top:2px;color:var(--aq-text-4);font-size:12px;line-height:1.5}
+.aq-svc-price{flex:none;max-width:45%;color:var(--aq-text);font-size:14px;font-weight:var(--aq-fw-bold);text-align:right}
+.aq-svc-price.is-free{color:var(--aq-green-600,#17803d)}
+.aq-svc-price.is-soon{color:var(--aq-text-4);font-weight:var(--aq-fw-medium)}
+.aq-svc-form{display:grid;gap:0}
+.aq-svc-tier>span:first-child{display:grid;gap:2px}
+.aq-svc-tier b{font-size:14px}
+.aq-svc-tier small{color:var(--aq-text-3);font-size:12px;font-weight:var(--aq-fw-medium);line-height:1.5}
+.aq-svc-tier:disabled{opacity:.55;cursor:default}
+.aq-svc-platforms{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.aq-svc-platforms .ui-check{align-items:center;padding:10px 12px;font-size:14px}
+.aq-svc-tracks{display:grid;gap:6px}
+.aq-svc-tracks .ui-check.is-disabled{opacity:.6;cursor:default}
+.aq-svc-file{position:relative;cursor:pointer}
+.aq-svc-lrc{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.7}
+.aq-svc-pay{display:grid;gap:14px}
+.aq-svc-pay-sum{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px;border-radius:var(--aq-r-xl);background:var(--aq-surface)}
+.aq-svc-pay-sum small{display:block;color:var(--aq-text-3);font-size:12px}
+.aq-svc-pay-sum strong{display:block;margin-top:2px;overflow:hidden;color:var(--aq-text);font-size:15px;text-overflow:ellipsis;white-space:nowrap}
+.aq-svc-pay-sum>b{flex:none;color:var(--aq-text);font-size:20px;font-weight:var(--aq-fw-heavy,800);font-variant-numeric:tabular-nums}
+.aq-svc-pay .aq-studio-note{margin:0}
+@media (max-width:760px){
+  .aq-svc-grid{grid-template-columns:minmax(0,1fr)}
+  .aq-svc-platforms{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .aq-svc-head{flex-direction:column;align-items:flex-start;gap:4px}
+}

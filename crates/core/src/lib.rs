@@ -1,4 +1,5 @@
 pub mod account;
+pub mod addons;
 pub mod agreement;
 pub mod allocator;
 pub mod api;

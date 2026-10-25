@@ -8612,3 +8612,420 @@ async fn presave_saves_album_at_release_and_erases_tokens(pool: PgPool) {
     .unwrap();
     assert_eq!(expired, 1);
 }
+
+/// What the stand-in Toss server saw: "path auth".
+#[derive(Clone, Default)]
+struct TossFx {
+    seen: Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+async fn toss_fixture() -> (String, TossFx) {
+    use axum::http::{HeaderMap, Uri};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let fx = TossFx::default();
+    let handler = |axum::extract::State(fx): axum::extract::State<TossFx>,
+                   uri: Uri,
+                   h: HeaderMap,
+                   body: axum::body::Bytes| async move {
+        let auth = h
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        let path = uri.path().to_string();
+        fx.seen.lock().unwrap().push(format!("{path} {auth}"));
+        // Basic base64("toss-secret:")
+        if auth != "Basic dG9zcy1zZWNyZXQ6" {
+            return (StatusCode::UNAUTHORIZED, "{}".to_string());
+        }
+        let b: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+        if path == "/v1/payments/confirm" {
+            if b["paymentKey"] == "pk-declined" {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    json!({"code": "REJECT_CARD_COMPANY"}).to_string(),
+                );
+            }
+            return (
+                StatusCode::OK,
+                json!({"status": "DONE", "orderId": b["orderId"], "totalAmount": b["amount"]})
+                    .to_string(),
+            );
+        }
+        if path.ends_with("/cancel") {
+            return (StatusCode::OK, json!({"status": "CANCELED"}).to_string());
+        }
+        (StatusCode::NOT_FOUND, "{}".to_string())
+    };
+    let router = Router::new().fallback(handler).with_state(fx.clone());
+    tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    (base, fx)
+}
+
+/// Add-on services (0157): orders wait for payment; the settlement balance
+/// pays only what is withdrawable and a cancel gives it back through the
+/// ledger; a card payment is confirmed with Toss for exactly the order's
+/// amount and refunded at Toss when staff reject; an express release
+/// application makes its own order; artists upload LRC for free and staff
+/// deliver the synced lyrics an order paid for.
+#[sqlx::test]
+async fn addon_orders_pay_from_balance_or_card_and_refund(pool: PgPool) {
+    let (base, fx) = toss_fixture().await;
+    // Safety: set once in this test; other tests do not read these.
+    unsafe {
+        std::env::set_var("TOSS_FIXTURE_BASE", &base);
+        std::env::set_var("TOSS_CLIENT_KEY", "test_ck_x");
+        std::env::set_var("TOSS_SECRET_KEY", "toss-secret");
+    }
+    let d = draft_package(&pool).await;
+    sqlx::query("UPDATE catalog.releases SET draft = jsonb_set(draft, '{options}', coalesce(draft->'options','{}'::jsonb) || '{\"express\":true,\"expressAck\":true,\"expressReason\":\"방송 일정\"}'::jsonb), row_version = row_version + 1 WHERE id=$1")
+        .bind(d.release)
+        .execute(&pool)
+        .await
+        .unwrap();
+    consent_and_submit(&d.app, &d.u, d.release, &format!("k-ad-{}", Uuid::new_v4())).await;
+    let (app, u, release) = (d.app, d.u, d.release);
+    let org = u.org;
+    let path = format!("/api/orgs/{org}/addons");
+    let (s, v) = call(&app, "GET", &path, Value::Null, Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["card"], true);
+    assert_eq!(v["balance"], 0);
+    // The express application made its order, waiting for payment.
+    let express = &v["items"][0];
+    assert_eq!(
+        (
+            express["service"].as_str(),
+            express["status"].as_str(),
+            express["amount"].as_i64()
+        ),
+        (
+            Some("EXPRESS_RELEASE"),
+            Some("AWAITING_PAYMENT"),
+            Some(10_000)
+        ),
+        "{v}"
+    );
+    let express_id = v_id(express);
+    // Not orderable on its own.
+    let (_, v) = call(
+        &app,
+        "POST",
+        &path,
+        json!({"service": "EXPRESS_RELEASE", "release_id": release}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "ADDON_SERVICE_INVALID", "{v}");
+
+    // Lyric sync needs lyrics on the track.
+    let track: Uuid = sqlx::query_scalar(
+        "SELECT id FROM catalog.tracks WHERE release_id=$1 ORDER BY track_number LIMIT 1",
+    )
+    .bind(release)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let lyric = json!({"service": "LYRIC_SYNC", "release_id": release, "track_ids": [track]});
+    let (_, v) = call(&app, "POST", &path, lyric.clone(), Some(&u)).await;
+    assert_eq!(v["error"]["code"], "ADDON_LYRICS_REQUIRED", "{v}");
+    // Lyrics frozen after submission: set them past the draft guard (test only).
+    let mut t = pool.begin().await.unwrap();
+    sqlx::query("SET LOCAL session_replication_role = replica")
+        .execute(&mut *t)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE catalog.tracks SET lyrics='첫 줄\n둘째 줄' WHERE id=$1")
+        .bind(track)
+        .execute(&mut *t)
+        .await
+        .unwrap();
+    t.commit().await.unwrap();
+    let (s, order) = call(&app, "POST", &path, lyric, Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{order}");
+    assert_eq!(
+        (order["amount"].as_i64(), order["status"].as_str()),
+        (Some(5_000), Some("AWAITING_PAYMENT"))
+    );
+    let lyric_id = v_id(&order);
+
+    // The balance pays only what is withdrawable.
+    let pay = format!("{path}/{lyric_id}/pay/settlement");
+    let (_, v) = call(&app, "POST", &pay, json!({}), Some(&u)).await;
+    assert_eq!(v["error"]["code"], "ADDON_BALANCE_SHORT", "{v}");
+    let tx = Uuid::new_v4();
+    sqlx::query("INSERT INTO finance.ledger_transactions(id,org_id,transaction_code,currency) VALUES($1,$2,'TEST_ROYALTY','KRW')")
+        .bind(tx)
+        .bind(org)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO finance.ledger_entries(id,org_id,transaction_id,account,side,amount,currency) VALUES
+                 (gen_random_uuid(),$1,$2,'ROYALTY_RECEIVABLE','DEBIT',20000,'KRW'),(gen_random_uuid(),$1,$2,'ROYALTY_PAYABLE','CREDIT',20000,'KRW')")
+        .bind(org)
+        .bind(tx)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (s, v) = call(&app, "POST", &pay, json!({}), Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(
+        (v["status"].as_str(), v["pay_method"].as_str()),
+        (Some("SUBMITTED"), Some("SETTLEMENT"))
+    );
+    let (_, v) = call(&app, "GET", &path, Value::Null, Some(&u)).await;
+    assert_eq!(v["balance"], 15_000, "{v}");
+    let (_, v) = call(&app, "POST", &pay, json!({}), Some(&u)).await;
+    assert_eq!(v["error"]["code"], "ADDON_NOT_PAYABLE", "paid once: {v}");
+    // Cancelling before work starts gives it back through the ledger.
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("{path}/{lyric_id}/cancel"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["status"], "CANCELLED");
+    assert!(v["refunded_at"].is_string(), "{v}");
+    let (_, v) = call(&app, "GET", &path, Value::Null, Some(&u)).await;
+    assert_eq!(v["balance"], 20_000, "{v}");
+    let codes: Vec<String> = sqlx::query_scalar("SELECT transaction_code FROM finance.ledger_transactions WHERE org_id=$1 AND transaction_code LIKE 'ADDON_%' ORDER BY created_at")
+        .bind(org)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(codes, ["ADDON_CHARGE", "ADDON_REFUND"]);
+
+    // A music video by card: the tier sets the price; an unrated video
+    // cannot be "distribution only".
+    let mv = json!({"service": "MV_DISTRIBUTION", "tier": "BASIC", "release_id": release, "track_ids": [track],
+        "detail": {"video_url": "https://drive.example.com/mv.mp4", "mv_title": "여름의 끝 MV", "duration": "3:45", "platforms": ["melon", "youtube"]}});
+    let (_, v) = call(&app, "POST", &path, mv.clone(), Some(&u)).await;
+    assert_eq!(v["error"]["code"], "ADDON_MV_RATING_REQUIRED", "{v}");
+    let mut review = mv;
+    review["tier"] = json!("REVIEW");
+    let (s, order) = call(&app, "POST", &path, review, Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{order}");
+    assert_eq!(order["amount"], 39_000);
+    let mv_id = v_id(&order);
+    let (s, w) = call(
+        &app,
+        "POST",
+        &format!("{path}/{mv_id}/pay/card"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{w}");
+    assert_eq!(
+        (w["amount"].as_i64(), w["client_key"].as_str()),
+        (Some(39_000), Some("test_ck_x"))
+    );
+    let pg = w["order_id"].as_str().unwrap().to_string();
+    let confirm = format!("{path}/{mv_id}/pay/card/confirm");
+    let (_, v) = call(
+        &app,
+        "POST",
+        &confirm,
+        json!({"payment_key": "pk-1", "order_id": pg, "amount": 1000}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        v["error"]["code"], "ADDON_CARD_MISMATCH",
+        "an edited amount is refused: {v}"
+    );
+    let (_, v) = call(
+        &app,
+        "POST",
+        &confirm,
+        json!({"payment_key": "pk-declined", "order_id": pg, "amount": 39000}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "ADDON_CARD_FAILED", "{v}");
+    let (s, v) = call(
+        &app,
+        "POST",
+        &confirm,
+        json!({"payment_key": "pk-1", "order_id": pg, "amount": 39000}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(
+        (v["status"].as_str(), v["pay_method"].as_str()),
+        (Some("SUBMITTED"), Some("CARD"))
+    );
+    // The return page reloaded: the same payment, nothing new.
+    let (s, _) = call(
+        &app,
+        "POST",
+        &confirm,
+        json!({"payment_key": "pk-1", "order_id": pg, "amount": 39000}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+
+    // Staff with the delivery duty work it; a rejection refunds the card.
+    let reviewer = staff_user(&app, &pool, "REVIEWER").await;
+    let (s, _) = call(
+        &app,
+        "GET",
+        "/api/staff/addons",
+        Value::Null,
+        Some(&reviewer),
+    )
+    .await;
+    assert_ne!(s, StatusCode::OK);
+    let op = staff_user(&app, &pool, "OPERATOR").await;
+    let (s, v) = call(&app, "GET", "/api/staff/addons", Value::Null, Some(&op)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let ids: Vec<String> = v["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["id"].as_str().unwrap().to_string())
+        .collect();
+    assert!(
+        ids.contains(&mv_id.to_string()) && ids.contains(&express_id.to_string()),
+        "{v}"
+    );
+    let st = format!("/api/staff/addons/{mv_id}/status");
+    let (s, v) = call(
+        &app,
+        "POST",
+        &st,
+        json!({"status": "IN_PROGRESS", "result": {"rating": "15", "rating_no": "제2026-1호"}}),
+        Some(&op),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["result"]["rating"], "15");
+    let (_, v) = call(&app, "POST", &st, json!({"status": "REJECTED"}), Some(&op)).await;
+    assert_eq!(v["error"]["code"], "ADDON_NOTE_REQUIRED", "{v}");
+    let (s, v) = call(
+        &app,
+        "POST",
+        &st,
+        json!({"status": "REJECTED", "note": "영상 파일을 열 수 없어요"}),
+        Some(&op),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["status"], "REJECTED");
+    assert!(v["refunded_at"].is_string(), "{v}");
+    let seen = fx.seen.lock().unwrap().clone();
+    assert!(
+        seen.iter()
+            .any(|l| l.starts_with("/v1/payments/pk-1/cancel ")),
+        "{seen:?}"
+    );
+    assert_eq!(
+        seen.iter()
+            .filter(|l| l.starts_with("/v1/payments/confirm"))
+            .count(),
+        2,
+        "{seen:?}"
+    );
+    let (_, v) = call(&app, "GET", &path, Value::Null, Some(&u)).await;
+    assert_eq!(
+        v["balance"], 20_000,
+        "a card refund never touches the balance: {v}"
+    );
+
+    // Free LRC from the artist; staff deliver the synced lyrics of a paid order.
+    let put = format!("/api/orgs/{org}/releases/{release}/tracks/{track}/lyric-sync");
+    let (_, v) = call(&app, "PUT", &put, json!({"lrc": "그냥 가사"}), Some(&u)).await;
+    assert_eq!(v["error"]["code"], "LRC_INVALID", "{v}");
+    let (s, v) = call(
+        &app,
+        "PUT",
+        &put,
+        json!({"lrc": "[00:01.00]첫 줄\n[00:04.50]둘째 줄"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["lines"], 2);
+    let (_, order) = call(
+        &app,
+        "POST",
+        &path,
+        json!({"service": "LYRIC_SYNC", "release_id": release, "track_ids": [track]}),
+        Some(&u),
+    )
+    .await;
+    let id2 = v_id(&order);
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("{path}/{id2}/pay/settlement"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, v) = call(
+        &app,
+        "GET",
+        &format!("/api/staff/addons/{id2}/lyrics"),
+        Value::Null,
+        Some(&op),
+    )
+    .await;
+    assert_eq!(v["items"][0]["lyrics"], "첫 줄\n둘째 줄", "{v}");
+    let (s, v) = call(
+        &app,
+        "PUT",
+        &format!("/api/staff/addons/{id2}/lyrics/{track}"),
+        json!({"lrc": "[00:01.20]첫 줄\n[00:04.10]둘째 줄", "registered": ["musixmatch", "melon"]}),
+        Some(&op),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (_, v) = call(
+        &app,
+        "POST",
+        &format!("/api/staff/addons/{id2}/status"),
+        json!({"status": "COMPLETED", "note": "Musixmatch·멜론에 등록했어요"}),
+        Some(&op),
+    )
+    .await;
+    assert_eq!(v["status"], "COMPLETED", "{v}");
+    let (_, v) = call(
+        &app,
+        "GET",
+        &format!("/api/orgs/{org}/releases/{release}/lyric-sync"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (
+            v["items"][0]["source"].as_str(),
+            v["items"][0]["registered"].clone()
+        ),
+        (Some("AI"), json!(["musixmatch", "melon"])),
+        "{v}"
+    );
+    let (_, v) = call(
+        &app,
+        "POST",
+        &format!("{path}/{id2}/cancel"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "ADDON_NOT_CANCELLABLE", "{v}");
+    let notices: i64 = sqlx::query_scalar("SELECT count(*) FROM portal.notifications WHERE org_id=$1 AND link LIKE '/services?order=%'")
+        .bind(org)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(notices >= 4, "{notices}");
+}
