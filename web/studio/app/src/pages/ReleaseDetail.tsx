@@ -29,6 +29,7 @@ import { StageCard } from '../components/StageCard';
 import { Glyph } from '../components/Glyph';
 import { ContractBundle } from '../components/ContractBundle';
 import { AlbumPrep } from '../components/AlbumPrep';
+import { ReleaseStats } from '../components/ReleaseStats';
 import { TrackSheet } from '../components/TrackSheet';
 import { CopyButton } from '../components/CopyButton';
 import { albumPrep, draftTrackOf, releaseDay, type PrepItem } from '../lib/albumPrep';
@@ -63,6 +64,8 @@ const RIGHTS_KEYS = ['rightsMaster', 'rightsComposition', 'rightsArtwork', 'righ
  *  정보(발매 정보·커버·트랙) · 배급·계약(플랫폼·권리·계약서) · 관리(발매 뒤에 하는 일) · 기록 */
 const DETAIL_TABS = [
   { value: 'overview', label: '정보' },
+  // 성과는 발매된 뒤에만 (플랫폼 리포트가 들어오는 때)
+  { value: 'stats', label: '성과' },
   { value: 'delivery', label: '배급·계약' },
   { value: 'manage', label: '관리' },
   { value: 'history', label: '기록' },
@@ -161,6 +164,8 @@ export function ReleaseDetail() {
     !MOCK && rel?.draft?.coverPreviewAssetId ? coverImageUrl(rel.draft.coverPreviewAssetId, undefined) : undefined,
   );
   const [coverOk, coverFailed] = useImageOk(coverSrc);
+  // 주소로 '성과'를 열었는데 아직 발매 전이면 정보 탭으로
+  useEffect(() => { if (tab === 'stats' && rel && rel.status !== 'live' && rel.status !== 'closed') setTab('overview'); }, [tab, rel]);
 
   if (loading && !rel) {
     // 불러오는 동안에도 실제 화면과 같은 뼈대 — '발매 목록' 링크는 데이터와 상관없으니 그대로 두고, 큰 카드 자리도 같은 높이로.
@@ -220,6 +225,7 @@ export function ReleaseDetail() {
   // 배지 건수는 아래에 보여 주는 고칠 칸과 요청 서류를 모두 센다 (2건이라면서 3개를 보여 주던 것)
   const fixTotal = fixes.length + proofs.length;
   const dday = releaseDay(rel.release_date, rel.status);
+  const released = rel.status === 'live' || rel.status === 'closed';
   const totalMs = rel.tracks.reduce((n, t) => n + (t.duration_ms ?? 0), 0);
   // 앨범별 발매 준비 현황 — 끝난 발매(발매 완료 3일 뒤)·취소·거절에는 보여 주지 않는다
   const agreementDoc = docs.find(x => x.kind === 'agreements');
@@ -432,7 +438,7 @@ export function ReleaseDetail() {
 
       <div ref={tabsAnchor} aria-hidden="true" />
       <div ref={tabsBox} className="aq-detail-tabs" style={{ top: stickTop }}>
-        <Tabs label="발매 상세 메뉴" value={tab} items={DETAIL_TABS} onChange={changeTab} className="is-fill" />
+        <Tabs label="발매 상세 메뉴" value={tab} items={released ? DETAIL_TABS : DETAIL_TABS.filter(x => x.value !== 'stats')} onChange={changeTab} className="is-fill" />
       </div>
 
       {/* 탭을 붙인 채로 바꾸면 짧은 탭도 그 자리를 지킬 만큼 높이를 둔다 */}
@@ -536,6 +542,8 @@ export function ReleaseDetail() {
             </div>
           </div>
         )}
+
+        {tab === 'stats' && released && <ReleaseStats releaseId={rel.id} title={rel.title} />}
 
         {tab === 'delivery' && (
           <div className="aq-detail-stack">
