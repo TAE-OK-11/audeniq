@@ -9,8 +9,10 @@ import { MAX_VIDEO_BYTES, MV_PLATFORMS, PRICES, RATING_LABEL, TIER, uploadVideo,
 import { CheckIcon } from './Check';
 import { ChipPicker } from './ChipPicker';
 import { FileCard } from './FileCard';
+import { Glyph } from './Glyph';
 import { Segmented } from './Segmented';
 import { useToast } from './Toast';
+import { IconTile } from '../ui';
 
 export interface AddonFields {
   mv: boolean; mvTier: MvTier; mvTrack: number;
@@ -237,10 +239,11 @@ export function AddonSummary({ options, onEdit }: { options: Partial<AddonFields
   const total = lines.reduce((n, l) => n + l.amount, 0);
   return (
     <section className="aq-addon-summary" aria-labelledby="aqAddonSumHead">
-      <div className="aq-addon-checkout-head">
+      <header className="aq-manage-head">
+        <IconTile><Glyph name="layers" size={18} /></IconTile>
         <h2 id="aqAddonSumHead">고른 부가서비스</h2>
-        <button type="button" className="ui-btn is-white is-xs" onClick={onEdit}>수정</button>
-      </div>
+        <button type="button" className="ui-btn is-white is-sm" onClick={onEdit}>수정</button>
+      </header>
       <ul className="aq-addon-lines">
         {lines.map(l => <li key={l.label}><span className="min-0"><strong>{l.label}</strong></span><b>{money(l.amount)}</b></li>)}
         <li className="is-total"><span>합계 (부가세 포함)</span><b>{money(total)}</b></li>
