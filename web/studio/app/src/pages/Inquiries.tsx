@@ -22,7 +22,7 @@ import { PLATFORM_NAMES } from '../lib/platformNames';
 import { KINDS, STATUS_LABEL, STATUS_TONE, kindSpec, type PlatformRequest, type RequestGroup } from '../lib/platformRequests';
 import { Glyph } from '../components/Glyph';
 import { HelpFaq } from '../components/HelpFaq';
-import { Badge, EmptyState, PageHeader, SkeletonList } from '../ui';
+import { Badge, EmptyState, PageHeader, SkeletonList, Steps } from '../ui';
 import type { Tone } from '../ui/tone';
 
 /** 일반 문의 유형 */
@@ -134,11 +134,11 @@ const STEPS = ['SUBMITTED', 'IN_PROGRESS', 'SENT_TO_PLATFORM', 'RESOLVED'];
 
 /** 플랫폼 요청 상세 — 요약(플랫폼·아티스트·지금 상태) → 단계(접수 → 처리 중 → 플랫폼 전달 → 완료) → 남긴 내용 */
 function RequestDetail({ r, onCancel }: { r: PlatformRequest & { artist_id?: string | null }; onCancel: () => void }) {
-  const at = (status: string) => [...r.events].reverse().find(e => e.status === status);
-  // 끝난 요청(처리 불가·취소)은 그 단계에서 멈춘 모습으로
+  // 공통 진행 단계(Steps) — 끝난 요청(처리 불가·취소)은 멈춘 단계에 그 상태를 경고로 보여 준다
   const stopped = r.status === 'REJECTED' || r.status === 'CANCELLED';
   const reached = stopped ? Math.max(0, ...r.events.map(e => STEPS.indexOf(e.status))) : STEPS.indexOf(r.status);
-  const steps = stopped ? [...STEPS.slice(0, reached + 1), r.status] : STEPS;
+  const labels = STEPS.map((st, i) => (stopped && i === reached + 1 ? STATUS_LABEL[r.status] : STATUS_LABEL[st]));
+  const current = stopped ? Math.min(reached + 1, STEPS.length - 1) : r.status === 'RESOLVED' ? STEPS.length : reached;
   const notes = r.events.filter(e => e.note.trim());
   const platform = PLATFORM_NAMES[r.platform] ?? r.platform;
   return (
@@ -153,21 +153,7 @@ function RequestDetail({ r, onCancel }: { r: PlatformRequest & { artist_id?: str
         <p>{STATUS_HELP[r.status] ?? ''}</p>
       </section>
 
-      <ol className="aq-request-steps" aria-label="진행 단계">
-        {steps.map((st, i) => {
-          const ev = at(st);
-          const state = st === r.status ? (stopped ? 'is-stop' : 'is-now') : i < (stopped ? steps.length - 1 : reached) ? 'is-done' : 'is-todo';
-          return (
-            <li key={st} className={state} aria-current={st === r.status ? 'step' : undefined}>
-              <i aria-hidden="true">{state === 'is-done' ? <Glyph name="check" size={12} /> : null}</i>
-              <span className="min-0">
-                <b>{STATUS_LABEL[st] ?? st}</b>
-                {ev ? <small>{niceDate(ev.at)}</small> : state === 'is-todo' ? <small>대기</small> : null}
-              </span>
-            </li>
-          );
-        })}
-      </ol>
+      <Steps steps={labels} current={current} warn={stopped} label="요청 진행 단계" />
 
       {(r.resolution || notes.length > 0) && (
         <section className="aq-request-block">

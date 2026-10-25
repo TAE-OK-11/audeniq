@@ -1628,18 +1628,6 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-request-sum strong{display:block;font-size:16px;font-weight:var(--aq-fw-bold);color:var(--aq-text)}
 .aq-request-sum small{display:block;margin-top:2px;overflow:hidden;color:var(--aq-text-3);font-size:13px;text-overflow:ellipsis;white-space:nowrap}
 .aq-request-sum>p{grid-column:1/-1;margin:10px 0 0;color:var(--aq-text-2);font-size:14px;line-height:1.6}
-.aq-request-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));margin:2px 0 0;padding:0;list-style:none}
-.aq-request-steps li{position:relative;display:grid;justify-items:center;gap:8px;min-width:0;text-align:center}
-/* 단계 사이 선 — 지난 단계는 파랑 */
-.aq-request-steps li+li::before{content:"";position:absolute;top:11px;right:calc(50% + 16px);left:calc(-50% + 16px);height:2px;border-radius:2px;background:var(--aq-line)}
-.aq-request-steps li:is(.is-done,.is-now,.is-stop)+li:is(.is-done,.is-now,.is-stop)::before{background:var(--aq-primary)}
-.aq-request-steps i{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--aq-gray-100);color:#fff}
-.aq-request-steps .is-done i{background:var(--aq-primary)}
-.aq-request-steps .is-now i{background:#fff;box-shadow:inset 0 0 0 7px var(--aq-primary)}
-.aq-request-steps .is-stop i{background:#fff;box-shadow:inset 0 0 0 7px var(--aq-gray-400,#9aa3b5)}
-.aq-request-steps b{display:block;font-size:13px;font-weight:var(--aq-fw-bold);color:var(--aq-text)}
-.aq-request-steps .is-todo b{color:var(--aq-text-4);font-weight:var(--aq-fw-medium)}
-.aq-request-steps small{display:block;margin-top:2px;color:var(--aq-text-4);font-size:12px}
 .aq-request-block{display:grid;gap:8px;padding:14px 16px;border-radius:var(--aq-r-lg);background:var(--aq-surface)}
 .aq-request-block h3{margin:0;color:var(--aq-text-3);font-size:13px;font-weight:var(--aq-fw-bold)}
 .aq-request-block p{margin:0;color:var(--aq-text);font-size:14px;line-height:1.6;overflow-wrap:anywhere}
