@@ -264,16 +264,34 @@ function loadScript(src: string): Promise<void> {
 // 뮤직비디오 파일 — 16 MiB 조각으로 저장소에 바로 올린다 (끊기면 이어서)
 // ---------------------------------------------------------------------------
 export const MAX_VIDEO_BYTES = 8 * 1024 ** 3;
-export async function uploadVideo(file: File, onProgress?: (r: number) => void, signal?: AbortSignal): Promise<string> {
+/** 올린 영상 — 길이(m:ss)와 화면 크기는 서버가 파일 머리에서 읽은 값 (없으면 '' · 0) */
+export interface UploadedVideo { id: string; duration: string; width: number; height: number }
+
+/** 모의 모드: 서버 대신 브라우저가 영상 머리를 읽는다 */
+function readVideoMeta(file: File): Promise<Omit<UploadedVideo, 'id'>> {
+  return new Promise(resolve => {
+    const v = document.createElement('video');
+    const url = URL.createObjectURL(file);
+    const done = (d: Omit<UploadedVideo, 'id'>) => { URL.revokeObjectURL(url); resolve(d); };
+    v.preload = 'metadata';
+    v.onloadedmetadata = () => {
+      const s = Number.isFinite(v.duration) ? Math.floor(v.duration) : 0;
+      done({ duration: s ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : '', width: v.videoWidth, height: v.videoHeight });
+    };
+    v.onerror = () => done({ duration: '', width: 0, height: 0 });
+    v.src = url;
+  });
+}
+
+export async function uploadVideo(file: File, onProgress?: (r: number) => void, signal?: AbortSignal): Promise<UploadedVideo> {
   const type = file.type === 'video/quicktime' || /\.mov$/i.test(file.name) ? 'video/quicktime' : 'video/mp4';
   if (MOCK) {
     for (let i = 1; i <= 10; i++) { await new Promise(r => setTimeout(r, 60)); onProgress?.(i / 10); }
-    return `mock-video-${Date.now()}`;
+    return { id: `mock-video-${Date.now()}`, ...(await readVideoMeta(file)) };
   }
   const v = await req<{ id: string }>(orgPath('/addon-videos'), { method: 'POST', body: { name: file.name, size_bytes: file.size, content_type: type } });
   await uploadParts(file, v.id, onProgress, signal, `/addon-videos/${encodeURIComponent(v.id)}/parts`);
-  await req(orgPath(`/addon-videos/${encodeURIComponent(v.id)}/complete`), { method: 'POST', body: {} });
-  return v.id;
+  return req<UploadedVideo>(orgPath(`/addon-videos/${encodeURIComponent(v.id)}/complete`), { method: 'POST', body: {} });
 }
 
 // ---------------------------------------------------------------------------

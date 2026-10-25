@@ -257,7 +257,15 @@ async fn tracks_by_position(
 }
 
 /// Validated music video details from the application's options.
-fn mv_detail(tier: &str, o: &Value, video_file: Option<Uuid>) -> Result<Value> {
+/// An uploaded video and what the server read from its header.
+struct VideoFile {
+    id: Uuid,
+    duration: String,
+    width: Option<i32>,
+    height: Option<i32>,
+}
+
+fn mv_detail(tier: &str, o: &Value, video_file: Option<VideoFile>) -> Result<Value> {
     let url = o
         .get("mvVideoUrl")
         .and_then(Value::as_str)
@@ -274,18 +282,6 @@ fn mv_detail(tier: &str, o: &Value, video_file: Option<Uuid>) -> Result<Value> {
     let title = text(o, "mvTitle", 200)?;
     if title.is_empty() {
         return Err(Error::InvalidCode("ADDON_MV_TITLE_REQUIRED"));
-    }
-    let duration = text(o, "mvDuration", 8)?;
-    let ok_duration = duration.split_once(':').is_some_and(|(m, s)| {
-        !m.is_empty()
-            && m.len() <= 2
-            && m.chars().all(|c| c.is_ascii_digit())
-            && s.len() == 2
-            && s.chars().all(|c| c.is_ascii_digit())
-            && s < "60"
-    });
-    if !ok_duration {
-        return Err(Error::InvalidCode("ADDON_MV_DURATION_INVALID"));
     }
     let platforms: Vec<String> = o
         .get("mvPlatforms")
@@ -307,8 +303,16 @@ fn mv_detail(tier: &str, o: &Value, video_file: Option<Uuid>) -> Result<Value> {
     }
     let mut out = Map::new();
     out.insert("video_url".into(), json!(video_url));
+    // Length and size come from the uploaded file's header, never from the
+    // form; a linked video is measured by staff when they download it.
+    let mut duration = String::new();
     if let Some(f) = video_file {
-        out.insert("video_file".into(), json!(f.to_string()));
+        out.insert("video_file".into(), json!(f.id.to_string()));
+        duration = f.duration;
+        if let (Some(w), Some(h)) = (f.width, f.height) {
+            out.insert("width".into(), json!(w));
+            out.insert("height".into(), json!(h));
+        }
     }
     out.insert("mv_title".into(), json!(title));
     out.insert("duration".into(), json!(duration));
@@ -381,15 +385,20 @@ async fn wanted(
             Some(v) => {
                 let id = Uuid::parse_str(v)
                     .map_err(|_| Error::InvalidCode("ADDON_MV_VIDEO_REQUIRED"))?;
-                let ready: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM portal.addon_files WHERE org_id=$1 AND id=$2 AND status='READY')")
+                let probed: Option<(Option<i64>, Option<i32>, Option<i32>)> = sqlx::query_as("SELECT duration_ms, width, height FROM portal.addon_files WHERE org_id=$1 AND id=$2 AND status='READY'")
                     .bind(org)
                     .bind(id)
-                    .fetch_one(&mut *c)
+                    .fetch_optional(&mut *c)
                     .await?;
-                if !ready {
+                let Some((ms, w, h)) = probed else {
                     return Err(Error::PolicyGate("ADDON_MV_VIDEO_NOT_READY"));
-                }
-                Some(id)
+                };
+                Some(VideoFile {
+                    id,
+                    duration: video_clock(ms.unwrap_or(0)),
+                    width: w,
+                    height: h,
+                })
             }
             None => None,
         };
@@ -976,19 +985,39 @@ pub async fn video_complete(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Res
     }
     let meta = s.storage.head(&v.key).await?.ok_or(Error::Conflict)?;
     let head = s.storage.read_prefix(&v.key, 12).await?;
-    if meta.size != v.size || !is_video(&head) {
+    let info = if meta.size == v.size && is_video(&head) {
+        crate::mp4::probe(s.storage.as_ref(), &v.key, meta.size as u64).await?
+    } else {
+        None
+    };
+    let Some(info) = info else {
         let _ = s.storage.delete(&v.key).await;
         sqlx::query("UPDATE portal.addon_files SET status='FAILED' WHERE id=$1")
             .bind(id)
             .execute(&s.pool)
             .await?;
         return Err(Error::PolicyGate("ADDON_VIDEO_INVALID"));
-    }
-    sqlx::query("UPDATE portal.addon_files SET status='READY', completed_at=now() WHERE id=$1 AND status='UPLOADING'")
+    };
+    let positive = |n: i64| (n > 0).then_some(n);
+    sqlx::query("UPDATE portal.addon_files SET status='READY', completed_at=now(), duration_ms=$2, width=$3, height=$4 WHERE id=$1 AND status='UPLOADING'")
         .bind(id)
+        .bind(positive(info.duration_ms))
+        .bind(positive(i64::from(info.width)).map(|n| n as i32))
+        .bind(positive(i64::from(info.height)).map(|n| n as i32))
         .execute(&s.pool)
         .await?;
-    Ok(json!({"id": id, "status": "READY"}))
+    Ok(
+        json!({"id": id, "status": "READY", "duration": video_clock(info.duration_ms), "width": info.width, "height": info.height}),
+    )
+}
+
+/// `m:ss` of a probed length, `""` when the file did not say.
+fn video_clock(ms: i64) -> String {
+    if ms > 0 {
+        crate::mp4::clock(ms)
+    } else {
+        String::new()
+    }
 }
 
 /// MP4 and QuickTime files open with a box whose type is `ftyp` (bytes 4–8).
@@ -1537,9 +1566,13 @@ mod tests {
         }
     }
 
+    fn base_link() -> Value {
+        json!({"mvVideoUrl": "https://drive.example.com/mv.mp4", "mvTitle": "여름의 끝 MV", "mvPlatforms": ["melon", "youtube"]})
+    }
+
     #[test]
     fn mv_details_follow_the_tier() {
-        let base = json!({"mvVideoUrl": "https://drive.example.com/mv.mp4", "mvTitle": "여름의 끝 MV", "mvDuration": "3:45", "mvPlatforms": ["melon", "youtube"]});
+        let base = base_link();
         assert!(mv_detail("REVIEW", &base, None).is_ok());
         // Distribution only needs the rating it already has.
         assert!(mv_detail("BASIC", &base, None).is_err());
@@ -1557,9 +1590,27 @@ mod tests {
         let mut file = base;
         file["mvVideoUrl"] = json!("");
         assert!(mv_detail("REVIEW", &file, None).is_err());
+        // Length and size come from the file; a typed length is ignored.
+        let d = mv_detail(
+            "REVIEW",
+            &file,
+            Some(VideoFile {
+                id: Uuid::nil(),
+                duration: "3:46".into(),
+                width: Some(1920),
+                height: Some(1080),
+            }),
+        )
+        .unwrap();
+        assert_eq!(d["video_file"], Uuid::nil().to_string());
         assert_eq!(
-            mv_detail("REVIEW", &file, Some(Uuid::nil())).unwrap()["video_file"],
-            Uuid::nil().to_string()
+            (d["duration"].as_str(), d["width"].as_i64()),
+            (Some("3:46"), Some(1920))
+        );
+        // A link is measured by staff.
+        assert_eq!(
+            mv_detail("REVIEW", &base_link(), None).unwrap()["duration"],
+            ""
         );
     }
 
