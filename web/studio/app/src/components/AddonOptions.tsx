@@ -15,14 +15,17 @@ import { useToast } from './Toast';
 export interface AddonFields {
   mv: boolean; mvTier: MvTier; mvTrack: number;
   mvVideoFile: string; mvVideoName: string; mvVideoUrl: string;
-  mvTitle: string; mvDuration: string; mvDirector: string; mvProduction: string; mvCast: string; mvSynopsis: string;
+  /** 서버가 올린 파일에서 읽은 값 — 보여 주기만 하고, 접수 때 서버가 다시 읽는다 */
+  mvDuration: string; mvWidth: number; mvHeight: number;
+  mvTitle: string; mvDirector: string; mvProduction: string; mvCast: string; mvSynopsis: string;
   mvRating: string; mvRatingNo: string; mvPlatforms: string[]; mvDate: string;
   lyricSync: boolean; lyricTracks: number[];
 }
 
 export const EMPTY_ADDONS: AddonFields = {
   mv: false, mvTier: 'REVIEW', mvTrack: 1, mvVideoFile: '', mvVideoName: '', mvVideoUrl: '',
-  mvTitle: '', mvDuration: '', mvDirector: '', mvProduction: '', mvCast: '', mvSynopsis: '',
+  mvDuration: '', mvWidth: 0, mvHeight: 0,
+  mvTitle: '', mvDirector: '', mvProduction: '', mvCast: '', mvSynopsis: '',
   mvRating: '', mvRatingNo: '', mvPlatforms: [...MV_PLATFORMS], mvDate: '',
   lyricSync: false, lyricTracks: [],
 };
@@ -47,7 +50,6 @@ export function addonProblem(o: AddonFields, tracks: TrackLite[]): [string, stri
     if (!tracks[o.mvTrack - 1]) return ['뮤직비디오 곡을 골라 주세요.', 'aqMvTrack'];
     if (!o.mvVideoFile && !/^https:\/\/\S+$/i.test(o.mvVideoUrl.trim())) return ['뮤직비디오 영상 파일을 올리거나 https 링크를 적어 주세요.', 'aqMvVideo'];
     if (!o.mvTitle.trim()) return ['뮤직비디오 제목을 적어 주세요.', 'aqMvTitle'];
-    if (!/^\d{1,2}:[0-5]\d$/.test(o.mvDuration.trim())) return ['영상 길이를 01:01처럼 분:초로 적어 주세요.', 'aqMvDuration'];
     if (!o.mvPlatforms.length) return ['뮤직비디오를 보낼 플랫폼을 하나 이상 골라 주세요.', 'aqMvPlatforms'];
     if (o.mvTier === 'BASIC' && (!o.mvRating || !o.mvRatingNo.trim())) return ['받은 등급과 등급분류번호를 적어 주세요.', 'aqMvRating'];
   }
@@ -58,20 +60,14 @@ export function addonProblem(o: AddonFields, tracks: TrackLite[]): [string, stri
   return null;
 }
 
-/** 영상 길이 — 숫자만 받아 두 자리 뒤에 ':'를 넣는다 (0101 → 01:01) */
-export function formatDuration(v: string): string {
-  const d = v.replace(/\D/g, '').slice(0, 4);
-  return d.length > 2 ? `${d.slice(0, 2)}:${d.slice(2)}` : d;
-}
-
-/** 칸을 떠날 때 세 자리면 앞에 0을 붙인다 (345 → 03:45) */
-function padDuration(v: string): string {
-  const d = v.replace(/\D/g, '');
-  return d.length === 3 ? formatDuration(`0${d}`) : v;
-}
-
 const VIDEO_MODES = [{ value: 'file', label: '파일 올리기' }, { value: 'link', label: '링크로 보내기' }] as const;
 const platformName = (p: string) => PLATFORM_NAMES[p] ?? p;
+
+/** 올린 파일 아래 줄 — 서버가 읽은 길이·화면 크기 */
+function videoFacts(o: AddonFields): string {
+  const facts = [o.mvDuration && `길이 ${o.mvDuration}`, o.mvWidth > 0 && `${o.mvWidth}×${o.mvHeight}`].filter(Boolean);
+  return `${facts.length ? `${facts.join(' · ')} · ` : ''}다시 누르면 바꿀 수 있어요`;
+}
 
 export function MvDetail({ o, set, tracks }: { o: AddonFields; set: (patch: Partial<AddonFields>) => void; tracks: TrackLite[] }) {
   const toast = useToast();
@@ -89,8 +85,8 @@ export function MvDetail({ o, set, tracks }: { o: AddonFields; set: (patch: Part
     abort.current = new AbortController();
     setPct(0);
     try {
-      const id = await uploadVideo(f, r => setPct(r), abort.current.signal);
-      set({ mvVideoFile: id, mvVideoName: f.name, mvVideoUrl: '' });
+      const v = await uploadVideo(f, r => setPct(r), abort.current.signal);
+      set({ mvVideoFile: v.id, mvVideoName: f.name, mvVideoUrl: '', mvDuration: v.duration, mvWidth: v.width, mvHeight: v.height });
       toast('영상을 올렸어요.', 'success');
     } catch (e) { toast(errorMessage(e), 'error'); } finally { setPct(null); }
   };
@@ -129,7 +125,7 @@ export function MvDetail({ o, set, tracks }: { o: AddonFields; set: (patch: Part
               id="aqMvFile" busy={up !== null} fileName={o.mvVideoName || (o.mvVideoFile ? '올린 영상' : '')}
               accept="video/mp4,video/quicktime,.mp4,.mov" title="영상을 끌어다 놓거나 눌러서 선택"
               hint="MP4 · MOV · 원본 화질(1080p 이상) · 8GB까지"
-              status="올렸어요 · 다시 누르면 바꿀 수 있어요"
+              status={o.mvVideoFile ? videoFacts(o) : undefined}
               onFile={f => void pick(f)}
             />
             {up !== null ? (
@@ -137,26 +133,22 @@ export function MvDetail({ o, set, tracks }: { o: AddonFields; set: (patch: Part
                 <span><i style={{ width: `${Math.max(4, up)}%` }} /></span>
                 <small>{up < 100 ? `업로드 중 ${up}%` : '서버에서 확인하는 중…'} · <button type="button" className="ui-btn is-text is-xs" onClick={() => abort.current?.abort()}>멈추기</button></small>
               </div>
-            ) : <p className="ui-field-help">끊기면 같은 파일을 다시 고르면 이어서 올려요.</p>}
+            ) : o.mvVideoFile && o.mvHeight > 0 && Math.min(o.mvWidth, o.mvHeight) < 1080
+              ? <p className="aq-option-note">1080p보다 작은 영상이에요. 플랫폼에 따라 반려될 수 있으니 원본이 있으면 바꿔 주세요.</p>
+              : <p className="ui-field-help">길이와 화질은 올리면 서버가 파일에서 직접 읽어요. 끊기면 같은 파일을 다시 고르면 이어서 올려요.</p>}
           </>
         ) : (
           <>
             <label className="sr-only" htmlFor="aqMvUrl">영상 링크</label>
             <input id="aqMvUrl" type="url" inputMode="url" maxLength={500} placeholder="https:// (구글 드라이브·드롭박스 등 내려받을 수 있는 링크)"
-              value={o.mvVideoUrl} onChange={e => set({ mvVideoUrl: e.target.value, mvVideoFile: '', mvVideoName: '' })} />
-            <p className="ui-field-help">링크는 누구나 내려받을 수 있게 열어 두세요.</p>
+              value={o.mvVideoUrl} onChange={e => set({ mvVideoUrl: e.target.value, mvVideoFile: '', mvVideoName: '', mvDuration: '', mvWidth: 0, mvHeight: 0 })} />
+            <p className="ui-field-help">링크는 누구나 내려받을 수 있게 열어 두세요. 길이와 화질은 담당자가 내려받아 확인해요.</p>
           </>
         )}
       </div>
       <div className="ui-field">
         <label htmlFor="aqMvTitle">뮤직비디오 제목 <span className="required">*</span></label>
         <input id="aqMvTitle" maxLength={200} placeholder="예: 여름의 끝 MV" value={o.mvTitle} onChange={e => set({ mvTitle: e.target.value })} />
-      </div>
-      <div className="ui-field">
-        <label htmlFor="aqMvDuration">영상 길이 <span className="required">*</span></label>
-        <input id="aqMvDuration" inputMode="numeric" autoComplete="off" maxLength={5} placeholder="01:01" value={o.mvDuration}
-          onChange={e => set({ mvDuration: formatDuration(e.target.value) })} onBlur={e => set({ mvDuration: padDuration(e.target.value) })} />
-        <p className="ui-field-help">분:초로 숫자만 적으면 ‘:’는 알아서 들어가요. 예: 0345 → 03:45</p>
       </div>
       <div className="ui-field">
         <label htmlFor="aqMvDirector">감독<span className="aq-optional">선택</span></label>

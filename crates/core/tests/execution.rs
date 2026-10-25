@@ -8737,7 +8737,7 @@ async fn addon_orders_from_the_application_pay_at_once_and_refund(pool: PgPool) 
     let options = json!({
         "express": true, "expressAck": true, "expressReason": "방송 일정",
         "mv": true, "mvTier": "REVIEW", "mvTrack": 1, "mvVideoUrl": "https://drive.example.com/mv.mp4",
-        "mvTitle": "여름의 끝 MV", "mvDuration": "3:45", "mvPlatforms": ["melon", "youtube"],
+        "mvTitle": "여름의 끝 MV", "mvPlatforms": ["melon", "youtube"],
         "lyricSync": true, "lyricTracks": [1],
     });
     sqlx::query("UPDATE catalog.releases SET draft = jsonb_set(draft, '{options}', coalesce(draft->'options','{}'::jsonb) || $2), row_version = row_version + 1 WHERE id=$1")

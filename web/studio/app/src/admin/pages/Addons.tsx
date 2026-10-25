@@ -121,7 +121,7 @@ function OrderCard({ o, ok, onDone, toast }: { o: StaffOrder; ok: boolean; onDon
               <p>{o.video.name} · {(o.video.size_bytes / 1024 ** 3).toFixed(2)}GB{' '}
                 <button type="button" className="ui-btn is-soft is-xs" onClick={() => void download()}>내려받기</button></p>
             ) : <p><a href={String(d.video_url)} target="_blank" rel="noopener noreferrer">{String(d.video_url)}</a></p>}
-            <small className="muted">영상</small><p>{String(d.mv_title)} · {String(d.duration)}{d.director ? ` · 감독 ${String(d.director)}` : ''}{d.production ? ` · ${String(d.production)}` : ''}</p>
+            <small className="muted">영상</small><p>{String(d.mv_title)} · {d.duration ? `길이 ${String(d.duration)}` : '길이는 내려받아 확인'}{d.width ? ` · ${String(d.width)}×${String(d.height)}` : ''}{d.director ? ` · 감독 ${String(d.director)}` : ''}{d.production ? ` · ${String(d.production)}` : ''}</p>
             {d.cast && <><small className="muted">출연</small><p>{String(d.cast)}</p></>}
             {d.synopsis && <><small className="muted">영상 내용</small><p style={{ whiteSpace: 'pre-wrap' }}>{String(d.synopsis)}</p></>}
             {o.tier === 'BASIC' && <><small className="muted">받은 등급</small><p>{RATING_LABEL[String(d.rating)] ?? String(d.rating)} · {String(d.rating_no)}</p></>}
