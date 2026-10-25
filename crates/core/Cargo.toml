@@ -39,6 +39,8 @@ jsonschema = { version = "0.58.1", default-features = false, features = ["idna"]
 rust_decimal = { version = "1.43.0", features = ["serde", "db-postgres"] }
 rustfft = "6.4.1"
 quick-xml = "0.42.0"
+# Profanity lists: one multi-pattern pass per text; already in the tree via regex.
+aho-corasick = "1.1.5"
 unicode-normalization = "0.1.25"
 libc = "0.2.189"
 unicode-security = "0.1.2"

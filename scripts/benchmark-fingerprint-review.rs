@@ -23,7 +23,8 @@ mod qc_engine {
     pub fn fingerprint(_: &Path, _: Duration) -> Result<FingerprintReport, EngineError> {
         Err(EngineError::Unavailable)
     }
-    pub fn windows_to_segments(_: &[FingerprintWindow]) -> Vec<Vec<f32>> {
+    // Generic: the baseline passes `&Vec<_>`, the current module the `Vec`.
+    pub fn windows_to_segments<W>(_: W) -> Vec<Vec<f32>> {
         Vec::new()
     }
 }

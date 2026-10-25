@@ -80,11 +80,32 @@ pub struct Spec {
 }
 
 /// One fingerprint window: mono 11025 Hz s16 PCM from the continuous
-/// resampler, starting at `start_secs` of the track.
+/// resampler, starting at `start_secs` of the track. The samples arrive as
+/// JSON integers and are kept as the f32 the fingerprint core reads
+/// (`s / 32768`), converted while parsing: no second copy of up to 3 x 30 s.
 #[derive(Debug, Clone, Deserialize)]
 pub struct FingerprintWindow {
     pub start_secs: f64,
-    pub samples: Vec<i16>,
+    #[serde(deserialize_with = "s16_as_f32")]
+    pub samples: Vec<f32>,
+}
+
+fn s16_as_f32<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<f32>, D::Error> {
+    struct Samples;
+    impl<'de> serde::de::Visitor<'de> for Samples {
+        type Value = Vec<f32>;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("an array of s16 samples")
+        }
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Vec<f32>, A::Error> {
+            let mut out = Vec::with_capacity(seq.size_hint().unwrap_or(0).min(1 << 20));
+            while let Some(s) = seq.next_element::<i16>()? {
+                out.push(f32::from(s) / 32768.0);
+            }
+            Ok(out)
+        }
+    }
+    d.deserialize_seq(Samples)
 }
 
 /// `analyze` report (also nested in `convert --analyze`).
@@ -394,11 +415,11 @@ pub fn convert(
 
 /// Mono 11025 Hz fingerprint windows as the f32 segments the backend's
 /// fingerprint core consumes.
-pub fn windows_to_segments(windows: &[FingerprintWindow]) -> Vec<Vec<f32>> {
+pub fn windows_to_segments(windows: Vec<FingerprintWindow>) -> Vec<Vec<f32>> {
     windows
-        .iter()
+        .into_iter()
         .filter(|w| !w.samples.is_empty())
-        .map(|w| w.samples.iter().map(|s| f32::from(*s) / 32768.0).collect())
+        .map(|w| w.samples)
         .collect()
 }
 
