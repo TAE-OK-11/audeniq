@@ -22,7 +22,8 @@ import { PLATFORM_NAMES } from '../lib/platformNames';
 import { KINDS, STATUS_LABEL, STATUS_TONE, kindSpec, type PlatformRequest, type RequestGroup } from '../lib/platformRequests';
 import { Glyph } from '../components/Glyph';
 import { HelpFaq } from '../components/HelpFaq';
-import { Badge, EmptyState, PageHeader, SkeletonList, Steps } from '../ui';
+import { Badge, EmptyState, PageHeader, SkeletonList } from '../ui';
+import { StageCard } from '../components/StageCard';
 import type { Tone } from '../ui/tone';
 
 /** 일반 문의 유형 */
@@ -132,13 +133,13 @@ const STATUS_HELP: Record<string, string> = {
 };
 const STEPS = ['SUBMITTED', 'IN_PROGRESS', 'SENT_TO_PLATFORM', 'RESOLVED'];
 
-/** 플랫폼 요청 상세 — 요약(플랫폼·아티스트·지금 상태) → 단계(접수 → 처리 중 → 플랫폼 전달 → 완료) → 남긴 내용 */
+/** 플랫폼 요청 상세 — 요약(플랫폼·아티스트) → 진행 단계 카드(접수 → 처리 중 → 플랫폼 전달 → 완료) → 남긴 내용 */
 function RequestDetail({ r, onCancel }: { r: PlatformRequest & { artist_id?: string | null }; onCancel: () => void }) {
-  // 공통 진행 단계(Steps) — 끝난 요청(처리 불가·취소)은 멈춘 단계에 그 상태를 경고로 보여 준다
+  // 발매 상세와 같은 진행 단계 카드 — 끝난 요청(처리 불가·취소)은 멈춘 다음 칸에 그 상태를 빨간색으로
   const stopped = r.status === 'REJECTED' || r.status === 'CANCELLED';
   const reached = stopped ? Math.max(0, ...r.events.map(e => STEPS.indexOf(e.status))) : STEPS.indexOf(r.status);
-  const labels = STEPS.map((st, i) => (stopped && i === reached + 1 ? STATUS_LABEL[r.status] : STATUS_LABEL[st]));
-  const current = stopped ? Math.min(reached + 1, STEPS.length - 1) : r.status === 'RESOLVED' ? STEPS.length : reached;
+  const current = stopped ? Math.min(reached + 1, STEPS.length - 1) : Math.max(0, reached);
+  const labels = STEPS.map((st, i) => (stopped && i === current ? STATUS_LABEL[r.status] : STATUS_LABEL[st]));
   const notes = r.events.filter(e => e.note.trim());
   const platform = PLATFORM_NAMES[r.platform] ?? r.platform;
   return (
@@ -149,11 +150,10 @@ function RequestDetail({ r, onCancel }: { r: PlatformRequest & { artist_id?: str
           <strong>{platform}</strong>
           <small>{[r.artist_name, r.release_title].filter(Boolean).join(' · ')}</small>
         </span>
-        <Badge tone={(STATUS_TONE[r.status] ?? 'gray') as Tone}>{STATUS_LABEL[r.status] ?? r.status}</Badge>
-        <p>{STATUS_HELP[r.status] ?? ''}</p>
       </section>
 
-      <Steps steps={labels} current={current} warn={stopped} label="요청 진행 단계" />
+      <StageCard steps={labels} current={current} complete={r.status === 'RESOLVED'} tone={stopped ? 'error' : undefined}
+        note={STATUS_HELP[r.status]} label="요청 진행 단계" />
 
       {(r.resolution || notes.length > 0) && (
         <section className="aq-request-block">

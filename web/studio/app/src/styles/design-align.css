@@ -1623,11 +1623,11 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-explicit-auto{display:block;margin-top:4px;color:var(--aq-amber-700);font-size:13px;font-weight:var(--aq-fw-medium);line-height:1.5}
 /* 문의 — 플랫폼 요청 상세 (요약 · 단계 · 메모 · 요청 내용) */
 .aq-request-detail{display:grid;gap:14px}
-.aq-request-sum{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:4px 12px;padding:16px;border-radius:var(--aq-r-xl);background:var(--aq-surface)}
+.aq-request-detail>.aq-stage{margin:0}
+.aq-request-sum{display:grid;grid-template-columns:44px minmax(0,1fr);align-items:center;gap:4px 12px;padding:16px;border-radius:var(--aq-r-xl);background:var(--aq-surface)}
 .aq-request-sum-icon{display:grid;place-items:center;width:44px;height:44px;border-radius:var(--aq-r-md);background:#fff;color:var(--aq-primary)}
 .aq-request-sum strong{display:block;font-size:16px;font-weight:var(--aq-fw-bold);color:var(--aq-text)}
 .aq-request-sum small{display:block;margin-top:2px;overflow:hidden;color:var(--aq-text-3);font-size:13px;text-overflow:ellipsis;white-space:nowrap}
-.aq-request-sum>p{grid-column:1/-1;margin:10px 0 0;color:var(--aq-text-2);font-size:14px;line-height:1.6}
 .aq-request-block{display:grid;gap:8px;padding:14px 16px;border-radius:var(--aq-r-lg);background:var(--aq-surface)}
 .aq-request-block h3{margin:0;color:var(--aq-text-3);font-size:13px;font-weight:var(--aq-fw-bold)}
 .aq-request-block p{margin:0;color:var(--aq-text);font-size:14px;line-height:1.6;overflow-wrap:anywhere}
