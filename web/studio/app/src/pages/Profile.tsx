@@ -295,12 +295,6 @@ export function Profile() {
         <SetRow id="profileRowCountry" label="활동 국가" value={country} onClick={() => setEditing('country')} />
       </section>
 
-      {/* 소개 페이지·스마트링크·소식·응원·사진은 한 화면(아티스트 페이지)에서 */}
-      <section className="aq-set-card" aria-labelledby="setArtistHub">
-        <h2 id="setArtistHub">아티스트 페이지</h2>
-        <SetRow id="profileRowArtistPage" label="소개 페이지·사진·반응" value="관리하기" onClick={() => nav('/artist')} />
-      </section>
-
       <section className="aq-set-card" aria-labelledby="setPayout">
         <h2 id="setPayout">수익 받기</h2>
         <SetRow
