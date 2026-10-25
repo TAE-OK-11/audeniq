@@ -477,3 +477,31 @@ pub fn today_kst() -> chrono::NaiveDate {
     let kst = chrono::FixedOffset::east_opt(9 * 3600).expect("valid offset");
     chrono::Utc::now().with_timezone(&kst).date_naive()
 }
+
+/// `"-1234567"` → `"-1,234,567"`: an integer's digits grouped by thousands.
+pub fn group_digits(n: &str) -> String {
+    let (sign, digits) = n.strip_prefix('-').map_or(("", n), |d| ("-", d));
+    let mut out = String::with_capacity(n.len() + digits.len() / 3);
+    out.push_str(sign);
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+#[cfg(test)]
+mod group_digits_tests {
+    use super::group_digits;
+
+    #[test]
+    fn groups_by_thousands_and_keeps_the_sign_outside() {
+        assert_eq!(group_digits("0"), "0");
+        assert_eq!(group_digits("999"), "999");
+        assert_eq!(group_digits("1000"), "1,000");
+        assert_eq!(group_digits("1234567"), "1,234,567");
+        assert_eq!(group_digits("-150000"), "-150,000");
+    }
+}

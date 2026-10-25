@@ -28,13 +28,7 @@ const INVITES_PER_WINDOW: i32 = 20;
 
 /// `a***@example.com` for members who are not owners.
 fn masked(email: &str) -> String {
-    match email.split_once('@') {
-        Some((local, domain)) => {
-            let first: String = local.chars().take(1).collect();
-            format!("{first}***@{domain}")
-        }
-        None => "***".into(),
-    }
+    crate::email::mask_address(email, 1)
 }
 
 /// Members of `org`: everyone for an OWNER (invited and revoked included,

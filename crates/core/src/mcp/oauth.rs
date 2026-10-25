@@ -1871,15 +1871,7 @@ pub(super) fn scope_label(scope: &str, payout_limit: i64) -> (&'static str, Stri
 
 /// 300000 → "300,000"
 pub(super) fn won(v: i64) -> String {
-    let digits = v.to_string();
-    let mut out = String::new();
-    for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(c);
-    }
-    out
+    crate::domain::group_digits(&v.to_string())
 }
 
 #[cfg(test)]

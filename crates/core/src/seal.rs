@@ -21,7 +21,6 @@ use crate::{
     payout_keys::KeyRing,
 };
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use sqlx::{PgConnection, Row};
 use uuid::Uuid;
 
@@ -125,9 +124,7 @@ pub async fn render(c: &mut PgConnection, kind: Kind, id: Uuid) -> Result<(Optio
     Ok((row.get("org_id"), row.get("doc")))
 }
 
-pub fn sha256_hex(bytes: &[u8]) -> String {
-    crate::hex::encode(Sha256::digest(bytes))
-}
+pub use crate::domain::sha256_hex;
 
 /// What the document key signs and the chain hashes.
 pub fn message(kind: &str, id: Uuid, event: &str, content: &str, at: &str, prev: &str) -> String {

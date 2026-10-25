@@ -9,7 +9,7 @@
 use crate::{
     api::AppState,
     auth,
-    email::{Mailer, Rendered, escape_html, one_line},
+    email::{Mailer, Rendered, backoff_seconds, escape_html, one_line},
     error::{Error, Result},
     payout_keys::{Field, KeyRing},
 };
@@ -32,17 +32,7 @@ const EXPIRE_DAYS: i32 = 7;
 const LEASE_MINUTES: i32 = 10;
 
 fn normalize_email(v: &str) -> Result<String> {
-    let v = v.trim().to_lowercase();
-    let ok = v.len() <= 254
-        && !v.chars().any(|c| c.is_whitespace() || c.is_control())
-        && v.split_once('@').is_some_and(|(l, d)| {
-            !l.is_empty() && d.contains('.') && !d.starts_with('.') && !d.ends_with('.')
-        });
-    if ok {
-        Ok(v)
-    } else {
-        Err(Error::InvalidCode("ALERT_EMAIL_INVALID"))
-    }
+    crate::email::normalize_address(v).ok_or(Error::InvalidCode("ALERT_EMAIL_INVALID"))
 }
 
 #[derive(Deserialize)]
@@ -146,16 +136,6 @@ async fn finish(
     .execute(pool)
     .await?;
     Ok(())
-}
-
-fn backoff_seconds(attempts: i32) -> f64 {
-    match attempts {
-        ..=1 => 60.0,
-        2 => 300.0,
-        3 => 1800.0,
-        4 => 7200.0,
-        _ => 21600.0,
-    }
 }
 
 /// Send the alerts that are due: release date reached (from 09:00 KST).
