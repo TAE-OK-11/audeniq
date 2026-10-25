@@ -448,6 +448,24 @@ pub async fn update(
     if n != 1 {
         return Err(Error::Conflict);
     }
+    // 앨범 제목에 욕설이 있으면 모든 곡을 19세 이용가로 (crate::profanity)
+    let mut auto_explicit = false;
+    if matches!(kind, Kind::Release) {
+        let title: String =
+            sqlx::query_scalar("SELECT title FROM catalog.releases WHERE org_id=$1 AND id=$2")
+                .bind(org)
+                .bind(id)
+                .fetch_one(&mut *tx)
+                .await?;
+        if crate::profanity::in_song(&[&title]) {
+            auto_explicit = true;
+            sqlx::query("UPDATE catalog.tracks SET parental_advisory=true WHERE org_id=$1 AND release_id=$2 AND archived_at IS NULL")
+                .bind(org)
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+        }
+    }
     operations::audit(
         &mut tx,
         Some(a.user),
@@ -467,7 +485,7 @@ pub async fn update(
     )
     .await?;
     tx.commit().await?;
-    Ok(json!({"id":id,"row_version":expected+1}))
+    Ok(json!({"id":id,"row_version":expected+1,"auto_explicit":auto_explicit}))
 }
 pub async fn archive(
     s: &AppState,
@@ -587,8 +605,12 @@ pub async fn track(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .unwrap_or("");
+    // 제목·버전·가사·앨범 제목에 욕설이 있으면 19세 이용가로 (crate::profanity)
+    let auto_explicit =
+        drafts::song_profanity(&mut tx, org, release, &i.title, version, lyrics).await?;
+    let explicit = i.parental_advisory.unwrap_or(false) || auto_explicit;
     sqlx::query("INSERT INTO catalog.tracks(id,org_id,release_id,title,version,disc_number,track_number,artist_id,asset_id,lyrics,parental_advisory,isrc) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)")
- .bind(id).bind(org).bind(release).bind(i.title).bind(version).bind(i.disc_number).bind(i.track_number).bind(i.artist_id).bind(i.asset_id).bind(lyrics).bind(i.parental_advisory.unwrap_or(false)).bind(isrc).execute(&mut *tx).await?;
+ .bind(id).bind(org).bind(release).bind(&i.title).bind(version).bind(i.disc_number).bind(i.track_number).bind(i.artist_id).bind(i.asset_id).bind(lyrics).bind(explicit).bind(isrc).execute(&mut *tx).await?;
     operations::audit(
         &mut tx,
         Some(a.user),
@@ -608,7 +630,9 @@ pub async fn track(
     )
     .await?;
     tx.commit().await?;
-    Ok(json!({"id":id,"row_version":i.row_version+1}))
+    Ok(
+        json!({"id":id,"row_version":i.row_version+1,"parental_advisory":explicit,"auto_explicit":auto_explicit}),
+    )
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

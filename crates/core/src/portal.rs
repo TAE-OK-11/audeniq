@@ -402,12 +402,21 @@ async fn authorize_inquiry(c: &mut PgConnection, a: &Actor, org: Uuid, id: Uuid)
     Ok(status)
 }
 
+/// 고객센터 문의에는 욕설·비하 표현을 받지 않는다 (crate::profanity) — 고쳐서 다시 보내 달라고 안내한다
+fn no_profanity(texts: &[&str]) -> Result<()> {
+    if texts.iter().any(|t| crate::profanity::contains(t, &[])) {
+        return Err(Error::InvalidCode("INQUIRY_PROFANITY"));
+    }
+    Ok(())
+}
+
 pub async fn create_inquiry(s: &AppState, a: &Actor, org: Uuid, i: InquiryInput) -> Result<Value> {
     if !CATEGORIES.contains(&i.category.as_str()) {
         return Err(Error::Invalid);
     }
     let subject = text(&i.subject, 1, 200)?;
     let body = multiline(&i.body, 1, 4000)?;
+    no_profanity(&[&subject, &body])?;
     let mut tx = s.pool.begin().await?;
     member(&mut tx, a, org, true).await?;
     if let Some(release) = i.release_id {
@@ -452,6 +461,7 @@ pub async fn add_message(
     i: MessageInput,
 ) -> Result<Value> {
     let body = multiline(&i.body, 1, 4000)?;
+    no_profanity(&[&body])?;
     let mut tx = s.pool.begin().await?;
     member(&mut tx, a, org, true).await?;
     let status = authorize_inquiry(&mut tx, a, org, id).await?;

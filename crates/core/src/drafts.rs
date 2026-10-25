@@ -84,6 +84,30 @@ pub async fn track_refs(c: &mut PgConnection, a: &Actor, org: Uuid, i: &TrackInp
     }
     Ok(())
 }
+/// Whether a track's texts or its release's title have profanity: such a
+/// track is saved as 19+ whatever the artist ticked ([`crate::profanity::in_song`]).
+pub async fn song_profanity(
+    c: &mut PgConnection,
+    org: Uuid,
+    release: Uuid,
+    title: &str,
+    version: &str,
+    lyrics: Option<&str>,
+) -> Result<bool> {
+    let release_title: String =
+        sqlx::query_scalar("SELECT title FROM catalog.releases WHERE org_id=$1 AND id=$2")
+            .bind(org)
+            .bind(release)
+            .fetch_one(&mut *c)
+            .await?;
+    Ok(crate::profanity::in_song(&[
+        &release_title,
+        title,
+        version,
+        lyrics.unwrap_or(""),
+    ]))
+}
+
 pub async fn replace_track(
     s: &AppState,
     a: &Actor,
@@ -104,8 +128,11 @@ pub async fn replace_track(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .unwrap_or("");
+    // 제목·버전·가사·앨범 제목에 욕설이 있으면 19세 이용가로 (crate::profanity)
+    let auto_explicit = song_profanity(&mut tx, org, release, &i.title, version, lyrics).await?;
+    let explicit = i.parental_advisory.unwrap_or(false) || auto_explicit;
     let n = sqlx::query("UPDATE catalog.tracks SET title=$4,version=$11,disc_number=$5,track_number=$6,artist_id=$7,asset_id=$8,lyrics=$9,parental_advisory=$10,isrc=$12 WHERE org_id=$1 AND release_id=$2 AND id=$3 AND archived_at IS NULL")
-        .bind(org).bind(release).bind(track).bind(i.title).bind(i.disc_number).bind(i.track_number).bind(i.artist_id).bind(i.asset_id).bind(lyrics).bind(i.parental_advisory.unwrap_or(false)).bind(version).bind(isrc).execute(&mut *tx).await?.rows_affected();
+        .bind(org).bind(release).bind(track).bind(&i.title).bind(i.disc_number).bind(i.track_number).bind(i.artist_id).bind(i.asset_id).bind(lyrics).bind(explicit).bind(version).bind(isrc).execute(&mut *tx).await?.rows_affected();
     if n != 1 {
         return Err(Error::NotFound);
     }
@@ -119,7 +146,9 @@ pub async fn replace_track(
     )
     .await?;
     tx.commit().await?;
-    Ok(json!({"id":track,"row_version":i.row_version+1}))
+    Ok(
+        json!({"id":track,"row_version":i.row_version+1,"parental_advisory":explicit,"auto_explicit":auto_explicit}),
+    )
 }
 pub async fn archive_track(
     s: &AppState,

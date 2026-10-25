@@ -255,7 +255,7 @@ pub struct SubmitInput {
 /// revision to human review via `special_flags`. Lying on a declaration is
 /// a terms violation with an immutable audit trail — detection of lies is a
 /// human/vendor process, not something this struct claims to do.
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct DeclarationsInput {
     /// "I own or control all rights needed to distribute this release."
@@ -544,13 +544,29 @@ pub async fn submit(
         crate::signing::guardian_ready(&mut tx, org, release).await?;
     }
     let consent_package_hash: String = c.get("package_hash");
+    // 앨범·곡 제목이나 가사에 욕설이 있으면 19세 이용가 선언으로 (곡 저장 때 놓친 예전 초안까지; crate::profanity)
+    let mut declarations = input.declarations.clone();
+    if !declarations.explicit_content {
+        let texts: Vec<String> = sqlx::query_scalar(
+            "SELECT title FROM catalog.releases WHERE org_id=$1 AND id=$2
+             UNION ALL
+             SELECT concat_ws(E'\n', title, version, lyrics) FROM catalog.tracks
+              WHERE org_id=$1 AND release_id=$2 AND archived_at IS NULL",
+        )
+        .bind(org)
+        .bind(release)
+        .fetch_all(&mut *tx)
+        .await?;
+        declarations.explicit_content =
+            crate::profanity::in_song(&texts.iter().map(String::as_str).collect::<Vec<_>>());
+    }
     let body = revision_body(
         &mut tx,
         org,
         release,
         &consent_package_hash,
         input.minority_declared,
-        &input.declarations,
+        &declarations,
     )
     .await?;
     // Every attached asset must carry the content hash recorded at upload

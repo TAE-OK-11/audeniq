@@ -6608,6 +6608,127 @@ async fn artist_press_kit_and_cheer_filter(pool: PgPool) {
     assert_eq!(v["total"], 1, "{v}");
 }
 
+/// Profanity in songs and support: lyrics, track or album titles with
+/// profanity make the release 19+ (saved tracks, and the submit-time
+/// declaration for drafts saved before); inquiries with profanity are refused.
+#[sqlx::test]
+async fn profanity_marks_songs_19_and_refuses_abusive_inquiries(pool: PgPool) {
+    let d = draft_package(&pool).await;
+    let org = d.u.org;
+    let (app, u) = (d.app.clone(), d.u.clone());
+    let row: (Uuid, Uuid, Option<Uuid>) = sqlx::query_as(
+        "SELECT id, artist_id, asset_id FROM catalog.tracks WHERE release_id=$1 AND archived_at IS NULL ORDER BY track_number LIMIT 1",
+    )
+    .bind(d.release)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let (track, artist, asset) = row;
+    let rv = || async {
+        sqlx::query_scalar::<_, i64>("SELECT row_version FROM catalog.releases WHERE id=$1")
+            .bind(d.release)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+    };
+    let put = format!("/api/orgs/{org}/releases/{}/tracks/{track}", d.release);
+    let body = |lyrics: &str, row_version: i64| {
+        json!({"title":"T1","disc_number":1,"track_number":1,"artist_id":artist,"asset_id":asset,
+               "row_version":row_version,"lyrics":lyrics,"parental_advisory":false,"isrc":"USABC2600001"})
+    };
+    let (s, v) = call(
+        &app,
+        "PUT",
+        &put,
+        body("이 세상 씨 발 같아도 노래해", rv().await),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["auto_explicit"], true, "{v}");
+    let pa: bool = sqlx::query_scalar("SELECT parental_advisory FROM catalog.tracks WHERE id=$1")
+        .bind(track)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(pa, "saved as 19+");
+    let (_, v) = call(
+        &app,
+        "PUT",
+        &put,
+        body("6시 발매, 언니 미쳤다 진짜 좋아", rv().await),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["auto_explicit"], false, "{v}");
+    assert_eq!(v["parental_advisory"], false, "{v}");
+
+    // An album title with profanity: the submit-time declaration says explicit.
+    sqlx::query(
+        "UPDATE catalog.releases SET title='개새끼들의 밤', row_version=row_version+1 WHERE id=$1",
+    )
+    .bind(d.release)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let rev = consent_and_submit(&app, &u, d.release, &format!("k-pf-{}", Uuid::new_v4())).await;
+    let explicit: bool = sqlx::query_scalar(
+        "SELECT (body->'declarations'->>'explicit_content')::boolean FROM catalog.application_revisions WHERE id=$1",
+    )
+    .bind(rev)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(explicit, "album title makes the release explicit");
+
+    // The form's live check.
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{org}/text/profanity"),
+        json!({"texts": ["좋은 노래예요", "ㅅㅂ", ""]}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["flags"], json!([false, true, false]));
+    let other = user(&app).await;
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{org}/text/profanity"),
+        json!({"texts": ["x"]}),
+        Some(&other),
+    )
+    .await;
+    assert_ne!(s, StatusCode::OK);
+
+    // Support inquiries.
+    let inquiries = format!("/api/orgs/{org}/inquiries");
+    let (_, v) = call(
+        &app,
+        "POST",
+        &inquiries,
+        json!({"category": "OTHER", "subject": "정산 문의", "body": "왜 아직도 안 들어와 ㅅㅂ"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "INQUIRY_PROFANITY", "{v}");
+    let (s, v) = call(&app, "POST", &inquiries,
+        json!({"category": "OTHER", "subject": "정산 문의", "body": "6시 발표된 정산이 아직 안 들어왔어요."}), Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let id = v["id"].as_str().unwrap();
+    let (_, v) = call(
+        &app,
+        "POST",
+        &format!("{inquiries}/{id}/messages"),
+        json!({"body": "병신 같은 서비스"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "INQUIRY_PROFANITY", "{v}");
+}
+
 fn v_id(v: &Value) -> String {
     v["id"].as_str().unwrap().to_string()
 }

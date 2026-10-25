@@ -207,6 +207,7 @@ pub fn router(s: AppState) -> Router {
         .merge(crate::artist_community::routes())
         .merge(crate::artist_studio::routes())
         .merge(crate::artist_press::routes())
+        .merge(crate::profanity::routes())
         .merge(crate::partner_hooks::routes())
         .merge(crate::site_content::routes())
         .merge(crate::mcp::routes())
