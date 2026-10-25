@@ -132,9 +132,15 @@ pub trait ObjectStore: Send + Sync {
     /// without transferring the rest. The default reads the whole object;
     /// the S3 store asks for a byte range.
     async fn read_prefix(&self, key: &str, n: usize) -> Result<Vec<u8>> {
-        let mut b = self.get(key).await?;
-        b.truncate(n);
-        Ok(b)
+        self.read_range(key, 0, n).await
+    }
+    /// Up to `n` bytes starting at `offset` (container headers of a large
+    /// upload, e.g. the MP4 `moov` box). Shorter at the end of the object.
+    /// The default reads the whole object; the S3 store asks for a range.
+    async fn read_range(&self, key: &str, offset: u64, n: usize) -> Result<Vec<u8>> {
+        let b = self.get(key).await?;
+        let start = usize::try_from(offset).unwrap_or(usize::MAX).min(b.len());
+        Ok(b[start..start.saturating_add(n).min(b.len())].to_vec())
     }
     /// Stream an object into `dest`, hashing it on the way. Fails with
     /// [`Error::PolicyGate`]`("OBJECT_TOO_LARGE")` once more than `max_bytes`
@@ -1280,7 +1286,7 @@ impl ObjectStore for S3Store {
         }
         Ok(bytes)
     }
-    async fn read_prefix(&self, key: &str, n: usize) -> Result<Vec<u8>> {
+    async fn read_range(&self, key: &str, offset: u64, n: usize) -> Result<Vec<u8>> {
         if n == 0 {
             return Ok(Vec::new());
         }
@@ -1290,14 +1296,17 @@ impl ObjectStore for S3Store {
         let mut r = self
             .client
             .get(url)
-            .header("range", format!("bytes=0-{}", n - 1))
+            .header("range", format!("bytes={offset}-{}", offset + n as u64 - 1))
             .send()
             .await
             .map_err(|_| Error::Storage)?;
-        if !matches!(
-            r.status(),
-            reqwest::StatusCode::OK | reqwest::StatusCode::PARTIAL_CONTENT
-        ) {
+        // A 200 is the whole object: only right when the range starts at 0.
+        let ok = match r.status() {
+            reqwest::StatusCode::PARTIAL_CONTENT => true,
+            reqwest::StatusCode::OK => offset == 0,
+            _ => false,
+        };
+        if !ok {
             return Err(Error::Storage);
         }
         let mut bytes = Vec::with_capacity(n);

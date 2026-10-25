@@ -112,6 +112,7 @@ mod media_budget;
 pub mod members;
 mod password_work;
 
+pub mod mp4;
 pub mod oauth;
 pub mod passkey;
 pub mod password_policy;
