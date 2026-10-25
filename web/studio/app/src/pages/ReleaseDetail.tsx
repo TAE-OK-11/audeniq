@@ -357,10 +357,8 @@ export function ReleaseDetail() {
       )}
 
       {needsFix && (
-        <section className="aq-fix-panel" aria-labelledby="aqFixCardHead">
-          <div className="aq-fix-top">
-            <Badge tone="amber">{docsOnly ? (proofs.length ? `서류 제출 요청 ${proofs.length}건` : '서류 확인 필요') : fixTotal ? `보완 요청 ${fixTotal}건` : '보완 필요'}</Badge>
-          </div>
+        <section className="aq-fix-panel ui-tone-warn" aria-labelledby="aqFixCardHead">
+          <p className="eyebrow">{docsOnly ? (proofs.length ? `서류 제출 요청 ${proofs.length}건` : '서류 확인 필요') : fixTotal ? `보완 요청 ${fixTotal}건` : '보완 필요'}</p>
           <h2 id="aqFixCardHead" className="aq-fix-title">
             {docsOnly ? '담당자가 요청한 서류를 제출해 주세요'
               // 배지는 고칠 칸 + 요청 서류를 함께 센다 — 제목도 둘 다 말해야 '3건'과 '두 가지'가 어긋나지 않는다
