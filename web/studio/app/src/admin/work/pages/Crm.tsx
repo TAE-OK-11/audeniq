@@ -319,7 +319,7 @@ export function CrmDetail() {
     try { await workApi.archiveRelationship(r.id); toast('보관했어요.', 'info'); nav('/admin/crm'); } catch (e) { toast(errorMessage(e, '보관하지 못했어요.'), 'error'); }
   };
   const removeContact = async (c: RelContact) => {
-    if (!await confirm({ title: `${c.name} 연락처를 지울까요?`, message: '보관되어 연락 이력에는 이름이 남아요.', confirmLabel: '지우기' })) return;
+    if (!await confirm({ title: `${c.name} 연락처를 지울까요?`, message: '보관되어 연락 이력에는 이름이 남아요.', confirmLabel: '지우기', danger: true })) return;
     try { setOver(await workApi.editContact(c.id, { name: c.name, role: c.role, is_primary: false, archived: true })); } catch (e) { toast(errorMessage(e, '지우지 못했어요.'), 'error'); }
   };
   const source = r.entity ? entityLink(r.entity.kind, r.entity.id) : null;

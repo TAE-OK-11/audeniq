@@ -459,7 +459,7 @@ export function Inquiries() {
   };
 
   const cancelRequest = async (r: PlatformRequest) => {
-    if (!(await confirm({ title: '요청을 취소할까요?', message: '플랫폼에 전달되기 전까지만 취소할 수 있어요.', confirmLabel: '요청 취소' }))) return;
+    if (!(await confirm({ title: '요청을 취소할까요?', message: '플랫폼에 전달되기 전까지만 취소할 수 있어요.', confirmLabel: '요청 취소', danger: true }))) return;
     try {
       if (!MOCK) await req(orgPath(`/platform-requests/${encodeURIComponent(r.id)}/cancel`), { method: 'POST', body: {} });
       else setRequests(rs => (rs ?? []).map(x => (x.id === r.id ? { ...x, status: 'CANCELLED' } : x)));

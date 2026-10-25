@@ -87,7 +87,7 @@ export function TakedownCard({ releaseId }: { releaseId: string }) {
     }
   };
   const cancel = async () => {
-    const ok = await confirm({ title: '중단 요청을 취소할까요?', message: '발매는 지금처럼 플랫폼에 그대로 남아요.', confirmLabel: '요청 취소' });
+    const ok = await confirm({ title: '중단 요청을 취소할까요?', message: '발매는 지금처럼 플랫폼에 그대로 남아요.', confirmLabel: '요청 취소', danger: true });
     if (!ok) return;
     try {
       await api.cancelTakedown(releaseId);
