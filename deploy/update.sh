@@ -79,11 +79,15 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/pgbouncer"
 for f in "${FILES[@]}"; do
-  gh_curl -o "$tmp/$f" "https://raw.githubusercontent.com/$REPO/$rev/deploy/$f" \
-    || die "배포 파일을 받지 못했어요: deploy/$f @ ${rev:0:7} (비공개 저장소면 GITHUB_TOKEN 또는 github-token 파일)"
+  if ! gh_curl -o "$tmp/$f" "https://raw.githubusercontent.com/$REPO/$rev/deploy/$f"; then
+    # update.sh가 생기기 전 커밋이면 지금 것을 그대로 둔다
+    [ "$f" = update.sh ] && { rm -f "$tmp/$f"; continue; }
+    die "배포 파일을 받지 못했어요: deploy/$f @ ${rev:0:7} (비공개 저장소면 GITHUB_TOKEN 또는 github-token 파일)"
+  fi
 done
 mkdir -p pgbouncer
 for f in "${FILES[@]}"; do
+  [ -f "$tmp/$f" ] || continue
   if [ -f "$f" ] && cmp -s "$tmp/$f" "$f"; then continue; fi
   echo "update: 바뀜 $f"
   install -m 644 "$tmp/$f" "$f"
