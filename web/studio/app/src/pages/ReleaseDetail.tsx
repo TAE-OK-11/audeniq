@@ -32,6 +32,7 @@ import { ContractBundle } from '../components/ContractBundle';
 /** 아직 없는 값 — 실제 값처럼 진하게 보이지 않도록 흐리게 */
 const Empty = ({ children }: { children: string }) => <span className="aq-empty-val">{children}</span>;
 import { Badge, Tabs } from '../ui';
+import { PendingAddons, ReleaseAddons } from '../components/ReleaseAddons';
 import { territorySummary } from '../lib/territories';
 import { DELIVERY_STAGE, DELIVERY_TONE } from '../lib/delivery';
 
@@ -104,7 +105,8 @@ export function ReleaseDetail() {
   // 홈 카드(플랫폼 반영·피칭·홍보 성과)에서 ?tab=으로 바로 그 탭을 연다
   const [params] = useSearchParams();
   const [tab, setTab] = useState(() => {
-    const t = params.get('tab');
+    // 부가서비스 알림(?addon=)은 관리 탭의 부가서비스 칸으로
+    const t = params.get('tab') ?? (params.get('addon') ? 'manage' : null);
     return t && DETAIL_TABS.some(x => x.value === t) ? t : 'overview';
   });
   // 탭은 머리글 바로 아래에 붙는다 — 큰 머리(표지·버튼·진행 단계) 아래에 있어 내려 읽다 보면 화면 밖으로 사라졌고,
@@ -340,6 +342,8 @@ export function ReleaseDetail() {
           label="발매 진행 단계"
         />
       )}
+
+      {!isDraft && <PendingAddons releaseId={rel.id} />}
 
       {rejected && (
         <section className="aq-fix-panel is-rejected" aria-labelledby="aqRejectHead">
@@ -584,6 +588,7 @@ export function ReleaseDetail() {
                   <ContentIdCard releaseId={rel.id} />
                   <InfringementCard releaseId={rel.id} />
                 </section>
+                <ReleaseAddons releaseId={rel.id} editable={!rejected && rel.status !== 'cancelled'} />
                 <section className="aq-manage-group" aria-label="서비스·계약">
                   <h3 className="aq-manage-group-title">서비스·계약</h3>
                   <CorrectionCard releaseId={rel.id} />

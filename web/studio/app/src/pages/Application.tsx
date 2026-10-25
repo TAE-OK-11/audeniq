@@ -15,6 +15,7 @@ import { docsForRelease, useDocs } from '../store/docs';
 import { PROFILE_LINKS } from '../lib/dsp';
 import { CheckIcon } from '../components/Check';
 import { Badge } from '../ui';
+import { ApplicationCheckout } from '../components/ReleaseAddons';
 import { Glyph } from '../components/Glyph';
 import { rereleaseSummary } from '../lib/rerelease';
 import { territorySummary } from '../lib/territories';
@@ -119,6 +120,8 @@ export function Application() {
           </div>
         </div>
       )}
+
+      {done && <ApplicationCheckout releaseId={rel.id} />}
 
       <article className="aq-paper" aria-label="디지털 음원 배급 신청서">
         <header className="aq-paper-head">
