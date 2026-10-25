@@ -1,4 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { releaseDay } from '../lib/albumPrep';
 import { useNavigate, useSearchParams } from '../lib/router';
 import { api, type Release, type Track } from '../api/client';
 import { prefetchRelease } from '../api/prefetch';
@@ -201,7 +202,10 @@ export function Releases() {
                   <div className="min-0">
                     <span className="ui-row-title">{r.title || '제목 없는 발매'}</span>
                     <span className="ui-row-meta">{r.artist || '아티스트 없음'} · {r.track_count}곡</span>
-                    <span className="ui-row-meta">{r.release_date ?? '발매일 아직 없음'}</span>
+                    <span className="ui-row-meta">
+                      {r.release_date ?? '발매일 아직 없음'}
+                      {(() => { const dd = releaseDay(r.release_date, r.status); return dd && <b className={`aq-card-dday${dd.soon ? ' is-soon' : ''}`}>{dd.text}</b>; })()}
+                    </span>
                   </div>
                   <div className="aq-release-end">
                     <Badge tone={statusTone(r.status)} className={`aq-status is-${r.status}`}>{STATUS_LABEL[r.status] || r.status}</Badge>
