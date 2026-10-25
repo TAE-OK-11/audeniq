@@ -1,6 +1,14 @@
 use std::env;
 use std::sync::atomic::{AtomicU8, Ordering};
 
+/// The variable's value with surrounding whitespace trimmed; unset or blank is `None`.
+pub fn env_value(name: &str) -> Option<String> {
+    env::var(name)
+        .ok()
+        .map(|v| v.trim().to_owned())
+        .filter(|v| !v.is_empty())
+}
+
 fn optional_feature(value: Option<&str>) -> crate::error::Result<bool> {
     match value {
         None | Some("false") => Ok(false),

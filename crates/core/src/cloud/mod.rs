@@ -107,10 +107,7 @@ pub fn unb64(text: &str, what: &str) -> Result<Zeroizing<Vec<u8>>> {
         .map_err(|_| CloudError(format!("{what} returned invalid base64")))
 }
 
-pub fn sha256_hex(data: &[u8]) -> String {
-    use sha2::Digest;
-    crate::hex::encode(sha2::Sha256::digest(data))
-}
+pub use crate::domain::sha256_hex;
 
 /// CRC32C (Castagnoli), as GCP integrity fields use.
 pub fn crc32c(data: &[u8]) -> u32 {

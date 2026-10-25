@@ -15,7 +15,7 @@
 use super::{
     oauth::Principal,
     protocol::error_code,
-    tools::{ToolError, tool_error},
+    tools::{ToolError, tool_error, uuid_arg},
 };
 use crate::{
     api::AppState,
@@ -53,13 +53,6 @@ fn kind_arg(args: &Value) -> std::result::Result<&'static str, ToolError> {
             "kind must be AUDIO, IMAGE or DOCUMENT.",
         )),
     }
-}
-
-fn uuid_arg(args: &Value, key: &str) -> std::result::Result<Uuid, ToolError> {
-    args.get(key)
-        .and_then(Value::as_str)
-        .and_then(|v| v.parse().ok())
-        .ok_or_else(|| tool_error("INVALID_ARGUMENTS", &format!("{key} must be a UUID.")))
 }
 
 /// `start_upload`: a signed PUT for one file.

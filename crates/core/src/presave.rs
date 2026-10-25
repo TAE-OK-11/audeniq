@@ -19,6 +19,7 @@
 //! The token is erased as soon as a pre-save ends. AUDENIQ keeps no account,
 //! email or profile of the fan. A platform is offered when its settings are
 //! complete (`PRESAVE_{SPOTIFY,DEEZER,TIDAL}_CLIENT_ID` / `_CLIENT_SECRET`).
+use crate::config::env_value as env;
 use crate::{
     api::AppState,
     auth,
@@ -87,13 +88,6 @@ pub struct Provider {
     authorize: String,
     token: String,
     api: String,
-}
-
-fn env(name: &str) -> Option<String> {
-    std::env::var(name)
-        .ok()
-        .map(|v| v.trim().to_owned())
-        .filter(|v| !v.is_empty())
 }
 
 /// Development/test only: one loopback HTTP server stands in for every

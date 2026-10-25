@@ -13,6 +13,7 @@
 //! Secrets never leave the server; only the client keys the window script
 //! needs are sent. `PAYMENT_FIXTURE_BASE` (development/test only) points
 //! every provider at one loopback stand-in.
+use crate::config::env_value as env;
 use crate::error::{Error, Result};
 use serde_json::{Value, json};
 use std::{sync::OnceLock, time::Duration};
@@ -58,13 +59,6 @@ pub struct Provider {
     /// Payple: the demo or live window/auth host.
     payple_host: String,
     test: bool,
-}
-
-fn env(name: &str) -> Option<String> {
-    std::env::var(name)
-        .ok()
-        .map(|v| v.trim().to_owned())
-        .filter(|v| !v.is_empty())
 }
 
 fn fixture() -> Option<String> {
