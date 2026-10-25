@@ -11,8 +11,9 @@ import {
   cancelOrder, confirmFromReturn, fetchReleaseAddons, fetchTracks, lrcLines, orderStage, payWithBalance, payWithCard, putLrc, statusNote,
   type AddonOrder, type ReleaseAddons as State, type Service, type TrackRow,
 } from '../lib/addons';
-import { Badge, SkeletonList } from '../ui';
+import { Badge, IconTile, SkeletonList } from '../ui';
 import { Glyph, type GlyphName } from './Glyph';
+import { ManageHead } from './ManageHead';
 import { Modal, useModalClose } from './Modal';
 import { StageCard } from './StageCard';
 import { useToast } from './Toast';
@@ -71,14 +72,12 @@ export function AddonCheckout({ releaseId, state, onPaid, title = '부가서비�
   };
   return (
     <section className="aq-addon-checkout" aria-labelledby="addonPayTitle">
-      <div className="aq-addon-checkout-head">
-        <h2 id="addonPayTitle">{title}</h2>
-        <span>신청서에서 고른 부가서비스예요. 결제하면 바로 담당자에게 접수돼요.</span>
-      </div>
+      <ManageHead id="addonPayTitle" icon="card" title={title} status={{ tone: 'amber', label: `결제 대기 ${waiting.length}건` }} />
+      <p className="ui-field-help">신청서에서 고른 부가서비스예요. 결제하면 바로 담당자에게 접수돼요.</p>
       <ul className="aq-addon-lines">
         {waiting.map(o => (
           <li key={o.id}>
-            <span className="aq-addon-line-icon" aria-hidden="true"><Glyph name={ICON[o.service]} size={16} /></span>
+            <IconTile><Glyph name={ICON[o.service]} size={18} /></IconTile>
             <span className="min-0">
               <strong>{SERVICE_LABEL[o.service]}{o.tier ? ` · ${TIER[o.tier].label}` : ''}</strong>
               <small>{o.service === 'LYRIC_SYNC' ? `${o.quantity}곡 × ${money(o.unit_price)}` : o.title}</small>
@@ -135,36 +134,42 @@ export function ReleaseAddons({ releaseId, editable }: { releaseId: string; edit
   if (!state) return <SkeletonList rows={1} />;
   const open = state.items.find(o => o.id === openId) ?? null;
   const shown = state.items.filter(o => o.status !== 'CANCELLED' || o.paid_at);
+  const waiting = state.items.filter(o => o.status === 'AWAITING_PAYMENT').length;
+  const rows = shown.filter(o => o.status !== 'AWAITING_PAYMENT');
   return (
-    <section className="aq-manage-group aq-release-addons" aria-labelledby="releaseAddonsTitle">
-      <h3 className="aq-manage-group-title" id="releaseAddonsTitle">부가서비스</h3>
-      {state.items.some(o => o.status === 'AWAITING_PAYMENT') && <p className="aq-addon-empty">결제를 기다리는 부가서비스가 있어요. 이 발매 맨 위에서 결제할 수 있어요.</p>}
-      {shown.filter(o => o.status !== 'AWAITING_PAYMENT').length > 0 ? (
-        <div className="aq-catalog-cards">
-          {shown.filter(o => o.status !== 'AWAITING_PAYMENT').map(o => (
-            <button key={o.id} type="button" className="ui-row aq-ticket-card" onClick={() => setOpenId(o.id)}>
-              <span className="aq-ticket-icon" aria-hidden="true"><Glyph name={ICON[o.service]} size={18} /></span>
-              <span className="min-0">
-                <span className="ui-row-title">{SERVICE_LABEL[o.service]}{o.tier ? ` · ${TIER[o.tier].label}` : ''}</span>
-                <span className="ui-row-meta">{[o.service === 'MV_DISTRIBUTION' ? o.title : o.service === 'LYRIC_SYNC' ? `${o.quantity}곡` : '', money(o.amount), niceDate(o.created_at)].filter(Boolean).join(' · ')}</span>
-              </span>
-              <Badge tone={STATUS_TONE[o.status]}>{STATUS_LABEL[o.status]}</Badge>
+    <section className="aq-manage-group" aria-label="부가서비스">
+      <h3 className="aq-manage-group-title">부가서비스</h3>
+      <section className="ui-card aq-manage-card aq-release-addons" aria-labelledby="releaseAddonsTitle">
+        <ManageHead id="releaseAddonsTitle" icon="layers" title="신청한 부가서비스"
+          status={waiting ? { tone: 'amber', label: `결제 대기 ${waiting}건` } : null} />
+        <p className="ui-field-help">
+          {waiting ? '결제를 기다리는 부가서비스가 있어요. 이 발매 맨 위에서 결제할 수 있어요.'
+            : rows.length ? '신청한 부가서비스예요. 누르면 진행 단계와 결과를 볼 수 있어요.'
+            : '뮤직비디오 배급, 신속 발매, AI 가사 싱크는 발매 신청서의 ‘부가서비스’에서 고를 수 있어요.'}
+        </p>
+        {rows.length > 0 && (
+          <div className="ui-list">
+            {rows.map(o => (
+              <button key={o.id} type="button" className="ui-row" onClick={() => setOpenId(o.id)}>
+                <IconTile><Glyph name={ICON[o.service]} size={18} /></IconTile>
+                <span className="min-0">
+                  <span className="ui-row-title">{SERVICE_LABEL[o.service]}{o.tier ? ` · ${TIER[o.tier].label}` : ''}</span>
+                  <span className="ui-row-meta">{[o.service === 'MV_DISTRIBUTION' ? o.title : o.service === 'LYRIC_SYNC' ? `${o.quantity}곡` : '', money(o.amount), niceDate(o.created_at)].filter(Boolean).join(' · ')}</span>
+                </span>
+                <Badge tone={STATUS_TONE[o.status]}>{STATUS_LABEL[o.status]}</Badge>
+              </button>
+            ))}
+          </div>
+        )}
+        {editable && (
+          <div className="aq-addon-lrc-cta">
+            <button type="button" className="ui-btn is-soft" onClick={() => setLrcOpen(true)}>
+              <Glyph name="music" size={16} />싱크 가사 직접 올리기
             </button>
-          ))}
-        </div>
-      ) : !state.items.some(o => o.status === 'AWAITING_PAYMENT') && (
-        <p className="aq-addon-empty">뮤직비디오 배급, 신속 발매, AI 가사 싱크는 발매 신청서의 ‘부가서비스’에서 고를 수 있어요.</p>
-      )}
-      {editable && (
-        <button type="button" className="ui-row aq-ticket-card" onClick={() => setLrcOpen(true)}>
-          <span className="aq-ticket-icon" aria-hidden="true"><Glyph name="music" size={18} /></span>
-          <span className="min-0">
-            <span className="ui-row-title">싱크 가사 직접 올리기</span>
-            <span className="ui-row-meta">무료 · 만든 LRC 파일을 올리면 가사 서비스에 함께 등록해요</span>
-          </span>
-          <Glyph name="chevron-right" size={16} className="aq-set-chev" />
-        </button>
-      )}
+            <span className="ui-field-help">무료 · 만든 LRC 파일을 올리면 가사 서비스에 함께 등록해요</span>
+          </div>
+        )}
+      </section>
       {open && (
         <Modal title={`${SERVICE_LABEL[open.service]}${open.tier ? ` · ${TIER[open.tier].label}` : ''}`} onClose={() => setOpenId(null)}>
           <OrderDetail o={open} releaseId={releaseId} onChanged={s => { setState(s); void load(); }} />
