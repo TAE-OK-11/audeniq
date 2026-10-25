@@ -15,7 +15,7 @@ import { ROLE_LEVEL, levelOf, type StaffRole } from '../api';
 import {
   can, entry, opsApi,
   type AgentRow, type DevAppRow, type IssuerRow, type LimitRow, type OpsArea, type OpsIndex, type PartnerRow,
-  type PartnerStatus, type PayoutRow, type ProtectedRow, type RoyaltyReport, type StaffRow,
+  type PartnerStatus, type PayoutRow, type ProtectedRow, type RoyaltyReport, type StaffRow, type BalanceAccount,
 } from '../ops';
 
 export const LEVEL_NAME: Record<number, string> = { 1: '고객 지원', 2: '실무 담당', 3: '관리자', 4: '최고 관리자' };
@@ -782,14 +782,19 @@ function Issuers({ index }: { index: OpsIndex | undefined }) {
 export function OpsFinance() {
   const ix = useOpsIndex();
   const index = ix.data;
-  const [tab, setTab] = useState<'payouts' | 'royalty'>('payouts');
+  const [tab, setTab] = useState<'payouts' | 'royalty' | 'balance'>('payouts');
+  // 정산금 추가는 CLI로만 주는 최고 관리자(레벨 4)에게만 보인다 — 서버와 DB가 다시 확인한다
+  const owner = can(index, 'balance', 'credit');
   return (
     <OpsPage eyebrow="운영 도구" title="정산·지급 처리" sub="지급 요청을 지시·승인·실행하고, DSP 정산 리포트를 가져와 장부에 반영해요. 승인한 사람과 실행하는 사람은 달라야 해요."
       index={index} loading={ix.loading} error={ix.error} reload={ix.reload}>
       {!can(index, 'payouts', 'list') ? <Need finance /> : (
         <>
-          <Tabs label="정산·지급" value={tab} onChange={setTab} items={[{ value: 'payouts', label: '지급 처리' }, { value: 'royalty', label: '로열티 정산' }]} />
-          {tab === 'payouts' ? <PayoutDesk index={index} /> : <RoyaltyDesk index={index} />}
+          <Tabs label="정산·지급" value={tab} onChange={setTab} items={[
+            { value: 'payouts', label: '지급 처리' }, { value: 'royalty', label: '로열티 정산' },
+            ...(owner ? [{ value: 'balance' as const, label: '정산금 추가' }] : []),
+          ]} />
+          {tab === 'payouts' ? <PayoutDesk index={index} /> : tab === 'royalty' ? <RoyaltyDesk index={index} /> : <BalanceDesk index={index} />}
         </>
       )}
     </OpsPage>
@@ -905,6 +910,111 @@ function PayoutAction({ act, busy, onClose, onRun }: {
         </div>
       </form>
     </Modal>
+  );
+}
+
+const BALANCE_MAX = 10_000_000;
+const ORG_KIND: Record<string, string> = { PERSONAL: '개인', LABEL: '레이블', COMPANY: '회사' };
+
+/** 정산금 직접 추가 — 최고 관리자만. 계정 이메일로 작업 공간을 찾고, 금액·내역 이름·사유를 남긴다.
+ *  장부 기록이라 고치거나 지울 수 없어서, 확인 창과 인증 코드를 거친다 (crates/core/src/staff_ops.rs balance.credit, 0159) */
+function BalanceDesk({ index }: { index: OpsIndex | undefined }) {
+  const { run, busy, modal } = useRun(index);
+  const [email, setEmail] = useState('');
+  const [found, setFound] = useState<BalanceAccount | null>(null);
+  const [looking, setLooking] = useState(false);
+  const [lookErr, setLookErr] = useState('');
+  const [org, setOrg] = useState('');
+  const [f, setF] = useState({ amount: '', title: '', reason: '' });
+  if (!can(index, 'balance', 'credit')) return <Need level={4} />;
+  const lookup = async (to = email.trim()) => {
+    if (!to) return;
+    setLooking(true); setLookErr('');
+    try {
+      const r = await opsApi.read<BalanceAccount>('balance', 'show', { email: to });
+      setFound(r);
+      setOrg(o => (r.orgs.some(x => x.org_id === o) ? o : r.orgs[0]?.org_id ?? ''));
+    } catch (e) { setFound(null); setLookErr(opsError(e)); } finally { setLooking(false); }
+  };
+  const target = found?.orgs.find(o => o.org_id === org);
+  const amount = Number(f.amount || 0);
+  const amountErr = f.amount && (amount <= 0 || amount > BALANCE_MAX) ? `1원부터 ${BALANCE_MAX.toLocaleString('ko-KR')}원까지 넣을 수 있어요.` : '';
+  const ready = !!target && amount > 0 && amount <= BALANCE_MAX && !!f.title.trim() && !!f.reason.trim();
+  const won = (n: number | string) => `${Number(n).toLocaleString('ko-KR')}원`;
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!ready || !target) return;
+    const res = await run('balance', 'credit', { org_id: target.org_id, amount: String(amount), title: f.title.trim(), reason: f.reason.trim() }, {
+      confirm: {
+        title: '정산금을 추가할까요?',
+        message: `${target.name}(${found?.email})의 정산금에 ${won(amount)}을 더해요. 아티스트 정산 내역에 ‘${f.title.trim()}’으로 보이고 바로 출금할 수 있게 돼요. 장부 기록이라 고치거나 지울 수 없어요.`,
+        confirmLabel: '추가', danger: true,
+      },
+      done: '정산금을 추가했어요. 아티스트에게 알림이 갔어요.',
+    });
+    if (res !== undefined) { setF({ amount: '', title: '', reason: '' }); await lookup(found?.email); }
+  };
+  return (
+    <>
+      <Section title="정산금 추가">
+        <Callout tone="warn">최고 관리자만 할 수 있어요. 추가한 금액은 아티스트가 바로 출금하거나 부가서비스 결제에 쓸 수 있고, 장부에 남아 고치거나 지울 수 없어요. 누가 언제 왜 넣었는지 감사 기록에 남아요.</Callout>
+        <form className="ui-card adm-ops-form" onSubmit={e => { e.preventDefault(); void lookup(); }}>
+          <Field label="아티스트 계정 이메일" htmlFor="ops-b-email" error={lookErr || undefined}>
+            <input id="ops-b-email" type="email" className={inputClass()} autoComplete="off" value={email} onChange={e => setEmail(e.target.value)} placeholder="artist@example.com" />
+          </Field>
+          <button type="submit" className="ui-btn is-soft" disabled={looking || !email.trim()}>{looking ? '찾는 중…' : '찾기'}</button>
+        </form>
+      </Section>
+      {found && (found.orgs.length === 0 ? <Empty title="이 계정에 속한 작업 공간이 없어요" /> : (
+        <Section title="넣을 곳">
+          {target && (
+            <dl className="ui-card adm-ops-kv">
+              <div><dt>작업 공간</dt><dd>{target.name} · {ORG_KIND[target.kind] ?? target.kind} <span className="is-mono adm-ops-dim">{target.org_id.slice(0, 8)}</span></dd></div>
+              <div><dt>지금 받을 수 있는 금액</dt><dd><Money value={target.withdrawable} /></dd></div>
+              {amount > 0 && !amountErr && <div><dt>추가한 뒤</dt><dd><b><Money value={Number(target.withdrawable) + amount} /></b></dd></div>}
+            </dl>
+          )}
+          <form className="ui-card adm-ops-form" onSubmit={submit}>
+            {found.orgs.length > 1 && (
+              <Field label="작업 공간" htmlFor="ops-b-org">
+                <select id="ops-b-org" className={selectClass()} value={org} onChange={e => setOrg(e.target.value)}>
+                  {found.orgs.map(o => <option key={o.org_id} value={o.org_id}>{o.name} · {ORG_KIND[o.kind] ?? o.kind}{o.role === 'OWNER' ? '' : ` (${o.role})`}</option>)}
+                </select>
+              </Field>
+            )}
+            <Field label="금액 (원)" htmlFor="ops-b-amount" error={amountErr || undefined} help={`한 번에 ${won(BALANCE_MAX)}까지`}>
+              <input id="ops-b-amount" className={inputClass()} inputMode="numeric" value={f.amount ? Number(f.amount).toLocaleString('ko-KR') : ''}
+                onChange={e => setF({ ...f, amount: e.target.value.replace(/\D/g, '').replace(/^0+/, '').slice(0, 9) })} placeholder="0" />
+            </Field>
+            <Field label="정산 내역에 보일 이름" htmlFor="ops-b-title" help="아티스트에게 그대로 보여요. 예: 9월 정산금">
+              <input id="ops-b-title" className={inputClass()} maxLength={100} value={f.title} onChange={e => setF({ ...f, title: e.target.value })} />
+            </Field>
+            <Field label="사유 (내부 기록)" htmlFor="ops-b-reason" help="아티스트에게는 보이지 않아요. 근거 문서·문의 번호를 남겨 주세요.">
+              <input id="ops-b-reason" className={inputClass()} maxLength={500} value={f.reason} onChange={e => setF({ ...f, reason: e.target.value })} />
+            </Field>
+            <button type="submit" className="ui-btn is-primary" disabled={busy || !ready}>{amount > 0 && !amountErr ? `${won(amount)} 추가` : '추가'}</button>
+          </form>
+          {target && target.credits.length > 0 && (
+            <div className="ui-card adm-table-wrap">
+              <table className="adm-table">
+                <thead><tr><th>최근 추가</th><th>금액</th><th>사유</th><th>시간</th></tr></thead>
+                <tbody>
+                  {target.credits.map(c => (
+                    <tr key={c.id}>
+                      <td><b>{c.title}</b></td>
+                      <td><Money value={c.amount} /></td>
+                      <td className="small">{c.reason ?? '—'}</td>
+                      <td className="small" title={when(c.created_at)}>{ago(c.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Section>
+      ))}
+      {modal}
+    </>
   );
 }
 

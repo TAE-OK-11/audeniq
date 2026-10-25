@@ -774,3 +774,107 @@ async fn without_the_operations_login_the_console_points_to_the_cli(pool: PgPool
         )
     );
 }
+
+#[sqlx::test]
+async fn only_an_owner_adds_settlement_balance(pool: PgPool) {
+    let app = console(&pool, true).await;
+    let (owner, _) = staff(&app, &pool, "OWNER").await;
+    let (admin, _) = staff(&app, &pool, "ADMIN").await;
+    let artist = user(&app).await;
+    let keys = audeniq_core::payout_keys::KeyRing::from_env(false).unwrap();
+    let email = audeniq_core::pii::user_email(&keys, &pool, artist.user)
+        .await
+        .unwrap();
+    let credit = json!({"org_id": artist.org, "amount": "50000", "title": "9월 정산금", "reason": "DSP 리포트 수기 반영"});
+
+    // An ADMIN (level 3) neither sees nor adds.
+    let (s, v) = send(
+        &app,
+        "GET",
+        &format!("/api/staff/ops/balance/show?email={email}"),
+        Value::Null,
+        Some(&admin),
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN, "{v}");
+    let (s, v) = send(
+        &app,
+        "POST",
+        "/api/staff/ops/balance/credit",
+        credit.clone(),
+        Some(&admin),
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN, "{v}");
+    assert_eq!(v["error"]["code"], "STAFF_LEVEL_REQUIRED");
+
+    // Bad amounts never reach the ledger.
+    for amount in ["0", "-1", "10.5", "10000001"] {
+        let mut b = credit.clone();
+        b["amount"] = json!(amount);
+        let (_, v) = send(
+            &app,
+            "POST",
+            "/api/staff/ops/balance/credit",
+            b,
+            Some(&owner),
+        )
+        .await;
+        assert_eq!(v["error"]["code"], "OPS_ARGUMENT_INVALID", "{amount} {v}");
+    }
+
+    let (s, v) = send(
+        &app,
+        "POST",
+        "/api/staff/ops/balance/credit",
+        credit,
+        Some(&owner),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["withdrawable"], "50000");
+    let mut c = pool.acquire().await.unwrap();
+    assert_eq!(
+        finance::withdrawable(&mut c, artist.org, None)
+            .await
+            .unwrap(),
+        "50000".parse::<Decimal>().unwrap()
+    );
+    let (title, by): (String, Option<Uuid>) = sqlx::query_as(
+        "SELECT description, created_by FROM finance.ledger_transactions WHERE org_id=$1 AND transaction_code='MANUAL_CREDIT'",
+    )
+    .bind(artist.org)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!((title.as_str(), by), ("9월 정산금", Some(owner.user)));
+    let audited: i64 = sqlx::query_scalar("SELECT count(*) FROM operations.audit_events WHERE action='balance.credit' AND org_id=$1 AND actor_user_id=$2")
+        .bind(artist.org)
+        .bind(owner.user)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(audited, 1);
+
+    let (s, v) = send(
+        &app,
+        "GET",
+        &format!("/api/staff/ops/balance/show?email={email}"),
+        Value::Null,
+        Some(&owner),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["orgs"][0]["withdrawable"], "50000", "{v}");
+    assert_eq!(v["orgs"][0]["credits"][0]["title"], "9월 정산금", "{v}");
+
+    // The database itself refuses anyone but an active OWNER, even on the operations login.
+    let ops = ops_pool(&pool).await;
+    let e = sqlx::query("SELECT finance.staff_credit_balance($1,$2,1000,'x','y')")
+        .bind(admin.user)
+        .bind(artist.org)
+        .execute(&ops)
+        .await
+        .unwrap_err();
+    assert!(e.to_string().contains("STAFF_OWNER_REQUIRED"), "{e}");
+}
