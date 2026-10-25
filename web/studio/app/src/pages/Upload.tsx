@@ -33,6 +33,7 @@ import {
 } from '../lib/dsp';
 import { uid } from '../lib/store';
 import { CheckIcon } from '../components/Check';
+import { ChipPicker, OTHER } from '../components/ChipPicker';
 import { AddonSummary, EMPTY_ADDONS, LyricDetail, MvDetail, addonProblem, type AddonFields } from '../components/AddonOptions';
 import { mockOrdersFromApplication } from '../lib/addons';
 import { Glyph } from '../components/Glyph';
@@ -525,65 +526,12 @@ const DSP_GROUPS: [string, (d: { region: string; category?: string }) => boolean
   ['피트니스·크리에이터·게임 라이선스', d => d.category === 'LICENSING'],
 ];
 
-const OTHER = '기타';
 const AI_USES = [
   '전체를 AI로 제작했어요', '작곡(멜로디)에 AI 도움을 받았어요', '작사에 AI 도움을 받았어요', 'AI로 보컬(목소리)을 만들었어요',
   '편곡·반주에 AI를 사용했어요', '믹싱·마스터링에 AI 도구를 썼어요', '커버아트를 AI로 만들었어요',
 ];
 const AI_TOOLS = ['Suno', 'Udio', 'ChatGPT', 'Stable Audio', 'AIVA', 'Midjourney'];
 const EXPRESS_REASONS = ['공연 일정에 맞춰야 해요', '방송·광고 일정이 있어요', '이벤트·프로모션 일정이 있어요', '영상·드라마 공개일에 맞춰야 해요'];
-
-/** 버튼으로 고르는 선택지 — 직접 타이핑은 ‘기타’를 눌렀을 때만 */
-function ChipPicker({ id, options, value, onChange, other, onOther, otherPlaceholder, single, list }: {
-  id: string; options: string[]; value: string[]; onChange: (v: string[]) => void;
-  other?: string; onOther?: (v: string) => void; otherPlaceholder?: string; single?: boolean;
-  /** 문장처럼 긴 선택지는 한 줄에 하나씩, 고른 표시는 오른쪽에 */
-  list?: boolean;
-}) {
-  const toggle = (opt: string) => {
-    const on = value.includes(opt);
-    onChange(single ? (on ? [] : [opt]) : on ? value.filter(v => v !== opt) : [...value, opt]);
-  };
-  const all = onOther ? [...options, OTHER] : options;
-  if (list) {
-    return (
-      <div className="aq-chip-picker" id={id}>
-        <div className="aq-pick-list" role={single ? 'radiogroup' : 'group'}>
-          {all.map(opt => {
-            const on = value.includes(opt);
-            return (
-              <button
-                key={opt} type="button" className={`aq-pick${on ? ' is-on' : ''}`}
-                role={single ? 'radio' : undefined} aria-checked={single ? on : undefined} aria-pressed={single ? undefined : on}
-                onClick={() => toggle(opt)}
-              >
-                <span>{opt === OTHER ? '기타 (직접 입력)' : opt}</span>
-                <span className={`aq-pick-mark${single ? ' is-radio' : ''}`} aria-hidden="true">{on && <CheckIcon size={12} />}</span>
-              </button>
-            );
-          })}
-        </div>
-        {onOther && value.includes(OTHER) && (
-          <input className="aq-chip-other" maxLength={300} value={other ?? ''} placeholder={otherPlaceholder} onChange={e => onOther(e.target.value)} autoFocus />
-        )}
-      </div>
-    );
-  }
-  return (
-    <div className="aq-chip-picker" id={id}>
-      <div className="aq-chips" role="group">
-        {all.map(opt => (
-          <button key={opt} type="button" className={`aq-chip${value.includes(opt) ? ' is-on' : ''}`} aria-pressed={value.includes(opt)} onClick={() => toggle(opt)}>
-            {opt === OTHER ? '기타 (직접 입력)' : opt}
-          </button>
-        ))}
-      </div>
-      {onOther && value.includes(OTHER) && (
-        <input className="aq-chip-other" maxLength={300} value={other ?? ''} placeholder={otherPlaceholder} onChange={e => onOther(e.target.value)} autoFocus />
-      )}
-    </div>
-  );
-}
 
 /** 고른 버튼을 심사용 문장으로 합친다 */
 function aiSummary(o: Pick<ReleaseOptions, 'aiUses' | 'aiTools' | 'aiUseOther' | 'aiToolOther'>): string {
