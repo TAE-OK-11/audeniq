@@ -28,6 +28,10 @@ import { fixCountWord, fixPath, splitCorrections } from '../lib/corrections';
 import { StageCard } from '../components/StageCard';
 import { Glyph } from '../components/Glyph';
 import { ContractBundle } from '../components/ContractBundle';
+import { AlbumPrep } from '../components/AlbumPrep';
+import { TrackSheet } from '../components/TrackSheet';
+import { CopyButton } from '../components/CopyButton';
+import { albumPrep, draftTrackOf, releaseDay, type PrepItem } from '../lib/albumPrep';
 
 /** 아직 없는 값 — 실제 값처럼 진하게 보이지 않도록 흐리게 */
 const Empty = ({ children }: { children: string }) => <span className="aq-empty-val">{children}</span>;
@@ -137,6 +141,8 @@ export function ReleaseDetail() {
     if (keepY !== null) window.scrollTo(0, keepY);
   }, [tab, keepY]);
   const [deleting, setDeleting] = useState(false);
+  // 곡 상세 창 — 정보 탭 트랙 목록에서 누른 곡의 순서
+  const [openTrack, setOpenTrack] = useState<number | null>(null);
   const [withdrawing, setWithdrawing] = useState(false);
   const { data: rel, error, loading, reload } = useAsync(
     // 없는 발매(404)는 오류가 아니라 '찾을 수 없음' — 다시 시도해도 소용없으니 목록으로 안내한다
@@ -213,6 +219,27 @@ export function ReleaseDetail() {
   const dateLabel = rel.status === 'live' || rel.status === 'closed' ? '발매일' : '발매 예정일';
   // 배지 건수는 아래에 보여 주는 고칠 칸과 요청 서류를 모두 센다 (2건이라면서 3개를 보여 주던 것)
   const fixTotal = fixes.length + proofs.length;
+  const dday = releaseDay(rel.release_date, rel.status);
+  const totalMs = rel.tracks.reduce((n, t) => n + (t.duration_ms ?? 0), 0);
+  // 앨범별 발매 준비 현황 — 끝난 발매(발매 완료 3일 뒤)·취소·거절에는 보여 주지 않는다
+  const agreementDoc = docs.find(x => x.kind === 'agreements');
+  const prep = settledLive || ['cancelled', 'rejected', 'closed'].includes(rel.status) ? null : albumPrep({
+    rel, draft: d, coverReady: coverOk || !!d?.coverName,
+    agreement: !agreementDoc ? 'none' : agreementDoc.localSignatureAt || agreementDoc.electronic ? 'signed' : agreementDoc.reviewStatus === 'approved' ? 'to-sign' : 'none',
+    proofsDue: pendingProofs(allDocs, rel.id, rel.title).length,
+  });
+  const wizard = `/upload?edit=${encodeURIComponent(rel.id)}`;
+  const prepGo = (key: PrepItem['key']): (() => void) | null => {
+    if (key === 'agreement' && agreementDoc) return () => nav(`/contracts?doc=${encodeURIComponent(agreementDoc.id)}`);
+    if (key === 'proofs') { const due = pendingProofs(allDocs, rel.id, rel.title); return () => nav(proofPath(due[0])); }
+    if (['cover', 'audio', 'credits', 'date'].includes(key)) return needsFix ? () => nav(fixPath(rel.id)) : editInWizard ? () => nav(wizard) : null;
+    return null;
+  };
+  // 곡을 고칠 곳 — 작성 중·보완이면 신청서, 접수 뒤에는 정보 수정 요청(문의)
+  const trackEdit = rel.status === 'cancelled' || rejected ? null
+    : needsFix ? { label: '신청서에서 고치기', go: () => nav(fixPath(rel.id)) }
+    : editInWizard ? { label: '신청서에서 고치기', go: () => nav(wizard) }
+    : { label: '정보 수정 요청하기', go: () => nav(`/inquiries?new=edit&release=${encodeURIComponent(rel.id)}`) };
 
   // 접수한 신청 취소 — 한 달 3회까지 직접, 그 이상·배급 시작 후는 문의로
   const canWithdraw = ['review', 'needs', 'scheduled'].includes(rel.status);
@@ -321,27 +348,32 @@ export function ReleaseDetail() {
           <h1>{rel.title || '제목 없는 발매'}</h1>
           <p className="aq-detail-artist">{rel.artist || '아티스트 없음'}</p>
           {/* 비어 있는 값은 아래 '발매 정보'에서 '입력 전'으로 보여 주므로 여기서는 있는 것만 */}
-          {(rel.tracks.length > 0 || genre || rel.release_date) && (
-            <div className="aq-detail-facts">
-              {rel.tracks.length > 0 && <span>{rel.tracks.length}곡</span>}
-              {genre && <span>{genre}</span>}
-              {rel.release_date && <span>{rel.release_date}</span>}
-            </div>
+          {/* 알약 여러 개 대신 한 줄 — 곡 수 · 총 길이 · 장르, 그 아래 발매일과 D-day */}
+          {(rel.tracks.length > 0 || genre) && (
+            <p className="aq-detail-meta">{[rel.tracks.length ? `${rel.tracks.length}곡` : '', totalMs ? durationLabel(totalMs) : '', genre].filter(Boolean).join(' · ')}</p>
+          )}
+          {rel.release_date && (
+            <p className="aq-detail-when">
+              <Glyph name="calendar" size={15} />
+              <span><span className="aq-when-label">{dateLabel} </span>{rel.release_date}</span>
+              {dday && <b className={`aq-dday${dday.soon ? ' is-soon' : ''}`}>{dday.text}</b>}
+            </p>
           )}
         </div>
         <div className="aq-detail-actions is-wide">{actionButtons}</div>
+        {/* 진행 단계는 머리 카드 안 아래쪽 흰 판으로 — 따로 카드 하나를 더 쌓지 않는다 */}
+        {!settledLive && (
+          <StageCard
+            steps={PIPELINE.map((_, i) => stageLabel(i))} current={stage} complete={rel.status === 'live'}
+            tone={rejected ? 'error' : needsFix ? 'warn' : undefined}
+            note={STAGE_NOTE[rel.status] && !needsFix && !rejected ? STAGE_NOTE[rel.status] : undefined}
+            label="발매 진행 단계"
+          />
+        )}
       </div>
 
       <div className="row-actions aq-detail-actions is-narrow">{actionButtons}</div>
 
-      {!settledLive && (
-        <StageCard
-          steps={PIPELINE.map((_, i) => stageLabel(i))} current={stage} complete={rel.status === 'live'}
-          tone={rejected ? 'error' : needsFix ? 'warn' : undefined}
-          note={STAGE_NOTE[rel.status] && !needsFix && !rejected ? STAGE_NOTE[rel.status] : undefined}
-          label="발매 진행 단계"
-        />
-      )}
 
       {!isDraft && <PendingAddons releaseId={rel.id} />}
 
@@ -408,77 +440,92 @@ export function ReleaseDetail() {
         style={keepY !== null ? { minHeight: `calc(100dvh - ${stickTop + (tabsBox.current?.offsetHeight ?? 0)}px)` } : undefined}>
         {tab === 'overview' && (
           <div className="aq-detail-stack">
-            <div className="split">
+            {prep && <AlbumPrep items={prep} go={prepGo} />}
+            {/* 커버가 없으면 빈 커버 카드 대신 발매 정보를 넓게 — 커버 올리기는 위 '발매 준비'에서 */}
+            <div className={coverOk ? 'split' : undefined}>
               <div className="aq-relinfo-card">
                 <h2 className="subhead">발매 정보</h2>
-                <dl className="ui-kv is-2">
+                <dl className={`ui-kv${coverOk ? ' is-2' : ''}`}>
                   <div><dt>아티스트</dt><dd>{rel.artist || <Empty>입력 전</Empty>}</dd></div>
                   <div><dt>발매 유형</dt><dd>{kindLabel(d?.type) || <Empty>입력 전</Empty>}</dd></div>
                   <div><dt>주요 언어</dt><dd>{languageLabel(d?.language) || <Empty>입력 전</Empty>}</dd></div>
                   <div><dt>{dateLabel}</dt><dd>{rel.release_date || <Empty>미정</Empty>}</dd></div>
                   {d?.preorder_start && <div><dt>사전 공개</dt><dd>{d.preorder_start}부터</dd></div>}
-                  <div><dt>UPC / EAN</dt><dd>{d?.upc || <Empty>등록 전</Empty>}</dd></div>
+                  <div><dt>UPC / EAN</dt><dd className="aq-code-line">{d?.upc ? <><span className="is-mono">{d.upc}</span><CopyButton text={d.upc} className="ui-btn is-xs is-white" /></> : <Empty>등록 전</Empty>}</dd></div>
                   <div><dt>장르</dt><dd>{genre || <Empty>입력 전</Empty>}</dd></div>
                   <div><dt>레이블</dt><dd>{d?.label || <Empty>입력 전</Empty>}</dd></div>
+                  {!coverOk && <div><dt>최근 수정</dt><dd>{localStamp(rel.updated_at || rel.created_at)}</dd></div>}
                 </dl>
                 <h2 className="subhead">앨범 소개</h2>
                 <p className="muted small break">{d?.notes || '등록된 소개가 없어요.'}</p>
               </div>
-              <div className="studio-album-aside aq-cover-card">
-                <h2 className="subhead">커버아트</h2>
-                <div className={`aq-cover-stage${coverOk ? '' : ' is-empty'}`}>
-                  {coverOk ? (
-                    <>
-                      {/* 커버 색이 카드 바탕으로 번지게 — 같은 이미지를 흐리게 깐다 */}
-                      <img className="aq-cover-glow" src={coverSrc} alt="" aria-hidden="true" decoding="async" />
-                      <img className="aq-detail-cover-large" src={coverSrc} alt={`${rel.title} 커버아트`} decoding="async" onError={coverFailed} />
-                    </>
-                  ) : (
-                    <div className="aq-detail-cover-empty">
-                      {/* 이미지가 없을 땐 위 머리 카드와 같은 발매별 색 커버 */}
-                      <ReleaseCover id={rel.id} className="cover aq-detail-cover-fallback" />
-                      <span>{d?.coverName ? '미리보기 없음' : '커버아트 등록 전'}</span>
-                    </div>
-                  )}
+              {coverOk && (
+                <div className="studio-album-aside aq-cover-card">
+                  <h2 className="subhead">커버아트</h2>
+                  <div className={`aq-cover-stage${coverOk ? '' : ' is-empty'}`}>
+                    {coverOk ? (
+                      <>
+                        {/* 커버 색이 카드 바탕으로 번지게 — 같은 이미지를 흐리게 깐다 */}
+                        <img className="aq-cover-glow" src={coverSrc} alt="" aria-hidden="true" decoding="async" />
+                        <img className="aq-detail-cover-large" src={coverSrc} alt={`${rel.title} 커버아트`} decoding="async" onError={coverFailed} />
+                      </>
+                    ) : (
+                      <div className="aq-detail-cover-empty">
+                        {/* 이미지가 없을 땐 위 머리 카드와 같은 발매별 색 커버 */}
+                        <ReleaseCover id={rel.id} className="cover aq-detail-cover-fallback" />
+                        <span>{d?.coverName ? '미리보기 없음' : '커버아트 등록 전'}</span>
+                      </div>
+                    )}
+                  </div>
+                  <dl className="aq-cover-meta">
+                    {d?.coverName && <div><dt>파일</dt><dd className="break">{d.coverName}</dd></div>}
+                    <div><dt>최근 수정</dt><dd>{rel.updated_at ? localStamp(rel.updated_at) : localStamp(rel.created_at)}</dd></div>
+                  </dl>
                 </div>
-                <dl className="aq-cover-meta">
-                  {d?.coverName && <div><dt>파일</dt><dd className="break">{d.coverName}</dd></div>}
-                  <div><dt>최근 수정</dt><dd>{rel.updated_at ? localStamp(rel.updated_at) : localStamp(rel.created_at)}</dd></div>
-                </dl>
-              </div>
+              )}
             </div>
             <div className="aq-relinfo-card">
-              <h2 className="subhead">트랙 {rel.tracks.length}곡</h2>
+              <div className="aq-tracklist-head">
+                <h2 className="subhead">트랙 {rel.tracks.length}곡</h2>
+                {totalMs > 0 && <span>총 {durationLabel(totalMs)}</span>}
+              </div>
               {rel.tracks.length ? (
-                <div className="aq-catalog-cards aq-stagger">
-                  {rel.tracks.map((t, i) => (
-                    <div key={t.id} className="aq-track-card">
-                      <span className="aq-track-num" aria-hidden="true">{i + 1}</span>
-                      <div className="min-0">
-                        <span className="ui-row-title">
-                          {t.title || '곡명 없음'}{t.version ? ` (${t.version})` : ''}
-                          {t.explicit && <em className="aq-explicit" title="Explicit">E</em>}
-                        </span>
-                        {/* 크레딧 · 길이 / 식별자 · 파일 — 잘리지 않게 두 줄로 나눈다 */}
-                        <span className="ui-row-meta aq-track-credit">
-                          {creditParts(t.composers, t.lyricists).map(c => <span key={c}>{c}</span>)}
-                          {t.duration_ms ? <span>{durationLabel(t.duration_ms)}</span> : null}
-                        </span>
-                        <span className="aq-track-facts">
-                          <span className="ui-tag">ISRC {t.isrc || '등록 전'}</span>
-                          <span className={`ui-tag aq-track-file${t.audioName ? '' : ' is-missing'}`}>
-                            {t.audioName ? <><Glyph name="check" size={12} />{t.audioName}</> : '음원 파일 없음'}
+                <ol className="aq-tracklist">
+                  {rel.tracks.map((t, i) => {
+                    const credit = creditParts(t.composers, t.lyricists).join(' · ');
+                    return (
+                      <li key={t.id}>
+                        <button type="button" className="aq-trackrow" onClick={() => setOpenTrack(i)} aria-label={`${i + 1}번 곡 ${t.title || '곡명 없음'} 자세히 보기`}>
+                          <span className="aq-trackrow-no" aria-hidden="true">{i + 1}</span>
+                          <span className="aq-trackrow-main">
+                            <span className="aq-trackrow-title">
+                              {t.title || '곡명 없음'}{t.version && <small> ({t.version})</small>}
+                              {t.explicit && <em className="aq-explicit" title="Explicit">E</em>}
+                            </span>
+                            <span className="aq-trackrow-meta">
+                              {!t.audioName && <b className="aq-trackrow-warn">음원 없음</b>}
+                              {credit || '크레딧 입력 전'}
+                            </span>
                           </span>
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                          <span className="aq-trackrow-side">
+                            <span className="aq-trackrow-isrc">{t.isrc ? t.isrc : 'ISRC 발급 전'}</span>
+                            <span className="aq-trackrow-time">{t.duration_ms ? durationLabel(t.duration_ms) : '—'}</span>
+                            <Glyph name="chevron-right" size={16} className="aq-track-chev" />
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ol>
               ) : (
                 <div className="empty-note">
                   등록된 트랙이 없어요.<br />
                   <button type="button" className="ui-btn is-white is-sm" onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}>트랙 등록하기 <Glyph name="chevron-right" size={13} /></button>
                 </div>
+              )}
+              {openTrack !== null && rel.tracks[openTrack] && (
+                <TrackSheet track={rel.tracks[openTrack]} no={openTrack + 1} draft={draftTrackOf(rel.tracks[openTrack], d)}
+                  onClose={() => setOpenTrack(null)} edit={trackEdit} />
               )}
               {/* 제출 전 안내 — 접수가 끝난 발매(검토 중·발매 완료)에서는 할 수 있는 일이 없는 문장이었다 */}
               {(isDraft || needsFix) && (
