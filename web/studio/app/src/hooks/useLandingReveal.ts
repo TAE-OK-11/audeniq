@@ -5,7 +5,7 @@
 // 초점이 들어가면 바로 제자리, 탭을 숨기면 진행 중인 연출을 끝낸다. 동작 줄이기·미지원 브라우저에서는 아무것도 하지 않는다.
 // (docs/DESIGN_SYSTEM.md 규칙 19의 예외 — 홈 첫 화면에만 쓴다. 다른 화면의 짧은 스크롤 등장은 useScrollReveal)
 import { useLayoutEffect, useRef, type RefObject } from 'react';
-import { hasEntranceAnimation } from './useScrollReveal';
+import { entryMotion, hasEntranceAnimation, rise, type EntryMotion } from './useScrollReveal';
 
 export interface RevealGroup {
   selector: string;
@@ -13,16 +13,17 @@ export interface RevealGroup {
   delay?: (i: number, el: HTMLElement, first: boolean) => number;
 }
 
-const KEYFRAMES: Keyframe[] = [{ opacity: 0, transform: 'translateY(16px)' }, { opacity: 1, transform: 'none' }];
 const EASING = 'cubic-bezier(.22,.61,.36,1)';
-const FIRST_MS = 600;
 const SCROLL_MS = 480;
+const SCROLL_RISE = rise(16);
 const WAITING = 'aq-motion-waiting';
 
 /** key가 바뀔 때마다(불러오기가 끝나 내용이 그려지면) 아직 나타나지 않은 덩어리만 새로 맡는다 — 한 번 나타난 것은 다시 움직이지 않는다 */
 export function useLandingReveal(root: RefObject<HTMLElement | null>, groups: RevealGroup[], key: unknown) {
   const seen = useRef(new WeakSet<HTMLElement>());
   const firstRun = useRef(true);
+  // 앱을 연 첫 화면이면 길게, 다른 화면에서 옮겨 왔으면 짧게 — 불러오기 뒤 다시 돌 때도 처음 정한 크기를 쓴다
+  const entry = useRef<EntryMotion | null>(null);
 
   // 그리기 전에 숨긴다 — 한 프레임이라도 제자리에 보였다가 사라지지 않게
   useLayoutEffect(() => {
@@ -31,6 +32,7 @@ export function useLandingReveal(root: RefObject<HTMLElement | null>, groups: Re
     if (!box || reduced || typeof IntersectionObserver === 'undefined' || !box.animate) return;
     const initial = firstRun.current;
     firstRun.current = false;
+    const motion = (entry.current ??= entryMotion());
 
     const delays = new Map<HTMLElement, number>();
     const firsts = new Set<HTMLElement>();
@@ -46,7 +48,7 @@ export function useLandingReveal(root: RefObject<HTMLElement | null>, groups: Re
         if (hasEntranceAnimation(el)) cssEntrance.add(el);
         const first = inView && (initial || window.scrollY < 40);
         if (first) firsts.add(el);
-        delays.set(el, g.delay?.(i, el, first) ?? 0);
+        delays.set(el, Math.round((g.delay?.(i, el, first) ?? 0) * (first ? motion.pace : 1)));
       });
     }
 
@@ -58,7 +60,8 @@ export function useLandingReveal(root: RefObject<HTMLElement | null>, groups: Re
       seen.current.add(el);
       // 연출을 먼저 걸고 숨김을 푼다 — 한 프레임이라도 제자리에 보였다가 다시 내려가지 않게
       if (!now && !document.hidden) {
-        const a = el.animate(KEYFRAMES, { duration: firsts.has(el) ? FIRST_MS : SCROLL_MS, easing: EASING, fill: 'backwards', delay: delays.get(el) ?? 0 });
+        const first = firsts.has(el);
+        const a = el.animate(first ? motion.keyframes : SCROLL_RISE, { duration: first ? motion.ms : SCROLL_MS, easing: EASING, fill: 'backwards', delay: delays.get(el) ?? 0 });
         active.set(el, a);
         a.finished.then(() => { if (active.get(el) === a) active.delete(el); }, () => {});
       }

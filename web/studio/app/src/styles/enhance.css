@@ -175,8 +175,8 @@ img{max-width:100%}
 
 /* ---------- 버튼 ---------- */
 .aq-spinner{display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid var(--aq-gray-300);border-right-color:transparent;animation:aq-spin .7s linear infinite;vertical-align:-2px;margin-right:6px}
-.aq-back-link{transition:transform .2s var(--aq-e-ease)}
-.aq-back-link:hover{transform:translateX(-3px)}
+.aq-back-link svg{transition:transform var(--aq-motion-short) var(--aq-enter)}
+@media(hover:hover) and (pointer:fine){.aq-back-link:hover svg{transform:translateX(-2px)}}
 
 /* ---------- 모달 ---------- */
 #modal.is-leaving{animation:aq-overlay-out .18s ease forwards!important;pointer-events:none}
@@ -271,7 +271,7 @@ img{max-width:100%}
 .aq-explicit{display:inline-grid;place-items:center;width:17px;height:17px;margin-left:6px;border-radius:4px;background:#5c667a;color:#fff;font-size:10px;font-style:normal;font-weight:800;vertical-align:1px}
 .aq-linked-docs{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:6px}
 .aq-linked-docs a{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 13px;border-radius:var(--aq-r-md);background:#fff;font-size:13px;font-weight:600;color:var(--aq-e-ink);transition:background-color .2s,transform .2s var(--aq-e-ease)}
-.aq-linked-docs a:hover{background:var(--aq-blue-100);transform:translateX(2px)}
+.aq-linked-docs a:hover{background:var(--aq-blue-100)}
 .aq-linked-docs em{flex-shrink:0;font-style:normal;font-size:11px;font-weight:700;color:var(--aq-e-blue);background:var(--aq-e-blue-soft);padding:4px 8px;border-radius:var(--aq-r-xs)}
 
 /* ---------- 오류 화면 ---------- */
