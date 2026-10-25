@@ -20,8 +20,6 @@ sha1 = "0.11.0"
 # checks, Apple client secrets, and RSA-SHA256 request signing in the host
 # secret tool (GCP service-account JWT, OCI API key).
 aws-lc-rs = "1.18.1"
-# Content-MD5 for S3 Object Lock (WORM) uploads; already in the tree via sqlx.
-md5 = { package = "md-5", version = "0.11.0" }
 hmac = "0.13.0"
 base64 = "0.23.1"
 subtle = "2.6.1"
@@ -55,6 +53,8 @@ tikv-jemallocator = "0.7.0"
 tokio-stream = "0.1.19"
 
 [dev-dependencies]
+# Independent oracle for the in-crate MD5 (crate::md5) tests only.
+md5_reference = { package = "md-5", version = "0.11.0" }
 tower = { version = "0.5.3", features = ["util"] }
 http-body-util = "0.1.5"
 unicode-normalization = "0.1.25"

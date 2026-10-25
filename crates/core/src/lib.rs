@@ -47,6 +47,7 @@ pub mod identifiers;
 pub mod identity_desk;
 pub mod infringement;
 pub mod mcp;
+pub mod md5;
 pub mod mockdsp;
 pub mod operations;
 pub mod packages;
