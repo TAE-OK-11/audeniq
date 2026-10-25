@@ -15,7 +15,7 @@
 use crate::{
     api::AppState,
     auth::{self, Actor},
-    email::{Mailer, Rendered, escape_html, one_line},
+    email::{Mailer, Rendered, backoff_seconds, escape_html, one_line},
     error::{Error, Result},
     operations,
     payout_keys::{Field, KeyRing},
@@ -40,28 +40,12 @@ const MAX_ATTEMPTS: i32 = 6;
 const LEASE_MINUTES: i32 = 10;
 
 fn normalize_email(v: &str) -> Result<String> {
-    let v = v.trim().to_lowercase();
-    let ok = v.len() <= 254
-        && !v.chars().any(|c| c.is_whitespace() || c.is_control())
-        && v.split_once('@').is_some_and(|(l, d)| {
-            !l.is_empty() && d.contains('.') && !d.starts_with('.') && !d.ends_with('.')
-        });
-    if ok {
-        Ok(v)
-    } else {
-        Err(Error::InvalidCode("SPLIT_EMAIL_INVALID"))
-    }
+    crate::email::normalize_address(v).ok_or(Error::InvalidCode("SPLIT_EMAIL_INVALID"))
 }
 
 /// "ab***@example.com"
 fn mask(email: &str) -> String {
-    match email.split_once('@') {
-        Some((l, d)) => {
-            let head: String = l.chars().take(2).collect();
-            format!("{head}***@{d}")
-        }
-        None => "***".into(),
-    }
+    crate::email::mask_address(email, 2)
 }
 
 fn pct(bps: i32) -> String {
@@ -606,16 +590,6 @@ pub fn render(
         subject: format!("[AUDENIQ] {headline}"),
         text,
         html,
-    }
-}
-
-fn backoff_seconds(attempts: i32) -> f64 {
-    match attempts {
-        ..=1 => 60.0,
-        2 => 300.0,
-        3 => 1800.0,
-        4 => 7200.0,
-        _ => 21600.0,
     }
 }
 

@@ -13,7 +13,7 @@
 //!   word in the conversation (`artist_confirmed`).
 use super::{
     oauth::Principal,
-    tools::{ToolError, tool_error},
+    tools::{ToolError, tool_error, uuid_arg},
 };
 use crate::{
     api::AppState,
@@ -86,13 +86,6 @@ pub(super) async fn call(s: &AppState, p: &Principal, name: &str, args: &Value) 
     }
 }
 
-fn uuid_arg(args: &Value, key: &str) -> std::result::Result<Uuid, ToolError> {
-    args.get(key)
-        .and_then(Value::as_str)
-        .and_then(|v| v.parse().ok())
-        .ok_or_else(|| tool_error("INVALID_ARGUMENTS", &format!("{key} must be a UUID.")))
-}
-
 fn str_arg<'a>(args: &'a Value, key: &str) -> &'a str {
     args.get(key).and_then(Value::as_str).unwrap_or("").trim()
 }
@@ -149,25 +142,12 @@ fn parse<T: serde::de::DeserializeOwned>(v: Value) -> std::result::Result<T, Too
 
 fn won(v: &Value) -> String {
     let n = v.as_str().unwrap_or("0");
-    let digits: String = n.split('.').next().unwrap_or("0").to_string();
-    let mut out = String::new();
-    for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(c);
-    }
-    format!("{out}원")
+    let digits = n.split('.').next().unwrap_or("0");
+    format!("{}원", crate::domain::group_digits(digits))
 }
 
 fn masked_email(e: &str) -> String {
-    match e.split_once('@') {
-        Some((user, domain)) => {
-            let first: String = user.chars().take(1).collect();
-            format!("{first}***@{domain}")
-        }
-        None => "***".into(),
-    }
+    crate::email::mask_address(e, 1)
 }
 
 /// Validates one request and builds what the approval page shows.
