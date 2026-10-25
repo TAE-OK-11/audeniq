@@ -1212,16 +1212,15 @@ impl ObjectStore for S3Store {
         retain_until: Option<DateTime<Utc>>,
     ) -> Result<()> {
         use base64::{Engine, engine::general_purpose::STANDARD};
-        use md5::Digest as _;
         // Object Lock writes require Content-MD5; it also guards the transfer.
         let (size, md5) = match &body {
-            ArchiveBody::Bytes(b) => (b.len() as u64, md5::Md5::digest(b).to_vec()),
+            ArchiveBody::Bytes(b) => (b.len() as u64, crate::md5::Md5::digest(b)),
             ArchiveBody::File(path) => {
                 use tokio::io::AsyncReadExt;
                 let mut f = tokio::fs::File::open(path)
                     .await
                     .map_err(|_| Error::Internal)?;
-                let mut h = md5::Md5::new();
+                let mut h = crate::md5::Md5::new();
                 let mut buf = vec![0u8; 1 << 20];
                 let mut n = 0u64;
                 loop {
@@ -1232,13 +1231,13 @@ impl ObjectStore for S3Store {
                     h.update(&buf[..read]);
                     n += read as u64;
                 }
-                (n, h.finalize().to_vec())
+                (n, h.finalize())
             }
         };
         let mut headers = BTreeMap::from([
             ("content-length".into(), size.to_string()),
             ("content-type".into(), mime.into()),
-            ("content-md5".into(), STANDARD.encode(&md5)),
+            ("content-md5".into(), STANDARD.encode(md5)),
         ]);
         if let Some(until) = retain_until {
             // R2/OCI would silently ignore these: refuse instead of pretending.
