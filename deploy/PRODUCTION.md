@@ -34,6 +34,7 @@ Current configuration examples are not evidence of an established Tunnel, VPC Se
 - PR과 다른 브랜치는 이미지를 만들지 않는다. Actions → Backend image → *Run workflow*로 수동 빌드도 된다.
 - `main` 푸시는 **배포할 이미지만** 만든다: 저장소 변수 `BACKEND_CPU_VARIANT`가 비었거나 `portable`이면 공용(amd64 + arm64), 아니면 그 CPU 최적화 이미지 하나. 모든 변형이 필요하면 수동 실행에서 `all_variants`를 켠다.
 - `main` 푸시(PR 병합)마다 그 이미지를 production 서버에 배포한다. 끄려면 저장소 변수 `AUTO_DEPLOY=false`, 승인을 거치려면 Settings → Environments → production에 Required reviewers를 건다. 배포에는 production 환경 시크릿 `DEPLOY_HOST`·`DEPLOY_USER`·`DEPLOY_SSH_KEY`·`DEPLOY_KNOWN_HOSTS`가 필요하다.
+- **서버에서 직접 새 버전 올리기**: `/opt/audeniq`에서 `./update.sh`. GHCR의 최신 `main` 이미지를 받고, 이미지에 적힌 커밋의 배포 파일(compose·grants·bootstrap·스크립트·`pgbouncer/`)을 GitHub에서 받아 바꾼 뒤 `deploy.sh`로 배포한다. `./update.sh --check`(새 버전 확인만), `./update.sh <커밋>`(그 커밋으로), `--force`(같은 버전 재배포). 비공개면 `docker login ghcr.io`와 GitHub 토큰(`GITHUB_TOKEN` 또는 같은 폴더의 `github-token`, chmod 600)이 필요하다. 처음 한 번은 저장소의 `deploy/update.sh`를 서버에 복사한다.
 - 테스트(**Foundation**, **Backend portability**)는 `main`으로 가는 PR에서만 돈다(문서만 바뀐 PR 제외). 작업 브랜치 푸시에는 CI가 돌지 않는다. CircleCI도 `main`과 수동 실행(Trigger Pipeline)에서만 돈다.
 - x86와 ARM 네이티브 러너에서 각각 빌드하고 캐시도 아키텍처·CPU별로 분리한다. 공용 이미지의 바이너리 실행·샌드박스와 각 이미지의 audeniq-music·UID·CPU 메타데이터(ffmpeg 미포함 확인)를 검사한 뒤 태그를 게시한다. CPU 최적화 바이너리는 QEMU의 `max` CPU로 CLI 실행을 검사한다. 이는 Graviton4의 실제 성능 측정이 아니다. SBOM과 provenance가 함께 올라가며 공개 저장소의 각 빌드 digest에는 GitHub attestation도 붙는다.
 
