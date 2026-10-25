@@ -22,14 +22,13 @@ import { PLATFORM_NAMES } from '../lib/platformNames';
 import { KINDS, STATUS_LABEL, STATUS_TONE, kindSpec, type PlatformRequest, type RequestGroup } from '../lib/platformRequests';
 import { Glyph } from '../components/Glyph';
 import { HelpFaq } from '../components/HelpFaq';
-import { Badge, Callout, ChipGroup, EmptyState, PageHeader, SkeletonList } from '../ui';
-import { IDENTITY_CATEGORY, composeInquiry, findTopic, missingField, releaseFits, topicsOf, type ReleaseNeed } from '../lib/inquiryTopics';
-import { STATUS_LABEL as RELEASE_STATUS } from '../lib/format';
+import { Badge, EmptyState, PageHeader, SkeletonList } from '../ui';
 import { StageCard } from '../components/StageCard';
 import type { Tone } from '../ui/tone';
 
 /** 일반 문의 유형 */
 const INQUIRY_CATEGORIES = ['발매·심사', '수정·테이크다운', '정산·지급', '계약·권리', '본인인증·실명인증', '계정·기타'];
+const IDENTITY_CATEGORY = '본인인증·실명인증';
 /** 플랫폼에 전달하는 요청 — 같은 작성 창에서 유형으로 고른다 */
 const REQUEST_CATEGORIES: Record<string, RequestGroup> = { '아티스트 페이지': 'profile', '유튜브 Content ID': 'content_id' };
 const GROUP_CATEGORY: Record<RequestGroup, string> = { profile: '아티스트 페이지', content_id: '유튜브 Content ID' };
@@ -189,14 +188,11 @@ function splitSubject(subject: string): { tag: string; title: string } {
   return m ? { tag: m[1], title: m[2] || m[1] } : { tag: '', title: subject };
 }
 
-interface TicketPreset { category: string; releaseId: string; topic?: string; kind?: string }
+interface TicketPreset { category: string; releaseId: string; subject: string; body: string; kind?: string }
 
 type Submit =
   | { type: 'inquiry'; ticket: Omit<Ticket, 'id' | 'created' | 'status'> }
   | { type: 'request'; body: Record<string, unknown>; label: string; releaseTitle: string };
-
-/** 발매 고르기 줄 — 상태를 함께 보여 어느 발매인지 헷갈리지 않게 */
-const releaseOption = (r: Release) => `${r.title || '제목 없는 발매'}${RELEASE_STATUS[r.status] ? ` · ${RELEASE_STATUS[r.status]}` : ''}`;
 
 function TicketForm({ onSave, preset, releases, artist }: {
   onSave: (s: Submit) => Promise<boolean>; preset?: TicketPreset | null; releases: Release[]; artist: string;
@@ -208,35 +204,32 @@ function TicketForm({ onSave, preset, releases, artist }: {
   const kinds = group ? KINDS.filter(k => k.group === group) : [];
   const [kind, setKind] = useState(preset?.kind ?? '');
   const spec = group ? kindSpec(kinds.some(k => k.kind === kind) ? kind : kinds[0].kind)! : null;
-  // 일반 문의 — 주제마다 필요한 칸만 (계정 문의는 발매를 묻지 않는다)
-  const [topicKey, setTopicKey] = useState(preset?.topic ?? '');
-  const topic = group ? null : findTopic(category, topicKey);
-  const [values, setValues] = useState<Record<string, string>>({});
   const [platform, setPlatform] = useState('melon');
   const [releaseId, setReleaseId] = useState(preset?.releaseId ?? '');
   const [name, setName] = useState(artist);
   const [urls, setUrls] = useState<string[]>([]);
-  const [subject, setSubject] = useState('');
-  const [body, setBody] = useState('');
+  const [subject, setSubject] = useState(preset?.subject ?? '');
+  const [body, setBody] = useState(preset?.body ?? '');
   const [busy, setBusy] = useState(false);
   useEffect(() => { setUrls([]); }, [spec?.kind]);
-  useEffect(() => { setValues({}); }, [category, topic?.key]);
   // 아티스트 이름은 처음 한 번만 채운다 (사용자가 지운 칸을 다시 채우지 않도록)
   const seeded = useRef(!!artist);
   useEffect(() => { if (!seeded.current && artist) { seeded.current = true; setName(artist); } }, [artist]);
+  // 발매 목록을 받은 뒤 제목을 채운다
+  useEffect(() => {
+    if (!preset?.releaseId || subject !== preset.subject) return;
+    const title = releases.find(r => r.id === preset.releaseId)?.title;
+    if (title && preset.subject) setSubject(`${preset.subject} ${title}`);
+  }, [releases]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submitted = releases.filter(r => r.status !== 'draft');
-  const releaseChoices = spec ? submitted : releases.filter(r => releaseFits(topic?.scope, r.status));
-  const releaseMode: ReleaseNeed = spec ? spec.release : topic?.release ?? 'optional';
-  // 주제를 바꿔 고를 수 없게 된 발매는 비운다
-  useEffect(() => {
-    if (releaseId && (releaseMode === 'none' || !releaseChoices.some(r => r.id === releaseId))) setReleaseId('');
-  }, [releaseMode, releaseChoices.length]); // eslint-disable-line react-hooks/exhaustive-deps
-  const rel = releases.find(r => r.id === releaseId);
+  const releaseChoices = spec ? submitted : releases;
+  const releaseMode = spec ? spec.release : 'optional';
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (busy) return;
+    const rel = releases.find(r => r.id === releaseId);
     let s: Submit;
     if (spec) {
       const list = urls.map(u => u.trim()).filter(Boolean);
@@ -252,11 +245,8 @@ function TicketForm({ onSave, preset, releases, artist }: {
         },
       };
     } else {
-      const t = topic!;
-      const missing = missingField(t, values, body, releaseId);
-      if (missing) { toast(`‘${missing}’ 칸을 채워 주세요.`, 'error'); return; }
-      const c = composeInquiry(t, values, body, rel?.title ?? '', subject);
-      s = { type: 'inquiry', ticket: { category, releaseId: releaseMode === 'none' ? '' : releaseId, releaseTitle: rel?.title ?? '', subject: c.subject, body: c.body } };
+      if (!subject.trim() || !body.trim()) { toast('제목과 내용을 입력해 주세요.'); return; }
+      s = { type: 'inquiry', ticket: { category, releaseId, releaseTitle: rel?.title ?? '', subject: subject.trim(), body: body.trim() } };
     }
     // 보내지 못했으면 작성한 내용이 남도록 창을 닫지 않는다
     setBusy(true);
@@ -265,36 +255,30 @@ function TicketForm({ onSave, preset, releases, artist }: {
     if (ok) close();
   };
 
-  const setValue = (k: string, v: string) => setValues(x => ({ ...x, [k]: v }));
-  const releaseField = releaseMode !== 'none' && (
-    <div className="ui-field">
-      <label htmlFor="tRelease">관련 발매{releaseMode === 'optional' && <span className="aq-optional">선택</span>}</label>
-      <select id="tRelease" value={releaseId} onChange={e => setReleaseId(e.target.value)}>
-        <option value="">{releaseMode === 'required' ? '발매 고르기' : '고르지 않음'}</option>
-        {releaseChoices.map(r => <option key={r.id} value={r.id}>{releaseOption(r)}</option>)}
-      </select>
-      {releaseMode === 'required' && !releaseChoices.length && (
-        <small className="ui-field-help">
-          {topic?.scope === 'live' ? '발매 완료된 발매가 아직 없어요.' : topic?.scope === 'before_live' ? '발매 전인 발매가 없어요.' : '신청한 발매가 아직 없어요.'}
-        </small>
-      )}
-    </div>
-  );
-
   return (
-    <form id="ticketForm" className="aq-ticket-form" onSubmit={submit} noValidate>
-      <p className="small muted">{spec ? '플랫폼에 전달할 요청이에요. 담당자가 확인해 플랫폼에 접수하고 결과까지 알려 드려요.' : '주제를 고르면 담당자가 바로 답할 수 있게 필요한 것만 물어봐요.'}</p>
-      <div className="ui-field">
-        <label htmlFor="tCategory">유형</label>
-        <select id="tCategory" value={category} onChange={e => { setCategory(e.target.value); setKind(''); setTopicKey(''); }}>
-          {INQUIRY_CATEGORIES.map(c => <option key={c}>{c}</option>)}
-          {Object.keys(REQUEST_CATEGORIES).map(c => <option key={c}>{c}</option>)}
-        </select>
+    <form id="ticketForm" onSubmit={submit}>
+      <p className="small muted">{spec ? '플랫폼에 전달할 요청이에요. 담당자가 확인해 플랫폼에 접수하고 결과까지 알려 드려요.' : '문의 내용을 작성하고 필요한 발매를 연결해 주세요.'}</p>
+      <div className="form-grid">
+        <div className="ui-field">
+          <label htmlFor="tCategory">유형</label>
+          <select id="tCategory" value={category} onChange={e => { setCategory(e.target.value); setKind(''); }}>
+            {INQUIRY_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+            {Object.keys(REQUEST_CATEGORIES).map(c => <option key={c}>{c}</option>)}
+          </select>
+        </div>
+        {releaseMode !== 'none' && (
+          <div className="ui-field">
+            <label htmlFor="tRelease">관련 발매</label>
+            <select id="tRelease" value={releaseId} onChange={e => setReleaseId(e.target.value)}>
+              <option value="">{releaseMode === 'required' ? '발매 선택' : '선택 안 함'}</option>
+              {releaseChoices.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
+            </select>
+          </div>
+        )}
       </div>
 
       {spec ? (
         <div className="aq-reveal" key={category}>
-          {releaseField}
           <div className="ui-field">
             <label htmlFor="tKind">요청 내용</label>
             <select id="tKind" value={spec.kind} onChange={e => setKind(e.target.value)}>
@@ -328,18 +312,8 @@ function TicketForm({ onSave, preset, releases, artist }: {
             <textarea id="tBody" maxLength={2000} rows={4} value={body} onChange={e => setBody(e.target.value)} />
           </div>
         </div>
-      ) : topic && (
-        <div className="aq-reveal" key={category}>
-          <div className="ui-field">
-            <span className="ui-field-label" id="tTopicLabel">어떤 일인가요</span>
-            <ChipGroup value={topic.key} options={topicsOf(category).map(t => ({ value: t.key, label: t.label }))}
-              onChange={setTopicKey} label="문의 주제" size="sm" wrap />
-          </div>
-          {topic.shortcut && (
-            <Callout action={<Link className="ui-btn is-sm" to={topic.shortcut.to} onClick={() => close()}>{topic.shortcut.label}</Link>}>
-              {topic.shortcut.text}
-            </Callout>
-          )}
+      ) : (
+        <>
           {category === IDENTITY_CATEGORY && (
             <div className="ui-callout aq-inquiry-identity">
               휴대폰·PASS로 본인인증이 안 되면 고객센터에서 신분증 원본을 보고 실명인증을 도와드려요.
@@ -347,40 +321,16 @@ function TicketForm({ onSave, preset, releases, artist }: {
               <b> 신분증 사진이나 주민등록번호는 문의에 올리지 마세요.</b>
             </div>
           )}
-          {releaseField}
-          {topic.fields.length > 0 && (
-            <div className="form-grid aq-reveal" key={topic.key}>
-              {topic.fields.map(f => (
-                <div key={f.key} className="ui-field">
-                  <label htmlFor={`tf-${f.key}`}>{f.label}{!f.required && <span className="aq-optional">선택</span>}</label>
-                  {f.kind === 'select' ? (
-                    <select id={`tf-${f.key}`} value={values[f.key] ?? ''} onChange={e => setValue(f.key, e.target.value)}>
-                      <option value="">고르기</option>
-                      {f.options?.map(o => <option key={o}>{o}</option>)}
-                    </select>
-                  ) : (
-                    <input id={`tf-${f.key}`} maxLength={f.kind === 'url' ? 500 : 200} placeholder={f.placeholder}
-                      type={f.kind === 'date' ? 'date' : f.kind === 'month' ? 'month' : f.kind === 'url' ? 'url' : 'text'}
-                      inputMode={f.kind === 'url' ? 'url' : undefined}
-                      value={values[f.key] ?? ''} onChange={e => setValue(f.key, e.target.value)} />
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
           <div className="ui-field">
-            <label htmlFor="tSubject">제목<span className="aq-optional">선택</span></label>
-            <input id="tSubject" maxLength={180} placeholder={`비워 두면 ‘${composeInquiry(topic, {}, '', rel?.title ?? '', '').subject}’`} value={subject} onChange={e => setSubject(e.target.value)} />
+            <label htmlFor="tSubject">제목</label>
+            <input id="tSubject" maxLength={180} required placeholder="문의 제목" value={subject} onChange={e => setSubject(e.target.value)} />
           </div>
           <div className="ui-field">
-            <label htmlFor="tBody">
-              {topic.body ?? '내용'}
-              {!topic.bodyRequired && topic.fields.length > 0 && <span className="aq-optional">선택</span>}
-            </label>
-            <textarea id="tBody" maxLength={3600} rows={5} placeholder={topic.bodyPlaceholder ?? '상황과 확인이 필요한 내용을 자세히 적어 주세요.'} value={body} onChange={e => setBody(e.target.value)} />
-            <p className="ui-field-help aq-counter">{body.length} / 3600</p>
+            <label htmlFor="tBody">내용</label>
+            <textarea id="tBody" maxLength={4000} rows={6} required placeholder="상황과 확인이 필요한 내용을 자세히 입력해 주세요." value={body} onChange={e => setBody(e.target.value)} />
+            <p className="ui-field-help aq-counter">{body.length} / 4000</p>
           </div>
-        </div>
+        </>
       )}
       <div className="aq-sticky-foot">
         <button className={`ui-btn is-primary studio-submit-wide${busy ? ' is-busy' : ''}`} type="submit" disabled={busy}>{busy ? '보내는 중' : '보내기'}</button>
@@ -414,12 +364,12 @@ export function Inquiries() {
   const presetRelease = params.get('release') ?? '';
   const [showForm, setShowForm] = useState(!!newKind);
   const [preset] = useState<TicketPreset | null>(() => {
-    if (newKind === 'edit') return { category: '수정·테이크다운', releaseId: presetRelease, topic: 'edit' };
-    if (newKind === 'identity') return { category: IDENTITY_CATEGORY, releaseId: '', topic: 'identity' };
-    if (newKind === 'cancel') return { category: '발매·심사', releaseId: presetRelease, topic: 'cancel' };
+    if (newKind === 'edit') return { category: INQUIRY_CATEGORIES[1], releaseId: presetRelease, subject: '[발매 정보 수정 요청]', body: '접수한 발매 정보를 아래와 같이 수정해 주세요.\n\n수정할 내용: ' };
+    if (newKind === 'identity') return { category: IDENTITY_CATEGORY, releaseId: '', subject: '[실명인증 요청]', body: '휴대폰·PASS 본인인증이 되지 않아 고객센터 실명인증을 받고 싶어요.\n\n안 되는 이유(예: 본인 명의 휴대폰 없음, 미성년자): \n방문 또는 연락 가능한 시간: ' };
+    if (newKind === 'cancel') return { category: INQUIRY_CATEGORIES[0], releaseId: presetRelease, subject: '[발매 취소 요청]', body: '이 발매 신청을 취소해 주세요.\n\n취소 사유: ' };
     if (newKind === 'request') {
       const g: RequestGroup = params.get('group') === 'content_id' ? 'content_id' : 'profile';
-      return { category: GROUP_CATEGORY[g], releaseId: presetRelease, kind: params.get('kind') ?? '' };
+      return { category: GROUP_CATEGORY[g], releaseId: presetRelease, subject: '', body: '', kind: params.get('kind') ?? '' };
     }
     return null;
   });
