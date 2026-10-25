@@ -4,7 +4,7 @@
 import { req } from './http';
 import { MOCK } from '../lib/mode';
 
-export type OpsArea = 'staff' | 'protected' | 'developer-apps' | 'ai-clients' | 'ai-limits' | 'partners' | 'identifiers' | 'payouts' | 'royalty';
+export type OpsArea = 'staff' | 'protected' | 'developer-apps' | 'ai-clients' | 'ai-limits' | 'partners' | 'identifiers' | 'payouts' | 'royalty' | 'balance';
 
 export interface OpsEntry { area: OpsArea; op: string; write: boolean; step_up: boolean; allowed: boolean; level: number; finance: boolean }
 export interface OpsIndex { available: boolean; role: string; level: number; ops: OpsEntry[] }
@@ -65,3 +65,7 @@ export interface PayoutRow {
   created_at: string; order_id: string | null; order_status: string | null;
 }
 export interface RoyaltyReport { report_id: string; dsp_id: string; status: string; currency: string; source_hash: string; source_amount: string; received_amount: string; unresolved: number }
+/** 정산금 직접 추가 (최고 관리자만) — 계정의 작업 공간마다 지금 받을 수 있는 금액과 최근 추가 기록 */
+export interface BalanceCredit { id: string; title: string; reason: string | null; amount: string; created_at: string }
+export interface BalanceOrg { org_id: string; name: string; kind: string; role: string; withdrawable: string; credits: BalanceCredit[] }
+export interface BalanceAccount { user_id: string; email: string; orgs: BalanceOrg[] }
