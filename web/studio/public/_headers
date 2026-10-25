@@ -3,7 +3,7 @@
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: blob:; font-src 'self' data: https://cdn.jsdelivr.net; connect-src 'self' https://*.r2.cloudflarestorage.com https://*.amazonaws.com https://*.oraclecloud.com https://*.oci.customer-oci.com; media-src 'self' blob: data:; frame-src blob:; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://js.tosspayments.com https://cdn.portone.io https://*.payple.kr https://ajax.googleapis.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: blob: https://*.tosspayments.com https://*.portone.io https://*.payple.kr; font-src 'self' data: https://cdn.jsdelivr.net; connect-src 'self' https://*.tosspayments.com https://*.portone.io https://*.payple.kr https://*.r2.cloudflarestorage.com https://*.amazonaws.com https://*.oraclecloud.com https://*.oci.customer-oci.com; media-src 'self' blob: data:; frame-src blob: https://*.tosspayments.com https://*.portone.io https://*.payple.kr; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self' https://*.tosspayments.com https://*.portone.io https://*.payple.kr
   Cross-Origin-Opener-Policy: same-origin
 /
   Cache-Control: no-cache

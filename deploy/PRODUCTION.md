@@ -195,6 +195,7 @@ R2 설정 (Cloudflare 대시보드):
     (audeniq-music으로 사용자 파일을 여는 쪽이라 쓰기·삭제 권한을 주지 않는다. 비우면 api 토큰을 쓴다)
 - CORS: `r2-cors.json` (Studio 도메인에서 `PUT`만).
 - 수명 주기 규칙: `quarantine/` 접두사 1일 후 삭제 (격리본·완료되지 않은 업로드 정리). **필수**: 이 규칙이 없으면 격리본이 쌓인다.
+- 부가서비스 뮤직비디오는 `addon-video/{org}/{id}`에 조각으로 바로 올라간다(검사는 크기와 MP4/MOV 머리만, 공개 주소 없음 — 담당자만 10분짜리 링크로 받는다). 완료되지 않은 multipart 업로드를 며칠 뒤 지우는 규칙(AbortIncompleteMultipartUpload)을 버킷 전체에 두면 남은 조각이 쌓이지 않는다. 브라우저가 조각을 올리므로 버킷 CORS는 음원 업로드와 같은 PUT·ETag 노출이 그대로 필요하다.
 - 수명 주기 규칙: 완료되지 않은 멀티파트 업로드 2일 후 중단 (R2: *Abort incomplete multipart uploads*, S3: `AbortIncompleteMultipartUpload`). 16 MiB보다 큰 음원은 조각으로 이어 올리고(24시간 동안 이어 올리기 가능), 끝내지 않은 조각은 이 규칙이 지운다.
 - CORS에 `If-None-Match` 헤더가 허용돼 있어야 한다(`r2-cors.json`).
 - 키가 새면 Cloudflare에서 그 토큰만 폐기하고 새 토큰을 `production.env`에 넣은 뒤 `./deploy.sh`로 다시 올린다.

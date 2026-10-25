@@ -57,6 +57,7 @@ export const DELIVERY_TABS = [
   { to: '/admin/claims', label: '권리침해 신고' },
   { to: '/admin/pitches', label: '플레이리스트 피칭' },
   { to: '/admin/platform-requests', label: '플랫폼 요청' },
+  { to: '/admin/addons', label: '부가서비스' },
   { to: '/admin/terms', label: '배급 종료' },
 ];
 

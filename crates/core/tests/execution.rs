@@ -8612,3 +8612,442 @@ async fn presave_saves_album_at_release_and_erases_tokens(pool: PgPool) {
     .unwrap();
     assert_eq!(expired, 1);
 }
+
+/// What the stand-in PG servers saw: "path auth".
+#[derive(Clone, Default)]
+struct PgFx {
+    seen: Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+/// One loopback server stands in for Toss (/toss), PortOne (/portone) and
+/// Payple (/payple-api approvals, /payple auth and cancel).
+async fn pg_fixture() -> (String, PgFx) {
+    use axum::http::{HeaderMap, Method, Uri};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let fx = PgFx::default();
+    let handler = |axum::extract::State(fx): axum::extract::State<PgFx>,
+                   m: Method,
+                   uri: Uri,
+                   h: HeaderMap,
+                   body: axum::body::Bytes| async move {
+        let header = |k: &str| {
+            h.get(k)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_string()
+        };
+        let path = uri.path().to_string();
+        let b: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+        fx.seen
+            .lock()
+            .unwrap()
+            .push(format!("{m} {path} {} {b}", header("authorization")));
+        let ok = |v: Value| (StatusCode::OK, v.to_string());
+        let bad = || {
+            (
+                StatusCode::BAD_REQUEST,
+                json!({"code": "REJECTED"}).to_string(),
+            )
+        };
+        match path.as_str() {
+            "/toss/v1/payments/confirm" => {
+                // Basic base64("toss-secret:")
+                if header("authorization") != "Basic dG9zcy1zZWNyZXQ6"
+                    || b["paymentKey"] == "pk-declined"
+                {
+                    return bad();
+                }
+                ok(json!({"status": "DONE", "orderId": b["orderId"], "totalAmount": b["amount"]}))
+            }
+            p if p.starts_with("/toss/v1/payments/") && p.ends_with("/cancel") => {
+                ok(json!({"status": "PARTIAL_CANCELED"}))
+            }
+            p if p.starts_with("/portone/payments/") && p.ends_with("/cancel") => {
+                if header("authorization") != "PortOne po-secret" {
+                    return bad();
+                }
+                ok(json!({"cancellation": {"status": "SUCCEEDED"}}))
+            }
+            p if p.starts_with("/portone/payments/") => {
+                if header("authorization") != "PortOne po-secret" {
+                    return bad();
+                }
+                let id = p.trim_start_matches("/portone/payments/");
+                // Whatever the browser says, the amount is what PortOne recorded.
+                let total = if id.ends_with("tampered") { 1000 } else { 5000 };
+                ok(
+                    json!({"status": "PAID", "id": id, "amount": {"total": total}, "currency": "KRW"}),
+                )
+            }
+            "/payple-api/api/v1/payments/cards/approval/confirm" => {
+                if b["PCD_CST_ID"] != "pp-cst"
+                    || b["PCD_CUST_KEY"] != "pp-cust"
+                    || header("referer").is_empty()
+                {
+                    return bad();
+                }
+                ok(
+                    json!({"PCD_PAY_RST": "success", "PCD_PAY_CODE": "PCCF0000", "PCD_PAY_OID": "pp-oid",
+                          "PCD_PAY_TOTAL": "5000", "PCD_PAY_TIME": "20261025123000"}),
+                )
+            }
+            "/payple/php/auth.php" => ok(
+                json!({"result": "success", "cst_id": "tmp-cst", "custKey": "tmp-key", "AuthKey": "tmp-auth"}),
+            ),
+            "/payple/php/account/api/cPayCAct.php" => {
+                if b["PCD_AUTH_KEY"] != "tmp-auth"
+                    || b["PCD_REFUND_KEY"] != "pp-refund"
+                    || b["PCD_PAY_DATE"] != "20261025"
+                {
+                    return bad();
+                }
+                ok(json!({"PCD_PAY_RST": "success", "PCD_PAY_CODE": "PAYC0000"}))
+            }
+            _ => (StatusCode::NOT_FOUND, "{}".to_string()),
+        }
+    };
+    let router = Router::new().fallback(handler).with_state(fx.clone());
+    tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    (base, fx)
+}
+
+/// Add-on services (0157) chosen in the release application: submit makes
+/// the orders; the checkout pays all of them from the balance (all or none)
+/// or by card through the configured PG for exactly their total; a
+/// cancelled or rejected paid order is refunded (ledger or that order's part
+/// of the card payment); artists upload LRC for free and staff deliver the
+/// synced lyrics an order paid for.
+#[sqlx::test]
+async fn addon_orders_from_the_application_pay_at_once_and_refund(pool: PgPool) {
+    let (base, fx) = pg_fixture().await;
+    // Safety: set in this test only; other tests do not read these.
+    unsafe {
+        std::env::set_var("PAYMENT_FIXTURE_BASE", &base);
+        std::env::set_var("PAYMENT_PROVIDER", "toss");
+        std::env::set_var("TOSS_CLIENT_KEY", "test_ck_x");
+        std::env::set_var("TOSS_SECRET_KEY", "toss-secret");
+    }
+    let d = draft_package(&pool).await;
+    sqlx::query("UPDATE catalog.tracks SET lyrics='첫 줄\n둘째 줄' WHERE release_id=$1")
+        .bind(d.release)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let options = json!({
+        "express": true, "expressAck": true, "expressReason": "방송 일정",
+        "mv": true, "mvTier": "REVIEW", "mvTrack": 1, "mvVideoUrl": "https://drive.example.com/mv.mp4",
+        "mvTitle": "여름의 끝 MV", "mvDuration": "3:45", "mvPlatforms": ["melon", "youtube"],
+        "lyricSync": true, "lyricTracks": [1],
+    });
+    sqlx::query("UPDATE catalog.releases SET draft = jsonb_set(draft, '{options}', coalesce(draft->'options','{}'::jsonb) || $2), row_version = row_version + 1 WHERE id=$1")
+        .bind(d.release)
+        .bind(&options)
+        .execute(&pool)
+        .await
+        .unwrap();
+    consent_and_submit(&d.app, &d.u, d.release, &format!("k-ad-{}", Uuid::new_v4())).await;
+    let (app, u, release) = (d.app, d.u, d.release);
+    let org = u.org;
+    let path = format!("/api/orgs/{org}/releases/{release}/addons");
+    let (s, v) = call(&app, "GET", &path, Value::Null, Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["card"]["provider"], "toss");
+    let items = v["items"].as_array().unwrap();
+    let by = |service: &str| {
+        items
+            .iter()
+            .find(|o| o["service"] == service)
+            .cloned()
+            .unwrap()
+    };
+    assert_eq!(items.len(), 3, "{v}");
+    assert!(
+        items.iter().all(|o| o["status"] == "AWAITING_PAYMENT"),
+        "{v}"
+    );
+    assert_eq!(
+        (
+            by("EXPRESS_RELEASE")["amount"].as_i64(),
+            by("LYRIC_SYNC")["amount"].as_i64(),
+            by("MV_DISTRIBUTION")["amount"].as_i64()
+        ),
+        (Some(10_000), Some(5_000), Some(39_000))
+    );
+    let (express, lyric, mv) = (
+        v_id(&by("EXPRESS_RELEASE")),
+        v_id(&by("LYRIC_SYNC")),
+        v_id(&by("MV_DISTRIBUTION")),
+    );
+
+    // The balance pays all or none.
+    let pay = format!("{path}/pay");
+    let (_, v) = call(
+        &app,
+        "POST",
+        &pay,
+        json!({"method": "SETTLEMENT"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "ADDON_BALANCE_SHORT", "{v}");
+    let tx = Uuid::new_v4();
+    sqlx::query("INSERT INTO finance.ledger_transactions(id,org_id,transaction_code,currency) VALUES($1,$2,'TEST_ROYALTY','KRW')")
+        .bind(tx).bind(org).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO finance.ledger_entries(id,org_id,transaction_id,account,side,amount,currency) VALUES
+                 (gen_random_uuid(),$1,$2,'ROYALTY_RECEIVABLE','DEBIT',20000,'KRW'),(gen_random_uuid(),$1,$2,'ROYALTY_PAYABLE','CREDIT',20000,'KRW')")
+        .bind(org).bind(tx).execute(&pool).await.unwrap();
+    let (_, v) = call(
+        &app,
+        "POST",
+        &pay,
+        json!({"method": "SETTLEMENT"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        v["error"]["code"], "ADDON_BALANCE_SHORT",
+        "54,000 over 20,000: nothing charged: {v}"
+    );
+    let (s, v) = call(
+        &app,
+        "POST",
+        &pay,
+        json!({"method": "SETTLEMENT", "order_ids": [express, lyric]}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["balance"], 5_000, "{v}");
+
+    // The rest by card: Toss confirms exactly the total.
+    let (s, w) = call(&app, "POST", &pay, json!({"method": "CARD"}), Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{w}");
+    assert_eq!(
+        (
+            w["provider"].as_str(),
+            w["amount"].as_i64(),
+            w["client_key"].as_str()
+        ),
+        (Some("toss"), Some(39_000), Some("test_ck_x"))
+    );
+    let confirm = format!(
+        "/api/orgs/{org}/addon-payments/{}/confirm",
+        w["payment_id"].as_str().unwrap()
+    );
+    let (_, v) = call(
+        &app,
+        "POST",
+        &confirm,
+        json!({"payment_key": "pk-declined"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "ADDON_CARD_FAILED", "{v}");
+    let (s, v) = call(
+        &app,
+        "POST",
+        &confirm,
+        json!({"payment_key": "pk-1"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let mv_row = v["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|o| o["service"] == "MV_DISTRIBUTION")
+        .unwrap()
+        .clone();
+    assert_eq!(
+        (
+            mv_row["status"].as_str(),
+            mv_row["pay_method"].as_str(),
+            mv_row["provider"].as_str()
+        ),
+        (Some("SUBMITTED"), Some("CARD"), Some("toss"))
+    );
+    let (s, _) = call(
+        &app,
+        "POST",
+        &confirm,
+        json!({"payment_key": "pk-1"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        s,
+        StatusCode::OK,
+        "a reloaded return page confirms nothing new"
+    );
+    let (_, v) = call(&app, "POST", &pay, json!({"method": "CARD"}), Some(&u)).await;
+    assert_eq!(v["error"]["code"], "ADDON_NOT_PAYABLE", "{v}");
+
+    // Staff reject the video: that order's part of the card payment comes back.
+    let op = staff_user(&app, &pool, "OPERATOR").await;
+    let (_, v) = call(
+        &app,
+        "POST",
+        &format!("/api/staff/addons/{mv}/status"),
+        json!({"status": "REJECTED", "note": "영상 파일을 열 수 없어요"}),
+        Some(&op),
+    )
+    .await;
+    assert_eq!(v["status"], "REJECTED", "{v}");
+    assert!(v["refunded_at"].is_string(), "{v}");
+    let seen = fx.seen.lock().unwrap().clone();
+    assert!(
+        seen.iter()
+            .any(|l| l.starts_with("POST /toss/v1/payments/pk-1/cancel")
+                && l.contains("\"cancelAmount\":39000")),
+        "{seen:?}"
+    );
+    // The artist cancels the lyric sync before work starts: back to the balance.
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{org}/addons/{lyric}/cancel"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["balance"], 10_000, "{v}");
+    let codes: Vec<String> = sqlx::query_scalar("SELECT transaction_code FROM finance.ledger_transactions WHERE org_id=$1 AND transaction_code LIKE 'ADDON_%' ORDER BY created_at, transaction_code")
+        .bind(org).fetch_all(&pool).await.unwrap();
+    assert_eq!(codes.iter().filter(|c| *c == "ADDON_CHARGE").count(), 2);
+    assert_eq!(codes.iter().filter(|c| *c == "ADDON_REFUND").count(), 1);
+
+    // Free LRC from the artist.
+    let track: Uuid = sqlx::query_scalar(
+        "SELECT id FROM catalog.tracks WHERE release_id=$1 ORDER BY track_number LIMIT 1",
+    )
+    .bind(release)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let put = format!("/api/orgs/{org}/releases/{release}/tracks/{track}/lyric-sync");
+    let (_, v) = call(&app, "PUT", &put, json!({"lrc": "그냥 가사"}), Some(&u)).await;
+    assert_eq!(v["error"]["code"], "LRC_INVALID", "{v}");
+    let (s, v) = call(
+        &app,
+        "PUT",
+        &put,
+        json!({"lrc": "[00:01.00]첫 줄\n[00:04.50]둘째 줄"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["lines"], 2);
+    let (_, v) = call(
+        &app,
+        "GET",
+        &format!("/api/staff/addons/{express}/lyrics"),
+        Value::Null,
+        Some(&op),
+    )
+    .await;
+    assert_eq!(v["items"], json!([]), "express has no tracks: {v}");
+    let (_, v) = call(
+        &app,
+        "POST",
+        &format!("/api/staff/addons/{express}/status"),
+        json!({"status": "COMPLETED", "note": "3영업일 안에 발매되도록 처리했어요"}),
+        Some(&op),
+    )
+    .await;
+    assert_eq!(v["status"], "COMPLETED", "{v}");
+    let notices: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM portal.notifications WHERE org_id=$1 AND link LIKE $2",
+    )
+    .bind(org)
+    .bind(format!("/releases/{release}?addon=%"))
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(notices >= 4, "{notices}");
+    // Every order stays on record (cancelled and rejected ones too).
+    let n: i64 = sqlx::query_scalar("SELECT count(*) FROM portal.addon_orders WHERE release_id=$1")
+        .bind(release)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 3);
+    portone_and_payple_confirm_and_cancel(&base, &fx).await;
+}
+
+/// PortOne and Payple confirm and cancel the same way: PortOne is looked up
+/// (the browser's word is not trusted), Payple approves the certification
+/// with the partner keys and cancels after a partner auth.
+async fn portone_and_payple_confirm_and_cancel(base: &str, fx: &PgFx) {
+    use audeniq_core::payments;
+    // Safety: run inside the add-on test, after its Toss part (one test owns these settings).
+    unsafe {
+        std::env::set_var("PAYMENT_FIXTURE_BASE", base);
+        std::env::set_var("PORTONE_STORE_ID", "store-x");
+        std::env::set_var("PORTONE_CHANNEL_KEY", "channel-x");
+        std::env::set_var("PORTONE_API_SECRET", "po-secret");
+        std::env::set_var("PAYPLE_CLIENT_KEY", "test_pp");
+        std::env::set_var("PAYPLE_CST_ID", "pp-cst");
+        std::env::set_var("PAYPLE_CUST_KEY", "pp-cust");
+        std::env::set_var("PAYPLE_REFUND_KEY", "pp-refund");
+        std::env::set_var("PAYMENT_PROVIDER", "portone");
+    }
+    let p = payments::provider().unwrap();
+    let w = p.window("aq-po", 5000, "부가서비스", "aq-u", ORIGIN);
+    assert_eq!(
+        (
+            w["provider"].as_str(),
+            w["store_id"].as_str(),
+            w["channel_key"].as_str()
+        ),
+        (Some("portone"), Some("store-x"), Some("channel-x"))
+    );
+    let paid = p.confirm("aq-po", 5000, &json!({}), ORIGIN).await.unwrap();
+    assert!(
+        p.confirm("aq-po-tampered", 5000, &json!({}), ORIGIN)
+            .await
+            .is_err(),
+        "PortOne recorded 1,000"
+    );
+    p.cancel(&paid, 5000, "", "c-1", ORIGIN).await.unwrap();
+    unsafe { std::env::set_var("PAYMENT_PROVIDER", "payple") };
+    let p = payments::provider().unwrap();
+    let w = p.window("pp-oid", 5000, "부가서비스 <MV>", "aq-u", ORIGIN);
+    assert_eq!(
+        (
+            w["provider"].as_str(),
+            w["order_name"].as_str(),
+            w["result_url"].as_str()
+        ),
+        (
+            Some("payple"),
+            Some("부가서비스 MV"),
+            Some("/api/payments/payple/return")
+        )
+    );
+    let cert = json!({"auth_key": "a", "req_key": "r", "order_id": "pp-oid", "total": "5000"});
+    let mut wrong = cert.clone();
+    wrong["total"] = json!("100");
+    assert!(
+        p.confirm("pp-oid", 5000, &wrong, ORIGIN).await.is_err(),
+        "a certification for another amount is not approved"
+    );
+    let paid = p.confirm("pp-oid", 5000, &cert, ORIGIN).await.unwrap();
+    assert_eq!(paid.date, "20261025");
+    p.cancel(&paid, 5000, "", "c-2", ORIGIN).await.unwrap();
+    let seen = fx.seen.lock().unwrap().clone();
+    assert!(
+        seen.iter().any(
+            |l| l.starts_with("POST /portone/payments/aq-po/cancel PortOne po-secret")
+                && l.contains("\"amount\":5000")
+        ),
+        "{seen:?}"
+    );
+    assert!(
+        seen.iter()
+            .any(|l| l.starts_with("POST /payple/php/account/api/cPayCAct.php")),
+        "{seen:?}"
+    );
+}

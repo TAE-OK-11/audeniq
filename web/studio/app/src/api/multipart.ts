@@ -56,8 +56,10 @@ export async function uploadParts(
   session: string,
   onProgress?: (r: number) => void,
   signal?: AbortSignal,
+  /** 조각 주소 — 기본은 음원 업로드, 뮤직비디오는 /addon-videos/{id}/parts */
+  partsPath = `/uploads/${encodeURIComponent(session)}/parts`,
 ): Promise<void> {
-  const base = orgPath(`/uploads/${encodeURIComponent(session)}/parts`);
+  const base = orgPath(partsPath);
   const stored = await req<{ part_size: number; part_count: number; parts: { part_number: number; size_bytes: number }[] }>(base);
   const { part_size: partSize, part_count: count } = stored;
   const done = new Set(stored.parts.map(p => p.part_number));

@@ -33,6 +33,8 @@ import {
 } from '../lib/dsp';
 import { uid } from '../lib/store';
 import { CheckIcon } from '../components/Check';
+import { AddonSummary, EMPTY_ADDONS, LyricDetail, MvDetail, addonProblem, type AddonFields } from '../components/AddonOptions';
+import { mockOrdersFromApplication } from '../lib/addons';
 import { Glyph } from '../components/Glyph';
 import { Badge, IconTile } from '../ui';
 import { TrackChecks } from '../components/TrackChecks';
@@ -125,7 +127,7 @@ interface CoverTrackInfo {
   originalWriters: string;
 }
 
-interface ReleaseOptions extends RereleaseData {
+interface ReleaseOptions extends RereleaseData, AddonFields {
   express: boolean; expressAck: boolean; expressReason: string;
   minor: boolean;
   guardian: string; guardianRelation: string; guardianContact: string;
@@ -176,6 +178,7 @@ const EMPTY_OPTIONS: ReleaseOptions = {
   ai: false, aiTool: '', aiUses: [], aiTools: [], aiUseOther: '', aiToolOther: '',
   shared: false, sharedContractFile: '',
   rerelease: false, previousTitle: '', previousId: '',
+  ...EMPTY_ADDONS,
 };
 
 /** YouTube Content ID — 다른 사람 영상에 권리를 주장하는 별도 서비스라 '모두 배급'에 넣지 않고 따로 켠다 */
@@ -195,7 +198,9 @@ const EMPTY: WizardForm = {
 };
 
 const SERVICE_OPTIONS: [keyof ReleaseOptions, string, string][] = [
-  ['express', '신속 발매 요청', '원하는 일정에 먼저 검토할 수 있는지 확인해요.'],
+  ['express', '신속 발매 · 10,000원', '심사와 전송을 먼저 처리해 3영업일 안에 발매해요.'],
+  ['mv', '뮤직비디오 배급 · 19,000원부터', '멜론·지니·벅스·FLO·바이브·유튜브에 보내고, 영상물등급위원회 심의도 대신해요.'],
+  ['lyricSync', 'AI 가사 싱크 · 곡당 5,000원', '가사에 노래 시간을 맞춘 싱크 가사를 만들어 Musixmatch·국내 플랫폼에 등록해요.'],
 ];
 
 const RIGHTS_OPTIONS: [keyof ReleaseOptions, string, string][] = [
@@ -613,10 +618,12 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
 
   // 선택한 카드 바로 밑에 여는 입력 (목록 맨 아래가 아니라)
   const detail: Partial<Record<keyof ReleaseOptions, React.ReactNode>> = {
+    mv: <MvDetail o={o} set={patch => set('options', { ...o, ...patch })} tracks={form.tracks} />,
+    lyricSync: <LyricDetail o={o} set={patch => set('options', { ...o, ...patch })} tracks={form.tracks} />,
     express: (
       <div className="aq-option-detail">
-        <h3>신속 발매 요청</h3>
-        <p className="aq-option-intro">신속 발매는 가능 여부와 조건을 확인한 뒤 진행해요. 특정 발매일이나 플랫폼 송출을 보장하지 않아요.</p>
+        <h3>신속 발매 · 10,000원</h3>
+        <p className="aq-option-intro">신청 후 3영업일 안에 발매되도록 심사와 플랫폼 전송을 먼저 처리해요. 신청을 마치면 부가서비스에서 정산금이나 카드로 결제해요. 보완이 필요하거나 일정을 맞출 수 없으면 담당자가 연락하고, 진행하지 못하면 전액 환불해요.</p>
         <div className="ui-field">
           <label htmlFor="aqExpressReason">신속 발매가 필요한 이유<span className="aq-optional">선택</span></label>
           <ChipPicker
@@ -633,7 +640,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
             checked={o.expressAck}
             onChange={e => setOpt('expressAck', e.target.checked)}
           />
-          <span>가능한 일정과 비용 등 별도 안내를 확인한 후 진행할게요.<small>신청 단계에서 추가 비용이 자동 결제되지는 않아요.</small></span>
+          <span>신속 발매 비용 10,000원을 결제할게요.<small>신청을 마친 뒤 부가서비스에서 결제해요. 자동으로 결제되지는 않아요.</small></span>
           <span className="aq-pick-mark" aria-hidden="true">{o.expressAck && <CheckIcon size={12} />}</span>
         </label>
       </div>
@@ -1878,7 +1885,7 @@ export function Upload() {
       if (form.releaseDate < minReleaseDate(form.options.express) && form.releaseDate !== origDate) {
         return fail(form.options.express
           ? '신속 발매도 플랫폼 납품에 최소 3일이 필요해요. 3일 뒤 이후 날짜를 선택해 주세요.'
-          : '플랫폼 납품·검수에 2주가 필요해요. 오늘부터 14일 뒤 이후로 선택하거나, 급하면 아래 ‘신속 발매 요청’을 선택해 주세요.', '#f-releaseDate');
+          : '플랫폼 납품·검수에 2주가 필요해요. 오늘부터 14일 뒤 이후로 선택하거나, 급하면 아래 ‘신속 발매’(10,000원)를 선택해 주세요.', '#f-releaseDate');
       }
       if (form.preorderStart && (form.preorderStart >= form.releaseDate || form.preorderStart < shiftDate(form.releaseDate, -90))) {
         return fail('사전 공개 시작일은 발매일 1–90일 전으로 골라 주세요.', '#f-preorder');
@@ -1895,6 +1902,8 @@ export function Upload() {
       if (form.upc.trim() && !/^0?\d{12}$/.test(form.upc.trim())) return fail('UPC는 12자리(UPC-A)만 받을 수 있어요. 13자리 EAN은 0으로 시작하는 번호만 쓸 수 있어요.', '#f-upc');
       const o = form.options;
       if (o.express && !o.expressAck) return fail('신속 발매 안내를 확인해 주세요.', '#aqExpressAck');
+      const addon = addonProblem(o, form.tracks);
+      if (addon) return fail(addon[0], `#${addon[1]}`);
     }
     if (i === 4) {
       if (['coverLicenseFile', 'sampleLicenseFile', 'featuredConsentFile', 'sharedContractFile'].some(k => uploads[k]?.state === 'uploading')) return fail('첨부서류 업로드가 끝나면 계속할 수 있어요.', '#aqSpecialOptions');
@@ -1999,7 +2008,7 @@ export function Upload() {
       draftIdRef.current = r.id;
       dirtyRef.current = false;
       // 실서버는 계약서를 서버가 만든다 (알림·서류는 pushNotice가 새로 받게 한다)
-      if (MOCK) ensureReleaseDocuments(f, r.id);
+      if (MOCK) { ensureReleaseDocuments(f, r.id); mockOrdersFromApplication(r.id, r.title, { ...f.options }, f.tracks.map(t => t.title)); }
       pushNotice({
         id: uid('n'), kind: '발매', time: stampNow(), link: `/releases/${r.id}`,
         title: editId && origStatus !== 'draft' ? `${r.title} 수정 내용을 보냈어요.` : `${r.title} 발매를 신청했어요.`,
@@ -2849,6 +2858,7 @@ export function Upload() {
                 : `아래에 서명하고 ‘${editId && origStatus !== 'draft' ? '서명하고 수정 완료' : '서명하고 접수하기'}’를 누르면 배급 신청서가 발급되고 권리 확인서가 준비돼요. 최종 승인과 배급일은 담당자 검토 후 확정돼요.`}
             </div>
             <FinalReviewBanner form={form} />
+            <AddonSummary options={form.options} onEdit={() => goStep(3)} />
 
             {!resubmit && (
             <section className="aq-apply-sign" aria-labelledby="aqApplySignHead">
