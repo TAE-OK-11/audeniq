@@ -19,6 +19,12 @@ in work management an OWNER works as an ADMIN). Payouts and royalty reports
 need the Finance duty (OPERATOR, ADMIN, OWNER), as the CLI required.
 
 OWNER is granted only with the CLI: `audeniq-admin staff grant EMAIL OWNER`.
+Only an OWNER adds settlement balance by hand (`balance.credit`, console
+정산·지급 처리 › 정산금 추가): up to 10,000,000 KRW in whole won per
+action, a title the artist sees in the statement and an internal reason.
+`finance.staff_credit_balance` (0159) re-checks the OWNER in the database,
+posts `MANUAL_CREDIT` debit / `ROYALTY_PAYABLE` credit (never an edit),
+notifies the artist and the change is audited as `balance.credit`.
 In the console an OWNER grants ADMIN, REVIEWER, OPERATOR or SUPPORT, never
 changes their own row and never another OWNER. `identity.staff_set` and
 `identity.staff_reset_mfa` (SECURITY DEFINER) enforce this in the database too.
@@ -40,6 +46,7 @@ with a JSON body (plus `code`, a fresh authenticator code, where step-up applies
 | identifiers | list (3); register (4) | register |
 | payouts | list, order, approve, submit, result, cancel, manual, reissue, return (Finance) | approve, submit, result, manual, reissue, return |
 | royalty | show, import, match, receipt, post (Finance) | receipt, post |
+| balance | show, credit (4) | credit |
 
 Errors: `STAFF_LEVEL_REQUIRED` (403, `details.level` or `details.duty`),
 `STAFF_STEP_UP_REQUIRED` / `STAFF_MFA_CODE_INVALID`, `OPS_ARGUMENT_INVALID`

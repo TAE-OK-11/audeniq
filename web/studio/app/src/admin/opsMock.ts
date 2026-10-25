@@ -12,6 +12,7 @@ const OPS: [OpsArea, string, number, boolean, boolean][] = [
   ['identifiers', 'list', 3, false, false], ['identifiers', 'register', 4, true, true],
   ['payouts', 'list', 2, false, false], ['payouts', 'order', 2, true, false], ['payouts', 'approve', 2, true, true],
   ['royalty', 'show', 2, false, false], ['royalty', 'post', 2, true, true],
+  ['balance', 'show', 4, false, false], ['balance', 'credit', 4, true, true],
 ];
 
 const now = Date.now();
@@ -49,6 +50,11 @@ const DATA: Record<string, unknown> = {
     { request_id: 'r1', org_id: '7c1e9a40-2b51-4c6e-9d0a-1f00aa000001', amount: '320000', fee: '1000', net: '319000', status: 'REQUESTED', account: { bank_name: '기업은행', account_masked: '***-***-1234', holder_name: '김하늘' }, created_at: iso(240), order_id: null, order_status: null },
     { request_id: 'r2', org_id: '1a2b3c4d-0000-4c6e-9d0a-1f00aa000002', amount: '1250000', fee: '1000', net: '1249000', status: 'REQUESTED', account: { bank_name: '국민은행', account_masked: '***-**-5678', holder_name: '이도윤' }, created_at: iso(60 * 26), order_id: 'o2', order_status: 'PENDING_APPROVAL' },
   ],
+  'balance/show': { user_id: 'u-artist', email: 'artist@example.com', orgs: [
+    { org_id: '7c1e9a40-2b51-4c6e-9d0a-1f00aa000001', name: '서린', kind: 'PERSONAL', role: 'OWNER', withdrawable: '24406', credits: [
+      { id: 'c1', title: '8월 정산금', reason: 'DSP 리포트 수기 반영 (문의 #1031)', amount: '24406', created_at: iso(60 * 24 * 45) },
+    ] },
+  ] },
   'royalty/show': { report_id: 'rep-1', dsp_id: 'spotify', status: 'NORMALIZED', currency: 'USD', source_hash: 'ab12', source_amount: '1824.55', received_amount: '0', unresolved: 3 },
 };
 

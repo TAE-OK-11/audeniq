@@ -145,6 +145,9 @@ pub const OPS: &[Op] = &[
     op("royalty", "match", FIN, true, false),
     op("royalty", "receipt", FIN, true, true),
     op("royalty", "post", FIN, true, true),
+    // 정산금 직접 추가: CLI로만 주는 OWNER만 (0159가 DB에서도 다시 확인)
+    op("balance", "show", L4, false, false),
+    op("balance", "credit", L4, true, true),
 ];
 
 pub fn find(area: &str, name: &str) -> Option<&'static Op> {
@@ -874,8 +877,94 @@ pub async fn run(
             tx.commit().await?;
             out
         }
+        ("balance", "show") => balance_show(pool, keys, a.text("email")?).await?,
+        ("balance", "credit") => {
+            let org = a.uuid("org_id")?;
+            let amount = a.decimal("amount")?;
+            if amount <= Decimal::ZERO
+                || amount > Decimal::from(BALANCE_CREDIT_MAX)
+                || !amount.fract().is_zero()
+            {
+                return Err(OpsError::Argument("amount"));
+            }
+            let title = a.text("title")?;
+            let reason = a.text("reason")?;
+            if title.chars().count() > 100 {
+                return Err(OpsError::Argument("title"));
+            }
+            if reason.chars().count() > 500 {
+                return Err(OpsError::Argument("reason"));
+            }
+            let mut tx = pool.begin().await?;
+            let id: Uuid =
+                sqlx::query_scalar("SELECT finance.staff_credit_balance($1,$2,$3,$4,$5)")
+                    .bind(actor)
+                    .bind(org)
+                    .bind(amount)
+                    .bind(title)
+                    .bind(reason)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(|e| match &e {
+                        sqlx::Error::Database(d) if d.message() == "BALANCE_AMOUNT_INVALID" => {
+                            OpsError::Argument("amount")
+                        }
+                        sqlx::Error::Database(d) if d.message() == "BALANCE_REASON_INVALID" => {
+                            OpsError::Argument("reason")
+                        }
+                        sqlx::Error::Database(d) if d.message() == "ORG_NOT_FOUND" => {
+                            OpsError::Api(Error::NotFound)
+                        }
+                        _ => e.into(),
+                    })?;
+            crate::operations::audit(
+                &mut tx,
+                Some(actor),
+                Some(org),
+                Some(id),
+                "balance.credit",
+                "STAFF_CONSOLE",
+                Uuid::new_v4(),
+            )
+            .await?;
+            let left = crate::finance::withdrawable(&mut tx, org, None).await?;
+            tx.commit().await?;
+            json!({"transaction_id": id, "org_id": org, "amount": amount.to_string(), "withdrawable": left.to_string()})
+        }
         _ => return Err(OpsError::Api(Error::NotFound)),
     })
+}
+
+/// The most one `balance.credit` adds (KRW, whole won); 0159 checks it too.
+pub const BALANCE_CREDIT_MAX: i64 = 10_000_000;
+
+/// `balance.show`: the account's organisations with what each can withdraw
+/// now and the last staff credits, so the OWNER picks the right one.
+pub async fn balance_show(pool: &PgPool, keys: &KeyRing, email: &str) -> OpsResult<Value> {
+    let user = user_by_email(pool, keys, email).await?;
+    let orgs: Vec<(Uuid, String, String, String)> = sqlx::query_as(
+        "SELECT o.id, o.name, o.kind, m.role FROM identity.memberships m JOIN identity.orgs o ON o.id=m.org_id
+          WHERE m.user_id=$1 AND m.status='ACTIVE' ORDER BY (m.role='OWNER') DESC, o.created_at",
+    )
+    .bind(user)
+    .fetch_all(pool)
+    .await?;
+    let mut out = Vec::with_capacity(orgs.len());
+    let mut c = pool.acquire().await?;
+    for (id, name, kind, role) in orgs {
+        let left = crate::finance::withdrawable(&mut c, id, None).await?;
+        let credits: Vec<Value> = sqlx::query_scalar(
+            "SELECT jsonb_build_object('id',t.id,'title',t.description,'reason',t.source_ref->>'reason','created_at',t.created_at,
+                    'amount',(SELECT SUM(e.amount) FROM finance.ledger_entries e WHERE e.transaction_id=t.id AND e.org_id=t.org_id AND e.side='CREDIT')::text)
+               FROM finance.ledger_transactions t
+              WHERE t.org_id=$1 AND t.transaction_code='MANUAL_CREDIT' ORDER BY t.created_at DESC LIMIT 5",
+        )
+        .bind(id)
+        .fetch_all(&mut *c)
+        .await?;
+        out.push(json!({"org_id": id, "name": name, "kind": kind, "role": role, "withdrawable": left.to_string(), "credits": credits}));
+    }
+    Ok(json!({"user_id": user, "email": email, "orgs": out}))
 }
 
 // ---------------------------------------------------------------------------
@@ -1011,8 +1100,25 @@ mod tests {
             ("royalty", "post"),
             ("identifiers", "register"),
             ("partners", "go-live"),
+            ("balance", "credit"),
         ] {
             assert!(find(area, name).unwrap().step_up, "{area} {name}");
+        }
+    }
+
+    #[test]
+    fn only_an_owner_adds_balance() {
+        for name in ["show", "credit"] {
+            let op = find("balance", name).unwrap();
+            assert!(op.need.allows(StaffRole::Owner), "{name}");
+            for role in [
+                StaffRole::Admin,
+                StaffRole::Operator,
+                StaffRole::Reviewer,
+                StaffRole::Support,
+            ] {
+                assert!(!op.need.allows(role), "{name} {role:?}");
+            }
         }
     }
 }

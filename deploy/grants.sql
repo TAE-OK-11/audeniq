@@ -319,6 +319,8 @@ IF EXISTS (SELECT FROM pg_roles WHERE rolname='audeniq_staff_ops') THEN
   GRANT INSERT ON distribution.identifier_counters TO audeniq_staff_ops;
   GRANT EXECUTE ON FUNCTION execution.partner_onboarding_gaps(text), execution.platform_contract_live(text) TO audeniq_staff_ops;
   GRANT EXECUTE ON FUNCTION finance.withdrawable(uuid,uuid), finance.settle_split_share(uuid) TO audeniq_staff_ops;
+  -- 0159: 최고 관리자 정산금 추가 (함수 안에서 OWNER를 다시 확인)
+  GRANT EXECUTE ON FUNCTION finance.staff_credit_balance(uuid,uuid,numeric,text,text) TO audeniq_staff_ops;
   -- payouts and royalty reports
   GRANT INSERT,UPDATE ON finance.payout_orders,finance.finance_holds,finance.royalty_reports,finance.report_lines TO audeniq_staff_ops;
   GRANT INSERT ON finance.ledger_transactions,finance.ledger_entries,finance.payout_returns,finance.royalty_receipts,
