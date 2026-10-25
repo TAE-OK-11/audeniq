@@ -5,7 +5,10 @@ set -euo pipefail
 # machine: profanity filter, protected artist names, fingerprint report
 # parsing. Verifies identical results before timing. rustc -O for both.
 task_repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-task_base=${1:-917861d}
+task_base=${1:-917861d3a1a3174d4d8068707666896d4680f74b}
+# CI checks out one commit: fetch the baseline when it is missing.
+git -C "$task_repo_root" cat-file -e "$task_base^{commit}" 2>/dev/null ||
+    git -C "$task_repo_root" fetch --no-tags --depth=1 origin "$task_base"
 task_target_dir=${CARGO_TARGET_DIR:-"$task_repo_root/target"}
 task_externs=$(cargo build --locked -p aho-corasick@1.1.5 -p unicode-normalization@0.1.26 -p unicode-security@0.1.2 \
     -p serde@1.0.229 -p serde_json@1.0.154 --message-format=json --manifest-path "$task_repo_root/Cargo.toml" |
