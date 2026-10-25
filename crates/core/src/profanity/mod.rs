@@ -419,6 +419,58 @@ fn check(text: &str, extra: &[String], how: Reading) -> bool {
             .any(|w| !w.is_empty() && joined.contains(&w))
 }
 
+/// Song texts (release title, track title and version, lyrics) with
+/// profanity: the release is marked 19+ (`parental_advisory`, the explicit
+/// flag and the domestic 19금 marking) instead of being refused.
+pub fn in_song(texts: &[&str]) -> bool {
+    texts
+        .iter()
+        .any(|t| !t.trim().is_empty() && contains(t, &[]))
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CheckInput {
+    pub texts: Vec<String>,
+}
+
+/// `POST /api/orgs/{org}/text/profanity` `{texts}` → `{flags}`: which texts
+/// the filter catches, so a form can say so while the artist types (the
+/// server still decides on save).
+pub async fn check_texts(
+    s: &crate::api::AppState,
+    a: &crate::auth::Actor,
+    org: uuid::Uuid,
+    i: CheckInput,
+) -> crate::error::Result<serde_json::Value> {
+    if i.texts.len() > 40 || i.texts.iter().any(|t| t.chars().count() > 20_000) {
+        return Err(crate::error::Error::Invalid);
+    }
+    let mut tx = s.pool.begin().await?;
+    crate::auth::membership(&mut tx, a, org, false).await?;
+    tx.rollback().await?;
+    crate::auth::rate(&s.pool, &format!("profanity-check:{}", a.user), 120).await?;
+    let flags: Vec<bool> = i.texts.iter().map(|t| contains(t, &[])).collect();
+    Ok(serde_json::json!({ "flags": flags }))
+}
+
+async fn h_check(
+    axum::extract::State(s): axum::extract::State<crate::api::AppState>,
+    axum::extract::Path(org): axum::extract::Path<uuid::Uuid>,
+    h: axum::http::HeaderMap,
+    axum::Json(i): axum::Json<CheckInput>,
+) -> crate::error::Result<axum::Json<serde_json::Value>> {
+    let a = crate::auth::actor(&s.pool, &h, &s.config, false).await?;
+    Ok(axum::Json(check_texts(&s, &a, org, i).await?))
+}
+
+pub fn routes() -> axum::Router<crate::api::AppState> {
+    axum::Router::new().route(
+        "/api/orgs/{org}/text/profanity",
+        axum::routing::post(h_check),
+    )
+}
+
 /// An artist's blocked words, cleaned: trimmed, at most 20 characters with
 /// at least one letter, duplicates (as folded) dropped; `None` when one is
 /// invalid or there are more than `max`.

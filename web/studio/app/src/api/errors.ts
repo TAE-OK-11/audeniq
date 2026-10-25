@@ -157,6 +157,7 @@ const CODE_MESSAGES: Record<string, string> = {
   ARTIST_PHOTO_NOT_READY: '사진 안전 검사가 아직 끝나지 않았어요. 잠시 뒤 다시 올려 주세요.',
   ARTIST_PHOTO_REQUIRED: '프로필 사진을 먼저 올려 주세요.',
   CHEER_PROFANITY: '욕설이나 비하 표현이 들어 있어 남길 수 없어요. 고쳐서 다시 남겨 주세요.',
+  INQUIRY_PROFANITY: '욕설이나 비하 표현이 들어 있어 보낼 수 없어요. 그 부분을 고쳐서 다시 보내 주세요.',
   CHEER_FILTER_INVALID: '막을 낱말은 한 개에 20자까지, 50개까지 넣을 수 있어요.',
   PRESS_TAGLINE_TOO_LONG: '한 줄 소개는 120자까지 쓸 수 있어요.',
   PRESS_BIO_TOO_LONG: '보도용 소개는 400자까지 쓸 수 있어요.',
