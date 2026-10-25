@@ -155,6 +155,14 @@ echo "deploy: $PREVIOUS"
 echo "     → $PINNED"
 # migrate → grants가 성공해야 api·worker가 새 이미지로 바뀐다 (compose depends_on)
 # DSP 전송 중이면 worker는 그 전송이 끝날 때까지(최대 WORKER_DELIVERY_DRAIN_SECONDS) 기다렸다가 내려간다
+# compose up은 서버에 이미 있는 이미지를 다시 받지 않아, postgres는 처음 받은 18.x에, pgbouncer는 처음 만든
+# Debian 패키지에 머문다. 배포마다 보안 패치를 받는다: 태그 이미지는 새로 받고, pgbouncer는 바탕 이미지를
+# 새로 받아 만든다(바뀌었을 때만 패키지를 다시 설치). 새 postgres 이미지면 postgres가 한 번 다시 시작한다.
+# 레지스트리에 닿지 않으면 지금 이미지로 배포를 계속한다
+"${COMPOSE[@]}" pull --quiet --ignore-buildable \
+  || echo "deploy: 경고 — postgres 등 이미지 갱신 실패, 서버에 있는 이미지로 계속" >&2
+"${COMPOSE[@]}" build --pull --quiet pgbouncer \
+  || echo "deploy: 경고 — pgbouncer 바탕 이미지 갱신 실패, 캐시로 계속" >&2
 # --build: pgbouncer 이미지는 서버에서 deploy/pgbouncer로 만든다 (바뀐 게 없으면 캐시)
 if ! "${COMPOSE[@]}" up -d --build --remove-orphans; then
   "${COMPOSE[@]}" logs --tail 80 migrate grants pgbouncer api worker || true
