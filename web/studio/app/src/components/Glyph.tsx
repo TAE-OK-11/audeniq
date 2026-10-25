@@ -19,6 +19,7 @@ const P: Record<string, ReactNode> = {
   close: <path d="M6 6l12 12M18 6 6 18" />,
   plus: <path d="M12 5v14M5 12h14" />,
   'arrow-up-right': <path d="M7 17 17 7M9 7h8v8" />,
+  'arrow-up': <path d="M12 19V5M6 11l6-6 6 6" />,
   'arrow-right': <path d="M5 12h14M13 6l6 6-6 6" />,
   'arrow-left': <path d="M19 12H5M11 6l-6 6 6 6" />,
   'chevron-right': <path d="m9 6 6 6-6 6" />,

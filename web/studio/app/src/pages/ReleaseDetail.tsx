@@ -25,7 +25,7 @@ import { MOCK } from '../lib/mode';
 import { ApiError, errorMessage } from '../api/errors';
 import { CorrectionList, ReviewNote } from '../components/CorrectionList';
 import { fixCountWord, fixPath, splitCorrections } from '../lib/corrections';
-import { CheckIcon } from '../components/Check';
+import { StageCard } from '../components/StageCard';
 import { Glyph } from '../components/Glyph';
 import { ContractBundle } from '../components/ContractBundle';
 
@@ -196,7 +196,6 @@ export function ReleaseDetail() {
   // 발매 완료 후 3일이 지나면 진행 막대는 더 볼 필요가 없어 숨긴다
   const settledLive = rel.status === 'live' && !!rel.release_date
     && Date.now() - new Date(`${rel.release_date}T00:00:00`).getTime() >= 3 * 86_400_000;
-  const stageTone = rejected ? 'is-error' : needsFix ? 'is-warn' : '';
   const stageLabel = (i: number) => (i === 1 && rejected ? '거절' : i === 1 && needsFix ? '보완 필요' : PIPELINE[i].label);
   const allFixes = rel.corrections ?? [];
   // 담당자 전체 의견은 고칠 항목이 아니라 따로 보여 준다
@@ -334,32 +333,12 @@ export function ReleaseDetail() {
       <div className="row-actions aq-detail-actions is-narrow">{actionButtons}</div>
 
       {!settledLive && (
-        <section className={`aq-stage${stageTone ? ` ${stageTone}` : ''}`} aria-label="발매 진행 단계">
-          <div className="aq-stage-head">
-            <div className="min-0">
-              <span className="aq-stage-kicker">진행 단계</span>
-              <strong className="aq-stage-now">{stageLabel(stage)}</strong>
-            </div>
-            <span className="aq-stage-count" aria-label={`${PIPELINE.length}단계 중 ${stage + 1}단계`}>
-              {stage + 1}<small>/ {PIPELINE.length}</small>
-            </span>
-          </div>
-          {STAGE_NOTE[rel.status] && !needsFix && !rejected && <p className="aq-stage-note">{STAGE_NOTE[rel.status]}</p>}
-          <ol className="aq-stage-track">
-            {PIPELINE.map((p, i) => {
-              const done = i < stage || (i === stage && rel.status === 'live');
-              return (
-                <li key={p.key} className={done ? 'is-done' : i === stage ? 'is-current' : ''} aria-current={i === stage ? 'step' : undefined}>
-                  <span className="aq-stage-bar" aria-hidden="true" />
-                  <span className="aq-stage-label">
-                    {done && <CheckIcon size={10} />}
-                    {stageLabel(i)}
-                  </span>
-                </li>
-              );
-            })}
-          </ol>
-        </section>
+        <StageCard
+          steps={PIPELINE.map((_, i) => stageLabel(i))} current={stage} complete={rel.status === 'live'}
+          tone={rejected ? 'error' : needsFix ? 'warn' : undefined}
+          note={STAGE_NOTE[rel.status] && !needsFix && !rejected ? STAGE_NOTE[rel.status] : undefined}
+          label="발매 진행 단계"
+        />
       )}
 
       {rejected && (

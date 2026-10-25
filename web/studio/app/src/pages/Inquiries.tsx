@@ -1,7 +1,7 @@
 // 문의 (/inquiries) — 담당자에게 보내는 모든 요청을 하나의 티켓 목록으로. 일반 문의(답변 대화)와
 // 플랫폼 요청(아티스트 페이지 정리·유튜브 Content ID, 플랫폼 처리 단계)을 같은 목록·같은 작성 창에서 다룬다.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from '../lib/router';
+import { Link, useSearchParams } from '../lib/router';
 import { Modal, useModalClose } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
@@ -23,6 +23,7 @@ import { KINDS, STATUS_LABEL, STATUS_TONE, kindSpec, type PlatformRequest, type 
 import { Glyph } from '../components/Glyph';
 import { HelpFaq } from '../components/HelpFaq';
 import { Badge, EmptyState, PageHeader, SkeletonList } from '../ui';
+import { StageCard } from '../components/StageCard';
 import type { Tone } from '../ui/tone';
 
 /** 일반 문의 유형 */
@@ -106,11 +107,13 @@ function TicketThread({ ticket, onClosed }: { ticket: Ticket; onClosed: () => vo
       {status !== '종료' ? (
         <form onSubmit={send} className="aq-thread-reply aq-sticky-foot">
           <label htmlFor="tReply" className="sr-only">추가 메시지</label>
-          <textarea id="tReply" rows={3} maxLength={4000} value={reply} onChange={e => setReply(e.target.value)} placeholder="추가로 전할 내용을 입력해 주세요" />
-          <div className="row-actions">
-            <button type="button" className="ui-btn is-soft" onClick={close} disabled={busy}>문의 종료</button>
-            <button type="submit" className="ui-btn is-primary" disabled={busy || !reply.trim()}>보내기</button>
+          <div className="aq-thread-compose">
+            <textarea id="tReply" rows={2} maxLength={4000} value={reply} onChange={e => setReply(e.target.value)} placeholder="담당자에게 더 전할 내용" />
+            <button type="submit" className={`ui-btn is-primary is-icon${busy ? ' is-busy' : ''}`} aria-label="보내기" disabled={busy || !reply.trim()}>
+              <Glyph name="arrow-up" size={18} />
+            </button>
           </div>
+          <button type="button" className="ui-btn is-text is-sm aq-thread-end" onClick={close} disabled={busy}>해결됐어요 · 문의 종료</button>
         </form>
       ) : (
         <div className="ui-callout aq-ticket-closed">종료된 문의예요. 더 궁금한 점은 새 문의로 남겨 주세요.</div>
@@ -119,32 +122,70 @@ function TicketThread({ ticket, onClosed }: { ticket: Ticket; onClosed: () => vo
   );
 }
 
-/** 플랫폼 요청 상세 — 접수 → 처리 → 플랫폼 전달 → 결과 */
-function RequestDetail({ r, onCancel }: { r: PlatformRequest; onCancel: () => void }) {
+/** 지금 단계를 한 줄로 */
+const STATUS_HELP: Record<string, string> = {
+  SUBMITTED: '요청을 받았어요. 담당자가 내용을 확인하고 있어요.',
+  IN_PROGRESS: '담당자가 플랫폼에 보낼 준비를 하고 있어요.',
+  SENT_TO_PLATFORM: '플랫폼에 전달했어요. 반영까지 며칠에서 몇 주 걸릴 수 있어요.',
+  RESOLVED: '플랫폼에 반영됐어요.',
+  REJECTED: '이번 요청은 처리하지 못했어요. 아래 사유를 확인해 주세요.',
+  CANCELLED: '취소한 요청이에요.',
+};
+const STEPS = ['SUBMITTED', 'IN_PROGRESS', 'SENT_TO_PLATFORM', 'RESOLVED'];
+
+/** 플랫폼 요청 상세 — 요약(플랫폼·아티스트) → 진행 단계 카드(접수 → 처리 중 → 플랫폼 전달 → 완료) → 남긴 내용 */
+function RequestDetail({ r, onCancel }: { r: PlatformRequest & { artist_id?: string | null }; onCancel: () => void }) {
+  // 발매 상세와 같은 진행 단계 카드 — 끝난 요청(처리 불가·취소)은 멈춘 다음 칸에 그 상태를 빨간색으로
+  const stopped = r.status === 'REJECTED' || r.status === 'CANCELLED';
+  const reached = stopped ? Math.max(0, ...r.events.map(e => STEPS.indexOf(e.status))) : STEPS.indexOf(r.status);
+  const current = stopped ? Math.min(reached + 1, STEPS.length - 1) : Math.max(0, reached);
+  const labels = STEPS.map((st, i) => (stopped && i === current ? STATUS_LABEL[r.status] : STATUS_LABEL[st]));
+  const notes = r.events.filter(e => e.note.trim());
+  const platform = PLATFORM_NAMES[r.platform] ?? r.platform;
   return (
     <div className="aq-request-detail">
-      <ol className="ui-timeline">
-        {r.events.map((e, i) => (
-          <li key={i} className={i === r.events.length - 1 ? 'is-now' : undefined}>
-            <b>{STATUS_LABEL[e.status] ?? e.status}</b> <span className="muted small">{niceDate(e.at)}</span>
-            {e.note && <p className="small">{e.note}</p>}
-          </li>
-        ))}
-      </ol>
-      {r.platform_ref && <p className="small muted">플랫폼 접수 번호 {r.platform_ref}</p>}
-      {r.urls.length > 0 && (
-        <ul className="aq-request-urls">
-          {r.urls.map(u => <li key={u}><a href={u} target="_blank" rel="noopener noreferrer">{u}</a></li>)}
-        </ul>
+      <section className="aq-request-sum">
+        <span className="aq-request-sum-icon" aria-hidden="true"><Glyph name={r.kind === 'PROFILE_IMAGE' ? 'user' : 'globe'} size={20} /></span>
+        <span className="min-0">
+          <strong>{platform}</strong>
+          <small>{[r.artist_name, r.release_title].filter(Boolean).join(' · ')}</small>
+        </span>
+      </section>
+
+      <StageCard steps={labels} current={current} complete={r.status === 'RESOLVED'} tone={stopped ? 'error' : undefined}
+        note={STATUS_HELP[r.status]} label="요청 진행 단계" />
+
+      {(r.resolution || notes.length > 0) && (
+        <section className="aq-request-block">
+          <h3>담당자 메모</h3>
+          {r.resolution && <p>{r.resolution}</p>}
+          {notes.map((e, i) => <p key={i}><span>{STATUS_LABEL[e.status] ?? e.status} · {niceDate(e.at)}</span>{e.note}</p>)}
+        </section>
       )}
-      {r.description && <p className="aq-ticket-body">{r.description}</p>}
+      {(r.platform_ref || r.urls.length > 0 || r.description) && (
+        <section className="aq-request-block">
+          <h3>요청 내용</h3>
+          {r.platform_ref && <p><span>플랫폼 접수 번호</span>{r.platform_ref}</p>}
+          {r.urls.map(u => <p key={u}><a href={u} target="_blank" rel="noopener noreferrer">{u}</a></p>)}
+          {r.description && <p className="is-pre">{r.description}</p>}
+        </section>
+      )}
+      {r.kind === 'PROFILE_IMAGE' && (
+        <Link className="ui-btn is-soft is-block" to={`/artist?tab=photo${r.artist_id ? `&artist=${encodeURIComponent(r.artist_id)}` : ''}`}>
+          <Glyph name="user" size={15} />아티스트 페이지에서 사진 보기
+        </Link>
+      )}
       {(r.status === 'SUBMITTED' || r.status === 'IN_PROGRESS') && (
-        <div className="row-actions">
-          <button type="button" className="ui-btn is-text aq-danger-text" onClick={onCancel}>요청 취소</button>
-        </div>
+        <button type="button" className="ui-btn is-block aq-danger-text aq-request-cancel" onClick={onCancel}>요청 취소</button>
       )}
     </div>
   );
+}
+
+/** '[발매 정보 수정 요청] Paper Moon' → 꼬리표와 제목으로 나눠 보여 준다 */
+function splitSubject(subject: string): { tag: string; title: string } {
+  const m = /^\[([^\]]{1,30})\]\s*(.*)$/.exec(subject.trim());
+  return m ? { tag: m[1], title: m[2] || m[1] } : { tag: '', title: subject };
 }
 
 interface TicketPreset { category: string; releaseId: string; subject: string; body: string; kind?: string }
@@ -342,15 +383,15 @@ export function Inquiries() {
 
   const rows = useMemo<Row[]>(() => [
     ...tickets.map(t => ({
-      id: t.id, type: 'inquiry' as const, title: t.subject, created: t.created,
-      meta: [t.category, niceDate(t.created), t.releaseTitle].filter(Boolean),
+      id: t.id, type: 'inquiry' as const, title: splitSubject(t.subject).title, created: t.created,
+      meta: [splitSubject(t.subject).tag || t.category, niceDate(t.created), t.releaseTitle].filter(Boolean),
       tone: inquiryTone(t.status), status: t.status,
     })),
     ...(requests ?? []).map(r => {
-      const g = kindSpec(r.kind)?.group;
+      // 같은 요청을 여러 플랫폼에 보내면 제목이 같아진다 — 어느 플랫폼인지 먼저 보이게
       return {
         id: r.id, type: 'request' as const, title: kindSpec(r.kind)?.label ?? r.kind, created: r.created_at,
-        meta: [g ? GROUP_CATEGORY[g] : '플랫폼 요청', niceDate(r.created_at), r.release_title ?? PLATFORM_NAMES[r.platform] ?? r.platform].filter(Boolean) as string[],
+        meta: [PLATFORM_NAMES[r.platform] ?? r.platform, r.release_title, niceDate(r.created_at)].filter(Boolean) as string[],
         tone: (STATUS_TONE[r.status] ?? 'gray') as Tone, status: STATUS_LABEL[r.status] ?? r.status,
       };
     }),
@@ -464,16 +505,16 @@ export function Inquiries() {
 
       {openRequest && (
         <Modal title={kindSpec(openRequest.kind)?.label ?? '플랫폼 요청'} onClose={() => setOpenId(null)}>
-          <p className="small muted">
-            {[PLATFORM_NAMES[openRequest.platform] ?? openRequest.platform, openRequest.artist_name, openRequest.release_title].filter(Boolean).join(' · ')}
-          </p>
           <RequestDetail r={openRequest} onCancel={() => void cancelRequest(openRequest)} />
         </Modal>
       )}
 
       {openTicket && (
-        <Modal title={openTicket.subject} onClose={() => setOpenId(null)}>
-          <p className="small muted">{[openTicket.category, niceDate(openTicket.created), openTicket.releaseTitle].filter(Boolean).join(' · ')}</p>
+        <Modal title={splitSubject(openTicket.subject).title} onClose={() => setOpenId(null)}>
+          <p className="aq-ticket-meta">
+            {splitSubject(openTicket.subject).tag && <Badge tone="blue">{splitSubject(openTicket.subject).tag}</Badge>}
+            <span>{[openTicket.category, niceDate(openTicket.created), openTicket.releaseTitle].filter(Boolean).join(' · ')}</span>
+          </p>
           {!MOCK ? <TicketThread ticket={openTicket} onClosed={() => setOpenId(null)} /> : (<>
           {/* 체험 모드도 실서버와 같은 대화 모양 — 내 문의는 오른쪽, 담당자 답변은 왼쪽 말풍선 */}
           <ol className="aq-thread">
