@@ -4,7 +4,10 @@ use crate::{
     error::{Error, Result},
     operations,
 };
-use argon2::{Argon2, PasswordHasher, PasswordVerifier, password_hash::phc::PasswordHash};
+use argon2::{
+    Argon2, PasswordHasher, PasswordVerifier,
+    password_hash::phc::{Output, PasswordHash, Salt},
+};
 use axum::{Json, http::HeaderMap};
 use rand::{TryRng, rngs::SysRng};
 use serde::Deserialize;
@@ -338,16 +341,77 @@ fn credentials(c: &Credentials) -> Result<String> {
 /// cannot silently alter stored hashes; verification reads the parameters
 /// from each stored hash, so older hashes keep verifying. Concurrency is
 /// bounded by `password_slots` to keep memory and CPU predictable.
-fn argon2() -> Argon2<'static> {
-    let params = argon2::Params::new(19 * 1024, 2, 1, None).expect("valid Argon2 params");
-    Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params)
+fn argon2_params() -> argon2::Params {
+    argon2::Params::new(19 * 1024, 2, 1, None).expect("valid Argon2 params")
 }
+fn argon2() -> Argon2<'static> {
+    Argon2::new(
+        argon2::Algorithm::Argon2id,
+        argon2::Version::V0x13,
+        argon2_params(),
+    )
+}
+/// ARM64 computes the Argon2id tag with [`crate::argon2id`] (NEON block
+/// function; the crate runs it as scalar code there). The PHC string and the
+/// verification rules stay the crate's, and the tags are identical.
+const NATIVE_ARGON2: bool = cfg!(target_arch = "aarch64");
 pub(crate) fn hash_password(password: String) -> Result<String> {
+    if NATIVE_ARGON2 {
+        return native_hash(password.as_bytes()).ok_or(Error::Internal);
+    }
     argon2()
         // Random 16-byte salt from the OS RNG (password-hash 0.6 default).
         .hash_password(password.as_bytes())
         .map(|h| h.to_string())
         .map_err(|_| Error::Internal)
+}
+/// The PHC string `argon2().hash_password` would give, salt from the OS RNG.
+fn native_hash(password: &[u8]) -> Option<String> {
+    let mut salt = [0u8; 16];
+    SysRng.try_fill_bytes(&mut salt).ok()?;
+    native_hash_with_salt(password, &salt)
+}
+fn native_hash_with_salt(password: &[u8], salt: &[u8]) -> Option<String> {
+    let params = argon2_params();
+    let tag = crate::argon2id::hash(
+        password,
+        salt,
+        params.m_cost(),
+        params.t_cost(),
+        params.p_cost(),
+    )?;
+    let phc = PasswordHash {
+        algorithm: argon2::Algorithm::Argon2id.ident(),
+        version: Some(argon2::Version::V0x13.into()),
+        params: (&params).try_into().ok()?,
+        salt: Some(Salt::new(salt).ok()?),
+        hash: Some(Output::new(&tag).ok()?),
+    };
+    Some(phc.to_string())
+}
+/// `Some(matches)` for an Argon2id v19 hash with a 32-byte tag and no
+/// secret/associated data; `None` leaves anything else to the crate.
+fn native_verify(password: &[u8], h: &PasswordHash) -> Option<bool> {
+    use subtle::ConstantTimeEq;
+    if h.algorithm != argon2::Algorithm::Argon2id.ident() || h.version != Some(0x13) {
+        return None;
+    }
+    let params = argon2::Params::try_from(h).ok()?;
+    let (salt, want) = (h.salt.as_ref()?, h.hash.as_ref()?);
+    if !params.keyid().is_empty()
+        || !params.data().is_empty()
+        || want.len() != crate::argon2id::TAG_LEN
+    {
+        return None;
+    }
+    let tag = crate::argon2id::hash(
+        password,
+        salt,
+        params.m_cost(),
+        params.t_cost(),
+        params.p_cost(),
+    )?;
+    Some(tag.ct_eq(want.as_bytes()).into())
 }
 pub async fn password_hash(password: String) -> Result<String> {
     tokio::task::spawn_blocking(move || hash_password(password))
@@ -355,7 +419,12 @@ pub async fn password_hash(password: String) -> Result<String> {
         .map_err(|_| Error::Internal)?
 }
 pub(crate) fn verify_password(password: &str, hash: &str) -> bool {
-    PasswordHash::new(hash).is_ok_and(|h| argon2().verify_password(password.as_bytes(), &h).is_ok())
+    PasswordHash::new(hash).is_ok_and(|h| {
+        NATIVE_ARGON2
+            .then(|| native_verify(password.as_bytes(), &h))
+            .flatten()
+            .unwrap_or_else(|| argon2().verify_password(password.as_bytes(), &h).is_ok())
+    })
 }
 #[cfg(test)]
 async fn verify(password: String, hash: String) -> bool {
@@ -967,5 +1036,62 @@ mod tests {
         assert!(cookie.contains("SameSite=Strict"));
         assert!(cookie.contains("; Secure"));
         assert!(!cookie.contains("Domain="));
+    }
+
+    /// The ARM64 path writes exactly the crate's PHC string and accepts and
+    /// rejects exactly what the crate does (run on every architecture).
+    #[test]
+    fn native_argon2_is_interchangeable_with_the_crate() {
+        let salt = *b"0123456789abcdef";
+        for password in ["Long-test-password-123!", "", "비밀번호 🔑"] {
+            let native = native_hash_with_salt(password.as_bytes(), &salt).unwrap();
+            let theirs = argon2()
+                .hash_password_with_salt(password.as_bytes(), &salt)
+                .unwrap()
+                .to_string();
+            assert_eq!(native, theirs);
+            let parsed = PasswordHash::new(&theirs).unwrap();
+            assert_eq!(native_verify(password.as_bytes(), &parsed), Some(true));
+            assert_eq!(native_verify(b"wrong", &parsed), Some(false));
+            assert!(
+                argon2()
+                    .verify_password(password.as_bytes(), &PasswordHash::new(&native).unwrap())
+                    .is_ok()
+            );
+        }
+        let random = native_hash(b"pw").unwrap();
+        assert!(verify_password("pw", &random) && !verify_password("pW", &random));
+        // Other algorithms, versions and tag lengths go to the crate.
+        for other in [
+            Argon2::new(
+                argon2::Algorithm::Argon2i,
+                argon2::Version::V0x13,
+                argon2_params(),
+            ),
+            Argon2::new(
+                argon2::Algorithm::Argon2id,
+                argon2::Version::V0x10,
+                argon2_params(),
+            ),
+            Argon2::new(
+                argon2::Algorithm::Argon2id,
+                argon2::Version::V0x13,
+                argon2::Params::new(64, 1, 1, Some(64)).unwrap(),
+            ),
+        ] {
+            let h = other
+                .hash_password_with_salt(b"pw", &salt)
+                .unwrap()
+                .to_string();
+            assert_eq!(
+                native_verify(b"pw", &PasswordHash::new(&h).unwrap()),
+                None,
+                "{h}"
+            );
+            assert!(
+                verify_password("pw", &h) && !verify_password("px", &h),
+                "{h}"
+            );
+        }
     }
 }
