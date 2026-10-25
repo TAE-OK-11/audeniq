@@ -15,6 +15,7 @@ import { InfringementCard } from '../components/InfringementCard';
 import { SkeletonBlock, SkeletonRows } from '../components/Skeleton';
 import { ReleaseCover, useImageOk, useSharpImage } from '../components/ReleaseCover';
 import { coverImageUrl } from '../api/remote';
+import { gradientFor } from '../ui/cover';
 import { useAsync } from '../hooks/useAsync';
 import { STATUS_LABEL, localStamp, statusTone } from '../lib/format';
 import { dspLabel, durationLabel, genreLabel, kindLabel, languageLabel } from '../lib/catalog';
@@ -220,6 +221,7 @@ export function ReleaseDetail() {
   // 배지 건수는 아래에 보여 주는 고칠 칸과 요청 서류를 모두 센다 (2건이라면서 3개를 보여 주던 것)
   const fixTotal = fixes.length + proofs.length;
   const dday = releaseDay(rel.release_date, rel.status);
+  const totalMs = rel.tracks.reduce((n, t) => n + (t.duration_ms ?? 0), 0);
   // 앨범별 발매 준비 현황 — 끝난 발매(발매 완료 3일 뒤)·취소·거절에는 보여 주지 않는다
   const agreementDoc = docs.find(x => x.kind === 'agreements');
   const prep = settledLive || ['cancelled', 'rejected', 'closed'].includes(rel.status) ? null : albumPrep({
@@ -337,6 +339,10 @@ export function ReleaseDetail() {
       </div>
 
       <div className="aq-detail-hero" aria-label="발매 정보">
+        {/* 커버 색이 머리 카드에 은은하게 번지게 — 커버가 없으면 발매별 색으로 */}
+        <span className="aq-hero-glow" aria-hidden="true">
+          {coverOk ? <img src={coverSrc} alt="" decoding="async" /> : <i style={{ background: gradientFor(rel.id) }} />}
+        </span>
         <ReleaseCover id={rel.id} src={coverSrc} className="cover aq-detail-cover" />
         <div className="aq-detail-info">
           <div className="aq-detail-top">
@@ -347,13 +353,16 @@ export function ReleaseDetail() {
           <h1>{rel.title || '제목 없는 발매'}</h1>
           <p className="aq-detail-artist">{rel.artist || '아티스트 없음'}</p>
           {/* 비어 있는 값은 아래 '발매 정보'에서 '입력 전'으로 보여 주므로 여기서는 있는 것만 */}
-          {(rel.tracks.length > 0 || genre || rel.release_date) && (
-            <div className="aq-detail-facts">
-              {rel.tracks.length > 0 && <span>{rel.tracks.length}곡</span>}
-              {genre && <span>{genre}</span>}
-              {rel.release_date && <span>{rel.release_date}</span>}
-              {dday && <span className={`aq-dday${dday.soon ? ' is-soon' : ''}`}>{dday.text}</span>}
-            </div>
+          {/* 알약 여러 개 대신 한 줄 — 곡 수 · 총 길이 · 장르, 그 아래 발매일과 D-day */}
+          {(rel.tracks.length > 0 || genre) && (
+            <p className="aq-detail-meta">{[rel.tracks.length ? `${rel.tracks.length}곡` : '', totalMs ? durationLabel(totalMs) : '', genre].filter(Boolean).join(' · ')}</p>
+          )}
+          {rel.release_date && (
+            <p className="aq-detail-when">
+              <Glyph name="calendar" size={15} />
+              <span><span className="aq-when-label">{dateLabel} </span>{rel.release_date}</span>
+              {dday && <b className={`aq-dday${dday.soon ? ' is-soon' : ''}`}>{dday.text}</b>}
+            </p>
           )}
         </div>
         <div className="aq-detail-actions is-wide">{actionButtons}</div>
@@ -483,7 +492,7 @@ export function ReleaseDetail() {
             <div className="aq-relinfo-card">
               <div className="aq-tracklist-head">
                 <h2 className="subhead">트랙 {rel.tracks.length}곡</h2>
-                {rel.tracks.some(t => t.duration_ms) && <span>총 {durationLabel(rel.tracks.reduce((n, t) => n + (t.duration_ms ?? 0), 0))}</span>}
+                {totalMs > 0 && <span>총 {durationLabel(totalMs)}</span>}
               </div>
               {rel.tracks.length ? (
                 <ol className="aq-tracklist">
