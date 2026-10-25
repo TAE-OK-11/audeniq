@@ -373,3 +373,27 @@ export async function saveNotificationSettings(emailEnabled: boolean): Promise<{
   const v = await req<{ email_enabled: boolean }>('/api/me/notification-settings', { method: 'PUT', body: { email_enabled: emailEnabled } });
   return { emailEnabled: v.email_enabled };
 }
+
+// ---------------------------------------------------------------------------
+// 식별코드 — 접수한 발매의 UPC와 곡별 ISRC (crates/core/src/codes.rs). 테스트 범위 코드는 따로 표시
+// ---------------------------------------------------------------------------
+export interface CodeTrack { trackId: string; title: string; disc: number; number: number; isrc: string; isrcVirtual: boolean }
+export interface CodeRelease {
+  releaseId: string; title: string; artist: string; releaseDate: string; status: string;
+  upc: string; upcVirtual: boolean; tracks: CodeTrack[];
+}
+type ServerCode = {
+  release_id: string; title: string | null; artist: string | null; release_date: string | null; status: string;
+  upc: string | null; upc_virtual: boolean;
+  tracks: { track_id: string; title: string | null; disc: number | null; number: number | null; isrc: string | null; isrc_virtual: boolean }[];
+};
+export async function fetchCodes(): Promise<CodeRelease[]> {
+  const r = await req<{ items: ServerCode[] }>(orgPath('/codes'));
+  return r.items.map(c => ({
+    releaseId: c.release_id, title: c.title ?? '', artist: c.artist ?? '', releaseDate: c.release_date ?? '', status: c.status,
+    upc: c.upc ?? '', upcVirtual: c.upc_virtual,
+    tracks: c.tracks.map(t => ({ trackId: t.track_id, title: t.title ?? '', disc: t.disc ?? 1, number: t.number ?? 0, isrc: t.isrc ?? '', isrcVirtual: t.isrc_virtual })),
+  }));
+}
+/** 발매·곡·UPC·ISRC 전체를 CSV로 (스프레드시트용, 수식 주입은 서버가 막는다) */
+export const downloadCodesCsv = () => downloadFile(orgPath('/codes.csv'), 'codes.csv');

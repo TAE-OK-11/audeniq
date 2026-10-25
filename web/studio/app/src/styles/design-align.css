@@ -1786,3 +1786,65 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
   .aq-prep-bar i,.aq-prep-count b,.aq-prep-list li.is-done .ui-icon svg,.aq-detail-when .aq-dday.is-soon,.aq-copy-btn.is-copied .aq-glyph{animation:none}
   .aq-trackrow:is(:active,.is-pressed),.aq-prep-list button.aq-task:is(:active,.is-pressed){transform:none}
 }
+
+/* ---------- 발매 상세 '성과' (components/ReleaseStats.tsx) — 정산 화면 큰 숫자 + 달별 막대 + 플랫폼별 몫 ---------- */
+.aq-stats-hero{display:grid;gap:4px}
+.aq-stats-label{margin:0;color:var(--aq-text-3);font-size:14px;font-weight:700}
+.aq-stats-big{display:flex;align-items:baseline;gap:4px;margin:2px 0 0;color:var(--aq-text);font-size:clamp(34px,5vw,44px);font-weight:800;letter-spacing:-.02em;line-height:1.15;font-variant-numeric:tabular-nums}
+.aq-stats-big small{color:var(--aq-text-3);font-size:20px;font-weight:700}
+.aq-stats-sub{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-top:6px;color:var(--aq-text-3);font-size:14px;font-weight:600}
+.aq-stats-sub b{color:var(--aq-text)}
+.aq-stats-change{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:var(--aq-r-pill);font-size:12px;font-weight:700}
+.aq-stats-change.is-up{background:var(--aq-tone-green-bg);color:var(--aq-tone-green-fg)}
+.aq-stats-change.is-down{background:var(--aq-tone-red-bg,#FDECEC);color:var(--aq-tone-red-fg,#B0393B)}
+.aq-stats-change.is-down .aq-glyph{transform:rotate(180deg)}
+.aq-stats-bars{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);align-items:end;gap:8px;height:150px;margin:20px 0 0;padding:14px 14px 10px;list-style:none;border-radius:var(--aq-r-xl);background:#fff}
+.aq-stats-bars li{display:grid;grid-template-rows:minmax(0,1fr) auto;justify-items:center;gap:6px;height:100%;min-width:0}
+.aq-stats-bars i{align-self:end;width:min(100%,28px);border-radius:8px 8px 4px 4px;background:var(--aq-blue-150);transform-origin:bottom;animation:aq-grow-y var(--aq-motion-page) var(--aq-enter) both}
+.aq-stats-bars li.is-last i{background:var(--aq-blue-500)}
+.aq-stats-bars span{color:var(--aq-text-4);font-size:11px;font-weight:700;font-variant-numeric:tabular-nums}
+.aq-stats-bars li.is-last span{color:var(--aq-blue-700)}
+.aq-stats-dsps{display:grid;gap:2px;margin:0;padding:6px;list-style:none;border-radius:var(--aq-r-xl);background:#fff}
+.aq-stats-dsps li{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 10px}
+.aq-stats-dsp-main{display:grid;gap:6px;min-width:0}
+.aq-stats-dsp-top{display:flex;justify-content:space-between;gap:8px;font-size:14px}
+.aq-stats-dsp-top b{overflow:hidden;color:var(--aq-text);font-weight:700;text-overflow:ellipsis;white-space:nowrap}
+.aq-stats-dsp-top span{flex:none;color:var(--aq-text-3);font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}
+.aq-stats-share{height:6px;border-radius:var(--aq-r-pill);background:var(--aq-gray-100);overflow:hidden}
+.aq-stats-share i{display:block;height:100%;border-radius:inherit;background:var(--aq-blue-500);transform-origin:left;animation:aq-grow-x var(--aq-motion-page) var(--aq-enter) both}
+.aq-stats-dsp-rev{min-width:72px;color:var(--aq-text);font-size:14px;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+.aq-stats-empty{display:grid;justify-items:center;gap:8px;padding:40px 24px;text-align:center}
+.aq-stats-empty .subhead{margin:6px 0 0}
+.aq-stats-empty p{max-width:420px;margin:0;color:var(--aq-text-3);font-size:14px;line-height:1.65}
+
+/* ---------- 발매·곡 관리 'UPC·ISRC' (components/CodesPanel.tsx) ---------- */
+.aq-codes{display:grid;gap:14px}
+.aq-codes-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr)) auto;align-items:center;gap:12px;padding:20px 22px;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
+.aq-codes-summary>div{display:grid;gap:2px}
+.aq-codes-summary>div span{color:var(--aq-text-3);font-size:13px;font-weight:700}
+.aq-codes-summary>div b{color:var(--aq-text);font-size:28px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.aq-codes-summary>div small{margin-left:3px;color:var(--aq-text-3);font-size:14px;font-weight:600}
+.aq-codes-summary .ui-btn{gap:6px}
+.aq-codes-list{display:grid;gap:12px}
+.aq-code-card{display:grid;gap:12px}
+.aq-code-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px}
+.aq-code-title{display:grid;gap:2px;min-width:0;padding:0;border:0;background:none;font:inherit;text-align:left;color:inherit;cursor:pointer}
+.aq-code-title b{color:var(--aq-text);font-size:17px;font-weight:700}
+.aq-code-title span{color:var(--aq-text-3);font-size:13px}
+@media(hover:hover){.aq-code-title:hover b{color:var(--aq-primary)}}
+.aq-code-upc,.aq-code-isrc{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
+.aq-code-kind{padding:2px 8px;border-radius:6px;background:var(--aq-blue-150);color:var(--aq-blue-700);font-size:11px;font-weight:800}
+.aq-code-tracks{display:grid;margin:0;padding:4px;list-style:none;border-radius:var(--aq-r-xl);background:#fff}
+.aq-code-tracks li{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:12px;align-items:center;min-height:52px;padding:6px 12px}
+.aq-code-tracks li+li{box-shadow:inset 0 1px 0 var(--aq-line)}
+.aq-code-track{overflow:hidden;color:var(--aq-text);font-size:14px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:760px){
+  .aq-codes-summary{grid-template-columns:repeat(2,minmax(0,1fr));padding:18px}
+  .aq-codes-summary .ui-btn{grid-column:1/-1}
+  .aq-code-tracks li{grid-template-columns:22px minmax(0,1fr);row-gap:2px}
+  .aq-code-tracks li>:last-child{grid-column:2}
+}
+@media(prefers-reduced-motion:reduce){.aq-stats-bars i,.aq-stats-share i{animation:none}}
+.aq-code-card{padding:20px 22px;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
+.aq-code-tracks .aq-empty-val,.aq-code-upc .aq-empty-val{font-size:13px;font-weight:600}
+@media(max-width:760px){.aq-code-card{padding:18px 16px}}
