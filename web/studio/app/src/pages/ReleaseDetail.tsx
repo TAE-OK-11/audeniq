@@ -15,7 +15,6 @@ import { InfringementCard } from '../components/InfringementCard';
 import { SkeletonBlock, SkeletonRows } from '../components/Skeleton';
 import { ReleaseCover, useImageOk, useSharpImage } from '../components/ReleaseCover';
 import { coverImageUrl } from '../api/remote';
-import { gradientFor } from '../ui/cover';
 import { useAsync } from '../hooks/useAsync';
 import { STATUS_LABEL, localStamp, statusTone } from '../lib/format';
 import { dspLabel, durationLabel, genreLabel, kindLabel, languageLabel } from '../lib/catalog';
@@ -339,10 +338,6 @@ export function ReleaseDetail() {
       </div>
 
       <div className="aq-detail-hero" aria-label="발매 정보">
-        {/* 커버 색이 머리 카드에 은은하게 번지게 — 커버가 없으면 발매별 색으로 */}
-        <span className="aq-hero-glow" aria-hidden="true">
-          {coverOk ? <img src={coverSrc} alt="" decoding="async" /> : <i style={{ background: gradientFor(rel.id) }} />}
-        </span>
         <ReleaseCover id={rel.id} src={coverSrc} className="cover aq-detail-cover" />
         <div className="aq-detail-info">
           <div className="aq-detail-top">
