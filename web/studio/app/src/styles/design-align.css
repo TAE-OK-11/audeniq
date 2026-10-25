@@ -1821,3 +1821,11 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 
 /* 발매·곡 관리 › 전체 트랙 — 검색칸 옆 UPC·ISRC CSV */
 .aq-codes-csv{flex:none;gap:6px}
+/* 휴대폰 점검 (390px) — 코드 + 복사는 한 줄 전체, 성과의 플랫폼 이름이 잘리지 않게 숫자를 아래로 */
+@media(max-width:760px){
+  .ui-kv>.aq-kv-code{grid-column:1/-1}
+  .aq-stats-dsps li{grid-template-columns:32px minmax(0,1fr) auto;gap:10px;padding:10px 6px}
+  .aq-stats-dsp-top{flex-wrap:wrap;row-gap:0}
+  .aq-stats-dsp-top b{flex:1 0 100%}
+  .aq-stats-dsp-rev{min-width:0}
+}

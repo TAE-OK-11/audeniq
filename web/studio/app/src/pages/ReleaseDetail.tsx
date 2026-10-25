@@ -240,7 +240,8 @@ export function ReleaseDetail() {
   const totalMs = rel.tracks.reduce((n, t) => n + (t.duration_ms ?? 0), 0);
   // 앨범별 발매 준비 현황 — 끝난 발매(발매 완료 3일 뒤)·취소·거절에는 보여 주지 않는다
   const agreementDoc = docs.find(x => x.kind === 'agreements');
-  const prep = settledLive || ['cancelled', 'rejected', 'closed'].includes(rel.status) ? null : albumPrep({
+  // 보완 요청 중에는 위 보완 카드가 할 일 목록이라 같은 내용을 두 번 보여 주지 않는다
+  const prep = settledLive || needsFix || ['cancelled', 'rejected', 'closed'].includes(rel.status) ? null : albumPrep({
     rel, draft: d, coverReady: coverOk || !!d?.coverName,
     agreement: !agreementDoc ? 'none' : agreementDoc.localSignatureAt || agreementDoc.electronic ? 'signed' : agreementDoc.reviewStatus === 'approved' ? 'to-sign' : 'none',
     proofsDue: pendingProofs(allDocs, rel.id, rel.title).length,
@@ -468,7 +469,7 @@ export function ReleaseDetail() {
                   <div><dt>주요 언어</dt><dd>{languageLabel(d?.language) || <Empty>입력 전</Empty>}</dd></div>
                   <div><dt>{dateLabel}</dt><dd>{rel.release_date || <Empty>미정</Empty>}</dd></div>
                   {d?.preorder_start && <div><dt>사전 공개</dt><dd>{d.preorder_start}부터</dd></div>}
-                  <div><dt>UPC / EAN</dt><dd className="aq-code-line">{d?.upc ? <><span className="is-mono">{d.upc}</span><CopyButton text={d.upc} className="ui-btn is-xs is-white" /></> : <Empty>등록 전</Empty>}</dd></div>
+                  <div className={d?.upc ? 'aq-kv-code' : undefined}><dt>UPC / EAN</dt><dd className="aq-code-line">{d?.upc ? <><span className="is-mono">{d.upc}</span><CopyButton text={d.upc} className="ui-btn is-xs is-white" /></> : <Empty>등록 전</Empty>}</dd></div>
                   <div><dt>장르</dt><dd>{genre || <Empty>입력 전</Empty>}</dd></div>
                   <div><dt>레이블</dt><dd>{d?.label || <Empty>입력 전</Empty>}</dd></div>
                   {!coverOk && <div><dt>최근 수정</dt><dd>{localStamp(rel.updated_at || rel.created_at)}</dd></div>}
