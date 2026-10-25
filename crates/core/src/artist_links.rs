@@ -1,6 +1,7 @@
 //! Artist pages (migration 0151).
 //!
-//! One public page per artist, `/link/artist/{handle}`: the artist's name, a short
+//! One public page per artist, `/link/artist/{handle}`: the artist's name and photo
+//! ([`crate::artist_studio`]), a short
 //! introduction, their own pages on each platform (linked
 //! [`crate::artist_pages`]) and every release of the artist that has a
 //! visible smart link, newest first; each release opens its smart link
@@ -111,6 +112,7 @@ pub async fn list(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
     auth::membership(&mut tx, a, org, false).await?;
     let items: Vec<Value> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT jsonb_build_object('artist_id', a.id, 'name', a.name,
+                'photo', EXISTS (SELECT 1 FROM portal.artist_photos f WHERE f.org_id=a.org_id AND f.artist_id=a.id),
                 'link', (SELECT jsonb_build_object('slug', k.slug, 'enabled', k.enabled, 'bio', k.bio, 'links', k.links, 'contact', k.contact,
                                   'cheers_enabled', k.cheers_enabled,
                                   'posts', (SELECT count(*) FROM portal.artist_posts p WHERE p.link_id=k.id),
@@ -393,7 +395,9 @@ pub async fn public_page(s: &AppState, h: &HeaderMap, slug: &str) -> Result<Valu
         return Err(Error::NotFound);
     }
     let row = sqlx::query(
-        "SELECT k.id, k.org_id, k.artist_id, k.bio, k.links, k.contact, k.cheers_enabled, a.name
+        "SELECT k.id, k.org_id, k.artist_id, k.bio, k.links, k.contact, k.cheers_enabled, a.name,
+                (SELECT floor(extract(epoch FROM f.updated_at) * 1000)::bigint FROM portal.artist_photos f
+                  WHERE f.org_id=k.org_id AND f.artist_id=k.artist_id) AS photo_v
            FROM portal.artist_links k
            JOIN catalog.artists a ON a.org_id=k.org_id AND a.id=k.artist_id
           WHERE k.slug=$1 AND k.enabled AND a.archived_at IS NULL",
@@ -465,6 +469,9 @@ pub async fn public_page(s: &AppState, h: &HeaderMap, slug: &str) -> Result<Valu
     Ok(json!({
         "community": community,
         "name": row.get::<String, _>("name"),
+        // When the photo last changed: its address carries it (the image is cached for a year).
+        "photo": row.get::<Option<i64>, _>("photo_v").is_some(),
+        "photo_v": row.get::<Option<i64>, _>("photo_v"),
         "bio": row.get::<String, _>("bio"),
         "links": row.get::<Value, _>("links"),
         "contact": row.get::<String, _>("contact"),

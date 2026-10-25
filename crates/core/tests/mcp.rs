@@ -2115,7 +2115,7 @@ async fn promotion_codes_notifications_documents_and_support(pool: PgPool) {
         v["url"]
             .as_str()
             .unwrap()
-            .starts_with(&format!("{ORIGIN}/l/")),
+            .starts_with(&format!("{ORIGIN}/link/release/")),
         "{v}"
     );
     assert_eq!(

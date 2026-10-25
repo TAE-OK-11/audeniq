@@ -103,7 +103,7 @@ export function ArtistDiscography() {
 
   return (
     <PublicShell bg={artistBackdrop(page)} className="aq-artistpage" cardClass="aq-artist-card aq-artist-sub">
-      <ArtistSubHead slug={slug} name={page.name} title="디스코그래피" />
+      <ArtistSubHead slug={slug} name={page.name} photo={page.photo} version={page.photo_v} title="디스코그래피" />
       {items === null && <CardSkeleton rows={3} tall />}
       {list.length > 0 && (
         <p className="aq-disco-stats" aria-label="요약">

@@ -1,5 +1,5 @@
 // 아티스트 소개 페이지 편집 창 — 아티스트마다 하나의 공개 주소(/a/코드): 이름·소개 글·플랫폼 아티스트 페이지와
-// 스마트링크를 켠 발매들. 계정 정보 > 아티스트 페이지(ArtistHubCard)의 '소개 페이지' 줄에서 열린다.
+// 스마트링크를 켠 발매들. 아티스트 페이지(pages/ArtistStudio)의 '소개 페이지' 줄에서 열린다.
 // 처음 저장하면 주소가 만들어지고, 꺼도 주소는 그대로라 다시 켜면 같은 링크로 열린다.
 import { useEffect, useState } from 'react';
 import { orgPath, req } from '../api/http';

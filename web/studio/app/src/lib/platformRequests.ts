@@ -41,7 +41,14 @@ export const KINDS: KindSpec[] = [
     urls: [], minUrls: 0, release: 'required', description: 'optional' },
 ];
 
-export const kindSpec = (kind: string) => KINDS.find(k => k.kind === kind);
+/** 문의 화면에서는 만들지 않는 요청 — 아티스트 페이지 > 프로필 사진에서 사진과 함께 만든다 */
+const MADE_ELSEWHERE: KindSpec[] = [
+  { kind: 'PROFILE_IMAGE', group: 'profile', label: '프로필 사진 바꾸기',
+    help: '아티스트 페이지에서 올린 프로필 사진을 플랫폼에 보내 바꿔요.',
+    urls: ['플랫폼 아티스트 페이지'], minUrls: 0, release: 'none', description: 'optional' },
+];
+
+export const kindSpec = (kind: string) => KINDS.find(k => k.kind === kind) ?? MADE_ELSEWHERE.find(k => k.kind === kind);
 
 export const STATUS_LABEL: Record<string, string> = {
   SUBMITTED: '접수', IN_PROGRESS: '처리 중', SENT_TO_PLATFORM: '플랫폼 전달',
@@ -58,5 +65,7 @@ export interface PlatformRequest {
   id: string; kind: string; platform: string; release_id: string | null; release_title: string | null;
   artist_name: string; urls: string[]; description: string; status: string; platform_ref: string; resolution: string;
   created_at: string; updated_at: string; org_name?: string;
+  /** 사진을 담은 요청 (PROFILE_IMAGE) — 스태프는 /api/staff/platform-requests/{id}/image로 연다 */
+  image?: boolean;
   events: { status: string; note: string; by_staff: boolean; at: string }[];
 }

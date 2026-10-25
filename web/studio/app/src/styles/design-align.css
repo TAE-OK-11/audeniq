@@ -991,8 +991,6 @@ body.wizard-mode .portal-header,.portal-header:has(#portalNav:not([hidden])){box
 /* 계정 정보 > 아티스트 소개 페이지 편집 창 — 주소 · 소개 글 · 공개 스위치 */
 .aq-artist-link-editor{display:grid;grid-template-columns:minmax(0,1fr);gap:20px}
 /* 계정 정보 > 아티스트 페이지 — 아티스트 이름 아래에 플랫폼 페이지·소개 페이지 두 줄 */
-.aq-artist-hub-group+.aq-artist-hub-group{margin-top:6px;padding-top:6px;box-shadow:inset 0 1px 0 var(--aq-line)}
-.aq-artist-hub-name{margin:0;padding:10px 14px 2px;font-size:13px;font-weight:800;color:var(--aq-text-3)}
 /* 아티스트 소개 페이지 편집 — 맨 위 공유 카드(이름·상태·주소 + 도구 타일), 섹션은 제목 줄 + 내용 */
 .aq-al-share{display:grid;gap:14px;padding:18px;border-radius:var(--aq-r-xl);background:var(--aq-blue-50)}
 .aq-al-head{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px}
@@ -1467,3 +1465,87 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 /* 발매 메일 알림 — 접어 둔 버튼, 펼치면 폼 */
 .aq-smartlink-alert-open{margin-top:24px;gap:6px}
 .aq-pub-card .ui-reveal .aq-smartlink-alert{margin-top:24px}
+
+/* ==========================================================================
+   아티스트 페이지 관리 (pages/ArtistStudio) — 사진·주소 카드, 반응·관리·프로필 사진 탭
+   ========================================================================== */
+.aq-artist-avatar.has-photo{overflow:hidden;background:var(--aq-surface-2)}
+.aq-artist-avatar.has-photo img{display:block;width:100%;height:100%;object-fit:cover}
+.aq-studio-pick{min-width:160px}
+.aq-studio-id{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:16px;margin:0 0 20px}
+.aq-studio-avatar{position:relative;flex:none;width:72px;height:72px;padding:0;border:0;border-radius:50%;background:none;cursor:pointer}
+.aq-studio-avatar>img,.aq-studio-avatar>span{display:grid;place-items:center;width:100%;height:100%;border-radius:50%;object-fit:cover;color:#fff;font-size:28px;font-weight:var(--aq-fw-heavy)}
+.aq-studio-avatar>i{position:absolute;right:-2px;bottom:-2px;display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--aq-surface);color:var(--aq-text-2);box-shadow:0 0 0 3px var(--aq-blue-50)}
+.aq-studio-who h2{margin:0;font-size:var(--aq-fs-title);font-weight:var(--aq-fw-bold)}
+.aq-studio-url{display:flex;align-items:center;gap:8px;margin:6px 0 0;color:var(--aq-text-3);font-size:13px}
+.aq-studio-url>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-studio-tools{margin:0;justify-content:flex-end}
+.aq-studio-tabs{margin:0 0 20px}
+.aq-studio-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 16px}
+.aq-studio-note{margin:0;color:var(--aq-text-3);font-size:13px;line-height:1.6}
+.aq-studio-stats{margin-bottom:16px}
+.aq-studio-insights>.ui-callout{margin-bottom:16px}
+.aq-studio-block{margin:0 0 16px}
+.aq-studio-block>h3{margin:0 0 14px;font-size:var(--aq-fs-lg);font-weight:var(--aq-fw-bold)}
+.aq-studio-empty{margin:0;padding:8px 0;color:var(--aq-text-3);font-size:14px;line-height:1.6}
+.aq-studio-two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.aq-studio-releases{margin:0;padding:0;list-style:none}
+.aq-studio-release{display:flex;align-items:center;gap:12px}
+.aq-studio-release-main{flex:1}
+.aq-studio-release-main strong{display:block;font-size:15px;font-weight:var(--aq-fw-bold)}
+.aq-studio-release-main small{display:block;margin-top:2px;color:var(--aq-text-3);font-size:13px}
+.aq-studio-fans{margin:0}
+.aq-set-card h2 small{margin-left:6px;color:var(--aq-text-4);font-size:13px;font-weight:var(--aq-fw-medium)}
+/* 날마다 방문 막대 그래프 — 한 가지 파랑, 짚은 날은 한 단계 진하게 */
+.aq-visits{position:relative}
+.aq-visits svg{display:block;overflow:visible}
+.aq-visits-grid line{stroke:var(--aq-line);stroke-width:1}
+.aq-visits-grid text,.aq-visits-x{fill:var(--aq-text-4);font-size:11px;font-weight:var(--aq-fw-medium)}
+.aq-visits-bar{fill:var(--aq-primary);transition:fill var(--aq-motion-short) var(--aq-enter)}
+.aq-visits-bar.is-hover{fill:var(--aq-blue-800)}
+.aq-visits-tip{position:absolute;top:0;transform:translateX(-50%);display:grid;gap:2px;min-width:150px;padding:10px 12px;border-radius:var(--aq-r-md);background:var(--aq-text);color:#fff;font-size:12px;line-height:1.5;pointer-events:none;white-space:nowrap}
+.aq-visits-tip strong{font-size:13px;font-weight:var(--aq-fw-bold)}
+/* 비율 막대 — 이름 · 막대 · 숫자 */
+.aq-share{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.aq-share li{display:grid;grid-template-columns:118px minmax(0,1fr) auto;align-items:center;gap:10px;font-size:14px}
+.aq-share-label{overflow:hidden;color:var(--aq-text-2);font-weight:var(--aq-fw-medium);text-overflow:ellipsis;white-space:nowrap}
+.aq-share-track{height:8px;border-radius:4px;background:var(--aq-surface)}
+.aq-share-track i{display:block;height:100%;border-radius:4px;background:var(--aq-primary)}
+.aq-share-value{color:var(--aq-text);font-weight:var(--aq-fw-bold);font-variant-numeric:tabular-nums}
+.aq-share-value small{margin-left:4px;color:var(--aq-text-4);font-size:12px;font-weight:var(--aq-fw-medium)}
+/* 프로필 사진 */
+.aq-photo-now{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:20px}
+.aq-photo-now h3{margin:0 0 6px;font-size:var(--aq-fs-lg);font-weight:var(--aq-fw-bold)}
+.aq-photo-preview{width:112px;height:112px;border-radius:50%;overflow:hidden;background:var(--aq-surface)}
+.aq-photo-preview img,.aq-photo-preview span{display:grid;place-items:center;width:100%;height:100%;object-fit:cover;color:#fff;font-size:42px;font-weight:var(--aq-fw-heavy)}
+.aq-photo-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px}
+.aq-photo-platforms{display:grid;gap:6px;margin:4px 0 12px;padding:0 8px;list-style:none}
+.aq-photo-platform{align-items:center}
+.aq-photo-platform.is-disabled{cursor:default}
+.aq-photo-platform-name{flex:1;color:var(--aq-text);font-weight:var(--aq-fw-medium)}
+.aq-photo-send>.ui-btn.is-block{width:calc(100% - 16px);margin:0 8px}
+.aq-photo-send .aq-studio-note{padding:0 14px 10px}
+.aq-photo-history{display:flex;width:max-content;margin:6px auto 2px}
+/* 사진 자르기 — 정사각형 칸, 동그란 안내선 */
+.aq-crop{display:grid;gap:14px}
+.aq-crop-stage{position:relative;width:100%;max-width:360px;aspect-ratio:1;margin:0 auto;overflow:hidden;border-radius:var(--aq-r-lg);background:var(--aq-surface-2);touch-action:none;cursor:grab;user-select:none}
+.aq-crop-stage:active{cursor:grabbing}
+.aq-crop-stage img{position:absolute;top:50%;left:50%;max-width:none;pointer-events:none}
+.aq-crop-ring{position:absolute;inset:0;border-radius:50%;box-shadow:0 0 0 999px rgba(23,27,41,.42),inset 0 0 0 2px rgba(255,255,255,.9);pointer-events:none}
+.aq-crop-zoom{display:flex;align-items:center;gap:12px;font-size:14px;font-weight:var(--aq-fw-medium);color:var(--aq-text-2)}
+.aq-crop-zoom input{flex:1;accent-color:var(--aq-primary)}
+.aq-crop>.ui-field-help{margin:0;text-align:center}
+/* 관리자 — 보낼 프로필 사진 */
+.adm-pr-photo img{display:block;width:120px;height:120px;margin:6px 0 4px;border-radius:50%;object-fit:cover}
+@media (max-width:760px){
+  .aq-studio-id{grid-template-columns:auto minmax(0,1fr);gap:14px}
+  .aq-studio-tools{grid-column:1/-1;justify-content:flex-start}
+  .aq-studio-avatar{width:64px;height:64px}
+  .aq-studio-two{grid-template-columns:minmax(0,1fr);gap:0}
+  .aq-studio-bar{flex-wrap:wrap}
+  .aq-share li{grid-template-columns:104px minmax(0,1fr) auto;gap:8px}
+  .aq-studio-fans{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .aq-photo-now{grid-template-columns:minmax(0,1fr);justify-items:center;text-align:center}
+  .aq-photo-actions{justify-content:center}
+}
+@media (prefers-reduced-motion:reduce){.aq-visits-bar{transition:none}}

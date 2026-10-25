@@ -3,7 +3,10 @@
 //!
 //! Artist profiles: a release on the wrong artist page (`PROFILE_MISMATCH`),
 //! two artists on one page (`PROFILE_SPLIT`), duplicate pages
-//! (`PROFILE_MERGE`), a YouTube Official Artist Channel (`OAC`).
+//! (`PROFILE_MERGE`), a YouTube Official Artist Channel (`OAC`), a new
+//! profile photo at one platform (`PROFILE_IMAGE`, made from the artist
+//! screen with the photo it carries: [`crate::artist_studio`]; staff open
+//! the photo to send it).
 //! YouTube Content ID / UGC: channels never to claim (`CID_ALLOWLIST`), a
 //! claim on a video to release (`CID_RELEASE_CLAIM`), someone else's claim on
 //! the artist's recording to dispute (`CID_DISPUTE`), Content ID off/on for a
@@ -33,7 +36,13 @@ use serde_json::{Value, json};
 use sqlx::{PgConnection, Row};
 use uuid::Uuid;
 
-const PROFILE_KINDS: &[&str] = &["PROFILE_MISMATCH", "PROFILE_SPLIT", "PROFILE_MERGE", "OAC"];
+const PROFILE_KINDS: &[&str] = &[
+    "PROFILE_MISMATCH",
+    "PROFILE_SPLIT",
+    "PROFILE_MERGE",
+    "OAC",
+    "PROFILE_IMAGE",
+];
 const CID_KINDS: &[&str] = &[
     "CID_ALLOWLIST",
     "CID_RELEASE_CLAIM",
@@ -236,6 +245,7 @@ pub async fn create(s: &AppState, a: &Actor, org: Uuid, i: NewRequest) -> Result
 const REQUEST_JSON: &str = "jsonb_build_object('id',p.id,'kind',p.kind,'platform',p.platform,'release_id',p.release_id,
     'release_title',(SELECT r.title FROM catalog.releases r WHERE r.id=p.release_id),'artist_name',p.artist_name,
     'urls',p.urls,'description',p.description,'status',p.status,'platform_ref',p.platform_ref,'resolution',p.resolution,
+    'artist_id',p.artist_id,'image',p.asset_id IS NOT NULL,
     'created_at',p.created_at,'updated_at',p.updated_at,
     'events',COALESCE((SELECT jsonb_agg(jsonb_build_object('status',e.status,'note',e.note,'by_staff',e.by_staff,'at',e.created_at)
                         ORDER BY e.created_at) FROM portal.platform_request_events e WHERE e.request_id=p.id),'[]'::jsonb))";
@@ -434,6 +444,27 @@ pub async fn staff_update(s: &AppState, h: &HeaderMap, id: Uuid, i: StaffUpdate)
     Ok(json!({"id": id, "status": i.status}))
 }
 
+/// The photo a `PROFILE_IMAGE` request carries, for the staff member who
+/// sends it to the platform.
+pub async fn staff_image(
+    s: &AppState,
+    h: &HeaderMap,
+    id: Uuid,
+) -> Result<crate::uploads::StoredImage> {
+    let st = staff::staff(s, h, false).await?;
+    staff::require(&st, Duty::Delivery)?;
+    let mut tx = s.pool.begin().await?;
+    staff::staff_scope(&mut tx).await?;
+    let row: Option<(Uuid, Option<Uuid>)> =
+        sqlx::query_as("SELECT org_id, asset_id FROM portal.platform_requests WHERE id=$1")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    tx.rollback().await?;
+    let (org, asset) = row.ok_or(Error::NotFound)?;
+    crate::uploads::stored_image(s, org, asset.ok_or(Error::NotFound)?).await
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContentIdInput {
@@ -539,6 +570,16 @@ async fn h_staff_update(
 ) -> Result<Json<Value>> {
     Ok(Json(staff_update(&s, &h, id, i).await?))
 }
+async fn h_staff_image(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    h: HeaderMap,
+) -> Result<axum::response::Response> {
+    Ok(crate::uploads::image_response(
+        staff_image(&s, &h, id).await?,
+        &h,
+    ))
+}
 async fn h_staff_content_id(
     State(s): State<AppState>,
     Path(id): Path<Uuid>,
@@ -566,6 +607,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/staff/platform-requests/{id}/status",
             post(h_staff_update),
+        )
+        .route(
+            "/api/staff/platform-requests/{id}/image",
+            get(h_staff_image),
         )
         .route(
             "/api/staff/releases/{id}/content-id",

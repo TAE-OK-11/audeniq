@@ -20,7 +20,7 @@ const HEAD: [string, number][] = [
 const UNITS = [
   '.ui-card', '.ui-list > *', '.ui-row', '.ui-section-head', '.ui-callout', '.ui-empty', '.ui-tabs', '.ui-hero',
   '.aq-bundle', '.aq-faq-item', '.aq-nboard-row', '.aq-nhero', '.aq-event-hero', '.settle-hero', '.aq-detail-hero',
-  '.surface', '.aq-report-card', '.aq-rp-card', '.aq-profile-card', '.aq-doc-list', '.aq-settings > *',
+  '.surface', '.aq-report-card', '.aq-rp-card', '.aq-profile-card', '.aq-doc-list', '.aq-settings > *', '.aq-set-card',
 ].join(',');
 
 /** 아래에서 떠오르는 등장 */
