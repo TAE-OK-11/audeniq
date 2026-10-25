@@ -97,6 +97,22 @@ fn invisible(c: char) -> bool {
 
 /// Fold one character to its comparable form ("" for separators).
 fn fold_char(c: char) -> String {
+    // A precomposed Hangul syllable is its own NFKC/NFC, lower case and
+    // alphanumeric: the Hangul branch below returns it unchanged.
+    if ('\u{ac00}'..='\u{d7a3}').contains(&c) {
+        return c.to_string();
+    }
+    // ASCII (names, separators, leet) folds through the table computed once.
+    if c.is_ascii() {
+        static ASCII: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+        let table =
+            ASCII.get_or_init(|| (0..128u8).map(|b| fold_char_slow(char::from(b))).collect());
+        return table[c as usize].clone();
+    }
+    fold_char_slow(c)
+}
+
+fn fold_char_slow(c: char) -> String {
     let mut out = String::new();
     for n in c.to_string().nfkc() {
         if invisible(n) {
