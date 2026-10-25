@@ -1610,3 +1610,5 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
   .aq-press-facts-form{grid-template-columns:minmax(0,1fr)}
   .aq-press-share{flex-wrap:wrap}
 }
+/* 새 발매 — 욕설로 19세 이용가가 된 곡 안내 (lib/profanity) */
+.aq-explicit-auto{display:block;margin-top:4px;color:var(--aq-amber-700);font-size:13px;font-weight:var(--aq-fw-medium);line-height:1.5}

@@ -15,6 +15,7 @@ import { addDoc, docsForRelease, getDocsSnapshot, useDocs, type DocRecord } from
 import { RightsDocumentModal } from '../components/RightsDocumentModal';
 import { GuardianConsentPanel } from '../components/GuardianConsent';
 import { orgId } from '../api/http';
+import { useProfanity } from '../lib/profanity';
 import { DocumentModal } from '../components/DocumentModal';
 import { RIGHTS_DOCUMENTS, type RightsDocumentContext, type RightsDocumentKind } from '../lib/rightsDocument';
 import { RERELEASE_KINDS, RERELEASE_AVAILABILITY, rereleaseIssue, rereleaseSummary, type RereleaseData } from '../lib/rerelease';
@@ -1093,7 +1094,7 @@ function CreditChips({ names, value, onAdd, label }: { names?: string[]; value: 
 
 const TrackEditor = memo(function TrackEditor({
   track: t, index: i, expanded, canDelete, upload, collapsed = false, complete = false, onOpen, onCollapse,
-  onToggleExpand, onDeleteTrack, setTrack, onTrackAudio, credits,
+  onToggleExpand, onDeleteTrack, setTrack, onTrackAudio, credits, forcedExplicit = null,
 }: {
   track: Track; index: number; expanded: boolean; canDelete: boolean;
   /** 예전 발매에 쓴 크레딧 이름 — 칸 아래 제안 칩 */
@@ -1104,6 +1105,8 @@ const TrackEditor = memo(function TrackEditor({
   setTrack: (id: string, key: keyof Track, value: string | boolean | number) => void;
   onTrackAudio: (id: string, e: React.ChangeEvent<HTMLInputElement>) => void;
   upload?: UploadState;
+  /** 가사·곡 제목·앨범 제목에 욕설이 있어 19세 이용가로 정해진 곡 (lib/profanity — 서버가 저장할 때도 같게 정한다) */
+  forcedExplicit?: 'track' | 'release' | null;
 }) {
   if (collapsed) {
     const meta = [t.composers.trim() && `작곡 ${t.composers.trim()}`, t.audioName ? (t.duration || '음원 등록') : '음원 없음'].filter(Boolean).join(' · ');
@@ -1135,6 +1138,12 @@ const TrackEditor = memo(function TrackEditor({
       <div className="ui-field track-title-field">
         <label htmlFor={`tr-${i}-title`}>곡 제목 <span className="required">*</span></label>
         <input id={`tr-${i}-title`} value={t.title} onChange={e => setTrack(t.id, 'title', e.target.value)} placeholder="곡명만 입력 (피처링·버전 표기 제외)" maxLength={200} />
+        {/* 19세 표시 칸은 '상세 정보' 안에 있어 접혀 있을 때도 보이게 제목 아래에 한 줄 */}
+        {forcedExplicit && !expanded && (
+          <small className="aq-explicit-auto" role="status">
+            {forcedExplicit === 'release' ? '앨범 제목' : '가사나 곡 제목'}에 욕설이 있어 이 곡은 19세 이용가로 표시돼요.
+          </small>
+        )}
       </div>
       <div className="ui-field">
         <label htmlFor={`tr-${i}-featuring`}>피처링 아티스트</label>
@@ -1218,10 +1227,17 @@ const TrackEditor = memo(function TrackEditor({
           </div>}
           <label className="ui-check is-plain">
             <input
-              type="checkbox" checked={t.explicit}
+              type="checkbox" checked={t.explicit || !!forcedExplicit} disabled={!!forcedExplicit}
               onChange={e => setTrack(t.id, 'explicit', e.target.checked)}
             />
-            <span>청소년 이용불가 / Explicit 가사가 포함돼요.</span>
+            <span>
+              청소년 이용불가 / Explicit 가사가 포함돼요.
+              {forcedExplicit && (
+                <small className="aq-explicit-auto" role="status">
+                  {forcedExplicit === 'release' ? '앨범 제목' : '가사나 곡 제목'}에 욕설이 있어 19세 이용가로 표시했어요. 그 부분을 고치면 표시가 풀려요.
+                </small>
+              )}
+            </span>
           </label>
         </div>
       )}
@@ -1659,6 +1675,24 @@ export function Upload() {
     dirtyRef.current = true;
     setForm(f => ({ ...f, tracks: f.tracks.map(t => (t.id === id ? { ...t, [key]: value } : t)) }));
   }, []);
+
+  // 욕설 확인 — 앨범 제목과 곡마다 (제목·버전·가사). 걸리면 그 곡(앨범 제목이면 모든 곡)을 19세 이용가로
+  const profane = useProfanity([form.title, ...form.tracks.map(t => [t.title, t.version, t.instrumental ? '' : t.lyrics].join('\n'))]);
+  const releaseProfane = profane[0] ?? false;
+  const forcedFor = (index: number): 'track' | 'release' | null =>
+    releaseProfane ? 'release' : profane[index + 1] ? 'track' : null;
+  // 자동으로 켠 곡만 기억해 두었다가, 욕설을 고치면 다시 끈다 (아티스트가 직접 켠 것은 그대로)
+  const autoExplicit = useRef(new Set<string>());
+  useEffect(() => {
+    const on = form.tracks.filter((t, i) => !t.explicit && (releaseProfane || profane[i + 1])).map(t => t.id);
+    const off = form.tracks.filter((t, i) => t.explicit && autoExplicit.current.has(t.id) && !releaseProfane && !profane[i + 1]).map(t => t.id);
+    if (!on.length && !off.length) return;
+    on.forEach(id => autoExplicit.current.add(id));
+    off.forEach(id => autoExplicit.current.delete(id));
+    dirtyRef.current = true;
+    setForm(f => ({ ...f, tracks: f.tracks.map(t => (on.includes(t.id) ? { ...t, explicit: true } : off.includes(t.id) ? { ...t, explicit: false } : t)) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profane.join(','), releaseProfane]);
 
   // 서버가 새로 만든 트랙 ID를 반영해야 다음 저장 때 트랙이 중복 생성되지 않는다
   const adoptTrackIds = useCallback((ids: Record<string, string> | undefined) => {
@@ -2475,6 +2509,7 @@ export function Upload() {
                   onTrackAudio={onTrackAudio}
                   credits={creditNames}
                   upload={uploads[t.id]}
+                  forcedExplicit={forcedFor(i)}
                 />
               ))}
             </div>
