@@ -1817,34 +1817,17 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-stats-empty .subhead{margin:6px 0 0}
 .aq-stats-empty p{max-width:420px;margin:0;color:var(--aq-text-3);font-size:14px;line-height:1.65}
 
-/* ---------- 발매·곡 관리 'UPC·ISRC' (components/CodesPanel.tsx) ---------- */
-.aq-codes{display:grid;gap:14px}
-.aq-codes-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr)) auto;align-items:center;gap:12px;padding:20px 22px;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
-.aq-codes-summary>div{display:grid;gap:2px}
-.aq-codes-summary>div span{color:var(--aq-text-3);font-size:13px;font-weight:700}
-.aq-codes-summary>div b{color:var(--aq-text);font-size:28px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
-.aq-codes-summary>div small{margin-left:3px;color:var(--aq-text-3);font-size:14px;font-weight:600}
-.aq-codes-summary .ui-btn{gap:6px}
-.aq-codes-list{display:grid;gap:12px}
-.aq-code-card{display:grid;gap:12px}
-.aq-code-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px}
-.aq-code-title{display:grid;gap:2px;min-width:0;padding:0;border:0;background:none;font:inherit;text-align:left;color:inherit;cursor:pointer}
-.aq-code-title b{color:var(--aq-text);font-size:17px;font-weight:700}
-.aq-code-title span{color:var(--aq-text-3);font-size:13px}
-@media(hover:hover){.aq-code-title:hover b{color:var(--aq-primary)}}
-.aq-code-upc,.aq-code-isrc{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
-.aq-code-kind{padding:2px 8px;border-radius:6px;background:var(--aq-blue-150);color:var(--aq-blue-700);font-size:11px;font-weight:800}
-.aq-code-tracks{display:grid;margin:0;padding:4px;list-style:none;border-radius:var(--aq-r-xl);background:#fff}
-.aq-code-tracks li{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:12px;align-items:center;min-height:52px;padding:6px 12px}
-.aq-code-tracks li+li{box-shadow:inset 0 1px 0 var(--aq-line)}
-.aq-code-track{overflow:hidden;color:var(--aq-text);font-size:14px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}
-@media(max-width:760px){
-  .aq-codes-summary{grid-template-columns:repeat(2,minmax(0,1fr));padding:18px}
-  .aq-codes-summary .ui-btn{grid-column:1/-1}
-  .aq-code-tracks li{grid-template-columns:22px minmax(0,1fr);row-gap:2px}
-  .aq-code-tracks li>:last-child{grid-column:2}
-}
 @media(prefers-reduced-motion:reduce){.aq-stats-bars i,.aq-stats-share i{animation:none}}
-.aq-code-card{padding:20px 22px;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
-.aq-code-tracks .aq-empty-val,.aq-code-upc .aq-empty-val{font-size:13px;font-weight:600}
-@media(max-width:760px){.aq-code-card{padding:18px 16px}}
+
+/* 발매·곡 관리 › 전체 트랙 — 곡 줄 안 ISRC + 복사, 위에 UPC·ISRC CSV */
+#view-catalog .aq-track-row{grid-template-columns:auto minmax(0,1fr) auto auto}
+.aq-track-isrc{display:flex;align-items:center;gap:6px;cursor:default}
+.aq-track-isrc-code{display:inline-flex;align-items:baseline;gap:5px;color:var(--aq-text-2);font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
+.aq-track-isrc-code small{color:var(--aq-text-4);font-size:11px;font-weight:700}
+.aq-track-isrc .aq-empty-val{font-size:12px;font-weight:600}
+.aq-codes-csv{flex:none;gap:6px}
+@media(max-width:760px){
+  #view-catalog .aq-track-row{grid-template-columns:auto minmax(0,1fr) auto}
+  #view-catalog .aq-track-row>.chevron{display:none}
+  .aq-track-isrc-code small{display:none}
+}
