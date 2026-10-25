@@ -81,10 +81,10 @@ CircleCI도 같은 이름의 환경 변수를 쓴다. 토큰은 빌드 비밀·�
 | Secret | `DEPLOY_SSH_KEY` | 배포 전용 SSH 개인키 |
 | Secret | `DEPLOY_KNOWN_HOSTS` | `ssh-keyscan <서버>` 결과 (호스트 키 고정) |
 | Variable | `DEPLOY_PATH` | 기본 `/opt/audeniq` |
-| Variable (저장소) | `AUTO_DEPLOY` | 기본은 main에 이미지가 올라갈 때마다 자동 배포, `false`면 끈다 |
+| Variable (저장소) | `AUTO_DEPLOY` | 기본은 main에 이미지가 올라갈 때마다 자동 배포, `false`면 끈다. 위 시크릿이 하나도 없으면 자동 배포는 경고만 남기고 건너뛴다(서버에서 `./update.sh`로 올리는 경우). 일부만 있으면 실패한다 |
 | Variable (저장소) | `BACKEND_CPU_VARIANT` | 자동 배포 이미지: `portable`(기본), `x86-64-v3`, `graviton4`, `ampere-a4`, `ampere-a1` |
 
-Actions → Backend image → *Run workflow*에서 `deploy`와 `cpu_variant`를 선택하거나, `AUTO_DEPLOY=true`와 `BACKEND_CPU_VARIANT`로 자동 배포한다. 배포 작업은 같은 커밋의 `compose.production.yaml`·`grants.sql`·`bootstrap.sql`·`deploy.sh`·`check-cpu.sh`·`pg-upgrade.sh`·`pgbouncer/`를 서버에 복사하고, 그 작업 동안만 유효한 토큰으로 GHCR에 로그인해 `deploy.sh`를 실행한다. 비밀 파일(`production.env`, `tunnel-token`)은 서버에만 있다.
+Actions → Backend image → *Run workflow*에서 `deploy`와 `cpu_variant`를 선택하거나, main 푸시 때 `BACKEND_CPU_VARIANT` 이미지로 자동 배포한다(`AUTO_DEPLOY=false`가 아닐 때). 배포 작업은 같은 커밋의 `compose.production.yaml`·`grants.sql`·`bootstrap.sql`·`deploy.sh`·`check-cpu.sh`·`pg-upgrade.sh`·`backup.sh`·`restore-backup.sh`·`archive.sh`·`update.sh`·`pgbouncer/`를 서버에 복사하고, 그 작업 동안만 유효한 토큰으로 GHCR에 로그인해 `deploy.sh`를 실행한다. 비밀 파일(`production.env`, `tunnel-token`)은 서버에만 있다.
 
 ### CircleCI에서 빌드·배포 (선택)
 
