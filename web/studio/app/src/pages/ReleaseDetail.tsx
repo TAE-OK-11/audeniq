@@ -144,8 +144,9 @@ export function ReleaseDetail() {
     if (keepY !== null) window.scrollTo(0, keepY);
   }, [tab, keepY]);
   const [deleting, setDeleting] = useState(false);
-  // 곡 상세 창 — 정보 탭 트랙 목록에서 누른 곡의 순서
+  // 곡 상세 창 — 정보 탭 트랙 목록에서 누른 곡의 순서 (전체 트랙에서 ?track=으로 들어오면 그 곡을 바로 연다)
   const [openTrack, setOpenTrack] = useState<number | null>(null);
+  const [wantTrack, setWantTrack] = useState(() => params.get('track'));
   const [withdrawing, setWithdrawing] = useState(false);
   const { data: rel, error, loading, reload } = useAsync(
     // 없는 발매(404)는 오류가 아니라 '찾을 수 없음' — 다시 시도해도 소용없으니 목록으로 안내한다
@@ -164,6 +165,16 @@ export function ReleaseDetail() {
     !MOCK && rel?.draft?.coverPreviewAssetId ? coverImageUrl(rel.draft.coverPreviewAssetId, undefined) : undefined,
   );
   const [coverOk, coverFailed] = useImageOk(coverSrc);
+  useEffect(() => {
+    if (!wantTrack || !rel) return;
+    const i = rel.tracks.findIndex(t => t.id === wantTrack);
+    if (i >= 0) { setTab('overview'); setOpenTrack(i); }
+    setWantTrack(null);
+    // 한 번 열고 나면 주소에서 지운다 — 창을 닫고 새로고침해도 다시 열리지 않게
+    const u = new URL(window.location.href);
+    u.searchParams.delete('track');
+    window.history.replaceState(window.history.state, '', `${u.pathname}${u.search}${u.hash}`);
+  }, [wantTrack, rel]);
   // 주소로 '성과'를 열었는데 아직 발매 전이면 정보 탭으로
   useEffect(() => { if (tab === 'stats' && rel && rel.status !== 'live' && rel.status !== 'closed') setTab('overview'); }, [tab, rel]);
 
@@ -229,7 +240,8 @@ export function ReleaseDetail() {
   const totalMs = rel.tracks.reduce((n, t) => n + (t.duration_ms ?? 0), 0);
   // 앨범별 발매 준비 현황 — 끝난 발매(발매 완료 3일 뒤)·취소·거절에는 보여 주지 않는다
   const agreementDoc = docs.find(x => x.kind === 'agreements');
-  const prep = settledLive || ['cancelled', 'rejected', 'closed'].includes(rel.status) ? null : albumPrep({
+  // 보완 요청 중에는 위 보완 카드가 할 일 목록이라 같은 내용을 두 번 보여 주지 않는다
+  const prep = settledLive || needsFix || ['cancelled', 'rejected', 'closed'].includes(rel.status) ? null : albumPrep({
     rel, draft: d, coverReady: coverOk || !!d?.coverName,
     agreement: !agreementDoc ? 'none' : agreementDoc.localSignatureAt || agreementDoc.electronic ? 'signed' : agreementDoc.reviewStatus === 'approved' ? 'to-sign' : 'none',
     proofsDue: pendingProofs(allDocs, rel.id, rel.title).length,
@@ -457,7 +469,7 @@ export function ReleaseDetail() {
                   <div><dt>주요 언어</dt><dd>{languageLabel(d?.language) || <Empty>입력 전</Empty>}</dd></div>
                   <div><dt>{dateLabel}</dt><dd>{rel.release_date || <Empty>미정</Empty>}</dd></div>
                   {d?.preorder_start && <div><dt>사전 공개</dt><dd>{d.preorder_start}부터</dd></div>}
-                  <div><dt>UPC / EAN</dt><dd className="aq-code-line">{d?.upc ? <><span className="is-mono">{d.upc}</span><CopyButton text={d.upc} className="ui-btn is-xs is-white" /></> : <Empty>등록 전</Empty>}</dd></div>
+                  <div className={d?.upc ? 'aq-kv-code' : undefined}><dt>UPC / EAN</dt><dd className="aq-code-line">{d?.upc ? <><span className="is-mono">{d.upc}</span><CopyButton text={d.upc} className="ui-btn is-xs is-white" /></> : <Empty>등록 전</Empty>}</dd></div>
                   <div><dt>장르</dt><dd>{genre || <Empty>입력 전</Empty>}</dd></div>
                   <div><dt>레이블</dt><dd>{d?.label || <Empty>입력 전</Empty>}</dd></div>
                   {!coverOk && <div><dt>최근 수정</dt><dd>{localStamp(rel.updated_at || rel.created_at)}</dd></div>}
