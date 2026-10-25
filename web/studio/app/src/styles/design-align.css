@@ -1741,3 +1741,27 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 }
 .aq-trackrow-warn{margin-right:6px;color:var(--aq-amber-700);font-weight:700}
 .aq-trackrow-isrc{min-width:92px;text-align:right}
+
+/* 발매 상세 머리 — 커버가 주인공: 큰 커버, 커버 색이 바탕에 은은하게, 굵은 제목, 정보는 한 줄 */
+#view-release .aq-detail-hero{position:relative;isolation:isolate;overflow:hidden;gap:24px;padding:28px;background:var(--aq-blue-50)}
+.aq-hero-glow{position:absolute;inset:-30% -10% auto auto;z-index:-1;width:70%;height:160%;opacity:.32;filter:blur(72px) saturate(1.15);pointer-events:none}
+.aq-hero-glow>img,.aq-hero-glow>i{display:block;width:100%;height:100%;object-fit:cover;border-radius:50%}
+#view-release .aq-detail-cover{width:168px!important;height:168px!important;flex-basis:168px;border-radius:var(--aq-r-2xl)!important;box-shadow:0 24px 44px -18px rgba(28,40,110,.45)}
+#view-release .aq-detail-cover .aq-cover-glyph{width:56px;height:56px}
+@media (min-width:761px){#view-release .aq-detail-hero{grid-template-columns:168px minmax(0,1fr) auto}}
+#view-release .aq-detail-info h1{margin:6px 0 2px;font-size:clamp(24px,3.2vw,34px);font-weight:800;letter-spacing:-.02em;line-height:1.2}
+#view-release .aq-detail-artist{margin:0;color:var(--aq-text-2);font-size:16px;font-weight:600}
+.aq-detail-meta{margin:14px 0 0;color:var(--aq-text-3);font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+.aq-detail-when{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:6px 0 0;color:var(--aq-text-3);font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+.aq-detail-when>.aq-glyph{color:var(--aq-text-4)}
+.aq-detail-when .aq-dday{margin-left:4px;padding:3px 9px;border-radius:var(--aq-r-pill);background:var(--aq-blue-150);color:var(--aq-blue-700);font-size:12px;font-weight:700}
+.aq-detail-when .aq-dday.is-soon{background:var(--aq-blue-500);color:#fff}
+@media(max-width:760px){
+  #view-release .aq-detail-hero{grid-template-columns:104px minmax(0,1fr);gap:16px;padding:20px}
+  #view-release .aq-detail-cover{width:104px!important;height:104px!important;flex-basis:104px;border-radius:var(--aq-r-xl)!important}
+  #view-release .aq-detail-cover .aq-cover-glyph{width:38px;height:38px}
+  .aq-hero-glow{width:100%;height:120%;inset:-40% -30% auto auto}
+  .aq-detail-meta{margin-top:8px;font-size:13px}
+  .aq-detail-when{font-size:13px}
+}
+@media(max-width:760px){.aq-when-label{display:none}}
