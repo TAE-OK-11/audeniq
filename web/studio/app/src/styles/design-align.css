@@ -1676,3 +1676,89 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 @media (max-width:760px){
   .aq-addon-summary{padding:16px}
 }
+
+/* 앨범별 관리 — 발매 준비 현황 (components/AlbumPrep.tsx): 정산 화면의 막대 + 홈 '확인할 작업' 줄 */
+.aq-prep{display:grid;gap:14px}
+.aq-prep-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+.aq-prep-head .subhead{margin:0}
+.aq-prep-sub{margin:4px 0 0;color:var(--aq-text-3);font-size:13px;line-height:1.5}
+.aq-prep-count{flex:none;margin:0;color:var(--aq-text-4);font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+.aq-prep-count b{color:var(--aq-text);font-size:28px;font-weight:800;letter-spacing:-.02em}
+.aq-prep-bar{height:6px;border-radius:var(--aq-r-pill);background:#fff;overflow:hidden}
+.aq-prep-bar i{display:block;height:100%;border-radius:inherit;background:var(--aq-blue-500);transition:width var(--aq-motion-long) var(--aq-enter)}
+.aq-prep-list{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+.aq-prep-list .aq-task.is-static{cursor:default}
+.aq-prep-list .aq-task.is-static:active{transform:none}
+.aq-prep-list li.is-done .aq-task-text strong{color:var(--aq-text-2)}
+.aq-prep-list li.is-wait .aq-task-text strong{color:var(--aq-text-3)}
+/* 발매일까지 남은 날 — 머리 카드의 정보 알약 옆 */
+.aq-detail-facts span.aq-dday{background:var(--aq-blue-150);color:var(--aq-blue-700)}
+.aq-detail-facts span.aq-dday.is-soon{background:var(--aq-blue-500);color:#fff}
+/* 식별코드 + 복사 */
+.aq-code-line{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.aq-code-line .aq-copy-btn{gap:4px}
+.aq-track-chev{align-self:center;color:var(--aq-text-4);transition:transform var(--aq-motion-short) var(--aq-enter)}
+/* 곡 상세 창 (components/TrackSheet.tsx) */
+.aq-track-sheet{display:grid;gap:16px}
+.aq-track-sheet-tags{display:flex;flex-wrap:wrap;gap:6px}
+.aq-track-sheet-tags:empty{display:none}
+.aq-track-sheet-h{margin:4px 0 -6px;font-size:15px;font-weight:700;color:var(--aq-text)}
+.aq-track-sheet-lyrics{max-height:220px;margin:0;padding:14px 16px;overflow:auto;border-radius:var(--aq-r-lg);background:var(--aq-surface);color:var(--aq-text-2);font-size:14px;line-height:1.75;white-space:pre-wrap}
+@media(max-width:560px){.aq-prep-list{grid-template-columns:minmax(0,1fr)}}
+/* 발매 목록 카드 — 발매일 옆 D-day */
+.aq-card-dday{margin-left:6px;padding:1px 7px;border-radius:var(--aq-r-pill);background:var(--aq-blue-150);color:var(--aq-blue-700);font-size:11px;font-weight:700}
+.aq-card-dday.is-soon{background:var(--aq-blue-500);color:#fff}
+
+/* 발매 상세 머리 — 진행 단계를 카드 안 아래 흰 판으로 (따로 카드를 쌓지 않는다) */
+#view-release .aq-detail-hero>.aq-stage{grid-column:1/-1;margin:6px 0 0;padding:16px 18px;background:#fff;border-radius:var(--aq-r-xl);animation:none}
+@media (min-width:761px){
+  /* 버튼은 오른쪽 위에 가로 한 줄 — 세로 세 칸이 제목 옆을 길게 차지했다 */
+  #view-release .aq-detail-hero{align-items:start}
+  .aq-detail-actions.is-wide{flex-direction:row;align-items:center;min-width:0;gap:6px}
+  .aq-detail-actions.is-wide .ui-btn{--btn-h:var(--aq-h-sm);--btn-px:16px;--btn-fs:var(--aq-fs-sm);width:auto}
+  .aq-detail-actions.is-wide .ui-btn.aq-danger-text{--btn-h:var(--aq-h-sm);order:3}
+}
+/* 트랙 목록 — 흰 판 한 장에 촘촘한 줄 (번호 · 곡명·크레딧 · ISRC · 길이) */
+.aq-tracklist-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.aq-tracklist-head>span{color:var(--aq-text-3);font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.aq-tracklist{margin:0;padding:4px;list-style:none;border-radius:var(--aq-r-xl);background:#fff}
+.aq-trackrow{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:14px;align-items:center;width:100%;padding:13px 14px;border:0;border-radius:var(--aq-r-lg);background:none;font:inherit;color:inherit;text-align:left;cursor:pointer;transition:background-color var(--aq-motion-short) var(--aq-enter)}
+.aq-tracklist li+li{box-shadow:inset 0 1px 0 var(--aq-line)}
+@media(hover:hover){.aq-trackrow:hover{background:var(--aq-surface)}.aq-trackrow:hover .aq-track-chev{transform:translateX(3px)}}
+.aq-trackrow:focus-visible{outline:var(--aq-focus);outline-offset:-2px}
+.aq-trackrow-no{color:var(--aq-text-4);font-size:15px;font-weight:800;text-align:center;font-variant-numeric:tabular-nums}
+.aq-trackrow-main{min-width:0}
+.aq-trackrow-title{display:block;overflow:hidden;color:var(--aq-text);font-size:15px;font-weight:700;line-height:1.4;text-overflow:ellipsis;white-space:nowrap}
+.aq-trackrow-title small{color:var(--aq-text-3);font-size:14px;font-weight:600}
+.aq-trackrow-meta{display:block;margin-top:2px;overflow:hidden;color:var(--aq-text-4);font-size:12px;line-height:1.5;text-overflow:ellipsis;white-space:nowrap}
+.aq-trackrow-side{display:flex;align-items:center;gap:14px}
+.aq-trackrow-isrc{color:var(--aq-text-3);font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}
+.aq-trackrow-time{min-width:38px;color:var(--aq-text-2);font-size:13px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+@media(max-width:760px){
+  .aq-trackrow{grid-template-columns:22px minmax(0,1fr) auto;gap:12px;padding:12px 10px}
+  .aq-trackrow-isrc{display:none}
+  .aq-trackrow-side{gap:8px}
+}
+.aq-trackrow-warn{margin-right:6px;color:var(--aq-amber-700);font-weight:700}
+.aq-trackrow-isrc{min-width:92px;text-align:right}
+
+/* 발매 상세 머리 — 커버가 주인공: 큰 커버, 굵은 제목, 정보는 한 줄 */
+#view-release .aq-detail-hero{gap:24px;padding:28px;background:var(--aq-blue-50)}
+#view-release .aq-detail-cover{width:168px!important;height:168px!important;flex-basis:168px;border-radius:var(--aq-r-2xl)!important;box-shadow:0 24px 44px -18px rgba(28,40,110,.45)}
+#view-release .aq-detail-cover .aq-cover-glyph{width:56px;height:56px}
+@media (min-width:761px){#view-release .aq-detail-hero{grid-template-columns:168px minmax(0,1fr) auto}}
+#view-release .aq-detail-info h1{margin:6px 0 2px;font-size:clamp(24px,3.2vw,34px);font-weight:800;letter-spacing:-.02em;line-height:1.2}
+#view-release .aq-detail-artist{margin:0;color:var(--aq-text-2);font-size:16px;font-weight:600}
+.aq-detail-meta{margin:14px 0 0;color:var(--aq-text-3);font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+.aq-detail-when{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:6px 0 0;color:var(--aq-text-3);font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+.aq-detail-when>.aq-glyph{color:var(--aq-text-4)}
+.aq-detail-when .aq-dday{margin-left:4px;padding:3px 9px;border-radius:var(--aq-r-pill);background:var(--aq-blue-150);color:var(--aq-blue-700);font-size:12px;font-weight:700}
+.aq-detail-when .aq-dday.is-soon{background:var(--aq-blue-500);color:#fff}
+@media(max-width:760px){
+  #view-release .aq-detail-hero{grid-template-columns:104px minmax(0,1fr);gap:16px;padding:20px}
+  #view-release .aq-detail-cover{width:104px!important;height:104px!important;flex-basis:104px;border-radius:var(--aq-r-xl)!important}
+  #view-release .aq-detail-cover .aq-cover-glyph{width:38px;height:38px}
+  .aq-detail-meta{margin-top:8px;font-size:13px}
+  .aq-detail-when{font-size:13px}
+}
+@media(max-width:760px){.aq-when-label{display:none}}
