@@ -144,8 +144,9 @@ export function ReleaseDetail() {
     if (keepY !== null) window.scrollTo(0, keepY);
   }, [tab, keepY]);
   const [deleting, setDeleting] = useState(false);
-  // 곡 상세 창 — 정보 탭 트랙 목록에서 누른 곡의 순서
+  // 곡 상세 창 — 정보 탭 트랙 목록에서 누른 곡의 순서 (전체 트랙에서 ?track=으로 들어오면 그 곡을 바로 연다)
   const [openTrack, setOpenTrack] = useState<number | null>(null);
+  const [wantTrack, setWantTrack] = useState(() => params.get('track'));
   const [withdrawing, setWithdrawing] = useState(false);
   const { data: rel, error, loading, reload } = useAsync(
     // 없는 발매(404)는 오류가 아니라 '찾을 수 없음' — 다시 시도해도 소용없으니 목록으로 안내한다
@@ -164,6 +165,16 @@ export function ReleaseDetail() {
     !MOCK && rel?.draft?.coverPreviewAssetId ? coverImageUrl(rel.draft.coverPreviewAssetId, undefined) : undefined,
   );
   const [coverOk, coverFailed] = useImageOk(coverSrc);
+  useEffect(() => {
+    if (!wantTrack || !rel) return;
+    const i = rel.tracks.findIndex(t => t.id === wantTrack);
+    if (i >= 0) { setTab('overview'); setOpenTrack(i); }
+    setWantTrack(null);
+    // 한 번 열고 나면 주소에서 지운다 — 창을 닫고 새로고침해도 다시 열리지 않게
+    const u = new URL(window.location.href);
+    u.searchParams.delete('track');
+    window.history.replaceState(window.history.state, '', `${u.pathname}${u.search}${u.hash}`);
+  }, [wantTrack, rel]);
   // 주소로 '성과'를 열었는데 아직 발매 전이면 정보 탭으로
   useEffect(() => { if (tab === 'stats' && rel && rel.status !== 'live' && rel.status !== 'closed') setTab('overview'); }, [tab, rel]);
 
