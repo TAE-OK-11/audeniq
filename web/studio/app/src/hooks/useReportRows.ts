@@ -16,7 +16,7 @@ export function useReportRows(range: ReportRange = {}): { rows: ReportRow[]; loa
     const r = await fetchReports(range);
     // 화면은 원화로 표시한다: 원화가 아닌 리포트 금액은 원화로 확정되기 전이라 더하지 않는다(재생 수는 반영).
     return r.rows.map(x => ({
-      period: x.month, platform: dspLabel(x.dsp), release: x.release || '미확인 발매', track: '전체',
+      period: x.month, platform: dspLabel(x.dsp), release: x.release || '미확인 발매', track: '전체', releaseId: x.release_id ?? undefined,
       plays: Number(x.streams) || 0, revenue: (x.currency ?? 'KRW') === 'KRW' ? Math.round(Number(x.revenue) || 0) : 0,
     }));
   }, [range.from, range.to]);

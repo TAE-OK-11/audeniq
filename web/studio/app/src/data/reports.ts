@@ -1,6 +1,8 @@
 // 음악 리포트 목 데이터 — Reports 화면과 홈 요약이 같은 원천을 쓴다.
 export interface ReportRow {
   period: string; platform: string; release: string; track: string; plays: number; revenue: number;
+  /** 실서버: 매칭된 발매 ID (발매 상세의 성과에서 이 발매 행만 고른다) */
+  releaseId?: string;
 }
 
 export const REPORT_ROWS: ReportRow[] = [

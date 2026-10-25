@@ -10,6 +10,11 @@ import { SkeletonRows } from '../components/Skeleton';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { Glyph } from '../components/Glyph';
 import { Badge, Tabs } from '../ui';
+import { CopyButton } from '../components/CopyButton';
+import { downloadCodesCsv, fetchCodes } from '../api/portal';
+import { errorMessage } from '../api/errors';
+import { useToast } from '../components/Toast';
+import { MOCK } from '../lib/mode';
 import { openFixes, pendingProofs, proofPath, useDocs, type DocRecord } from '../store/docs';
 
 const FILTERS = [
@@ -31,7 +36,7 @@ const SORTS = [
   { value: 'title', label: '이름순' },
 ];
 
-type TrackWithRelease = Track & { releaseTitle: string; releaseId: string; artist?: string; coverData?: string };
+type TrackWithRelease = Track & { releaseTitle: string; releaseId: string; artist?: string; coverData?: string; isrcTest?: boolean };
 
 /** 첫 보완 요청 한 줄 요약 */
 function firstFixText(r: Release, proofs: DocRecord[] = []): string {
@@ -86,7 +91,23 @@ export function Releases() {
     }
     return out;
   }, [tracksWanted, listData], { key: tracksWanted && listData ? 'release-tracks' : undefined });
-  const tracks = useMemo(() => trackData ?? [], [trackData]);
+  // 곡별 ISRC는 서버 식별코드(GET /codes: 실제 배정 코드 · 테스트 범위 여부)를 우선한다 — 트랙 탭을 열 때만
+  const { data: codeData } = useAsync(async () => {
+    if (!tracksWanted || MOCK) return null;
+    const m = new Map<string, { isrc: string; test: boolean }>();
+    for (const r of await fetchCodes().catch(() => [])) for (const t of r.tracks) if (t.isrc) m.set(t.trackId, { isrc: t.isrc, test: t.isrcVirtual });
+    return m;
+  }, [tracksWanted]);
+  const tracks = useMemo(() => (trackData ?? []).map(t => {
+    const c = codeData?.get(t.id);
+    return c ? { ...t, isrc: c.isrc, isrcTest: c.test } : t;
+  }), [trackData, codeData]);
+  const toast = useToast();
+  const [csvBusy, setCsvBusy] = useState(false);
+  const codesCsv = async () => {
+    setCsvBusy(true);
+    try { await downloadCodesCsv(); } catch (e) { toast(errorMessage(e, 'CSV를 받지 못했어요.'), 'error'); } finally { setCsvBusy(false); }
+  };
   const trackCount = useMemo(() => list.reduce((n, r) => n + (r.track_count || 0), 0), [list]);
   const tracksPending = tab === 'tracks' && (tracksLoading || (!trackData && !tracksError));
   // 탭을 바꾼 뒤 트랙이 금방 오면 스켈레톤을 그리지 않는다 — 회색 줄이 한 번 번쩍였다가 바뀌어 튀어 보였다
@@ -263,6 +284,12 @@ export function Releases() {
               id="trackSearch" className="ui-input" type="search" aria-label="트랙 검색" placeholder="곡명·아티스트·ISRC 검색"
               value={trackQuery} onChange={e => setTrackQuery(e.target.value)}
             />
+            {/* 발매·곡·UPC·ISRC 전체를 스프레드시트로 (GET /codes.csv) */}
+            {!MOCK && (
+              <button type="button" className="ui-btn is-soft aq-codes-csv" onClick={() => void codesCsv()} disabled={csvBusy}>
+                <Glyph name="download" size={15} />{csvBusy ? '받는 중' : 'UPC·ISRC CSV'}
+              </button>
+            )}
           </div>
           <div className="studio-result-count" aria-live="polite">{filteredTracks.length}개의 트랙</div>
           {filteredTracks.length ? (
@@ -277,8 +304,18 @@ export function Releases() {
                   <ReleaseCover id={t.releaseId} src={t.coverData} />
                   <div className="min-0">
                     <span className="ui-row-title">{t.title || '제목 없는 곡'}{t.explicit && <em className="aq-explicit" title="Explicit">E</em>}</span>
-                    <span className="ui-row-meta">{t.releaseTitle} · {t.artist || '아티스트 없음'}{t.isrc ? ` · ISRC ${t.isrc}` : ''}</span>
+                    <span className="ui-row-meta">{t.releaseTitle} · {t.artist || '아티스트 없음'}</span>
                   </div>
+                  {/* ISRC는 줄 안에서 바로 복사 — 복사를 눌러도 상세로 넘어가지 않게 */}
+                  <span className="aq-track-isrc" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+                    {t.isrc ? (
+                      <>
+                        <span className="aq-track-isrc-code"><small>ISRC</small>{t.isrc}</span>
+                        {t.isrcTest && <Badge tone="amber">테스트</Badge>}
+                        <CopyButton text={t.isrc} className="ui-btn is-xs is-white" />
+                      </>
+                    ) : <span className="aq-empty-val">ISRC 발급 전</span>}
+                  </span>
                   <span className="chevron" aria-hidden="true"><Glyph name="chevron-right" size={18} /></span>
                 </div>
               ))}
