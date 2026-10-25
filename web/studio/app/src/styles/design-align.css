@@ -1641,46 +1641,49 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-thread-reply .aq-thread-compose textarea{min-height:48px;max-height:180px;margin:0;background:transparent;resize:none}
 .aq-thread-compose .ui-btn.is-icon{width:44px;height:44px;border-radius:50%}
 .aq-thread-end{justify-self:center;color:var(--aq-text-3)}
-/* 부가서비스 (/services) — 유료 서비스 카드 세 장 · 내 신청 · 전체 요금 · 신청서 · 결제 */
-.aq-svc-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 28px}
-.aq-svc-card{display:flex;flex-direction:column;gap:6px;min-width:0;padding:20px;border-radius:var(--aq-r-xl);background:var(--aq-surface)}
-.aq-svc-icon{display:grid;place-items:center;width:44px;height:44px;margin-bottom:6px;border-radius:var(--aq-r-md);background:#fff;color:var(--aq-primary)}
-.aq-svc-card h3{margin:0;font-size:var(--aq-fs-lg);font-weight:var(--aq-fw-bold);color:var(--aq-text)}
-.aq-svc-card-price{margin:0;color:var(--aq-primary);font-size:15px;font-weight:var(--aq-fw-bold)}
-.aq-svc-card-desc{flex:1;margin:4px 0 0;color:var(--aq-text-3);font-size:14px;line-height:1.6}
-.aq-svc-card-action{margin-top:10px}
-.aq-svc-mine{margin:0 0 28px}
-.aq-svc-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:0 0 12px}
-.aq-svc-head h2{margin:0;font-size:var(--aq-fs-lg);font-weight:var(--aq-fw-bold)}
-.aq-svc-balance{color:var(--aq-text-3);font-size:13px}
-.aq-svc-balance b{margin-left:4px;color:var(--aq-text);font-variant-numeric:tabular-nums}
-.aq-svc-price-row{text-decoration:none}
-.aq-svc-price-row.is-static{cursor:default}
-.aq-svc-price-name{flex:1}
-.aq-svc-price-name strong{display:block;color:var(--aq-text);font-size:15px;font-weight:var(--aq-fw-semibold,600)}
-.aq-svc-price-name small{display:block;margin-top:2px;color:var(--aq-text-4);font-size:12px;line-height:1.5}
-.aq-svc-price{flex:none;max-width:45%;color:var(--aq-text);font-size:14px;font-weight:var(--aq-fw-bold);text-align:right}
-.aq-svc-price.is-free{color:var(--aq-green-600,#17803d)}
-.aq-svc-price.is-soon{color:var(--aq-text-4);font-weight:var(--aq-fw-medium)}
-.aq-svc-form{display:grid;gap:0}
-.aq-svc-tier>span:first-child{display:grid;gap:2px}
-.aq-svc-tier b{font-size:14px}
-.aq-svc-tier small{color:var(--aq-text-3);font-size:12px;font-weight:var(--aq-fw-medium);line-height:1.5}
-.aq-svc-tier:disabled{opacity:.55;cursor:default}
-.aq-svc-platforms{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
-.aq-svc-platforms .ui-check{align-items:center;padding:10px 12px;font-size:14px}
-.aq-svc-tracks{display:grid;gap:6px}
-.aq-svc-tracks .ui-check.is-disabled{opacity:.6;cursor:default}
-.aq-svc-file{position:relative;cursor:pointer}
-.aq-svc-lrc{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.7}
-.aq-svc-pay{display:grid;gap:14px}
-.aq-svc-pay-sum{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px;border-radius:var(--aq-r-xl);background:var(--aq-surface)}
-.aq-svc-pay-sum small{display:block;color:var(--aq-text-3);font-size:12px}
-.aq-svc-pay-sum strong{display:block;margin-top:2px;overflow:hidden;color:var(--aq-text);font-size:15px;text-overflow:ellipsis;white-space:nowrap}
-.aq-svc-pay-sum>b{flex:none;color:var(--aq-text);font-size:20px;font-weight:var(--aq-fw-heavy,800);font-variant-numeric:tabular-nums}
-.aq-svc-pay .aq-studio-note{margin:0}
+/* 부가서비스 — 신청서의 부가서비스 칸·최종 확인 합계·결제(신청 완료 화면, 발매 상세)·발매 상세의 부가서비스 칸 */
+.aq-addon-checkout,.aq-addon-summary{display:grid;gap:14px;margin:16px 0 24px;padding:20px;border-radius:var(--aq-r-xl);background:var(--aq-blue-50)}
+.aq-addon-checkout-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 12px}
+.aq-addon-checkout-head h2{margin:0;color:var(--aq-text);font-size:var(--aq-fs-lg);font-weight:var(--aq-fw-bold)}
+.aq-addon-checkout-head>span{flex-basis:100%;color:var(--aq-text-3);font-size:13px;line-height:1.55}
+.aq-addon-lines{display:grid;gap:2px;margin:0;padding:6px;border-radius:var(--aq-r-lg);background:#fff;list-style:none}
+.aq-addon-lines li{display:flex;align-items:center;gap:12px;min-height:52px;padding:8px 10px}
+.aq-addon-lines li strong{display:block;color:var(--aq-text);font-size:14px;font-weight:var(--aq-fw-semibold,600)}
+.aq-addon-lines li small{display:block;margin-top:2px;overflow:hidden;color:var(--aq-text-4);font-size:12px;text-overflow:ellipsis;white-space:nowrap}
+.aq-addon-lines li>.min-0{flex:1}
+.aq-addon-lines li>b{flex:none;color:var(--aq-text);font-size:15px;font-weight:var(--aq-fw-bold);font-variant-numeric:tabular-nums}
+.aq-addon-lines li.is-total{justify-content:space-between;min-height:48px;margin-top:4px;border-top:1px solid var(--aq-line);color:var(--aq-text-2);font-size:14px;font-weight:var(--aq-fw-semibold,600)}
+.aq-addon-lines li.is-total>b{color:var(--aq-primary);font-size:18px;font-weight:var(--aq-fw-heavy,800)}
+.aq-addon-line-icon{display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:var(--aq-r-md);background:var(--aq-blue-50);color:var(--aq-primary)}
+.aq-addon-pay>span:first-child{display:grid;gap:2px}
+.aq-addon-pay b{font-size:14px}
+.aq-addon-pay small{color:var(--aq-text-3);font-size:12px;font-weight:var(--aq-fw-medium);line-height:1.5}
+.aq-addon-pay:disabled{opacity:.55;cursor:default}
+.aq-addon-checkout .ui-choice,.aq-addon-summary .ui-choice{background:#fff}
+.aq-addon-note{margin:0;color:var(--aq-text-3);font-size:12px;line-height:1.6}
+.aq-release-addons{display:grid;gap:10px}
+.aq-addon-empty{margin:0;padding:14px 16px;border-radius:var(--aq-r-lg);background:var(--aq-surface);color:var(--aq-text-3);font-size:13px;line-height:1.6}
+.aq-addon-form{display:grid;gap:0}
+.aq-addon-file{position:relative;cursor:pointer}
+.aq-addon-lrc{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.7}
+/* 신청서 안 — 선택지 바로 아래 열리는 입력 */
+.aq-addon-detail .ui-choices{margin:0 0 16px}
+.aq-addon-drop{display:flex;align-items:center;gap:14px;padding:18px;border-radius:var(--aq-r-lg);background:#fff;box-shadow:inset 0 0 0 1.5px var(--aq-blue-200);color:var(--aq-primary);cursor:pointer;transition:background-color var(--aq-dur) var(--aq-ease)}
+.aq-addon-drop:hover{background:var(--aq-blue-25,#f5f8ff)}
+.aq-addon-drop b{display:block;color:var(--aq-text);font-size:14px}
+.aq-addon-drop small{display:block;margin-top:2px;color:var(--aq-text-3);font-size:12px;line-height:1.5}
+.aq-addon-file-row{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--aq-r-lg);background:#fff;color:var(--aq-text);font-size:14px}
+.aq-addon-file-row>.min-0{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-addon-upload{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;padding:12px 14px;border-radius:var(--aq-r-lg);background:#fff;font-size:13px;color:var(--aq-text-2)}
+.aq-addon-bar{height:6px;border-radius:3px;background:var(--aq-gray-100);overflow:hidden}
+.aq-addon-bar i{display:block;height:100%;border-radius:3px;background:var(--aq-primary);transition:width .2s linear}
+.aq-addon-platforms{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.aq-addon-platforms .ui-check{align-items:center;padding:10px 12px;font-size:14px;background:#fff}
+.aq-addon-tracks{display:grid;gap:6px}
+.aq-addon-tracks .ui-check{background:#fff}
+.aq-addon-tracks .ui-check.is-disabled{opacity:.6;cursor:default}
+.aq-addon-sum{margin:10px 0 0;color:var(--aq-primary);font-size:14px;font-weight:var(--aq-fw-bold);text-align:right}
 @media (max-width:760px){
-  .aq-svc-grid{grid-template-columns:minmax(0,1fr)}
-  .aq-svc-platforms{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .aq-svc-head{flex-direction:column;align-items:flex-start;gap:4px}
+  .aq-addon-checkout,.aq-addon-summary{padding:16px}
+  .aq-addon-platforms{grid-template-columns:repeat(2,minmax(0,1fr))}
 }

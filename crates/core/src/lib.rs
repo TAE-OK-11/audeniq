@@ -115,6 +115,7 @@ mod password_work;
 pub mod oauth;
 pub mod passkey;
 pub mod password_policy;
+pub mod payments;
 pub mod payout_keys;
 pub mod payout_policy;
 pub mod pii;

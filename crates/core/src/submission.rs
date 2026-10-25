@@ -658,15 +658,9 @@ pub async fn submit(
         a.user,
     )
     .await?;
-    // An express release is a paid add-on: the order waits for payment (0157).
-    crate::addons::express_from_submission(
-        &mut tx,
-        org,
-        release,
-        &body["release"]["draft"],
-        a.user,
-    )
-    .await?;
+    // Add-ons chosen in the application become orders waiting for payment (0157).
+    crate::addons::sync_from_submission(&mut tx, org, release, &body["release"]["draft"], a.user)
+        .await?;
     operations::audit(
         &mut tx,
         Some(a.user),

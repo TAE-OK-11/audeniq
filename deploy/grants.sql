@@ -90,7 +90,7 @@ GRANT SELECT,INSERT,UPDATE ON portal.artist_photos TO audeniq_api;
 GRANT SELECT,INSERT,UPDATE ON portal.artist_press TO audeniq_api;
 GRANT SELECT,INSERT,UPDATE,DELETE ON portal.artist_press_releases TO audeniq_api;
 -- 부가서비스 주문 (0157): 정산금 결제·환불은 원장 쓰기 권한 없이 이 두 함수로만 한다.
-GRANT SELECT,INSERT,UPDATE ON portal.addon_orders, portal.track_lyric_sync TO audeniq_api;
+GRANT SELECT,INSERT,UPDATE ON portal.addon_orders, portal.addon_payments, portal.addon_files, portal.track_lyric_sync TO audeniq_api;
 GRANT SELECT,INSERT ON portal.addon_order_events TO audeniq_api;
 GRANT EXECUTE ON FUNCTION finance.charge_addon(uuid), finance.refund_addon(uuid) TO audeniq_api;
 -- 발매 후 정보 수정 (0115): 크레딧·장르만. 승인되면 수정 메시지 작업을 넣는다

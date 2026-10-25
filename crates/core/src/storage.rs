@@ -74,6 +74,17 @@ pub trait ObjectStore: Send + Sync {
     async fn abort_multipart(&self, _key: &str, _upload_id: &str) -> Result<()> {
         Ok(())
     }
+    /// A short-lived signed GET that downloads `key` as an attachment named
+    /// `filename` (staff downloading an add-on music video). Stores without
+    /// signing refuse.
+    async fn presign_get(
+        &self,
+        _key: &str,
+        _filename: &str,
+        _expires: DateTime<Utc>,
+    ) -> Result<String> {
+        Err(Error::Storage)
+    }
     async fn head(&self, key: &str) -> Result<Option<ObjectMeta>>;
     async fn freeze(&self, source: &str, target: &str, etag: &str) -> Result<()>;
     /// Whether [`ObjectStore::freeze`]'s copy carries the source ETag (false
@@ -804,6 +815,12 @@ impl S3Store {
         ))
     }
 }
+/// Keys a browser may upload to in parts: unchecked masters in quarantine
+/// (removed after a day) and add-on music videos, which are never parsed.
+fn multipart_key(key: &str) -> bool {
+    key.starts_with("quarantine/") || key.starts_with("addon-video/")
+}
+
 #[async_trait]
 impl ObjectStore for S3Store {
     fn copy_keeps_etag(&self) -> bool {
@@ -849,7 +866,7 @@ impl ObjectStore for S3Store {
         })
     }
     async fn create_multipart(&self, key: &str, mime: &str, nonce: &str) -> Result<String> {
-        if !key.starts_with("quarantine/") {
+        if !multipart_key(key) {
             return Err(Error::Invalid);
         }
         let headers = BTreeMap::from([
@@ -888,7 +905,7 @@ impl ObjectStore for S3Store {
         // size, so the parts can only add up to the declared master size.
         if !(1..=10_000).contains(&part)
             || !(1..=crate::uploads::MAX_AUDIO_BYTES).contains(&size)
-            || !key.starts_with("quarantine/")
+            || !multipart_key(key)
             || upload_id.is_empty()
         {
             return Err(Error::Invalid);
@@ -910,6 +927,37 @@ impl ObjectStore for S3Store {
             headers,
             expires_at: expires,
         })
+    }
+    async fn presign_get(
+        &self,
+        key: &str,
+        filename: &str,
+        expires: DateTime<Utc>,
+    ) -> Result<String> {
+        if !key.starts_with("addon-video/") {
+            return Err(Error::Invalid);
+        }
+        let name: String = filename
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || "-_.".contains(c) {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .take(100)
+            .collect();
+        let disposition = format!("attachment; filename=\"{name}\"");
+        let now = Utc::now();
+        self.signed_query(
+            "GET",
+            key,
+            &[("response-content-disposition", &disposition)],
+            &BTreeMap::new(),
+            now,
+            (expires - now).num_seconds(),
+        )
     }
     async fn list_parts(&self, key: &str, upload_id: &str) -> Result<Vec<UploadedPart>> {
         let started = std::time::Instant::now();

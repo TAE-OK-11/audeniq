@@ -2,26 +2,49 @@
 --
 -- Paid add-ons an artist orders on top of distribution, paid either from the
 -- settlement balance (a ledger posting, only through finance.charge_addon)
--- or by card (Toss Payments, confirmed server-side):
+-- or by card (the configured PG, confirmed server-side):
 --  - MV_DISTRIBUTION: a music video to the major video DSPs. Tier BASIC
 --    (already rated: distribution only), REVIEW (+ 영상물등급위원회 rating
 --    filed for the artist), EXPRESS (+ expedited handling).
 --  - EXPRESS_RELEASE: a release reviewed and delivered first so it can go
---    out three business days after submission. Made by submit when the
---    application asks for it (draft options.express).
+--    out three business days after submission.
 --  - LYRIC_SYNC: time-synced lyrics (LRC) made for the chosen tracks and
 --    registered with lyric services; priced per track.
+-- All three are chosen in the release application (draft options) and made
+-- by submit; the artist pays them together at the end of the application or
+-- later from the release.
 -- An order is AWAITING_PAYMENT until paid, then SUBMITTED → IN_PROGRESS →
 -- DELIVERED → COMPLETED as staff work it; the artist can cancel until work
 -- starts, staff can reject. Cancelling or rejecting a paid order refunds it
 -- (settlement: an offsetting posting via finance.refund_addon; card: the
--- API cancels the card payment first).
+-- API cancels that order's part of the card payment first).
+-- Card payments: one PG payment can pay several orders of a release at once
+-- (the checkout at the end of the application). `provider` is the PG it went
+-- through (crates/core/src/payments.rs); `pg_key`/`pg_date` are what a later
+-- (partial) cancel needs.
+CREATE TABLE portal.addon_payments (
+ id uuid PRIMARY KEY,
+ org_id uuid NOT NULL REFERENCES identity.orgs ON DELETE RESTRICT,
+ release_id uuid NULL REFERENCES catalog.releases ON DELETE RESTRICT,
+ order_ids uuid[] NOT NULL CHECK (cardinality(order_ids) BETWEEN 1 AND 20),
+ amount integer NOT NULL CHECK (amount > 0),
+ provider text NOT NULL CHECK (provider IN ('toss','portone','payple')),
+ pg_order_id text NOT NULL UNIQUE CHECK (pg_order_id ~ '^[A-Za-z0-9_-]{6,64}$'),
+ pg_key text NULL CHECK (length(pg_key) <= 200),
+ pg_date text NULL CHECK (pg_date ~ '^[0-9]{8}$'),
+ status text NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING','PAID','FAILED')),
+ created_by uuid NOT NULL REFERENCES identity.users ON DELETE RESTRICT,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ paid_at timestamptz NULL
+);
+CREATE INDEX addon_payments_org ON portal.addon_payments(org_id, created_at DESC);
+
 CREATE TABLE portal.addon_orders (
  id uuid PRIMARY KEY,
  org_id uuid NOT NULL REFERENCES identity.orgs ON DELETE RESTRICT,
  service text NOT NULL CHECK (service IN ('MV_DISTRIBUTION','EXPRESS_RELEASE','LYRIC_SYNC')),
  tier text NOT NULL DEFAULT '' CHECK (tier IN ('','BASIC','REVIEW','EXPRESS')),
- release_id uuid NULL REFERENCES catalog.releases ON DELETE RESTRICT,
+ release_id uuid NOT NULL REFERENCES catalog.releases ON DELETE RESTRICT,
  track_ids uuid[] NOT NULL DEFAULT '{}' CHECK (cardinality(track_ids) <= 100),
  title text NOT NULL CHECK (length(btrim(title)) BETWEEN 1 AND 200),
  detail jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(detail) = 'object' AND length(detail::text) <= 20000),
@@ -33,8 +56,7 @@ CREATE TABLE portal.addon_orders (
  pay_method text NULL CHECK (pay_method IN ('SETTLEMENT','CARD')),
  paid_at timestamptz NULL,
  ledger_tx uuid NULL,
- pg_order_id text NULL UNIQUE CHECK (pg_order_id ~ '^[A-Za-z0-9_-]{6,64}$'),
- pg_payment_key text NULL CHECK (length(pg_payment_key) <= 200),
+ payment_id uuid NULL REFERENCES portal.addon_payments ON DELETE RESTRICT,
  refunded_at timestamptz NULL,
  refund_tx uuid NULL,
  result jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(result) = 'object' AND length(result::text) <= 20000),
@@ -44,14 +66,34 @@ CREATE TABLE portal.addon_orders (
  updated_at timestamptz NOT NULL DEFAULT now(),
  CHECK ((pay_method IS NULL) = (paid_at IS NULL)),
  CHECK (pay_method IS DISTINCT FROM 'SETTLEMENT' OR ledger_tx IS NOT NULL),
- CHECK (pay_method IS DISTINCT FROM 'CARD' OR pg_payment_key IS NOT NULL)
+ CHECK (pay_method IS DISTINCT FROM 'CARD' OR payment_id IS NOT NULL)
 );
 CREATE INDEX addon_orders_org ON portal.addon_orders(org_id, created_at DESC);
+CREATE INDEX addon_orders_release ON portal.addon_orders(release_id);
 CREATE INDEX addon_orders_open ON portal.addon_orders(status, created_at)
  WHERE status IN ('SUBMITTED','IN_PROGRESS','DELIVERED');
--- One live express order per release (a resubmission reuses it).
-CREATE UNIQUE INDEX addon_orders_express_once ON portal.addon_orders(release_id)
- WHERE service = 'EXPRESS_RELEASE' AND status NOT IN ('CANCELLED','REJECTED');
+-- One live order of each service per release: a resubmission updates the
+-- unpaid one (or keeps a paid one) instead of adding another.
+CREATE UNIQUE INDEX addon_orders_live_once ON portal.addon_orders(release_id, service)
+ WHERE status NOT IN ('CANCELLED','REJECTED');
+
+-- Music video files uploaded in the application (multipart, straight to
+-- storage under addon-video/). Never parsed or served to the public: the
+-- container is sniffed at completion and staff download it as an attachment.
+CREATE TABLE portal.addon_files (
+ id uuid PRIMARY KEY,
+ org_id uuid NOT NULL REFERENCES identity.orgs ON DELETE RESTRICT,
+ object_key text NOT NULL UNIQUE CHECK (object_key ~ '^addon-video/'),
+ name text NOT NULL CHECK (length(btrim(name)) BETWEEN 1 AND 200),
+ size_bytes bigint NOT NULL CHECK (size_bytes > 0),
+ content_type text NOT NULL CHECK (content_type IN ('video/mp4','video/quicktime')),
+ upload_id text NOT NULL CHECK (length(upload_id) BETWEEN 1 AND 1024),
+ status text NOT NULL DEFAULT 'UPLOADING' CHECK (status IN ('UPLOADING','READY','FAILED')),
+ created_by uuid NOT NULL REFERENCES identity.users ON DELETE RESTRICT,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ completed_at timestamptz NULL
+);
+CREATE INDEX addon_files_org ON portal.addon_files(org_id, created_at DESC);
 
 CREATE TABLE portal.addon_order_events (
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -137,18 +179,16 @@ BEGIN
  IF TG_OP = 'UPDATE' AND NEW.status IS NOT DISTINCT FROM OLD.status THEN RETURN NEW; END IF;
  what := CASE NEW.service WHEN 'MV_DISTRIBUTION' THEN '뮤직비디오 배급' WHEN 'EXPRESS_RELEASE' THEN '신속 발매'
                           ELSE 'AI 가사 싱크' END;
- link := '/services?order=' || NEW.id;
- IF NEW.status = 'AWAITING_PAYMENT' AND NEW.service = 'EXPRESS_RELEASE' THEN
-  PERFORM portal.notify(NEW.org_id, 'RELEASE', '신속 발매 결제가 필요해요.', '결제하면 담당자가 먼저 검토해 3영업일 안에 발매되도록 진행해요.', link);
- ELSIF NEW.status = 'SUBMITTED' THEN
+ link := '/releases/' || NEW.release_id || '?addon=' || NEW.id;
+ IF NEW.status = 'SUBMITTED' THEN
   PERFORM portal.notify(NEW.org_id, 'RELEASE', what || ' 신청이 접수됐어요.', '담당자가 확인하고 진행 상황을 알려 드려요.', link);
  ELSIF NEW.status = 'DELIVERED' THEN
-  PERFORM portal.notify(NEW.org_id, 'RELEASE', what || ' 결과를 전달했어요.', left(coalesce(nullif(NEW.resolution, ''), '자세한 내용은 부가서비스에서 확인해 주세요.'), 300), link);
+  PERFORM portal.notify(NEW.org_id, 'RELEASE', what || ' 결과를 전달했어요.', left(coalesce(nullif(NEW.resolution, ''), '자세한 내용은 발매 상세의 부가서비스에서 확인해 주세요.'), 300), link);
  ELSIF NEW.status = 'COMPLETED' THEN
-  PERFORM portal.notify(NEW.org_id, 'RELEASE', what || '가 완료됐어요.', left(coalesce(nullif(NEW.resolution, ''), '자세한 내용은 부가서비스에서 확인해 주세요.'), 300), link);
+  PERFORM portal.notify(NEW.org_id, 'RELEASE', what || '가 완료됐어요.', left(coalesce(nullif(NEW.resolution, ''), '자세한 내용은 발매 상세의 부가서비스에서 확인해 주세요.'), 300), link);
  ELSIF NEW.status = 'REJECTED' THEN
   PERFORM portal.notify(NEW.org_id, 'RELEASE', what || ' 신청을 진행하지 못했어요.',
-   left(coalesce(nullif(NEW.resolution, ''), '자세한 내용은 부가서비스에서 확인해 주세요.') ||
+   left(coalesce(nullif(NEW.resolution, ''), '자세한 내용은 발매 상세의 부가서비스에서 확인해 주세요.') ||
         CASE WHEN NEW.paid_at IS NOT NULL THEN ' 결제한 금액은 환불해 드려요.' ELSE '' END, 300), link);
  END IF;
  RETURN NEW;

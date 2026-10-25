@@ -1,4 +1,4 @@
-// 부가서비스 처리 — 뮤직비디오 배급·심의, 신속 발매, AI 가사 싱크 신청 (서버 crates/core/src/addons.rs).
+// 부가서비스 처리 — 발매 신청서에서 고른 뮤직비디오 배급·심의, 신속 발매, AI 가사 싱크 (서버 crates/core/src/addons.rs).
 // 결제가 끝난 신청이 먼저, 급행·신속 발매가 그 위에. 시작 → 결과 전달 → 완료로 옮기고, 진행할 수 없으면 사유와 함께
 // 진행 불가로 닫는다(결제한 금액은 자동 환불: 정산금은 원장 반대 기록, 카드는 토스 결제 취소).
 // 뮤직비디오는 등급·등급분류번호와 플랫폼별 링크를, 가사 싱크는 곡마다 만든 LRC와 등록한 가사 서비스를 남긴다.
@@ -18,6 +18,7 @@ import { Badge, EmptyState, ErrorBox, NoDuty, PageHeader, SkeletonList, DELIVERY
 
 type StaffOrder = AddonOrder & { org_name: string };
 const OPEN = ['SUBMITTED', 'IN_PROGRESS', 'DELIVERED'];
+const PG_LABEL: Record<string, string> = { toss: '토스페이먼츠', portone: '포트원', payple: '페이플' };
 
 export function Addons() {
   const toast = useToast();
@@ -51,7 +52,7 @@ export function Addons() {
       </div>
       {error && <ErrorBox message={error} onRetry={reload} />}
       {loading && !data ? <SkeletonList rows={3} /> : items.length === 0 ? (
-        <EmptyState title="처리할 신청이 없어요">아티스트가 부가서비스를 신청하고 결제하면 이곳에 올라와요.</EmptyState>
+        <EmptyState title="처리할 신청이 없어요">아티스트가 발매 신청서에서 부가서비스를 고르고 결제하면 이곳에 올라와요.</EmptyState>
       ) : (
         <div className="ui-list">
           {items.map(o => <OrderCard key={o.id} o={o} ok={ok} onDone={() => { reload(); }} toast={toast} />)}
@@ -74,6 +75,11 @@ function OrderCard({ o, ok, onDone, toast }: { o: StaffOrder; ok: boolean; onDon
   const mv = o.service === 'MV_DISTRIBUTION';
   const platforms = Array.isArray(d.platforms) ? d.platforms : [];
 
+  // 올린 영상은 10분짜리 내려받기 링크로 (공개 주소가 없다)
+  const download = async () => {
+    try { const r = await req<{ url: string }>(`/api/staff/addons/${o.id}/video`); window.open(r.url, '_blank', 'noopener'); }
+    catch (e) { toast(errorMessage(e), 'error'); }
+  };
   const move = async (status: string, done: string) => {
     if (status === 'REJECTED') {
       if (!note.trim()) { toast('아티스트에게 남길 사유를 적어 주세요.', 'error'); return; }
@@ -99,7 +105,7 @@ function OrderCard({ o, ok, onDone, toast }: { o: StaffOrder; ok: boolean; onDon
             <span>{SERVICE_LABEL[o.service]}{o.tier ? ` · ${TIER[o.tier].label}` : ''}</span>
             <span>{o.org_name}</span>
             {o.release_id && <Link to={`/admin/reviews/${o.release_id}`}>{o.release_title ?? '발매'}</Link>}
-            <span>{money(o.amount)} · {o.pay_method ? (o.pay_method === 'CARD' ? '카드' : '정산금') : '결제 전'}{o.refunded_at ? ' · 환불됨' : ''}</span>
+            <span>{money(o.amount)} · {o.pay_method ? (o.pay_method === 'CARD' ? `카드${o.provider ? `(${PG_LABEL[o.provider] ?? o.provider})` : ''}` : '정산금') : '결제 전'}{o.refunded_at ? ' · 환불됨' : ''}</span>
             <span>신청 {ago(o.created_at)}</span>
           </span>
         </span>
@@ -110,7 +116,11 @@ function OrderCard({ o, ok, onDone, toast }: { o: StaffOrder; ok: boolean; onDon
         {o.tracks.length > 0 && <><small className="muted">곡</small><p>{o.tracks.map(t => t.title).join(', ')}</p></>}
         {mv && (
           <>
-            <small className="muted">영상 파일</small><p><a href={String(d.video_url)} target="_blank" rel="noopener noreferrer">{String(d.video_url)}</a></p>
+            <small className="muted">영상 파일</small>
+            {o.video ? (
+              <p>{o.video.name} · {(o.video.size_bytes / 1024 ** 3).toFixed(2)}GB{' '}
+                <button type="button" className="ui-btn is-soft is-xs" onClick={() => void download()}>내려받기</button></p>
+            ) : <p><a href={String(d.video_url)} target="_blank" rel="noopener noreferrer">{String(d.video_url)}</a></p>}
             <small className="muted">영상</small><p>{String(d.mv_title)} · {String(d.duration)}{d.director ? ` · 감독 ${String(d.director)}` : ''}{d.production ? ` · ${String(d.production)}` : ''}</p>
             {d.cast && <><small className="muted">출연</small><p>{String(d.cast)}</p></>}
             {d.synopsis && <><small className="muted">영상 내용</small><p style={{ whiteSpace: 'pre-wrap' }}>{String(d.synopsis)}</p></>}
@@ -202,7 +212,7 @@ function LyricsEditor({ orderId, ok, toast }: { orderId: string; ok: boolean; to
               </div>
               <div className="ui-field">
                 <label htmlFor={`ly-lrc-${t.id}`}>싱크 가사 (LRC)</label>
-                <textarea id={`ly-lrc-${t.id}`} className="ui-textarea aq-svc-lrc" rows={8} placeholder="[00:12.30]첫 줄" value={lrc[t.id] ?? t.lrc ?? ''} onChange={e => setLrc(m => ({ ...m, [t.id]: e.target.value }))} />
+                <textarea id={`ly-lrc-${t.id}`} className="ui-textarea aq-addon-lrc" rows={8} placeholder="[00:12.30]첫 줄" value={lrc[t.id] ?? t.lrc ?? ''} onChange={e => setLrc(m => ({ ...m, [t.id]: e.target.value }))} />
               </div>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '4px 0 8px' }}>

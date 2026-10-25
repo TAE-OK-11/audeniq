@@ -53,7 +53,6 @@ const ArtistPress = lazyPage(pageLoaders.ArtistPress, m => m.ArtistPress);
 const ArtistNews = lazyPage(pageLoaders.ArtistNews, m => m.ArtistNews);
 const ArtistDiscography = lazyPage(pageLoaders.ArtistDiscography, m => m.ArtistDiscography);
 const ArtistStudio = lazyPage(pageLoaders.ArtistStudio, m => m.ArtistStudio);
-const Services = lazyPage(pageLoaders.Services, m => m.Services);
 const SplitInvite = lazyPage(pageLoaders.SplitInvite, m => m.SplitInvite);
 const SettlementTerms = lazyPage(pageLoaders.Terms, m => m.SettlementTerms);
 const PrivacyPolicy = lazyPage(pageLoaders.Terms, m => m.PrivacyPolicy);
@@ -174,7 +173,6 @@ function PortalRoutes() {
             <Route path="/support" element={<Navigate to="/inquiries" replace />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/artist" element={<ArtistStudio />} />
-            <Route path="/services" element={<Services />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>

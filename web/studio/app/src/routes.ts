@@ -36,7 +36,6 @@ export const pageLoaders = {
   ArtistNews: () => import('./pages/ArtistNews'),
   ArtistDiscography: () => import('./pages/ArtistDiscography'),
   ArtistStudio: () => import('./pages/ArtistStudio'),
-  Services: () => import('./pages/Services'),
   SplitInvite: () => import('./pages/SplitInvite'),
   Admin: () => import('./admin/AdminApp'),
 };
@@ -63,7 +62,6 @@ const ROUTE_PAGES: [RegExp, PageName[]][] = [
   [/^\/notices/, ['Notices']],
   [/^\/profile/, ['Profile']],
   [/^\/artist\/?$/, ['ArtistStudio']],
-  [/^\/services\/?$/, ['Services']],
   [/^\/ai\/approve\//, ['AiApprove']],
   [/^\/ai\/actions\//, ['AiAction']],
   [/^\/ai\/connect/, ['AiConnect']],

@@ -1,6 +1,8 @@
-// 부가서비스 — 서버 crates/core/src/addons.rs. 뮤직비디오 배급·심의, 신속 발매, AI 가사 싱크를 신청하고
-// 정산금(정산 잔액에서 바로 차감) 또는 카드(토스페이먼츠)로 결제한다. 체험 모드는 같은 모양을 브라우저 안에서 흉내 낸다.
+// 부가서비스 — 서버 crates/core/src/addons.rs, payments.rs. 발매 신청서의 '부가서비스' 칸에서 고르면 접수할 때 주문이 생기고,
+// 신청 마지막(신청 완료 화면)이나 발매 상세에서 한 번에 결제한다: 정산금(정산 잔액에서 바로 차감) 또는 카드(설정한 PG —
+// 토스페이먼츠·포트원·페이플). 체험 모드는 같은 모양을 브라우저 안에서 흉내 낸다.
 import { orgPath, req } from '../api/http';
+import { uploadParts } from '../api/multipart';
 import { MOCK } from './mode';
 
 export type Service = 'MV_DISTRIBUTION' | 'EXPRESS_RELEASE' | 'LYRIC_SYNC';
@@ -9,27 +11,31 @@ export type OrderStatus = 'AWAITING_PAYMENT' | 'SUBMITTED' | 'IN_PROGRESS' | 'DE
 
 export interface AddonOrder {
   id: string; service: Service; tier: '' | MvTier;
-  release_id: string | null; release_title: string | null;
+  release_id: string; release_title: string | null;
   track_ids: string[]; tracks: { id: string; title: string }[];
+  video: { id: string; name: string; size_bytes: number } | null;
   title: string; detail: Record<string, unknown>;
   quantity: number; unit_price: number; amount: number;
   status: OrderStatus; pay_method: 'SETTLEMENT' | 'CARD' | null; paid_at: string | null; refunded_at: string | null;
+  provider: string | null;
   result: { rating?: string; rating_no?: string; note?: string; links?: Record<string, string> };
   resolution: string; created_at: string; updated_at: string;
   events: { status: string; note: string; by_staff: boolean; at: string }[];
 }
 
-export interface AddonState {
-  items: AddonOrder[];
-  prices: { mv: { tier: MvTier; price: number }[]; express_release: number; lyric_sync: number };
-  /** 카드 결제를 쓸 수 있는지 (서버에 토스 키가 있을 때) */
-  card: boolean;
-  /** 지금 출금할 수 있는 정산 잔액 (원) */
-  balance: number;
-  mv_platforms: string[];
-}
+export interface Prices { mv: { tier: MvTier; price: number }[]; express_release: number; lyric_sync: number }
+export interface CardInfo { provider: 'toss' | 'portone' | 'payple'; label: string }
+export interface AddonConfig { prices: Prices; card: CardInfo | null; balance: number; mv_platforms: string[] }
+export interface ReleaseAddons { items: AddonOrder[]; prices: Prices; card: CardInfo | null; balance: number }
 
 export interface TrackRow { id: string; title: string; track_number: number; has_lyrics: boolean; lrc: string | null; source: 'ARTIST' | 'AI' | null; registered: string[] }
+
+/** 서버와 같은 가격 (부가세 포함) — 신청서에서 미리 보여 줄 때 */
+export const PRICES: Prices = {
+  mv: [{ tier: 'BASIC', price: 19000 }, { tier: 'REVIEW', price: 39000 }, { tier: 'EXPRESS', price: 49000 }],
+  express_release: 10000, lyric_sync: 5000,
+};
+export const MV_PLATFORMS = ['melon', 'genie', 'bugs', 'flo', 'vibe', 'youtube'];
 
 export const SERVICE_LABEL: Record<Service, string> = {
   MV_DISTRIBUTION: '뮤직비디오 배급', EXPRESS_RELEASE: '신속 발매', LYRIC_SYNC: 'AI 가사 싱크',
@@ -44,7 +50,7 @@ export const LYRIC_SERVICE_LABEL: Record<string, string> = {
   musixmatch: 'Musixmatch', lyricfind: 'LyricFind', melon: '멜론', genie: '지니', bugs: '벅스', flo: 'FLO', vibe: '바이브',
 };
 
-/** 진행 단계 카드 — 결제 → 접수 → 진행 중 → 전달 → 완료 (취소·진행 불가는 멈춘 자리) */
+/** 진행 단계 카드 — 결제 → 접수 → 진행 중 → 결과 전달 → 완료 (취소·진행 불가는 멈춘 자리) */
 export const STEPS = ['결제', '접수', '진행 중', '결과 전달', '완료'];
 const STEP_OF: Record<string, number> = { AWAITING_PAYMENT: 0, SUBMITTED: 1, IN_PROGRESS: 2, DELIVERED: 3, COMPLETED: 4 };
 export function orderStage(o: Pick<AddonOrder, 'status' | 'events'>): { steps: string[]; current: number; complete: boolean; stopped: boolean } {
@@ -76,132 +82,203 @@ export function statusNote(o: AddonOrder): string {
   }
 }
 
-/** 가격표 — 무료·유료 모든 부가서비스 (지금 쓸 수 있는 곳으로 바로 가는 주소 포함) */
-export interface PriceRow { name: string; price: string; note: string; to?: string; tag?: 'free' | 'paid' | 'soon' }
-export const PRICE_TABLE: PriceRow[] = [
-  { name: '뮤직비디오 배급·심의', price: '19,000원 / 39,000원 / 49,000원', note: '배급만 · 배급+심의 · 배급+심의+급행', to: '/services?new=mv', tag: 'paid' },
-  { name: '신속 발매', price: '10,000원', note: '심사·전송을 먼저 처리해 3영업일 안에 발매', to: '/upload', tag: 'paid' },
-  { name: 'AI 가사 싱크 생성', price: '곡당 5,000원', note: '가사에 시간을 맞춘 싱크 가사(LRC)를 만들어 등록', to: '/services?new=lyrics', tag: 'paid' },
-  { name: '가사 등록 (LRC)', price: '무료', note: '직접 만든 싱크 가사를 올리면 함께 등록', to: '/services?new=lrc', tag: 'free' },
-  { name: 'UGC Rights · Content ID 등록', price: '무료', note: '유튜브 수익 배분 90:10 (아티스트 90)', to: '/inquiries?new=request&group=content_id', tag: 'free' },
-  { name: 'Artist Profile Basic', price: '무료', note: '아티스트 페이지·스마트링크·응원', to: '/artist', tag: 'free' },
-  { name: 'Audio QC', price: '무료', note: '올릴 때 음원 품질을 자동으로 검사', tag: 'free' },
-  { name: 'Dolby Atmos 전달', price: '무료', note: '공간 음향 파일을 지원 플랫폼에 함께 전달', tag: 'free' },
-  { name: 'API·피드 기반 자동 DB 등록', price: '무료', note: '음원 정보를 플랫폼·DB에 피드로 자동 등록', tag: 'free' },
-  { name: 'Marketing Basic', price: '무료', note: '프로모 이미지·캡션·보도자료', to: '/artist?tab=press', tag: 'free' },
-  { name: 'Artist Profile Plus', price: '연 19,000원', note: '곧 열려요', tag: 'soon' },
-  { name: 'Marketing Plus', price: '릴리즈당 39,000원', note: '곧 열려요', tag: 'soon' },
-];
-
 // ---------------------------------------------------------------------------
 // 체험 모드
 // ---------------------------------------------------------------------------
-const MOCK_PRICES: AddonState['prices'] = { mv: [{ tier: 'BASIC', price: 19000 }, { tier: 'REVIEW', price: 39000 }, { tier: 'EXPRESS', price: 49000 }], express_release: 10000, lyric_sync: 5000 };
-const mock = { balance: 52300, items: [] as AddonOrder[] };
 const now = () => new Date().toISOString();
-const mockEvent = (o: AddonOrder, status: OrderStatus, note = '') => { o.status = status; o.updated_at = now(); o.events = [...o.events, { status, note, by_staff: false, at: now() }]; };
+/** 체험 모드 예시 — '여름 EP'(r2)에 결제를 기다리는 뮤직비디오 배급과 끝난 가사 싱크 */
+const seed = (id: string, service: Service, tier: '' | MvTier, amount: number, qty: number, title: string, status: OrderStatus, extra: Partial<AddonOrder> = {}): AddonOrder => ({
+  id, service, tier, release_id: 'r2', release_title: '여름 EP', track_ids: [], tracks: [], video: null, title, detail: {},
+  quantity: qty, unit_price: amount / qty, amount, status, pay_method: null, paid_at: null, refunded_at: null, provider: null,
+  result: {}, resolution: '', created_at: '2026-09-22T09:10:00+09:00', updated_at: '2026-09-22T09:10:00+09:00',
+  events: [{ status: 'AWAITING_PAYMENT', note: '', by_staff: false, at: '2026-09-22T09:10:00+09:00' }], ...extra,
+});
+const mock = {
+  balance: 52300,
+  orders: [
+    seed('mock-mv', 'MV_DISTRIBUTION', 'REVIEW', 39000, 1, '여름 EP 타이틀 MV', 'AWAITING_PAYMENT', { detail: { mv_title: '여름 EP 타이틀 MV', duration: '3:45', platforms: ['melon', 'genie', 'youtube'] } }),
+    seed('mock-lyric', 'LYRIC_SYNC', '', 10000, 2, '여름 EP 가사 싱크', 'COMPLETED', {
+      pay_method: 'SETTLEMENT', paid_at: '2026-09-22T09:12:00+09:00', resolution: 'Musixmatch·멜론·지니에 등록했어요.',
+      tracks: [{ id: 'mt1', title: '여름의 끝' }, { id: 'mt2', title: '파도' }],
+      events: [
+        { status: 'AWAITING_PAYMENT', note: '', by_staff: false, at: '2026-09-22T09:10:00+09:00' },
+        { status: 'SUBMITTED', note: '정산금에서 결제', by_staff: false, at: '2026-09-22T09:12:00+09:00' },
+        { status: 'COMPLETED', note: '', by_staff: true, at: '2026-09-24T15:00:00+09:00' },
+      ],
+    }),
+  ] as AddonOrder[],
+};
 const MOCK_TRACKS: TrackRow[] = [
   { id: 'mt1', title: '여름의 끝', track_number: 1, has_lyrics: true, lrc: null, source: null, registered: [] },
   { id: 'mt2', title: '파도', track_number: 2, has_lyrics: true, lrc: null, source: null, registered: [] },
-  { id: 'mt3', title: '여름의 끝 (Inst.)', track_number: 3, has_lyrics: false, lrc: null, source: null, registered: [] },
 ];
+const mockState = (rid: string): ReleaseAddons => ({ items: mock.orders.filter(o => o.release_id === rid).map(o => ({ ...o })), prices: PRICES, card: { provider: 'toss', label: '토스페이먼츠' }, balance: mock.balance });
+const mockStep = (o: AddonOrder, status: OrderStatus, note = '') => { o.status = status; o.updated_at = now(); o.events = [...o.events, { status, note, by_staff: false, at: now() }]; };
+
+/** 체험 모드 — 신청서 옵션으로 주문을 만든다 (실서버는 접수할 때 서버가 만든다) */
+export function mockOrdersFromApplication(releaseId: string, title: string, o: Record<string, unknown>, trackTitles: string[]) {
+  if (!MOCK) return;
+  const make = (service: Service, tier: '' | MvTier, unit: number, qty: number, name: string, tracks: string[]) => {
+    if (mock.orders.some(x => x.release_id === releaseId && x.service === service && !['CANCELLED', 'REJECTED'].includes(x.status))) return;
+    mock.orders.push({
+      id: `mock-${service}-${Date.now()}`, service, tier, release_id: releaseId, release_title: title, track_ids: tracks,
+      tracks: tracks.map((t, i) => ({ id: t, title: trackTitles[i] ?? t })), video: null, title: name, detail: {},
+      quantity: qty, unit_price: unit, amount: unit * qty, status: 'AWAITING_PAYMENT', pay_method: null, paid_at: null,
+      refunded_at: null, provider: null, result: {}, resolution: '', created_at: now(), updated_at: now(),
+      events: [{ status: 'AWAITING_PAYMENT', note: '', by_staff: false, at: now() }],
+    });
+  };
+  if (o.express) make('EXPRESS_RELEASE', '', 10000, 1, title, []);
+  if (o.mv) make('MV_DISTRIBUTION', (o.mvTier as MvTier) || 'REVIEW', PRICES.mv.find(t => t.tier === o.mvTier)?.price ?? 39000, 1, String(o.mvTitle || `${title} MV`), []);
+  if (o.lyricSync) {
+    const n = Array.isArray(o.lyricTracks) ? o.lyricTracks.length : 0;
+    if (n) make('LYRIC_SYNC', '', 5000, n, `${title} 가사 싱크`, (o.lyricTracks as number[]).map(String));
+  }
+}
 
 // ---------------------------------------------------------------------------
 // 서버
 // ---------------------------------------------------------------------------
-export async function fetchAddons(): Promise<AddonState> {
-  if (MOCK) return { items: [...mock.items], prices: MOCK_PRICES, card: true, balance: mock.balance, mv_platforms: ['melon', 'genie', 'bugs', 'flo', 'vibe', 'youtube'] };
-  return req<AddonState>(orgPath('/addons'), { quiet401: true });
+export async function fetchConfig(): Promise<AddonConfig> {
+  if (MOCK) return { prices: PRICES, card: { provider: 'toss', label: '토스페이먼츠' }, balance: mock.balance, mv_platforms: MV_PLATFORMS };
+  return req<AddonConfig>(orgPath('/addons/config'), { quiet401: true });
 }
 
-export interface NewOrder { service: Service; tier?: MvTier; release_id: string; track_ids: string[]; detail: Record<string, unknown> }
+export async function fetchReleaseAddons(releaseId: string): Promise<ReleaseAddons> {
+  if (MOCK) return mockState(releaseId);
+  return req<ReleaseAddons>(orgPath(`/releases/${encodeURIComponent(releaseId)}/addons`), { quiet401: true });
+}
 
-export async function createOrder(o: NewOrder, releaseTitle: string, tracks: { id: string; title: string }[]): Promise<AddonOrder> {
+export async function payWithBalance(releaseId: string, orderIds: string[]): Promise<ReleaseAddons> {
   if (MOCK) {
-    const unit = o.service === 'LYRIC_SYNC' ? 5000 : MOCK_PRICES.mv.find(t => t.tier === o.tier)?.price ?? 0;
-    const order: AddonOrder = {
-      id: `mock-${Date.now()}`, service: o.service, tier: o.tier ?? '', release_id: o.release_id, release_title: releaseTitle,
-      track_ids: o.track_ids, tracks: tracks.filter(t => o.track_ids.includes(t.id)),
-      title: o.service === 'MV_DISTRIBUTION' ? String(o.detail.mv_title ?? '') : `${releaseTitle} 가사 싱크`,
-      detail: o.detail, quantity: o.service === 'LYRIC_SYNC' ? o.track_ids.length : 1, unit_price: unit,
-      amount: unit * (o.service === 'LYRIC_SYNC' ? o.track_ids.length : 1), status: 'AWAITING_PAYMENT',
-      pay_method: null, paid_at: null, refunded_at: null, result: {}, resolution: '', created_at: now(), updated_at: now(),
-      events: [{ status: 'AWAITING_PAYMENT', note: '', by_staff: false, at: now() }],
-    };
-    mock.items = [order, ...mock.items];
-    return order;
+    const list = mock.orders.filter(o => orderIds.includes(o.id) && o.status === 'AWAITING_PAYMENT');
+    const total = list.reduce((n, o) => n + o.amount, 0);
+    if (mock.balance < total) throw Object.assign(new Error('출금할 수 있는 정산금이 모자라요.'), { code: 'ADDON_BALANCE_SHORT' });
+    mock.balance -= total;
+    for (const o of list) { o.pay_method = 'SETTLEMENT'; o.paid_at = now(); mockStep(o, 'SUBMITTED', '정산금에서 결제'); }
+    return mockState(releaseId);
   }
-  return req<AddonOrder>(orgPath('/addons'), { method: 'POST', body: o });
+  return req<ReleaseAddons>(orgPath(`/releases/${encodeURIComponent(releaseId)}/addons/pay`), { method: 'POST', body: { method: 'SETTLEMENT', order_ids: orderIds } });
 }
 
-export async function paySettlement(id: string): Promise<AddonOrder> {
+export async function cancelOrder(id: string, releaseId: string): Promise<ReleaseAddons> {
   if (MOCK) {
-    const o = mock.items.find(x => x.id === id)!;
-    if (mock.balance < o.amount) throw Object.assign(new Error('정산 잔액이 모자라요.'), { code: 'ADDON_BALANCE_SHORT' });
-    mock.balance -= o.amount;
-    o.pay_method = 'SETTLEMENT'; o.paid_at = now();
-    mockEvent(o, 'SUBMITTED', '정산금에서 결제');
-    return { ...o };
-  }
-  return req<AddonOrder>(orgPath(`/addons/${encodeURIComponent(id)}/pay/settlement`), { method: 'POST', body: {} });
-}
-
-export async function cancelOrder(id: string): Promise<AddonOrder> {
-  if (MOCK) {
-    const o = mock.items.find(x => x.id === id)!;
+    const o = mock.orders.find(x => x.id === id)!;
     if (o.pay_method === 'SETTLEMENT') mock.balance += o.amount;
     if (o.paid_at) o.refunded_at = now();
-    mockEvent(o, 'CANCELLED');
-    return { ...o };
+    mockStep(o, 'CANCELLED');
+    return mockState(releaseId);
   }
-  return req<AddonOrder>(orgPath(`/addons/${encodeURIComponent(id)}/cancel`), { method: 'POST', body: {} });
+  return req<ReleaseAddons>(orgPath(`/addons/${encodeURIComponent(id)}/cancel`), { method: 'POST', body: {} });
 }
 
-/** 카드 결제 — 토스 결제창을 열고, 돌아오면 /services?pay=card&id=…에서 confirmCard로 승인한다 */
-const PENDING = 'aq-addon-card';
-export async function payCard(id: string): Promise<void> {
+// ---------------------------------------------------------------------------
+// 카드 결제 — PG마다 결제창이 다르다. 결제창이 돌아오면 서버가 금액을 다시 확인하고 승인한다.
+// ---------------------------------------------------------------------------
+type Window = Record<string, unknown> & { provider: CardInfo['provider']; payment_id: string; amount: number; order_name: string };
+
+/** 결제창에서 돌아올 주소 — 발매 상세가 ?pay=…&payment=…를 읽어 승인을 마친다 */
+const backUrl = (releaseId: string, provider: string, payment: string) =>
+  `${window.location.origin}/releases/${encodeURIComponent(releaseId)}?pay=${provider}&payment=${encodeURIComponent(payment)}`;
+
+/** 카드로 결제 — 결제창을 연다. 바로 결과가 나오는 결제창(PC 포트원·페이플)이면 승인까지 마치고 새 상태를 돌려주고,
+ *  다른 페이지로 넘어가는 결제창이면 돌아온 뒤 발매 상세에서 마친다 (그때는 null) */
+export async function payWithCard(releaseId: string, orderIds: string[]): Promise<ReleaseAddons | null> {
   if (MOCK) {
-    const o = mock.items.find(x => x.id === id)!;
-    o.pay_method = 'CARD'; o.paid_at = now();
-    mockEvent(o, 'SUBMITTED', '카드 결제');
-    return;
+    for (const o of mock.orders.filter(x => orderIds.includes(x.id) && x.status === 'AWAITING_PAYMENT')) {
+      o.pay_method = 'CARD'; o.paid_at = now(); o.provider = 'toss'; mockStep(o, 'SUBMITTED', '카드 결제');
+    }
+    return mockState(releaseId);
   }
-  const w = await req<{ client_key: string; customer_key: string; order_id: string; amount: number; order_name: string }>(
-    orgPath(`/addons/${encodeURIComponent(id)}/pay/card`), { method: 'POST', body: {} });
-  const sdk = await loadToss();
-  const back = `${window.location.origin}/services?pay=card&id=${encodeURIComponent(id)}`;
-  try { sessionStorage.setItem(PENDING, id); } catch { /* 돌아오는 주소에도 id가 있다 */ }
-  const payment = sdk(w.client_key).payment({ customerKey: w.customer_key });
-  await payment.requestPayment({
-    method: 'CARD', amount: { currency: 'KRW', value: w.amount }, orderId: w.order_id, orderName: w.order_name,
-    successUrl: back, failUrl: `${back}&fail=1`,
+  const w = await req<Window>(orgPath(`/releases/${encodeURIComponent(releaseId)}/addons/pay`), { method: 'POST', body: { method: 'CARD', order_ids: orderIds } });
+  const back = backUrl(releaseId, w.provider, w.payment_id);
+  if (w.provider === 'toss') {
+    await loadScript('https://js.tosspayments.com/v2/standard');
+    const toss = (window as unknown as { TossPayments: (k: string) => { payment: (o: { customerKey: string }) => { requestPayment: (o: Record<string, unknown>) => Promise<void> } } }).TossPayments;
+    await toss(String(w.client_key)).payment({ customerKey: String(w.customer_key) }).requestPayment({
+      method: 'CARD', amount: { currency: 'KRW', value: w.amount }, orderId: String(w.order_id), orderName: w.order_name,
+      successUrl: back, failUrl: `${back}&fail=1`,
+    });
+    return null;
+  }
+  if (w.provider === 'portone') {
+    await loadScript('https://cdn.portone.io/v2/browser-sdk.js');
+    const portone = (window as unknown as { PortOne: { requestPayment: (o: Record<string, unknown>) => Promise<{ code?: string; message?: string } | undefined> } }).PortOne;
+    const r = await portone.requestPayment({
+      storeId: w.store_id, channelKey: w.channel_key, paymentId: w.pg_payment_id,
+      orderName: w.order_name, totalAmount: w.amount, currency: 'CURRENCY_KRW', payMethod: 'CARD', redirectUrl: back,
+    });
+    if (!r) return null; // 리다이렉트로 넘어갔다
+    if (r.code) throw Object.assign(new Error(r.message || '결제를 마치지 못했어요.'), { code: 'ADDON_CARD_FAILED' });
+    return confirmPayment(w.payment_id, {});
+  }
+  // 페이플 — jQuery가 먼저 있어야 한다. 결과는 callbackFunction으로 받는다 (PCD_RST_URL은 상대 경로).
+  await loadScript('https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js');
+  await loadScript(String(w.script));
+  return new Promise((resolve, reject) => {
+    const check = (window as unknown as { PaypleCpayAuthCheck: (o: Record<string, unknown>) => void }).PaypleCpayAuthCheck;
+    check({
+      clientKey: w.client_key, PCD_PAY_TYPE: 'card', PCD_PAY_WORK: 'CERT', PCD_CARD_VER: '02',
+      PCD_PAY_GOODS: w.order_name, PCD_PAY_TOTAL: w.amount, PCD_PAY_OID: w.order_id, PCD_RST_URL: w.result_url,
+      callbackFunction: (res: Record<string, string>) => {
+        if (res.PCD_PAY_RST !== 'success') {
+          reject(Object.assign(new Error(res.PCD_PAY_RST === 'close' ? '결제를 닫았어요.' : res.PCD_PAY_MSG || '결제를 마치지 못했어요.'), { code: 'ADDON_CARD_FAILED' }));
+          return;
+        }
+        confirmPayment(w.payment_id, { auth_key: res.PCD_AUTH_KEY, req_key: res.PCD_PAY_REQKEY, order_id: res.PCD_PAY_OID, total: String(res.PCD_PAY_TOTAL) })
+          .then(resolve, reject);
+      },
+    });
   });
 }
 
-export async function confirmCard(id: string, q: URLSearchParams): Promise<AddonOrder> {
-  return req<AddonOrder>(orgPath(`/addons/${encodeURIComponent(id)}/pay/card/confirm`), {
-    method: 'POST', body: { payment_key: q.get('paymentKey') ?? '', order_id: q.get('orderId') ?? '', amount: Number(q.get('amount') ?? 0) },
-  });
+export async function confirmPayment(paymentId: string, input: Record<string, unknown>): Promise<ReleaseAddons> {
+  return req<ReleaseAddons>(orgPath(`/addon-payments/${encodeURIComponent(paymentId)}/confirm`), { method: 'POST', body: input });
 }
 
-type TossFactory = (clientKey: string) => { payment: (o: { customerKey: string }) => { requestPayment: (o: Record<string, unknown>) => Promise<void> } };
-let tossLoading: Promise<TossFactory> | null = null;
-/** 토스페이먼츠 결제 SDK (v2) — 결제할 때만 불러온다 */
-function loadToss(): Promise<TossFactory> {
-  tossLoading ??= new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://js.tosspayments.com/v2/standard';
-    s.async = true;
-    s.onload = () => {
-      const f = (window as unknown as { TossPayments?: TossFactory }).TossPayments;
-      if (f) resolve(f); else reject(new Error('결제창을 불러오지 못했어요.'));
-    };
-    s.onerror = () => { tossLoading = null; reject(new Error('결제창을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.')); };
-    document.head.appendChild(s);
-  });
-  return tossLoading;
+/** 결제창에서 돌아온 주소(?pay=toss|portone&payment=…)의 결과로 승인 — 실패로 돌아왔으면 그 메시지로 에러 */
+export async function confirmFromReturn(q: URLSearchParams): Promise<ReleaseAddons> {
+  const payment = q.get('payment') ?? '';
+  if (q.get('fail') || q.get('code')) throw Object.assign(new Error(q.get('message') || '결제를 마치지 못했어요.'), { code: 'ADDON_CARD_FAILED' });
+  return confirmPayment(payment, q.get('pay') === 'toss' ? { payment_key: q.get('paymentKey') ?? '' } : {});
 }
 
+const loading = new Map<string, Promise<void>>();
+function loadScript(src: string): Promise<void> {
+  let p = loading.get(src);
+  if (!p) {
+    p = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.async = true;
+      s.onload = () => resolve();
+      s.onerror = () => { loading.delete(src); reject(new Error('결제창을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.')); };
+      document.head.appendChild(s);
+    });
+    loading.set(src, p);
+  }
+  return p;
+}
+
+// ---------------------------------------------------------------------------
+// 뮤직비디오 파일 — 16 MiB 조각으로 저장소에 바로 올린다 (끊기면 이어서)
+// ---------------------------------------------------------------------------
+export const MAX_VIDEO_BYTES = 8 * 1024 ** 3;
+export async function uploadVideo(file: File, onProgress?: (r: number) => void, signal?: AbortSignal): Promise<string> {
+  const type = file.type === 'video/quicktime' || /\.mov$/i.test(file.name) ? 'video/quicktime' : 'video/mp4';
+  if (MOCK) {
+    for (let i = 1; i <= 10; i++) { await new Promise(r => setTimeout(r, 60)); onProgress?.(i / 10); }
+    return `mock-video-${Date.now()}`;
+  }
+  const v = await req<{ id: string }>(orgPath('/addon-videos'), { method: 'POST', body: { name: file.name, size_bytes: file.size, content_type: type } });
+  await uploadParts(file, v.id, onProgress, signal, `/addon-videos/${encodeURIComponent(v.id)}/parts`);
+  await req(orgPath(`/addon-videos/${encodeURIComponent(v.id)}/complete`), { method: 'POST', body: {} });
+  return v.id;
+}
+
+// ---------------------------------------------------------------------------
+// 싱크 가사 (LRC)
+// ---------------------------------------------------------------------------
 export async function fetchTracks(releaseId: string): Promise<TrackRow[]> {
   if (MOCK) return MOCK_TRACKS.map(t => ({ ...t }));
   return (await req<{ items: TrackRow[] }>(orgPath(`/releases/${encodeURIComponent(releaseId)}/lyric-sync`), { quiet401: true })).items;

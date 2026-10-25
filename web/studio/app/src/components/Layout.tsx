@@ -44,7 +44,6 @@ const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
       { to: '/releases', label: '발매·곡 관리', icon: 'disc' },
       { to: '/reports', label: '음악 리포트', icon: 'chart' },
       { to: '/settlement', label: '정산·지급', icon: 'won' },
-      { to: '/services', label: '부가서비스', icon: 'layers' },
     ],
   },
   {
