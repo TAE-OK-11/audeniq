@@ -16,7 +16,7 @@ export function ReviewNote({ text }: { text: string }) {
   );
 }
 
-/** 보완 요청 할 일 줄 — 단계 이름표 · 무엇을 · ‘고치러 가기’(신청서의 해당 입력칸으로 바로 이동) */
+/** 보완 요청 할 일 줄 — 홈 '확인할 작업'과 같은 줄: 아이콘 · 무엇을(단계 · 사유) · 줄 전체를 누르면 신청서의 해당 입력칸으로 */
 export function CorrectionList({ releaseId, corrections, trackIds = [], trackTitles = {} }: {
   releaseId: string;
   corrections: Correction[];
@@ -25,16 +25,20 @@ export function CorrectionList({ releaseId, corrections, trackIds = [], trackTit
 }) {
   const nav = useNavigate();
   return (
-    <ul className="aq-fix-list">
+    <ul className="aq-task-list aq-fix-tasks">
       {corrections.map((c, i) => {
         const r = resolveCorrection(c, trackIds);
         const track = c.trackId ? trackTitles[c.trackId] : '';
+        const doc = isDocumentFix(c);
         return (
           <li key={`${c.code}-${c.trackId ?? ''}-${i}`}>
-            <span className="aq-fix-step">{r.step + 1}단계 · {WIZ_STEP_NAMES[r.step]}</span>
-            <p><strong>{r.label}{track ? ` · ${track}` : ''}</strong>{r.message}</p>
-            <button type="button" className="ui-btn is-sm is-soft" onClick={() => nav(fixPath(releaseId, c))}>
-              {isDocumentFix(c) ? '서류 첨부하기' : '고치러 가기'}<Glyph name="chevron-right" size={13} />
+            <button type="button" className="aq-task is-warn" onClick={() => nav(fixPath(releaseId, c))}>
+              <span className="ui-icon" aria-hidden="true"><Glyph name={doc ? 'doc' : 'pencil'} size={18} /></span>
+              <span className="aq-task-text">
+                <strong>{r.label}{track ? ` · ${track}` : ''}</strong>
+                <small>{r.step + 1}단계 {WIZ_STEP_NAMES[r.step]} · {r.message}</small>
+              </span>
+              <span className="aq-task-go">{doc ? '서류 첨부하기' : '고치러 가기'}<i aria-hidden="true"><Glyph name="chevron-right" size={14} /></i></span>
             </button>
           </li>
         );
