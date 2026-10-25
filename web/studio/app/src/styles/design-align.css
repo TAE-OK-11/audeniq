@@ -1642,7 +1642,14 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-thread-compose .ui-btn.is-icon{width:44px;height:44px;border-radius:50%}
 .aq-thread-end{justify-self:center;color:var(--aq-text-3)}
 /* 부가서비스 — 신청서의 부가서비스 칸·최종 확인 합계·결제(신청 완료 화면, 발매 상세)·발매 상세의 부가서비스 칸 */
-.aq-addon-checkout,.aq-addon-summary{display:grid;gap:14px;margin:16px 0 24px;padding:20px;border-radius:var(--aq-r-xl);background:var(--aq-blue-50)}
+.aq-addon-summary{display:grid;gap:14px;margin:16px 0 24px;padding:20px;border-radius:var(--aq-r-xl);background:var(--aq-blue-50)}
+.aq-addon-checkout{display:grid;gap:14px}
+.aq-addon-checkout>.aq-fix-title{margin:-2px 0 0}
+.aq-addon-lead{margin:-6px 0 4px;color:var(--aq-text-3);font-size:14px;line-height:1.6}
+.aq-addon-method,.aq-addon-blocked{display:grid;gap:4px;margin:0;padding:14px 16px;border-radius:var(--aq-r-lg);background:#fff;color:var(--aq-text-3);font-size:13px;line-height:1.6}
+.aq-addon-method b,.aq-addon-blocked b{color:var(--aq-text);font-size:15px;font-weight:var(--aq-fw-bold)}
+.aq-addon-blocked{background:var(--aq-e-amber-soft,var(--aq-amber-50))}
+.aq-addon-blocked b{color:var(--aq-amber-700)}
 .aq-addon-lines{display:grid;gap:2px;margin:0;padding:6px;border-radius:var(--aq-r-lg);background:#fff;list-style:none}
 .aq-addon-lines li{display:flex;align-items:center;gap:12px;min-height:52px;padding:8px 10px}
 .aq-addon-lines li strong{display:block;color:var(--aq-text);font-size:14px;font-weight:var(--aq-fw-semibold,600)}
@@ -1656,7 +1663,6 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-addon-pay small{color:var(--aq-text-3);font-size:12px;font-weight:var(--aq-fw-medium);line-height:1.5}
 .aq-addon-pay:disabled{opacity:.55;cursor:default}
 .aq-addon-checkout .ui-choice,.aq-addon-summary .ui-choice{background:#fff}
-.aq-addon-checkout>.aq-manage-head+.ui-field-help{margin-top:-8px}
 .aq-addon-lrc-cta{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
 .aq-addon-lrc-cta .ui-btn{gap:6px}
 .aq-addon-note{margin:0;color:var(--aq-text-3);font-size:12px;line-height:1.6}
@@ -1666,5 +1672,5 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-pick:disabled{opacity:.55;cursor:default}
 .aq-pick:disabled:hover{background:#fff}
 @media (max-width:760px){
-  .aq-addon-checkout,.aq-addon-summary{padding:16px}
+  .aq-addon-summary{padding:16px}
 }
