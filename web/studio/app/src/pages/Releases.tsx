@@ -10,6 +10,7 @@ import { SkeletonRows } from '../components/Skeleton';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { Glyph } from '../components/Glyph';
 import { Badge, Tabs } from '../ui';
+import { CodesPanel } from '../components/CodesPanel';
 import { openFixes, pendingProofs, proofPath, useDocs, type DocRecord } from '../store/docs';
 
 const FILTERS = [
@@ -53,7 +54,7 @@ export function Releases() {
   const docs = useDocs();
   const [params, setParams] = useSearchParams();
   const tabParam = params.get('tab');
-  const tab = tabParam === 'tracks' ? tabParam : 'releases';
+  const tab = tabParam === 'tracks' || tabParam === 'codes' ? tabParam : 'releases';
   const filter = params.get('status') || 'all';
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('updated');
@@ -144,13 +145,16 @@ export function Releases() {
         items={[
           { value: 'releases', label: '발매 목록', count: listLoading ? null : list.length },
           { value: 'tracks', label: '전체 트랙', count: listLoading ? null : trackCount },
+          { value: 'codes', label: 'UPC·ISRC' },
         ]}
         onChange={v => setParam('tab', v, 'releases')}
         onIntent={v => { if (v === 'tracks') setTracksWanted(true); }}
         className="is-fill"
       />
 
-      {loading ? (
+      {tab === 'codes' ? (
+        <div className="ui-tab-panel" key="codes"><CodesPanel /></div>
+      ) : loading ? (
         listLoading || slowTracks ? <SkeletonRows count={4} /> : <div className="aq-tab-wait" aria-busy="true" />
       ) : error ? (
         <div className="ui-empty">
