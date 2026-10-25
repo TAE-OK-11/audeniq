@@ -1,5 +1,5 @@
 // 스튜디오 > 계정 정보 > 아티스트 페이지 — 소개 페이지의 소식(공지·이벤트)을 올리고 고치는 창과 팬 응원을 관리하는 창.
-// ArtistHubCard의 ‘소식’·‘팬 응원’ 줄에서 열린다. 공개 페이지에 보이는 모양(PostCard·CheerItem)을 그대로 보여 준다.
+// 아티스트 페이지(pages/ArtistStudio) > 관리의 ‘소식’·‘팬 응원’ 줄에서 열린다. 공개 페이지에 보이는 모양(PostCard·CheerItem)을 그대로 보여 준다.
 import { useCallback, useEffect, useState } from 'react';
 import { orgPath, req } from '../api/http';
 import { errorMessage } from '../api/errors';

@@ -6048,6 +6048,342 @@ async fn artist_page_news_cheers_and_discography(pool: PgPool) {
     }
 }
 
+/// Artist studio: insights add up the artist page and the artist's smart
+/// links per day (period and the one before), per platform, channel and
+/// release; the profile photo is an uploaded image the page shows, sent to
+/// the platforms that take it from the distributor as one request each.
+#[sqlx::test]
+async fn artist_studio_insights_photo_and_platform_photo_requests(pool: PgPool) {
+    let d = draft_package(&pool).await;
+    consent_and_submit(&d.app, &d.u, d.release, &format!("k-as-{}", Uuid::new_v4())).await;
+    let org = d.u.org;
+    let (app, u) = (d.app.clone(), d.u.clone());
+    let (_, v) = call(
+        &app,
+        "GET",
+        &format!("/api/orgs/{org}/artist-links"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    let artist = v["items"][0]["artist_id"].as_str().unwrap().to_string();
+    assert_eq!(v["items"][0]["photo"], false, "{v}");
+    let base = format!("/api/orgs/{org}/artists/{artist}");
+
+    // Before any page or link: zeros for every day of the period.
+    let (s, i) = call(
+        &app,
+        "GET",
+        &format!("{base}/insights?days=7"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{i}");
+    assert_eq!(i["series"].as_array().unwrap().len(), 7, "{i}");
+    assert!(i["page"].is_null());
+    assert_eq!(i["releases"].as_array().unwrap().len(), 1, "{i}");
+    assert!(i["releases"][0]["link"].is_null());
+    let (_, bad) = call(
+        &app,
+        "GET",
+        &format!("{base}/insights?days=5"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(bad["error"]["code"], "INSIGHTS_PERIOD_INVALID", "{bad}");
+
+    let (_, v) = call(
+        &app,
+        "PUT",
+        &format!("{base}/link"),
+        json!({"handle": "studio_artist"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["slug"], "studio_artist", "{v}");
+    let (_, v) = call(
+        &app,
+        "PUT",
+        &format!("/api/orgs/{org}/releases/{}/smart-link", d.release),
+        json!({"links": {"melon": "https://www.melon.com/album/detail.htm?albumId=1"}}),
+        Some(&u),
+    )
+    .await;
+    let slug = v["slug"].as_str().unwrap().to_string();
+    // Today's visits; and counts from before the period (comparison).
+    call(
+        &app,
+        "GET",
+        "/api/artist-links/studio_artist",
+        Value::Null,
+        None,
+    )
+    .await;
+    call(
+        &app,
+        "GET",
+        &format!("/api/smart-links/{slug}?src=instagram"),
+        Value::Null,
+        None,
+    )
+    .await;
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("/api/smart-links/{slug}/click"),
+        json!({"platform": "melon"}),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    sqlx::query(
+        "INSERT INTO portal.smart_link_stats(link_id, day, platform, count)
+         SELECT id, (now() AT TIME ZONE 'Asia/Seoul')::date - 10, '_view', 4 FROM portal.smart_links WHERE slug=$1",
+    )
+    .bind(&slug)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (_, i) = call(
+        &app,
+        "GET",
+        &format!("{base}/insights?days=7"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(i["totals"]["page_views"], 1, "{i}");
+    assert_eq!(i["totals"]["link_views"], 1, "{i}");
+    assert_eq!(i["totals"]["clicks"], 1, "{i}");
+    assert_eq!(i["previous"]["link_views"], 4, "{i}");
+    assert_eq!(i["platforms"]["melon"], 1, "{i}");
+    assert_eq!(i["sources"]["instagram"], 1, "{i}");
+    let last = i["series"].as_array().unwrap().last().unwrap().clone();
+    assert_eq!(last["clicks"], 1, "{i}");
+    assert_eq!(i["releases"][0]["link"]["slug"], slug.as_str(), "{i}");
+    assert_eq!(i["releases"][0]["views"], 1, "{i}");
+    assert_eq!(i["page"]["slug"], "studio_artist");
+    // Another org sees nothing.
+    let other = user(&app).await;
+    let (s, _) = call(
+        &app,
+        "GET",
+        &format!("{base}/insights"),
+        Value::Null,
+        Some(&other),
+    )
+    .await;
+    assert_ne!(s, StatusCode::OK);
+
+    // Photo: the cover image doubles as an uploaded photo (sanitized).
+    let asset: Uuid =
+        sqlx::query_scalar("SELECT artwork_asset_id FROM catalog.releases WHERE id=$1")
+            .bind(d.release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let (_, v) = call(
+        &app,
+        "POST",
+        &format!("{base}/photo/send"),
+        json!({"platforms": ["melon"]}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "ARTIST_PHOTO_REQUIRED", "{v}");
+    for action in ["read", "write"] {
+        sqlx::query("INSERT INTO identity.resource_acl(org_id,resource_id,principal_party_id,action) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING")
+            .bind(org).bind(asset).bind(u.party).bind(action)
+            .execute(&pool).await.unwrap();
+    }
+    let (_, v) = call(
+        &app,
+        "PUT",
+        &format!("{base}/photo"),
+        json!({"asset_id": asset}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        v["error"]["code"], "ARTIST_PHOTO_NOT_READY",
+        "not sanitized yet: {v}"
+    );
+    sqlx::query(
+        "INSERT INTO catalog.asset_safety(asset_id,org_id,source_key,source_sha256,safe_key,safe_sha256,rule_version)
+         SELECT id, org_id, 'quarantine/' || org_id || '/' || id || '/source', sha256, object_key, sha256, '1'
+           FROM catalog.assets WHERE id=$1 ON CONFLICT DO NOTHING",
+    )
+    .bind(asset)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (s, v) = call(
+        &app,
+        "PUT",
+        &format!("{base}/photo"),
+        json!({"asset_id": asset}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (s, _) = call(&app, "GET", &format!("{base}/photo"), Value::Null, Some(&u)).await;
+    assert_eq!(s, StatusCode::OK);
+    let (s, _) = call(
+        &app,
+        "GET",
+        "/api/artist-links/studio_artist/photo",
+        Value::Null,
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, page) = call(
+        &app,
+        "GET",
+        "/api/artist-links/studio_artist",
+        Value::Null,
+        None,
+    )
+    .await;
+    assert_eq!(page["photo"], true, "{page}");
+    let (s, _) = call(
+        &app,
+        "GET",
+        &format!("/api/orgs/{}/artists/{artist}/photo", other.org),
+        Value::Null,
+        Some(&other),
+    )
+    .await;
+    assert_ne!(s, StatusCode::OK);
+
+    // Send to platforms: Spotify takes no distributor photo.
+    let send = format!("{base}/photo/send");
+    let (_, v) = call(
+        &app,
+        "POST",
+        &send,
+        json!({"platforms": ["spotify"]}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        v["error"]["code"], "PLATFORM_REQUEST_PLATFORM_INVALID",
+        "{v}"
+    );
+    let (s, v) = call(
+        &app,
+        "POST",
+        &send,
+        json!({"platforms": ["melon", "genie", "melon"]}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["created"].as_array().unwrap().len(), 2, "{v}");
+    let (_, v) = call(
+        &app,
+        "POST",
+        &send,
+        json!({"platforms": ["melon", "bugs"]}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["skipped"], json!(["melon"]), "open request stays: {v}");
+    let (_, i) = call(
+        &app,
+        "GET",
+        &format!("{base}/insights"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    let reqs = i["photo_requests"].as_array().unwrap();
+    assert_eq!(reqs.len(), 3, "{i}");
+    assert!(
+        reqs.iter()
+            .all(|r| r["status"] == "SUBMITTED" && r["current"] == true),
+        "{i}"
+    );
+    let (_, list) = call(
+        &app,
+        "GET",
+        &format!("/api/orgs/{org}/platform-requests?group=profile"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(list["items"].as_array().unwrap().len(), 3, "{list}");
+    assert_eq!(list["items"][0]["image"], true, "{list}");
+    // Made only from the artist screen (it carries the photo).
+    let (_, v) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{org}/platform-requests"),
+        json!({"kind": "PROFILE_IMAGE", "platform": "melon", "artist_name": "x"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "PLATFORM_REQUEST_KIND_INVALID", "{v}");
+
+    // Staff with the delivery duty open the photo the request carries.
+    let id = v_id(&list["items"][0]);
+    let reviewer = staff_user(&app, &pool, "REVIEWER").await;
+    let (s, _) = call(
+        &app,
+        "GET",
+        &format!("/api/staff/platform-requests/{id}/image"),
+        Value::Null,
+        Some(&reviewer),
+    )
+    .await;
+    assert_ne!(s, StatusCode::OK);
+    let op = staff_user(&app, &pool, "OPERATOR").await;
+    let (s, _) = call(
+        &app,
+        "GET",
+        &format!("/api/staff/platform-requests/{id}/image"),
+        Value::Null,
+        Some(&op),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+
+    // Removing the photo hides it from the page; the requests keep theirs.
+    let (s, _) = call(
+        &app,
+        "DELETE",
+        &format!("{base}/photo"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (s, _) = call(
+        &app,
+        "GET",
+        "/api/artist-links/studio_artist/photo",
+        Value::Null,
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+    let (s, _) = call(
+        &app,
+        "GET",
+        &format!("/api/staff/platform-requests/{id}/image"),
+        Value::Null,
+        Some(&op),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+}
+
+fn v_id(v: &Value) -> String {
+    v["id"].as_str().unwrap().to_string()
+}
+
 #[sqlx::test]
 async fn codes_list_and_csv(pool: PgPool) {
     let ctx = ready_package(&pool).await;

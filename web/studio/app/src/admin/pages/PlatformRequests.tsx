@@ -6,7 +6,7 @@ import { Link } from '../../lib/router';
 import { useToast } from '../../components/Toast';
 import { errorMessage } from '../../api/errors';
 import { useAsync } from '../../hooks/useAsync';
-import { req } from '../../api/http';
+import { API_BASE, req } from '../../api/http';
 import { MOCK } from '../../lib/mode';
 import { PLATFORM_NAMES } from '../../lib/platformNames';
 import { KINDS, MONETIZATION_LABEL, STATUS_LABEL, STATUS_TONE, kindSpec, type PlatformRequest } from '../../lib/platformRequests';
@@ -86,6 +86,13 @@ export function PlatformRequests() {
                   <Badge tone={STATUS_TONE[r.status] ?? 'gray'}>{STATUS_LABEL[r.status] ?? r.status}</Badge>
                 </div>
                 <div className="adm-note ui-on-soft" style={{ marginTop: 12 }}>
+                  {r.image && (
+                    <div className="adm-pr-photo">
+                      <small className="muted">보낼 프로필 사진</small>
+                      <img src={`${API_BASE}/api/staff/platform-requests/${encodeURIComponent(r.id)}/image`} alt={`${r.artist_name} 프로필 사진`} width={120} height={120} />
+                      <p><a href={`${API_BASE}/api/staff/platform-requests/${encodeURIComponent(r.id)}/image`} download={`${r.artist_name}-${r.platform}.jpg`}>원본 받기</a></p>
+                    </div>
+                  )}
                   {r.urls.map((u, i) => (
                     <div key={u}><small className="muted">{spec?.urls[i] ?? '링크'}</small><p><a href={u} target="_blank" rel="noopener noreferrer">{u}</a></p></div>
                   ))}
