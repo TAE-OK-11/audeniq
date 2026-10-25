@@ -1643,13 +1643,21 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-thread-end{justify-self:center;color:var(--aq-text-3)}
 /* 부가서비스 — 신청서의 부가서비스 칸·최종 확인 합계·결제(신청 완료 화면, 발매 상세)·발매 상세의 부가서비스 칸 */
 .aq-addon-summary{display:grid;gap:14px;margin:16px 0 24px;padding:20px;border-radius:var(--aq-r-xl);background:var(--aq-blue-50)}
-.aq-addon-checkout{display:grid;gap:14px}
-.aq-addon-checkout>.aq-fix-title{margin:-2px 0 0}
-.aq-addon-lead{margin:-6px 0 4px;color:var(--aq-text-3);font-size:14px;line-height:1.6}
-.aq-addon-method,.aq-addon-blocked{display:grid;gap:4px;margin:0;padding:14px 16px;border-radius:var(--aq-r-lg);background:#fff;color:var(--aq-text-3);font-size:13px;line-height:1.6}
-.aq-addon-method b,.aq-addon-blocked b{color:var(--aq-text);font-size:15px;font-weight:var(--aq-fw-bold)}
-.aq-addon-blocked{background:var(--aq-e-amber-soft,var(--aq-amber-50))}
-.aq-addon-blocked b{color:var(--aq-amber-700)}
+.aq-addon-summary .ui-choice{background:#fff}
+/* 부가서비스 결제 — 정산·지급의 '받을 수 있는 금액' 카드(settle-hero)와 같은 모양 */
+#view-release .aq-addon-checkout,#view-application .aq-addon-checkout{margin:0 0 24px}
+.aq-addon-items{margin-top:14px}
+.aq-addon-items li{align-items:baseline;color:var(--aq-text-2);font-size:14px}
+.aq-addon-items li>.min-0{flex:1}
+.aq-addon-method{margin-top:20px}
+.aq-addon-checkout .settle-facts{margin-top:12px}
+.aq-addon-pay-btn{margin-top:20px}
+.aq-addon-note{margin:12px 0 0;color:var(--aq-text-4);font-size:12px;line-height:1.6}
+/* 보완 요청 — 홈 '먼저 할 일'과 같은 주황 면 · 작은 제목 · 큰 제목 · 확인할 작업 줄 */
+#view-release .aq-fix-panel.ui-tone-warn{background:var(--aq-amber-50)}
+.aq-fix-panel.ui-tone-warn>.eyebrow{margin:0;color:var(--aq-amber-600)}
+#view-release .aq-fix-panel.ui-tone-warn .aq-fix-title{margin-top:8px;font-size:22px}
+.aq-fix-tasks{gap:6px}
 .aq-addon-lines{display:grid;gap:2px;margin:0;padding:6px;border-radius:var(--aq-r-lg);background:#fff;list-style:none}
 .aq-addon-lines li{display:flex;align-items:center;gap:12px;min-height:52px;padding:8px 10px}
 .aq-addon-lines li strong{display:block;color:var(--aq-text);font-size:14px;font-weight:var(--aq-fw-semibold,600)}
@@ -1658,14 +1666,8 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-addon-lines li>b{flex:none;color:var(--aq-text);font-size:15px;font-weight:var(--aq-fw-bold);font-variant-numeric:tabular-nums}
 .aq-addon-lines li.is-total{justify-content:space-between;min-height:48px;margin-top:4px;border-top:1px solid var(--aq-line);color:var(--aq-text-2);font-size:14px;font-weight:var(--aq-fw-semibold,600)}
 .aq-addon-lines li.is-total>b{color:var(--aq-primary);font-size:18px;font-weight:var(--aq-fw-heavy,800)}
-.aq-addon-pay>span:first-child{display:grid;gap:2px}
-.aq-addon-pay b{font-size:14px}
-.aq-addon-pay small{color:var(--aq-text-3);font-size:12px;font-weight:var(--aq-fw-medium);line-height:1.5}
-.aq-addon-pay:disabled{opacity:.55;cursor:default}
-.aq-addon-checkout .ui-choice,.aq-addon-summary .ui-choice{background:#fff}
 .aq-addon-lrc-cta{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
 .aq-addon-lrc-cta .ui-btn{gap:6px}
-.aq-addon-note{margin:0;color:var(--aq-text-3);font-size:12px;line-height:1.6}
 .aq-addon-form{display:grid;gap:0}
 .aq-addon-file{position:relative;cursor:pointer}
 .aq-addon-lrc{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.7}

@@ -18,7 +18,8 @@ import { Modal, useModalClose } from './Modal';
 import { StageCard } from './StageCard';
 import { useToast } from './Toast';
 import { useConfirm } from './Confirm';
-import { CheckIcon } from './Check';
+import { Money } from './Money';
+import { Segmented } from './Segmented';
 
 const ICON: Record<Service, GlyphName> = { MV_DISTRIBUTION: 'release', EXPRESS_RELEASE: 'clock', LYRIC_SYNC: 'music' };
 
@@ -48,8 +49,9 @@ function useReleaseAddons(releaseId: string, handleReturn: boolean) {
 }
 
 /** 결제를 기다리는 부가서비스를 한 번에 결제 — 없으면 아무것도 그리지 않는다.
- *  보완 요청 카드와 같은 모양: 주황 머리글 · 큰 제목 · 줄 목록 · 할 일 버튼. 못 쓰는 결제 방법은 흐리게 두지 않고 숨긴다 */
-export function AddonCheckout({ releaseId, state, onPaid, title }: {
+ *  정산·지급의 '받을 수 있는 금액' 카드와 같은 모양: 작은 제목 · 큰 금액 · 항목 · 결제 방법(흰 알약) · 결제 버튼.
+ *  못 쓰는 결제 방법은 흐리게 두지 않고 빼고, 정산금이 모자라면 얼마나 쌓였는지 막대로 보여 준다 */
+export function AddonCheckout({ releaseId, state, onPaid, title = '결제할 부가서비스' }: {
   releaseId: string; state: State; onPaid: (s: State) => void; title?: string;
 }) {
   const toast = useToast();
@@ -73,52 +75,41 @@ export function AddonCheckout({ releaseId, state, onPaid, title }: {
       }
     } catch (e) { toast(errorMessage(e), 'error'); } finally { setBusy(false); }
   };
-  const head = title ?? (waiting.length === 1 ? `${SERVICE_LABEL[waiting[0].service]} 결제만 남았어요` : `부가서비스 ${waiting.length}건 결제만 남았어요`);
-  const methodText = {
-    SETTLEMENT: { label: '정산금으로 결제', help: `출금할 수 있는 정산금 ${money(state.balance)}에서 바로 빠져요.` },
-    CARD: { label: '카드 결제', help: `${state.card?.label ?? ''} 결제창에서 카드·간편결제로 결제해요.` },
-  };
   return (
-    <section className="aq-fix-panel aq-addon-checkout" aria-labelledby="addonPayTitle">
-      <div className="aq-fix-top"><Badge tone="amber">결제 대기 {waiting.length}건</Badge></div>
-      <h2 id="addonPayTitle" className="aq-fix-title">{head}</h2>
-      <p className="aq-addon-lead">신청서에서 고른 부가서비스예요. 결제하면 바로 담당자에게 접수돼요.</p>
-      <ul className="aq-addon-lines">
+    <section className="ui-card settle-hero aq-addon-checkout" aria-labelledby="addonPayTitle">
+      <h2 id="addonPayTitle">{title}</h2>
+      <strong className="settle-hero-amount"><Money value={total} /></strong>
+      <ul className="settle-split-legend aq-addon-items">
         {waiting.map(o => (
           <li key={o.id}>
-            <IconTile><Glyph name={ICON[o.service]} size={18} /></IconTile>
-            <span className="min-0">
-              <strong>{SERVICE_LABEL[o.service]}{o.tier ? ` · ${TIER[o.tier].label}` : ''}</strong>
-              <small>{o.service === 'LYRIC_SYNC' ? `${o.quantity}곡 × ${money(o.unit_price)}` : o.title}</small>
-            </span>
+            <span className="min-0">{SERVICE_LABEL[o.service]}{o.tier ? ` · ${TIER[o.tier].label}` : ''}{o.service === 'LYRIC_SYNC' ? ` · ${o.quantity}곡` : ''}</span>
             <b>{money(o.amount)}</b>
           </li>
         ))}
-        <li className="is-total"><span>합계</span><b>{money(total)}</b></li>
       </ul>
-      {methods.length > 1 ? (
-        <div className="ui-choices" role="radiogroup" aria-label="결제 방법">
-          {methods.map(m => (
-            <button key={m} type="button" role="radio" aria-checked={method === m} className="ui-choice aq-addon-pay" onClick={() => setMethod(m)}>
-              <span><b>{methodText[m].label}</b><small>{methodText[m].help}</small></span>
-              <span className="ui-choice-mark" aria-hidden="true">{method === m && <CheckIcon size={11} />}</span>
-            </button>
-          ))}
-        </div>
-      ) : method ? (
-        <p className="aq-addon-method"><b>{methodText[method].label}</b>{methodText[method].help}</p>
-      ) : (
-        <p className="aq-addon-blocked">
-          <b>지금은 결제할 수 없어요</b>
-          출금할 수 있는 정산금이 {money(state.balance)}이라 {money(total - state.balance)} 모자라요. 카드 결제는 준비 중이에요. 정산금이 쌓이면 여기서 결제해 주세요.
-        </p>
+      {methods.length > 1 && (
+        <Segmented label="결제 방법" className="aq-addon-method" value={method!} onChange={setMethod}
+          options={[{ value: 'SETTLEMENT', label: '정산금' }, { value: 'CARD', label: '카드' }]} />
       )}
       {method && (
-        <button type="button" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={busy} onClick={() => void pay()}>
+        <dl className="settle-facts">
+          {method === 'SETTLEMENT'
+            ? <div><dt>결제 뒤 남는 정산금</dt><dd><b>{money(state.balance - total)}</b></dd></div>
+            : <div><dt>{state.card?.label} 결제창</dt><dd>카드·간편결제</dd></div>}
+        </dl>
+      )}
+      {!enough && (
+        <div className="settle-min" role="note">
+          <div className="settle-min-bar" aria-hidden="true"><i style={{ width: `${Math.min(100, Math.round((state.balance / total) * 100))}%` }} /></div>
+          <p>정산금이 {money(total - state.balance)} 더 쌓이면 정산금으로 결제할 수 있어요 (지금 {money(state.balance)}).{!state.card && ' 카드 결제는 준비 중이에요.'}</p>
+        </div>
+      )}
+      {method && (
+        <button type="button" className={`ui-btn is-primary is-lg is-block aq-addon-pay-btn${busy ? ' is-busy' : ''}`} disabled={busy} onClick={() => void pay()}>
           {money(total)} 결제하기
         </button>
       )}
-      <p className="aq-addon-note">지금 결제하지 않아도 발매 상세에서 언제든 결제할 수 있어요. 담당자가 시작하기 전에 취소하면 결제한 방법으로 전액 환불돼요.</p>
+      <p className="aq-addon-note">담당자가 시작하기 전에 취소하면 결제한 방법으로 전액 환불돼요. 지금 결제하지 않아도 발매 상세에서 언제든 결제할 수 있어요.</p>
     </section>
   );
 }
