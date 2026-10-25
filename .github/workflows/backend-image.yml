@@ -284,20 +284,32 @@ jobs:
         with:
           ref: ${{ needs.image.outputs.sha }}
       - name: Check deploy settings
+        id: settings
         env:
           KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           KNOWN: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          EVENT: ${{ github.event_name }}
         run: |
           missing=""
           [ -n "$DEPLOY_HOST" ] || missing="$missing DEPLOY_HOST"
           [ -n "$DEPLOY_USER" ] || missing="$missing DEPLOY_USER"
           [ -n "$KEY" ] || missing="$missing DEPLOY_SSH_KEY"
           [ -n "$KNOWN" ] || missing="$missing DEPLOY_KNOWN_HOSTS"
+          # 시크릿이 하나도 없으면 Actions 배포를 쓰지 않는 것(서버에서 update.sh)으로 보고 자동 배포만 건너뛴다.
+          # 일부만 있거나 수동 실행에서 배포를 켰으면 실패한다.
+          if [ "$EVENT" = push ] && [ "$missing" = " DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS" ]; then
+            echo "::warning::production 환경 시크릿이 없어 자동 배포를 건너뜁니다. 서버에서 ./update.sh로 올리거나, 시크릿을 넣거나, 저장소 변수 AUTO_DEPLOY=false로 끄세요."
+            echo "자동 배포 건너뜀 (production 시크릿 없음). 서버에서: \`./update.sh\` 또는 \`./deploy.sh $REF\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ -n "$missing" ]; then
             echo "::error::production 환경 시크릿이 없어요:$missing (deploy/PRODUCTION.md 'GHCR 이미지 배포' 참고)"
             exit 1
           fi
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
       - name: SSH setup
+        if: steps.settings.outputs.enabled == 'true'
         env:
           KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           KNOWN: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
@@ -306,6 +318,7 @@ jobs:
           printf '%s\n' "$KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
           printf '%s\n' "$KNOWN" > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
       - name: Copy deploy files of this commit
+        if: steps.settings.outputs.enabled == 'true'
         # compose·grants·bootstrap은 이미지(마이그레이션)와 같은 커밋이어야 한다. 비밀 파일은 서버에만 있다.
         run: |
           ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
@@ -313,6 +326,7 @@ jobs:
             "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
           scp -r -i ~/.ssh/deploy_key deploy/pgbouncer "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
       - name: Deploy
+        if: steps.settings.outputs.enabled == 'true'
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ACTOR: ${{ github.actor }}
@@ -321,5 +335,6 @@ jobs:
           ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
             "cd '$DEPLOY_PATH' && chmod +x deploy.sh pg-upgrade.sh && GHCR_USER='$ACTOR' GHCR_TOKEN_STDIN=1 ./deploy.sh '$REF'" <<< "$TOKEN"
       - name: Summary
+        if: steps.settings.outputs.enabled == 'true'
         run: |
           echo "배포됨: \`$REF\` → \`$DEPLOY_HOST:$DEPLOY_PATH\`" >> "$GITHUB_STEP_SUMMARY"
