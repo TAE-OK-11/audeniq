@@ -79,13 +79,7 @@ fn text(v: &str, max: usize) -> Result<String> {
 }
 
 fn email(v: &str) -> Result<String> {
-    let v = v.trim().to_lowercase();
-    let ok = v.len() <= 254
-        && !v.chars().any(|c| c.is_whitespace() || c.is_control())
-        && v.split_once('@').is_some_and(|(l, d)| {
-            !l.is_empty() && d.contains('.') && !d.starts_with('.') && !d.ends_with('.')
-        });
-    if ok { Ok(v) } else { Err(invalid()) }
+    crate::email::normalize_address(v).ok_or_else(invalid)
 }
 
 fn phone(v: &str) -> Result<Option<String>> {

@@ -2278,7 +2278,7 @@ async fn later(
     }
 }
 
-fn uuid_arg(args: &Value, key: &str) -> std::result::Result<Uuid, ToolError> {
+pub(super) fn uuid_arg(args: &Value, key: &str) -> std::result::Result<Uuid, ToolError> {
     args.get(key)
         .and_then(Value::as_str)
         .and_then(|v| v.parse().ok())

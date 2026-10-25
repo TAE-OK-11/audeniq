@@ -14,6 +14,7 @@
 //! has an account is not linked automatically (pre-hijacking and takeover
 //! protection): sign in with the password and connect the provider in the
 //! account settings. A provider is on when its settings are complete.
+use crate::config::env_value as env;
 use crate::{
     api::AppState,
     auth,
@@ -89,13 +90,6 @@ pub struct Provider {
     token: String,
     jwks: String,
     issuers: Vec<String>,
-}
-
-fn env(name: &str) -> Option<String> {
-    std::env::var(name)
-        .ok()
-        .map(|v| v.trim().to_owned())
-        .filter(|v| !v.is_empty())
 }
 
 /// Development/test only: one loopback HTTP server stands in for both

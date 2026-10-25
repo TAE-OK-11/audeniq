@@ -13,6 +13,7 @@
 //! - 실패하면 1분·5분·30분·2시간·6시간 뒤 다시 보내고, 6번 실패하면 `FAILED`.
 //!   3일이 지난 알림은 보내지 않는다 (`SKIPPED`/`EMAIL_EXPIRED`). 처리 끝난 줄은 90일 뒤 지운다.
 //! - 대기열·로그에는 주소·본문·발송 서비스 응답을 남기지 않는다 (고정 코드만).
+use crate::config::env_value as env;
 use crate::{
     api::AppState,
     auth,
@@ -42,14 +43,14 @@ const LEASE_MINUTES: i32 = 10;
 /// 대기열이 비었을 때 다시 볼 간격.
 const IDLE: Duration = Duration::from_secs(10);
 
-/// n번째 실패 뒤 다시 보낼 때까지 기다리는 시간(초).
-fn backoff_seconds(attempts: i32) -> i64 {
+/// n번째 실패 뒤 다시 보낼 때까지 기다리는 시간(초). 발매 알림·지분 초대 메일도 같은 간격.
+pub(crate) fn backoff_seconds(attempts: i32) -> f64 {
     match attempts {
-        ..=1 => 60,
-        2 => 300,
-        3 => 1800,
-        4 => 7200,
-        _ => 21600,
+        ..=1 => 60.0,
+        2 => 300.0,
+        3 => 1800.0,
+        4 => 7200.0,
+        _ => 21600.0,
     }
 }
 
@@ -87,13 +88,6 @@ pub struct Mailer {
     from: Mailbox,
     /// 메일 속 바로 가기 링크의 기준 (스튜디오 주소).
     pub(crate) origin: String,
-}
-
-fn env(key: &str) -> Option<String> {
-    std::env::var(key)
-        .ok()
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
 }
 
 fn required(key: &str) -> anyhow::Result<String> {
@@ -279,6 +273,30 @@ pub struct Rendered {
     pub html: String,
 }
 
+/// A typed-in address, trimmed and lowercased, if it looks deliverable
+/// (`local@domain.tld`, no spaces, at most 254 characters).
+pub(crate) fn normalize_address(v: &str) -> Option<String> {
+    let v = v.trim().to_lowercase();
+    let ok = v.len() <= 254
+        && !v.chars().any(|c| c.is_whitespace() || c.is_control())
+        && v.split_once('@').is_some_and(|(l, d)| {
+            !l.is_empty() && d.contains('.') && !d.starts_with('.') && !d.ends_with('.')
+        });
+    ok.then_some(v)
+}
+
+/// `"artist@example.com"` → `"a***@example.com"` with `keep` = 1: the first
+/// `keep` characters of the local part and the domain. Not an address: `"***"`.
+pub(crate) fn mask_address(email: &str, keep: usize) -> String {
+    match email.split_once('@') {
+        Some((local, domain)) => {
+            let head: String = local.chars().take(keep).collect();
+            format!("{head}***@{domain}")
+        }
+        None => "***".into(),
+    }
+}
+
 pub(crate) fn one_line(s: &str) -> String {
     s.chars()
         .map(|c| if c.is_control() { ' ' } else { c })
@@ -443,7 +461,7 @@ pub async fn dispatch_once(pool: &PgPool, keys: &KeyRing, mailer: &Mailer) -> Re
                         next_attempt_at=now() + make_interval(secs => $2) WHERE id=$1",
                 )
                 .bind(id)
-                .bind(backoff_seconds(attempts) as f64)
+                .bind(backoff_seconds(attempts))
                 .execute(pool)
                 .await?;
             }
@@ -606,8 +624,31 @@ mod tests {
 
     #[test]
     fn backoff_grows_and_caps() {
-        let s: Vec<i64> = (1..=7).map(backoff_seconds).collect();
+        let s: Vec<f64> = (1..=7).map(backoff_seconds).collect();
         assert!(s.windows(2).all(|w| w[0] <= w[1]));
-        assert_eq!(*s.last().unwrap(), 21600);
+        assert_eq!(*s.last().unwrap(), 21600.0);
+    }
+
+    #[test]
+    fn address_is_trimmed_lowercased_and_checked() {
+        assert_eq!(
+            normalize_address("  Fan@Example.COM ").as_deref(),
+            Some("fan@example.com")
+        );
+        for bad in [
+            "",
+            "fan",
+            "@example.com",
+            "fan@example",
+            "fan@.com",
+            "fan@example.",
+            "f an@example.com",
+        ] {
+            assert_eq!(normalize_address(bad), None, "{bad}");
+        }
+        assert_eq!(
+            normalize_address(&format!("{}@example.com", "a".repeat(250))),
+            None
+        );
     }
 }

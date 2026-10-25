@@ -6,7 +6,7 @@
 //! so authorization and rules are exactly the Studio's.
 use super::{
     oauth::Principal,
-    tools::{ToolError, tool_error},
+    tools::{ToolError, tool_error, uuid_arg},
 };
 use crate::{api::AppState, auth, catalog, error::Error, portal};
 use serde_json::{Value, json};
@@ -53,13 +53,6 @@ pub(super) async fn call(s: &AppState, p: &Principal, name: &str, args: &Value) 
 /// Longest CSV returned inline (the edge caps responses; larger exports are
 /// downloaded in the Studio).
 const CSV_MAX_BYTES: usize = 256 * 1024;
-
-fn uuid_arg(args: &Value, key: &str) -> std::result::Result<Uuid, ToolError> {
-    args.get(key)
-        .and_then(Value::as_str)
-        .and_then(|v| v.parse().ok())
-        .ok_or_else(|| tool_error("INVALID_ARGUMENTS", &format!("{key} must be a UUID.")))
-}
 
 fn studio(s: &AppState, path: &str) -> String {
     format!("{}{path}", super::issuer(s))

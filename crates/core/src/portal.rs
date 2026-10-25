@@ -1532,14 +1532,7 @@ pub async fn payouts_requested_since(
 /// "30,000원" for user-facing notices (no ₩ glyph — it renders differently per font/OS).
 fn won(amount: Decimal) -> String {
     let digits = amount.trunc().abs().to_string();
-    let mut out = String::new();
-    for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(c);
-    }
-    format!("{out}원")
+    format!("{}원", crate::domain::group_digits(&digits))
 }
 
 #[derive(Deserialize)]
