@@ -1,5 +1,5 @@
 // 아티스트 페이지 (/artist) — 팬이 보는 모든 것을 한 화면에서: 소개 페이지·스마트링크·소식·팬 응원의 반응을 보고(반응),
-// 고치고(관리), 프로필 사진을 바꿔 플랫폼에도 보낸다(프로필 사진). 아티스트가 여럿이면 맨 위에서 고른다.
+// 고치고(관리), 기자·큐레이터용 보도자료를 쓰고(보도자료), 프로필 사진을 바꿔 플랫폼에도 보낸다(프로필 사진). 아티스트가 여럿이면 맨 위에서 고른다.
 // 서버: crates/core/src/artist_studio.rs (반응·사진), artist_links.rs (소개 페이지), artist_community.rs (소식·응원), artist_pages.rs (플랫폼 페이지).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from '../lib/router';
@@ -29,12 +29,14 @@ import { PhotoCropper, readImage, type CroppedPhoto } from '../components/PhotoC
 import { LinkEditor, type ArtistLinkRow } from '../components/ArtistLinkCard';
 import { PagesEditor, pagesSummary, type ArtistRow } from '../components/ArtistPagesCard';
 import { CheersManager, PostsManager } from '../components/ArtistCommunityManager';
+import { PressKitManager } from '../components/PressKitManager';
 import { gradientFor } from '../lib/catalog';
 
-type Tab = 'insights' | 'manage' | 'photo';
+type Tab = 'insights' | 'manage' | 'press' | 'photo';
 const TABS: { value: Tab; label: string }[] = [
   { value: 'insights', label: '반응' },
   { value: 'manage', label: '관리' },
+  { value: 'press', label: '보도자료' },
   { value: 'photo', label: '프로필 사진' },
 ];
 
@@ -191,6 +193,10 @@ function ArtistBody({ artist, page, tab, onTab, onLinkSaved, onPagesSaved, onPho
                 onCount({ cheers_enabled: v });
               } catch (e) { toast(errorMessage(e), 'error'); }
             }} />
+        )}
+        {tab === 'press' && (
+          <PressKitManager artistId={artist.artist_id} artist={artist.name} slug={link?.slug ?? null} contact={link?.contact ?? ''}
+            releases={data?.releases ?? []} onCreatePage={() => setEditLink(true)} />
         )}
         {tab === 'photo' && (
           <PhotoPanel artist={artist} data={data} photoSrc={photoSrc}

@@ -9,7 +9,7 @@ export const PERIODS: Period[] = [7, 30, 90];
 export interface DayPoint { day: string; page_views: number; link_views: number; clicks: number }
 export interface Totals { page_views: number; link_views: number; clicks: number }
 export interface ReleaseInsight {
-  release_id: string; title: string; release_date: string | null; released: boolean; cover: boolean;
+  release_id: string; title: string; type?: string; release_date: string | null; released: boolean; cover: boolean;
   link: { slug: string; enabled: boolean; visible: boolean } | null;
   views: number; clicks: number; alerts: number; alerts_new: number; presaves: number; presaves_new: number;
 }
@@ -97,16 +97,16 @@ function mockInsights(artistId: string, name: string, days: Period, page: Insigh
     platforms: share(totals.clicks, [['melon', 0.34], ['spotify', 0.22], ['youtube', 0.16], ['apple', 0.1], ['genie', 0.08], ['flo', 0.06], ['bugs', 0.04]]),
     sources: share(totals.link_views, [['instagram', 0.41], ['youtube', 0.17], ['kakao', 0.12], ['x', 0.07], ['qr', 0.05]]),
     releases: [
-      { release_id: 'mock-soon', title: '겨울 산책', release_date: '2099-01-01', released: false, cover: false,
+      { release_id: 'mock-soon', title: '겨울 산책', type: 'SINGLE', release_date: '2099-01-01', released: false, cover: false,
         link: { slug: 'soon0001', enabled: true, visible: true },
         views: Math.round(totals.link_views * 0.38), clicks: 0, alerts: 64, alerts_new: 21, presaves: 37, presaves_new: 12 },
-      { release_id: 'mock-1', title: '여름의 끝', release_date: '2026-08-01', released: true, cover: false,
+      { release_id: 'mock-1', title: '여름의 끝', type: 'EP', release_date: '2026-08-01', released: true, cover: false,
         link: { slug: 'mock0001', enabled: true, visible: true },
         views: Math.round(totals.link_views * 0.47), clicks: Math.round(totals.clicks * 0.8), alerts: 0, alerts_new: 0, presaves: 0, presaves_new: 0 },
-      { release_id: 'mock-2', title: '첫 번째 싱글', release_date: '2026-03-14', released: true, cover: false,
+      { release_id: 'mock-2', title: '첫 번째 싱글', type: 'SINGLE', release_date: '2026-03-14', released: true, cover: false,
         link: { slug: 'mock0002', enabled: true, visible: true },
         views: Math.round(totals.link_views * 0.15), clicks: Math.round(totals.clicks * 0.2), alerts: 0, alerts_new: 0, presaves: 0, presaves_new: 0 },
-      { release_id: 'mock-3', title: '데모 트랙', release_date: '2026-12-05', released: false, cover: false,
+      { release_id: 'mock-3', title: '데모 트랙', type: 'SINGLE', release_date: '2026-12-05', released: false, cover: false,
         link: null, views: 0, clicks: 0, alerts: 0, alerts_new: 0, presaves: 0, presaves_new: 0 },
     ],
     community: { posts: 3, cheers: 18, cheers_new: days === 7 ? 4 : 11, hearts: 6 },

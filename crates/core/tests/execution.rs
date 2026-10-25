@@ -6380,6 +6380,234 @@ async fn artist_studio_insights_photo_and_platform_photo_requests(pool: PgPool) 
     assert_eq!(s, StatusCode::OK);
 }
 
+/// Press kit and the cheers filter: the artist fills the press profile and
+/// writes press releases (drafts private, published on the press page with
+/// their release's smart link); cheers with profanity — also disguised — or
+/// a word the artist blocked are refused, everyday words pass.
+#[sqlx::test]
+async fn artist_press_kit_and_cheer_filter(pool: PgPool) {
+    let d = draft_package(&pool).await;
+    consent_and_submit(&d.app, &d.u, d.release, &format!("k-pk-{}", Uuid::new_v4())).await;
+    let org = d.u.org;
+    let (app, u) = (d.app.clone(), d.u.clone());
+    let (_, v) = call(
+        &app,
+        "GET",
+        &format!("/api/orgs/{org}/artist-links"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    let artist = v["items"][0]["artist_id"].as_str().unwrap().to_string();
+    let base = format!("/api/orgs/{org}/artists/{artist}/link");
+    let press = format!("{base}/press");
+
+    let (_, v) = call(&app, "GET", &press, Value::Null, Some(&u)).await;
+    assert_eq!(v["error"]["code"], "ARTIST_LINK_REQUIRED", "{v}");
+    let (_, v) = call(
+        &app,
+        "PUT",
+        &base,
+        json!({"handle": "press_artist"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["slug"], "press_artist", "{v}");
+    let (_, v) = call(
+        &app,
+        "PUT",
+        &format!("/api/orgs/{org}/releases/{}/smart-link", d.release),
+        json!({"links": {"melon": "https://www.melon.com/album/detail.htm?albumId=1"}}),
+        Some(&u),
+    )
+    .await;
+    let release_slug = v["slug"].as_str().unwrap().to_string();
+
+    // Profile.
+    let (_, v) = call(&app, "GET", &press, Value::Null, Some(&u)).await;
+    assert_eq!(v["profile"]["tagline"], "", "{v}");
+    for (bad, code) in [
+        (
+            json!({"tagline": "x".repeat(121)}),
+            "PRESS_TAGLINE_TOO_LONG",
+        ),
+        (json!({"debut": "1850"}), "PRESS_DEBUT_INVALID"),
+        (
+            json!({"quotes": [{"quote": "좋아요", "source": ""}]}),
+            "PRESS_QUOTE_SOURCE_REQUIRED",
+        ),
+        (json!({"highlights": vec!["x"; 9]}), "PRESS_TOO_MANY"),
+    ] {
+        let (_, v) = call(&app, "PUT", &press, bad.clone(), Some(&u)).await;
+        assert_eq!(v["error"]["code"], code, "{bad}: {v}");
+    }
+    let (s, v) = call(
+        &app,
+        "PUT",
+        &press,
+        json!({"tagline": " 새벽을 노래하는 싱어송라이터 ", "bio_short": "서울에서 활동해요.", "genre": "인디 팝",
+               "based_in": "서울", "label": "자체 레이블", "debut": "2024",
+               "highlights": ["멜론 인디 차트 3위", " "], "quotes": [{"quote": "올해의 발견", "source": "음악 웹진"}, {"quote": "", "source": ""}]}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["tagline"], "새벽을 노래하는 싱어송라이터");
+    assert_eq!(v["highlights"], json!(["멜론 인디 차트 3위"]));
+    assert_eq!(v["quotes"].as_array().unwrap().len(), 1);
+
+    // Press releases: a draft stays private, a published one shows with its smart link.
+    let releases = format!("{press}/releases");
+    let (_, v) = call(&app, "POST", &releases, json!({"title": " "}), Some(&u)).await;
+    assert_eq!(v["error"]["code"], "PRESS_RELEASE_TITLE_INVALID", "{v}");
+    let (_, v) = call(
+        &app,
+        "POST",
+        &releases,
+        json!({"title": "x", "release_id": Uuid::new_v4()}),
+        Some(&u),
+    )
+    .await;
+    assert!(v["error"].is_object(), "unknown release: {v}");
+    let (s, draft) = call(
+        &app,
+        "POST",
+        &releases,
+        json!({"title": "새 싱글 발매", "lead": "첫 문단", "body": "본문\n둘째 줄", "release_id": d.release}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{draft}");
+    assert_eq!(draft["published"], false);
+    let (_, public) = call(
+        &app,
+        "GET",
+        "/api/artist-links/press_artist/press",
+        Value::Null,
+        None,
+    )
+    .await;
+    assert_eq!(
+        public["releases"].as_array().unwrap().len(),
+        0,
+        "draft is private: {public}"
+    );
+    assert_eq!(public["profile"]["genre"], "인디 팝", "{public}");
+    let id = draft["id"].as_str().unwrap();
+    let (_, v) = call(
+        &app,
+        "PUT",
+        &format!("{releases}/{id}"),
+        json!({"title": "새 싱글 발매", "lead": "첫 문단", "body": "본문", "release_id": d.release, "published": true}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["published"], true, "{v}");
+    assert!(v["published_at"].is_string(), "{v}");
+    let (_, public) = call(
+        &app,
+        "GET",
+        "/api/artist-links/press_artist/press",
+        Value::Null,
+        None,
+    )
+    .await;
+    assert_eq!(public["releases"][0]["title"], "새 싱글 발매", "{public}");
+    assert_eq!(
+        public["releases"][0]["release"]["slug"],
+        release_slug.as_str(),
+        "{public}"
+    );
+    let other = user(&app).await;
+    let (s, _) = call(
+        &app,
+        "GET",
+        &format!("/api/orgs/{}/artists/{artist}/link/press", other.org),
+        Value::Null,
+        Some(&other),
+    )
+    .await;
+    assert_ne!(s, StatusCode::OK);
+    let (s, _) = call(
+        &app,
+        "DELETE",
+        &format!("{releases}/{id}"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, public) = call(
+        &app,
+        "GET",
+        "/api/artist-links/press_artist/press",
+        Value::Null,
+        None,
+    )
+    .await;
+    assert_eq!(public["releases"].as_array().unwrap().len(), 0);
+
+    // Cheers filter.
+    let cheers = "/api/artist-links/press_artist/cheers";
+    for (nick, msg) in [
+        ("팬", "씨 발 진짜"),
+        ("팬", "ㅅㅂ"),
+        ("개새끼", "좋아요"),
+        ("팬", "f*ck"),
+    ] {
+        let (_, v) = call(
+            &app,
+            "POST",
+            cheers,
+            json!({"nickname": nick, "message": msg}),
+            None,
+        )
+        .await;
+        assert_eq!(v["error"]["code"], "CHEER_PROFANITY", "{nick}/{msg}: {v}");
+    }
+    let (s, v) = call(
+        &app,
+        "POST",
+        cheers,
+        json!({"nickname": "팬", "message": "6시 발매 기다려요"}),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let filter = format!("{base}/cheer-filter");
+    let (_, v) = call(&app, "PUT", &filter, json!({"words": ["!!!"]}), Some(&u)).await;
+    assert_eq!(v["error"]["code"], "CHEER_FILTER_INVALID", "{v}");
+    let (s, v) = call(
+        &app,
+        "PUT",
+        &filter,
+        json!({"words": [" 스포 ", "스 포", ""]}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["blocked_words"], json!(["스포"]));
+    let (_, v) = call(
+        &app,
+        "POST",
+        cheers,
+        json!({"nickname": "팬2", "message": "결말 스.포 함"}),
+        None,
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "CHEER_PROFANITY", "{v}");
+    let (_, v) = call(
+        &app,
+        "GET",
+        &format!("{base}/cheers"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["blocked_words"], json!(["스포"]), "{v}");
+    assert_eq!(v["total"], 1, "{v}");
+}
+
 fn v_id(v: &Value) -> String {
     v["id"].as_str().unwrap().to_string()
 }

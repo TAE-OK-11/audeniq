@@ -86,6 +86,9 @@ GRANT SELECT,INSERT,UPDATE,DELETE ON portal.presave_starts, portal.presaves TO a
 GRANT SELECT,INSERT,UPDATE,DELETE ON portal.artist_posts, portal.artist_cheers TO audeniq_api;
 -- 아티스트 프로필 사진 (0155): 바꾸면 새 사진으로 덮어쓴다 (보낸 요청은 그때 사진을 가리킨다)
 GRANT SELECT,INSERT,UPDATE ON portal.artist_photos TO audeniq_api;
+-- 보도자료 (0156): 보도용 소개와 아티스트가 쓰는 보도자료 (지우기 있음)
+GRANT SELECT,INSERT,UPDATE ON portal.artist_press TO audeniq_api;
+GRANT SELECT,INSERT,UPDATE,DELETE ON portal.artist_press_releases TO audeniq_api;
 -- 발매 후 정보 수정 (0115): 크레딧·장르만. 승인되면 수정 메시지 작업을 넣는다
 GRANT SELECT,INSERT,UPDATE ON portal.metadata_corrections TO audeniq_api;
 GRANT USAGE ON SCHEMA portal TO audeniq_worker;

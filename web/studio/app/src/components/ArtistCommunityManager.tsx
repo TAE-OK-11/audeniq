@@ -9,7 +9,7 @@ import {
   type ArtistPost, type Cheer, type PostKind,
 } from '../lib/artistCommunity';
 import { artistNewsPath, artistPath } from '../lib/publicLinks';
-import { Reveal, Segmented, SkeletonList } from '../ui';
+import { Reveal, Segmented, SkeletonList, Tag } from '../ui';
 import { DateTimeField } from './Picker';
 import { Glyph } from './Glyph';
 import { useToast } from './Toast';
@@ -173,6 +173,49 @@ export function PostsManager({ artistId, artist, slug, onCount }: { artistId: st
 }
 
 /** 팬 응원 관리 — 숨김·하트·지우기, 받기 켜고 끄기 */
+/** 응원 거르기 — 욕설·비하 표현은 모든 페이지가 막고, 그 밖에 이 페이지에서 막을 낱말(스포·광고 등)을 아티스트가 더한다 */
+function CheerFilter({ artistId, words, onSaved }: { artistId: string; words: string[]; onSaved: (w: string[]) => void }) {
+  const toast = useToast();
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const save = async (next: string[]) => {
+    setBusy(true);
+    try {
+      const r = MOCK ? { blocked_words: next } : await req<{ blocked_words: string[] }>(`${base(artistId)}/cheer-filter`, { method: 'PUT', body: { words: next } });
+      onSaved(r.blocked_words);
+      return true;
+    } catch (err) { toast(errorMessage(err), 'error'); return false; } finally { setBusy(false); }
+  };
+  const add = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const w = draft.trim();
+    if (!w) return;
+    if (words.includes(w)) { setDraft(''); return; }
+    if (await save([...words, w])) setDraft('');
+  };
+  return (
+    <form className="aq-cheer-filter" onSubmit={add}>
+      <p className="aq-cheer-filter-title"><Glyph name="lock" size={15} />욕설·비하 표현은 자동으로 막아요</p>
+      <p className="ui-field-help">이 페이지에서 더 막고 싶은 낱말(스포, 광고 문구 등)을 넣으면 그 낱말이 든 응원은 남길 수 없어요. 띄어 쓰거나 기호를 끼워도 걸러요.</p>
+      {words.length > 0 && (
+        <ul className="aq-cheer-filter-words" aria-label="막은 낱말">
+          {words.map(w => (
+            <li key={w}>
+              <Tag>{w}</Tag>
+              <button type="button" className="ui-btn is-ghost is-icon is-xs" aria-label={`${w} 빼기`} disabled={busy}
+                onClick={() => void save(words.filter(x => x !== w))}><Glyph name="close" size={12} /></button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="aq-cheer-filter-add">
+        <input className="ui-input" aria-label="막을 낱말" placeholder="막을 낱말" maxLength={20} value={draft} onChange={e => setDraft(e.target.value)} disabled={busy || words.length >= 50} />
+        <button type="submit" className="ui-btn is-soft" disabled={busy || !draft.trim() || words.length >= 50}>더하기</button>
+      </div>
+    </form>
+  );
+}
+
 export function CheersManager({ artistId, artist, enabled, onEnabled, onCount }: {
   artistId: string; artist: string; enabled: boolean; onEnabled: (v: boolean) => Promise<void>; onCount: (n: number) => void;
 }) {
@@ -185,14 +228,16 @@ export function CheersManager({ artistId, artist, enabled, onEnabled, onCount }:
   const [leaving, setLeaving] = useState<string | null>(null);
   const [popped, setPopped] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
+  const [blocked, setBlocked] = useState<string[]>([]);
 
   const load = useCallback(async (before?: string) => {
     if (MOCK) { setItems(cur => cur ?? MOCK_CHEERS); setStats({ total: MOCK_CHEERS.length, hidden: 0 }); return; }
     try {
-      const r = await req<{ items: Cheer[]; more: boolean; total: number; hidden: number }>(
+      const r = await req<{ items: Cheer[]; more: boolean; total: number; hidden: number; blocked_words?: string[] }>(
         `${base(artistId)}/cheers${before ? `?before=${encodeURIComponent(before)}` : ''}`, { quiet401: true });
       setItems(cur => (before ? [...(cur ?? []), ...r.items] : r.items));
       setMore(r.more); setStats({ total: r.total, hidden: r.hidden });
+      if (!before) setBlocked(r.blocked_words ?? []);
     } catch (err) { setItems(cur => cur ?? []); toast(errorMessage(err), 'error'); }
   }, [artistId, toast]);
   useEffect(() => { void load(); }, [load]);
@@ -241,6 +286,7 @@ export function CheersManager({ artistId, artist, enabled, onEnabled, onCount }:
         {stats.total ? `응원 ${stats.total.toLocaleString()}개${stats.hidden ? ` · 숨김 ${stats.hidden}개` : ''}. ` : ''}
         하트를 누르면 ‘{artist}님이 좋아해요’로 보여요. 불편한 글은 숨기거나 지울 수 있어요.
       </p>
+      <CheerFilter artistId={artistId} words={blocked} onSaved={setBlocked} />
       {items === null ? <CheerSkeleton />
         : items.length === 0 ? <p className="aq-cheer-empty"><Glyph name="heart" size={18} />아직 받은 응원이 없어요. 소개 페이지를 SNS에 걸어 보세요.</p>
         : (
