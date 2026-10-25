@@ -15,7 +15,7 @@
 use crate::{
     api::AppState,
     auth::{self, Actor},
-    email::{Mailer, Rendered, backoff_seconds, escape_html, one_line},
+    email::{Attempt, Mailer, Rendered, attempt, escape_html, one_line},
     error::{Error, Result},
     operations,
     payout_keys::{Field, KeyRing},
@@ -36,7 +36,6 @@ use uuid::Uuid;
 const MAX_SHARES: usize = 10;
 /// Invites sent per round.
 pub const BATCH: i64 = 20;
-const MAX_ATTEMPTS: i32 = 6;
 const LEASE_MINUTES: i32 = 10;
 
 fn normalize_email(v: &str) -> Result<String> {
@@ -658,14 +657,13 @@ pub async fn dispatch_once(pool: &PgPool, keys: &KeyRing, mailer: &Mailer) -> Re
             &row.get::<String, _>("track_title"),
             row.get("share_bps"),
         );
-        match mailer.send(Uuid::new_v4(), &to, &mail).await {
-            Ok(_) => done("SENT").await?,
-            Err(Error::PolicyGate("EMAIL_ADDRESS_INVALID")) => done("FAILED").await?,
-            Err(_) if attempts >= MAX_ATTEMPTS => done("FAILED").await?,
-            Err(_) => {
+        match attempt(mailer.send(Uuid::new_v4(), &to, &mail).await, attempts) {
+            Attempt::Sent(_) => done("SENT").await?,
+            Attempt::Failed(_) => done("FAILED").await?,
+            Attempt::Retry(after) => {
                 sqlx::query("UPDATE portal.split_shares SET invite_next_at=now() + make_interval(secs => $2) WHERE id=$1 AND invite_attempts=$3")
                     .bind(id)
-                    .bind(backoff_seconds(attempts))
+                    .bind(after)
                     .bind(attempts)
                     .execute(pool)
                     .await?;

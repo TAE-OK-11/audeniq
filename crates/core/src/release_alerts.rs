@@ -9,7 +9,7 @@
 use crate::{
     api::AppState,
     auth,
-    email::{Mailer, Rendered, backoff_seconds, escape_html, one_line},
+    email::{Attempt, Mailer, Rendered, attempt, escape_html, one_line},
     error::{Error, Result},
     payout_keys::{Field, KeyRing},
 };
@@ -26,7 +26,6 @@ use uuid::Uuid;
 
 /// Alerts sent per round.
 pub const BATCH: i64 = 20;
-const MAX_ATTEMPTS: i32 = 6;
 /// Not sent this many days after the release date → expired.
 const EXPIRE_DAYS: i32 = 7;
 const LEASE_MINUTES: i32 = 10;
@@ -188,21 +187,16 @@ pub async fn dispatch_once(pool: &PgPool, keys: &KeyRing, mailer: &Mailer) -> Re
             &page.get::<String, _>("title"),
             page.get::<Option<String>, _>("artist").as_deref(),
         );
-        match mailer.send(id, &to, &mail).await {
-            Ok(provider) => finish(pool, id, "SENT", Some(provider), None).await?,
-            Err(Error::PolicyGate("EMAIL_ADDRESS_INVALID")) => {
-                finish(pool, id, "FAILED", None, Some("EMAIL_ADDRESS_INVALID")).await?
-            }
-            Err(_) if attempts >= MAX_ATTEMPTS => {
-                finish(pool, id, "FAILED", None, Some("EMAIL_SEND_FAILED")).await?
-            }
-            Err(_) => {
+        match attempt(mailer.send(id, &to, &mail).await, attempts) {
+            Attempt::Sent(provider) => finish(pool, id, "SENT", Some(provider), None).await?,
+            Attempt::Failed(code) => finish(pool, id, "FAILED", None, Some(code)).await?,
+            Attempt::Retry(after) => {
                 sqlx::query(
                     "UPDATE portal.release_alerts SET last_error='EMAIL_SEND_FAILED',
                         next_attempt_at=now() + make_interval(secs => $2) WHERE id=$1",
                 )
                 .bind(id)
-                .bind(backoff_seconds(attempts))
+                .bind(after)
                 .execute(pool)
                 .await?;
             }

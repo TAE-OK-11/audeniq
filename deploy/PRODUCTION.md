@@ -129,6 +129,7 @@ cd .. && npx --yes wrangler@4.141.0 deploy
 이미지는 `postgres:18-trixie`이고 데이터는 새 볼륨 `pg18_prod`에 둔다(18은 `/var/lib/postgresql/18/docker`에
 저장하므로 볼륨을 `/var/lib/postgresql`에 붙인다). 옛 `pg_prod`(17)가 있는데 아직 옮기지 않았으면
 `deploy.sh`가 빈 DB로 뜨지 않도록 멈춘다.
+`deploy.sh`는 배포마다 `postgres:18-trixie`를 새로 받고 pgbouncer는 바탕 이미지를 새로 받아 만든다(18.x 보안 패치·Debian 패키지 갱신). 새 이미지가 있으면 postgres가 그 배포에서 한 번 다시 시작하고, Docker Hub에 닿지 않으면 경고만 남기고 서버에 있는 이미지로 배포한다.
 
 ```sh
 cd /opt/audeniq
