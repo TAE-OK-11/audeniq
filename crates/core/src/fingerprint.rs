@@ -161,7 +161,7 @@ pub fn compute_fingerprint(path: &Path) -> Result<Fingerprint> {
             }
             _ => Error::Internal,
         })?;
-    let segments = crate::qc_engine::windows_to_segments(&report.fingerprint_windows);
+    let segments = crate::qc_engine::windows_to_segments(report.fingerprint_windows);
     let refs: Vec<&[f32]> = segments.iter().map(Vec::as_slice).collect();
     fingerprint_from_segments(&refs)
 }

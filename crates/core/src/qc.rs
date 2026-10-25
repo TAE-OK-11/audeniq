@@ -1232,7 +1232,7 @@ fn decode_analysis(
     // A precomputed analysis (from the conversion's decode) has no
     // fingerprint windows: with a fingerprint tap, decode as usual. The
     // checks below apply to it unchanged.
-    let report = match precomputed {
+    let mut report = match precomputed {
         Some(a) if !fingerprint || !a.fingerprint_windows.is_empty() => a,
         _ => classify_engine(crate::qc_engine::analyze(
             path,
@@ -1258,10 +1258,12 @@ fn decode_analysis(
     let tap = match tap_mode {
         TapMode::None => None,
         TapMode::Windows => Some(TapOutput::Windows(crate::qc_engine::windows_to_segments(
-            &report.fingerprint_windows,
+            std::mem::take(&mut report.fingerprint_windows),
         ))),
         TapMode::Fingerprint => {
-            let segments = crate::qc_engine::windows_to_segments(&report.fingerprint_windows);
+            let segments = crate::qc_engine::windows_to_segments(std::mem::take(
+                &mut report.fingerprint_windows,
+            ));
             let refs: Vec<&[f32]> = segments.iter().map(Vec::as_slice).collect();
             Some(TapOutput::Fingerprint(
                 crate::fingerprint::fingerprint_from_segments(&refs),

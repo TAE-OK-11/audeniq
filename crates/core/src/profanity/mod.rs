@@ -17,6 +17,7 @@
 //! [`words`]) and its idea of reading symbols as the Hangul they look like
 //! (`^^ㅣ발`, `🐶새끼`), digit forms (`씨8`, `18놈`) and Korean typed on an
 //! English keyboard (`tlqkf`).
+use aho_corasick::AhoCorasick;
 use unicode_normalization::UnicodeNormalization;
 
 /// Forms blocked wherever they appear, spaces and symbols between letters
@@ -209,15 +210,16 @@ mod words;
 /// them into conjoining jamo the lists do not use).
 fn normalized(s: &str) -> impl Iterator<Item = char> + '_ {
     s.chars().flat_map(|c| {
-        let hangul =
-            ('\u{AC00}'..='\u{D7A3}').contains(&c) || ('\u{3131}'..='\u{318E}').contains(&c);
-        let one = [c];
-        let keep: Vec<char> = if hangul {
-            one.to_vec()
+        // ASCII is its own NFKC; only the rest goes through the normalizer.
+        let keep = c.is_ascii()
+            || ('\u{AC00}'..='\u{D7A3}').contains(&c)
+            || ('\u{3131}'..='\u{318E}').contains(&c);
+        let (one, nfkc) = if keep {
+            (Some(c), None)
         } else {
-            one.iter().copied().nfkc().collect()
+            (None, Some(std::iter::once(c).nfkc()))
         };
-        keep
+        one.into_iter().chain(nfkc.into_iter().flatten())
     })
 }
 
@@ -268,14 +270,14 @@ fn read(c: char, how: Reading) -> Option<char> {
     }
 }
 
-/// The text as the filter sees it: NFKC, lowercase, Hangul and Latin letters
+/// The text as the filter sees it (`chars` already [`normalized`]): lowercase, Hangul and Latin letters
 /// kept, digits and symbols read as `how` says, everything else dropped.
 /// `spaces` keeps whitespace as one space (the word boundary [`WORD`]
 /// needs).
-fn fold(s: &str, spaces: bool, how: Reading) -> String {
-    let mut out = String::with_capacity(s.len());
+fn fold(chars: &[char], spaces: bool, how: Reading) -> String {
+    let mut out = String::with_capacity(chars.len());
     let mut last: Option<char> = None;
-    for c in normalized(s) {
+    for &c in chars {
         if c.is_whitespace() {
             if spaces && !out.ends_with(' ') {
                 out.push(' ');
@@ -315,13 +317,17 @@ fn fold(s: &str, spaces: bool, how: Reading) -> String {
 fn compose(s: &str) -> String {
     const INITIALS: &str = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
     const VOWELS: &str = "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ";
+    // Both lists lie in U+3131..=U+3163: anything else is neither.
+    let jamo = |c: char| ('\u{3131}'..='\u{3163}').contains(&c);
     let chars: Vec<char> = s.chars().collect();
     let mut out = String::with_capacity(s.len());
     let mut i = 0;
     while i < chars.len() {
-        let ini = INITIALS.chars().position(|c| c == chars[i]);
-        let vow = chars
-            .get(i + 1)
+        let ini = (jamo(chars[i]) && chars.get(i + 1).copied().is_some_and(jamo))
+            .then(|| INITIALS.chars().position(|c| c == chars[i]))
+            .flatten();
+        let vow = ini
+            .and(chars.get(i + 1))
             .and_then(|v| VOWELS.chars().position(|c| c == *v));
         if let (Some(a), Some(b)) = (ini, vow)
             && let Some(syl) = char::from_u32(0xAC00 + (a as u32 * 21 + b as u32) * 28)
@@ -340,24 +346,37 @@ fn composed(list: &'static [&'static str]) -> Vec<String> {
     list.iter().map(|w| compose(w)).collect()
 }
 
-/// The lists as matched (jamo joined like the text).
+/// The lists as matched (jamo joined like the text), each searched in one
+/// pass (Aho-Corasick) instead of one substring scan per word.
 struct Lists {
-    strict: Vec<String>,
-    word: Vec<String>,
-    korcen: Vec<String>,
+    strict: AhoCorasick,
+    word: AhoCorasick,
+    korcen: AhoCorasick,
+    /// [`ALLOWED`] then korcen's, in the order they are taken out.
+    allowed: Vec<&'static str>,
+    allowed_ac: AhoCorasick,
 }
 
 fn lists() -> &'static Lists {
     static L: std::sync::OnceLock<Lists> = std::sync::OnceLock::new();
     L.get_or_init(|| {
+        let ac = |words: &[String]| AhoCorasick::new(words).expect("profanity list automaton");
         let word = composed(WORD);
+        let korcen: Vec<String> = composed(words::KORCEN)
+            .into_iter()
+            .filter(|w| !word.contains(w))
+            .collect();
+        let allowed: Vec<&'static str> = ALLOWED
+            .iter()
+            .chain(words::KORCEN_ALLOWED)
+            .copied()
+            .collect();
         Lists {
-            strict: composed(STRICT),
-            korcen: composed(words::KORCEN)
-                .into_iter()
-                .filter(|w| !word.contains(w))
-                .collect(),
-            word,
+            strict: ac(&composed(STRICT)),
+            word: ac(&word),
+            korcen: ac(&korcen),
+            allowed_ac: AhoCorasick::new(&allowed).expect("allowed list automaton"),
+            allowed,
         }
     })
 }
@@ -370,11 +389,21 @@ fn fold_word(w: &str) -> String {
         .collect()
 }
 
+/// Every allowed word replaced by a space, one word after another in list
+/// order. Only words found in `folded` (or containing a space, which an
+/// earlier replacement can complete) are replaced: a replacement cannot
+/// create a space-free word that was not already there.
 fn without_allowed(folded: &str) -> String {
-    ALLOWED
+    let l = lists();
+    let mut found = vec![false; l.allowed.len()];
+    for m in l.allowed_ac.find_overlapping_iter(folded) {
+        found[m.pattern().as_usize()] = true;
+    }
+    l.allowed
         .iter()
-        .chain(words::KORCEN_ALLOWED)
-        .fold(folded.to_string(), |t, a| t.replace(a, " "))
+        .zip(found)
+        .filter(|(a, found)| *found || a.contains(' '))
+        .fold(folded.to_string(), |t, (a, _)| t.replace(a, " "))
 }
 
 /// True when `text` contains profanity, or one of `extra` (an artist's own
@@ -383,6 +412,8 @@ pub fn contains(text: &str, extra: &[String]) -> bool {
     if words::GESTURES.iter().any(|g| text.contains(g)) {
         return true;
     }
+    // Normalized once; each reading folds the same characters.
+    let chars: Vec<char> = normalized(text).collect();
     [
         Reading::Drop,
         Reading::Latin,
@@ -390,13 +421,13 @@ pub fn contains(text: &str, extra: &[String]) -> bool {
         Reading::Digits,
     ]
     .into_iter()
-    .any(|how| check(text, extra, how))
+    .any(|how| check(&chars, extra, how))
 }
 
-fn check(text: &str, extra: &[String], how: Reading) -> bool {
+fn check(chars: &[char], extra: &[String], how: Reading) -> bool {
     let l = lists();
-    let joined = without_allowed(&compose(&fold(text, false, how)));
-    let spaced = without_allowed(&compose(&fold(text, true, how)));
+    let joined = without_allowed(&compose(&fold(chars, false, how)));
+    let spaced = without_allowed(&compose(&fold(chars, true, how)));
     let tokens: Vec<&str> = spaced.split(' ').filter(|t| !t.is_empty()).collect();
     // 가운데 손가락 ㅗ — 낱말로 홀로 설 때만 (ㅗㅜㅑ 같은 감탄은 그대로)
     let finger = tokens.iter().any(|t| t.chars().all(|c| c == 'ㅗ'));
@@ -404,15 +435,15 @@ fn check(text: &str, extra: &[String], how: Reading) -> bool {
     let split = tokens.windows(2).any(|p| {
         ["씨", "시", "쓰", "ㅅ", "ㅆ"].contains(&p[0]) && {
             let pair = without_allowed(&format!("{}{}", p[0], p[1]));
-            l.word.iter().any(|w| pair.contains(w.as_str()))
+            l.word.is_match(&pair)
         }
     });
     finger
         || split
-        || l.strict.iter().any(|w| joined.contains(w.as_str()))
+        || l.strict.is_match(&joined)
         // korcen의 낱말 가운데 띄어 쓴 두 낱말에 걸쳐 우연히 생기는 것(WORD)은 낱말 안에서만 (lists()가 뺀다)
-        || l.korcen.iter().any(|w| joined.contains(w.as_str()))
-        || l.word.iter().any(|w| spaced.contains(w.as_str()))
+        || l.korcen.is_match(&joined)
+        || l.word.is_match(&spaced)
         || extra
             .iter()
             .map(|w| compose(&fold_word(w)))
@@ -617,6 +648,37 @@ mod tests {
             None
         );
         assert_eq!(clean_words(&w(&["a", "b", "c"]), 2), None);
+    }
+
+    /// The one-pass search replaces exactly what replacing every allowed
+    /// word in turn did, overlaps and words with spaces included.
+    #[test]
+    fn allowed_words_come_out_as_with_one_replace_per_word() {
+        let allowed: Vec<&str> = ALLOWED
+            .iter()
+            .chain(words::KORCEN_ALLOWED)
+            .copied()
+            .collect();
+        let each = |t: &str| allowed.iter().fold(t.to_string(), |t, a| t.replace(a, " "));
+        let mut seed = 0x2545_f491u32;
+        let mut next = |n: usize| {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed as usize % n
+        };
+        let filler = ["", " ", "시", "씨", "발", "바", "견", "이누", "강아지", "a"];
+        for _ in 0..5000 {
+            let mut t = String::new();
+            for _ in 0..1 + next(6) {
+                if next(2) == 0 {
+                    t.push_str(allowed[next(allowed.len())]);
+                } else {
+                    t.push_str(filler[next(filler.len())]);
+                }
+            }
+            assert_eq!(without_allowed(&t), each(&t), "{t:?}");
+        }
     }
 }
 
