@@ -54,6 +54,27 @@ pub(crate) fn backoff_seconds(attempts: i32) -> f64 {
     }
 }
 
+/// What one send attempt means for a queued mail.
+#[derive(Debug, PartialEq)]
+pub(crate) enum Attempt {
+    /// Sent through this provider.
+    Sent(&'static str),
+    /// Not retried: the address is invalid, or this was the last attempt.
+    Failed(&'static str),
+    /// Try again after this many seconds.
+    Retry(f64),
+}
+
+/// The outcome of send attempt number `attempts` (from 1) of `MAX_ATTEMPTS`.
+pub(crate) fn attempt(result: Result<&'static str>, attempts: i32) -> Attempt {
+    match result {
+        Ok(provider) => Attempt::Sent(provider),
+        Err(Error::PolicyGate("EMAIL_ADDRESS_INVALID")) => Attempt::Failed("EMAIL_ADDRESS_INVALID"),
+        Err(_) if attempts >= MAX_ATTEMPTS => Attempt::Failed("EMAIL_SEND_FAILED"),
+        Err(_) => Attempt::Retry(backoff_seconds(attempts)),
+    }
+}
+
 /// 보낸 메일 (`test` 발송 서비스). 테스트에서만 읽는다.
 #[derive(Debug, Clone)]
 pub struct SentEmail {
@@ -447,21 +468,16 @@ pub async fn dispatch_once(pool: &PgPool, keys: &KeyRing, mailer: &Mailer) -> Re
             n["detail"].as_str().unwrap_or(""),
             n["link"].as_str().unwrap_or(""),
         );
-        match mailer.send(id, &to, &mail).await {
-            Ok(provider) => finish(pool, id, "SENT", Some(provider), None).await?,
-            Err(Error::PolicyGate("EMAIL_ADDRESS_INVALID")) => {
-                finish(pool, id, "FAILED", None, Some("EMAIL_ADDRESS_INVALID")).await?
-            }
-            Err(_) if attempts >= MAX_ATTEMPTS => {
-                finish(pool, id, "FAILED", None, Some("EMAIL_SEND_FAILED")).await?
-            }
-            Err(_) => {
+        match attempt(mailer.send(id, &to, &mail).await, attempts) {
+            Attempt::Sent(provider) => finish(pool, id, "SENT", Some(provider), None).await?,
+            Attempt::Failed(code) => finish(pool, id, "FAILED", None, Some(code)).await?,
+            Attempt::Retry(after) => {
                 sqlx::query(
                     "UPDATE portal.notification_emails SET last_error='EMAIL_SEND_FAILED',
                         next_attempt_at=now() + make_interval(secs => $2) WHERE id=$1",
                 )
                 .bind(id)
-                .bind(backoff_seconds(attempts))
+                .bind(after)
                 .execute(pool)
                 .await?;
             }
@@ -627,6 +643,21 @@ mod tests {
         let s: Vec<f64> = (1..=7).map(backoff_seconds).collect();
         assert!(s.windows(2).all(|w| w[0] <= w[1]));
         assert_eq!(*s.last().unwrap(), 21600.0);
+    }
+
+    #[test]
+    fn invalid_address_and_last_attempt_are_final_others_retry() {
+        assert_eq!(attempt(Ok("smtp"), 1), Attempt::Sent("smtp"));
+        let invalid = || Err(Error::PolicyGate("EMAIL_ADDRESS_INVALID"));
+        assert_eq!(
+            attempt(invalid(), 1),
+            Attempt::Failed("EMAIL_ADDRESS_INVALID")
+        );
+        assert_eq!(attempt(Err(Error::Internal), 1), Attempt::Retry(60.0));
+        assert_eq!(
+            attempt(Err(Error::Internal), MAX_ATTEMPTS),
+            Attempt::Failed("EMAIL_SEND_FAILED")
+        );
     }
 
     #[test]
