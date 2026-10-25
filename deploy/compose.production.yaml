@@ -190,6 +190,9 @@ services:
       UPLOAD_AV_ENABLED: '${UPLOAD_AV_ENABLED:-false}'
       DATABASE_URL: postgres://audeniq_api:${API_DB_PASSWORD}@pgbouncer:6432/audeniq_prod
       DATABASE_POOLER: pgbouncer
+      # 관리자 화면 운영 도구 (docs/STAFF_LEVELS.md, crates/core/src/staff_ops.rs): CLI로만 하던 일을
+      # 관리자 화면에서. 역할 audeniq_staff_ops로 postgres에 바로 붙는다(pgbouncer 아님). 비우면 꺼지고 CLI만.
+      AUDENIQ_STAFF_OPS_DATABASE_URL: ${AUDENIQ_STAFF_OPS_DATABASE_URL:-}
       STORAGE_ENABLED: ${STORAGE_ENABLED:-false}
       S3_ENDPOINT: ${S3_ENDPOINT:-https://unconfigured.invalid}
       S3_BUCKET: ${S3_BUCKET:-unconfigured}
