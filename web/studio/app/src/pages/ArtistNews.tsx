@@ -42,7 +42,7 @@ export function ArtistNews() {
 
   return (
     <PublicShell bg={artistBackdrop(page)} className="aq-artistpage" cardClass="aq-artist-card aq-artist-sub">
-      <ArtistSubHead slug={slug} name={page.name} title={upcoming ? `소식 · 다가오는 이벤트 ${upcoming}개` : '소식'} />
+      <ArtistSubHead slug={slug} name={page.name} photo={page.photo} version={page.photo_v} title={upcoming ? `소식 · 다가오는 이벤트 ${upcoming}개` : '소식'} />
       {posts === null && <CardSkeleton />}
       {all.length > 0 && (
         <div className="ui-chips aq-news-filter" role="group" aria-label="소식 종류">

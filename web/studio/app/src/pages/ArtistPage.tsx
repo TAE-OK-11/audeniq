@@ -16,7 +16,7 @@ import { linkBrand, shortUrl, type OwnLink } from '../lib/ownLinks';
 import { artistDiscographyPath, artistNewsPath, artistPath, releasePath } from '../lib/publicLinks';
 import { MOCK_CHEERS, MOCK_POSTS, type Community } from '../lib/artistCommunity';
 import { CheerBoard, PostCard } from '../components/ArtistCommunity';
-import { PublicFoot, PublicLoading, PublicMissing, PublicShell } from '../components/PublicPage';
+import { ArtistAvatar, PublicFoot, PublicLoading, PublicMissing, PublicShell } from '../components/PublicPage';
 import { CountUp } from '../ui';
 
 /** 바탕에 흐리게 깔 커버 — 가장 최근 발매의 커버 (소개·소식·디스코그래피·보도자료가 같은 바탕) */
@@ -29,6 +29,10 @@ export interface ArtistRelease { slug: string; title: string; type: string; rele
 type Release = ArtistRelease;
 export interface ArtistPageData {
   name: string; bio: string; links: OwnLink[]; contact: string;
+  /** 스튜디오에서 올린 프로필 사진이 있는지 (/api/artist-links/{slug}/photo) */
+  photo?: boolean;
+  /** 사진을 바꾼 때 — 사진 주소에 붙여 바뀐 사진을 바로 받는다 */
+  photo_v?: number | null;
   pages: { platform: string; url: string }[]; releases: Release[];
   community?: Community;
 }
@@ -104,7 +108,7 @@ export function ArtistPage() {
 
   return (
     <PublicShell bg={artistBackdrop(page)} className="aq-artistpage" cardClass="aq-artist-card">
-        <span className="aq-artist-avatar" style={{ background: gradientFor(slug) }} aria-hidden="true">{page.name.trim().charAt(0)}</span>
+        <ArtistAvatar slug={slug} name={page.name} photo={page.photo} version={page.photo_v} />
         <h1>{page.name}</h1>
         {page.bio && <p className="aq-artist-bio">{page.bio}</p>}
         {page.pages.length > 0 && (

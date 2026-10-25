@@ -7,6 +7,7 @@ pub mod artifacts;
 pub mod artist_community;
 pub mod artist_links;
 pub mod artist_pages;
+pub mod artist_studio;
 pub mod artwork_policy;
 pub mod auth;
 pub mod av_update;

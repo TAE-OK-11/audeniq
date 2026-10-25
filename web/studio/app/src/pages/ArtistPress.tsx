@@ -51,7 +51,7 @@ export function ArtistPress() {
   return (
     <PublicShell bg={artistBackdrop(page)} className="aq-artistpage aq-presspage" cardClass="aq-artist-card aq-artist-sub aq-press-card">
         {/* 머리 작은 글자에 요약까지 — 영어 대문자 라벨(PRESS KIT)은 쓰지 않는다 */}
-        <ArtistSubHead slug={slug} name={page.name}
+        <ArtistSubHead slug={slug} name={page.name} photo={page.photo} version={page.photo_v}
           title={`보도자료 · 발매 ${page.releases.length}개${latest?.release_date ? ` · 최근 ${dotted(latest.release_date)}` : ''}`} />
         {page.contact && (
           <div className="aq-press-contact">
