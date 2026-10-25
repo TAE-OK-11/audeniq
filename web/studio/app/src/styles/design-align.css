@@ -1676,3 +1676,39 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 @media (max-width:760px){
   .aq-addon-summary{padding:16px}
 }
+
+/* 앨범별 관리 — 발매 준비 현황 (components/AlbumPrep.tsx): 정산 화면의 막대 + 홈 '확인할 작업' 줄 */
+.aq-prep{display:grid;gap:14px}
+.aq-prep-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+.aq-prep-head .subhead{margin:0}
+.aq-prep-sub{margin:4px 0 0;color:var(--aq-text-3);font-size:13px;line-height:1.5}
+.aq-prep-count{flex:none;margin:0;color:var(--aq-text-4);font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+.aq-prep-count b{color:var(--aq-text);font-size:28px;font-weight:800;letter-spacing:-.02em}
+.aq-prep-bar{height:6px;border-radius:var(--aq-r-pill);background:#fff;overflow:hidden}
+.aq-prep-bar i{display:block;height:100%;border-radius:inherit;background:var(--aq-blue-500);transition:width var(--aq-motion-long) var(--aq-enter)}
+.aq-prep-list{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+.aq-prep-list .aq-task.is-static{cursor:default}
+.aq-prep-list .aq-task.is-static:active{transform:none}
+.aq-prep-list li.is-done .aq-task-text strong{color:var(--aq-text-2)}
+.aq-prep-list li.is-wait .aq-task-text strong{color:var(--aq-text-3)}
+/* 발매일까지 남은 날 — 머리 카드의 정보 알약 옆 */
+.aq-detail-facts span.aq-dday{background:var(--aq-blue-150);color:var(--aq-blue-700)}
+.aq-detail-facts span.aq-dday.is-soon{background:var(--aq-blue-500);color:#fff}
+/* 식별코드 + 복사 */
+.aq-code-line{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.aq-code-line .aq-copy-btn{gap:4px}
+/* 트랙 줄 전체가 곡 상세 버튼 */
+#view-release .aq-track-card.is-button{grid-template-columns:44px minmax(0,1fr) auto;width:100%;border:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
+#view-release .aq-track-card.is-button:focus-visible{outline:3px solid var(--aq-blue-450);outline-offset:2px}
+@media(hover:hover){#view-release .aq-track-card.is-button:hover{background:var(--aq-surface-hover)}#view-release .aq-track-card.is-button:hover .aq-track-chev{transform:translateX(3px)}}
+.aq-track-chev{align-self:center;color:var(--aq-text-4);transition:transform var(--aq-motion-short) var(--aq-enter)}
+/* 곡 상세 창 (components/TrackSheet.tsx) */
+.aq-track-sheet{display:grid;gap:16px}
+.aq-track-sheet-tags{display:flex;flex-wrap:wrap;gap:6px}
+.aq-track-sheet-tags:empty{display:none}
+.aq-track-sheet-h{margin:4px 0 -6px;font-size:15px;font-weight:700;color:var(--aq-text)}
+.aq-track-sheet-lyrics{max-height:220px;margin:0;padding:14px 16px;overflow:auto;border-radius:var(--aq-r-lg);background:var(--aq-surface);color:var(--aq-text-2);font-size:14px;line-height:1.75;white-space:pre-wrap}
+@media(max-width:560px){.aq-prep-list{grid-template-columns:minmax(0,1fr)}}
+/* 발매 목록 카드 — 발매일 옆 D-day */
+.aq-card-dday{margin-left:6px;padding:1px 7px;border-radius:var(--aq-r-pill);background:var(--aq-blue-150);color:var(--aq-blue-700);font-size:11px;font-weight:700}
+.aq-card-dday.is-soon{background:var(--aq-blue-500);color:#fff}
