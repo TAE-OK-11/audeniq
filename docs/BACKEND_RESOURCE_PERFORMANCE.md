@@ -204,7 +204,7 @@ aarch64로 교차 빌드해 qemu에서 결과 일치만 확인했다(에뮬레�
 | 후보 | 결과 | 판단 |
 |---|---|---|
 | SHA-256: sha2 0.11 → media-hash | 64 KiB 1,871 vs 1,868 MB/s, 16 MiB 1,653 vs 1,755 MB/s (aws-lc 1,783) | 둘 다 SHA-NI/ARMv8 SHA2 명령. 차이가 오차 수준이라 유지 |
-| MD5(Object Lock Content-MD5): md-5 → media-hash | 16 MiB 661 → 705 MB/s(+6%) | 보관 업로드는 네트워크가 병목이고 media-hash는 LGPL 표기 크레이트라 유지 |
+| MD5(Object Lock Content-MD5): md-5 → media-hash | 16 MiB 661 → 705 MB/s(+6%) | media-hash는 LGPL 표기라 쓰지 않고 자체 구현으로 대체(아래 「자체 MD5」) |
 | 지문 FFT: rustfft 복소 FFT → realfft | 90초 지문 2.56 → 2.52 ms(1~4%) | FFT가 지문 계산의 작은 부분이라 의존성을 늘릴 가치 없음 |
 | 엔진 보고서 JSON: serde_json → sonic-rs / simd-json / media-json | 4.9 MB 보고서 13.1 ms / sonic-rs 12.0 ms / simd-json 25.6 ms(RAM 10배) | sonic-rs 6% 차이로는 교체 가치 없음. media-json은 값 트리 파서라 더 느림 |
 | CRC32C(GCP KMS) | 32~64바이트 키 자료만 처리 | 비용이 무시할 수준 |
@@ -246,3 +246,28 @@ f32로 한 번 더 복사하던 것을, 파싱하면서 바로 f32(`s / 32768`, 
 
 검증: `cargo clippy -p audeniq-core --all-targets -D warnings`, lib 테스트 400개(DB 테스트는
 PostgreSQL 16, 지문·QC는 고정 커밋의 audeniq-music) 통과.
+
+## 자체 MD5 (2026-10-25)
+
+S3 Object Lock 보관 업로드의 `Content-MD5`를 RustCrypto md-5 대신 `crate::md5`로 계산한다.
+RFC 1321만 보고 새로 쓴 구현이다(상수 T도 RFC의 정의 ⌊2³²·|sin i|⌋로 계산). audeniq-media의
+LGPL 표기 `media-hash` 코드는 쓰지도 옮기지도 않았다. md-5는 테스트의 독립 대조용 dev-dependency로만 남는다.
+
+빠른 이유: MD5 한 블록은 64단계가 `b`를 통해 직렬로 이어져 단계마다의 지연이 속도를 정한다.
+라운드 함수를 `b`와 무관한 항이 먼저 계산되는 꼴로 쓰고(F = d ^ (b & (c ^ d)), G는 서로 겹치지 않는
+비트의 덧셈, H = b ^ (c ^ d)), 상수 T를 컴파일러가 보지 못하게(`black_box(&T)`) 했다. 상수가 보이면
+LLVM이 `a + X + T + f`를 `(a + X + f) + T`로 재결합해 f 뒤의 직렬 경로에 덧셈이 하나 늘어난다.
+
+같은 기계, 같은 입력, 7회 중앙값(release + fat LTO; MB/s):
+
+| 크기 | md-5 0.11 | media-hash | **audeniq** | md-5 대비 |
+|---|---:|---:|---:|---:|
+| 64 B | 331 | 348 | **422** | +28% |
+| 1 KiB | 632 | 671 | **797** | +26% |
+| 64 KiB | 673 | 714 | **847** | +26% |
+| 16 MiB | 661 | 703 | **828** | +25% |
+
+RFC 1321 A.5 테스트 모음과, 0~1099바이트 모든 길이·분할점에서 md-5와 같은 값을 낸다(x86-64,
+aarch64 qemu). `scripts/benchmark-md5.sh`가 두 구현을 `rustc -O`로 빌드해 같은 값을 확인한 뒤
+처리량을 재며, `Backend portability`가 x86-64·ARM64 네이티브 러너에서 실행해 로그를
+`backend-resource-benchmarks-X64/ARM64` 아티팩트에 남긴다.
