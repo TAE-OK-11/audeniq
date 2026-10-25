@@ -336,7 +336,7 @@ pub async fn insights(
 
     // The artist's submitted releases (newest first) with their smart link, if any.
     let releases = sqlx::query(sqlx::AssertSqlSafe(format!(
-        "SELECT r.id, r.title, r.status, r.draft->>'release_date' AS release_date, r.draft->>'release_time' AS release_time,
+        "SELECT r.id, r.title, r.status, r.release_type, r.draft->>'release_date' AS release_date, r.draft->>'release_time' AS release_time,
                 r.artwork_asset_id IS NOT NULL AS cover, l.id AS link_id, l.slug, l.enabled,
                 (l.id IS NOT NULL AND {}) AS visible
            FROM catalog.releases r
@@ -474,6 +474,7 @@ pub async fn insights(
             json!({
                 "release_id": r.get::<Uuid, _>("id"),
                 "title": r.get::<String, _>("title"),
+                "type": r.get::<String, _>("release_type"),
                 "release_date": date,
                 "released": smart_links::is_released(date.as_deref(), r.get::<Option<String>, _>("release_time").as_deref()),
                 "cover": r.get::<bool, _>("cover"),

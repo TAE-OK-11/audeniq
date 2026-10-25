@@ -8,7 +8,10 @@
 //! Fans leave cheers without an account: a nickname and a short message,
 //! limited per visitor address, per page and overall. The artist can hide or
 //! delete each one, mark it with a heart and switch cheers off for the page
-//! (existing cheers are then not shown and new ones are refused).
+//! (existing cheers are then not shown and new ones are refused). A cheer
+//! with profanity, insults or slurs, or with a word the artist blocked for
+//! their page (migration 0156), is refused (`CHEER_PROFANITY`,
+//! [`crate::profanity`]).
 //!
 //! The discography lists the same releases as the page (those with a visible
 //! smart link) with their tracks, grouped by year on the page.
@@ -39,6 +42,8 @@ const PLACE_MAX: usize = 80;
 const URL_MAX: usize = 500;
 const NICK_MAX: usize = 20;
 const CHEER_MAX: usize = 300;
+/// Words an artist can keep out of cheers on their page.
+const BLOCKED_WORDS_MAX: usize = 50;
 const CHEERS_PAGE: i64 = 30;
 /// Posts shown on the page itself (pinned first, then the newest).
 pub const PREVIEW: i64 = 3;
@@ -334,8 +339,44 @@ pub async fn list_cheers(
     .bind(link)
     .fetch_one(&mut *tx)
     .await?;
+    let blocked: Vec<String> =
+        sqlx::query_scalar("SELECT cheer_blocklist FROM portal.artist_links WHERE id=$1")
+            .bind(link)
+            .fetch_one(&mut *tx)
+            .await?;
     tx.rollback().await?;
-    Ok(json!({"items": items, "more": more, "total": total, "hidden": hidden}))
+    Ok(
+        json!({"items": items, "more": more, "total": total, "hidden": hidden, "blocked_words": blocked, "blocked_max": BLOCKED_WORDS_MAX}),
+    )
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FilterInput {
+    pub words: Vec<String>,
+}
+
+/// The artist's own words to keep out of cheers (on top of the profanity
+/// filter every page has). Cheers already left are not touched.
+pub async fn set_filter(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    artist: Uuid,
+    i: FilterInput,
+) -> Result<Value> {
+    let words = crate::profanity::clean_words(&i.words, BLOCKED_WORDS_MAX)
+        .ok_or(Error::InvalidCode("CHEER_FILTER_INVALID"))?;
+    let mut tx = s.pool.begin().await?;
+    auth::membership(&mut tx, a, org, true).await?;
+    let link = org_link(&mut tx, org, artist, true).await?;
+    sqlx::query("UPDATE portal.artist_links SET cheer_blocklist=$2, updated_at=now() WHERE id=$1")
+        .bind(link)
+        .bind(&words)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(json!({"blocked_words": words}))
 }
 
 pub async fn patch_cheer(
@@ -517,6 +558,10 @@ pub async fn cheer(s: &AppState, h: &HeaderMap, slug: &str, i: CheerInput) -> Re
         return Err(Error::InvalidCode("CHEER_MESSAGE_INVALID"));
     }
     text_policy::check_multiline(message)?;
+    // 욕설·비하 표현은 남기지 않는다 (crate::profanity) — 데이터베이스 없이 거르므로 횟수 제한 전에
+    if crate::profanity::contains(nickname, &[]) || crate::profanity::contains(message, &[]) {
+        return Err(Error::InvalidCode("CHEER_PROFANITY"));
+    }
     let (link, _, _, enabled) = public_link(s, slug).await?;
     if !enabled {
         return Err(Error::PolicyGate("CHEERS_CLOSED"));
@@ -531,6 +576,17 @@ pub async fn cheer(s: &AppState, h: &HeaderMap, slug: &str, i: CheerInput) -> Re
         ],
     )
     .await?;
+    // 아티스트가 이 페이지에 막은 낱말
+    let blocked: Vec<String> =
+        sqlx::query_scalar("SELECT cheer_blocklist FROM portal.artist_links WHERE id=$1")
+            .bind(link)
+            .fetch_one(&s.pool)
+            .await?;
+    if crate::profanity::contains(nickname, &blocked)
+        || crate::profanity::contains(message, &blocked)
+    {
+        return Err(Error::InvalidCode("CHEER_PROFANITY"));
+    }
     let id = Uuid::new_v4();
     let item: Value = sqlx::query_scalar(
         "INSERT INTO portal.artist_cheers(id, link_id, nickname, message) VALUES($1,$2,$3,$4)
@@ -677,6 +733,15 @@ async fn h_cheer(
 ) -> Result<Json<Value>> {
     Ok(Json(cheer(&s, &h, &slug, i).await?))
 }
+async fn h_set_filter(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+    Json(i): Json<FilterInput>,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    Ok(Json(set_filter(&s, &a, org, id, i).await?))
+}
 async fn h_discography(State(s): State<AppState>, Path(slug): Path<String>) -> Result<Json<Value>> {
     Ok(Json(discography(&s, &slug).await?))
 }
@@ -692,6 +757,10 @@ pub fn routes() -> Router<AppState> {
             put(h_update_post).delete(h_delete_post),
         )
         .route("/api/orgs/{org}/artists/{id}/link/cheers", get(h_cheers))
+        .route(
+            "/api/orgs/{org}/artists/{id}/link/cheer-filter",
+            put(h_set_filter),
+        )
         .route(
             "/api/orgs/{org}/artists/{id}/link/cheers/{cheer}",
             put(h_patch_cheer).delete(h_delete_cheer),
