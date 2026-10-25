@@ -39,7 +39,8 @@ export function AlbumPrep({ items, go }: { items: PrepItem[]; go: (key: PrepItem
             </>
           );
           return (
-            <li key={i.key} className={`is-${i.state}`}>
+            // '나머지 보기'로 붙는 줄은 높이가 자라며 펼쳐진다 (lib/expand.ts)
+            <li key={i.key} className={`is-${i.state}`} data-expand={todo > 0 && i.state !== 'todo' ? '' : undefined}>
               {action ? (
                 <button type="button" className="aq-task" onClick={action}>
                   {body}
