@@ -22,7 +22,8 @@ export function firstDelay(n: number): number {
   return n < 4 ? n * 50 : 150 + ((n - 4) % 4) * 60;
 }
 
-export function usePublicReveal(root: RefObject<HTMLElement | null>, selector: string, ready: boolean) {
+/** first: false — 첫 화면 차례 등장은 그곳 자체 연출(전체 메뉴 열림 등)에 맡기고, 화면 밖 덩어리의 스크롤 등장만 한다 */
+export function usePublicReveal(root: RefObject<HTMLElement | null>, selector: string, ready: boolean, { first: playFirst = true }: { first?: boolean } = {}) {
   useLayoutEffect(() => {
     const host = root.current;
     if (!ready || !host) return;
@@ -46,8 +47,12 @@ export function usePublicReveal(root: RefObject<HTMLElement | null>, selector: s
     const io = new IntersectionObserver(entries => {
       entries.forEach(e => { if (e.isIntersecting) show(e.target as HTMLElement); });
     }, { rootMargin: '0px 0px 48px 0px' });
+    const touched = new Set<HTMLElement>();
     const wait = (el: HTMLElement) => {
       pending.add(el);
+      // 자체 CSS 등장(전체 메뉴 묶음 등)은 화면 밖에서 먼저 끝나 의미가 없고, 겹치면 두 번 떠오른다
+      el.style.animation = 'none';
+      touched.add(el);
       el.classList.add(WAITING);
       io.observe(el);
     };
@@ -65,7 +70,7 @@ export function usePublicReveal(root: RefObject<HTMLElement | null>, selector: s
       if (r.top < vh) {
         seen.add(el);
         el.querySelectorAll(selector).forEach(x => seen.add(x));
-        play(el, FIRST_MS, firstDelay(n++));
+        if (playFirst) play(el, FIRST_MS, firstDelay(n++));
       } else if (!el.matches(selector) && !el.querySelector(selector)) {
         seen.add(el);
         wait(el);
@@ -73,17 +78,19 @@ export function usePublicReveal(root: RefObject<HTMLElement | null>, selector: s
     });
 
     const scan = () => {
-      const first = performance.now() - started < FIRST_WINDOW && window.scrollY < 40;
+      const first = playFirst && performance.now() - started < FIRST_WINDOW && window.scrollY < 40;
       // 늦게 그려진 카드 바로 아래 덩어리(불러오기 뒤의 거르기 줄·목록) — 첫 화면 시간 안이면 같은 차례로
       (Array.from(host.children) as HTMLElement[]).filter(el => !seen.has(el)).forEach(el => {
-        seen.add(el);
         const r = el.getBoundingClientRect();
         if (!r.width && !r.height) return;
+        // 화면 밖이면서 단위(selector)인 덩어리는 아래 단위 차례에 맡긴다 — 여기서 본 것으로 치면 그대로 보인 채 남는다
+        if (r.top >= window.innerHeight && (el.matches(selector) || el.querySelector(selector))) return;
+        seen.add(el);
         if (r.top < window.innerHeight) {
           if (!first) return;
           el.querySelectorAll(selector).forEach(x => seen.add(x));
           play(el, FIRST_MS, firstDelay(n++));
-        } else if (!el.matches(selector) && !el.querySelector(selector)) wait(el);
+        } else wait(el);
       });
       const fresh = Array.from(host.querySelectorAll<HTMLElement>(selector)).filter(el => !seen.has(el));
       fresh.forEach(el => seen.add(el));
@@ -118,6 +125,8 @@ export function usePublicReveal(root: RefObject<HTMLElement | null>, selector: s
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('beforeprint', showAll);
       pending.forEach(el => el.classList.remove(WAITING));
+      // 다시 열릴 때(전체 메뉴) 자체 CSS 등장이 돌아오게
+      touched.forEach(el => { el.style.animation = ''; });
     };
   }, [root, selector, ready]);
 }
