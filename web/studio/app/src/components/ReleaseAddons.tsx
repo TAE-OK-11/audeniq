@@ -47,19 +47,22 @@ function useReleaseAddons(releaseId: string, handleReturn: boolean) {
   return { state, setState, load };
 }
 
-/** 결제를 기다리는 부가서비스를 한 번에 결제 — 없으면 아무것도 그리지 않는다 */
-export function AddonCheckout({ releaseId, state, onPaid, title = '부가서비스 결제' }: {
+/** 결제를 기다리는 부가서비스를 한 번에 결제 — 없으면 아무것도 그리지 않는다.
+ *  보완 요청 카드와 같은 모양: 주황 머리글 · 큰 제목 · 줄 목록 · 할 일 버튼. 못 쓰는 결제 방법은 흐리게 두지 않고 숨긴다 */
+export function AddonCheckout({ releaseId, state, onPaid, title }: {
   releaseId: string; state: State; onPaid: (s: State) => void; title?: string;
 }) {
   const toast = useToast();
   const waiting = state.items.filter(o => o.status === 'AWAITING_PAYMENT');
   const total = waiting.reduce((n, o) => n + o.amount, 0);
   const enough = state.balance >= total;
-  const [method, setMethod] = useState<'SETTLEMENT' | 'CARD'>(enough || !state.card ? 'SETTLEMENT' : 'CARD');
+  const methods = [...(enough ? ['SETTLEMENT' as const] : []), ...(state.card ? ['CARD' as const] : [])];
+  const [picked, setMethod] = useState<'SETTLEMENT' | 'CARD'>('SETTLEMENT');
+  const method = methods.includes(picked) ? picked : methods[0];
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (!enough && state.card) setMethod('CARD'); }, [enough, state.card]);
   if (!waiting.length) return null;
   const pay = async () => {
+    if (!method) return;
     setBusy(true);
     try {
       const ids = waiting.map(o => o.id);
@@ -70,10 +73,16 @@ export function AddonCheckout({ releaseId, state, onPaid, title = '부가서비�
       }
     } catch (e) { toast(errorMessage(e), 'error'); } finally { setBusy(false); }
   };
+  const head = title ?? (waiting.length === 1 ? `${SERVICE_LABEL[waiting[0].service]} 결제만 남았어요` : `부가서비스 ${waiting.length}건 결제만 남았어요`);
+  const methodText = {
+    SETTLEMENT: { label: '정산금으로 결제', help: `출금할 수 있는 정산금 ${money(state.balance)}에서 바로 빠져요.` },
+    CARD: { label: '카드 결제', help: `${state.card?.label ?? ''} 결제창에서 카드·간편결제로 결제해요.` },
+  };
   return (
-    <section className="aq-addon-checkout" aria-labelledby="addonPayTitle">
-      <ManageHead id="addonPayTitle" icon="card" title={title} status={{ tone: 'amber', label: `결제 대기 ${waiting.length}건` }} />
-      <p className="ui-field-help">신청서에서 고른 부가서비스예요. 결제하면 바로 담당자에게 접수돼요.</p>
+    <section className="aq-fix-panel aq-addon-checkout" aria-labelledby="addonPayTitle">
+      <div className="aq-fix-top"><Badge tone="amber">결제 대기 {waiting.length}건</Badge></div>
+      <h2 id="addonPayTitle" className="aq-fix-title">{head}</h2>
+      <p className="aq-addon-lead">신청서에서 고른 부가서비스예요. 결제하면 바로 담당자에게 접수돼요.</p>
       <ul className="aq-addon-lines">
         {waiting.map(o => (
           <li key={o.id}>
@@ -87,25 +96,28 @@ export function AddonCheckout({ releaseId, state, onPaid, title = '부가서비�
         ))}
         <li className="is-total"><span>합계</span><b>{money(total)}</b></li>
       </ul>
-      <div className="ui-choices" role="radiogroup" aria-label="결제 방법">
-        <button type="button" role="radio" aria-checked={method === 'SETTLEMENT'} disabled={!enough} className="ui-choice aq-addon-pay" onClick={() => setMethod('SETTLEMENT')}>
-          <span>
-            <b>정산금으로 결제</b>
-            <small>{enough ? `출금할 수 있는 정산금 ${money(state.balance)}에서 바로 빠져요.` : `출금할 수 있는 정산금이 ${money(state.balance)}이라 모자라요.`}</small>
-          </span>
-          <span className="ui-choice-mark" aria-hidden="true">{method === 'SETTLEMENT' && <CheckIcon size={11} />}</span>
+      {methods.length > 1 ? (
+        <div className="ui-choices" role="radiogroup" aria-label="결제 방법">
+          {methods.map(m => (
+            <button key={m} type="button" role="radio" aria-checked={method === m} className="ui-choice aq-addon-pay" onClick={() => setMethod(m)}>
+              <span><b>{methodText[m].label}</b><small>{methodText[m].help}</small></span>
+              <span className="ui-choice-mark" aria-hidden="true">{method === m && <CheckIcon size={11} />}</span>
+            </button>
+          ))}
+        </div>
+      ) : method ? (
+        <p className="aq-addon-method"><b>{methodText[method].label}</b>{methodText[method].help}</p>
+      ) : (
+        <p className="aq-addon-blocked">
+          <b>지금은 결제할 수 없어요</b>
+          출금할 수 있는 정산금이 {money(state.balance)}이라 {money(total - state.balance)} 모자라요. 카드 결제는 준비 중이에요. 정산금이 쌓이면 여기서 결제해 주세요.
+        </p>
+      )}
+      {method && (
+        <button type="button" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={busy} onClick={() => void pay()}>
+          {money(total)} 결제하기
         </button>
-        <button type="button" role="radio" aria-checked={method === 'CARD'} disabled={!state.card} className="ui-choice aq-addon-pay" onClick={() => setMethod('CARD')}>
-          <span>
-            <b>카드 결제</b>
-            <small>{state.card ? `${state.card.label} 결제창에서 카드·간편결제로 결제해요.` : '카드 결제는 준비 중이에요. 정산금으로 결제하거나 나중에 결제해 주세요.'}</small>
-          </span>
-          <span className="ui-choice-mark" aria-hidden="true">{method === 'CARD' && <CheckIcon size={11} />}</span>
-        </button>
-      </div>
-      <button type="button" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={busy || (method === 'SETTLEMENT' && !enough) || (method === 'CARD' && !state.card)} onClick={() => void pay()}>
-        {money(total)} 결제하기
-      </button>
+      )}
       <p className="aq-addon-note">지금 결제하지 않아도 발매 상세에서 언제든 결제할 수 있어요. 담당자가 시작하기 전에 취소하면 결제한 방법으로 전액 환불돼요.</p>
     </section>
   );
