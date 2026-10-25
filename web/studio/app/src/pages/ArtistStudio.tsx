@@ -92,7 +92,7 @@ export function ArtistStudio() {
   return (
     <div className="view aq-studio" id="view-artist">
       <PageHeader
-        eyebrow="내 작업실" title="아티스트 페이지"
+        eyebrow="아티스트" title="아티스트 페이지"
         sub="소개 페이지·스마트링크·소식·팬 응원의 반응을 보고 한곳에서 고쳐요."
         actions={artists && artists.length > 1 ? (
           <select className="ui-select aq-studio-pick" aria-label="아티스트" value={artist?.artist_id ?? ''} onChange={e => setParam('artist', e.target.value)}>
@@ -285,7 +285,7 @@ function InsightsPanel({ data, days, onDays, hasPage, onCreate }: {
         <h3 id="studioFans">팬 반응</h3>
         <StatGrid cols={3} className="aq-studio-fans">
           <StatTile compact label="팬 응원" value={num(data.community.cheers)} unit="개" hint={data.community.cheers_new ? `최근 ${days}일 +${num(data.community.cheers_new)}` : `최근 ${days}일 새 응원 없음`} />
-          <StatTile compact label="하트 남긴 응원" value={num(data.community.hearts)} unit="개" />
+          <StatTile compact label="하트한 응원" value={num(data.community.hearts)} unit="개" />
           <StatTile compact label="올린 소식" value={num(data.community.posts)} unit="개" />
         </StatGrid>
       </section>
@@ -315,7 +315,8 @@ function ShareBars({ rows, unit }: { rows: [string, number][]; unit: string }) {
 
 function ReleaseRow({ r }: { r: ReleaseInsight }) {
   const cover = r.cover && r.link?.visible && !MOCK ? `${API_BASE}/api/smart-links/${encodeURIComponent(r.link.slug)}/cover` : null;
-  const status = !r.link ? { tone: 'gray' as const, text: '스마트링크 없음' }
+  // 스마트링크가 없으면 아래 줄 설명이 대신 말한다 (배지를 겹치지 않는다)
+  const status = !r.link ? null
     : !r.link.enabled ? { tone: 'gray' as const, text: '꺼짐' }
       : !r.link.visible ? { tone: 'amber' as const, text: '지금은 안 보여요' }
         : !r.released ? { tone: 'blue' as const, text: '발매 전' } : null;

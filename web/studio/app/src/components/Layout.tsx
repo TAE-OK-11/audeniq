@@ -42,9 +42,14 @@ const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
     items: [
       { to: '/', label: '홈', icon: 'home' },
       { to: '/releases', label: '발매·곡 관리', icon: 'disc' },
-      { to: '/artist', label: '아티스트 페이지', icon: 'globe' },
       { to: '/reports', label: '음악 리포트', icon: 'chart' },
       { to: '/settlement', label: '정산·지급', icon: 'won' },
+    ],
+  },
+  {
+    group: '아티스트',
+    items: [
+      { to: '/artist', label: '아티스트 페이지', icon: 'globe' },
     ],
   },
   {
