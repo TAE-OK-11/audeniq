@@ -4,6 +4,7 @@ pub mod agreement;
 pub mod allocator;
 pub mod api;
 pub mod archive;
+pub mod argon2id;
 pub mod artifacts;
 pub mod artist_community;
 pub mod artist_links;

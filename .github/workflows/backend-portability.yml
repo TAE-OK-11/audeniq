@@ -84,6 +84,7 @@ jobs:
           set -euo pipefail
           cargo bench --locked --profile dev -p audeniq-core --bench backend_resources --bench crypto_resources 2>&1 | tee /tmp/backend-resource-benchmarks.log
           bash scripts/benchmark-md5.sh 2>&1 | tee -a /tmp/backend-resource-benchmarks.log
+          bash scripts/benchmark-argon2.sh 2>&1 | tee -a /tmp/backend-resource-benchmarks.log
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:

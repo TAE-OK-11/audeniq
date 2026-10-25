@@ -13,6 +13,8 @@ serde_json = "1.0.151"
 uuid = { version = "1.26.1", features = ["v4", "v5", "serde"] }
 chrono = { version = "0.4.45", features = ["serde"] }
 argon2 = "0.6.0"
+# BLAKE2b for crate::argon2id (H0, H'); already in the tree via argon2.
+blake2 = "0.11.0"
 rand = "0.10.3"
 sha2 = "0.11.0"
 sha1 = "0.11.0"
