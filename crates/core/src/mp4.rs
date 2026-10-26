@@ -23,6 +23,37 @@ const MAX_MOOV: u64 = 32 << 20;
 const MAX_BOXES: usize = 1024;
 /// All `moof` payloads together.
 const MAX_FRAGMENT_INDEX: u64 = 32 << 20;
+/// Bytes asked for per ranged read when walking headers: a box header, a
+/// small `ftyp`/`moof` and the header after it usually come in one request
+/// (a fragmented file: one request per fragment instead of three).
+const WINDOW: usize = 8 << 10;
+
+/// Ranged reads through one buffered window.
+struct Reader<'a> {
+    store: &'a dyn ObjectStore,
+    key: &'a str,
+    at: u64,
+    buf: Vec<u8>,
+    requests: usize,
+}
+
+impl Reader<'_> {
+    /// Up to `n` bytes at `at` (shorter at the end of the object).
+    async fn read(&mut self, at: u64, n: usize) -> Result<Vec<u8>> {
+        let end = at.saturating_add(n as u64);
+        let have = self.at + self.buf.len() as u64;
+        if at >= self.at && (end <= have || (have < self.at + WINDOW as u64 && at < have)) {
+            let from = (at - self.at) as usize;
+            let to = (end.min(have) - self.at) as usize;
+            return Ok(self.buf[from..to].to_vec());
+        }
+        self.requests += 1;
+        let bytes = self.store.read_range(self.key, at, n.max(WINDOW)).await?;
+        let out = bytes[..n.min(bytes.len())].to_vec();
+        (self.at, self.buf) = (at, bytes);
+        Ok(out)
+    }
+}
 
 fn u16_at(b: &[u8], i: usize) -> Option<u64> {
     Some(u64::from(u16::from_be_bytes(
@@ -135,6 +166,13 @@ pub async fn index(store: &dyn ObjectStore, key: &str, size: u64) -> Result<Opti
         size,
         ..Index::default()
     };
+    let mut r = Reader {
+        store,
+        key,
+        at: 0,
+        buf: Vec::new(),
+        requests: 0,
+    };
     let mut fragments = 0u64;
     let mut at = 0u64;
     let mut moov = None;
@@ -143,7 +181,7 @@ pub async fn index(store: &dyn ObjectStore, key: &str, size: u64) -> Result<Opti
             idx.complete = true;
             break;
         }
-        let head = store.read_range(key, at, 16).await?;
+        let head = r.read(at, 16).await?;
         let (Some(len), Some(typ)) = (u32_at(&head, 0), head.get(4..8)) else {
             break;
         };
@@ -167,12 +205,12 @@ pub async fn index(store: &dyn ObjectStore, key: &str, size: u64) -> Result<Opti
                 if body_len > MAX_MOOV {
                     return Ok(None);
                 }
-                let body = store.read_range(key, at + hdr, body_len as usize).await?;
+                let body = r.read(at + hdr, body_len as usize).await?;
                 moov = Some(body.clone());
                 idx.bodies.push((at + hdr, body));
             }
             b"ftyp" if body_len <= 4096 => {
-                let body = store.read_range(key, at + hdr, body_len as usize).await?;
+                let body = r.read(at + hdr, body_len as usize).await?;
                 idx.bodies.push((at + hdr, body));
             }
             b"moof" => {
@@ -180,7 +218,7 @@ pub async fn index(store: &dyn ObjectStore, key: &str, size: u64) -> Result<Opti
                 if fragments > MAX_FRAGMENT_INDEX {
                     break;
                 }
-                let body = store.read_range(key, at + hdr, body_len as usize).await?;
+                let body = r.read(at + hdr, body_len as usize).await?;
                 idx.bodies.push((at + hdr, body));
             }
             _ => {}
@@ -195,6 +233,12 @@ pub async fn index(store: &dyn ObjectStore, key: &str, size: u64) -> Result<Opti
         return Ok(None);
     };
     idx.moov = moov;
+    tracing::debug!(
+        key,
+        requests = r.requests,
+        boxes = idx.heads.len(),
+        "mp4 index read"
+    );
     Ok(Some(idx))
 }
 
@@ -279,7 +323,13 @@ mod tests {
         assert_eq!(clock(i.duration_ms), "1:01");
     }
 
-    struct Bytes(Vec<u8>);
+    /// Object bytes; counts the ranged reads.
+    struct Bytes(Vec<u8>, std::sync::atomic::AtomicUsize);
+    impl Bytes {
+        fn new(b: Vec<u8>) -> Self {
+            Self(b, Default::default())
+        }
+    }
     #[async_trait::async_trait]
     impl ObjectStore for Bytes {
         async fn presign_put(
@@ -299,7 +349,33 @@ mod tests {
             unreachable!()
         }
         async fn get(&self, _: &str) -> Result<Vec<u8>> {
+            self.1.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             Ok(self.0.clone())
+        }
+    }
+
+    #[tokio::test]
+    async fn a_fragment_costs_one_ranged_read() {
+        let moov = bx(
+            b"moov",
+            &[mvhd0(1000, 0), bx(b"trak", &tkhd(0, 1920, 1080))].concat(),
+        );
+        let mut file = [bx(b"ftyp", b"iso6\0\0\0\0"), moov].concat();
+        for _ in 0..50 {
+            file.extend(bx(b"moof", &[1u8; 900]));
+            file.extend(bx(b"mdat", &[0u8; 20_000]));
+        }
+        let size = file.len() as u64;
+        let store = Bytes::new(file);
+        let i = index(&store, "k", size).await.unwrap().unwrap();
+        assert!(i.complete);
+        assert_eq!(i.heads.len(), 2 + 100);
+        assert_eq!(i.bodies.len(), 2 + 50);
+        let reads = store.1.load(std::sync::atomic::Ordering::Relaxed);
+        assert!(reads <= 51, "{reads} reads");
+        // What was read is what the object holds.
+        for (at, b) in i.heads.iter().chain(&i.bodies) {
+            assert_eq!(&store.0[*at as usize..*at as usize + b.len()], &b[..]);
         }
     }
 
@@ -316,7 +392,7 @@ mod tests {
         ]
         .concat();
         let size = file.len() as u64;
-        let i = probe(&Bytes(file), "k", size).await.unwrap().unwrap();
+        let i = probe(&Bytes::new(file), "k", size).await.unwrap().unwrap();
         assert_eq!(
             (clock(i.duration_ms), i.width, i.height),
             ("1:01".into(), 1920, 1080)
@@ -324,7 +400,7 @@ mod tests {
         // No moov: not a usable video.
         let bare = [bx(b"ftyp", b"isom"), bx(b"mdat", &[0u8; 64])].concat();
         let size = bare.len() as u64;
-        assert!(probe(&Bytes(bare), "k", size).await.unwrap().is_none());
+        assert!(probe(&Bytes::new(bare), "k", size).await.unwrap().is_none());
     }
 
     #[test]
