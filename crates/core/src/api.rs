@@ -232,6 +232,7 @@ pub fn router(s: AppState) -> Router {
             crate::sites::policy,
         ))
         .layer(middleware::from_fn(header_limit))
+        .layer(middleware::from_fn(compress_json))
         .layer(compression())
         .with_state(s)
 }
@@ -292,6 +293,101 @@ fn compression() -> tower_http::compression::CompressionLayer<
     CompressionLayer::new()
         .quality(CompressionLevel::Precise(4))
         .compress_when(DefaultPredicate::new().and(SizeAbove::new(1024)))
+}
+/// Largest JSON body [`compress_json`] buffers; anything larger streams
+/// through the generic layer.
+const COMPRESS_JSON_MAX: usize = 8 * 1024 * 1024;
+
+/// JSON bodies (already whole in memory) compressed here, with the brotli
+/// window fitted to the body. The generic layer's streaming encoder always
+/// sets up brotli's default 4 MiB window: a 16 KB answer took about 550 µs
+/// instead of 210 µs, for the same output. Same quality and encodings as
+/// [`compression`]; the generic layer passes over a response that already
+/// has a `Content-Encoding`, and still handles everything else (streams,
+/// other types).
+async fn compress_json(req: Request, next: Next) -> Response {
+    use axum::http::header;
+    let encoding = preferred_encoding(req.headers());
+    let response = next.run(req).await;
+    let Some(encoding) = encoding else {
+        return response;
+    };
+    let json = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|t| t.starts_with("application/json"));
+    let size = http_body::Body::size_hint(response.body()).exact();
+    if !json
+        || response.headers().contains_key(header::CONTENT_ENCODING)
+        || !size.is_some_and(|n| (1024..=COMPRESS_JSON_MAX as u64).contains(&n))
+    {
+        return response;
+    }
+    let (mut parts, body) = response.into_parts();
+    let Ok(bytes) = axum::body::to_bytes(body, COMPRESS_JSON_MAX).await else {
+        return Error::Internal.into_response();
+    };
+    let compressed = match encoding {
+        "br" => {
+            let params = brotli::enc::BrotliEncoderParams {
+                quality: 4,
+                // Smallest window (2^16..2^22) that holds the whole body.
+                lgwin: (usize::BITS - (bytes.len() - 1).leading_zeros()).clamp(16, 22) as i32,
+                ..Default::default()
+            };
+            let mut out = Vec::with_capacity(bytes.len() / 3);
+            brotli::BrotliCompress(&mut &bytes[..], &mut out, &params).map(|_| out)
+        }
+        _ => {
+            use std::io::Write;
+            let mut e = flate2::write::GzEncoder::new(
+                Vec::with_capacity(bytes.len() / 3),
+                flate2::Compression::new(4),
+            );
+            e.write_all(&bytes).and_then(|_| e.finish())
+        }
+    };
+    let Ok(compressed) = compressed else {
+        return Response::from_parts(parts, axum::body::Body::from(bytes));
+    };
+    parts
+        .headers
+        .insert(header::CONTENT_ENCODING, HeaderValue::from_static(encoding));
+    parts
+        .headers
+        .append(header::VARY, HeaderValue::from_static("accept-encoding"));
+    parts.headers.remove(header::CONTENT_LENGTH);
+    parts.headers.remove(header::ACCEPT_RANGES);
+    Response::from_parts(parts, axum::body::Body::from(compressed))
+}
+
+/// `br` or `gzip` from Accept-Encoding: the highest q-value, `br` on a tie
+/// (the order [`compression`] prefers); `None` when neither is acceptable.
+fn preferred_encoding(h: &HeaderMap) -> Option<&'static str> {
+    let mut best: Option<(&'static str, f32)> = None;
+    for value in h.get_all(axum::http::header::ACCEPT_ENCODING) {
+        for item in value.to_str().unwrap_or("").split(',') {
+            let mut fields = item.split(';');
+            let name = match fields.next().unwrap_or("").trim() {
+                n if n.eq_ignore_ascii_case("br") => "br",
+                n if n.eq_ignore_ascii_case("gzip") => "gzip",
+                _ => continue,
+            };
+            let q = fields
+                .find_map(|f| f.trim().strip_prefix("q=").map(str::parse::<f32>))
+                .unwrap_or(Ok(1.0))
+                .unwrap_or(0.0);
+            let better = match best {
+                None => true,
+                Some((n, bq)) => q > bq || (q == bq && name == "br" && n != "br"),
+            };
+            if q > 0.0 && better {
+                best = Some((name, q));
+            }
+        }
+    }
+    best.map(|(n, _)| n)
 }
 /// Total request-header budget. Browsers and the edge send a few KiB; hyper
 /// alone accepted a single 200 KB header (sandbox round 2).
@@ -1194,5 +1290,91 @@ mod tests {
             .unwrap();
         let v: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(v["error"]["code"], "INTERNAL_ERROR");
+    }
+
+    async fn compressed(
+        accept: Option<&str>,
+        path: &str,
+    ) -> (Option<String>, Option<String>, Vec<u8>) {
+        let big: Value = json!({"items": (0..400).map(|i| json!({"id": i, "name": format!("트랙 {i}")})).collect::<Vec<_>>()});
+        let app: Router = Router::new()
+            .route("/big", get(move || async move { Json(big) }))
+            .route("/small", get(|| async { Json(json!({"ok": true})) }))
+            .route(
+                "/text",
+                get(|| async {
+                    (
+                        [(axum::http::header::CONTENT_TYPE, "text/plain")],
+                        "x".repeat(4096),
+                    )
+                }),
+            )
+            .layer(middleware::from_fn(compress_json))
+            .layer(compression());
+        let mut req = axum::http::Request::builder().uri(path);
+        if let Some(a) = accept {
+            req = req.header("accept-encoding", a);
+        }
+        let res = app
+            .oneshot(req.body(axum::body::Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let header = |n| {
+            res.headers()
+                .get(n)
+                .map(|v: &HeaderValue| v.to_str().unwrap().to_string())
+        };
+        let (enc, vary) = (header("content-encoding"), header("vary"));
+        let body = axum::body::to_bytes(res.into_body(), 1 << 22)
+            .await
+            .unwrap()
+            .to_vec();
+        (enc, vary, body)
+    }
+
+    /// JSON is compressed here (fitted brotli window) with the encoding the
+    /// caller prefers and decodes to the same body; other responses keep
+    /// going through the generic layer.
+    #[tokio::test]
+    async fn json_bodies_are_compressed_with_the_preferred_encoding() {
+        let (_, _, plain) = compressed(None, "/big").await;
+        assert!(plain.len() > 1024);
+        let (enc, vary, body) = compressed(Some("gzip, br"), "/big").await;
+        assert_eq!(
+            (enc.as_deref(), vary.as_deref()),
+            (Some("br"), Some("accept-encoding"))
+        );
+        let mut out = Vec::new();
+        brotli::BrotliDecompress(&mut &body[..], &mut out).unwrap();
+        assert_eq!(out, plain);
+        let (enc, _, body) = compressed(Some("br;q=0.5, gzip"), "/big").await;
+        assert_eq!(enc.as_deref(), Some("gzip"));
+        let mut out = Vec::new();
+        std::io::Read::read_to_end(&mut flate2::read::GzDecoder::new(&body[..]), &mut out).unwrap();
+        assert_eq!(out, plain);
+        assert_eq!(compressed(Some("br;q=0"), "/big").await.0, None);
+        assert_eq!(compressed(Some("deflate"), "/big").await.0, None);
+        assert_eq!(compressed(Some("br"), "/small").await.0, None);
+        // Not JSON: still compressed, by the generic layer.
+        assert_eq!(
+            compressed(Some("br"), "/text").await.0.as_deref(),
+            Some("br")
+        );
+    }
+
+    #[test]
+    fn accept_encoding_preference() {
+        let h = |v: &str| {
+            let mut m = HeaderMap::new();
+            m.insert("accept-encoding", HeaderValue::from_str(v).unwrap());
+            preferred_encoding(&m)
+        };
+        assert_eq!(h("br, gzip"), Some("br"));
+        assert_eq!(h("gzip, br"), Some("br"));
+        assert_eq!(h("gzip;q=1.0, br;q=0.9"), Some("gzip"));
+        assert_eq!(h("BR"), Some("br"));
+        assert_eq!(h("identity, deflate"), None);
+        assert_eq!(h("gzip;q=0"), None);
+        assert_eq!(preferred_encoding(&HeaderMap::new()), None);
     }
 }

@@ -51,6 +51,11 @@ zeroize = "1.9.0"
 # 64 KiB pages (deploy/build-target.sh) so one image runs on any page size.
 tikv-jemallocator = "0.7.0"
 tokio-stream = "0.1.19"
+# JSON response compression with a fitted brotli window (api::compress_json);
+# both already in the tree through tower-http's codecs.
+brotli = "9.0.0"
+flate2 = "1.1.10"
+http-body = "1.1.0"
 
 [dev-dependencies]
 # Independent oracle for the in-crate MD5 (crate::md5) tests only.
