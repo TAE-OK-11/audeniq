@@ -855,9 +855,7 @@ pub async fn video_start(s: &AppState, a: &Actor, org: Uuid, i: VideoInput) -> R
     if name.is_empty() {
         return Err(invalid());
     }
-    let mut tx = s.pool.begin().await?;
-    auth::membership(&mut tx, a, org, true).await?;
-    tx.rollback().await?;
+    auth::membership(&mut *s.pool.acquire().await?, a, org, true).await?;
     auth::rate(&s.pool, &format!("addon-video:{}", a.user), 20).await?;
     let id = Uuid::new_v4();
     let key = format!("addon-video/{org}/{id}");

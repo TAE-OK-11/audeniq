@@ -271,3 +271,36 @@ RFC 1321 A.5 테스트 모음과, 0~1099바이트 모든 길이·분할점에서
 aarch64 qemu). `scripts/benchmark-md5.sh`가 두 구현을 `rustc -O`로 빌드해 같은 값을 확인한 뒤
 처리량을 재며, `Backend portability`가 x86-64·ARM64 네이티브 러너에서 실행해 로그를
 `backend-resource-benchmarks-X64/ARM64` 아티팩트에 남긴다.
+
+## 요청당 상태 복사·tools/list·불필요한 트랜잭션 (2026-10-26)
+
+실제 `audeniq-api`(release, thin LTO, codegen-units 16, jemalloc)를 PostgreSQL 16에 붙여 API 2코어,
+oha 2코어(`taskset`)로 나누고, 회차마다 새 DB와 새 프로세스로 main(e0058cc)과 번갈아 3회씩 쟀다.
+부하: MCP `tools/list`(공개, 동시 32) 15초 → 욕설 검사 응원 문구(동시 32) 15초 → 가사(동시 16) 15초 →
+`/api/notices`(동시 32) 15초 → 아티스트 목록(DB, 동시 32) 15초 → 30초 유휴. 수치는 3회의 중앙값이다.
+RSS는 100 ms마다 `/proc`에서, CPU는 단계마다 프로세스 user+system을 요청 수로 나눴다.
+
+`perf`로 본 main의 CPU: `AppState` 복사·해제가 약 6%(미들웨어 층과 핸들러마다 전체 필드를 복사,
+설정의 문자열 할당 포함), brotli 압축 약 9%, memset 약 3%.
+
+- `AppState`를 `Arc` 하나로: 복사가 참조 카운트 하나. 기동·테스트에서 필드를 바꾸는 코드는
+  `DerefMut`(`Arc::make_mut`)로 그대로 둔다.
+- MCP `tools/list`: 캐시된 도구 목록 `Vec<Value>`를 요청마다 새 `Value` 트리로 복사해 약 58 KB를
+  직렬화하던 것을, 한 번 직렬화한 `RawValue`를 끼워 넣는 것으로. 응답 바이트는 같다(테스트).
+- uploads·addons·profanity: membership 확인 한 번만을 위한 `BEGIN`/`ROLLBACK`을 빼고 autocommit
+  한 문장으로. `FOR SHARE` 잠금은 문장과 함께 끝나 롤백 시점에 풀리던 것과 같고, DB 왕복이 2번 준다.
+
+| | main | 변경 |
+|---|---:|---:|
+| 시작 RSS | 45.2 MB | 42.9 MB |
+| 부하 중 평균 RSS | 93.0 MB | **47.8 MB** |
+| 최대 RSS | 108.0 MB | **61.0 MB** |
+| 부하 후 30초 유휴 RSS | 32.6 MB | 29.2 MB |
+| MCP tools/list req/s (요청당 CPU) | 17,021 (117 µs) | **21,525 (92 µs)** |
+| 공지 조회 req/s (요청당 CPU) | 22,311 (81 µs) | **26,427 (67 µs)** |
+| 아티스트 목록 req/s (요청당 CPU) | 5,871 (177 µs) | 6,319 (163 µs) |
+| 욕설 검사(횟수 제한 응답) 요청당 CPU | 232–238 µs | 220–224 µs |
+
+메모리 감소의 대부분은 `tools/list` 동시 요청마다 만들던 큰 `Value` 트리가 없어진 것이다.
+욕설 검사는 사용자당 15분 120회 제한 때문에 대부분 429로 측정됐다(필터 자체의 비교는 위
+「audeniq-media 도구 이식 검토와 텍스트 필터」와 `scripts/benchmark-before-after.sh`).
