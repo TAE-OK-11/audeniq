@@ -9051,3 +9051,127 @@ async fn portone_and_payple_confirm_and_cancel(base: &str, fx: &PgFx) {
         "{seen:?}"
     );
 }
+
+/// A music-video upload is checked by the media engine (`audeniq-music video
+/// probe`) when it completes; the checks come back to the artist and travel
+/// with the order to staff.
+#[sqlx::test]
+async fn addon_video_completion_reports_engine_checks(pool: PgPool) {
+    let d = draft_package(&pool).await;
+    let dir = std::env::temp_dir().join(format!("audeniq-mv-{}", Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mp4 = dir.join("mv.mp4");
+    let st = std::process::Command::new("ffmpeg")
+        .args([
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=1280x720:rate=25",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=sample_rate=48000",
+            "-t",
+            "2",
+            "-ac",
+            "2",
+            "-c:v",
+            "libx264",
+            "-c:a",
+            "aac",
+            "-movflags",
+            "+faststart",
+        ])
+        .arg(&mp4)
+        .status()
+        .unwrap();
+    assert!(st.success());
+    let bytes = std::fs::read(&mp4).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    let (org, id) = (d.u.org, Uuid::new_v4());
+    let key = format!("addon-video/{org}/{id}");
+    // The parts are already assembled in the store (multipart is the S3 path).
+    d.store.put(&key, &bytes, "video/mp4").await;
+    sqlx::query(
+        "INSERT INTO portal.addon_files(id, org_id, object_key, name, size_bytes, content_type, upload_id, created_by)
+         VALUES($1,$2,$3,'mv.mp4',$4,'video/mp4','test-upload',$5)",
+    )
+    .bind(id)
+    .bind(org)
+    .bind(&key)
+    .bind(bytes.len() as i64)
+    .bind(d.u.user)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (s, v) = call(
+        &d.app,
+        "POST",
+        &format!("/api/orgs/{org}/addon-videos/{id}/complete"),
+        json!({}),
+        Some(&d.u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(
+        (v["duration"].as_str(), v["width"].as_u64()),
+        (Some("0:02"), Some(1280))
+    );
+    let checks = &v["checks"];
+    assert_eq!(checks["rule"], "mv-delivery-v1", "{v}");
+    assert_eq!(checks["mv_ready"], true);
+    assert!(
+        checks["summary"]
+            .as_str()
+            .unwrap()
+            .starts_with("H.264 High · 1280×720 · 25fps"),
+        "{checks}"
+    );
+    let codes: Vec<&str> = checks["issues"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|i| i["code"].as_str())
+        .collect();
+    assert!(codes.contains(&"RESOLUTION_BELOW_1080P"), "{codes:?}");
+    let (report,): (Value,) =
+        sqlx::query_as("SELECT video_report FROM portal.addon_files WHERE id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(report["video"][0]["codec_name"], "h264");
+    assert_eq!(report["audio"][0]["codec_name"], "aac");
+
+    // Chosen in the application: the order carries the same checks.
+    let options = json!({
+        "mv": true, "mvTier": "BASIC", "mvTrack": 1, "mvVideoFile": id.to_string(),
+        "mvTitle": "여름의 끝 MV", "mvPlatforms": ["melon"], "mvRating": "ALL", "mvRatingNo": "2026-MV-1",
+    });
+    sqlx::query("UPDATE catalog.releases SET draft = jsonb_set(draft, '{options}', coalesce(draft->'options','{}'::jsonb) || $2), row_version = row_version + 1 WHERE id=$1")
+        .bind(d.release)
+        .bind(&options)
+        .execute(&pool)
+        .await
+        .unwrap();
+    consent_and_submit(&d.app, &d.u, d.release, &format!("k-mv-{}", Uuid::new_v4())).await;
+    let (s, v) = call(
+        &d.app,
+        "GET",
+        &format!("/api/orgs/{org}/releases/{}/addons", d.release),
+        Value::Null,
+        Some(&d.u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let mv = v["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|o| o["service"] == "MV_DISTRIBUTION")
+        .unwrap();
+    assert_eq!(&mv["video"]["checks"], checks, "{mv}");
+}

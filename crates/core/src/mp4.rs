@@ -1,6 +1,8 @@
 //! Length and frame size of an uploaded MP4/MOV, read from its `moov` box
 //! with a few ranged reads (the media data itself is never fetched), so the
-//! artist does not type them in.
+//! artist does not type them in. [`index`] keeps every top-level box header
+//! and the index payloads so the media engine can check the whole layout
+//! ([`crate::video`]).
 
 use crate::{error::Result, storage::ObjectStore};
 
@@ -15,8 +17,12 @@ pub struct VideoInfo {
 
 /// Largest `moov` we read into memory. Even hours of video index in a few MB.
 const MAX_MOOV: u64 = 32 << 20;
-/// Top-level boxes we walk past before giving up (ftyp, free, mdat, …).
-const MAX_BOXES: usize = 64;
+/// Top-level boxes we walk, one ranged read each (ftyp, free, mdat, …; a
+/// fragmented file has a `moof`+`mdat` pair per fragment: 10 minutes in
+/// 2-second fragments is 600). Past it only the `moov` is used.
+const MAX_BOXES: usize = 1024;
+/// All `moof` payloads together.
+const MAX_FRAGMENT_INDEX: u64 = 32 << 20;
 
 fn u16_at(b: &[u8], i: usize) -> Option<u64> {
     Some(u64::from(u16::from_be_bytes(
@@ -108,12 +114,33 @@ pub fn parse_moov(moov: &[u8]) -> Option<VideoInfo> {
     })
 }
 
-/// Walks the top-level boxes of a stored object with ranged reads and parses
-/// its `moov`. `None` when there is none to read (not a usable video).
-pub async fn probe(store: &dyn ObjectStore, key: &str, size: u64) -> Result<Option<VideoInfo>> {
+/// The stored layout of an MP4/MOV: every top-level box header (up to 16
+/// bytes) and the payloads of `ftyp`, `moov` and `moof`, at their offsets in
+/// the object. Media data is never read.
+#[derive(Debug, Default)]
+pub struct Index {
+    pub size: u64,
+    pub heads: Vec<(u64, Vec<u8>)>,
+    pub bodies: Vec<(u64, Vec<u8>)>,
+    /// `moov` payload.
+    pub moov: Vec<u8>,
+    /// Every box was walked within the limits (else only `moov` is usable).
+    pub complete: bool,
+}
+
+/// Walks the top-level boxes of a stored object with ranged reads. `None`
+/// when there is no `moov` to read (not a usable video).
+pub async fn index(store: &dyn ObjectStore, key: &str, size: u64) -> Result<Option<Index>> {
+    let mut idx = Index {
+        size,
+        ..Index::default()
+    };
+    let mut fragments = 0u64;
     let mut at = 0u64;
+    let mut moov = None;
     for _ in 0..MAX_BOXES {
         if at + 8 > size {
+            idx.complete = true;
             break;
         }
         let head = store.read_range(key, at, 16).await?;
@@ -128,21 +155,54 @@ pub async fn probe(store: &dyn ObjectStore, key: &str, size: u64) -> Result<Opti
             },
             n => (8, n),
         };
+        idx.heads.push((at, head.clone()));
         if len < hdr || at + len > size {
+            // Truncated or malformed: the engine reports it from the headers.
+            idx.complete = moov.is_some();
             break;
         }
-        if typ == b"moov" {
-            if len > MAX_MOOV {
-                return Ok(None);
+        let body_len = len - hdr;
+        match typ {
+            b"moov" if moov.is_none() => {
+                if body_len > MAX_MOOV {
+                    return Ok(None);
+                }
+                let body = store.read_range(key, at + hdr, body_len as usize).await?;
+                moov = Some(body.clone());
+                idx.bodies.push((at + hdr, body));
             }
-            let body = store
-                .read_range(key, at + hdr, (len - hdr) as usize)
-                .await?;
-            return Ok(parse_moov(&body));
+            b"ftyp" if body_len <= 4096 => {
+                let body = store.read_range(key, at + hdr, body_len as usize).await?;
+                idx.bodies.push((at + hdr, body));
+            }
+            b"moof" => {
+                fragments += body_len;
+                if fragments > MAX_FRAGMENT_INDEX {
+                    break;
+                }
+                let body = store.read_range(key, at + hdr, body_len as usize).await?;
+                idx.bodies.push((at + hdr, body));
+            }
+            _ => {}
         }
         at += len;
+        if at == size {
+            idx.complete = true;
+            break;
+        }
     }
-    Ok(None)
+    let Some(moov) = moov else {
+        return Ok(None);
+    };
+    idx.moov = moov;
+    Ok(Some(idx))
+}
+
+/// [`index`] then [`parse_moov`].
+pub async fn probe(store: &dyn ObjectStore, key: &str, size: u64) -> Result<Option<VideoInfo>> {
+    Ok(index(store, key, size)
+        .await?
+        .and_then(|i| parse_moov(&i.moov)))
 }
 
 /// `m:ss` (minutes may run past 59, e.g. `72:05`).

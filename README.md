@@ -8,7 +8,7 @@ New application logic and tests are Rust only. The three supplied frontend packa
 
 ## Local development
 
-Requires Rust 1.98.1, Docker Engine + Compose v2. PostgreSQL 18 is the target database (API/worker connect through PgBouncer in Compose). Native file analysis also requires xmllint, the AUDENIQ media engine audeniq-music (`deploy/install-audeniq-music.sh`, set `AUDENIQ_MUSIC_BIN`, default `/usr/local/bin/audeniq-music`; `qc` for audio probe/conversion/QC/fingerprints, `photo` for image/audio metadata, QR, OCR and upload sanitization); the Docker image includes it. Tests additionally use FFmpeg, ExifTool and qrencode to generate fixtures.
+Requires Rust 1.98.1, Docker Engine + Compose v2. PostgreSQL 18 is the target database (API/worker connect through PgBouncer in Compose). Native file analysis also requires xmllint, the AUDENIQ media engine audeniq-music (`deploy/install-audeniq-music.sh`, set `AUDENIQ_MUSIC_BIN`, default `/usr/local/bin/audeniq-music`; `qc` for audio probe/conversion/QC/fingerprints, `photo` for image/audio metadata, QR, OCR and upload sanitization, `video` for music-video probe and delivery checks); the Docker image includes it. Tests additionally use FFmpeg, ExifTool and qrencode to generate fixtures.
 
 1. Copy `.env.example` to `.env`. Set three different random URL-safe database passwords and a random `EDGE_SERVICE_SECRET` of at least 32 characters. Do not commit `.env`.
 2. `docker compose up --build -d` starts PostgreSQL, runs SQLx migrations using the owner, applies separate runtime grants, and starts API/worker. Storage is disabled until configured.
