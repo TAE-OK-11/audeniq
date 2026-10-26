@@ -7,9 +7,31 @@
 //! and written at their offsets into a sparse file of the object's size; the
 //! engine reads nothing else, so it sees the same layout as the real file.
 //! Like every parser of uploaded bytes it runs only inside the parser sandbox.
-use crate::{error::Result, mp4, storage::ObjectStore};
+//!
+//! The sound check (`addon_video.sound` job, [`measure_sound`]) runs later on
+//! the worker: it asks the engine where the sound track's data is
+//! (`video sound-ranges`), fetches just those ranges into the same sparse
+//! copy and has the engine decode and measure them (`video probe --sound`).
+use crate::{
+    error::{Error, Result},
+    mp4,
+    storage::ObjectStore,
+};
 use serde_json::{Value, json};
-use std::{path::Path, process::Command, time::Duration};
+use sqlx::PgPool;
+use std::{path::Path, process::Command, sync::Arc, time::Duration};
+use uuid::Uuid;
+
+/// Job kind of the sound check (queue `qc`).
+pub const SOUND_JOB: &str = "addon_video.sound";
+/// Gap between sound ranges read through rather than split into another
+/// request (about one request's latency of transfer).
+const READ_THROUGH: u64 = 4 << 20;
+/// Largest single ranged read, and all reads of one video together.
+const MAX_READ: u64 = 32 << 20;
+const MAX_FETCH: u64 = 2 << 30;
+/// Ranged reads in flight.
+const FETCHES: usize = 8;
 
 /// What the upload is: the container's length and size, and the engine's
 /// report when the engine could read it.
@@ -44,29 +66,206 @@ pub async fn inspect(store: &dyn ObjectStore, key: &str, size: u64) -> Result<Op
     Ok(Some(Inspection { info, report }))
 }
 
-fn probe_layout(index: &mp4::Index) -> Option<Value> {
+/// The index written at its offsets into a sparse file of the object's size.
+fn write_sparse(index: &mp4::Index, path: &Path) -> std::io::Result<()> {
     use std::os::unix::fs::FileExt;
+    let file = std::fs::File::create_new(path)?;
+    file.set_len(index.size)?;
+    for (at, bytes) in index.heads.iter().chain(&index.bodies) {
+        file.write_all_at(bytes, *at)?;
+    }
+    Ok(())
+}
+
+fn probe_layout(index: &mp4::Index) -> Option<Value> {
     let workspace = crate::upload_safety::Workspace::new().ok()?;
     let path = workspace.0.join("video.mp4");
-    let file = std::fs::File::create_new(&path).ok()?;
-    file.set_len(index.size).ok()?;
-    for (at, bytes) in index.heads.iter().chain(&index.bodies) {
-        file.write_all_at(bytes, *at).ok()?;
-    }
-    drop(file);
+    write_sparse(index, &path).ok()?;
     probe_file(&path)
 }
 
-/// `audeniq-music video probe PATH` in the sandbox; `None` when the engine is
-/// missing, refuses the file or exceeds its limits.
-pub fn probe_file(path: &Path) -> Option<Value> {
+/// One `audeniq-music video …` command in the sandbox; `None` when the
+/// engine is missing, refuses the file or exceeds its limits.
+fn engine(args: &[&str], path: &Path, timeout: Duration) -> Option<Value> {
     let mut command = Command::new(crate::qc_engine::bin());
-    command.arg("video").arg("probe").arg(path);
+    command.arg("video").args(args).arg(path);
     crate::parser_sandbox::restrict_audio(&mut command, &[path], &[]).ok()?;
-    let out =
-        crate::local_analyzer::run_timeout(&mut command, &[0], Duration::from_secs(30)).ok()?;
-    let report: Value = serde_json::from_slice(&out).ok()?;
-    report["issues"].is_array().then_some(report)
+    let out = crate::local_analyzer::run_timeout(&mut command, &[0], timeout).ok()?;
+    serde_json::from_slice(&out).ok()
+}
+
+/// `audeniq-music video probe PATH` (index only).
+pub fn probe_file(path: &Path) -> Option<Value> {
+    engine(&["probe"], path, Duration::from_secs(30)).filter(|r| r["issues"].is_array())
+}
+
+/// `audeniq-music video probe --sound PATH`.
+pub fn probe_sound_file(path: &Path) -> Option<Value> {
+    engine(&["probe", "--sound"], path, Duration::from_secs(300)).filter(|r| r["issues"].is_array())
+}
+
+/// `audeniq-music video sound-ranges PATH` → (offset, length) pairs.
+pub fn sound_ranges_file(path: &Path) -> Option<Vec<(u64, u64)>> {
+    let v = engine(&["sound-ranges"], path, Duration::from_secs(30))?;
+    v["ranges"]
+        .as_array()?
+        .iter()
+        .map(|r| Some((r[0].as_u64()?, r[1].as_u64()?)))
+        .collect()
+}
+
+/// Reads covering `ranges`: neighbours closer than [`READ_THROUGH`] share a
+/// read, and no read is longer than [`MAX_READ`].
+fn plan_reads(ranges: &[(u64, u64)]) -> Vec<(u64, u64)> {
+    let mut reads: Vec<(u64, u64)> = Vec::new();
+    for &(o, l) in ranges {
+        if l == 0 {
+            continue;
+        }
+        match reads.last_mut() {
+            Some((ro, rl)) if o >= *ro + *rl && o - (*ro + *rl) <= READ_THROUGH => {
+                *rl = o + l - *ro;
+            }
+            _ => reads.push((o, l)),
+        }
+    }
+    reads
+        .into_iter()
+        .flat_map(|(o, l)| {
+            (0..l.div_ceil(MAX_READ))
+                .map(move |i| (o + i * MAX_READ, (l - i * MAX_READ).min(MAX_READ)))
+        })
+        .collect()
+}
+
+/// The parts of `ranges` inside the read `(at, bytes)`: (file offset, slice).
+fn pieces<'a>(
+    ranges: &'a [(u64, u64)],
+    at: u64,
+    bytes: &'a [u8],
+) -> impl Iterator<Item = (u64, &'a [u8])> {
+    let end = at + bytes.len() as u64;
+    ranges.iter().filter_map(move |&(o, l)| {
+        let (lo, hi) = (o.max(at), (o + l).min(end));
+        (lo < hi).then(|| (lo, &bytes[(lo - at) as usize..(hi - at) as usize]))
+    })
+}
+
+/// The `addon_video.sound` job: measure a ready upload's sound and update
+/// its report and checks. `Ok(true)`: try again later (engine or storage
+/// unavailable).
+pub async fn measure_sound(
+    pool: &PgPool,
+    store: &Arc<dyn ObjectStore>,
+    file: Uuid,
+) -> Result<bool> {
+    let row: Option<(String, i64)> = sqlx::query_as(
+        "SELECT object_key, size_bytes FROM portal.addon_files WHERE id=$1 AND status='READY'",
+    )
+    .bind(file)
+    .fetch_optional(pool)
+    .await?;
+    let Some((key, size)) = row else {
+        return Ok(false);
+    };
+    let size = size as u64;
+    let Some(index) = mp4::index(store.as_ref(), &key, size).await? else {
+        return Ok(false);
+    };
+    if !index.complete {
+        return Ok(false);
+    }
+    let workspace = crate::upload_safety::Workspace::new()?;
+    let path = workspace.0.join("video.mp4");
+    {
+        let path = path.clone();
+        tokio::task::spawn_blocking(move || write_sparse(&index, &path))
+            .await
+            .map_err(|_| Error::Internal)?
+            .map_err(|_| Error::Storage)?;
+    }
+    let ranges = {
+        let path = path.clone();
+        tokio::task::spawn_blocking(move || sound_ranges_file(&path))
+            .await
+            .map_err(|_| Error::Internal)?
+    };
+    let Some(ranges) = ranges else {
+        tracing::warn!(%file, "video sound-ranges unavailable");
+        return Ok(true);
+    };
+    let reads = plan_reads(&ranges);
+    let total: u64 = reads.iter().map(|r| r.1).sum();
+    if total > MAX_FETCH {
+        tracing::warn!(%file, total, "sound data spread too thin to fetch; not measured");
+        return Ok(false);
+    }
+    let ranges = Arc::new(ranges);
+    let out = Arc::new(
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .map_err(|_| Error::Storage)?,
+    );
+    let mut pending = reads.into_iter();
+    let mut set = tokio::task::JoinSet::new();
+    loop {
+        while set.len() < FETCHES {
+            let Some((at, len)) = pending.next() else {
+                break;
+            };
+            let (store, key, ranges, out) =
+                (store.clone(), key.clone(), ranges.clone(), out.clone());
+            set.spawn(async move {
+                let bytes = store.read_range(&key, at, len as usize).await?;
+                tokio::task::spawn_blocking(move || {
+                    use std::os::unix::fs::FileExt;
+                    for (o, piece) in pieces(&ranges, at, &bytes) {
+                        out.write_all_at(piece, o).map_err(|_| Error::Storage)?;
+                    }
+                    Ok::<_, Error>(())
+                })
+                .await
+                .map_err(|_| Error::Internal)?
+            });
+        }
+        let Some(done) = set.join_next().await else {
+            break;
+        };
+        done.map_err(|_| Error::Internal)??;
+    }
+    drop(out);
+    let report = tokio::task::spawn_blocking(move || probe_sound_file(&path))
+        .await
+        .map_err(|_| Error::Internal)?;
+    let Some(report) = report else {
+        tracing::warn!(%file, "video probe --sound unavailable");
+        return Ok(true);
+    };
+    let checks = checks(&report);
+    sqlx::query("UPDATE portal.addon_files SET video_report=$2, video_checks=$3 WHERE id=$1 AND status='READY'")
+        .bind(file)
+        .bind(&report)
+        .bind(&checks)
+        .execute(pool)
+        .await?;
+    drop(workspace);
+    Ok(false)
+}
+
+/// Queue the sound check of a completed upload.
+pub async fn enqueue_sound(pool: &PgPool, file: Uuid) -> Result<()> {
+    let mut c = pool.acquire().await?;
+    crate::operations::enqueue(
+        &mut c,
+        "qc",
+        SOUND_JOB,
+        &json!({"file_id": file}),
+        &format!("addon-video-sound:{file}"),
+        None,
+    )
+    .await
+    .map(|_| ())
 }
 
 fn codec_label(name: &str) -> String {
@@ -110,25 +309,61 @@ fn summary(report: &Value) -> String {
             p.push(format!("{}kHz", rate / 1000.0));
         }
         p.push(format!("{}ch", a["channels"]));
+        let sound = &report["sound"];
+        if let Some(l) = sound["integrated_lufs"].as_f64() {
+            p.push(format!("{l:.1} LUFS"));
+        }
+        if let Some(t) = sound["true_peak_dbtp"].as_f64() {
+            p.push(format!("TP {t:+.1}dBTP"));
+        }
         parts.push(p.join(" · "));
     }
     parts.join(" / ")
 }
 
 /// What the order and the upload answer carry: `mv_ready`, a one-line
-/// summary and the engine's issues (code, severity, Korean detail).
+/// summary, the engine's issues (code, severity, Korean detail) and whether
+/// the sound was measured yet (`sound`: `pending`, `measured`, `skipped`).
 pub fn checks(report: &Value) -> Value {
+    let sound = if report["sound"].is_object() {
+        "measured"
+    } else if report["sound_note"].is_string() {
+        "skipped"
+    } else {
+        "pending"
+    };
     json!({
         "rule": report["rule"],
         "mv_ready": report["mv_ready"],
         "summary": summary(report),
         "issues": report["issues"],
+        "sound": sound,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_merge_close_ranges_and_stay_bounded() {
+        // Audio every 66 kB (one video frame apart): one read.
+        let close: Vec<(u64, u64)> = (0..100).map(|i| (1000 + i * 66_000, 1000)).collect();
+        assert_eq!(plan_reads(&close), [(1000, 99 * 66_000 + 1000)]);
+        // Far apart (ProRes): one read each.
+        let far = [(0, 100), (50 << 20, 100)];
+        assert_eq!(plan_reads(&far), far);
+        // Long stretches are split.
+        let long = [(10, 80 << 20)];
+        let reads = plan_reads(&long);
+        assert_eq!(reads.len(), 3);
+        assert!(reads.iter().all(|r| r.1 <= MAX_READ));
+        assert_eq!(reads.iter().map(|r| r.1).sum::<u64>(), 80 << 20);
+        // Only the sound bytes of a read are kept.
+        let bytes: Vec<u8> = (0..100).collect();
+        let got: Vec<_> = pieces(&[(5, 10), (95, 20)], 0, &bytes).collect();
+        assert_eq!(got, [(5, &bytes[5..15]), (95, &bytes[95..100])]);
+    }
 
     #[test]
     fn summary_line() {
@@ -142,6 +377,14 @@ mod tests {
             checks(&report)["summary"],
             "H.264 High · 1920×1080 · 29.97fps · 10.2Mbps / AAC LC · 48kHz · 2ch"
         );
+        assert_eq!(checks(&report)["sound"], "pending");
+        let mut measured = report.clone();
+        measured["sound"] = json!({"integrated_lufs": -9.84, "true_peak_dbtp": 0.31});
+        assert_eq!(
+            checks(&measured)["summary"],
+            "H.264 High · 1920×1080 · 29.97fps · 10.2Mbps / AAC LC · 48kHz · 2ch · -9.8 LUFS · TP +0.3dBTP"
+        );
+        assert_eq!(checks(&measured)["sound"], "measured");
         let pcm = json!({"video": [], "audio": [{"codec_name": "pcm_s24le", "sample_rate": 44100, "channels": 2}]});
         assert_eq!(summary(&pcm), "PCM · 44.1kHz · 2ch");
     }

@@ -80,6 +80,7 @@ function VideoIssues({ checks }: { checks: VideoChecks }) {
     <div className="aq-option-note" role={checks.mv_ready ? undefined : 'alert'}>
       <strong>{checks.mv_ready ? '플랫폼에 따라 반려될 수 있어요. 원본이 있으면 바꿔 주세요.' : '이 파일은 그대로 배급할 수 없어요. 다시 내보내 올려 주세요.'}</strong>
       <ul>{shown.map(i => <li key={i.code}>{i.detail}</li>)}</ul>
+      {checks.sound === 'pending' && <p>소리(음량·클리핑·무음)는 서버가 이어서 확인해요.</p>}
     </div>
   );
 }
