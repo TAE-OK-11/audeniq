@@ -1627,7 +1627,9 @@ pub async fn principal_for(
     }
     let grant: Uuid = row.get("id");
     if row.get::<bool, _>("touch") {
-        let _ = sqlx::query("UPDATE identity.mcp_grants SET last_used_at=now() WHERE id=$1")
+        // Concurrent requests of one grant all see it stale: the first takes
+        // the row, the others skip it instead of queueing on its lock.
+        let _ = sqlx::query("UPDATE identity.mcp_grants SET last_used_at=now() WHERE id=(SELECT id FROM identity.mcp_grants WHERE id=$1 AND (last_used_at IS NULL OR last_used_at < now() - interval '1 minute') FOR UPDATE SKIP LOCKED)")
             .bind(grant)
             .execute(&s.pool)
             .await;
