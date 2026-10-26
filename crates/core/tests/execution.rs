@@ -9121,8 +9121,9 @@ async fn addon_video_completion_reports_engine_checks(pool: PgPool) {
         (Some("0:02"), Some(1280))
     );
     let checks = &v["checks"];
-    assert_eq!(checks["rule"], "mv-delivery-v1", "{v}");
+    assert_eq!(checks["rule"], "mv-delivery-v2", "{v}");
     assert_eq!(checks["mv_ready"], true);
+    assert_eq!(checks["sound"], "pending");
     assert!(
         checks["summary"]
             .as_str()
@@ -9145,6 +9146,40 @@ async fn addon_video_completion_reports_engine_checks(pool: PgPool) {
             .unwrap();
     assert_eq!(report["video"][0]["codec_name"], "h264");
     assert_eq!(report["audio"][0]["codec_name"], "aac");
+    // The sound check was queued; the worker job decodes and measures it.
+    let (kind,): (String,) =
+        sqlx::query_as("SELECT kind FROM operations.jobs WHERE idempotency_key=$1")
+            .bind(format!("addon-video-sound:{id}"))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(kind, audeniq_core::video::SOUND_JOB);
+    let store: Arc<dyn ObjectStore> = d.store.clone();
+    assert!(
+        !audeniq_core::video::measure_sound(&pool, &store, id)
+            .await
+            .unwrap()
+    );
+    let (checks,): (Value,) =
+        sqlx::query_as("SELECT video_checks FROM portal.addon_files WHERE id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(checks["sound"], "measured", "{checks}");
+    assert!(
+        checks["summary"].as_str().unwrap().contains(" LUFS · TP "),
+        "{checks}"
+    );
+    let (report,): (Value,) =
+        sqlx::query_as("SELECT video_report FROM portal.addon_files WHERE id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(report["sound"]["decode_errors"], 0, "{report}");
+    let lufs = report["sound"]["integrated_lufs"].as_f64().unwrap();
+    assert!((-40.0..0.0).contains(&lufs), "{lufs}");
 
     // Chosen in the application: the order carries the same checks.
     let options = json!({
@@ -9173,5 +9208,5 @@ async fn addon_video_completion_reports_engine_checks(pool: PgPool) {
         .iter()
         .find(|o| o["service"] == "MV_DISTRIBUTION")
         .unwrap();
-    assert_eq!(&mv["video"]["checks"], checks, "{mv}");
+    assert_eq!(mv["video"]["checks"], checks, "{mv}");
 }

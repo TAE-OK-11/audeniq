@@ -1010,6 +1010,11 @@ pub async fn video_complete(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Res
         .bind(&checks)
         .execute(&s.pool)
         .await?;
+    if report.is_some() {
+        // The sound is decoded and measured on the worker (it reads the
+        // sound track's data); the checks gain it when that job is done.
+        crate::video::enqueue_sound(&s.pool, id).await?;
+    }
     Ok(
         json!({"id": id, "status": "READY", "duration": video_clock(info.duration_ms), "width": info.width, "height": info.height, "checks": checks}),
     )

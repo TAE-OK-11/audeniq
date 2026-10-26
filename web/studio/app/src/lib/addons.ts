@@ -267,7 +267,8 @@ export const MAX_VIDEO_BYTES = 8 * 1024 ** 3;
 /** 올린 영상 — 길이(m:ss)와 화면 크기는 서버가 파일 머리에서 읽은 값 (없으면 '' · 0) */
 /** 서버 미디어 엔진(audeniq-music video probe)이 올린 영상에서 읽은 검사 — crates/core/src/video.rs */
 export interface VideoIssue { code: string; severity: 'error' | 'warning' | 'info'; detail: string }
-export interface VideoChecks { rule: string; mv_ready: boolean; summary: string; issues: VideoIssue[] }
+/** sound: 소리 디코드·음량 검사(워커) — pending 진행 중, measured 끝남, skipped 측정 안 함(이유는 issues의 SOUND_NOT_MEASURED) */
+export interface VideoChecks { rule: string; mv_ready: boolean; summary: string; issues: VideoIssue[]; sound?: 'pending' | 'measured' | 'skipped' }
 export interface UploadedVideo { id: string; duration: string; width: number; height: number; checks?: VideoChecks | null }
 
 /** 모의 모드: 서버 대신 브라우저가 영상 머리를 읽는다 */

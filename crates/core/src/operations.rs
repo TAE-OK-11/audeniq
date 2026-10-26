@@ -638,6 +638,24 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
             }
         };
     }
+    if j.kind == crate::video::SOUND_JOB {
+        // Music-video sound check: decode the sound track of a completed
+        // add-on upload and update its delivery checks.
+        let file = j
+            .payload
+            .get("file_id")
+            .and_then(Value::as_str)
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .ok_or(Error::Internal)?;
+        return match crate::video::measure_sound(pool, storage, file).await {
+            Ok(false) => succeed(pool, j).await,
+            Ok(true) => retry_or_surface(pool, j, "ADDON_VIDEO_SOUND_TECHNICAL_RETRY").await,
+            Err(e) => {
+                let short: String = format!("{e:?}").chars().take(500).collect();
+                retry_or_surface(pool, j, &format!("ADDON_VIDEO_SOUND_ERROR:{short}")).await
+            }
+        };
+    }
     if j.kind == "asset.fingerprint" {
         // Fingerprint-version backfill (`audeniq-admin fingerprint backfill`):
         // writes only the current-version fingerprint row of an asset.
