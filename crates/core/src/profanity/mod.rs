@@ -477,7 +477,7 @@ pub async fn check_texts(
     if i.texts.len() > 40 || i.texts.iter().any(|t| t.chars().count() > 20_000) {
         return Err(crate::error::Error::Invalid);
     }
-    crate::auth::membership(&mut *s.pool.acquire().await?, a, org, false).await?;
+    crate::auth::membership_read(&mut *s.pool.acquire().await?, a, org).await?;
     crate::auth::rate(&s.pool, &format!("profanity-check:{}", a.user), 120).await?;
     let flags: Vec<bool> = i.texts.iter().map(|t| contains(t, &[])).collect();
     Ok(serde_json::json!({ "flags": flags }))
