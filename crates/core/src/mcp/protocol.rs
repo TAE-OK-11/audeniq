@@ -142,7 +142,7 @@ fn tools_list(id: &Value, public_only: bool, modern: bool) -> Response {
         jsonrpc: &'static str,
         result: Listing,
     }
-    Json(Rpc {
+    let mut r = Json(Rpc {
         id,
         jsonrpc: "2.0",
         result: Listing {
@@ -152,7 +152,9 @@ fn tools_list(id: &Value, public_only: bool, modern: bool) -> Response {
             ttl_ms: modern.then_some(STATIC_TTL_MS),
         },
     })
-    .into_response()
+    .into_response();
+    r.extensions_mut().insert(crate::precompressed::Repeated);
+    r
 }
 
 fn challenge(s: &AppState, extra: &str) -> HeaderValue {
@@ -291,20 +293,33 @@ enum Endpoint {
 
 pub async fn post(State(s): State<AppState>, h: HeaderMap, body: Bytes) -> Response {
     let sse = wants_sse(&h);
-    framed(
+    let accept = accept_encoding(&h);
+    let r = framed(
         Box::pin(serve_body(s, h, body, Endpoint::Account)).await,
         sse,
     )
-    .await
+    .await;
+    crate::precompressed::apply(&accept, r).await
 }
 
 pub async fn post_public(State(s): State<AppState>, h: HeaderMap, body: Bytes) -> Response {
     let sse = wants_sse(&h);
-    framed(
+    let accept = accept_encoding(&h);
+    let r = framed(
         Box::pin(serve_body(s, h, body, Endpoint::Public)).await,
         sse,
     )
-    .await
+    .await;
+    crate::precompressed::apply(&accept, r).await
+}
+
+/// Only what [`crate::precompressed::apply`] reads.
+fn accept_encoding(h: &HeaderMap) -> HeaderMap {
+    let mut out = HeaderMap::new();
+    for v in h.get_all(header::ACCEPT_ENCODING) {
+        out.append(header::ACCEPT_ENCODING, v.clone());
+    }
+    out
 }
 
 /// Most batched messages answered in one request (2025-03-26 batches).
