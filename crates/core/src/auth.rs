@@ -214,12 +214,15 @@ pub fn bucket_hash(key: &str) -> Vec<u8> {
     }
 }
 pub async fn rate(pool: &PgPool, key: &str, limit: i32) -> Result<()> {
-    let n:i32=sqlx::query_scalar("INSERT INTO identity.auth_limits(bucket_hash,attempts) VALUES($1,1) ON CONFLICT(bucket_hash) DO UPDATE SET attempts=CASE WHEN identity.auth_limits.window_start<now()-interval '15 minutes' THEN 1 ELSE identity.auth_limits.attempts+1 END,window_start=CASE WHEN identity.auth_limits.window_start<now()-interval '15 minutes' THEN now() ELSE identity.auth_limits.window_start END RETURNING attempts")
- .bind(bucket_hash(key)).fetch_one(pool).await?;
-    if n > limit {
-        Err(Error::RateLimited)
-    } else {
-        Ok(())
+    // A bucket already over `limit` in its window is left as it is (the
+    // update's WHERE is false, nothing is returned): a client hammering a
+    // refused endpoint no longer rewrites the row on every request. The count
+    // stops at limit + 1, which every reader (`over_limit`) sees as over.
+    let n:Option<i32>=sqlx::query_scalar("INSERT INTO identity.auth_limits(bucket_hash,attempts) VALUES($1,1) ON CONFLICT(bucket_hash) DO UPDATE SET attempts=CASE WHEN identity.auth_limits.window_start<now()-interval '15 minutes' THEN 1 ELSE identity.auth_limits.attempts+1 END,window_start=CASE WHEN identity.auth_limits.window_start<now()-interval '15 minutes' THEN now() ELSE identity.auth_limits.window_start END WHERE identity.auth_limits.attempts<=$2 OR identity.auth_limits.window_start<now()-interval '15 minutes' RETURNING attempts")
+ .bind(bucket_hash(key)).bind(limit).fetch_optional(pool).await?;
+    match n {
+        Some(n) if n <= limit => Ok(()),
+        _ => Err(Error::RateLimited),
     }
 }
 /// [`rate`] for several buckets in one round trip: each is counted, and the
@@ -967,5 +970,46 @@ mod tests {
         assert!(cookie.contains("SameSite=Strict"));
         assert!(cookie.contains("; Secure"));
         assert!(!cookie.contains("Domain="));
+    }
+
+    /// Requests up to the limit pass; past it they are refused without the
+    /// row changing again, `over_limit` still sees the bucket as over, and an
+    /// expired window starts over.
+    #[sqlx::test]
+    async fn over_limit_buckets_are_not_rewritten(pool: PgPool) {
+        crate::database::MIGRATOR.run(&pool).await.unwrap();
+        init_rate_key(&"r".repeat(32));
+        let key = "test-bucket";
+        let row = || async {
+            sqlx::query_as::<_, (i32, String)>(
+                "SELECT attempts, xmin::text FROM identity.auth_limits WHERE bucket_hash=$1",
+            )
+            .bind(bucket_hash(key))
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        };
+        for _ in 0..3 {
+            rate(&pool, key, 3).await.unwrap();
+        }
+        assert!(matches!(rate(&pool, key, 3).await, Err(Error::RateLimited)));
+        let frozen = row().await;
+        assert_eq!(frozen.0, 4);
+        for _ in 0..5 {
+            assert!(matches!(rate(&pool, key, 3).await, Err(Error::RateLimited)));
+        }
+        assert_eq!(
+            row().await,
+            frozen,
+            "refused requests must not rewrite the row"
+        );
+        assert!(over_limit(&pool, key, 3).await.unwrap());
+        sqlx::query("UPDATE identity.auth_limits SET window_start=now()-interval '16 minutes' WHERE bucket_hash=$1")
+            .bind(bucket_hash(key))
+            .execute(&pool)
+            .await
+            .unwrap();
+        rate(&pool, key, 3).await.unwrap();
+        assert_eq!(row().await.0, 1);
     }
 }
