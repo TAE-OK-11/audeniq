@@ -158,9 +158,9 @@ async fn issue_resumable(
 ) -> Result<Value> {
     // Membership is checked before anything is created in the store.
     {
-        let mut tx = s.pool.begin().await?;
-        auth::membership(&mut tx, a, org, true).await?;
-        tx.rollback().await?;
+        // One autocommit statement: its FOR SHARE locks end with it, as they
+        // did at the rollback of a transaction around it.
+        auth::membership(&mut *s.pool.acquire().await?, a, org, true).await?;
     }
     // Network call outside any transaction. If the rows below fail, the
     // bucket's abort-incomplete-multipart lifecycle rule drops the upload.
