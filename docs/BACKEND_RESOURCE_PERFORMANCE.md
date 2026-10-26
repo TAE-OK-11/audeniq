@@ -304,3 +304,28 @@ RSS는 100 ms마다 `/proc`에서, CPU는 단계마다 프로세스 user+system�
 메모리 감소의 대부분은 `tools/list` 동시 요청마다 만들던 큰 `Value` 트리가 없어진 것이다.
 욕설 검사는 사용자당 15분 120회 제한 때문에 대부분 429로 측정됐다(필터 자체의 비교는 위
 「audeniq-media 도구 이식 검토와 텍스트 필터」와 `scripts/benchmark-before-after.sh`).
+
+## PostgreSQL CPU: 횟수 제한 행, 읽기 전용 권한 확인의 잠금 (2026-10-26)
+
+부하 측정에 같은 서버의 PostgreSQL CPU(postmaster 자식 프로세스 user+system, 종료한 것 포함)를
+더하고 `pg_stat_statements`로 단계별 쿼리를 봤다. 설정은 위와 같고(API 2코어, oha 2코어,
+PostgreSQL 16) 아티스트 150명, 상세 조회 단계를 더했다. main(843b7f4)과 번갈아 3회, 중앙값.
+
+- 횟수 제한(`auth::rate`): 같은 버킷으로 계속 요청하면 거부된 뒤에도 upsert가 매번 행을 고쳐
+  써서 한 번에 평균 2.2 ms가 걸렸다. 창 안에서 한도를 넘은 버킷은 `ON CONFLICT DO UPDATE ...
+  WHERE`로 그대로 두고, 반환이 없으면 거부로 본다(카운트는 limit+1에서 멈춤, `over_limit`의
+  답은 같음).
+- 읽기 전용 권한 확인: `membership`/`authorize`의 `FOR SHARE`는 권한 회수가 쓰기와 경합하지
+  않게 하려는 것인데, 읽기만 하는 요청도 같은 행에 공유 잠금을 걸어 동시 요청이 많으면
+  MultiXact로 PostgreSQL CPU를 썼다. 뒤에 쓰기가 없는 카탈로그 목록·상세와 욕설 검사만
+  `membership_read`/`authorize_read`(잠금 없음, 같은 조건)로 바꿨다. 읽기 확인 뒤에 쓰기가 있는
+  10곳을 포함한 나머지는 그대로다.
+
+| | main | + 횟수 제한 | + 읽기 잠금 제거 |
+|---|---:|---:|---:|
+| 욕설 검사(거부) PostgreSQL CPU/요청 | 415 µs | 295 µs | **226 µs** |
+| 욕설 검사 req/s (p99) | 3,780 (22 ms) | 3,770 (14 ms) | **5,000 (12 ms)** |
+| 아티스트 목록 PostgreSQL CPU/요청 | 408 µs | 401 µs | **317 µs** |
+| 아티스트 목록 req/s | 3,100 | 3,070 | **3,740** |
+
+목록 쿼리 자체는 인덱스 병합 조인으로 이미 최적(0.21 ms, 대부분 `to_jsonb` 51행)이라 그대로 뒀다.
