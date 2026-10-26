@@ -163,6 +163,33 @@ pub async fn membership(c: &mut PgConnection, a: &Actor, org: Uuid, write: bool)
     }
     Ok(role)
 }
+/// [`membership`] for a request that only reads: the same check without the
+/// shared row locks. The locks are there so a revoke cannot race a write;
+/// a read that writes nothing afterwards has nothing to protect, and many
+/// concurrent locks on the same rows cost PostgreSQL CPU (MultiXacts). Use
+/// only where nothing in the request writes after the check.
+pub async fn membership_read(c: &mut PgConnection, a: &Actor, org: Uuid) -> Result<String> {
+    sqlx::query_scalar("SELECT m.role FROM identity.memberships m JOIN identity.users u ON u.id=m.user_id WHERE m.org_id=$1 AND m.user_id=$2 AND m.status='ACTIVE' AND u.status='ACTIVE'")
+        .bind(org)
+        .bind(a.user)
+        .fetch_optional(&mut *c)
+        .await?
+        .ok_or(Error::Forbidden)
+}
+/// [`authorize`] with read access, without row locks (see [`membership_read`]).
+pub async fn authorize_read(
+    c: &mut PgConnection,
+    a: &Actor,
+    org: Uuid,
+    id: Uuid,
+    kind: &str,
+) -> Result<()> {
+    membership_read(c, a, org).await?;
+    let exists:Option<Uuid>=sqlx::query_scalar("SELECT r.id FROM identity.resources r JOIN identity.resource_acl acl ON acl.org_id=r.org_id AND acl.resource_id=r.id WHERE r.org_id=$1 AND r.id=$2 AND r.kind=$3 AND acl.principal_party_id=$4 AND acl.action='read' AND acl.revoked_at IS NULL AND acl.starts_at<=now() AND (acl.ends_at IS NULL OR acl.ends_at>now())")
+ .bind(org).bind(id).bind(kind).bind(a.party).fetch_optional(&mut *c).await?;
+    exists.ok_or(Error::Forbidden)?;
+    Ok(())
+}
 pub async fn authorize(
     c: &mut PgConnection,
     a: &Actor,
