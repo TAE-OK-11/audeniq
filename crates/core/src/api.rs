@@ -707,11 +707,17 @@ async fn list(
     Path((org, k)): Path<(Uuid, String)>,
     Query(page): Query<catalog::Page>,
     h: HeaderMap,
-) -> Result<Json<Value>> {
+) -> Result<Response> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
-    Ok(Json(
-        catalog::list(&s, &a, org, Kind::parse(&k)?, page).await?,
-    ))
+    let body = catalog::list_body(&s, &a, org, Kind::parse(&k)?, page).await?;
+    Ok((
+        [(
+            axum::http::header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        )],
+        body,
+    )
+        .into_response())
 }
 async fn detail(
     State(s): State<AppState>,
