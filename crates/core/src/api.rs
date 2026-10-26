@@ -23,8 +23,26 @@ use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tracing::Instrument;
 use uuid::Uuid;
+/// Shared by every request: each middleware layer and handler takes its own
+/// copy, so a copy is one reference count, not a clone of every field (the
+/// config's strings included).
 #[derive(Clone)]
-pub struct AppState {
+pub struct AppState(Arc<AppStateInner>);
+impl std::ops::Deref for AppState {
+    type Target = AppStateInner;
+    fn deref(&self) -> &AppStateInner {
+        &self.0
+    }
+}
+/// Setting a field before the state is shared (tests, start-up); a state
+/// already shared is copied first.
+impl std::ops::DerefMut for AppState {
+    fn deref_mut(&mut self) -> &mut AppStateInner {
+        Arc::make_mut(&mut self.0)
+    }
+}
+#[derive(Clone)]
+pub struct AppStateInner {
     pub pool: PgPool,
     pub config: Config,
     pub storage: Arc<dyn ObjectStore>,
@@ -57,7 +75,7 @@ impl AppState {
     pub async fn new(pool: PgPool, config: Config, storage: Arc<dyn ObjectStore>) -> Result<Self> {
         let service_secret_digest = auth::token_digest(&config.service_secret);
         auth::init_rate_key(&config.service_secret);
-        Ok(Self {
+        Ok(Self(Arc::new(AppStateInner {
             pool,
             config,
             storage,
@@ -72,7 +90,7 @@ impl AppState {
             staff_ops: crate::staff_ops::pool_from_env()?,
             dummy_hash: auth::password_hash(auth::random_token()).await?,
             service_secret_digest,
-        })
+        })))
     }
 }
 pub fn router(s: AppState) -> Router {
