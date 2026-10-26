@@ -18,7 +18,7 @@ export interface AddonOrder {
   quantity: number; unit_price: number; amount: number;
   status: OrderStatus; pay_method: 'SETTLEMENT' | 'CARD' | null; paid_at: string | null; refunded_at: string | null;
   provider: string | null;
-  result: { rating?: string; rating_no?: string; note?: string; links?: Record<string, string> };
+  result: { rating?: string; rating_no?: string; note?: string; links?: Record<string, string>; isrc?: string };
   resolution: string; created_at: string; updated_at: string;
   events: { status: string; note: string; by_staff: boolean; at: string }[];
 }
