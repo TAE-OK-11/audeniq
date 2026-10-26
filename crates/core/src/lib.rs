@@ -62,6 +62,7 @@ pub mod photo;
 pub mod pitching;
 pub mod platform_requests;
 pub mod portal;
+pub mod precompressed;
 pub mod preflight;
 pub mod preparation_model;
 pub mod presave;
