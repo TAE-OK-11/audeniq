@@ -1514,6 +1514,16 @@ pub fn list_json(public_only: bool) -> &'static [Value] {
     cell.get_or_init(|| build_list(public_only))
 }
 
+/// [`list_json`] serialized once, for the `tools/list` response.
+pub fn list_raw(public_only: bool) -> &'static serde_json::value::RawValue {
+    static ALL: OnceLock<Box<serde_json::value::RawValue>> = OnceLock::new();
+    static PUBLIC: OnceLock<Box<serde_json::value::RawValue>> = OnceLock::new();
+    let cell = if public_only { &PUBLIC } else { &ALL };
+    cell.get_or_init(|| {
+        serde_json::value::to_raw_value(list_json(public_only)).expect("tool listing serializes")
+    })
+}
+
 fn build_list(public_only: bool) -> Vec<Value> {
     published()
         .iter()

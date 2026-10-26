@@ -120,6 +120,41 @@ fn rpc_result(id: &Value, result: Value) -> Response {
     Json(json!({"jsonrpc": "2.0", "id": id, "result": result})).into_response()
 }
 
+/// `tools/list` with the listing serialized once ([`tools::list_raw`])
+/// instead of copied into a new `Value` tree and serialized per request.
+/// Same bytes as `rpc_result` with `cacheable(json!({"tools": ..}))`: keys
+/// in the same (sorted) order.
+fn tools_list(id: &Value, public_only: bool, modern: bool) -> Response {
+    use serde_json::value::RawValue;
+    #[derive(serde::Serialize)]
+    struct Listing {
+        #[serde(rename = "cacheScope", skip_serializing_if = "Option::is_none")]
+        cache_scope: Option<&'static str>,
+        #[serde(rename = "resultType", skip_serializing_if = "Option::is_none")]
+        result_type: Option<&'static str>,
+        tools: &'static RawValue,
+        #[serde(rename = "ttlMs", skip_serializing_if = "Option::is_none")]
+        ttl_ms: Option<u64>,
+    }
+    #[derive(serde::Serialize)]
+    struct Rpc<'a> {
+        id: &'a Value,
+        jsonrpc: &'static str,
+        result: Listing,
+    }
+    Json(Rpc {
+        id,
+        jsonrpc: "2.0",
+        result: Listing {
+            cache_scope: modern.then_some("public"),
+            result_type: modern.then_some("complete"),
+            tools: tools::list_raw(public_only),
+            ttl_ms: modern.then_some(STATIC_TTL_MS),
+        },
+    })
+    .into_response()
+}
+
 fn challenge(s: &AppState, extra: &str) -> HeaderValue {
     HeaderValue::from_str(&format!(
         "Bearer resource_metadata=\"{}\"{extra}",
@@ -592,10 +627,7 @@ async fn serve(s: AppState, h: HeaderMap, body: Bytes, endpoint: Endpoint) -> Re
             }),
         ),
         "ping" => rpc_result(&id, complete(json!({}))),
-        "tools/list" => rpc_result(
-            &id,
-            cacheable(json!({"tools": tools::list_json(endpoint == Endpoint::Public)})),
-        ),
+        "tools/list" => tools_list(&id, endpoint == Endpoint::Public, modern),
         "prompts/list" => rpc_result(&id, cacheable(json!({"prompts": prompts::list_json()}))),
         "prompts/get" => {
             let name = params.get("name").and_then(Value::as_str).unwrap_or("");
@@ -725,5 +757,40 @@ pub fn error_code(e: &Error) -> &'static str {
         }
         Error::Database(e) if crate::error::db_unavailable(e) => "DATABASE_UNAVAILABLE",
         _ => "INTERNAL_ERROR",
+    }
+}
+
+#[cfg(test)]
+mod tools_list_tests {
+    use super::*;
+
+    async fn body(r: Response) -> Vec<u8> {
+        axum::body::to_bytes(r.into_body(), usize::MAX)
+            .await
+            .unwrap()
+            .to_vec()
+    }
+
+    /// The pre-serialized listing answers byte for byte what the `Value`
+    /// path did, for both endpoints and protocol eras.
+    #[tokio::test]
+    async fn tools_list_bytes_match_the_value_path() {
+        for public_only in [true, false] {
+            for modern in [true, false] {
+                for id in [json!(1), json!("req-7"), Value::Null] {
+                    let mut v = json!({"tools": tools::list_json(public_only)});
+                    if modern {
+                        v["resultType"] = json!("complete");
+                        v["cacheScope"] = json!("public");
+                        v["ttlMs"] = json!(STATIC_TTL_MS);
+                    }
+                    assert_eq!(
+                        body(tools_list(&id, public_only, modern)).await,
+                        body(rpc_result(&id, v)).await,
+                        "public_only={public_only} modern={modern} id={id}"
+                    );
+                }
+            }
+        }
     }
 }
