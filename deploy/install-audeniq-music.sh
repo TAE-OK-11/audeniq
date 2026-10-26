@@ -2,7 +2,8 @@
 # Build the pinned AUDENIQ media engine (audeniq-music: audio probe, lossless
 # FLAC conversion, QC decode and fingerprint windows as `audeniq-music qc`;
 # image/audio metadata, QR, OCR and upload sanitization as
-# `audeniq-music photo`) and install it as DEST/bin/audeniq-music. The commit
+# `audeniq-music photo`; music-video probe and delivery checks as
+# `audeniq-music video`) and install it as DEST/bin/audeniq-music. The commit
 # lives in deploy/audeniq-music.rev so the image, CI and local runs use the
 # same engine; bumping it can change QC measurements, cover measurements and
 # sanitized bytes, so it goes together with the QC rule / fingerprint version

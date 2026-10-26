@@ -13,7 +13,7 @@ export interface AddonOrder {
   id: string; service: Service; tier: '' | MvTier;
   release_id: string; release_title: string | null;
   track_ids: string[]; tracks: { id: string; title: string }[];
-  video: { id: string; name: string; size_bytes: number } | null;
+  video: { id: string; name: string; size_bytes: number; checks?: VideoChecks | null } | null;
   title: string; detail: Record<string, unknown>;
   quantity: number; unit_price: number; amount: number;
   status: OrderStatus; pay_method: 'SETTLEMENT' | 'CARD' | null; paid_at: string | null; refunded_at: string | null;
@@ -265,7 +265,10 @@ function loadScript(src: string): Promise<void> {
 // ---------------------------------------------------------------------------
 export const MAX_VIDEO_BYTES = 8 * 1024 ** 3;
 /** 올린 영상 — 길이(m:ss)와 화면 크기는 서버가 파일 머리에서 읽은 값 (없으면 '' · 0) */
-export interface UploadedVideo { id: string; duration: string; width: number; height: number }
+/** 서버 미디어 엔진(audeniq-music video probe)이 올린 영상에서 읽은 검사 — crates/core/src/video.rs */
+export interface VideoIssue { code: string; severity: 'error' | 'warning' | 'info'; detail: string }
+export interface VideoChecks { rule: string; mv_ready: boolean; summary: string; issues: VideoIssue[] }
+export interface UploadedVideo { id: string; duration: string; width: number; height: number; checks?: VideoChecks | null }
 
 /** 모의 모드: 서버 대신 브라우저가 영상 머리를 읽는다 */
 function readVideoMeta(file: File): Promise<Omit<UploadedVideo, 'id'>> {
