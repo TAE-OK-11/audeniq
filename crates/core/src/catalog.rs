@@ -315,6 +315,89 @@ pub async fn list(s: &AppState, a: &Actor, org: Uuid, kind: Kind, page: Page) ->
     )
     .await
 }
+/// [`list`] as the response body, for the HTTP API. Rows are the JSON text
+/// PostgreSQL writes (`row_to_json`) and pass through without being parsed
+/// into a `Value` tree and written again, unless one may carry an embedded
+/// file ([`crate::upload_safety::visible_inline_files`] decides about those,
+/// on the same `Value` path as before). Releases add per-row fields and keep
+/// that path too. Same items and values; keys keep the table's column order.
+pub async fn list_body(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    kind: Kind,
+    page: Page,
+) -> Result<Vec<u8>> {
+    if matches!(kind, Kind::Release) {
+        return serde_json::to_vec(&list(s, a, org, kind, page).await?)
+            .map_err(|_| Error::Internal);
+    }
+    let limit = page.limit.unwrap_or(50);
+    if !(1..=100).contains(&limit) {
+        return Err(Error::Invalid);
+    }
+    let mut tx = s.pool.begin().await?;
+    auth::membership_read(&mut tx, a, org).await?;
+    let query = format!(
+        "SELECT row_to_json(t)::text AS body FROM {} t WHERE t.org_id=$1 AND t.archived_at IS NULL AND EXISTS(SELECT 1 FROM identity.resource_acl acl WHERE acl.org_id=t.org_id AND acl.resource_id=t.id AND acl.principal_party_id=$2 AND acl.action='read' AND acl.revoked_at IS NULL AND acl.starts_at<=now() AND (acl.ends_at IS NULL OR acl.ends_at>now())) AND ($3::uuid IS NULL OR t.id>$3) ORDER BY t.id LIMIT $4",
+        kind.table()
+    );
+    // Audited: only `kind.table()` (a fixed enum -> static table name) is
+    // interpolated; every value is a bound parameter.
+    let mut rows: Vec<String> = sqlx::query_scalar(sqlx::AssertSqlSafe(query))
+        .bind(org)
+        .bind(a.party)
+        .bind(page.after)
+        .bind(limit + 1)
+        .fetch_all(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    let has_more = rows.len() > limit as usize;
+    rows.truncate(limit as usize);
+    #[derive(Deserialize)]
+    struct Id {
+        id: Value,
+    }
+    let next_cursor = match rows.last() {
+        Some(row) if has_more => Some(
+            serde_json::from_str::<Id>(row)
+                .map_err(|_| Error::Internal)?
+                .id,
+        ),
+        _ => None,
+    };
+    // What `visible_inline_files` looks at: `signature` keys and data:/blob: strings.
+    if rows
+        .iter()
+        .any(|r| r.contains("\"signature\"") || r.contains("\"data:") || r.contains("\"blob:"))
+    {
+        let items: Vec<Value> = rows
+            .iter()
+            .map(|r| serde_json::from_str(r))
+            .collect::<serde_json::Result<_>>()
+            .map_err(|_| Error::Internal)?;
+        let v = crate::upload_safety::visible_inline_files(
+            &s.pool,
+            json!({"items":items,"limit":limit,"next_cursor":next_cursor}),
+        )
+        .await?;
+        return serde_json::to_vec(&v).map_err(|_| Error::Internal);
+    }
+    let mut out = Vec::with_capacity(rows.iter().map(|r| r.len() + 1).sum::<usize>() + 96);
+    out.extend_from_slice(b"{\"items\":[");
+    for (i, row) in rows.iter().enumerate() {
+        if i > 0 {
+            out.push(b',');
+        }
+        out.extend_from_slice(row.as_bytes());
+    }
+    out.extend_from_slice(b"],\"limit\":");
+    out.extend_from_slice(limit.to_string().as_bytes());
+    out.extend_from_slice(b",\"next_cursor\":");
+    serde_json::to_writer(&mut out, &next_cursor).map_err(|_| Error::Internal)?;
+    out.push(b'}');
+    Ok(out)
+}
 /// Per-DSP delivery job and live state of each release's latest frozen
 /// package (one batched read for any number of releases). The execution
 /// tables are org-scoped by RLS, so this authorizes `org` on the caller's
@@ -786,4 +869,99 @@ pub async fn acl(s: &AppState, a: &Actor, org: Uuid, resource: Uuid, i: AclInput
     .await?;
     tx.commit().await?;
     Ok(json!({"updated":true}))
+}
+
+#[cfg(test)]
+mod list_body_tests {
+    use super::*;
+
+    /// The pass-through body has the same items, values and cursor as
+    /// [`list`], for plain rows, across pages, and with a row that carries an
+    /// uninspected embedded image (hidden on both paths).
+    #[sqlx::test]
+    async fn list_body_matches_list(pool: sqlx::PgPool) {
+        crate::database::MIGRATOR.run(&pool).await.unwrap();
+        let config = crate::config::Config {
+            database_url: String::new(),
+            origin: "https://studio.audeniq.test".into(),
+            service_secret: "s".repeat(32),
+            secure_cookie: true,
+            bind: String::new(),
+            session_seconds: 60,
+            test_only_bypass_dsp_gate: false,
+        };
+        let s = AppState::new(
+            pool.clone(),
+            config,
+            std::sync::Arc::new(crate::storage::DisabledStore),
+        )
+        .await
+        .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let (user, org, party) = crate::auth::create_account(
+            &s,
+            &mut tx,
+            "list-body@example.test",
+            "x",
+            "test",
+            &axum::http::HeaderMap::new(),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        let a = Actor {
+            user,
+            party,
+            session_hash: Vec::new(),
+            request: Uuid::new_v4(),
+        };
+        for kind in [Kind::Artist, Kind::Label] {
+            for i in 0..5 {
+                let input: Input = serde_json::from_value(
+                    json!({"name": format!("이름 {i} name"), "party_id": party, "profile": {"n": i, "note": "따옴표 \" 와 \\ 역슬래시", "nested": {"k": [1, 2]}}}),
+                )
+                .unwrap();
+                create(&s, &a, org, kind, input).await.unwrap();
+            }
+        }
+        // A legacy row with an embedded image that was never inspected.
+        sqlx::query("UPDATE catalog.artists SET profile='{\"photo\":\"data:image/png;base64,AAAA\"}' WHERE id=(SELECT id FROM catalog.artists ORDER BY id LIMIT 1)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let page = |after: Option<Uuid>, limit: i64| Page {
+            after,
+            limit: Some(limit),
+        };
+        for kind in [Kind::Artist, Kind::Label] {
+            for limit in [2, 5, 100] {
+                let mut after = None;
+                loop {
+                    let want = list(&s, &a, org, kind, page(after, limit)).await.unwrap();
+                    let got: Value = serde_json::from_slice(
+                        &list_body(&s, &a, org, kind, page(after, limit))
+                            .await
+                            .unwrap(),
+                    )
+                    .unwrap();
+                    assert_eq!(got, want, "{} limit {limit} after {after:?}", kind.table());
+                    match want["next_cursor"].as_str() {
+                        Some(c) => after = Some(Uuid::parse_str(c).unwrap()),
+                        None => break,
+                    }
+                }
+            }
+        }
+        let artists = list(&s, &a, org, Kind::Artist, page(None, 100))
+            .await
+            .unwrap();
+        assert!(
+            artists["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| r["profile"]["photo"] == ""),
+            "the uninspected image is hidden"
+        );
+    }
 }
