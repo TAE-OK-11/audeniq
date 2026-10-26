@@ -126,3 +126,4 @@ pub mod print_stamp;
 pub mod privacy_maintenance;
 pub mod profanity;
 pub mod seal;
+pub mod video;

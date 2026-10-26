@@ -354,6 +354,7 @@ jobs:
         run: |
           docker compose run --rm --no-deps --entrypoint audeniq-music worker qc capabilities
           docker compose run --rm --no-deps --entrypoint audeniq-music worker photo --version
+          docker compose run --rm --no-deps --entrypoint audeniq-music api video capabilities
       - name: Runtime logs
         if: always()
         run: |

@@ -148,7 +148,7 @@ const ORDER_JSON: &str = "jsonb_build_object('id',o.id,'service',o.service,'tier
     'release_title',(SELECT r.title FROM catalog.releases r WHERE r.id=o.release_id),'track_ids',o.track_ids,
     'tracks',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',t.id,'title',t.title) ORDER BY t.disc_number,t.track_number)
                        FROM catalog.tracks t WHERE t.id = ANY(o.track_ids)),'[]'::jsonb),
-    'video',(SELECT jsonb_build_object('id',f.id,'name',f.name,'size_bytes',f.size_bytes) FROM portal.addon_files f
+    'video',(SELECT jsonb_build_object('id',f.id,'name',f.name,'size_bytes',f.size_bytes,'checks',f.video_checks) FROM portal.addon_files f
               WHERE f.org_id=o.org_id AND f.id::text = o.detail->>'video_file'),
     'title',o.title,'detail',o.detail,'quantity',o.quantity,'unit_price',o.unit_price,'amount',o.amount,
     'status',o.status,'pay_method',o.pay_method,'paid_at',o.paid_at,'refunded_at',o.refunded_at,
@@ -962,7 +962,9 @@ pub async fn video_part_urls(
 }
 
 /// Every part stored at its size → the object is assembled, its size and
-/// container (MP4/MOV `ftyp` box) checked; anything else is removed.
+/// container (MP4/MOV `ftyp` box) checked; anything else is removed. The
+/// media engine then reports codecs, picture, sound and delivery issues
+/// ([`crate::video`]), shown to the artist and staff.
 pub async fn video_complete(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
     let v = open_video(s, a, org, id).await?;
     if s.storage.head(&v.key).await?.is_none() {
@@ -983,12 +985,12 @@ pub async fn video_complete(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Res
     }
     let meta = s.storage.head(&v.key).await?.ok_or(Error::Conflict)?;
     let head = s.storage.read_prefix(&v.key, 12).await?;
-    let info = if meta.size == v.size && is_video(&head) {
-        crate::mp4::probe(s.storage.as_ref(), &v.key, meta.size as u64).await?
+    let inspected = if meta.size == v.size && is_video(&head) {
+        crate::video::inspect(s.storage.as_ref(), &v.key, meta.size as u64).await?
     } else {
         None
     };
-    let Some(info) = info else {
+    let Some(crate::video::Inspection { info, report }) = inspected else {
         let _ = s.storage.delete(&v.key).await;
         sqlx::query("UPDATE portal.addon_files SET status='FAILED' WHERE id=$1")
             .bind(id)
@@ -997,15 +999,24 @@ pub async fn video_complete(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Res
         return Err(Error::PolicyGate("ADDON_VIDEO_INVALID"));
     };
     let positive = |n: i64| (n > 0).then_some(n);
-    sqlx::query("UPDATE portal.addon_files SET status='READY', completed_at=now(), duration_ms=$2, width=$3, height=$4 WHERE id=$1 AND status='UPLOADING'")
+    // Not a gate: staff decide on delivery; the artist sees the issues now.
+    let checks = report.as_ref().map(crate::video::checks);
+    sqlx::query("UPDATE portal.addon_files SET status='READY', completed_at=now(), duration_ms=$2, width=$3, height=$4, video_report=$5, video_checks=$6 WHERE id=$1 AND status='UPLOADING'")
         .bind(id)
         .bind(positive(info.duration_ms))
         .bind(positive(i64::from(info.width)).map(|n| n as i32))
         .bind(positive(i64::from(info.height)).map(|n| n as i32))
+        .bind(&report)
+        .bind(&checks)
         .execute(&s.pool)
         .await?;
+    if report.is_some() {
+        // The sound is decoded and measured on the worker (it reads the
+        // sound track's data); the checks gain it when that job is done.
+        crate::video::enqueue_sound(&s.pool, id).await?;
+    }
     Ok(
-        json!({"id": id, "status": "READY", "duration": video_clock(info.duration_ms), "width": info.width, "height": info.height}),
+        json!({"id": id, "status": "READY", "duration": video_clock(info.duration_ms), "width": info.width, "height": info.height, "checks": checks}),
     )
 }
 

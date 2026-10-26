@@ -27,7 +27,7 @@ Current configuration examples are not evidence of an established Tunnel, VPC Se
 
 `main`에 백엔드 변경이 푸시되면 **Backend image** 워크플로가 `deploy/Dockerfile`로 이미지를 만들어 GHCR에 올린다. 운영 프로필은 `CARGO_PROFILE=release`(`Cargo.toml` `[profile.release]`: fat LTO, opt-level 3, 코드젠 1)이다. 공용 이미지는 **Linux x86-64와 ARM64**를 함께 제공하며 Docker가 서버에 맞는 아키텍처를 선택한다. CPU 최적화 이미지는 별도 태그로 제공한다. Rust와 C/C++ 의존성에 같은 CPU 기준선을 적용하고 `/usr/local/share/audeniq/target-cpu`·`target-arch`에 기록한다. `deploy.sh`는 AUDENIQ 바이너리를 실행하기 전에 아키텍처와 CPU를 확인한다.
 
-- 이미지: `ghcr.io/tae-ok-11/audeniq` — `audeniq-api`, `audeniq-worker`, `audeniq-migrate`, `audeniq-admin` + `audeniq-music`(자체 미디어 엔진: 오디오 `qc`, 이미지·PDF `photo`, `deploy/audeniq-music.rev` 고정 커밋), UID 10001. 런타임 이미지에 FFmpeg는 없다.
+- 이미지: `ghcr.io/tae-ok-11/audeniq` — `audeniq-api`, `audeniq-worker`, `audeniq-migrate`, `audeniq-admin` + `audeniq-music`(자체 미디어 엔진: 오디오 `qc`, 이미지·PDF `photo`, 뮤직비디오 분석 `video`, `deploy/audeniq-music.rev` 고정 커밋), UID 10001. 런타임 이미지에 FFmpeg는 없다.
 - 공용 태그: `sha-<커밋 전체 해시>`, `main`, `latest` — `linux/amd64` (`x86-64`) + `linux/arm64` (`generic`, ARMv8-A).
 - CPU 최적화 태그: 위 태그 뒤에 `-x86-64-v3`(AMD/Intel AVX2 서버, Oracle Cloud AMD E 시리즈 포함), `-graviton4`(ARM64 `neoverse-v2`, AWS Graviton4), `-ampere-a4`(ARM64 `ampere1a`, Oracle Cloud A4·AmpereOne M), `-ampere-a1`(ARM64 `neoverse-n1`, Oracle Cloud Ampere A1·AWS Graviton2 이상)을 붙인다. CircleCI 운영 배포는 컨텍스트 변수 `BACKEND_CPU_VARIANT`로 고른다. 그 밖의 ARM 서버는 공용 태그를 사용한다. Oracle Cloud 전체 설정은 [ORACLE_CLOUD.md](ORACLE_CLOUD.md).
 - 배포에는 항상 **digest**(`@sha256:…`)를 쓴다. 공용 manifest digest도 두 아키텍처를 유지한다. 실행 요약(Summary)에 태그와 선택한 배포 digest가 나온다.
