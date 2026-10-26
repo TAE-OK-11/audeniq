@@ -17,9 +17,6 @@ import { ago } from '../labels';
 import { Badge, EmptyState, ErrorBox, NoDuty, PageHeader, SkeletonList, DELIVERY_TABS, SubTabs, useStaff } from '../ui';
 
 type StaffOrder = AddonOrder & { org_name: string };
-
-/** DDEX ERN 3.8.2로 뮤직비디오를 받는 플랫폼 (국내 플랫폼은 파트너 규격이라 ERN이 없다) */
-const ERN_DSPS: [string, string][] = [['youtube', 'YouTube'], ['apple', 'Apple Music'], ['amazon', 'Amazon Music'], ['tidal', 'TIDAL']];
 const OPEN = ['SUBMITTED', 'IN_PROGRESS', 'DELIVERED'];
 const PG_LABEL: Record<string, string> = { toss: '토스페이먼츠', portone: '포트원', payple: '페이플' };
 
@@ -71,25 +68,12 @@ function OrderCard({ o, ok, onDone, toast }: { o: StaffOrder; ok: boolean; onDon
   const [rating, setRating] = useState(o.result.rating ?? '');
   const [ratingNo, setRatingNo] = useState(o.result.rating_no ?? '');
   const [links, setLinks] = useState<Record<string, string>>(o.result.links ?? {});
-  const [isrc, setIsrc] = useState(o.result.isrc ?? '');
-  const [ernDsp, setErnDsp] = useState<string>(ERN_DSPS[0][0]);
   const [busy, setBusy] = useState(false);
   const [lyricsOpen, setLyricsOpen] = useState(false);
   const d = o.detail as Record<string, string | string[]>;
   const open = OPEN.includes(o.status);
   const mv = o.service === 'MV_DISTRIBUTION';
   const platforms = Array.isArray(d.platforms) ? d.platforms : [];
-
-  // 해외 플랫폼용 뮤직비디오 DDEX ERN(VideoSingle) — 서버가 XSD로 확인한 뒤 내려준다
-  const downloadErn = async () => {
-    try {
-      const r = await req<{ xml: string; file_name: string }>(`/api/staff/addons/${o.id}/ern`, { method: 'POST', body: { dsp: ernDsp } });
-      const url = URL.createObjectURL(new Blob([r.xml], { type: 'application/xml' }));
-      const a = document.createElement('a');
-      a.href = url; a.download = r.file_name; a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) { toast(errorMessage(e, 'ERN을 만들지 못했어요.'), 'error'); }
-  };
 
   // 올린 영상은 10분짜리 내려받기 링크로 (공개 주소가 없다)
   const download = async () => {
@@ -104,7 +88,7 @@ function OrderCard({ o, ok, onDone, toast }: { o: StaffOrder; ok: boolean; onDon
     }
     setBusy(true);
     try {
-      const result = mv ? { rating, rating_no: ratingNo, isrc, links: Object.fromEntries(Object.entries(links).filter(([, u]) => u.trim())) } : undefined;
+      const result = mv ? { rating, rating_no: ratingNo, links: Object.fromEntries(Object.entries(links).filter(([, u]) => u.trim())) } : undefined;
       await req(`/api/staff/addons/${o.id}/status`, { method: 'POST', body: { status, note, ...(result ? { result } : {}) } });
       toast(done, 'success'); setNote(''); onDone();
     } catch (e) { toast(errorMessage(e, '처리하지 못했어요.'), 'error'); } finally { setBusy(false); }
@@ -177,21 +161,6 @@ function OrderCard({ o, ok, onDone, toast }: { o: StaffOrder; ok: boolean; onDon
                 <input id={`ad-rno-${o.id}`} className="ui-input" maxLength={500} value={ratingNo} onChange={e => setRatingNo(e.target.value)} />
               </div>
             </>
-          )}
-          <div className="ui-field">
-            <label htmlFor={`ad-isrc-${o.id}`}>뮤직비디오 ISRC</label>
-            <input id={`ad-isrc-${o.id}`} className="ui-input" maxLength={15} placeholder="KR-A40-26-00001" value={isrc} onChange={e => setIsrc(e.target.value)} />
-          </div>
-          {o.video && (
-            <div className="ui-field">
-              <label htmlFor={`ad-ern-${o.id}`}>해외 플랫폼 DDEX ERN</label>
-              <span style={{ display: 'flex', gap: 8 }}>
-                <select id={`ad-ern-${o.id}`} className="ui-select" value={ernDsp} onChange={e => setErnDsp(e.target.value)}>
-                  {ERN_DSPS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
-                <button type="button" className="ui-btn is-soft is-sm" disabled={!o.result.isrc} title={o.result.isrc ? undefined : 'ISRC를 저장한 뒤에 만들 수 있어요'} onClick={() => void downloadErn()}>내려받기</button>
-              </span>
-            </div>
           )}
           {platforms.map(p => (
             <div key={p} className="ui-field">
