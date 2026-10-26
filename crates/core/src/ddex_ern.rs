@@ -236,7 +236,7 @@ fn normalize_nfc(prepared: &PreparedRelease) -> Cow<'_, PreparedRelease> {
     Cow::Owned(out)
 }
 
-pub(crate) fn attr(name: &str, value: &str) -> String {
+fn attr(name: &str, value: &str) -> String {
     let mut out = String::with_capacity(name.len() + value.len() + 4);
     out.push(' ');
     out.push_str(name);
@@ -246,11 +246,11 @@ pub(crate) fn attr(name: &str, value: &str) -> String {
     out
 }
 
-pub(crate) fn required(s: &str) -> bool {
+fn required(s: &str) -> bool {
     !s.trim().is_empty() && s.chars().all(crate::ern::xml_char)
 }
 
-pub(crate) fn validate_config(c: &DdexErnConfig) -> Result<()> {
+fn validate_config(c: &DdexErnConfig) -> Result<()> {
     if !required(&c.message_id)
         || !required(&c.created_at)
         || !required(&c.sender_name)
@@ -322,7 +322,7 @@ pub fn image_file_name(upc: &str, content_type: &str) -> String {
     format!("{upc}.{ext}")
 }
 
-pub(crate) fn message_header(out: &mut String, c: &DdexErnConfig) {
+fn message_header(out: &mut String, c: &DdexErnConfig) {
     // XSD order: MessageThreadId?, MessageId, MessageFileName?,
     // MessageSender, SentOnBehalfOf?, MessageRecipient,
     // MessageCreatedDateTime, MessageAuditTrail?, Comment?,
@@ -644,7 +644,7 @@ fn release_type_ddex(release_type: &str) -> &'static str {
 
 /// XSD Artist: PartyName+, PartyId* — the artist's id at the recipient
 /// (proprietary, in the recipient's DPID namespace).
-pub(crate) fn artist_party_id(out: &mut String, artist_id: Option<(&str, &str)>) {
+fn artist_party_id(out: &mut String, artist_id: Option<(&str, &str)>) {
     if let Some((id, dpid)) = artist_id {
         out.push_str("<PartyId");
         out.push_str(&attr("Namespace", &format!("DPID:{dpid}")));
@@ -750,7 +750,7 @@ pub struct DealTiming<'a> {
     pub rights_end: Option<chrono::NaiveDate>,
 }
 
-pub(crate) fn deal_list(
+fn deal_list(
     out: &mut String,
     c: &DdexErnConfig,
     territories: &crate::territory::Territories,

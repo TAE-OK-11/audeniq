@@ -27,7 +27,6 @@ pub mod database;
 pub mod ddex_ern;
 pub mod ddex_preset;
 pub mod ddex_validate;
-pub mod ddex_video;
 pub mod ddex_xsd;
 pub mod delivery_staging;
 pub mod distribution;

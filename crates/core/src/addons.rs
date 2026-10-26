@@ -1034,157 +1034,6 @@ pub fn is_video(head: &[u8]) -> bool {
     head.len() >= 8 && &head[4..8] == b"ftyp"
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct StaffErn {
-    /// DSP registry slug (`youtube`, `apple`, …); must ingest DDEX ERN 3.8.2.
-    pub dsp: String,
-}
-
-/// The music video's DDEX ERN 3.8.2 message for one DSP (staff): a
-/// `VideoSingle` with the MV ISRC staff entered (`result.isrc`), linked to
-/// the audio release, technical details from the engine's report of the
-/// uploaded file. Validated against the XSD before it is returned.
-pub async fn staff_ern(s: &AppState, h: &HeaderMap, id: Uuid, i: StaffErn) -> Result<Value> {
-    use crate::ddex_video::{PreparedVideo, VideoTech, generate_ddex_ern_382_video};
-    let st = staff::staff(s, h, false).await?;
-    staff::require(&st, Duty::Delivery)?;
-    let dsp = crate::dsp_registry::Dsp::from_slug(&i.dsp)
-        .ok_or(Error::InvalidCode("ADDON_MV_DSP_UNKNOWN"))?;
-    let spec = dsp.spec();
-    if spec.ern_version != "3.8.2" {
-        return Err(Error::PolicyGate("ADDON_MV_DSP_NOT_DDEX"));
-    }
-    let mut tx = s.pool.begin().await?;
-    staff::staff_scope(&mut tx).await?;
-    type Row = (
-        Uuid,
-        Option<Uuid>,
-        Value,
-        Value,
-        Option<Value>,
-        Option<i64>,
-        Option<String>,
-        String,
-        Option<String>,
-    );
-    let row: Option<Row> = sqlx::query_as(
-        "SELECT o.org_id, o.release_id, o.detail, o.result, f.video_report, f.duration_ms, f.content_type,
-                org.name, org.ddex_sender_dpid
-           FROM portal.addon_orders o
-           JOIN identity.orgs org ON org.id=o.org_id
-           LEFT JOIN portal.addon_files f ON f.org_id=o.org_id AND f.id::text = o.detail->>'video_file' AND f.status='READY'
-          WHERE o.id=$1 AND o.service='MV_DISTRIBUTION'",
-    )
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await?;
-    let (org, release, detail, result, report, duration_ms, content_type, org_name, org_dpid) =
-        row.ok_or(Error::NotFound)?;
-    let release = release.ok_or(Error::PolicyGate("ADDON_MV_RELEASE_REQUIRED"))?;
-    let isrc = result["isrc"]
-        .as_str()
-        .filter(|v| !v.is_empty())
-        .ok_or(Error::PolicyGate("ADDON_MV_ISRC_REQUIRED"))?
-        .to_owned();
-    let report = report.ok_or(Error::PolicyGate("ADDON_MV_VIDEO_NOT_CHECKED"))?;
-    let tech =
-        VideoTech::from_report(&report).ok_or(Error::PolicyGate("ADDON_MV_VIDEO_NOT_CHECKED"))?;
-    let canonical: Option<(Uuid, Value)> = sqlx::query_as(
-        "SELECT id, body FROM distribution.canonical_releases WHERE org_id=$1 AND release_id=$2 ORDER BY created_at DESC LIMIT 1",
-    )
-    .bind(org)
-    .bind(release)
-    .fetch_optional(&mut *tx)
-    .await?;
-    let recipient: Option<(String, Option<String>)> = sqlx::query_as(
-        "SELECT display_name, ddex_recipient_dpid FROM execution.adapter_profiles WHERE dsp_id=$1",
-    )
-    .bind(dsp.uuid())
-    .fetch_optional(&mut *tx)
-    .await?;
-    tx.rollback().await?;
-    let (canonical_id, canonical) =
-        canonical.ok_or(Error::PolicyGate("ADDON_MV_RELEASE_NOT_PREPARED"))?;
-    let canonical: crate::distribution::CanonicalRelease =
-        serde_json::from_value(canonical).map_err(|_| Error::Internal)?;
-    let prepared = crate::preparation_model::PreparedRelease::from_canonical(
-        &s.pool,
-        canonical_id,
-        &canonical,
-    )
-    .await?;
-    let (sender_name, sender_dpid) =
-        crate::ddex_preset::message_sender(&org_name, org_dpid.as_deref())
-            .ok_or(Error::PolicyGate("DDEX_SENDER_DPID_MISSING"))?;
-    let (recipient_name, recipient_dpid) = match recipient {
-        Some((name, Some(dpid))) => (name, dpid),
-        _ => return Err(Error::PolicyGate("ADDON_MV_RECIPIENT_DPID_MISSING")),
-    };
-    let text = |k: &str| {
-        detail[k]
-            .as_str()
-            .map(str::trim)
-            .filter(|v| !v.is_empty())
-            .map(str::to_owned)
-    };
-    let release_date =
-        text("release_date").and_then(|d| chrono::NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok());
-    let duration_secs = report["video"][0]["duration"]
-        .as_f64()
-        .or(duration_ms.map(|ms| ms as f64 / 1000.0))
-        .unwrap_or(0.0);
-    let ext = if content_type.as_deref() == Some("video/quicktime") {
-        "mov"
-    } else {
-        "mp4"
-    };
-    let file_name = format!("{isrc}.{ext}");
-    let video = PreparedVideo {
-        release: &prepared,
-        isrc: isrc.clone(),
-        title: text("mv_title").unwrap_or_default(),
-        director: text("director"),
-        synopsis: text("synopsis"),
-        // Rated before the order (BASIC) or by the review staff filed.
-        rating: result["rating"]
-            .as_str()
-            .filter(|r| !r.is_empty())
-            .map(str::to_owned)
-            .or_else(|| text("rating")),
-        release_date,
-        duration_secs,
-        tech,
-        file_name: file_name.clone(),
-    };
-    let date = release_date.unwrap_or(prepared.release_date);
-    let message_id = format!("AUDENIQ-MV-{}-{}", id.simple(), spec.code.replace('-', ""));
-    let config = crate::ddex_ern::DdexErnConfig {
-        deal: spec.deal,
-        message_id: message_id.clone(),
-        message_thread_id: None,
-        message_sub_type: crate::ddex_ern::MessageSubType::Initial,
-        created_at: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
-        sender_name,
-        sender_party_id: Some(sender_dpid),
-        sent_on_behalf_of: None,
-        recipient_name,
-        recipient_party_id: Some(recipient_dpid),
-        deal_start_date: date.format("%Y-%m-%d").to_string(),
-        takedown_date: None,
-        artist_party_id: prepared.artist_platform_ids.get(spec.slug).cloned(),
-    };
-    let xml = generate_ddex_ern_382_video(&video, &config)?;
-    let xml = crate::ddex_xsd::validate_ern_382_xml_blocking(xml).await?;
-    Ok(json!({
-        "message_id": message_id,
-        "dsp": spec.slug,
-        "file_name": format!("{isrc}_{}.xml", spec.slug),
-        "video_file_name": file_name,
-        "xml": xml,
-    }))
-}
-
 /// A ten-minute download link to the order's video, for staff.
 pub async fn staff_video(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<Value> {
     let st = staff::staff(s, h, false).await?;
@@ -1344,25 +1193,6 @@ fn staff_result(v: &Value) -> Result<Value> {
                     return Err(invalid());
                 }
                 out.insert(k.clone(), json!(r));
-            }
-            "isrc" => {
-                // The music video's own ISRC (staff register it); needed
-                // for its DDEX message.
-                let t = val
-                    .as_str()
-                    .unwrap_or("")
-                    .trim()
-                    .to_ascii_uppercase()
-                    .replace('-', "");
-                let b = t.as_bytes();
-                let ok = b.len() == 12
-                    && b[..2].iter().all(u8::is_ascii_uppercase)
-                    && b[2..5].iter().all(u8::is_ascii_alphanumeric)
-                    && b[5..].iter().all(u8::is_ascii_digit);
-                if !t.is_empty() && !ok {
-                    return Err(Error::InvalidCode("ADDON_MV_ISRC_INVALID"));
-                }
-                out.insert(k.clone(), json!(t));
             }
             "rating_no" | "note" => {
                 let t = val.as_str().unwrap_or("").trim();
@@ -1675,15 +1505,6 @@ async fn h_staff_put_lyrics(
 ) -> Result<Json<Value>> {
     Ok(Json(staff_put_lyrics(&s, &h, id, track, i).await?))
 }
-async fn h_staff_ern(
-    State(s): State<AppState>,
-    Path(id): Path<Uuid>,
-    h: HeaderMap,
-    Json(i): Json<StaffErn>,
-) -> Result<Json<Value>> {
-    Ok(Json(staff_ern(&s, &h, id, i).await?))
-}
-
 async fn h_staff_video(
     State(s): State<AppState>,
     Path(id): Path<Uuid>,
@@ -1731,7 +1552,6 @@ pub fn routes() -> Router<AppState> {
             put(h_staff_put_lyrics),
         )
         .route("/api/staff/addons/{id}/video", get(h_staff_video))
-        .route("/api/staff/addons/{id}/ern", post(h_staff_ern))
 }
 
 #[cfg(test)]
