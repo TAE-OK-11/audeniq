@@ -272,7 +272,7 @@ pub async fn list(s: &AppState, a: &Actor, org: Uuid, kind: Kind, page: Page) ->
         return Err(Error::Invalid);
     }
     let mut tx = s.pool.begin().await?;
-    auth::membership(&mut tx, a, org, false).await?;
+    auth::membership_read(&mut tx, a, org).await?;
     let query = format!(
         "SELECT to_jsonb(t) AS body FROM {} t WHERE t.org_id=$1 AND t.archived_at IS NULL AND EXISTS(SELECT 1 FROM identity.resource_acl acl WHERE acl.org_id=t.org_id AND acl.resource_id=t.id AND acl.principal_party_id=$2 AND acl.action='read' AND acl.revoked_at IS NULL AND acl.starts_at<=now() AND (acl.ends_at IS NULL OR acl.ends_at>now())) AND ($3::uuid IS NULL OR t.id>$3) ORDER BY t.id LIMIT $4",
         kind.table()
@@ -393,7 +393,7 @@ pub(crate) async fn delivery_axes(
 }
 pub async fn get(s: &AppState, a: &Actor, org: Uuid, kind: Kind, id: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
-    auth::authorize(&mut tx, a, org, id, kind.resource(), false).await?;
+    auth::authorize_read(&mut tx, a, org, id, kind.resource()).await?;
     let q = format!(
         "SELECT to_jsonb(t) FROM {} t WHERE org_id=$1 AND id=$2 AND archived_at IS NULL",
         kind.table()
