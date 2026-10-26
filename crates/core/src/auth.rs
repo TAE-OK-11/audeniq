@@ -241,11 +241,13 @@ pub fn bucket_hash(key: &str) -> Vec<u8> {
     }
 }
 pub async fn rate(pool: &PgPool, key: &str, limit: i32) -> Result<()> {
-    // A bucket already over `limit` in its window is left as it is (the
-    // update's WHERE is false, nothing is returned): a client hammering a
-    // refused endpoint no longer rewrites the row on every request. The count
-    // stops at limit + 1, which every reader (`over_limit`) sees as over.
-    let n:Option<i32>=sqlx::query_scalar("INSERT INTO identity.auth_limits(bucket_hash,attempts) VALUES($1,1) ON CONFLICT(bucket_hash) DO UPDATE SET attempts=CASE WHEN identity.auth_limits.window_start<now()-interval '15 minutes' THEN 1 ELSE identity.auth_limits.attempts+1 END,window_start=CASE WHEN identity.auth_limits.window_start<now()-interval '15 minutes' THEN now() ELSE identity.auth_limits.window_start END WHERE identity.auth_limits.attempts<=$2 OR identity.auth_limits.window_start<now()-interval '15 minutes' RETURNING attempts")
+    // A bucket already over `limit` in its window is left as it is: a plain
+    // read finds it over and nothing is inserted, so a client hammering a
+    // refused endpoint neither rewrites the row nor queues on its row lock
+    // (ON CONFLICT DO UPDATE locks the row even when its WHERE is false). The
+    // count stops at limit + 1, which every reader (`over_limit`) sees as
+    // over; the update's WHERE still holds it there when that read raced.
+    let n:Option<i32>=sqlx::query_scalar("WITH over AS (SELECT 1 FROM identity.auth_limits WHERE bucket_hash=$1 AND attempts>$2 AND window_start>=now()-interval '15 minutes') INSERT INTO identity.auth_limits(bucket_hash,attempts) SELECT $1,1 WHERE NOT EXISTS (SELECT 1 FROM over) ON CONFLICT(bucket_hash) DO UPDATE SET attempts=CASE WHEN identity.auth_limits.window_start<now()-interval '15 minutes' THEN 1 ELSE identity.auth_limits.attempts+1 END,window_start=CASE WHEN identity.auth_limits.window_start<now()-interval '15 minutes' THEN now() ELSE identity.auth_limits.window_start END WHERE identity.auth_limits.attempts<=$2 OR identity.auth_limits.window_start<now()-interval '15 minutes' RETURNING attempts")
  .bind(bucket_hash(key)).bind(limit).fetch_optional(pool).await?;
     match n {
         Some(n) if n <= limit => Ok(()),
@@ -253,20 +255,23 @@ pub async fn rate(pool: &PgPool, key: &str, limit: i32) -> Result<()> {
     }
 }
 /// [`rate`] for several buckets in one round trip: each is counted, and the
-/// call is refused when any of them is over its limit.
+/// call is refused when any of them is over its limit. When one already was
+/// (as [`rate`], a plain read), nothing is counted or locked.
 pub async fn rate_all(pool: &PgPool, buckets: &[(&str, i32)]) -> Result<()> {
     if let [(key, limit)] = buckets {
         return rate(pool, key, *limit).await;
     }
     let hashes: Vec<Vec<u8>> = buckets.iter().map(|(k, _)| bucket_hash(k)).collect();
-    let rows: Vec<(Vec<u8>, i32)> = sqlx::query_as("INSERT INTO identity.auth_limits(bucket_hash,attempts) SELECT h,1 FROM unnest($1::bytea[]) AS h ON CONFLICT(bucket_hash) DO UPDATE SET attempts=CASE WHEN identity.auth_limits.window_start<now()-interval '15 minutes' THEN 1 ELSE identity.auth_limits.attempts+1 END,window_start=CASE WHEN identity.auth_limits.window_start<now()-interval '15 minutes' THEN now() ELSE identity.auth_limits.window_start END RETURNING bucket_hash,attempts")
-        .bind(&hashes).fetch_all(pool).await?;
-    let over = rows.iter().any(|(h, n)| {
-        hashes
-            .iter()
-            .zip(buckets)
-            .any(|(want, (_, limit))| want == h && n > limit)
-    });
+    let limits: Vec<i32> = buckets.iter().map(|(_, l)| *l).collect();
+    let rows: Vec<(Vec<u8>, i32)> = sqlx::query_as("WITH b AS (SELECT * FROM unnest($1::bytea[],$2::int[]) AS b(h,lim)) INSERT INTO identity.auth_limits(bucket_hash,attempts) SELECT h,1 FROM b WHERE NOT EXISTS (SELECT 1 FROM identity.auth_limits a JOIN b o ON a.bucket_hash=o.h WHERE a.attempts>o.lim AND a.window_start>=now()-interval '15 minutes') ON CONFLICT(bucket_hash) DO UPDATE SET attempts=CASE WHEN identity.auth_limits.window_start<now()-interval '15 minutes' THEN 1 ELSE identity.auth_limits.attempts+1 END,window_start=CASE WHEN identity.auth_limits.window_start<now()-interval '15 minutes' THEN now() ELSE identity.auth_limits.window_start END RETURNING bucket_hash,attempts")
+        .bind(&hashes).bind(&limits).fetch_all(pool).await?;
+    let over = rows.len() < hashes.len()
+        || rows.iter().any(|(h, n)| {
+            hashes
+                .iter()
+                .zip(buckets)
+                .any(|(want, (_, limit))| want == h && n > limit)
+        });
     if over {
         Err(Error::RateLimited)
     } else {
@@ -1031,6 +1036,13 @@ mod tests {
             "refused requests must not rewrite the row"
         );
         assert!(over_limit(&pool, key, 3).await.unwrap());
+        // Several buckets: one already over refuses without counting the rest.
+        assert!(matches!(
+            rate_all(&pool, &[(key, 3), ("test-other", 10)]).await,
+            Err(Error::RateLimited)
+        ));
+        assert_eq!(row().await, frozen);
+        assert!(!over_limit(&pool, "test-other", 1).await.unwrap());
         sqlx::query("UPDATE identity.auth_limits SET window_start=now()-interval '16 minutes' WHERE bucket_hash=$1")
             .bind(bucket_hash(key))
             .execute(&pool)
@@ -1038,5 +1050,10 @@ mod tests {
             .unwrap();
         rate(&pool, key, 3).await.unwrap();
         assert_eq!(row().await.0, 1);
+        rate_all(&pool, &[(key, 3), ("test-other", 10)])
+            .await
+            .unwrap();
+        assert_eq!(row().await.0, 2);
+        assert!(over_limit(&pool, "test-other", 1).await.unwrap());
     }
 }
