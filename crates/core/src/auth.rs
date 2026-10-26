@@ -176,19 +176,39 @@ pub async fn membership_read(c: &mut PgConnection, a: &Actor, org: Uuid) -> Resu
         .await?
         .ok_or(Error::Forbidden)
 }
-/// [`authorize`] with read access, without row locks (see [`membership_read`]).
-pub async fn authorize_read(
+/// [`authorize`] with read access, without row locks (see
+/// [`membership_read`]), and the row it guards in one round trip: `row_sql` is a
+/// scalar subquery over `$1` (org) and `$2` (id) that yields the row's JSON.
+/// Forbidden when the membership or read grant is missing (before the row is
+/// looked at, as an authorize then a read would answer), `None` when
+/// the row does not exist.
+pub async fn authorize_read_row(
     c: &mut PgConnection,
     a: &Actor,
     org: Uuid,
     id: Uuid,
     kind: &str,
-) -> Result<()> {
-    membership_read(c, a, org).await?;
-    let exists:Option<Uuid>=sqlx::query_scalar("SELECT r.id FROM identity.resources r JOIN identity.resource_acl acl ON acl.org_id=r.org_id AND acl.resource_id=r.id WHERE r.org_id=$1 AND r.id=$2 AND r.kind=$3 AND acl.principal_party_id=$4 AND acl.action='read' AND acl.revoked_at IS NULL AND acl.starts_at<=now() AND (acl.ends_at IS NULL OR acl.ends_at>now())")
- .bind(org).bind(id).bind(kind).bind(a.party).fetch_optional(&mut *c).await?;
-    exists.ok_or(Error::Forbidden)?;
-    Ok(())
+    row_sql: &str,
+) -> Result<Option<Value>> {
+    let q = format!(
+        "SELECT EXISTS(SELECT 1 FROM identity.memberships m JOIN identity.users u ON u.id=m.user_id WHERE m.org_id=$1 AND m.user_id=$3 AND m.status='ACTIVE' AND u.status='ACTIVE'),
+                EXISTS(SELECT 1 FROM identity.resources r JOIN identity.resource_acl acl ON acl.org_id=r.org_id AND acl.resource_id=r.id WHERE r.org_id=$1 AND r.id=$2 AND r.kind=$4 AND acl.principal_party_id=$5 AND acl.action='read' AND acl.revoked_at IS NULL AND acl.starts_at<=now() AND (acl.ends_at IS NULL OR acl.ends_at>now())),
+                ({row_sql})"
+    );
+    // Audited: `row_sql` is a static query of the caller; values are bound.
+    let (member, allowed, row): (bool, bool, Option<Value>) =
+        sqlx::query_as(sqlx::AssertSqlSafe(q))
+            .bind(org)
+            .bind(id)
+            .bind(a.user)
+            .bind(kind)
+            .bind(a.party)
+            .fetch_one(&mut *c)
+            .await?;
+    if !(member && allowed) {
+        return Err(Error::Forbidden);
+    }
+    Ok(row)
 }
 pub async fn authorize(
     c: &mut PgConnection,

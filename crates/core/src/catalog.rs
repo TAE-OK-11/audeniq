@@ -475,29 +475,32 @@ pub(crate) async fn delivery_axes(
     Ok(out)
 }
 pub async fn get(s: &AppState, a: &Actor, org: Uuid, kind: Kind, id: Uuid) -> Result<Value> {
-    let mut tx = s.pool.begin().await?;
-    auth::authorize_read(&mut tx, a, org, id, kind.resource()).await?;
-    let q = format!(
+    // Static table name from the Kind enum; values are bound.
+    let row = format!(
         "SELECT to_jsonb(t) FROM {} t WHERE org_id=$1 AND id=$2 AND archived_at IS NULL",
         kind.table()
     );
-    // Audited: static table name from the Kind enum; values are bound.
-    let mut v: Value = sqlx::query_scalar(sqlx::AssertSqlSafe(q))
-        .bind(org)
-        .bind(id)
-        .fetch_optional(&mut *tx)
+    if !matches!(kind, Kind::Release) {
+        // One statement, no transaction: the checks and the read in one trip.
+        let mut c = s.pool.acquire().await?;
+        let v = auth::authorize_read_row(&mut c, a, org, id, kind.resource(), &row)
+            .await?
+            .ok_or(Error::NotFound)?;
+        drop(c);
+        return crate::upload_safety::visible_inline_files(&s.pool, v).await;
+    }
+    let mut tx = s.pool.begin().await?;
+    let mut v = auth::authorize_read_row(&mut tx, a, org, id, kind.resource(), &row)
         .await?
         .ok_or(Error::NotFound)?;
-    if matches!(kind, Kind::Release) {
-        let tracks:Vec<Value>=sqlx::query_scalar("SELECT to_jsonb(t) || jsonb_build_object('credits',COALESCE((SELECT jsonb_agg(jsonb_build_object('party_id',c.party_id,'role',c.role) ORDER BY c.party_id,c.role) FROM catalog.credits c WHERE c.org_id=t.org_id AND c.track_id=t.id),'[]'::jsonb)) FROM catalog.tracks t WHERE org_id=$1 AND release_id=$2 AND archived_at IS NULL ORDER BY disc_number,track_number").bind(org).bind(id).fetch_all(&mut *tx).await?;
-        v["tracks"] = json!(tracks);
-        let mut axes = delivery_axes(&mut tx, org, &[id]).await?;
-        let (delivery, live) = axes.remove(&id).unwrap_or_default();
-        v["delivery_status_by_dsp"] = json!(delivery);
-        v["live_status_by_dsp"] = json!(live);
-        v["agreement_status"] = json!(agreement_statuses(&mut tx, org, &[id]).await?.remove(&id));
-        v["submission_enabled"] = json!(false);
-    }
+    let tracks:Vec<Value>=sqlx::query_scalar("SELECT to_jsonb(t) || jsonb_build_object('credits',COALESCE((SELECT jsonb_agg(jsonb_build_object('party_id',c.party_id,'role',c.role) ORDER BY c.party_id,c.role) FROM catalog.credits c WHERE c.org_id=t.org_id AND c.track_id=t.id),'[]'::jsonb)) FROM catalog.tracks t WHERE org_id=$1 AND release_id=$2 AND archived_at IS NULL ORDER BY disc_number,track_number").bind(org).bind(id).fetch_all(&mut *tx).await?;
+    v["tracks"] = json!(tracks);
+    let mut axes = delivery_axes(&mut tx, org, &[id]).await?;
+    let (delivery, live) = axes.remove(&id).unwrap_or_default();
+    v["delivery_status_by_dsp"] = json!(delivery);
+    v["live_status_by_dsp"] = json!(live);
+    v["agreement_status"] = json!(agreement_statuses(&mut tx, org, &[id]).await?.remove(&id));
+    v["submission_enabled"] = json!(false);
     tx.commit().await?;
     crate::upload_safety::visible_inline_files(&s.pool, v).await
 }
