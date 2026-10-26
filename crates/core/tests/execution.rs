@@ -9052,12 +9052,9 @@ async fn portone_and_payple_confirm_and_cancel(base: &str, fx: &PgFx) {
     );
 }
 
-/// A music-video upload is checked by the media engine (`audeniq-music video
-/// probe`) when it completes; the checks come back to the artist and travel
-/// with the order to staff.
-#[sqlx::test]
-async fn addon_video_completion_reports_engine_checks(pool: PgPool) {
-    let d = draft_package(&pool).await;
+/// A 2 s 1280×720 H.264/AAC music video uploaded as an add-on file of the
+/// draft's org and completed: (file id, status, completion answer).
+async fn upload_mv(pool: &PgPool, d: &DraftCtx) -> (Uuid, StatusCode, Value) {
     let dir = std::env::temp_dir().join(format!("audeniq-mv-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
     let mp4 = dir.join("mv.mp4");
@@ -9104,7 +9101,7 @@ async fn addon_video_completion_reports_engine_checks(pool: PgPool) {
     .bind(&key)
     .bind(bytes.len() as i64)
     .bind(d.u.user)
-    .execute(&pool)
+    .execute(pool)
     .await
     .unwrap();
     let (s, v) = call(
@@ -9115,6 +9112,17 @@ async fn addon_video_completion_reports_engine_checks(pool: PgPool) {
         Some(&d.u),
     )
     .await;
+    (id, s, v)
+}
+
+/// A music-video upload is checked by the media engine (`audeniq-music video
+/// probe`) when it completes; the checks come back to the artist and travel
+/// with the order to staff.
+#[sqlx::test]
+async fn addon_video_completion_reports_engine_checks(pool: PgPool) {
+    let d = draft_package(&pool).await;
+    let (id, s, v) = upload_mv(&pool, &d).await;
+    let org = d.u.org;
     assert_eq!(s, StatusCode::OK, "{v}");
     assert_eq!(
         (v["duration"].as_str(), v["width"].as_u64()),
@@ -9209,4 +9217,108 @@ async fn addon_video_completion_reports_engine_checks(pool: PgPool) {
         .find(|o| o["service"] == "MV_DISTRIBUTION")
         .unwrap();
     assert_eq!(mv["video"]["checks"], checks, "{mv}");
+}
+
+/// Staff make the music video's DDEX ERN for a DDEX platform: a VideoSingle
+/// with the MV ISRC they entered, tied to the prepared audio release, with
+/// the engine's technical details, valid against the ERN 3.8.2 XSD.
+#[sqlx::test]
+async fn music_video_ern_for_a_ddex_platform(pool: PgPool) {
+    let d = draft_package(&pool).await;
+    let (file, s, v) = upload_mv(&pool, &d).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    // The worker's sound check (same qc queue as Stage 1) runs first.
+    assert_eq!(
+        run_one(&pool, &d.store, "qc", audeniq_core::video::SOUND_JOB).await,
+        "SUCCEEDED"
+    );
+    let measured: String =
+        sqlx::query_scalar("SELECT video_checks->>'sound' FROM portal.addon_files WHERE id=$1")
+            .bind(file)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(measured, "measured");
+    let options = json!({
+        "mv": true, "mvTier": "BASIC", "mvTrack": 1, "mvVideoFile": file.to_string(),
+        "mvTitle": "여름의 끝 (Official MV)", "mvDirector": "김감독", "mvPlatforms": ["youtube"],
+        "mvRating": "12", "mvRatingNo": "2026-MV-0001",
+    });
+    sqlx::query("UPDATE catalog.releases SET draft = jsonb_set(draft, '{options}', coalesce(draft->'options','{}'::jsonb) || $2), row_version = row_version + 1 WHERE id=$1")
+        .bind(d.release)
+        .bind(&options)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (org, app) = (d.u.org, d.app.clone());
+    let ready = finish_package(&pool, d).await;
+    let order: Uuid = sqlx::query_scalar(
+        "SELECT id FROM portal.addon_orders WHERE release_id=$1 AND service='MV_DISTRIBUTION'",
+    )
+    .bind(ready.release)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    // Paid and taken in (the payment flow has its own test).
+    sqlx::query("UPDATE portal.addon_orders SET status='SUBMITTED' WHERE id=$1")
+        .bind(order)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let youtube = audeniq_core::dsp_registry::Dsp::from_slug("youtube").unwrap();
+    sqlx::query("UPDATE execution.adapter_profiles SET ddex_recipient_dpid='PADPIDA2013020802I' WHERE dsp_id=$1")
+        .bind(youtube.uuid())
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE identity.orgs SET ddex_sender_dpid='PADPIDA2026092501A' WHERE id=$1")
+        .bind(org)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let op = staff_user(&app, &pool, "OPERATOR").await;
+    let ern = format!("/api/staff/addons/{order}/ern");
+    // No ISRC yet.
+    let (_, v) = call(&app, "POST", &ern, json!({"dsp": "youtube"}), Some(&op)).await;
+    assert_eq!(v["error"]["code"], "ADDON_MV_ISRC_REQUIRED", "{v}");
+    let (_, v) = call(
+        &app,
+        "POST",
+        &format!("/api/staff/addons/{order}/status"),
+        json!({"status": "UPDATE", "result": {"isrc": "KR-A40-26-00001"}}),
+        Some(&op),
+    )
+    .await;
+    assert_eq!(v["result"]["isrc"], "KRA402600001", "{v}");
+    // Korean stores take partner feeds, not DDEX.
+    let (_, v) = call(&app, "POST", &ern, json!({"dsp": "melon"}), Some(&op)).await;
+    assert_eq!(v["error"]["code"], "ADDON_MV_DSP_NOT_DDEX", "{v}");
+    let (s, v) = call(&app, "POST", &ern, json!({"dsp": "youtube"}), Some(&op)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let xml = v["xml"].as_str().unwrap();
+    assert_eq!(v["file_name"], "KRA402600001_youtube.xml");
+    for needle in [
+        "<VideoId><ISRC>KRA402600001</ISRC></VideoId>",
+        "<ReleaseType>VideoSingle</ReleaseType>",
+        "<ReleaseRelationshipType>IsFromAudio</ReleaseRelationshipType>",
+        "<RatingText>12세이상관람가</RatingText>",
+        "<FullName>김감독</FullName>",
+        "<VideoCodecType>AVC</VideoCodecType>",
+        "<ImageWidth UnitOfMeasure=\"Pixel\">1280</ImageWidth>",
+        "<AudioCodecType>AAC</AudioCodecType>",
+        "<FileName>KRA402600001.mp4</FileName>",
+        "<PartyId>PADPIDA2013020802I</PartyId>",
+    ] {
+        assert!(xml.contains(needle), "{needle}\n{xml}");
+    }
+    // Only staff on delivery duty.
+    let (s, _) = call(
+        &app,
+        "POST",
+        &ern,
+        json!({"dsp": "youtube"}),
+        Some(&ready.user),
+    )
+    .await;
+    assert!(s.is_client_error());
 }
