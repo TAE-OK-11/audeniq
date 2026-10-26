@@ -138,7 +138,8 @@ jobs:
             test "$(cat /usr/local/share/audeniq/target-cpu)" = "$EXPECTED_CPU"
             test "$(id -u)" = 10001
             audeniq-music qc capabilities
-            audeniq-music photo --version'
+            audeniq-music photo --version
+            audeniq-music video capabilities'
       - name: Verify portable binary execution and parser sandbox on native CPU
         if: matrix.variant == 'amd64' || matrix.variant == 'arm64'
         env:

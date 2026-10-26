@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { errorMessage } from '../api/errors';
 import { money } from '../lib/format';
 import { PLATFORM_NAMES } from '../lib/platformNames';
-import { MAX_VIDEO_BYTES, MV_PLATFORMS, PRICES, RATING_LABEL, TIER, uploadVideo, type MvTier } from '../lib/addons';
+import { MAX_VIDEO_BYTES, MV_PLATFORMS, PRICES, RATING_LABEL, TIER, uploadVideo, type MvTier, type VideoChecks } from '../lib/addons';
 import { CheckIcon } from './Check';
 import { ChipPicker } from './ChipPicker';
 import { FileCard } from './FileCard';
@@ -19,6 +19,8 @@ export interface AddonFields {
   mvVideoFile: string; mvVideoName: string; mvVideoUrl: string;
   /** 서버가 올린 파일에서 읽은 값 — 보여 주기만 하고, 접수 때 서버가 다시 읽는다 */
   mvDuration: string; mvWidth: number; mvHeight: number;
+  /** 서버가 파일을 검사한 결과(코덱·화질·소리·배급 규격) — 없으면 null */
+  mvChecks: VideoChecks | null;
   mvTitle: string; mvDirector: string; mvProduction: string; mvCast: string; mvSynopsis: string;
   mvRating: string; mvRatingNo: string; mvPlatforms: string[]; mvDate: string;
   lyricSync: boolean; lyricTracks: number[];
@@ -26,7 +28,7 @@ export interface AddonFields {
 
 export const EMPTY_ADDONS: AddonFields = {
   mv: false, mvTier: 'REVIEW', mvTrack: 1, mvVideoFile: '', mvVideoName: '', mvVideoUrl: '',
-  mvDuration: '', mvWidth: 0, mvHeight: 0,
+  mvDuration: '', mvWidth: 0, mvHeight: 0, mvChecks: null,
   mvTitle: '', mvDirector: '', mvProduction: '', mvCast: '', mvSynopsis: '',
   mvRating: '', mvRatingNo: '', mvPlatforms: [...MV_PLATFORMS], mvDate: '',
   lyricSync: false, lyricTracks: [],
@@ -65,10 +67,22 @@ export function addonProblem(o: AddonFields, tracks: TrackLite[]): [string, stri
 const VIDEO_MODES = [{ value: 'file', label: '파일 올리기' }, { value: 'link', label: '링크로 보내기' }] as const;
 const platformName = (p: string) => PLATFORM_NAMES[p] ?? p;
 
-/** 올린 파일 아래 줄 — 서버가 읽은 길이·화면 크기 */
+/** 올린 파일 아래 줄 — 서버가 읽은 길이·화면 크기(검사했으면 코덱·프레임레이트·소리까지) */
 function videoFacts(o: AddonFields): string {
-  const facts = [o.mvDuration && `길이 ${o.mvDuration}`, o.mvWidth > 0 && `${o.mvWidth}×${o.mvHeight}`].filter(Boolean);
+  const facts = [o.mvDuration && `길이 ${o.mvDuration}`, o.mvChecks?.summary || (o.mvWidth > 0 && `${o.mvWidth}×${o.mvHeight}`)].filter(Boolean);
   return `${facts.length ? `${facts.join(' · ')} · ` : ''}다시 누르면 바꿀 수 있어요`;
+}
+
+/** 서버 검사에서 나온 문제 — 배급할 수 없는 것(error)과 반려될 수 있는 것(warning) */
+function VideoIssues({ checks }: { checks: VideoChecks }) {
+  const shown = checks.issues.filter(i => i.severity !== 'info');
+  return (
+    <div className="aq-option-note" role={checks.mv_ready ? undefined : 'alert'}>
+      <strong>{checks.mv_ready ? '플랫폼에 따라 반려될 수 있어요. 원본이 있으면 바꿔 주세요.' : '이 파일은 그대로 배급할 수 없어요. 다시 내보내 올려 주세요.'}</strong>
+      <ul>{shown.map(i => <li key={i.code}>{i.detail}</li>)}</ul>
+      {checks.sound === 'pending' && <p>소리(음량·클리핑·무음)는 서버가 이어서 확인해요.</p>}
+    </div>
+  );
 }
 
 export function MvDetail({ o, set, tracks }: { o: AddonFields; set: (patch: Partial<AddonFields>) => void; tracks: TrackLite[] }) {
@@ -88,7 +102,7 @@ export function MvDetail({ o, set, tracks }: { o: AddonFields; set: (patch: Part
     setPct(0);
     try {
       const v = await uploadVideo(f, r => setPct(r), abort.current.signal);
-      set({ mvVideoFile: v.id, mvVideoName: f.name, mvVideoUrl: '', mvDuration: v.duration, mvWidth: v.width, mvHeight: v.height });
+      set({ mvVideoFile: v.id, mvVideoName: f.name, mvVideoUrl: '', mvDuration: v.duration, mvWidth: v.width, mvHeight: v.height, mvChecks: v.checks ?? null });
       toast('영상을 올렸어요.', 'success');
     } catch (e) { toast(errorMessage(e), 'error'); } finally { setPct(null); }
   };
@@ -135,7 +149,9 @@ export function MvDetail({ o, set, tracks }: { o: AddonFields; set: (patch: Part
                 <span><i style={{ width: `${Math.max(4, up)}%` }} /></span>
                 <small>{up < 100 ? `업로드 중 ${up}%` : '서버에서 확인하는 중…'} · <button type="button" className="ui-btn is-text is-xs" onClick={() => abort.current?.abort()}>멈추기</button></small>
               </div>
-            ) : o.mvVideoFile && o.mvHeight > 0 && Math.min(o.mvWidth, o.mvHeight) < 1080
+            ) : o.mvVideoFile && o.mvChecks?.issues.some(i => i.severity !== 'info')
+              ? <VideoIssues checks={o.mvChecks} />
+              : o.mvVideoFile && !o.mvChecks && o.mvHeight > 0 && Math.min(o.mvWidth, o.mvHeight) < 1080
               ? <p className="aq-option-note">1080p보다 작은 영상이에요. 플랫폼에 따라 반려될 수 있으니 원본이 있으면 바꿔 주세요.</p>
               : <p className="ui-field-help">길이와 화질은 올리면 서버가 파일에서 직접 읽어요. 끊기면 같은 파일을 다시 고르면 이어서 올려요.</p>}
           </>
@@ -143,7 +159,7 @@ export function MvDetail({ o, set, tracks }: { o: AddonFields; set: (patch: Part
           <>
             <label className="sr-only" htmlFor="aqMvUrl">영상 링크</label>
             <input id="aqMvUrl" type="url" inputMode="url" maxLength={500} placeholder="https:// (구글 드라이브·드롭박스 등 내려받을 수 있는 링크)"
-              value={o.mvVideoUrl} onChange={e => set({ mvVideoUrl: e.target.value, mvVideoFile: '', mvVideoName: '', mvDuration: '', mvWidth: 0, mvHeight: 0 })} />
+              value={o.mvVideoUrl} onChange={e => set({ mvVideoUrl: e.target.value, mvVideoFile: '', mvVideoName: '', mvDuration: '', mvWidth: 0, mvHeight: 0, mvChecks: null })} />
             <p className="ui-field-help">링크는 누구나 내려받을 수 있게 열어 두세요. 길이와 화질은 담당자가 내려받아 확인해요.</p>
           </>
         )}

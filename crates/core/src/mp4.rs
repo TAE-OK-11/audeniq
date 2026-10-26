@@ -1,6 +1,8 @@
 //! Length and frame size of an uploaded MP4/MOV, read from its `moov` box
 //! with a few ranged reads (the media data itself is never fetched), so the
-//! artist does not type them in.
+//! artist does not type them in. [`index`] keeps every top-level box header
+//! and the index payloads so the media engine can check the whole layout
+//! ([`crate::video`]).
 
 use crate::{error::Result, storage::ObjectStore};
 
@@ -15,8 +17,43 @@ pub struct VideoInfo {
 
 /// Largest `moov` we read into memory. Even hours of video index in a few MB.
 const MAX_MOOV: u64 = 32 << 20;
-/// Top-level boxes we walk past before giving up (ftyp, free, mdat, …).
-const MAX_BOXES: usize = 64;
+/// Top-level boxes we walk, one ranged read each (ftyp, free, mdat, …; a
+/// fragmented file has a `moof`+`mdat` pair per fragment: 10 minutes in
+/// 2-second fragments is 600). Past it only the `moov` is used.
+const MAX_BOXES: usize = 1024;
+/// All `moof` payloads together.
+const MAX_FRAGMENT_INDEX: u64 = 32 << 20;
+/// Bytes asked for per ranged read when walking headers: a box header, a
+/// small `ftyp`/`moof` and the header after it usually come in one request
+/// (a fragmented file: one request per fragment instead of three).
+const WINDOW: usize = 8 << 10;
+
+/// Ranged reads through one buffered window.
+struct Reader<'a> {
+    store: &'a dyn ObjectStore,
+    key: &'a str,
+    at: u64,
+    buf: Vec<u8>,
+    requests: usize,
+}
+
+impl Reader<'_> {
+    /// Up to `n` bytes at `at` (shorter at the end of the object).
+    async fn read(&mut self, at: u64, n: usize) -> Result<Vec<u8>> {
+        let end = at.saturating_add(n as u64);
+        let have = self.at + self.buf.len() as u64;
+        if at >= self.at && (end <= have || (have < self.at + WINDOW as u64 && at < have)) {
+            let from = (at - self.at) as usize;
+            let to = (end.min(have) - self.at) as usize;
+            return Ok(self.buf[from..to].to_vec());
+        }
+        self.requests += 1;
+        let bytes = self.store.read_range(self.key, at, n.max(WINDOW)).await?;
+        let out = bytes[..n.min(bytes.len())].to_vec();
+        (self.at, self.buf) = (at, bytes);
+        Ok(out)
+    }
+}
 
 fn u16_at(b: &[u8], i: usize) -> Option<u64> {
     Some(u64::from(u16::from_be_bytes(
@@ -108,15 +145,43 @@ pub fn parse_moov(moov: &[u8]) -> Option<VideoInfo> {
     })
 }
 
-/// Walks the top-level boxes of a stored object with ranged reads and parses
-/// its `moov`. `None` when there is none to read (not a usable video).
-pub async fn probe(store: &dyn ObjectStore, key: &str, size: u64) -> Result<Option<VideoInfo>> {
+/// The stored layout of an MP4/MOV: every top-level box header (up to 16
+/// bytes) and the payloads of `ftyp`, `moov` and `moof`, at their offsets in
+/// the object. Media data is never read.
+#[derive(Debug, Default)]
+pub struct Index {
+    pub size: u64,
+    pub heads: Vec<(u64, Vec<u8>)>,
+    pub bodies: Vec<(u64, Vec<u8>)>,
+    /// `moov` payload.
+    pub moov: Vec<u8>,
+    /// Every box was walked within the limits (else only `moov` is usable).
+    pub complete: bool,
+}
+
+/// Walks the top-level boxes of a stored object with ranged reads. `None`
+/// when there is no `moov` to read (not a usable video).
+pub async fn index(store: &dyn ObjectStore, key: &str, size: u64) -> Result<Option<Index>> {
+    let mut idx = Index {
+        size,
+        ..Index::default()
+    };
+    let mut r = Reader {
+        store,
+        key,
+        at: 0,
+        buf: Vec::new(),
+        requests: 0,
+    };
+    let mut fragments = 0u64;
     let mut at = 0u64;
+    let mut moov = None;
     for _ in 0..MAX_BOXES {
         if at + 8 > size {
+            idx.complete = true;
             break;
         }
-        let head = store.read_range(key, at, 16).await?;
+        let head = r.read(at, 16).await?;
         let (Some(len), Some(typ)) = (u32_at(&head, 0), head.get(4..8)) else {
             break;
         };
@@ -128,21 +193,60 @@ pub async fn probe(store: &dyn ObjectStore, key: &str, size: u64) -> Result<Opti
             },
             n => (8, n),
         };
+        idx.heads.push((at, head.clone()));
         if len < hdr || at + len > size {
+            // Truncated or malformed: the engine reports it from the headers.
+            idx.complete = moov.is_some();
             break;
         }
-        if typ == b"moov" {
-            if len > MAX_MOOV {
-                return Ok(None);
+        let body_len = len - hdr;
+        match typ {
+            b"moov" if moov.is_none() => {
+                if body_len > MAX_MOOV {
+                    return Ok(None);
+                }
+                let body = r.read(at + hdr, body_len as usize).await?;
+                moov = Some(body.clone());
+                idx.bodies.push((at + hdr, body));
             }
-            let body = store
-                .read_range(key, at + hdr, (len - hdr) as usize)
-                .await?;
-            return Ok(parse_moov(&body));
+            b"ftyp" if body_len <= 4096 => {
+                let body = r.read(at + hdr, body_len as usize).await?;
+                idx.bodies.push((at + hdr, body));
+            }
+            b"moof" => {
+                fragments += body_len;
+                if fragments > MAX_FRAGMENT_INDEX {
+                    break;
+                }
+                let body = r.read(at + hdr, body_len as usize).await?;
+                idx.bodies.push((at + hdr, body));
+            }
+            _ => {}
         }
         at += len;
+        if at == size {
+            idx.complete = true;
+            break;
+        }
     }
-    Ok(None)
+    let Some(moov) = moov else {
+        return Ok(None);
+    };
+    idx.moov = moov;
+    tracing::debug!(
+        key,
+        requests = r.requests,
+        boxes = idx.heads.len(),
+        "mp4 index read"
+    );
+    Ok(Some(idx))
+}
+
+/// [`index`] then [`parse_moov`].
+pub async fn probe(store: &dyn ObjectStore, key: &str, size: u64) -> Result<Option<VideoInfo>> {
+    Ok(index(store, key, size)
+        .await?
+        .and_then(|i| parse_moov(&i.moov)))
 }
 
 /// `m:ss` (minutes may run past 59, e.g. `72:05`).
@@ -219,7 +323,13 @@ mod tests {
         assert_eq!(clock(i.duration_ms), "1:01");
     }
 
-    struct Bytes(Vec<u8>);
+    /// Object bytes; counts the ranged reads.
+    struct Bytes(Vec<u8>, std::sync::atomic::AtomicUsize);
+    impl Bytes {
+        fn new(b: Vec<u8>) -> Self {
+            Self(b, Default::default())
+        }
+    }
     #[async_trait::async_trait]
     impl ObjectStore for Bytes {
         async fn presign_put(
@@ -239,7 +349,33 @@ mod tests {
             unreachable!()
         }
         async fn get(&self, _: &str) -> Result<Vec<u8>> {
+            self.1.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             Ok(self.0.clone())
+        }
+    }
+
+    #[tokio::test]
+    async fn a_fragment_costs_one_ranged_read() {
+        let moov = bx(
+            b"moov",
+            &[mvhd0(1000, 0), bx(b"trak", &tkhd(0, 1920, 1080))].concat(),
+        );
+        let mut file = [bx(b"ftyp", b"iso6\0\0\0\0"), moov].concat();
+        for _ in 0..50 {
+            file.extend(bx(b"moof", &[1u8; 900]));
+            file.extend(bx(b"mdat", &[0u8; 20_000]));
+        }
+        let size = file.len() as u64;
+        let store = Bytes::new(file);
+        let i = index(&store, "k", size).await.unwrap().unwrap();
+        assert!(i.complete);
+        assert_eq!(i.heads.len(), 2 + 100);
+        assert_eq!(i.bodies.len(), 2 + 50);
+        let reads = store.1.load(std::sync::atomic::Ordering::Relaxed);
+        assert!(reads <= 51, "{reads} reads");
+        // What was read is what the object holds.
+        for (at, b) in i.heads.iter().chain(&i.bodies) {
+            assert_eq!(&store.0[*at as usize..*at as usize + b.len()], &b[..]);
         }
     }
 
@@ -256,7 +392,7 @@ mod tests {
         ]
         .concat();
         let size = file.len() as u64;
-        let i = probe(&Bytes(file), "k", size).await.unwrap().unwrap();
+        let i = probe(&Bytes::new(file), "k", size).await.unwrap().unwrap();
         assert_eq!(
             (clock(i.duration_ms), i.width, i.height),
             ("1:01".into(), 1920, 1080)
@@ -264,7 +400,7 @@ mod tests {
         // No moov: not a usable video.
         let bare = [bx(b"ftyp", b"isom"), bx(b"mdat", &[0u8; 64])].concat();
         let size = bare.len() as u64;
-        assert!(probe(&Bytes(bare), "k", size).await.unwrap().is_none());
+        assert!(probe(&Bytes::new(bare), "k", size).await.unwrap().is_none());
     }
 
     #[test]

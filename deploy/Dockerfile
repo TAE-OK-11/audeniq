@@ -40,9 +40,10 @@ RUN AUDENIQ_BUILD_METADATA_DIR=/meta audeniq-build-target "$TARGETARCH" "$TARGET
 
 # The AUDENIQ media engine at the commit pinned in deploy/audeniq-music.rev:
 # `audeniq-music qc` (probe, lossless FLAC conversion, QC decode, fingerprint
-# windows) and `audeniq-music photo` (cover metadata, QR, OCR, upload
+# windows), `audeniq-music photo` (cover metadata, QR, OCR, upload
 # sanitization; replaces ExifTool, ZBar, Tesseract and the Pillow/Poppler
-# sanitizer). It is a separate binary so uploads are parsed only in its
+# sanitizer) and `audeniq-music video` (music-video probe and delivery
+# checks; replaces FFprobe). It is a separate binary so uploads are parsed only in its
 # sandboxed child process.
 FROM chef AS engine
 ARG TARGETARCH
