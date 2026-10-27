@@ -3,7 +3,8 @@
 # CI 빌드와 같은 deploy/Dockerfile·release 프로필이고, 서버 아키텍처(amd64/arm64) 하나만 만든다.
 #
 #   ./build-on-server.sh                # origin/main 최신 커밋
-#   ./build-on-server.sh <커밋 해시>     # 그 커밋
+#   ./build-on-server.sh <커밋 해시>     # 그 커밋 (main에 없는 커밋·브랜치 이름도 된다)
+#   SKIP_STUDIO=1                        # Studio 화면 빌드·배포를 건너뛴다 (기본은 같은 커밋으로 함께)
 #
 # 한 번 준비 (서버에서):
 #   git clone https://github.com/TAE-OK-11/audeniq.git /opt/audeniq-src
@@ -58,6 +59,11 @@ bash "$SRC/deploy/check-cpu.sh" "$arch" "$cpu"
 echo "build-on-server: 저장소 받는 중"
 git -C "$SRC" fetch --quiet origin main
 target=${1:-origin/main}
+# main에 없는 커밋·브랜치(예: 병합 전 시험 배포)도 받는다
+if [ -n "${1:-}" ] && ! git -C "$SRC" cat-file -e "$target^{commit}" 2>/dev/null; then
+  git -C "$SRC" fetch --quiet origin "$target" || die "커밋·브랜치를 받지 못했어요: $target"
+  target=FETCH_HEAD
+fi
 git -C "$SRC" checkout --quiet --detach "$target"
 sha=$(git -C "$SRC" rev-parse HEAD)
 [ -z "$(git -C "$SRC" status --porcelain)" ] || die "저장소에 커밋하지 않은 변경이 있어요: $SRC"
@@ -92,11 +98,26 @@ fi
 
 # 배포 파일은 이미지(마이그레이션)와 같은 커밋이어야 한다. 비밀 파일(production.env, tunnel-token)은 건드리지 않는다.
 echo "build-on-server: 같은 커밋의 배포 파일을 $DEPLOY_PATH 로 복사"
-for f in compose.production.yaml bootstrap.sql grants.sql deploy.sh check-cpu.sh pg-upgrade.sh backup.sh restore-backup.sh archive.sh build-on-server.sh; do
+for f in compose.production.yaml bootstrap.sql grants.sql deploy.sh check-cpu.sh pg-upgrade.sh backup.sh restore-backup.sh archive.sh build-on-server.sh studio-release.sh; do
   [ -f "$SRC/deploy/$f" ] && install -m "$( [ "${f##*.}" = sh ] && echo 755 || echo 644 )" "$SRC/deploy/$f" "$DEPLOY_PATH/$f"
 done
 rm -rf "$DEPLOY_PATH/pgbouncer.new" && cp -r "$SRC/deploy/pgbouncer" "$DEPLOY_PATH/pgbouncer.new"
 rm -rf "$DEPLOY_PATH/pgbouncer" && mv "$DEPLOY_PATH/pgbouncer.new" "$DEPLOY_PATH/pgbouncer"
+
+# Studio 화면도 같은 커밋으로 (api가 서빙한다: deploy/STUDIO_SERVING.md). SKIP_STUDIO=1이면 건너뛴다.
+# 저장소를 더럽히지 않게 임시 폴더에 꺼내 Node 컨테이너에서 빌드하고, studio-release.sh로 올린다.
+if [ -x "$DEPLOY_PATH/studio-release.sh" ] && [ "${SKIP_STUDIO:-}" != 1 ]; then
+  echo "build-on-server: Studio 화면 빌드"
+  work=$(mktemp -d)
+  trap 'rm -f "$meta"; rm -rf "$work"' EXIT
+  git -C "$SRC" archive HEAD web tsconfig.json | tar -x -C "$work"
+  bun_version=$(tr -d '[:space:]' < "$work/web/studio/.bun-version")
+  docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -e npm_config_update_notifier=false \
+    -v "$work:/src" -w /src/web/studio/app "${STUDIO_BUILD_IMAGE:-node:22-bookworm-slim}" \
+    sh -c "npx --yes bun@$bun_version install --frozen-lockfile && npx --yes bun@$bun_version run build"
+  tar -C "$work/web/studio/public" -czf "$work/studio.tar.gz" .
+  "$DEPLOY_PATH/studio-release.sh" install "$sha" "$work/studio.tar.gz"
+fi
 
 cd "$DEPLOY_PATH"
 exec ./deploy.sh "$ref"
