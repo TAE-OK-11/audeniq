@@ -263,12 +263,21 @@ services:
       # ./studio/releases/<커밋>에 풀고 current 심링크를 바꾸면 api가 다음 요청부터 새 화면을 준다(재시작 없음).
       # production.env에 STUDIO_DIR= (빈 값)을 넣으면 화면 서빙을 끈다.
       STUDIO_DIR: ${STUDIO_DIR-/srv/studio/current}
+      # AWS CloudFront가 직접 부르는 HTTPS (crates/core/src/edge_tls.rs, deploy/aws/README.md). TLS_BIND를 비우면 꺼짐(터널만).
+      # 켜기: production.env에 TLS_BIND=0.0.0.0:8443 → deploy.sh가 compose.tls.yaml(서버 443 → 8443)을 붙인다.
+      # 인증서는 ./tls-cert.sh가 ./tls에 둔다(5분마다 다시 읽음).
+      # CloudFront 오리진 IP 대역에서 온 연결만, 서비스 비밀이 있는 요청만 받는다(화면 파일 포함).
+      TLS_BIND: ${TLS_BIND:-}
+      TLS_CERT_FILE: /run/audeniq-tls/fullchain.pem
+      TLS_KEY_FILE: /run/audeniq-tls/privkey.pem
+      TLS_ALLOWED_SOURCES: ${TLS_ALLOWED_SOURCES:-cloudfront}
     volumes:
       - av_socket:/run/audeniq-av:ro
       - ${PAYOUT_KEYRING_DIR:-/dev/shm/audeniq-secrets}:/run/audeniq-keys:ro
       - api_tmp:/var/tmp/audeniq
       - ./partners:/etc/audeniq/partners:ro
       - ./studio:/srv/studio:ro
+      - ./tls:/run/audeniq-tls:ro
     depends_on:
       pgbouncer: {condition: service_healthy}
     # /ready (database included), through the binary itself: no curl in the image.

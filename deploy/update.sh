@@ -19,7 +19,7 @@ cd "$(dirname "$0")"
 REPO=${AUDENIQ_REPO:-TAE-OK-11/audeniq}
 IMAGE=${AUDENIQ_IMAGE_REPO:-ghcr.io/tae-ok-11/audeniq}
 VARIANT=${BACKEND_CPU_VARIANT:-portable}
-FILES=(compose.production.yaml bootstrap.sql grants.sql deploy.sh check-cpu.sh pg-upgrade.sh backup.sh restore-backup.sh archive.sh update.sh studio-release.sh
+FILES=(compose.production.yaml compose.tls.yaml bootstrap.sql grants.sql deploy.sh check-cpu.sh pg-upgrade.sh backup.sh restore-backup.sh archive.sh update.sh studio-release.sh tls-cert.sh
        pgbouncer/Dockerfile pgbouncer/entrypoint.sh)
 
 die() { echo "update: $*" >&2; exit 1; }
@@ -80,8 +80,8 @@ trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/pgbouncer"
 for f in "${FILES[@]}"; do
   if ! gh_curl -o "$tmp/$f" "https://raw.githubusercontent.com/$REPO/$rev/deploy/$f"; then
-    # update.sh·studio-release.sh가 생기기 전 커밋이면 지금 것을 그대로 둔다
-    case "$f" in update.sh|studio-release.sh) rm -f "$tmp/$f"; continue ;; esac
+    # update.sh·studio-release.sh·tls-cert.sh·compose.tls.yaml이 생기기 전 커밋이면 지금 것을 그대로 둔다
+    case "$f" in update.sh|studio-release.sh|tls-cert.sh|compose.tls.yaml) rm -f "$tmp/$f"; continue ;; esac
     die "배포 파일을 받지 못했어요: deploy/$f @ ${rev:0:7} (비공개 저장소면 GITHUB_TOKEN 또는 github-token 파일)"
   fi
 done
@@ -94,6 +94,7 @@ for f in "${FILES[@]}"; do
 done
 chmod +x deploy.sh update.sh pg-upgrade.sh check-cpu.sh backup.sh restore-backup.sh archive.sh pgbouncer/entrypoint.sh
 if [ -f studio-release.sh ]; then chmod +x studio-release.sh; fi
+if [ -f tls-cert.sh ]; then chmod +x tls-cert.sh; fi
 
 # Studio 화면도 같은 커밋으로 (api가 서빙한다: STUDIO_SERVING.md). 소스를 받아 Node 컨테이너에서 빌드한다.
 # 실패해도 백엔드 배포는 계속하고, api는 이전 화면을 그대로 준다. 건너뛰려면 SKIP_STUDIO=1

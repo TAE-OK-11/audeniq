@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# CloudFront + S3 스택 만들기/갱신: deploy/aws/deploy-stack.sh <studio|admin|landing>
+# CloudFront 스택 만들기/갱신: deploy/aws/deploy-stack.sh <studio|admin|landing> (studio는 S3 없이 백엔드만)
 #   AWS_UI_CERT_ARN       us-east-1 ACM 인증서 ARN (처음 만들 때 필수, 이후 생략하면 기존 값)
-#   API_ORIGIN_DOMAIN     /api 를 받을 백엔드 ALB의 HTTPS 주소 (예: api-origin.audeniq.com, 랜딩은 없음)
+#   API_ORIGIN_DOMAIN     백엔드 api의 HTTPS 주소 (예: origin.audeniq.com → 서버 IP, 443은 api가 직접 받음. 랜딩은 없음)
 #   EDGE_SERVICE_SECRET   백엔드 EDGE_SERVICE_SECRET 과 같은 값 (CloudFront가 x-audeniq-service로 붙인다)
 # 지정하지 않은 값은 기존 스택 값을 그대로 쓴다.
 set -euo pipefail

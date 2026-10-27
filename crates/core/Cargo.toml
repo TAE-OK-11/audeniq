@@ -55,6 +55,11 @@ zeroize = "1.9.0"
 # 64 KiB pages (deploy/build-target.sh) so one image runs on any page size.
 tikv-jemallocator = "0.7.0"
 tokio-stream = "0.1.19"
+# Built-in HTTPS for the CloudFront origin (crate::edge_tls): the rustls stack
+# sqlx/reqwest already link, on aws-lc-rs. ipnet parses AWS's published ranges.
+rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }
+ipnet = { version = "2.12.2", features = ["serde"] }
 
 [dev-dependencies]
 # Independent oracle for the in-crate MD5 (crate::md5) tests only.

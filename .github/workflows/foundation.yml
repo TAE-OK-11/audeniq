@@ -312,8 +312,13 @@ jobs:
           jq -e '(.services.migrate.environment.DATABASE_URL | test("@postgres/"))' /tmp/production.json
           # Studio 화면은 api가 읽기 전용 폴더에서 서빙한다 (deploy/STUDIO_SERVING.md)
           jq -e '.services.api.environment.STUDIO_DIR == "/srv/studio/current" and ([.services.api.volumes[] | select(.target == "/srv/studio")] | length == 1 and .[0].read_only == true)' /tmp/production.json
+          # AWS CloudFront가 부르는 HTTPS (deploy/aws/README.md): 기본은 꺼짐·포트 없음.
+          # compose.tls.yaml을 붙이면(deploy.sh가 TLS_BIND를 보고) api만 서버 443 → 8443
+          jq -e '.services.api.environment.TLS_BIND == "" and .services.api.environment.TLS_ALLOWED_SOURCES == "cloudfront" and ([.services.api.volumes[] | select(.target == "/run/audeniq-tls")] | length == 1 and .[0].read_only == true)' /tmp/production.json
+          TLS_BIND=0.0.0.0:8443 docker compose -f deploy/compose.production.yaml -f deploy/compose.tls.yaml config --format json > /tmp/production-tls.json
+          jq -e '([.services | to_entries[] | select((.value.ports // []) | length > 0) | .key] == ["api"]) and (.services.api.ports | length == 1 and .[0].target == 8443 and .[0].published == "443") and .services.api.environment.TLS_BIND == "0.0.0.0:8443"' /tmp/production-tls.json
       - name: Deploy script lint
-        run: shellcheck deploy/deploy.sh deploy/build-target.sh deploy/check-cpu.sh deploy/studio-release.sh
+        run: shellcheck deploy/deploy.sh deploy/build-target.sh deploy/check-cpu.sh deploy/studio-release.sh deploy/tls-cert.sh
       - name: Build and start the stack
         env:
           AUDENIQ_GITHUB_TOKEN: ${{ secrets.AUDENIQ_GITHUB_TOKEN }}
