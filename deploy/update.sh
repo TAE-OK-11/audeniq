@@ -95,4 +95,17 @@ done
 chmod +x deploy.sh update.sh pg-upgrade.sh check-cpu.sh backup.sh restore-backup.sh archive.sh pgbouncer/entrypoint.sh
 if [ -f studio-release.sh ]; then chmod +x studio-release.sh; fi
 
+# Studio 화면도 같은 커밋으로 (api가 서빙한다: STUDIO_SERVING.md). 소스를 받아 Node 컨테이너에서 빌드한다.
+# 실패해도 백엔드 배포는 계속하고, api는 이전 화면을 그대로 준다. 건너뛰려면 SKIP_STUDIO=1
+if [ -x studio-release.sh ] && [ "${SKIP_STUDIO:-}" != 1 ]; then
+  mkdir -p "$tmp/src"
+  if gh_curl "https://api.github.com/repos/$REPO/tarball/$rev" \
+       | tar -xz -C "$tmp/src" --strip-components=1 --wildcards '*/web/*' '*/tsconfig.json' \
+     && ./studio-release.sh build "$rev" "$tmp/src"; then
+    :
+  else
+    echo "update: 경고 — Studio 화면을 올리지 못했어요. 백엔드 배포는 계속해요 (나중에: SKIP_STUDIO 없이 ./update.sh --force)" >&2
+  fi
+fi
+
 exec ./deploy.sh "$pinned"
