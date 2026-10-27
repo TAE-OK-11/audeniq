@@ -33,6 +33,7 @@ pub mod distribution;
 pub mod domain;
 pub mod drafts;
 pub mod dsp_registry;
+pub mod edge_tls;
 pub mod email;
 pub mod ern;
 pub mod error;

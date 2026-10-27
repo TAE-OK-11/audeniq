@@ -6,6 +6,7 @@ use audeniq_core::{
     studio_static,
 };
 use axum::serve::ListenerExt;
+use std::future::IntoFuture;
 use std::sync::Arc;
 #[global_allocator]
 static GLOBAL: audeniq_core::allocator::Allocator = audeniq_core::allocator::Allocator;
@@ -91,6 +92,12 @@ async fn main() -> anyhow::Result<()> {
                 tracing::debug!(%error, "TCP_NODELAY not set");
             }
         });
+    // TLS_BIND: HTTPS straight from AWS CloudFront (crate::edge_tls). A bad
+    // certificate stops startup like a bad bind address does.
+    let tls_listener = match audeniq_core::edge_tls::Settings::from_env()? {
+        Some(settings) => Some(settings.bind().await?),
+        None => None,
+    };
     // Notification emails (SES / OCI Email Delivery over SMTP); a bad
     // configuration stops startup instead of silently dropping mail.
     let mailer = audeniq_core::email::Mailer::from_env(&config.origin)?;
@@ -115,8 +122,16 @@ async fn main() -> anyhow::Result<()> {
         Some(_) => tracing::info!("serving Studio static files (STUDIO_DIR)"),
         None => tracing::info!("Studio static files not served (STUDIO_DIR empty)"),
     }
-    let app = studio_static::app(state, studio);
-    let server = axum::serve(listener, app).with_graceful_shutdown(async move {
+    let shutdown = {
+        let on_signal = on_signal.clone();
+        move || {
+            let mut on_signal = on_signal.clone();
+            async move {
+                let _ = on_signal.wait_for(|s| *s).await;
+            }
+        }
+    };
+    tokio::spawn(async move {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {},
             _ = sigterm.recv() => {},
@@ -125,12 +140,27 @@ async fn main() -> anyhow::Result<()> {
         audeniq_core::live::begin_shutdown();
         let _ = signalled.send(true);
     });
+    let tls = match tls_listener {
+        Some(listener) => {
+            let app = audeniq_core::edge_tls::app(state.clone(), studio.clone());
+            Some(axum::serve(listener, app).with_graceful_shutdown(shutdown()))
+        }
+        None => None,
+    };
+    let app = studio_static::app(state, studio);
+    let plain = axum::serve(listener, app).with_graceful_shutdown(shutdown());
+    let served = async move {
+        match tls {
+            Some(tls) => tokio::try_join!(plain.into_future(), tls.into_future()).map(|_| ()),
+            None => plain.await,
+        }
+    };
     let deadline = async move {
         let _ = on_signal.wait_for(|s| *s).await;
         tokio::time::sleep(SHUTDOWN_GRACE).await;
     };
     tokio::select! {
-        served = server => served?,
+        served = served => served?,
         () = deadline => tracing::warn!(
             grace_seconds = SHUTDOWN_GRACE.as_secs(),
             "requests still running at the shutdown deadline; exiting"

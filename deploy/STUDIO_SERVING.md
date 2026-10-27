@@ -8,9 +8,9 @@ CloudFront(+ CloudFront Function)로 바뀌고, 백엔드·배포는 그대로�
 브라우저 ── studio.audeniq.com ── Worker audeniq-studio-proxy ── (터널) api-origin ── api :8080
                                    헤더만 다듬기                                     ├─ /api/*, /ready, /health, /.well-known/oauth-*  → API (boundary)
                                                                                     └─ 그 밖의 경로                                 → 화면 파일 (boundary 바깥)
-2단계 (AWS, 나중)
-브라우저 ── studio.audeniq.com ── CloudFront ── ALB ── api :8080   (같은 api, 같은 화면 파일)
-                                  viewer-request Function: 헤더만
+2단계 (AWS)
+브라우저 ── studio.audeniq.com ── CloudFront ── origin.audeniq.com:443 ── api (TLS 직접, 같은 화면 파일)
+                                  edge.js Function: 헤더만                CloudFront IP 대역·서비스 비밀만 받음
                                   origin custom header: x-audeniq-service, x-audeniq-site
 ```
 
@@ -19,7 +19,7 @@ CloudFront(+ CloudFront Function)로 바뀌고, 백엔드·배포는 그대로�
 | 일 | 예전 | 지금 | 코드 |
 |---|---|---|---|
 | 화면 파일 서빙, SPA 폴백, `_redirects`, `_headers`(보안·캐시 헤더), brotli | Workers Static Assets | 백엔드 api | `crates/core/src/studio_static.rs` |
-| 브라우저가 보낸 `x-audeniq-*` 버리기 | Worker | Worker (→ 나중에 CloudFront Function) | `web/shared/transport.ts` `backendHeaders` |
+| 브라우저가 보낸 `x-audeniq-*` 버리기 | Worker | Worker (→ CloudFront Function) | `web/shared/transport.ts` `backendHeaders` → `deploy/aws/functions/edge.js` |
 | 실제 사용자 IP → `x-audeniq-client-ip` | Worker (`CF-Connecting-IP`) | Worker (→ `event.viewer.ip`) | 같음 |
 | 서비스 식별 `x-audeniq-service`(비밀)·`x-audeniq-site` | Worker | Worker (→ origin custom header) | 같음 |
 | HSTS | Worker | Worker (→ CloudFront 응답 헤더 정책) | `secureResponse` |
@@ -92,19 +92,20 @@ curl -s  $H/api/status -H 'x-audeniq-service: forged' -H 'x-audeniq-client-ip: 1
 - 기존 기능: 로그인, 발매 목록, 공지, 점검 화면, 새 버전 안내(옛 스크립트 404 → 새로고침 안내)를 직접 확인해요.
 - 자동 테스트: `cargo test -p audeniq-core --lib studio_static`, `cd web/studio && bun test test/`.
 
-## 2단계(AWS CloudFront)를 위한 설계 메모
+## 2단계(AWS CloudFront)
 
-이 구조는 CloudFront Function으로 옮기기 쉽게 엣지를 "헤더만"으로 줄였어요. Function 코드는 이번에 만들지 않아요.
+구현과 전환 순서는 [`aws/README.md`](aws/README.md)에 있어요. 이 구조에서 바뀐 것만:
 
-- **Function은 헤더만**: viewer-request(cloudfront-js-2.0)에서 `x-audeniq-*`로 시작하는 헤더를 모두 지우고 `x-audeniq-client-ip = event.viewer.ip`.
-  본문·네트워크·비밀이 필요 없어서 Function 제약(코드 10 KB, 1 ms 안팎, 외부 호출 불가)에 맞아요. 지금 `deploy/aws/functions/api.js`가 이 동작이에요.
-- **비밀은 Function에 넣지 않기**: Function 코드는 콘솔·API로 읽혀요. `x-audeniq-service`와 `x-audeniq-site: studio`는 오리진 custom header로 붙여요(같은 이름의 뷰어 헤더는 CloudFront가 덮어써요).
-- **SPA 폴백·리다이렉트는 Function에 두지 않기**: 백엔드가 해요. 그래서 모든 behavior에 같은 Function 하나를 붙일 수 있고, 지금의 `functions/studio.js`(S3용 SPA 폴백)와 Studio S3 버킷은 필요 없어져요(`apps.ts`의 studio 오리진을 ALB로 바꾸는 건 2단계 작업).
-- **behavior와 캐시**:
-  - `/assets/*` → 캐시(CachingOptimized, gzip·br 켬). 백엔드가 `.br`을 주고 `Vary: Accept-Encoding`. 쿠키·`x-audeniq-client-ip`는 캐시 키에 넣지 않아요.
-  - `/api/*`, `/ready`, `/.well-known/oauth-*` → CachingDisabled + 오리진 요청 정책 AllViewerExceptHostHeader(Function이 넣은 `x-audeniq-client-ip`도 전달돼요).
-  - 기본 `/*`(화면·SPA) → CachingDisabled(또는 오리진 Cache-Control 따름). `index.html`은 `no-cache`라 매번 ETag로 확인해요.
-- **헤더 원본은 백엔드**: CSP 등은 `_headers`로 백엔드가 붙여요. CloudFront 응답 헤더 정책에는 HSTS만 두고, CSP를 넣는다면 오리진 값을 덮지 않게(override 끔) 해요.
-- **엣지 중립**: 백엔드는 `CF-Connecting-IP`·`X-Forwarded-For` 같은 엣지 고유 헤더를 읽지 않고 `x-audeniq-client-ip`만 읽어요. 엣지를 바꿔도 백엔드는 그대로예요.
-- **시간 제한**: CloudFront 오리진 응답 시간 기본 30초(최대 60초, 요청하면 더). api는 요청을 120초에서 끊고, 업로드 완료·실시간 스트림은 예외라 2단계에서 맞춰요.
+- **Function은 헤더만**: `deploy/aws/functions/edge.js`(cloudfront-js-2.0)가 `backendHeaders`와 같은 허용 목록만 남기고
+  `x-audeniq-client-ip = event.viewer.ip`를 넣어요. 응답에서는 Studio `/api`의 CORS 헤더만 맞춰요. 같은지는 `deploy/aws/test/aws.test.ts`가 맞춰 봐요.
+- **비밀은 Function에 넣지 않기**: Function 코드는 콘솔·API로 읽혀요. `x-audeniq-service`와 `x-audeniq-site: studio`는 오리진 custom header로 붙여요.
+- **SPA 폴백·리다이렉트는 백엔드**: 그래서 Studio S3 버킷과 S3용 SPA 함수가 없어졌어요. 오리진은 백엔드 하나예요.
+- **behavior와 캐시**: `/assets/*`만 CachingOptimized(gzip·br 캐시 키, 오리진 요청 정책 없음 → 브라우저 헤더는 오리진에 닿지 않음).
+  나머지 `/*`(화면·`/api`)는 CachingDisabled + AllViewerExceptHostHeader, 요청·응답 모두 `edge.js`.
+- **헤더 원본은 백엔드**: CSP 등은 `_headers`로 백엔드가 붙여요. CloudFront 응답 헤더 정책에는 HSTS만 둬요.
+- **ALB·터널 없음**: api가 `TLS_BIND`(컨테이너 8443 → 서버 443)에서 인증서로 직접 받아요(`crates/core/src/edge_tls.rs`, 인증서는 `deploy/tls-cert.sh`).
+  CloudFront 오리진 IP 대역이 아닌 연결은 TLS 전에 끊고, 서비스 비밀이 없는 요청은 화면 파일까지 403이에요.
+  평문 `API_BIND`(8080)는 healthcheck와 전환 전 터널용이라 1단계 동작은 그대로예요.
+- **엣지 중립**: 백엔드는 `CF-Connecting-IP`·`X-Forwarded-For` 같은 엣지 고유 헤더를 읽지 않고 `x-audeniq-client-ip`만 읽어요.
+- **시간 제한**: CloudFront 오리진 응답 시간 60초(요청하면 180초까지). api는 요청을 120초에서 끊고, 업로드 완료·실시간 스트림은 예외예요.
 - **배포는 그대로**: 화면은 계속 서버의 `studio/releases`로 가요. CloudFront 무효화는 필요 없어요(`/assets/*`는 이름에 해시, 나머지는 캐시하지 않음).
