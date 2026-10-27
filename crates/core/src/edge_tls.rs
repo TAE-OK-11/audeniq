@@ -3,16 +3,21 @@
 //! 예전에는 Cloudflare Tunnel이 TLS를 끝내고 평문 8080으로 넘겼다. AWS에서는 ALB 없이 api가 인증서를
 //! 직접 들고 `TLS_BIND`(컨테이너 8443 → 서버 443)에서 CloudFront의 요청을 받는다.
 //!
-//! - 인증서: `TLS_CERT_FILE`(전체 체인 PEM)·`TLS_KEY_FILE`. 5분마다 파일을 다시 보고, 바뀌었으면 다음 연결부터
-//!   새 인증서를 쓴다(갱신 뒤 재시작 없음, deploy/tls-cert.sh). 새 파일이 깨졌으면 이전 인증서를 계속 쓴다.
+//! - 인증서 (둘 중 하나):
+//!   - `TLS_ACME_DOMAIN`: api가 Let's Encrypt에서 직접 받고 자동으로 갱신한다(crate::edge_acme, TLS-ALPN-01이라
+//!     443 하나로 끝나고 80·DNS 토큰이 필요 없다). 받은 인증서는 `TLS_ACME_DIR`에 남아 재시작해도 그대로 쓴다.
+//!   - `TLS_CERT_FILE`(전체 체인 PEM)·`TLS_KEY_FILE`: 바깥에서 받은 인증서(deploy/tls-cert.sh 등). 5분마다 파일을
+//!     다시 보고, 바뀌었으면 다음 연결부터 새 인증서를 쓴다. 새 파일이 깨졌으면 이전 인증서를 계속 쓴다.
 //! - 연결 출처: `TLS_ALLOWED_SOURCES=cloudfront`(기본)이면 CloudFront 오리진 쪽 IP 대역
 //!   (`CLOUDFRONT_ORIGIN_FACING`)에서 온 연결만 받고, 나머지는 TLS 핸드셰이크 전에 끊는다. 대역은 AWS
 //!   ip-ranges.json을 6시간마다 받고, 첫 응답 전에는 저장소 스냅샷(config/cloudfront-origin-facing.json)을 쓴다.
+//!   예외는 하나: 인증서를 받는 동안에만 Let's Encrypt 검증 연결(ALPN `acme-tls/1`, 그 도메인 SNI)에 검증용
+//!   인증서로 답하고 바로 닫는다. 요청은 받지 않는다.
 //! - 요청: 이 리스너로 온 요청은 화면 파일까지 모두 서비스 비밀(`x-audeniq-service`, CloudFront origin custom
 //!   header)이 있어야 한다. 다른 AWS 계정의 CloudFront가 이 서버를 오리진으로 걸어도 403이다.
 //!
 //! 평문 `API_BIND`는 컨테이너 healthcheck와 (전환 전까지) 터널용으로 그대로 둔다.
-use crate::{api::AppState, error::Error, studio_static};
+use crate::{api::AppState, edge_acme, error::Error, studio_static};
 use axum::{
     Router,
     extract::{Request, State},
@@ -21,6 +26,7 @@ use axum::{
 };
 use ipnet::IpNet;
 use rustls::{
+    ServerConfig,
     crypto::CryptoProvider,
     pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject},
     server::{ClientHello, ResolvesServerCert},
@@ -32,7 +38,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use tokio::net::TcpStream;
-use tokio_rustls::{TlsAcceptor, server::TlsStream};
+use tokio_rustls::{LazyConfigAcceptor, server::TlsStream};
 
 /// AWS가 공개하는 IP 대역 (https://docs.aws.amazon.com/vpc/latest/userguide/aws-ip-ranges.html)
 pub const AWS_IP_RANGES_URL: &str = "https://ip-ranges.amazonaws.com/ip-ranges.json";
@@ -59,11 +65,19 @@ pub enum Sources {
     Any,
 }
 
+/// 인증서를 어디서 얻나
+#[derive(Clone, Debug)]
+pub enum Certificates {
+    /// 바깥에서 받은 PEM 파일 (5분마다 다시 읽음)
+    Files { cert: PathBuf, key: PathBuf },
+    /// api가 Let's Encrypt에서 직접 받고 갱신
+    Acme(edge_acme::Acme),
+}
+
 #[derive(Clone, Debug)]
 pub struct Settings {
     pub bind: String,
-    pub cert_file: PathBuf,
-    pub key_file: PathBuf,
+    pub certificates: Certificates,
     pub sources: Sources,
 }
 
@@ -77,10 +91,20 @@ impl Settings {
         let Some(bind) = get("TLS_BIND") else {
             return Ok(None);
         };
-        let cert_file = get("TLS_CERT_FILE")
-            .ok_or_else(|| anyhow::anyhow!("TLS_BIND requires TLS_CERT_FILE"))?;
-        let key_file =
-            get("TLS_KEY_FILE").ok_or_else(|| anyhow::anyhow!("TLS_BIND requires TLS_KEY_FILE"))?;
+        // TLS_ACME_DOMAIN이 있으면 Let's Encrypt (compose가 늘 넣어 두는 TLS_CERT_FILE은 쓰지 않는다)
+        let certificates = match edge_acme::Acme::from_values(&get)? {
+            Some(acme) => Certificates::Acme(acme),
+            None => Certificates::Files {
+                cert: get("TLS_CERT_FILE")
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("TLS_BIND requires TLS_ACME_DOMAIN or TLS_CERT_FILE")
+                    })?
+                    .into(),
+                key: get("TLS_KEY_FILE")
+                    .ok_or_else(|| anyhow::anyhow!("TLS_CERT_FILE requires TLS_KEY_FILE"))?
+                    .into(),
+            },
+        };
         let sources = match get("TLS_ALLOWED_SOURCES").as_deref() {
             None | Some("cloudfront") => Sources::CloudFront,
             Some("any") => Sources::Any,
@@ -94,23 +118,26 @@ impl Settings {
         );
         Ok(Some(Self {
             bind,
-            cert_file: cert_file.into(),
-            key_file: key_file.into(),
+            certificates,
             sources,
         }))
     }
 
-    /// 인증서를 읽고(실패하면 시작하지 않는다) 포트를 연다. 인증서 재로드·IP 대역 갱신 작업도 여기서 띄운다.
+    /// 인증서를 준비하고 포트를 연다. 인증서 갱신·IP 대역 갱신 작업도 여기서 띄운다.
+    /// 파일 인증서가 깨졌으면 시작하지 않는다. Let's Encrypt는 아직 인증서가 없으면 받을 때까지
+    /// 핸드셰이크가 실패할 뿐 api는 뜬다(평문 API·healthcheck는 그대로).
     pub async fn bind(self) -> anyhow::Result<TlsListener> {
         let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
-        let certs = Arc::new(CertStore::load(&self.cert_file, &self.key_file, &provider)?);
-        let mut config = rustls::ServerConfig::builder_with_provider(provider.clone())
+        let certs = Arc::new(match &self.certificates {
+            Certificates::Files { cert, key } => CertStore::from_files(cert, key, &provider)?,
+            Certificates::Acme(acme) => acme.load_stored(&provider),
+        });
+        let mut config = ServerConfig::builder_with_provider(provider.clone())
             .with_safe_default_protocol_versions()?
             .with_no_client_auth()
             .with_cert_resolver(certs.clone());
         // CloudFront는 오리진에 HTTP/1.1로 붙지만, h2를 내미는 상대(시험용 curl, 이후 gRPC 등)도 받는다
         config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
-        let acceptor = TlsAcceptor::from(Arc::new(config));
 
         let allow = Arc::new(match self.sources {
             Sources::CloudFront => Allow::cloudfront(),
@@ -122,15 +149,27 @@ impl Settings {
             bind = %local,
             sources = ?self.sources,
             prefixes = allow.len(),
+            certificate = match &self.certificates {
+                Certificates::Files { .. } => "files",
+                Certificates::Acme(_) => "letsencrypt",
+            },
             "HTTPS listener (TLS_BIND)"
         );
 
-        tokio::spawn(reload_certs(certs, provider));
+        let challenges = Arc::new(edge_acme::Challenges::default());
+        match self.certificates {
+            Certificates::Files { .. } => {
+                tokio::spawn(reload_certs(certs, provider));
+            }
+            Certificates::Acme(acme) => {
+                tokio::spawn(edge_acme::run(acme, certs, challenges.clone(), provider));
+            }
+        }
         if self.sources == Sources::CloudFront {
             tokio::spawn(refresh_ranges(allow.clone()));
         }
         let (tx, rx) = tokio::sync::mpsc::channel(64);
-        tokio::spawn(accept_loop(tcp, acceptor, allow, tx));
+        tokio::spawn(accept_loop(tcp, Arc::new(config), allow, challenges, tx));
         Ok(TlsListener { rx, local })
     }
 }
@@ -173,8 +212,9 @@ impl axum::serve::Listener for TlsListener {
 
 async fn accept_loop(
     tcp: tokio::net::TcpListener,
-    acceptor: TlsAcceptor,
+    config: Arc<ServerConfig>,
     allow: Arc<Allow>,
+    challenges: Arc<edge_acme::Challenges>,
     tx: tokio::sync::mpsc::Sender<(TlsStream<TcpStream>, SocketAddr)>,
 ) {
     let handshakes = Arc::new(tokio::sync::Semaphore::new(MAX_HANDSHAKES));
@@ -194,7 +234,9 @@ async fn accept_loop(
             // 서버가 멈췄다(종료 중)
             () = tx.closed() => return,
         };
-        if !allow.permits(peer.ip()) {
+        let allowed = allow.permits(peer.ip());
+        // 인증서를 받는 중이 아니면 CloudFront 밖의 연결은 ClientHello도 읽지 않는다
+        if !allowed && !challenges.pending() {
             rejected += 1;
             if rejected == 1 || last_report.elapsed() >= Duration::from_secs(60) {
                 tracing::warn!(peer = %peer.ip(), rejected, "HTTPS connection refused: not a CloudFront origin address");
@@ -210,14 +252,15 @@ async fn accept_loop(
         if let Err(error) = stream.set_nodelay(true) {
             tracing::debug!(%error, "TCP_NODELAY not set");
         }
-        let acceptor = acceptor.clone();
-        let tx = tx.clone();
+        let (config, challenges, tx) = (config.clone(), challenges.clone(), tx.clone());
         tokio::spawn(async move {
-            match tokio::time::timeout(HANDSHAKE_TIMEOUT, acceptor.accept(stream)).await {
-                Ok(Ok(tls)) => {
+            let shake = handshake(stream, peer, allowed, config, &challenges);
+            match tokio::time::timeout(HANDSHAKE_TIMEOUT, shake).await {
+                Ok(Ok(Some(tls))) => {
                     drop(permit);
                     let _ = tx.send((tls, peer)).await;
                 }
+                Ok(Ok(None)) => {}
                 Ok(Err(error)) => {
                     tracing::debug!(peer = %peer.ip(), %error, "TLS handshake failed")
                 }
@@ -227,53 +270,121 @@ async fn accept_loop(
     }
 }
 
+/// ClientHello를 보고 나눈다: Let's Encrypt 검증(acme-tls/1)이면 검증용 인증서로 답하고 닫고(None),
+/// 그 밖에는 CloudFront에서 온 연결만 보통 핸드셰이크를 마친다.
+async fn handshake(
+    stream: TcpStream,
+    peer: SocketAddr,
+    allowed: bool,
+    config: Arc<ServerConfig>,
+    challenges: &edge_acme::Challenges,
+) -> std::io::Result<Option<TlsStream<TcpStream>>> {
+    let start = LazyConfigAcceptor::new(rustls::server::Acceptor::default(), stream).await?;
+    let hello = start.client_hello();
+    if edge_acme::is_challenge(&hello) {
+        let challenge = hello.server_name().and_then(|name| challenges.config(name));
+        if let Some(challenge) = challenge {
+            let mut tls = start.into_stream(challenge).await?;
+            tracing::info!(peer = %peer.ip(), "ACME TLS-ALPN-01 challenge answered");
+            let _ = tokio::io::AsyncWriteExt::shutdown(&mut tls).await;
+        }
+        return Ok(None);
+    }
+    if !allowed {
+        tracing::debug!(peer = %peer.ip(), "HTTPS connection refused during ACME validation: not a CloudFront origin address");
+        return Ok(None);
+    }
+    Ok(Some(start.into_stream(config).await?))
+}
+
 // ---- 인증서 ----
 
-/// 지금 쓰는 인증서. 파일이 바뀌면 [`CertStore::reload`]가 바꿔 끼운다.
+/// 지금 쓰는 인증서. 파일 모드는 [`CertStore::reload`]가, Let's Encrypt는 [`CertStore::install`]이 바꿔 끼운다.
+/// 아직 없으면(Let's Encrypt 첫 발급 전) 핸드셰이크가 실패한다.
 #[derive(Debug)]
-struct CertStore {
-    cert_file: PathBuf,
-    key_file: PathBuf,
-    current: RwLock<(Fingerprint, Arc<CertifiedKey>)>,
+pub(crate) struct CertStore {
+    files: Option<(PathBuf, PathBuf)>,
+    current: RwLock<Option<Loaded>>,
+}
+
+#[derive(Debug)]
+struct Loaded {
+    fingerprint: Fingerprint,
+    key: Arc<CertifiedKey>,
 }
 
 type Fingerprint = [u8; 32];
 
 impl CertStore {
-    fn load(cert: &Path, key: &Path, provider: &CryptoProvider) -> anyhow::Result<Self> {
-        let (fingerprint, certified) = read_pair(cert, key, provider)?;
+    pub(crate) fn empty() -> Self {
+        Self {
+            files: None,
+            current: RwLock::new(None),
+        }
+    }
+
+    fn from_files(cert: &Path, key: &Path, provider: &CryptoProvider) -> anyhow::Result<Self> {
+        let loaded = read_pair(cert, key, provider)?;
         Ok(Self {
-            cert_file: cert.to_owned(),
-            key_file: key.to_owned(),
-            current: RwLock::new((fingerprint, Arc::new(certified))),
+            files: Some((cert.to_owned(), key.to_owned())),
+            current: RwLock::new(Some(loaded)),
         })
     }
 
-    /// 파일이 바뀌었으면 다시 읽는다. 새로 바꿔 끼웠으면 true.
+    fn fingerprint(&self) -> Option<Fingerprint> {
+        self.current
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .map(|l| l.fingerprint)
+    }
+
+    /// 파일 모드: 파일이 바뀌었으면 다시 읽는다. 새로 바꿔 끼웠으면 true.
     fn reload(&self, provider: &CryptoProvider) -> anyhow::Result<bool> {
-        let fingerprint = fingerprint(
-            &std::fs::read(&self.cert_file)?,
-            &std::fs::read(&self.key_file)?,
-        );
-        if self.current.read().unwrap_or_else(|e| e.into_inner()).0 == fingerprint {
+        let Some((cert, key)) = &self.files else {
+            return Ok(false);
+        };
+        let fingerprint = fingerprint(&std::fs::read(cert)?, &std::fs::read(key)?);
+        if self.fingerprint() == Some(fingerprint) {
             return Ok(false);
         }
-        let (fingerprint, certified) = read_pair(&self.cert_file, &self.key_file, provider)?;
-        *self.current.write().unwrap_or_else(|e| e.into_inner()) =
-            (fingerprint, Arc::new(certified));
+        let loaded = read_pair(cert, key, provider)?;
+        *self.current.write().unwrap_or_else(|e| e.into_inner()) = Some(loaded);
         Ok(true)
+    }
+
+    /// 새 인증서(PEM)로 바꿔 끼운다. 깨졌거나 키가 맞지 않으면 지금 것을 그대로 둔다.
+    pub(crate) fn install(
+        &self,
+        cert_pem: &[u8],
+        key_pem: &[u8],
+        provider: &CryptoProvider,
+    ) -> anyhow::Result<()> {
+        let key = parse_pair(cert_pem, key_pem, provider)?;
+        *self.current.write().unwrap_or_else(|e| e.into_inner()) = Some(Loaded {
+            fingerprint: fingerprint(cert_pem, key_pem),
+            key: Arc::new(key),
+        });
+        Ok(())
+    }
+
+    /// 지금 인증서의 맨 앞(서버) 인증서
+    pub(crate) fn leaf(&self) -> Option<CertificateDer<'static>> {
+        self.current
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .and_then(|l| l.key.cert.first().cloned())
     }
 }
 
 impl ResolvesServerCert for CertStore {
     fn resolve(&self, _hello: ClientHello<'_>) -> Option<Arc<CertifiedKey>> {
-        Some(
-            self.current
-                .read()
-                .unwrap_or_else(|e| e.into_inner())
-                .1
-                .clone(),
-        )
+        self.current
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .map(|l| l.key.clone())
     }
 }
 
@@ -285,32 +396,28 @@ fn fingerprint(cert: &[u8], key: &[u8]) -> Fingerprint {
     h.finalize().into()
 }
 
-fn read_pair(
-    cert: &Path,
-    key: &Path,
-    provider: &CryptoProvider,
-) -> anyhow::Result<(Fingerprint, CertifiedKey)> {
+fn read_pair(cert: &Path, key: &Path, provider: &CryptoProvider) -> anyhow::Result<Loaded> {
     let cert_pem = std::fs::read(cert)
         .map_err(|e| anyhow::anyhow!("TLS_CERT_FILE {}: {e}", cert.display()))?;
     let key_pem =
         std::fs::read(key).map_err(|e| anyhow::anyhow!("TLS_KEY_FILE {}: {e}", key.display()))?;
-    Ok((
-        fingerprint(&cert_pem, &key_pem),
-        parse_pair(&cert_pem, &key_pem, provider)?,
-    ))
+    Ok(Loaded {
+        fingerprint: fingerprint(&cert_pem, &key_pem),
+        key: Arc::new(parse_pair(&cert_pem, &key_pem, provider)?),
+    })
 }
 
-fn parse_pair(
+pub(crate) fn parse_pair(
     cert_pem: &[u8],
     key_pem: &[u8],
     provider: &CryptoProvider,
 ) -> anyhow::Result<CertifiedKey> {
     let chain = CertificateDer::pem_slice_iter(cert_pem)
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| anyhow::anyhow!("TLS_CERT_FILE is not PEM: {e}"))?;
-    anyhow::ensure!(!chain.is_empty(), "TLS_CERT_FILE has no certificate");
+        .map_err(|e| anyhow::anyhow!("TLS certificate is not PEM: {e}"))?;
+    anyhow::ensure!(!chain.is_empty(), "TLS certificate file has no certificate");
     let key = PrivateKeyDer::from_pem_slice(key_pem)
-        .map_err(|e| anyhow::anyhow!("TLS_KEY_FILE is not a PEM private key: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("TLS key is not a PEM private key: {e}"))?;
     // 키가 인증서와 짝이 맞는지도 확인한다
     CertifiedKey::from_der(chain, key, provider)
         .map_err(|e| anyhow::anyhow!("TLS certificate and key do not match: {e}"))
@@ -606,6 +713,29 @@ mod tests {
             ("TLS_KEY_FILE", "/tls/privkey.pem"),
         ];
         assert!(settings(&[]).unwrap().is_none(), "off without TLS_BIND");
+        let acme = settings(&[
+            files[0],
+            files[1],
+            files[2],
+            ("TLS_ACME_DOMAIN", "origin.audeniq.com"),
+        ])
+        .unwrap()
+        .unwrap();
+        assert!(
+            matches!(acme.certificates, Certificates::Acme(_)),
+            "Let's Encrypt wins over the compose default files"
+        );
+        assert!(
+            matches!(
+                settings(&files).unwrap().unwrap().certificates,
+                Certificates::Files { .. }
+            ),
+            "files without TLS_ACME_DOMAIN"
+        );
+        assert!(
+            settings(&[files[0]]).is_err(),
+            "needs Let's Encrypt or certificate files"
+        );
         assert!(settings(&files[..2]).is_err(), "key file missing");
         assert_eq!(
             settings(&files).unwrap().unwrap().sources,
@@ -662,8 +792,8 @@ mod tests {
         let provider = rustls::crypto::aws_lc_rs::default_provider();
         let dir = temp_dir("reload");
         let (c, k) = write_pair(&dir, CERT_A, KEY_A);
-        let store = CertStore::load(&c, &k, &provider).unwrap();
-        let served = |s: &CertStore| s.current.read().unwrap().1.cert[0].to_vec();
+        let store = CertStore::from_files(&c, &k, &provider).unwrap();
+        let served = |s: &CertStore| s.leaf().unwrap().to_vec();
         assert_eq!(served(&store), der(CERT_A));
         assert!(!store.reload(&provider).unwrap(), "unchanged files");
 
@@ -688,10 +818,10 @@ mod tests {
         let dir = temp_dir("broken");
         let (c, k) = write_pair(&dir, CERT_A, KEY_B);
         assert!(
-            CertStore::load(&c, &k, &provider).is_err(),
+            CertStore::from_files(&c, &k, &provider).is_err(),
             "mismatched key"
         );
-        assert!(CertStore::load(&dir.join("missing.pem"), &k, &provider).is_err());
+        assert!(CertStore::from_files(&dir.join("missing.pem"), &k, &provider).is_err());
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -727,11 +857,10 @@ mod tests {
 
     async fn serve(sources: Sources) -> (SocketAddr, PathBuf) {
         let dir = temp_dir("serve");
-        let (cert_file, key_file) = write_pair(&dir, CERT_A, KEY_A);
+        let (cert, key) = write_pair(&dir, CERT_A, KEY_A);
         let listener = Settings {
             bind: "127.0.0.1:0".into(),
-            cert_file,
-            key_file,
+            certificates: Certificates::Files { cert, key },
             sources,
         }
         .bind()

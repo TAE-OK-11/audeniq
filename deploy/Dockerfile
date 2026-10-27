@@ -65,9 +65,11 @@ FROM debian:13-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c
 # pinned known_hosts file (crate::transport::SftpTransport).
 # /var/tmp/audeniq is the worker TMPDIR. A new named volume copies this
 # ownership, so UID 10001 can write downloaded masters for QC.
+# /var/lib/audeniq-tls: the api's Let's Encrypt account and certificates
+# (crate::edge_acme, compose volume api_tls), private to UID 10001.
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssh-client libxml2-utils clamav-daemon clamav-freshclam && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 audeniq && useradd --uid 10001 --gid 10001 --no-create-home audeniq \
-    && install -d -o 10001 -g 10001 -m 700 /var/tmp/audeniq \
+    && install -d -o 10001 -g 10001 -m 700 /var/tmp/audeniq /var/lib/audeniq-tls \
     && install -d -o 10001 -g 10001 -m 755 /var/lib/clamav /run/audeniq-av
 COPY --from=build /out/ /usr/local/bin/
 COPY --from=engine /engine/root/bin/audeniq-music /usr/local/bin/audeniq-music

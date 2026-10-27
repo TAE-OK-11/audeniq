@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# 백엔드 HTTPS 인증서 (crates/core/src/edge_tls.rs, deploy/aws/README.md): CloudFront가 오리진으로 부르는 주소의 인증서.
+# (대안) 백엔드 HTTPS 인증서를 바깥에서 받아 ./tls에 둔다 (crates/core/src/edge_tls.rs, deploy/aws/README.md).
+# 기본은 api가 Let's Encrypt에서 직접 받고 갱신하는 TLS_ACME_DOMAIN(crates/core/src/edge_acme.rs)이고, 이 스크립트는 그걸 쓰지 않을 때만.
 # CloudFront는 공인 CA 인증서만 믿어서 자체 서명·Cloudflare Origin CA는 안 된다. 기본은 Let's Encrypt를
 # DNS-01(Cloudflare DNS API)로 받아 서버 포트 80을 열지 않는다. api는 ./tls 파일을 5분마다 다시 읽어 재시작 없이 바꾼다.
 #
@@ -86,7 +87,7 @@ case "${1:-}" in
     ls -l tls/
     ;;
   *)
-    sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
     exit 2
     ;;
 esac

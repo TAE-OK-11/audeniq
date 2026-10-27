@@ -61,6 +61,10 @@ tokio-stream = "0.1.19"
 rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }
 ipnet = { version = "2.12.2", features = ["serde"] }
+# Let's Encrypt for that listener (crate::edge_acme): ACME client and the
+# CSR / TLS-ALPN-01 challenge certificate, both on aws-lc-rs.
+instant-acme = { version = "0.8.5", default-features = false, features = ["aws-lc-rs", "hyper-rustls", "rcgen"] }
+rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem", "crypto"] }
 
 [dev-dependencies]
 # Independent oracle for the in-crate MD5 (crate::md5) tests only.
