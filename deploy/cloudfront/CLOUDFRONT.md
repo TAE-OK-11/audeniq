@@ -63,6 +63,28 @@
 - 미결정: failover 방식(Premium 전용이라 Free에서는 불가),
   로깅(S3 버킷 필요), WAF(별도 비용).
 
+## CloudFront Function: audeniq-studio-maintenance (2026-10-27 추가)
+
+- 런타임: cloudfront-js-2.0, LIVE 스테이지로 게시됨
+- 연결: Default(*) + /api/* 양쪽 viewer-response
+  (viewer-request는 기존 audeniq-studio-edge 그대로, 변경 없음)
+- 코드: 이 디렉터리의 `studio-maintenance-function.js` (배포된 코드와 동일)
+- 하는 일: 오리진이 502/503/504를 내면(업데이트·서버 다운)
+  기본 에러 페이지 대신 AUDENIQ 점검 화면을 낸다.
+  /api/*는 JSON maintenance 응답을 낸다.
+  500·403 등 다른 상태는 그대로 둔다.
+  외부 리소스를 쓰지 않는다 (오리진이 죽었을 때는 정적 파일도 못 가져오므로 전부 인라인).
+
+## 보안 모드 기록 (2026-10-27)
+
+- 코어 보호·속도 제한 모두 모니터 모드로 유지가 기본 상태다.
+- 22:14 차단 모드로 전환했더니 사용자가 403으로 차단됨
+  (보안 추세에 24시간 기준 차단 요청 24건 표시됨).
+- 22:18~22:23 모니터 모드로 복원 완료
+  (코어 보호 "Use monitor mode" 재체크, 속도 제한 규칙 조치를 Block→Count로 변경).
+- 교훈: 차단 모드로 바꾸기 전에는 오탐 여부를 먼저 확인할 것.
+  사용자 트래픽이 차단되면 즉시 모니터 모드로 되돌릴 것.
+
 ## 관련 문서
 
 - `deploy/STUDIO_SERVING.md`: 백엔드 정적 서빙 전환 기록
