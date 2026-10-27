@@ -73,7 +73,7 @@ case "${1:-}" in
   install)
     chain=${2:?사용법: tls-cert.sh install <fullchain.pem> <privkey.pem>}
     key=${3:?사용법: tls-cert.sh install <fullchain.pem> <privkey.pem>}
-    [ -f "$chain" ] && [ -f "$key" ] || die "파일이 없어요: $chain $key"
+    if [ ! -f "$chain" ] || [ ! -f "$key" ]; then die "파일이 없어요: $chain $key"; fi
     dir=$(mktemp -d)
     trap 'rm -rf "$dir"' EXIT
     install -m 0600 "$chain" "$dir/fullchain.pem"
