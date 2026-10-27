@@ -92,6 +92,16 @@ impl AppState {
             service_secret_digest,
         })))
     }
+    /// Whether the request carries the edge's service secret (the same check
+    /// as `boundary`), for code outside it: the Studio static files and the
+    /// client IP on log lines (crate::studio_static).
+    pub(crate) fn edge_authenticated(&self, headers: &HeaderMap) -> bool {
+        let provided = headers
+            .get("x-audeniq-service")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        auth::secret_matches_digest(provided, &self.service_secret_digest)
+    }
 }
 pub fn router(s: AppState) -> Router {
     Router::new()

@@ -2,6 +2,9 @@
 
 > 지금(개발 단계)은 Cloudflare Workers가 화면을 서빙하고 `/api`를 터널로 백엔드에 넘겨요(공지·점검 로직은 백엔드, 설문은 베타 전까지 D1 Worker 그대로).
 > 이 문서는 AWS로 옮길 때 쓰는 구성이에요. 공지·점검을 백엔드로 옮긴 부분은 두 구성이 같아요.
+>
+> Studio 화면은 이제 백엔드가 서빙해요([`../STUDIO_SERVING.md`](../STUDIO_SERVING.md)). AWS에서는 Studio도 CloudFront → ALB 한 오리진으로 가고,
+> 아래의 Studio S3 버킷과 `functions/studio.js`(SPA 폴백)는 필요 없어져요. 그 설계 메모는 STUDIO_SERVING.md 마지막 절에 있어요.
 
 Cloudflare Workers, D1, Tunnel이 하던 일을 전부 AWS로 옮겨요.
 

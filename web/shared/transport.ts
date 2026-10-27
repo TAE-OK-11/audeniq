@@ -149,6 +149,8 @@ export const MCP_DISCOVERY_PATHS = new Set([
   '/.well-known/oauth-authorization-server',
 ]);
 const PARTNER_DROP = new Set(['x-forwarded-for', 'x-real-ip', 'host', 'connection', 'accept-encoding']);
+// 백엔드가 서빙하는 화면 파일(/api 밖, crates/core/src/studio_static.rs)은 조건부 요청으로 304를 받는다
+const STATIC_HEADERS = ['if-none-match', 'if-modified-since'];
 
 export function backendHeaders(request: WorkerRequest, env: Required<Pick<TransportEnv, 'EDGE_SERVICE_SECRET'>>, pathname: string, site: string): Headers {
   const src = request.headers;
@@ -158,6 +160,12 @@ export function backendHeaders(request: WorkerRequest, env: Required<Pick<Transp
     if (v) headers.set(name, v);
   }
   headers.set('accept-encoding', passThroughEncoding(clientEncoding(request)));
+  if (!pathname.startsWith('/api/')) {
+    for (const name of STATIC_HEADERS) {
+      const v = src.get(name);
+      if (v) headers.set(name, v);
+    }
+  }
   if (MCP_CLIENT_PATHS.has(pathname)) {
     for (const name of MCP_HEADERS) {
       const v = src.get(name);

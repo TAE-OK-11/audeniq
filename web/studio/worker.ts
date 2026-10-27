@@ -1,65 +1,30 @@
 /**
- * AUDENIQ STUDIO Worker — 화면 서빙과 백엔드 전달만 한다
- * - 정적 에셋(React 빌드)은 Workers Static Assets가 서빙 (없는 화면 경로는 index.html로 SPA 폴백)
- * - /api/*, /ready 는 백엔드로 (터널 → api, shared/transport.ts proxyToBackend)
- * - AI 어시스턴트 OAuth 발견 문서(/.well-known/oauth-*)도 백엔드로 (docs/MCP.md)
- *   공지·이벤트·서버 점검(/api/notices, /api/events, /api/status, /api/content/*), 점검 중 503 차단,
- *   비상 스위치(MAINTENANCE_MODE)는 모두 백엔드가 한다 (crates/core/src/site_content.rs)
+ * AUDENIQ STUDIO Worker — 프록시만 한다 (화면 파일도 백엔드가 서빙: crates/core/src/studio_static.rs)
+ * 모든 요청을 백엔드로 넘기면서 헤더만 다듬는다 (shared/transport.ts backendHeaders):
+ * - 브라우저가 보낸 x-audeniq-* 헤더는 버린다 (필요한 헤더만 골라 보낸다)
+ * - 실제 사용자 IP(Cloudflare CF-Connecting-IP)를 x-audeniq-client-ip로 넣는다
+ * - 서비스 식별 헤더 x-audeniq-service(비밀)·x-audeniq-site(studio)를 넣는다
+ * SPA 폴백·리다이렉트·캐시·보안 헤더(_headers)는 백엔드가 한다. 그래서 같은 일을 AWS CloudFront
+ * Function(viewer-request, 헤더만)과 origin custom header로 옮길 수 있다 (deploy/STUDIO_SERVING.md).
  *
  * 설정: BACKEND_URL(기본 https://api-origin.audeniq.com), EDGE_SERVICE_SECRET(secret)
  */
-import { MCP_DISCOVERY_PATHS, proxyToBackend, requireHttps, secureResponse, serveAssets } from '../shared/transport.ts';
+import { proxyToBackend, requireHttps, secureResponse } from '../shared/transport.ts';
 import type { WorkerRequest } from '../shared/transport.ts';
 import type { ExecutionContext, TransportEnv } from '../shared/worker-types.ts';
 
-async function proxy(request: WorkerRequest, env: TransportEnv): Promise<Response> {
-  const out = await proxyToBackend(request, env, { site: 'studio' });
-  out.headers.set('Access-Control-Allow-Origin', 'https://studio.audeniq.com');
-  out.headers.set('Access-Control-Allow-Credentials', 'true');
-  return out;
-}
-
-const studioWorker = {
-  async fetch(request: WorkerRequest, env: TransportEnv, _ctx?: ExecutionContext): Promise<Response> {
-    const url = new URL(request.url);
-    if (url.pathname.startsWith('/api/') || url.pathname === '/ready') return proxy(request, env);
-    if (MCP_DISCOVERY_PATHS.has(url.pathname) && ['GET', 'HEAD'].includes(request.method)) {
-      return proxyToBackend(request, env, { site: 'studio' });
-    }
-    if (url.pathname.startsWith('/.well-known/')) {
-      // 정적 에셋 설정(not_found_handling: single-page-application)은 없는 파일에도 화면 HTML을 200으로 준다.
-      // AI 클라이언트가 찾아보는 다른 발견 문서(openid-configuration, 경로를 붙인 주소 등)가 HTML을 받으면
-      // 404로 넘어가지 못하고 연결에 실패하므로, 실제 파일이 아니면 JSON 404로 답한다.
-      const res = await serveAssets(request, env);
-      if (res.status === 404 || res.headers.get('content-type')?.startsWith('text/html')) {
-        return Response.json({ error: { code: 'NOT_FOUND' } }, { status: 404, headers: { 'Cache-Control': 'no-store' } });
-      }
-      return res;
-    }
-    // 그 외는 정적 에셋 (없는 화면 경로는 index.html로 SPA 폴백)
-    const assetRes = await serveAssets(request, env);
-    if (assetRes.status === 404) {
-      // /.well-known 아래는 화면이 아니다: AI 클라이언트가 찾아보는 다른 발견 문서
-      // (openid-configuration 등)에 화면 HTML을 200으로 주면 404로 넘어가지 못하고 실패한다
-      const isAsset = /\.[a-z0-9]+$/i.test(url.pathname) || url.pathname.startsWith('/.well-known/');
-      if (!isAsset) {
-        const indexRes = await serveAssets(new Request(new URL('/', request.url), request), env);
-        if (indexRes.ok) {
-          // 에셋 응답의 보안 헤더(_headers의 CSP 등)는 그대로 두고 캐시만 끈다
-          const headers = new Headers(indexRes.headers);
-          headers.set('Cache-Control', 'no-cache');
-          return new Response(indexRes.body, { status: 200, headers });
-        }
-      }
-    }
-    return assetRes;
-  },
-};
+/** 정적 에셋 바인딩 없이 백엔드 주소·비밀만 */
+export type StudioEnv = Pick<TransportEnv, 'BACKEND_URL' | 'EDGE_SERVICE_SECRET'>;
 
 export default {
-  async fetch(request: WorkerRequest, env: TransportEnv, ctx?: ExecutionContext): Promise<Response> {
+  async fetch(request: WorkerRequest, env: StudioEnv, _ctx?: ExecutionContext): Promise<Response> {
     const refused = requireHttps(request);
     if (refused) return refused;
-    return secureResponse(await studioWorker.fetch(request, env, ctx));
+    const out = await proxyToBackend(request, env, { site: 'studio' });
+    if (new URL(request.url).pathname.startsWith('/api/')) {
+      out.headers.set('Access-Control-Allow-Origin', 'https://studio.audeniq.com');
+      out.headers.set('Access-Control-Allow-Credentials', 'true');
+    }
+    return secureResponse(out);
   },
 };

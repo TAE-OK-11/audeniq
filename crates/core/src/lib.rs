@@ -90,6 +90,7 @@ pub mod staff_admin;
 pub mod staff_mfa;
 pub mod staff_ops;
 pub mod storage;
+pub mod studio_static;
 pub mod submission;
 pub mod takedown;
 pub mod temp_sweep;
