@@ -4,8 +4,9 @@ import assert from 'node:assert/strict';
 import { runInNewContext } from 'node:vm';
 import { APPS, cacheGroups, isAppName, parseHeaders } from '../apps.ts';
 import type { AppName } from '../apps.ts';
-import { apiFunctionCode, functionCode, template } from '../template.ts';
+import { edgeFunctionCode, functionCode, ORIGIN_HTTPS_PORT, template } from '../template.ts';
 import type { ApiOrigin } from '../template.ts';
+import { backendHeaders, MCP_DISCOVERY_PATHS } from '../../../web/shared/transport.ts';
 import { syncCommands } from '../publish.ts';
 
 // CloudFront Functions(cloudfront-js-2.0) 이벤트·결과 중 테스트가 쓰는 만큼
@@ -15,6 +16,11 @@ interface CfEvent {
   viewer?: { ip: string };
   request: { uri: string; querystring: Record<string, CfValue>; headers: Record<string, CfValue> };
   response?: { statusCode: number; headers: Record<string, CfValue> };
+}
+/** viewer-request 결과 요청 */
+interface CfRequest {
+  uri: string;
+  headers: Record<string, CfValue>;
 }
 /** 요청(uri)이나 응답(statusCode·body)을 돌려준다 */
 interface CfResult {
@@ -34,17 +40,6 @@ async function viewer(app: AppName) {
     request: { uri, querystring: qs, headers: { host: { value: host } } },
   });
 }
-
-test('studio: SPA 폴백, 파일은 그대로, _redirects 이동은 쿼리 유지', async () => {
-  const run = await viewer('studio');
-  assert.equal(run('/').uri, '/index.html');
-  assert.equal(run('/releases/42').uri, '/index.html');
-  assert.equal(run('/assets/index-abc.js').uri, '/assets/index-abc.js');
-  const moved = run('/studio/', { qs: { a: { value: '1' }, b: { value: '' } } });
-  assert.equal(moved.statusCode, 308);
-  assert.equal(moved.headers.location.value, '/?a=1&b');
-  assert.equal(run('/index.html').headers.location.value, '/');
-});
 
 test('admin: 화면 경로는 index.html', async () => {
   const run = await viewer('admin');
@@ -83,58 +78,121 @@ test('landing viewer-response: 오류·미리보기 주소는 noindex', async ()
   assert.equal(respond('d111.cloudfront.net', 200).value, 'noindex, nofollow, noarchive');
 });
 
-test('API 함수: 브라우저의 x-audeniq-* 를 버리고 사용자 IP를 넣는다', () => {
-  const run = (app: AppName, uri: string) => {
-    const sandbox: Sandbox = {};
-    runInNewContext(`${apiFunctionCode(app)}\nthis.handler = handler;`, sandbox);
-    return sandbox.handler!({
-      viewer: { ip: '2001:db8::7' },
-      request: { uri, querystring: {}, headers: {
-        'x-audeniq-service': { value: 'forged' }, 'x-audeniq-client-ip': { value: '1.1.1.1' },
-        'x-audeniq-site': { value: 'admin' }, cookie: { value: 'a=b' },
-      } },
-    });
+function edge(app: AppName) {
+  const sandbox: { handler?: (event: unknown) => unknown } = {};
+  runInNewContext(`${edgeFunctionCode(app)}\nthis.handler = handler;`, sandbox);
+  return {
+    request: (uri: string, headers: Record<string, string>, ip = '2001:db8::7') => sandbox.handler!({
+      context: { eventType: 'viewer-request' }, viewer: { ip },
+      request: { uri, querystring: {}, headers: Object.fromEntries(Object.entries(headers).map(([k, v]) => [k, { value: v }])) },
+    }) as CfRequest,
+    response: (uri: string, headers: Record<string, string>) => (sandbox.handler!({
+      context: { eventType: 'viewer-response' },
+      request: { uri, querystring: {}, headers: {} },
+      response: { statusCode: 200, headers: Object.fromEntries(Object.entries(headers).map(([k, v]) => [k, { value: v }])) },
+    }) as { headers: Record<string, CfValue> }).headers,
   };
-  const r = run('studio', '/api/me');
-  assert.equal(r.uri, '/api/me');
-  assert.deepEqual(Object.keys(r.headers).sort(), ['cookie', 'x-audeniq-client-ip']);
-  assert.equal(r.headers['x-audeniq-client-ip'].value, '2001:db8::7');
+}
+
+// 브라우저·공격자가 보낼 수 있는 헤더 (CloudFront Functions에서는 쿠키가 headers 밖에 따로 온다)
+const BROWSER = {
+  host: 'studio.audeniq.com', 'accept-encoding': 'br, gzip', 'content-length': '2',
+  origin: 'https://studio.audeniq.com', 'content-type': 'application/json', accept: '*/*', 'x-csrf-token': 't',
+  'sec-fetch-site': 'same-origin', 'x-request-id': 'r1', 'user-agent': 'UA', 'if-none-match': '"e"', 'if-modified-since': 'x',
+  authorization: 'Bearer leak', 'mcp-protocol-version': '2025-06-18', 'mcp-method': 'tools/call', 'mcp-name': 'n',
+  'x-audeniq-service': 'forged', 'x-audeniq-client-ip': '1.1.1.1', 'x-audeniq-site': 'admin', 'x-audeniq-audit-route': 'x',
+  'x-forwarded-for': '9.9.9.9', 'x-real-ip': '9.9.9.9', 'x-partner-signature': 'sig', 'cf-connecting-ip': '8.8.8.8', referer: 'r',
+};
+
+test('edge 함수: 프록시 Worker(backendHeaders)와 같은 헤더만 백엔드로, 사용자 IP는 CloudFront 값', () => {
+  const run = edge('studio');
+  const paths = ['/', '/releases/1', '/assets/a.js', '/api/me', '/api/auth/login', '/api/mcp', '/api/oauth/token',
+    '/api/partner-hooks/acme/status', ...MCP_DISCOVERY_PATHS, '/ready'];
+  for (const path of paths) {
+    const out = run.request(path, BROWSER);
+    assert.equal(out.uri, path, '경로는 바꾸지 않는다 (SPA 폴백·리다이렉트는 백엔드)');
+    assert.equal(out.headers['x-audeniq-client-ip'].value, '2001:db8::7');
+    const sent = Object.keys(out.headers).filter(h => !['host', 'accept-encoding', 'content-length', 'x-audeniq-client-ip'].includes(h)).sort();
+    // Worker 규칙: cf-connecting-ip → x-audeniq-client-ip, 서비스 비밀·사이트는 CloudFront origin custom header
+    const request = new Request(`https://studio.audeniq.com${path}`, { headers: BROWSER });
+    const worker = [...backendHeaders(request, { EDGE_SERVICE_SECRET: 's' }, path, 'studio').keys()]
+      .filter(h => !['accept-encoding', 'x-audeniq-client-ip', 'x-audeniq-service', 'x-audeniq-site', 'content-length', 'cf-connecting-ip'].includes(h)).sort();
+    assert.deepEqual(sent, worker, path);
+    assert.ok(sent.every(h => !h.startsWith('x-audeniq-')), path);
+  }
+  assert.equal(run.request('/api/me', BROWSER).headers.authorization, undefined, '베어러 토큰은 MCP 경로에만');
+  assert.equal(run.request('/api/mcp', BROWSER).headers.authorization.value, 'Bearer leak');
 });
 
-test('템플릿: /api 만 백엔드로(캐시 없음, 서비스 비밀·사이트 헤더), 나머지는 S3', async () => {
-  for (const app of Object.keys(APPS).filter(isAppName)) {
+test('edge 함수 응답: studio /api는 CORS, admin /api는 CORS 없이 no-store', () => {
+  const studio = edge('studio').response('/api/me', { 'access-control-allow-origin': '*' });
+  assert.equal(studio['access-control-allow-origin'].value, 'https://studio.audeniq.com');
+  assert.equal(studio['access-control-allow-credentials'].value, 'true');
+  assert.equal(edge('studio').response('/', {})['access-control-allow-origin'], undefined, '화면 파일에는 붙이지 않는다');
+  const admin = edge('admin').response('/api/me', { 'access-control-allow-origin': '*', 'cache-control': 'max-age=30' });
+  assert.equal(admin['access-control-allow-origin'], undefined);
+  assert.equal(admin['cache-control'].value, 'no-store');
+  assert.equal(admin['x-content-type-options'].value, 'nosniff');
+});
+
+test('템플릿 studio: S3 없이 화면·API 모두 백엔드(443), 해시 에셋만 캐시', async () => {
+  const t = await template('studio');
+  assert.equal(t.Resources.Bucket, undefined);
+  assert.equal(t.Resources.ViewerFunction, undefined);
+  assert.equal(t.Outputs.BucketName, undefined);
+  const d = t.Resources.Distribution.Properties.DistributionConfig;
+  assert.deepEqual(d.Origins.map(o => o.Id), ['api']);
+  const api = d.Origins[0] as ApiOrigin;
+  assert.equal(api.CustomOriginConfig.HTTPSPort, ORIGIN_HTTPS_PORT);
+  assert.equal(api.CustomOriginConfig.OriginProtocolPolicy, 'https-only');
+  assert.deepEqual(api.OriginCustomHeaders, [
+    { HeaderName: 'x-audeniq-service', HeaderValue: { Ref: 'ServiceSecret' } },
+    { HeaderName: 'x-audeniq-site', HeaderValue: 'studio' },
+  ]);
+  const def = d.DefaultCacheBehavior;
+  assert.equal(def.TargetOriginId, 'api');
+  assert.equal(def.CachePolicyId, '4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
+  assert.ok(def.AllowedMethods.includes('POST'));
+  assert.deepEqual(def.FunctionAssociations.map(f => f.EventType), ['viewer-request', 'viewer-response']);
+  assert.deepEqual(d.CacheBehaviors.map(b => [b.PathPattern, b.CachePolicyId, b.OriginRequestPolicyId]),
+    [['/assets/*', '658327ea-f89d-4fab-a63d-7e88639e58f6', undefined]]);
+  const policy = t.Resources.ResponseHeaders.Properties.ResponseHeadersPolicyConfig;
+  assert.equal(policy.SecurityHeadersConfig.StrictTransportSecurity.AccessControlMaxAgeSec, 31536000);
+  assert.equal(policy.SecurityHeadersConfig.ContentSecurityPolicy, undefined, 'CSP는 백엔드(_headers)가 붙인다');
+  assert.equal(t.Parameters.ServiceSecret?.NoEcho, true);
+});
+
+test('템플릿 admin·landing: 화면은 S3, /api 만 백엔드로(캐시 없음, edge 함수)', async () => {
+  for (const app of (['admin', 'landing'] as const)) {
+    const conf = APPS[app];
+    assert.equal(conf.origin, 's3');
+    if (conf.origin !== 's3') continue;
     const t = await template(app);
     const d = t.Resources.Distribution.Properties.DistributionConfig;
     assert.equal(d.DefaultCacheBehavior.TargetOriginId, 's3');
-    assert.deepEqual(d.CacheBehaviors.map(b => b.PathPattern), APPS[app].api);
+    assert.deepEqual(d.CacheBehaviors.map(b => b.PathPattern), conf.api);
     for (const b of d.CacheBehaviors) {
       assert.equal(b.TargetOriginId, 'api');
       assert.equal(b.CachePolicyId, '4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
       assert.ok(b.AllowedMethods.includes('POST'));
-      assert.deepEqual(b.FunctionAssociations[0].FunctionARN, { 'Fn::GetAtt': ['ApiFunction', 'FunctionARN'] });
+      assert.deepEqual(b.FunctionAssociations[0].FunctionARN, { 'Fn::GetAtt': ['EdgeFunction', 'FunctionARN'] });
     }
     const api = d.Origins.find((o): o is ApiOrigin => o.Id === 'api');
-    assert.equal(!!api, APPS[app].api.length > 0);
-    if (api) {
-      assert.deepEqual(api.OriginCustomHeaders, [
-        { HeaderName: 'x-audeniq-service', HeaderValue: { Ref: 'ServiceSecret' } },
-        { HeaderName: 'x-audeniq-site', HeaderValue: APPS[app].site },
-      ]);
-      assert.equal(t.Parameters.ServiceSecret?.NoEcho, true);
-    }
+    assert.equal(!!api, conf.api.length > 0);
+    assert.equal(!!t.Resources.EdgeFunction, conf.api.length > 0);
+    if (api) assert.deepEqual(api.OriginCustomHeaders[1], { HeaderName: 'x-audeniq-site', HeaderValue: conf.site });
     const policy = t.Resources.ResponseHeaders.Properties.ResponseHeadersPolicyConfig;
     assert.equal(policy.SecurityHeadersConfig.StrictTransportSecurity.AccessControlMaxAgeSec, 31536000);
     assert.match(policy.SecurityHeadersConfig.ContentSecurityPolicy?.ContentSecurityPolicy ?? '', /frame-ancestors 'none'/);
   }
-  const studio = (await template('studio')).Resources.ResponseHeaders.Properties.ResponseHeadersPolicyConfig;
-  assert.match(studio.SecurityHeadersConfig.ContentSecurityPolicy?.ContentSecurityPolicy ?? '', /r2\.cloudflarestorage\.com/);
-  assert.ok(studio.CustomHeadersConfig?.Items.some(h => h.Header === 'X-Robots-Tag'));
+  assert.ok(Object.keys(APPS).every(isAppName));
 });
 
 test('_headers Cache-Control → 업로드 그룹, HTML은 마지막 no-cache', () => {
   const groups = cacheGroups(parseHeaders('/*\n  X-A: b\n/\n  Cache-Control: no-cache\n/index.html\n  Cache-Control: no-cache\n/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n'));
   assert.deepEqual(groups, [{ include: 'assets/*', cacheControl: 'public, max-age=31536000, immutable' }]);
-  const commands = syncCommands('studio', 'bucket');
+  const commands = syncCommands('admin', 'bucket');
   assert.equal(commands.at(-1)?.at(-1), 'no-cache');
   assert.ok(commands.every(c => c.includes('*.br') && c.includes('_headers')));
+  assert.throws(() => syncCommands('studio', 'bucket'), /백엔드/);
 });

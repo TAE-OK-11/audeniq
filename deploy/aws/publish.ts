@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// 빌드된 화면을 S3에 올리고 CloudFront 캐시를 비운다: node --experimental-strip-types deploy/aws/publish.ts <studio|admin|landing>
+// 빌드된 화면을 S3에 올리고 CloudFront 캐시를 비운다: node --experimental-strip-types deploy/aws/publish.ts <admin|landing>
+// Studio는 화면도 백엔드가 서빙해서 여기가 아니라 서버로 배포한다 (deploy/studio-release.sh, .github/workflows/studio-deploy.yml).
 // 먼저 deploy-stack.sh 로 스택(audeniq-<app>-ui)이 있어야 한다. AWS 자격증명·리전은 환경변수(AWS_REGION 등)로.
 //
 // - Cache-Control은 앱의 _headers 규칙 그대로 S3 메타데이터로 넣는다 (나머지는 no-cache)
@@ -19,6 +20,7 @@ const SKIP = ['_headers', '_redirects', '*.br', '.DS_Store'];
 /** aws s3 sync 호출 목록 (순서대로 실행) */
 export function syncCommands(name: AppName, bucket: string): string[][] {
   const app = APPS[name];
+  if (app.origin !== 's3') throw new Error(`${name}: 화면을 백엔드가 서빙해요. deploy/studio-release.sh로 서버에 올리세요`);
   const source = resolve(ROOT, app.dir);
   const target = `s3://${bucket}`;
   const groups = cacheGroups(parseHeaders(headersText(name)));
@@ -51,8 +53,13 @@ function stackOutputs(name: AppName): Record<string, string> {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const name = process.argv[2];
   if (!isAppName(name)) throw new Error(`사용법: publish.ts <${Object.keys(APPS).join('|')}>`);
-  const dir = resolve(ROOT, APPS[name].dir);
-  if (!existsSync(resolve(dir, 'index.html'))) throw new Error(`${APPS[name].dir}/index.html 이 없습니다. 먼저 빌드하세요.`);
+  const app = APPS[name];
+  if (app.origin !== 's3') {
+    console.log(`${name}: 화면을 백엔드가 서빙해요 — S3 배포 없음 (deploy/studio-release.sh)`);
+    process.exit(0);
+  }
+  const dir = resolve(ROOT, app.dir);
+  if (!existsSync(resolve(dir, 'index.html'))) throw new Error(`${app.dir}/index.html 이 없습니다. 먼저 빌드하세요.`);
   const { BucketName, DistributionId } = stackOutputs(name);
   for (const args of syncCommands(name, BucketName)) aws(args);
   aws(['cloudfront', 'create-invalidation', '--distribution-id', DistributionId, '--paths', '/*']);

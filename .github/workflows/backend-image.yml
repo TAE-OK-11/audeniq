@@ -20,6 +20,7 @@ on:
       # 서버의 update.sh는 이미지 커밋의 배포 스크립트를 받는다: 바뀌면 새 이미지가 있어야 서버에 간다
       - deploy/update.sh
       - deploy/studio-release.sh
+      - deploy/tls-cert.sh
       - deploy/audeniq-music.rev
       - deploy/install-audeniq-music.sh
       - deploy/with-github-token.sh
@@ -27,6 +28,7 @@ on:
       - deploy/freshclam.conf
       - deploy/pgbouncer/**
       - deploy/compose.production.yaml
+      - deploy/compose.tls.yaml
       - .dockerignore
       - .github/workflows/backend-image.yml
   workflow_dispatch:
@@ -326,7 +328,7 @@ jobs:
         # compose·grants·bootstrap은 이미지(마이그레이션)와 같은 커밋이어야 한다. 비밀 파일은 서버에만 있다.
         run: |
           ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
-          scp -i ~/.ssh/deploy_key deploy/compose.production.yaml deploy/bootstrap.sql deploy/grants.sql deploy/deploy.sh deploy/check-cpu.sh deploy/pg-upgrade.sh deploy/backup.sh deploy/restore-backup.sh deploy/archive.sh deploy/update.sh deploy/studio-release.sh \
+          scp -i ~/.ssh/deploy_key deploy/compose.production.yaml deploy/bootstrap.sql deploy/grants.sql deploy/deploy.sh deploy/check-cpu.sh deploy/pg-upgrade.sh deploy/backup.sh deploy/restore-backup.sh deploy/archive.sh deploy/update.sh deploy/studio-release.sh deploy/tls-cert.sh deploy/compose.tls.yaml \
             "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
           scp -r -i ~/.ssh/deploy_key deploy/pgbouncer "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
       - name: Deploy

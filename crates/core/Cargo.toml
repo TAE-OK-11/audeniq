@@ -5,7 +5,8 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 [dependencies]
-axum = "0.8.9"
+# http2: the HTTPS listener (crate::edge_tls) also offers h2 via ALPN.
+axum = { version = "0.8.9", features = ["http2"] }
 tokio = { version = "1.53.1", features = ["full"] }
 sqlx = { version = "0.9.0", features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "postgres", "uuid", "chrono", "json", "migrate", "rust_decimal"] }
 serde = { version = "1.0.229", features = ["derive"] }
@@ -55,6 +56,15 @@ zeroize = "1.9.0"
 # 64 KiB pages (deploy/build-target.sh) so one image runs on any page size.
 tikv-jemallocator = "0.7.0"
 tokio-stream = "0.1.19"
+# Built-in HTTPS for the CloudFront origin (crate::edge_tls): the rustls stack
+# sqlx/reqwest already link, on aws-lc-rs. ipnet parses AWS's published ranges.
+rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }
+ipnet = { version = "2.12.2", features = ["serde"] }
+# Let's Encrypt for that listener (crate::edge_acme): ACME client and the
+# CSR / TLS-ALPN-01 challenge certificate, both on aws-lc-rs.
+instant-acme = { version = "0.8.5", default-features = false, features = ["aws-lc-rs", "hyper-rustls", "rcgen"] }
+rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem", "crypto"] }
 
 [dev-dependencies]
 # Independent oracle for the in-crate MD5 (crate::md5) tests only.
@@ -71,4 +81,8 @@ harness = false
 
 [[bench]]
 name = "crypto_resources"
+harness = false
+
+[[bench]]
+name = "edge_resources"
 harness = false

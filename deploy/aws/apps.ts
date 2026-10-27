@@ -1,19 +1,36 @@
-// 화면(UI)은 S3, /api 는 백엔드(ALB)로 보내는 CloudFront 배포 목록 (README.md)
+// CloudFront 배포 목록 (README.md)
+// - origin 'backend': 화면·API 모두 백엔드 api(443, crates/core/src/edge_tls.rs)가 서빙한다. S3 없음 (Studio)
+// - origin 's3': 화면은 S3, `api` 경로만 백엔드로 (admin, landing)
 //   dir      S3에 올릴 빌드 결과 (저장소 루트 기준)
 //   headers  Cloudflare `_headers` 파일 — 보안 헤더(CloudFront 응답 헤더 정책)와 Cache-Control(S3 메타데이터)의 원본
 //   api      백엔드로 보낼 경로. 비어 있으면 S3만
 //   site     백엔드에 x-audeniq-site 로 알리는 화면 이름 (crate::sites)
-//   apiPrefix 백엔드 경로가 다를 때 /api 를 바꿀 접두사
+// 백엔드로 가는 요청은 모두 functions/edge.js 가 헤더를 다듬는다(프록시 Worker의 web/shared/transport.ts 규칙).
 // 설문(survey.audeniq.com)은 베타 전까지 D1 Worker 그대로라 여기 없다.
-interface AppBase {
+interface Common {
   aliases: string[];
+  /** 백엔드로 가는 /api 응답에 붙일 CORS Origin. 없으면 CORS 헤더를 지운다 (functions/edge.js) */
+  corsOrigin?: string;
+  /** /api 응답을 늘 no-store·nosniff로 (관리자 콘솔) */
+  apiNoStore?: boolean;
+}
+
+/** 화면도 백엔드가 서빙 (SPA 폴백·_redirects·_headers 모두 백엔드, crates/core/src/studio_static.rs) */
+export interface BackendApp extends Common {
+  origin: 'backend';
+  site: string;
+  /** 이름에 해시가 든 파일: CloudFront가 캐시한다 (나머지는 매번 백엔드로) */
+  cached: string[];
+}
+
+interface S3Base extends Common {
+  origin: 's3';
   dir: string;
   /** deploy/aws/functions 안의 뷰어 요청 함수 파일 */
   function: string;
   api: string[];
   /** api 가 있으면 필요 (없으면 x-audeniq-site 헤더 값이 빠진다) */
   site?: string;
-  apiPrefix?: string;
   /** 같은 함수를 viewer-response 에도 건다 */
   viewerResponse?: boolean;
   /** PAGE_PATHS·FILE_PATHS 를 내보내는 모듈 (저장소 루트 기준) — 함수의 ROUTES 자리표시에 넣는다 */
@@ -23,31 +40,35 @@ interface AppBase {
 }
 
 /** 보안 헤더 원본: `_headers` 파일 경로나 그 내용 중 하나 */
-export type App = AppBase & (
+export type S3App = S3Base & (
   | { headers: string; headersText?: undefined }
   | { headersText: string; headers?: undefined }
 );
+
+export type App = BackendApp | S3App;
 
 export type AppName = 'studio' | 'admin' | 'landing';
 
 export const APPS: Record<AppName, App> = {
   studio: {
+    origin: 'backend',
     aliases: ['studio.audeniq.com'],
-    dir: 'web/studio/public',
-    headers: 'web/studio/public/_headers',
-    function: 'studio.js',
-    api: ['/api/*', '/ready'],
     site: 'studio',
+    cached: ['/assets/*'],
+    corsOrigin: 'https://studio.audeniq.com',
   },
   admin: {
+    origin: 's3',
     aliases: ['admin.audeniq.com'],
     dir: 'web/admin/dist',
     headers: 'web/admin/public/_headers',
     function: 'admin.js',
     api: ['/api/*'],
     site: 'admin',
+    apiNoStore: true,
   },
   landing: {
+    origin: 's3',
     aliases: ['audeniq.com', 'www.audeniq.com'],
     dir: 'web/landing/public',
     // 랜딩은 _headers 대신 web/landing/src/worker.ts 의 withSecurityHeaders 와 같은 값
@@ -66,6 +87,9 @@ export const APPS: Record<AppName, App> = {
     api: [],
   },
 };
+
+/** 백엔드로 가는 경로가 있는지 */
+export const usesBackend = (app: App): boolean => app.origin === 'backend' || app.api.length > 0;
 
 export const isAppName = (name: string | undefined): name is AppName =>
   name !== undefined && Object.hasOwn(APPS, name);

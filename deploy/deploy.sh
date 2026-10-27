@@ -35,6 +35,15 @@ if [ -n "$SECRETS_ENV_FILE" ]; then
   COMPOSE+=(--env-file "$SECRETS_ENV_FILE")
 fi
 [ -f compose.production.yaml ] || die "compose.production.yaml 이 없어요"
+# AWS CloudFront가 부르는 HTTPS(서버 443)를 켰으면 포트를 여는 파일을 붙인다 (deploy/aws/README.md)
+if [ -n "$(sed -n 's/^TLS_BIND=//p' "$ENV_FILE" | tail -n 1)" ]; then
+  [ -f compose.tls.yaml ] || die "TLS_BIND가 있는데 compose.tls.yaml 이 없어요 (저장소의 deploy/compose.tls.yaml을 함께 복사)"
+  # TLS_ACME_DOMAIN이 있으면 api가 Let's Encrypt에서 직접 받는다. 없으면 ./tls 파일이 있어야 한다
+  if [ -z "$(sed -n 's/^TLS_ACME_DOMAIN=//p' "$ENV_FILE" | tail -n 1)" ]; then
+    if [ ! -s tls/fullchain.pem ] || [ ! -s tls/privkey.pem ]; then die "TLS_BIND가 있는데 인증서가 없어요: production.env에 TLS_ACME_DOMAIN(Let's Encrypt 자동) 또는 ./tls-cert.sh issue <주소> <메일>"; fi
+  fi
+  COMPOSE+=(-f compose.tls.yaml)
+fi
 [ -f pgbouncer/Dockerfile ] || die "pgbouncer/ 폴더가 없어요 (저장소의 deploy/pgbouncer를 함께 복사)"
 [ -f check-cpu.sh ] || die "check-cpu.sh 가 없어요 (저장소의 deploy/check-cpu.sh를 함께 복사)"
 # PostgreSQL 18은 새 볼륨을 쓴다: 옛 17 데이터가 있는데 아직 옮기지 않았으면 빈 DB로 뜨지 않게 멈춘다
