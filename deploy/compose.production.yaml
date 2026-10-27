@@ -269,6 +269,10 @@ services:
       # 볼륨 api_tls에 보관). 없으면 ./tls의 파일(./tls-cert.sh 등, 5분마다 다시 읽음).
       # CloudFront 오리진 IP 대역에서 온 연결만, 서비스 비밀이 있는 요청만 받는다(화면 파일 포함).
       TLS_BIND: ${TLS_BIND:-}
+      # 오리진으로 받는 유일한 이름 (CloudFront ApiOriginDomain). 이 이름(SNI·Host)이 아니면 거절한다.
+      # 예외: 스튜디오·관리자 주소(APP_ORIGIN·ADMIN_ORIGIN 호스트), TLS_EXTRA_HOSTS. 비우면 TLS_ACME_DOMAIN
+      TLS_ORIGIN_DOMAIN: ${TLS_ORIGIN_DOMAIN:-}
+      TLS_EXTRA_HOSTS: ${TLS_EXTRA_HOSTS:-}
       TLS_ACME_DOMAIN: ${TLS_ACME_DOMAIN:-}
       TLS_ACME_EMAIL: ${TLS_ACME_EMAIL:-}
       TLS_ACME_DIRECTORY: ${TLS_ACME_DIRECTORY:-production}

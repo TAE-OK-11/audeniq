@@ -142,7 +142,7 @@ async fn main() -> anyhow::Result<()> {
     });
     let tls = match tls_listener {
         Some(listener) => {
-            let app = audeniq_core::edge_tls::app(state.clone(), studio.clone());
+            let app = audeniq_core::edge_tls::app(state.clone(), studio.clone(), listener.hosts());
             Some(axum::serve(listener, app).with_graceful_shutdown(shutdown()))
         }
         None => None,
