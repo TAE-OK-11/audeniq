@@ -263,12 +263,31 @@ services:
       # ./studio/releases/<커밋>에 풀고 current 심링크를 바꾸면 api가 다음 요청부터 새 화면을 준다(재시작 없음).
       # production.env에 STUDIO_DIR= (빈 값)을 넣으면 화면 서빙을 끈다.
       STUDIO_DIR: ${STUDIO_DIR-/srv/studio/current}
+      # AWS CloudFront가 직접 부르는 HTTPS (crates/core/src/edge_tls.rs, deploy/aws/README.md). TLS_BIND를 비우면 꺼짐(터널만).
+      # 켜기: production.env에 TLS_BIND=0.0.0.0:8443 → deploy.sh가 compose.tls.yaml(서버 443 → 8443)을 붙인다.
+      # 인증서: TLS_ACME_DOMAIN이 있으면 api가 Let's Encrypt에서 직접 받고 자동 갱신한다(crates/core/src/edge_acme.rs,
+      # 볼륨 api_tls에 보관). 없으면 ./tls의 파일(./tls-cert.sh 등, 5분마다 다시 읽음).
+      # CloudFront 오리진 IP 대역에서 온 연결만, 서비스 비밀이 있는 요청만 받는다(화면 파일 포함).
+      TLS_BIND: ${TLS_BIND:-}
+      # 오리진으로 받는 유일한 이름 (CloudFront ApiOriginDomain). 이 이름(SNI·Host)이 아니면 거절한다.
+      # 예외: 스튜디오·관리자 주소(APP_ORIGIN·ADMIN_ORIGIN 호스트), TLS_EXTRA_HOSTS. 비우면 TLS_ACME_DOMAIN
+      TLS_ORIGIN_DOMAIN: ${TLS_ORIGIN_DOMAIN:-}
+      TLS_EXTRA_HOSTS: ${TLS_EXTRA_HOSTS:-}
+      TLS_ACME_DOMAIN: ${TLS_ACME_DOMAIN:-}
+      TLS_ACME_EMAIL: ${TLS_ACME_EMAIL:-}
+      TLS_ACME_DIRECTORY: ${TLS_ACME_DIRECTORY:-production}
+      TLS_ACME_DIR: /var/lib/audeniq-tls
+      TLS_CERT_FILE: /run/audeniq-tls/fullchain.pem
+      TLS_KEY_FILE: /run/audeniq-tls/privkey.pem
+      TLS_ALLOWED_SOURCES: ${TLS_ALLOWED_SOURCES:-cloudfront}
     volumes:
       - av_socket:/run/audeniq-av:ro
       - ${PAYOUT_KEYRING_DIR:-/dev/shm/audeniq-secrets}:/run/audeniq-keys:ro
       - api_tmp:/var/tmp/audeniq
       - ./partners:/etc/audeniq/partners:ro
       - ./studio:/srv/studio:ro
+      - ./tls:/run/audeniq-tls:ro
+      - api_tls:/var/lib/audeniq-tls
     depends_on:
       pgbouncer: {condition: service_healthy}
     # /ready (database included), through the binary itself: no curl in the image.
@@ -375,6 +394,8 @@ secrets:
     file: ./tunnel-token
 volumes:
   pg18_prod:
+  # api의 Let's Encrypt 계정·인증서 (지우면 다음 시작 때 새로 받는다: 주당 발급 한도에 주의)
+  api_tls:
   worker_tmp:
   api_tmp:
   av_socket:

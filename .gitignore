@@ -24,6 +24,10 @@ deploy/partners/secrets/
 # Key material and encrypted keyring configuration are deployment secrets.
 deploy/*keyring*.json
 deploy/backup-recipients.txt
+# 백엔드 HTTPS 인증서·발급 기록·Cloudflare DNS 토큰 (deploy/tls-cert.sh, 서버 전용)
+/deploy/tls/
+/deploy/letsencrypt/
+/deploy/tls-cloudflare.ini
 *.dump.age
 
 __pycache__/

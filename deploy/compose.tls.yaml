@@ -1,0 +1,9 @@
+# 백엔드 HTTPS를 서버 443으로 연다 (crates/core/src/edge_tls.rs, deploy/aws/README.md).
+# production.env에 TLS_BIND가 있으면 deploy.sh가 compose.production.yaml 위에 이 파일을 붙인다.
+# 컨테이너는 cap_drop ALL이라 1024 아래 포트를 못 열어서 안에서는 8443(TLS_BIND)으로 받는다.
+# 연결은 api가 CloudFront 오리진 IP 대역만 받고, 서버 방화벽도 가능하면 그 대역으로 좁힌다.
+services:
+  api:
+    ports:
+      # TLS_PUBLISH: 서버 쪽 주소·포트 (기본 443, 특정 IP만이면 203.0.113.10:443)
+      - ${TLS_PUBLISH:-443}:8443

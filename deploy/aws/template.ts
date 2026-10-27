@@ -4,8 +4,8 @@
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { APPS, isAppName, parseHeaders } from './apps.ts';
-import type { AppName } from './apps.ts';
+import { APPS, isAppName, parseHeaders, usesBackend } from './apps.ts';
+import type { AppName, S3App } from './apps.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '../..');
@@ -15,8 +15,6 @@ const CACHING_OPTIMIZED = '658327ea-f89d-4fab-a63d-7e88639e58f6';
 const CACHING_DISABLED = '4135ea2d-6df8-44a3-9df3-4b5a84be39ad';
 // Host를 빼고 뷰어 헤더·쿠키·쿼리 전부를 전달
 const ALL_VIEWER_EXCEPT_HOST = 'b689b0a8-53d0-40ab-baf2-68738e2966ac';
-// HSTS·nosniff·Referrer-Policy 등 (API 응답용)
-const SECURITY_HEADERS = '67f7725c-6f97-4210-82d7-5512b31e9d03';
 
 // CloudFormation 조각 (여기서 쓰는 만큼만)
 export interface Ref { Ref: string }
@@ -46,6 +44,9 @@ export interface Parameters {
   ServiceSecret?: Parameter;
 }
 
+/** 백엔드 api가 직접 받는 HTTPS 포트 (서버 443 → 컨테이너 TLS_BIND, crates/core/src/edge_tls.rs) */
+export const ORIGIN_HTTPS_PORT = 443;
+
 export interface S3Origin {
   Id: 's3';
   DomainName: GetAtt;
@@ -56,7 +57,14 @@ export interface S3Origin {
 export interface ApiOrigin {
   Id: 'api';
   DomainName: Ref;
-  CustomOriginConfig: { OriginProtocolPolicy: string; OriginSSLProtocols: string[]; HTTPSPort: number; OriginReadTimeout: number };
+  CustomOriginConfig: {
+    OriginProtocolPolicy: string;
+    OriginSSLProtocols: string[];
+    HTTPPort: number;
+    HTTPSPort: number;
+    OriginReadTimeout: number;
+    OriginKeepaliveTimeout: number;
+  };
   /** HeaderValue가 없으면(site 없는 앱) JSON에서 빠진다 */
   OriginCustomHeaders: { HeaderName: string; HeaderValue?: string | Ref }[];
 }
@@ -74,16 +82,17 @@ interface BehaviorBase {
   AllowedMethods: string[];
   CachedMethods: string[];
   CachePolicyId: string;
-  ResponseHeadersPolicyId: string | Ref;
+  ResponseHeadersPolicyId: Ref;
   Compress: boolean;
   FunctionAssociations: FunctionAssociation[];
 }
 
-export type DefaultCacheBehavior = BehaviorBase;
+export interface DefaultCacheBehavior extends BehaviorBase {
+  OriginRequestPolicyId?: string;
+}
 
-export interface CacheBehavior extends BehaviorBase {
+export interface CacheBehavior extends DefaultCacheBehavior {
   PathPattern: string;
-  OriginRequestPolicyId: string;
 }
 
 export interface CustomErrorResponse {
@@ -145,11 +154,13 @@ export interface Template {
   Description: string;
   Parameters: Parameters;
   Resources: {
-    Bucket: Resource<'AWS::S3::Bucket', Record<string, unknown>>;
-    OriginAccessControl: Resource<'AWS::CloudFront::OriginAccessControl', { OriginAccessControlConfig: Record<string, unknown> }>;
-    BucketPolicy: Resource<'AWS::S3::BucketPolicy', { Bucket: Ref; PolicyDocument: Record<string, unknown> }>;
-    ViewerFunction: Resource<'AWS::CloudFront::Function', CloudFrontFunctionProperties>;
-    ApiFunction?: Resource<'AWS::CloudFront::Function', CloudFrontFunctionProperties>;
+    // S3 화면 (origin 's3' 앱만)
+    Bucket?: Resource<'AWS::S3::Bucket', Record<string, unknown>>;
+    OriginAccessControl?: Resource<'AWS::CloudFront::OriginAccessControl', { OriginAccessControlConfig: Record<string, unknown> }>;
+    BucketPolicy?: Resource<'AWS::S3::BucketPolicy', { Bucket: Ref; PolicyDocument: Record<string, unknown> }>;
+    ViewerFunction?: Resource<'AWS::CloudFront::Function', CloudFrontFunctionProperties>;
+    /** 백엔드로 가는 요청·응답 (functions/edge.js) */
+    EdgeFunction?: Resource<'AWS::CloudFront::Function', CloudFrontFunctionProperties>;
     ResponseHeaders: Resource<'AWS::CloudFront::ResponseHeadersPolicy', { ResponseHeadersPolicyConfig: ResponseHeadersPolicy & { Name: Sub } }>;
     Distribution: Resource<'AWS::CloudFront::Distribution', { DistributionConfig: DistributionConfig }>;
   };
@@ -157,24 +168,37 @@ export interface Template {
 }
 
 export async function functionCode(name: AppName): Promise<string> {
-  const app = APPS[name];
+  const app = s3App(name);
   let code = readFileSync(resolve(HERE, 'functions', app.function), 'utf8');
   if (app.routes) {
     const { PAGE_PATHS, FILE_PATHS }: PublicRoutes = await import(pathToFileURL(resolve(ROOT, app.routes)).href);
     code = code.replace('/*ROUTES*/', `var PAGE_PATHS = ${JSON.stringify(PAGE_PATHS)};\nvar FILE_PATHS = ${JSON.stringify(FILE_PATHS)};`);
   }
-  if (Buffer.byteLength(code) > 10 * 1024) throw new Error(`${app.function}: CloudFront Function은 10KB까지`);
+  return checkSize(app.function, code);
+}
+
+/** functions/edge.js 에 앱 값(CORS Origin, /api no-store)을 채운 코드 */
+export function edgeFunctionCode(name: AppName): string {
+  const app = APPS[name];
+  const code = readFileSync(resolve(HERE, 'functions', 'edge.js'), 'utf8')
+    .replace("var CORS_ORIGIN = '';", `var CORS_ORIGIN = ${JSON.stringify(app.corsOrigin ?? '')};`)
+    .replace('var API_NO_STORE = false;', `var API_NO_STORE = ${app.apiNoStore === true};`);
+  return checkSize('edge.js', code);
+}
+
+function checkSize(file: string, code: string): string {
+  if (Buffer.byteLength(code) > 10 * 1024) throw new Error(`${file}: CloudFront Function은 10KB까지`);
   return code;
 }
 
-export function apiFunctionCode(name: AppName): string {
-  const prefix = APPS[name].apiPrefix ?? '';
-  return readFileSync(resolve(HERE, 'functions', 'api.js'), 'utf8')
-    .replace("var REWRITE_PREFIX = '';", `var REWRITE_PREFIX = ${JSON.stringify(prefix)};`);
+function s3App(name: AppName): S3App {
+  const app = APPS[name];
+  if (app.origin !== 's3') throw new Error(`${name}: 화면을 백엔드가 서빙하는 앱이라 S3 설정이 없어요`);
+  return app;
 }
 
 export function headersText(name: AppName): string {
-  const app = APPS[name];
+  const app = s3App(name);
   return app.headersText !== undefined ? app.headersText : readFileSync(resolve(ROOT, app.headers), 'utf8');
 }
 
@@ -208,10 +232,65 @@ export function responseHeadersPolicy(text: string): ResponseHeadersPolicy {
   };
 }
 
+/** 백엔드 오리진: api가 직접 HTTPS(443)로 받는다. 서비스 비밀·화면 이름은 여기서 붙인다 (브라우저 값은 덮어쓴다) */
+function backendOrigin(site: string | undefined): ApiOrigin {
+  return {
+    Id: 'api',
+    DomainName: { Ref: 'ApiOriginDomain' },
+    // 실시간 알림(SSE)은 20초마다 keep-alive를 보내므로 60초 안에 끊기지 않는다
+    CustomOriginConfig: {
+      OriginProtocolPolicy: 'https-only', OriginSSLProtocols: ['TLSv1.2'], HTTPPort: 80, HTTPSPort: ORIGIN_HTTPS_PORT,
+      OriginReadTimeout: 60, OriginKeepaliveTimeout: 60,
+    },
+    OriginCustomHeaders: [
+      { HeaderName: 'x-audeniq-service', HeaderValue: { Ref: 'ServiceSecret' } },
+      { HeaderName: 'x-audeniq-site', HeaderValue: site },
+    ],
+  };
+}
+
+const ALL_METHODS = ['GET', 'HEAD', 'OPTIONS', 'PUT', 'PATCH', 'POST', 'DELETE'];
+
+/** 캐시하지 않고 백엔드로: 요청·응답 모두 edge.js 를 거친다 */
+function backendBehavior(): DefaultCacheBehavior {
+  return {
+    TargetOriginId: 'api',
+    ViewerProtocolPolicy: 'redirect-to-https',
+    AllowedMethods: ALL_METHODS,
+    CachedMethods: ['GET', 'HEAD'],
+    CachePolicyId: CACHING_DISABLED,
+    // edge.js 가 남긴 헤더와 쿠키·쿼리 전부 (Host는 오리진 주소로)
+    OriginRequestPolicyId: ALL_VIEWER_EXCEPT_HOST,
+    ResponseHeadersPolicyId: { Ref: 'ResponseHeaders' },
+    // 백엔드가 압축한다 (화면 파일은 빌드의 .br, JSON은 br/gzip)
+    Compress: false,
+    FunctionAssociations: [
+      { EventType: 'viewer-request', FunctionARN: { 'Fn::GetAtt': ['EdgeFunction', 'FunctionARN'] } },
+      { EventType: 'viewer-response', FunctionARN: { 'Fn::GetAtt': ['EdgeFunction', 'FunctionARN'] } },
+    ],
+  };
+}
+
+function edgeFunction(name: AppName): Resource<'AWS::CloudFront::Function', CloudFrontFunctionProperties> {
+  return {
+    Type: 'AWS::CloudFront::Function',
+    Properties: {
+      Name: { 'Fn::Sub': '${AWS::StackName}-edge' },
+      AutoPublish: true,
+      FunctionConfig: { Comment: `AUDENIQ ${name} backend request headers`, Runtime: 'cloudfront-js-2.0' },
+      FunctionCode: edgeFunctionCode(name),
+    },
+  };
+}
+
+function viewerCertificate(): DistributionConfig['ViewerCertificate'] {
+  return { AcmCertificateArn: { Ref: 'AcmCertificateArn' }, SslSupportMethod: 'sni-only', MinimumProtocolVersion: 'TLSv1.2_2021' };
+}
+
 export async function template(name: string | undefined): Promise<Template> {
   if (!isAppName(name)) throw new Error(`알 수 없는 앱: ${name} (${Object.keys(APPS).join(', ')})`);
   const app = APPS[name];
-  const hasApi = app.api.length > 0;
+  const hasApi = usesBackend(app);
 
   const parameters: Parameters = {
     AcmCertificateArn: {
@@ -223,11 +302,63 @@ export async function template(name: string | undefined): Promise<Template> {
   if (hasApi) {
     parameters.ApiOriginDomain = {
       Type: 'String', MinLength: 1, AllowedPattern: '^[a-z0-9.-]+$',
-      Description: '백엔드 ALB의 HTTPS 주소 (예: api-origin.audeniq.com, ALB에 ACM 인증서)',
+      Description: '백엔드 api의 HTTPS 주소 (예: api-origin.audeniq.com → 서버 IP, 서버 443에서 api가 인증서로 직접 받는다)',
     };
     parameters.ServiceSecret = {
       Type: 'String', NoEcho: true, MinLength: 32,
       Description: '백엔드 EDGE_SERVICE_SECRET 과 같은 값. CloudFront가 x-audeniq-service 헤더로 붙인다',
+    };
+  }
+  const outputs: Template['Outputs'] = {
+    DistributionId: { Value: { Ref: 'Distribution' } },
+    DistributionDomainName: { Value: { 'Fn::GetAtt': ['Distribution', 'DomainName'] }, Description: 'DNS(CNAME)를 이 주소로' },
+  };
+  const base = {
+    Enabled: true,
+    Comment: `AUDENIQ ${name} UI`,
+    Aliases: app.aliases,
+    HttpVersion: 'http2and3',
+    IPV6Enabled: true,
+    PriceClass: { Ref: 'PriceClass' },
+    ViewerCertificate: viewerCertificate(),
+  };
+
+  if (app.origin === 'backend') {
+    // 화면·API 모두 백엔드. 해시 이름 파일만 CloudFront가 캐시한다(gzip·br 캐시 키, 오리진 요청 정책 없음 →
+    // 브라우저 헤더는 오리진에 닿지 않는다). 나머지는 매번 백엔드가 ETag·no-cache로 답한다.
+    const distribution: DistributionConfig = {
+      ...base,
+      Origins: [backendOrigin(app.site)],
+      DefaultCacheBehavior: backendBehavior(),
+      CacheBehaviors: app.cached.map(PathPattern => ({
+        PathPattern,
+        TargetOriginId: 'api',
+        ViewerProtocolPolicy: 'redirect-to-https',
+        AllowedMethods: ['GET', 'HEAD'],
+        CachedMethods: ['GET', 'HEAD'],
+        CachePolicyId: CACHING_OPTIMIZED,
+        ResponseHeadersPolicyId: { Ref: 'ResponseHeaders' },
+        Compress: true,
+        FunctionAssociations: [],
+      })),
+    };
+    return {
+      AWSTemplateFormatVersion: '2010-09-09',
+      Description: `AUDENIQ ${name} — CloudFront → backend api (HTTPS ${ORIGIN_HTTPS_PORT})`,
+      Parameters: parameters,
+      Resources: {
+        EdgeFunction: edgeFunction(name),
+        // 보안 헤더(CSP 등)는 백엔드가 _headers로 붙인다. 여기는 HSTS만 (Workers secureResponse와 같은 값)
+        ResponseHeaders: {
+          Type: 'AWS::CloudFront::ResponseHeadersPolicy',
+          Properties: { ResponseHeadersPolicyConfig: {
+            Name: { 'Fn::Sub': '${AWS::StackName}-headers' },
+            SecurityHeadersConfig: { StrictTransportSecurity: { AccessControlMaxAgeSec: 31536000, IncludeSubdomains: true, Override: true } },
+          } },
+        },
+        Distribution: { Type: 'AWS::CloudFront::Distribution', Properties: { DistributionConfig: distribution } },
+      },
+      Outputs: outputs,
     };
   }
 
@@ -237,30 +368,13 @@ export async function template(name: string | undefined): Promise<Template> {
     S3OriginConfig: { OriginAccessIdentity: '' },
     OriginAccessControlId: { 'Fn::GetAtt': ['OriginAccessControl', 'Id'] },
   }];
-  if (hasApi) {
-    origins.push({
-      Id: 'api',
-      DomainName: { Ref: 'ApiOriginDomain' },
-      // 실시간 알림(SSE)은 20초마다 keep-alive를 보내므로 60초 안에 끊기지 않는다
-      CustomOriginConfig: { OriginProtocolPolicy: 'https-only', OriginSSLProtocols: ['TLSv1.2'], HTTPSPort: 443, OriginReadTimeout: 60 },
-      OriginCustomHeaders: [
-        { HeaderName: 'x-audeniq-service', HeaderValue: { Ref: 'ServiceSecret' } },
-        { HeaderName: 'x-audeniq-site', HeaderValue: app.site },
-      ],
-    });
-  }
+  if (hasApi) origins.push(backendOrigin(app.site));
 
   const functions: FunctionAssociation[] = [{ EventType: 'viewer-request', FunctionARN: { 'Fn::GetAtt': ['ViewerFunction', 'FunctionARN'] } }];
   if (app.viewerResponse) functions.push({ EventType: 'viewer-response', FunctionARN: { 'Fn::GetAtt': ['ViewerFunction', 'FunctionARN'] } });
 
   const distribution: DistributionConfig = {
-    Enabled: true,
-    Comment: `AUDENIQ ${name} UI`,
-    Aliases: app.aliases,
-    HttpVersion: 'http2and3',
-    IPV6Enabled: true,
-    PriceClass: { Ref: 'PriceClass' },
-    ViewerCertificate: { AcmCertificateArn: { Ref: 'AcmCertificateArn' }, SslSupportMethod: 'sni-only', MinimumProtocolVersion: 'TLSv1.2_2021' },
+    ...base,
     Origins: origins,
     DefaultCacheBehavior: {
       TargetOriginId: 's3',
@@ -273,18 +387,7 @@ export async function template(name: string | undefined): Promise<Template> {
       FunctionAssociations: functions,
     },
     // /api 는 캐시하지 않고 백엔드로 (백엔드가 압축·no-store를 정한다)
-    CacheBehaviors: app.api.map(PathPattern => ({
-      PathPattern,
-      TargetOriginId: 'api',
-      ViewerProtocolPolicy: 'https-only',
-      AllowedMethods: ['GET', 'HEAD', 'OPTIONS', 'PUT', 'PATCH', 'POST', 'DELETE'],
-      CachedMethods: ['GET', 'HEAD'],
-      CachePolicyId: CACHING_DISABLED,
-      OriginRequestPolicyId: ALL_VIEWER_EXCEPT_HOST,
-      ResponseHeadersPolicyId: SECURITY_HEADERS,
-      Compress: false,
-      FunctionAssociations: [{ EventType: 'viewer-request', FunctionARN: { 'Fn::GetAtt': ['ApiFunction', 'FunctionARN'] } }],
-    })),
+    CacheBehaviors: app.api.map(PathPattern => ({ PathPattern, ...backendBehavior() })),
   };
   if (app.notFoundPage) {
     // 오류 응답 페이지는 배포 전체에 걸리므로 404만 — API의 403·405 JSON은 그대로 둔다
@@ -293,7 +396,7 @@ export async function template(name: string | undefined): Promise<Template> {
 
   return {
     AWSTemplateFormatVersion: '2010-09-09',
-    Description: `AUDENIQ ${name} — S3 + CloudFront${hasApi ? ' (/api → backend ALB)' : ''}`,
+    Description: `AUDENIQ ${name} — S3 + CloudFront${hasApi ? ' (/api → backend api)' : ''}`,
     Parameters: parameters,
     Resources: {
       Bucket: {
@@ -336,15 +439,7 @@ export async function template(name: string | undefined): Promise<Template> {
           FunctionCode: await functionCode(name),
         },
       },
-      ...(hasApi ? { ApiFunction: {
-        Type: 'AWS::CloudFront::Function',
-        Properties: {
-          Name: { 'Fn::Sub': '${AWS::StackName}-api' },
-          AutoPublish: true,
-          FunctionConfig: { Comment: `AUDENIQ ${name} API request cleanup`, Runtime: 'cloudfront-js-2.0' },
-          FunctionCode: apiFunctionCode(name),
-        },
-      } } : {}),
+      ...(hasApi ? { EdgeFunction: edgeFunction(name) } : {}),
       ResponseHeaders: {
         Type: 'AWS::CloudFront::ResponseHeadersPolicy',
         Properties: { ResponseHeadersPolicyConfig: {
@@ -354,11 +449,7 @@ export async function template(name: string | undefined): Promise<Template> {
       },
       Distribution: { Type: 'AWS::CloudFront::Distribution', Properties: { DistributionConfig: distribution } },
     },
-    Outputs: {
-      BucketName: { Value: { Ref: 'Bucket' } },
-      DistributionId: { Value: { Ref: 'Distribution' } },
-      DistributionDomainName: { Value: { 'Fn::GetAtt': ['Distribution', 'DomainName'] }, Description: 'DNS(CNAME)를 이 주소로' },
-    },
+    Outputs: { BucketName: { Value: { Ref: 'Bucket' } }, ...outputs },
   };
 }
 
