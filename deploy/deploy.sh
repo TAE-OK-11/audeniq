@@ -163,6 +163,9 @@ echo "     → $PINNED"
   || echo "deploy: 경고 — postgres 등 이미지 갱신 실패, 서버에 있는 이미지로 계속" >&2
 "${COMPOSE[@]}" build --pull --quiet pgbouncer \
   || echo "deploy: 경고 — pgbouncer 바탕 이미지 갱신 실패, 캐시로 계속" >&2
+# Studio 화면 폴더(api가 읽기 전용으로 마운트): docker가 root 소유로 만들지 않게 배포 사용자가 먼저 만든다.
+# 화면 파일은 studio-release.sh가 넣는다 (deploy/STUDIO_SERVING.md)
+mkdir -p studio/releases
 # --build: pgbouncer 이미지는 서버에서 deploy/pgbouncer로 만든다 (바뀐 게 없으면 캐시)
 if ! "${COMPOSE[@]}" up -d --build --remove-orphans; then
   "${COMPOSE[@]}" logs --tail 80 migrate grants pgbouncer api worker || true

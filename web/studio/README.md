@@ -1,14 +1,15 @@
-# AUDENIQ STUDIO (Workers 배포)
+# AUDENIQ STUDIO
 
-studio.audeniq.com을 서빙하는 Worker예요. React 빌드(`public/`, `app/`에서 `bun run build`)와 공지·이벤트 D1(`audeniq-content`)을 함께 제공합니다. noindex는 검색 제외일 뿐 접근제어가 아닙니다.
+studio.audeniq.com의 화면(React 빌드 `public/`, `app/`에서 `bun run build`)은 **백엔드 api가 서빙**해요
+(`crates/core/src/studio_static.rs`). Cloudflare Worker(`worker.ts`, 이름 `audeniq-studio-proxy`)는 프록시만 해요:
+브라우저가 보낸 `x-audeniq-*` 헤더를 버리고, 실제 사용자 IP를 `x-audeniq-client-ip`로, 서비스 식별 헤더를 넣어 모든 요청을 백엔드로 넘겨요.
+구조·배포·롤백·AWS(CloudFront) 전환 설계는 [`deploy/STUDIO_SERVING.md`](../../deploy/STUDIO_SERVING.md)를 보세요. noindex는 검색 제외일 뿐 접근제어가 아닙니다.
 
-## 처음 한 번
+## 배포
 
-```sh
-cd web/studio
-npx wrangler d1 migrations apply audeniq-content --remote   # 공지·이벤트 테이블 (다시 실행해도 안전)
-npx wrangler deploy
-```
+- 화면: main에 병합하면 CI(Studio deploy)가 빌드 결과를 서버의 `studio/releases/<커밋>`에 올리고 `current`를 바꿔요(`deploy/studio-release.sh`). api 재시작은 없어요.
+- 프록시 Worker: 바뀔 때만 손으로 올려요. `cd web/studio && npx --yes wrangler@4.149.0 deploy` (CI에서는 올리지 않아요)
+- 예전 `audeniq-studio` Worker(정적 서빙)는 DNS 전환 뒤 롤백용으로 그대로 둬요. 이 폴더에서 이름을 `audeniq-studio`로 바꿔 배포하지 마세요.
 
 ## 공지·이벤트 올리기
 
@@ -50,7 +51,7 @@ npx wrangler secret delete MAINTENANCE_MODE                  # 끄기
 
 API 규칙과 curl 예시는 `docs/STUDIO_DEPLOYMENT.md`를 참고하세요.
 
-## 성능 (Worker CPU)
+## 성능
 
 - `/api/status`와 점검 중 API 차단 검사는 점검 일정 행을 인스턴스에서 10초 기억해 요청마다 D1을 읽지 않아요(판정은 항상 현재 시각으로).
 - 공개 공지·이벤트(`GET /api/notices|events[/:id]`)는 데이터센터 캐시에 30초 둬요. 관리 화면에서 글을 바꾸면 해당 캐시를 바로 지워요(다른 데이터센터는 최대 30초 뒤 반영).
@@ -60,7 +61,7 @@ API 규칙과 curl 예시는 `docs/STUDIO_DEPLOYMENT.md`를 참고하세요.
 
 ```sh
 bun run check          # 설정·Worker 테스트
-npx wrangler dev       # 로컬 D1 + 백엔드 연결 (.dev.vars에 EDGE_SERVICE_SECRET=...)
+cargo test -p audeniq-core --lib studio_static   # 백엔드 화면 서빙 (SPA 폴백·캐시 헤더·_redirects)
 ```
 
 배포 순서는 `docs/STUDIO_DEPLOYMENT.md`를 참고하세요. 별도 관리 토큰은 화면에서 필요하지 않으며, 비상 스크립트용 `CONTENT_ADMIN_TOKEN` 설정만 선택적으로 유지합니다.
