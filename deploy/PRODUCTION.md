@@ -104,7 +104,7 @@ CircleCI 조직 설정 → Contexts에 `audeniq-production`을 만들고 다음 
 | `CLOUDFLARE_API_TOKEN` | 프론트엔드 배포 (Workers Scripts:Edit, D1:Edit — 설문) |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 계정 ID |
 
-같은 파일의 **frontend** 워크플로는 Studio(`web/studio`)·관리자(`web/admin`)·랜딩(`web/landing`)·설문(`web/survey`)을 각 폴더가 바뀐 푸시마다 테스트·빌드하고, main에서만 Cloudflare Workers로 배포한다. Worker는 화면 서빙과 `/api` 전달(터널 → api)만 하고, 공지·이벤트·서버 점검·인증 보조는 백엔드가 한다 (`crates/core/src/site_content.rs`, `sites.rs`). 설문은 베타 전까지 D1 Worker 그대로다. 예전 D1 데이터는 `node deploy/aws/migrate-d1.ts`로 옮긴다. 나중에 AWS로 옮길 때는 [`aws/README.md`](aws/README.md). 설문 D1 마이그레이션은 `web/survey/migrations`가 바뀌었거나 파이프라인 파라미터 `apply_migrations=true`일 때만 적용하고, 설문은 `bun run preflight`(실제 D1 ID·Turnstile 키)를 통과해야 배포한다. 수동 실행에서 파이프라인 파라미터 `target`을 `backend` 또는 `frontend`로 주면 그 워크플로만 돈다(`force=true`와 함께 쓰면 변경 여부와 상관없이 실행).
+같은 파일의 **frontend** 워크플로는 Studio(`web/studio`)·관리자(`web/admin`)·랜딩(`web/landing`)·설문(`web/survey`)을 각 폴더가 바뀐 푸시마다 테스트·빌드하고, main에서만 배포한다(관리자·랜딩·설문은 Cloudflare Workers, Studio 화면은 백엔드 서버: [STUDIO_SERVING.md](STUDIO_SERVING.md)). Worker는 화면 서빙과 `/api` 전달(터널 → api)만 하고, 공지·이벤트·서버 점검·인증 보조는 백엔드가 한다 (`crates/core/src/site_content.rs`, `sites.rs`). 설문은 베타 전까지 D1 Worker 그대로다. 예전 D1 데이터는 `node deploy/aws/migrate-d1.ts`로 옮긴다. 나중에 AWS로 옮길 때는 [`aws/README.md`](aws/README.md). 설문 D1 마이그레이션은 `web/survey/migrations`가 바뀌었거나 파이프라인 파라미터 `apply_migrations=true`일 때만 적용하고, 설문은 `bun run preflight`(실제 D1 ID·Turnstile 키)를 통과해야 배포한다. 수동 실행에서 파이프라인 파라미터 `target`을 `backend` 또는 `frontend`로 주면 그 워크플로만 돈다(`force=true`와 함께 쓰면 변경 여부와 상관없이 실행).
 
 ### CI 없이 서버에서 직접 빌드·배포
 
@@ -117,12 +117,15 @@ BUILD_ONLY=1 ./build-on-server.sh <커밋>           # 이미지만 (배포는 �
 
 빌드 중에는 서버 CPU·메모리를 많이 쓴다(release는 fat LTO). 사용자가 적은 시간에 돌리고, 메모리가 8GB보다 적으면 스왑을 먼저 늘린다. CI가 돌아오면 다시 CI 이미지로 배포한다.
 
-Studio·관리자 화면(Cloudflare Workers)은 백엔드 배포 뒤에 개발 PC에서 올린다 (`CLOUDFLARE_API_TOKEN`·`CLOUDFLARE_ACCOUNT_ID` 필요):
+Studio 화면은 백엔드 서버가 서빙한다 ([STUDIO_SERVING.md](STUDIO_SERVING.md)). 빌드해서 서버에 올린다:
 
 ```sh
 cd web/studio/app && bun install --frozen-lockfile && bun run test && bun run build
-cd .. && npx --yes wrangler@4.141.0 deploy
+cd .. && tar -C public -czf /tmp/studio.tar.gz . && scp /tmp/studio.tar.gz 서버:/opt/audeniq/studio/upload.tar.gz
+ssh 서버 'cd /opt/audeniq && ./studio-release.sh install <커밋> studio/upload.tar.gz'
 ```
+
+관리자 화면(Cloudflare Workers)은 지금처럼 개발 PC에서 올린다 (`CLOUDFLARE_API_TOKEN`·`CLOUDFLARE_ACCOUNT_ID` 필요): `cd web/admin && npx --yes wrangler@4.149.0 deploy`
 
 ### PostgreSQL 17 → 18 (한 번)
 

@@ -105,8 +105,5 @@ test('a missing asset answered with the SPA shell is a 404, never HTML as a scri
     const r = await serveAssets(new Request(`https://studio.audeniq.com${path}`), env);
     assert.equal(r.status, 200, path);
   }
-  // The studio Worker passes the 404 through instead of serving the shell.
-  const r = await studio.fetch(new Request('https://studio.audeniq.com/assets/Releases-OLDHASH.js'), env);
-  assert.equal(r.status, 404);
-  assert.equal((await studio.fetch(new Request('https://studio.audeniq.com/releases'), env)).status, 200);
+  // Studio is served by the backend now, with the same rule (crates/core/src/studio_static.rs).
 });

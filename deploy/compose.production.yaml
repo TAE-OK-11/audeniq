@@ -259,11 +259,16 @@ services:
       AUDENIQ_MCP_DYNAMIC_REGISTRATION: ${AUDENIQ_MCP_DYNAMIC_REGISTRATION:-true}
       AUDENIQ_MCP_PAYOUT_LIMIT_KRW: ${AUDENIQ_MCP_PAYOUT_LIMIT_KRW:-300000}
       AUDENIQ_MCP_PUBLIC_DAILY_USER: ${AUDENIQ_MCP_PUBLIC_DAILY_USER:-150}
+      # Studio 화면 파일 (crates/core/src/studio_static.rs, deploy/STUDIO_SERVING.md): studio-release.sh가
+      # ./studio/releases/<커밋>에 풀고 current 심링크를 바꾸면 api가 다음 요청부터 새 화면을 준다(재시작 없음).
+      # production.env에 STUDIO_DIR= (빈 값)을 넣으면 화면 서빙을 끈다.
+      STUDIO_DIR: ${STUDIO_DIR-/srv/studio/current}
     volumes:
       - av_socket:/run/audeniq-av:ro
       - ${PAYOUT_KEYRING_DIR:-/dev/shm/audeniq-secrets}:/run/audeniq-keys:ro
       - api_tmp:/var/tmp/audeniq
       - ./partners:/etc/audeniq/partners:ro
+      - ./studio:/srv/studio:ro
     depends_on:
       pgbouncer: {condition: service_healthy}
     # /ready (database included), through the binary itself: no curl in the image.
