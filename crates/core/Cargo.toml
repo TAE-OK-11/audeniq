@@ -61,6 +61,11 @@ tokio-stream = "0.1.19"
 rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }
 ipnet = { version = "2.12.2", features = ["serde"] }
+# The HTTPS listener's own connection loop (crate::edge_tls::serve): header-read
+# and idle timeouts and a connection cap, which axum::serve does not expose.
+hyper = { version = "1.12.0", features = ["server", "http1", "http2"] }
+hyper-util = { version = "0.1.21", features = ["server-auto", "tokio", "http1", "http2"] }
+tower-service = "0.3.3"
 # Let's Encrypt for that listener (crate::edge_acme): ACME client and the
 # CSR / TLS-ALPN-01 challenge certificate, both on aws-lc-rs.
 instant-acme = { version = "0.8.5", default-features = false, features = ["aws-lc-rs", "hyper-rustls", "rcgen"] }

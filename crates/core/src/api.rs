@@ -69,11 +69,53 @@ pub struct AppStateInner {
     /// `AUDENIQ_STAFF_OPS_DATABASE_URL` is set: the admin console's former
     /// CLI-only operations are unavailable without it.
     pub staff_ops: Option<PgPool>,
-    service_secret_digest: [u8; 32],
+    /// 앞단이 보내는 `x-audeniq-service`로 받는 값들 (`edge_header_secrets`)
+    service_secret_digests: Box<[[u8; 32]]>,
+}
+
+/// `x-audeniq-service`로 받는 값. `EDGE_HEADER_SECRETS`(쉼표, 2개까지)가 있으면 그 값들, 없으면 `EDGE_SERVICE_SECRET`.
+///
+/// `EDGE_SERVICE_SECRET`은 CSRF·저장된 전화번호/본인확인 해시·서명·MCP의 키이기도 해서 바꾸면 저장된 값이
+/// 맞지 않게 된다. 그래서 앞단(CloudFront origin custom header, Worker)이 보내는 값은 따로 바꿀 수 있게 한다:
+/// 교체할 때는 `EDGE_HEADER_SECRETS=<지금 값>,<새 값>`으로 둘 다 받다가, 앞단을 새 값으로 바꾼 뒤 `<새 값>`만 남긴다.
+pub fn edge_header_secrets(service_secret: &str) -> anyhow::Result<Vec<String>> {
+    edge_header_secrets_from(
+        crate::config::env_value("EDGE_HEADER_SECRETS"),
+        service_secret,
+    )
+}
+
+fn edge_header_secrets_from(
+    listed: Option<String>,
+    service_secret: &str,
+) -> anyhow::Result<Vec<String>> {
+    let Some(listed) = listed else {
+        return Ok(vec![service_secret.to_owned()]);
+    };
+    let secrets: Vec<String> = listed
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect();
+    anyhow::ensure!(
+        (1..=2).contains(&secrets.len()),
+        "EDGE_HEADER_SECRETS takes one or two secrets (current,next)"
+    );
+    anyhow::ensure!(
+        secrets.iter().all(|s| s.len() >= 32),
+        "each EDGE_HEADER_SECRETS value must have at least 32 random characters"
+    );
+    Ok(secrets)
 }
 impl AppState {
     pub async fn new(pool: PgPool, config: Config, storage: Arc<dyn ObjectStore>) -> Result<Self> {
-        let service_secret_digest = auth::token_digest(&config.service_secret);
+        // 자세한 이유는 audeniq-api가 시작할 때 먼저 확인해 알린다
+        let service_secret_digests = edge_header_secrets(&config.service_secret)
+            .map_err(|_| Error::PolicyGate("EDGE_HEADER_SECRETS_INVALID"))?
+            .iter()
+            .map(|s| auth::token_digest(s))
+            .collect();
         auth::init_rate_key(&config.service_secret);
         Ok(Self(Arc::new(AppStateInner {
             pool,
@@ -89,7 +131,7 @@ impl AppState {
             mcp: Arc::new(crate::mcp::Settings::from_env()),
             staff_ops: crate::staff_ops::pool_from_env()?,
             dummy_hash: auth::password_hash(auth::random_token()).await?,
-            service_secret_digest,
+            service_secret_digests,
         })))
     }
     /// Whether the request carries the edge's service secret (the same check
@@ -100,7 +142,15 @@ impl AppState {
             .get("x-audeniq-service")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
-        auth::secret_matches_digest(provided, &self.service_secret_digest)
+        self.service_secret_matches(provided)
+    }
+    /// 받는 값 모두와 비교한다 (어느 값이 맞았는지 시간으로 드러나지 않게 끝까지)
+    fn service_secret_matches(&self, provided: &str) -> bool {
+        self.service_secret_digests
+            .iter()
+            .fold(false, |ok, digest| {
+                auth::secret_matches_digest(provided, digest) | ok
+            })
     }
 }
 pub fn router(s: AppState) -> Router {
@@ -342,7 +392,7 @@ async fn boundary(State(s): State<AppState>, mut req: Request, next: Next) -> Re
         .get("x-audeniq-service")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    if !auth::secret_matches_digest(provided, &s.service_secret_digest) {
+    if !s.service_secret_matches(provided) {
         return Error::Forbidden.into_response();
     }
     let request_id = HeaderValue::from_str(&id.to_string()).expect("uuid is a valid header");
@@ -1045,6 +1095,34 @@ async fn acl(
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn edge_header_secrets_rotate_without_the_derivation_key() {
+        let key = "k".repeat(32);
+        let (old, new) = ("o".repeat(32), "n".repeat(40));
+        assert_eq!(
+            super::edge_header_secrets_from(None, &key).unwrap(),
+            [key.clone()]
+        );
+        assert_eq!(
+            super::edge_header_secrets_from(Some(format!(" {old} , {new} ")), &key).unwrap(),
+            [old.clone(), new.clone()]
+        );
+        assert_eq!(
+            super::edge_header_secrets_from(Some(new.clone()), &key).unwrap(),
+            [new.clone()]
+        );
+        for bad in [
+            String::new(),
+            ",".into(),
+            "short".into(),
+            format!("{old},{new},{key}"),
+        ] {
+            assert!(
+                super::edge_header_secrets_from(Some(bad.clone()), &key).is_err(),
+                "{bad}"
+            );
+        }
+    }
     use super::*;
     use tower::ServiceExt;
     #[tokio::test]
