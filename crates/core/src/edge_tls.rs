@@ -40,6 +40,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use tokio::net::TcpStream;
+use tokio::sync::OwnedSemaphorePermit;
 use tokio_rustls::{LazyConfigAcceptor, server::TlsStream};
 
 /// AWS가 공개하는 IP 대역 (https://docs.aws.amazon.com/vpc/latest/userguide/aws-ip-ranges.html)
@@ -57,6 +58,14 @@ const CERT_RELOAD: Duration = Duration::from_secs(300);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 /// 동시에 진행하는 핸드셰이크 상한 (넘으면 새 연결을 바로 끊는다)
 const MAX_HANDSHAKES: usize = 256;
+/// 동시에 여는 연결 상한 기본값 (`TLS_MAX_CONNECTIONS`). CloudFront는 연결을 재사용해서 보통 수십 개
+const DEFAULT_MAX_CONNECTIONS: usize = 512;
+/// 요청 헤더를 다 받을 때까지 (HTTP/1.1). CloudFront는 헤더를 한 번에 보낸다: 느린 헤더(slowloris)를 끊는다
+const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(10);
+/// 어느 쪽으로도 바이트가 오가지 않으면 끊는다. CloudFront의 오리진 응답 대기(60초)·keep-alive(60초)보다 길게
+const IDLE_TIMEOUT: Duration = Duration::from_secs(75);
+/// h2 연결 하나의 동시 스트림
+const MAX_H2_STREAMS: u32 = 128;
 
 /// 누가 이 리스너에 연결할 수 있나
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -83,6 +92,8 @@ pub struct Settings {
     pub sources: Sources,
     /// 이 리스너가 받는 이름 (TLS SNI·HTTP Host). 맨 앞이 오리진 도메인
     pub hosts: OriginHosts,
+    /// 동시에 여는 연결 상한 (핸드셰이크 중인 것 포함)
+    pub max_connections: usize,
 }
 
 /// 오리진으로 받는 이름: `TLS_ORIGIN_DOMAIN`(= CloudFront ApiOriginDomain, 예: api-origin.audeniq.com)과
@@ -205,11 +216,20 @@ impl Settings {
             .flatten()
             .chain(extra.split(',').map(str::to_owned)),
         );
+        let max_connections = match get("TLS_MAX_CONNECTIONS") {
+            None => DEFAULT_MAX_CONNECTIONS,
+            Some(n) => n
+                .parse()
+                .ok()
+                .filter(|n| (16..=65_536).contains(n))
+                .ok_or_else(|| anyhow::anyhow!("TLS_MAX_CONNECTIONS must be 16..=65536"))?,
+        };
         Ok(Some(Self {
             bind,
             certificates,
             sources,
             hosts,
+            max_connections,
         }))
     }
 
@@ -240,6 +260,7 @@ impl Settings {
             sources = ?self.sources,
             prefixes = allow.len(),
             hosts = ?self.hosts.0,
+            max_connections = self.max_connections,
             certificate = match &self.certificates {
                 Certificates::Files { .. } => "files",
                 Certificates::Acme(_) => "letsencrypt",
@@ -261,12 +282,14 @@ impl Settings {
         }
         let (tx, rx) = tokio::sync::mpsc::channel(64);
         let hosts = self.hosts.clone();
+        let connections = Arc::new(tokio::sync::Semaphore::new(self.max_connections));
         tokio::spawn(accept_loop(
             tcp,
             Arc::new(config),
             allow,
             challenges,
             self.hosts,
+            connections,
             tx,
         ));
         Ok(TlsListener { rx, local, hosts })
@@ -304,9 +327,12 @@ async fn require_edge(
     next.run(req).await
 }
 
-/// 핸드셰이크를 마친 연결을 axum에 넘긴다. 핸드셰이크는 연결마다 따로 돌아서 느린 상대가 다른 연결을 막지 않는다.
+/// 핸드셰이크를 마친 연결 (연결 상한의 몫을 함께 들고 있다)
+type Accepted = (TlsStream<TcpStream>, SocketAddr, OwnedSemaphorePermit);
+
+/// 핸드셰이크를 마친 연결을 [`serve`]에 넘긴다. 핸드셰이크는 연결마다 따로 돌아서 느린 상대가 다른 연결을 막지 않는다.
 pub struct TlsListener {
-    rx: tokio::sync::mpsc::Receiver<(TlsStream<TcpStream>, SocketAddr)>,
+    rx: tokio::sync::mpsc::Receiver<Accepted>,
     local: SocketAddr,
     hosts: OriginHosts,
 }
@@ -316,22 +342,158 @@ impl TlsListener {
     pub fn hosts(&self) -> OriginHosts {
         self.hosts.clone()
     }
+
+    pub fn local_addr(&self) -> SocketAddr {
+        self.local
+    }
 }
 
-impl axum::serve::Listener for TlsListener {
-    type Io = TlsStream<TcpStream>;
-    type Addr = SocketAddr;
+/// 이 리스너의 연결을 서빙한다. axum::serve와 같지만 연결마다 헤더 읽기·유휴 시간 제한이 있다.
+/// `shutdown`이 끝나면 새 연결을 받지 않고, 열린 연결은 처리 중인 요청을 마치고 닫는다.
+pub async fn serve(
+    mut listener: TlsListener,
+    app: Router,
+    shutdown: impl std::future::Future<Output = ()> + Send,
+) -> std::io::Result<()> {
+    use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
+    let (signal_tx, signal_rx) = tokio::sync::watch::channel(());
+    let (close_tx, close_rx) = tokio::sync::watch::channel(());
+    let mut shutdown = std::pin::pin!(shutdown);
+    loop {
+        let (tls, peer, permit) = tokio::select! {
+            accepted = listener.rx.recv() => match accepted {
+                Some(accepted) => accepted,
+                None => break,
+            },
+            () = &mut shutdown => break,
+        };
+        let app = app.clone();
+        let mut signal = signal_rx.clone();
+        let close = close_rx.clone();
+        tokio::spawn(async move {
+            let service =
+                hyper::service::service_fn(move |req: hyper::Request<hyper::body::Incoming>| {
+                    let mut app = app.clone();
+                    // Router는 늘 준비돼 있다 (poll_ready 없이 call)
+                    async move {
+                        tower_service::Service::call(&mut app, req.map(axum::body::Body::new)).await
+                    }
+                });
+            let mut builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
+            builder
+                .http1()
+                .timer(TokioTimer::new())
+                .header_read_timeout(HEADER_READ_TIMEOUT);
+            builder
+                .http2()
+                .timer(TokioTimer::new())
+                .max_concurrent_streams(MAX_H2_STREAMS);
+            let io = TokioIo::new(Idle::new(tls, IDLE_TIMEOUT));
+            let mut conn = std::pin::pin!(builder.serve_connection_with_upgrades(io, service));
+            loop {
+                tokio::select! {
+                    result = conn.as_mut() => {
+                        if let Err(error) = result {
+                            tracing::debug!(peer = %peer.ip(), %error, "HTTPS connection ended");
+                        }
+                        break;
+                    }
+                    _ = signal.changed() => conn.as_mut().graceful_shutdown(),
+                }
+            }
+            drop((permit, close));
+        });
+    }
+    // 새 연결은 그만 받고(받는 작업도 끝난다), 열린 연결에 알린 뒤 모두 닫힐 때까지
+    drop(listener);
+    let _ = signal_tx.send(());
+    drop(signal_rx);
+    drop(close_rx);
+    close_tx.closed().await;
+    Ok(())
+}
 
-    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
-        match self.rx.recv().await {
-            Some(connection) => connection,
-            // 받는 작업이 끝났으면(일어나지 않음) 새 연결도 없다
-            None => std::future::pending().await,
+/// 어느 쪽으로도 바이트가 `timeout` 동안 오가지 않으면 연결을 닫는다.
+/// 읽기·쓰기가 될 때마다 시한을 다시 잡는다 (실시간 알림은 20초마다 keep-alive를 써서 끊기지 않는다).
+struct Idle<T> {
+    io: T,
+    timeout: Duration,
+    deadline: std::pin::Pin<Box<tokio::time::Sleep>>,
+}
+
+impl<T> Idle<T> {
+    fn new(io: T, timeout: Duration) -> Self {
+        Self {
+            io,
+            timeout,
+            deadline: Box::pin(tokio::time::sleep(timeout)),
         }
     }
 
-    fn local_addr(&self) -> std::io::Result<Self::Addr> {
-        Ok(self.local)
+    fn touch(&mut self) {
+        let next = tokio::time::Instant::now() + self.timeout;
+        self.deadline.as_mut().reset(next);
+    }
+
+    fn expired(&mut self, cx: &mut std::task::Context<'_>) -> bool {
+        self.deadline.as_mut().poll(cx).is_ready()
+    }
+}
+
+fn idle_error() -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::TimedOut, "HTTPS connection idle")
+}
+
+impl<T: tokio::io::AsyncRead + Unpin> tokio::io::AsyncRead for Idle<T> {
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        use std::task::Poll;
+        let this = self.get_mut();
+        match std::pin::Pin::new(&mut this.io).poll_read(cx, buf) {
+            Poll::Ready(result) => {
+                this.touch();
+                Poll::Ready(result)
+            }
+            Poll::Pending if this.expired(cx) => Poll::Ready(Err(idle_error())),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl<T: tokio::io::AsyncWrite + Unpin> tokio::io::AsyncWrite for Idle<T> {
+    fn poll_write(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        data: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        use std::task::Poll;
+        let this = self.get_mut();
+        match std::pin::Pin::new(&mut this.io).poll_write(cx, data) {
+            Poll::Ready(result) => {
+                this.touch();
+                Poll::Ready(result)
+            }
+            // 받는 쪽이 읽지 않아 쓰기가 막힌 채로도 끝없이 기다리지 않는다
+            Poll::Pending if this.expired(cx) => Poll::Ready(Err(idle_error())),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.get_mut().io).poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.get_mut().io).poll_shutdown(cx)
     }
 }
 
@@ -341,11 +503,19 @@ async fn accept_loop(
     allow: Arc<Allow>,
     challenges: Arc<edge_acme::Challenges>,
     hosts: OriginHosts,
-    tx: tokio::sync::mpsc::Sender<(TlsStream<TcpStream>, SocketAddr)>,
+    connections: Arc<tokio::sync::Semaphore>,
+    tx: tokio::sync::mpsc::Sender<Accepted>,
 ) {
     let handshakes = Arc::new(tokio::sync::Semaphore::new(MAX_HANDSHAKES));
     let mut rejected = 0u64;
-    let mut last_report = Instant::now();
+    // 거절 로그는 1분에 한 줄 (그 사이 건수를 모아서). 처음 한 건은 바로 남긴다
+    const REPORT_EVERY: Duration = Duration::from_secs(60);
+    let long_ago = Instant::now()
+        .checked_sub(REPORT_EVERY)
+        .unwrap_or_else(Instant::now);
+    let mut last_report = long_ago;
+    let mut full = 0u64;
+    let mut last_full_report = long_ago;
     loop {
         let (stream, peer) = tokio::select! {
             accepted = tcp.accept() => match accepted {
@@ -364,13 +534,22 @@ async fn accept_loop(
         // 인증서를 받는 중이 아니면 CloudFront 밖의 연결은 ClientHello도 읽지 않는다
         if !allowed && !challenges.pending() {
             rejected += 1;
-            if rejected == 1 || last_report.elapsed() >= Duration::from_secs(60) {
+            if last_report.elapsed() >= REPORT_EVERY {
                 tracing::warn!(peer = %peer.ip(), rejected, "HTTPS connection refused: not a CloudFront origin address");
                 rejected = 0;
                 last_report = Instant::now();
             }
             continue;
         }
+        let Ok(connection) = connections.clone().try_acquire_owned() else {
+            full += 1;
+            if last_full_report.elapsed() >= REPORT_EVERY {
+                tracing::warn!(peer = %peer.ip(), dropped = full, "HTTPS connection dropped: connection limit reached (TLS_MAX_CONNECTIONS)");
+                full = 0;
+                last_full_report = Instant::now();
+            }
+            continue;
+        };
         let Ok(permit) = handshakes.clone().try_acquire_owned() else {
             tracing::warn!(peer = %peer.ip(), "HTTPS connection dropped: too many handshakes in progress");
             continue;
@@ -389,7 +568,7 @@ async fn accept_loop(
             match tokio::time::timeout(HANDSHAKE_TIMEOUT, shake).await {
                 Ok(Ok(Some(tls))) => {
                     drop(permit);
-                    let _ = tx.send((tls, peer)).await;
+                    let _ = tx.send((tls, peer, connection)).await;
                 }
                 Ok(Ok(None)) => {}
                 Ok(Err(error)) => {
@@ -1048,6 +1227,20 @@ mod tests {
             "origin = Let's Encrypt name"
         );
         let files_mode = settings(&files).unwrap().unwrap();
+        assert_eq!(files_mode.max_connections, DEFAULT_MAX_CONNECTIONS);
+        assert_eq!(
+            settings(&[BIND, CERT, KEY, ORIGIN, ("TLS_MAX_CONNECTIONS", "2000")])
+                .unwrap()
+                .unwrap()
+                .max_connections,
+            2000
+        );
+        for bad in ["0", "8", "99999", "many"] {
+            assert!(
+                settings(&[BIND, CERT, KEY, ORIGIN, ("TLS_MAX_CONNECTIONS", bad)]).is_err(),
+                "{bad}"
+            );
+        }
         assert!(matches!(
             files_mode.certificates,
             Certificates::Files { .. }
@@ -1233,11 +1426,15 @@ mod tests {
         Ok((text.lines().next().unwrap_or("").to_owned(), peer))
     }
 
-    async fn serve(sources: Sources) -> (SocketAddr, PathBuf) {
-        serve_for(sources, "localhost").await
+    async fn start(sources: Sources) -> (SocketAddr, PathBuf) {
+        start_with(sources, "localhost", DEFAULT_MAX_CONNECTIONS).await
     }
 
-    async fn serve_for(sources: Sources, origin: &str) -> (SocketAddr, PathBuf) {
+    async fn start_with(
+        sources: Sources,
+        origin: &str,
+        max_connections: usize,
+    ) -> (SocketAddr, PathBuf) {
         let dir = temp_dir("serve");
         let (cert, key) = write_pair(&dir, CERT_A, KEY_A);
         let listener = Settings {
@@ -1245,19 +1442,57 @@ mod tests {
             certificates: Certificates::Files { cert, key },
             sources,
             hosts: OriginHosts::new([origin.into()]),
+            max_connections,
         }
         .bind()
         .await
         .unwrap();
-        let addr = axum::serve::Listener::local_addr(&listener).unwrap();
+        let addr = listener.local_addr();
         let app = Router::new().route("/ping", axum::routing::get(|| async { "pong" }));
-        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        tokio::spawn(async move { serve(listener, app, std::future::pending()).await.unwrap() });
         (addr, dir)
     }
 
     #[tokio::test]
+    async fn connections_over_the_limit_are_closed() {
+        let (addr, dir) = start_with(Sources::Any, "localhost", 1).await;
+        // 첫 연결을 열어 둔 채로(요청 없이) 두 번째는 거절된다
+        let held = TcpStream::connect(addr).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(https_get(addr, CERT_A).await.is_err());
+        drop(held);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let (status, _) = https_get(addr, CERT_A).await.unwrap();
+        assert_eq!(
+            status, "HTTP/1.1 200 OK",
+            "a slot frees when the first connection closes"
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn idle_connections_time_out_and_traffic_keeps_them_open() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let (near, mut far) = tokio::io::duplex(64);
+        // 75초 대신 짧게: 시한보다 자주 바이트가 오가면 끊기지 않는다
+        let mut idle = Idle::new(near, Duration::from_millis(300));
+        for _ in 0..4 {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            far.write_all(b"x").await.unwrap();
+            let mut byte = [0u8; 1];
+            idle.read_exact(&mut byte).await.unwrap();
+        }
+        // 아무것도 오가지 않으면 시한 뒤 읽기가 실패한다
+        let started = std::time::Instant::now();
+        let mut byte = [0u8; 1];
+        let err = idle.read(&mut byte).await.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+        assert!(started.elapsed() >= Duration::from_millis(250));
+    }
+
+    #[tokio::test]
     async fn serves_https_with_the_configured_certificate() {
-        let (addr, dir) = serve(Sources::Any).await;
+        let (addr, dir) = start(Sources::Any).await;
         let (status, peer) = https_get(addr, CERT_A).await.unwrap();
         assert_eq!(status, "HTTP/1.1 200 OK");
         assert_eq!(peer, der(CERT_A));
@@ -1268,7 +1503,7 @@ mod tests {
 
     #[tokio::test]
     async fn offers_h2_to_clients_that_ask_for_it() {
-        let (addr, dir) = serve(Sources::Any).await;
+        let (addr, dir) = start(Sources::Any).await;
         let mut roots = rustls::RootCertStore::empty();
         roots
             .add(CertificateDer::from_pem_slice(CERT_A.as_bytes()).unwrap())
@@ -1302,7 +1537,12 @@ mod tests {
     #[tokio::test]
     async fn connections_for_another_name_are_closed_before_the_certificate() {
         // 인증서는 localhost용이지만 이 리스너의 오리진 이름은 api-origin.audeniq.test: SNI localhost는 거절
-        let (addr, dir) = serve_for(Sources::Any, "api-origin.audeniq.test").await;
+        let (addr, dir) = start_with(
+            Sources::Any,
+            "api-origin.audeniq.test",
+            DEFAULT_MAX_CONNECTIONS,
+        )
+        .await;
         assert!(https_get(addr, CERT_A).await.is_err());
         std::fs::remove_dir_all(dir).unwrap();
     }
@@ -1310,7 +1550,7 @@ mod tests {
     #[tokio::test]
     async fn connections_from_outside_cloudfront_are_closed_before_tls() {
         // 127.0.0.1은 CloudFront 대역이 아니다
-        let (addr, dir) = serve(Sources::CloudFront).await;
+        let (addr, dir) = start(Sources::CloudFront).await;
         assert!(https_get(addr, CERT_A).await.is_err());
         std::fs::remove_dir_all(dir).unwrap();
     }

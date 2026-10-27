@@ -39,7 +39,7 @@ ALB도 터널도 없어요. 백엔드 api가 공인 인증서를 직접 들고 �
 
 ## 보안 경계: AWS(CloudFront)가 아니면 거절
 
-백엔드 HTTPS 리스너(`TLS_BIND`)는 네 겹으로 막아요. 서버 443은 인터넷에 열려 있지만, CloudFront가 `api-origin.audeniq.com`으로 보낸 요청만 api에 닿아요.
+백엔드 HTTPS 리스너(`TLS_BIND`)는 다섯 겹으로 막아요. 서버 443은 인터넷에 열려 있지만, CloudFront가 `api-origin.audeniq.com`으로 보낸 요청만 api에 닿아요.
 
 1. **연결 출처**: AWS가 공개하는 `CLOUDFRONT_ORIGIN_FACING` IP 대역에서 온 TCP 연결만 받아요. 그 밖의 연결은 TLS 핸드셰이크 전에 끊어요(로그: `HTTPS connection refused: not a CloudFront origin address`, 1분에 한 줄).
    - 대역은 api가 `https://ip-ranges.amazonaws.com/ip-ranges.json`을 6시간마다 받아 바꿔요(실패하면 10분 뒤 다시, 그동안은 이전 목록). 처음 뜰 때는 저장소 스냅샷 `config/cloudfront-origin-facing.json`(갱신: `python3 scripts/cloudfront-ranges.py > config/cloudfront-origin-facing.json`)을 써요.
@@ -48,11 +48,20 @@ ALB도 터널도 없어요. 백엔드 api가 공인 인증서를 직접 들고 �
 2. **서비스 비밀**: 이 리스너로 온 요청은 화면 파일까지 모두 `x-audeniq-service`(= `EDGE_SERVICE_SECRET`)가 맞아야 해요. 다른 AWS 계정이 자기 CloudFront로 이 서버를 오리진으로 걸어도(IP는 CloudFront라 1을 통과) 403이에요. 비밀은 CloudFront origin custom header로만 붙고, 브라우저가 같은 이름을 보내면 `edge.js`가 지우고 CloudFront가 덮어써요.
 3. **이름**: 오리진으로 받는 이름은 `api-origin.audeniq.com`(`TLS_ORIGIN_DOMAIN`, Let's Encrypt를 쓰면 `TLS_ACME_DOMAIN`과 같은 값) 하나예요. TLS SNI가 이 이름이 아니면(서버 IP로 바로, 다른 도메인을 이 서버로 돌린 것) 인증서도 보내지 않고 끊고, HTTP `Host`(h2는 `:authority`)가 다르면 403이에요(로그: `HTTPS request for a name other than the origin`).
    - 예외: 스튜디오·관리자 주소(`APP_ORIGIN`·`ADMIN_ORIGIN`의 호스트)와 `TLS_EXTRA_HOSTS`(쉼표). CloudFront는 오리진 요청 정책(Host 빼고 전달)으로 늘 `Host: api-origin.audeniq.com`을 보내서 보통은 쓰이지 않아요.
-4. **헤더 정리**: `edge.js`가 프록시 Worker와 같은 허용 목록만 남겨요. 사용자 IP는 `event.viewer.ip` → `x-audeniq-client-ip`(백엔드는 서비스 비밀이 맞을 때만 믿어요). `x-audeniq-site=admin`이면 관리자 경로만 열리는 규칙(`crates/core/src/sites.rs`)은 그대로예요.
+4. **연결 자원**: 동시 연결 `TLS_MAX_CONNECTIONS`(기본 512, 넘으면 새 연결을 끊음), HTTP/1.1 요청 헤더는 10초 안에(느린 헤더 공격), 어느 쪽으로도 75초 동안 바이트가 없으면 끊어요(CloudFront 응답 대기·keep-alive 60초보다 길게). h2 연결 하나의 동시 스트림 128개.
+5. **헤더 정리**: `edge.js`가 프록시 Worker와 같은 허용 목록만 남겨요. 사용자 IP는 `event.viewer.ip` → `x-audeniq-client-ip`(백엔드는 서비스 비밀이 맞을 때만 믿어요). `x-audeniq-site=admin`이면 관리자 경로만 열리는 규칙(`crates/core/src/sites.rs`)은 그대로예요.
 
 방화벽(서버 보안 그룹): Let's Encrypt 자동 발급(`TLS_ACME_DOMAIN`)을 쓰면 **443은 인터넷 전체에 열어 둬요**. Let's Encrypt 검증은 여러 곳에서 오고 주소가 공개돼 있지 않아서, 거르기는 위 1을 api가 해요.
 파일 인증서(`tls-cert.sh`)만 쓴다면 443을 CloudFront 관리형 prefix list `com.amazonaws.global.cloudfront.origin-facing`로 좁혀도 돼요(AWS 서버일 때).
 평문 8080은 컨테이너 안 healthcheck와 (전환 전까지) 터널용이고, 서버 밖으로 열지 않아요.
+
+### 앞단 비밀 바꾸기
+
+`EDGE_SERVICE_SECRET`은 CSRF·저장된 전화번호/본인확인 해시·서명의 키이기도 해서 바꾸면 안 돼요. CloudFront가 보내는 값만 따로 바꿔요(`EDGE_HEADER_SECRETS`, 비우면 `EDGE_SERVICE_SECRET`).
+
+1. `production.env`에 `EDGE_HEADER_SECRETS=<지금 값>,<새 값>`(새 값: `openssl rand -hex 32`) → `./update.sh --force`
+2. `EDGE_SERVICE_SECRET=<새 값> deploy/aws/deploy-stack.sh studio`(admin도). CloudFront 배포가 끝날 때까지 몇 분은 두 값이 섞여 와요.
+3. `EDGE_HEADER_SECRETS=<새 값>` → `./update.sh --force`
 
 ## 인증서: api 내장 Let's Encrypt
 
@@ -122,7 +131,7 @@ CloudFront는 오리진 인증서를 공인 CA로 검증하고, 이름이 `ApiOr
    - 전환 직전에 5단계를 한 번 더 실행해서 마지막 글까지 옮겨요. 이미 있는 id는 건너뛰어요.
 10. **확인**: 로그인, 공지 읽기·쓰기, 관리자 점검 등록 → 스튜디오 점검 화면, 백엔드 로그의 사용자 IP.
 11. **정리**(안정된 뒤):
-    - `compose.production.yaml`의 `tunnel` 서비스와 `tunnel-token`, Cloudflare Tunnel과 `api-tunnel` DNS를 지워요. 그 뒤 `API_BIND`는 `127.0.0.1:8080`(healthcheck만)으로 좁혀도 돼요.
+    - 터널(cloudflared)은 배포에서 뺐어요(`compose.production.yaml`, 평문 `API_BIND=127.0.0.1:8080`은 healthcheck만). 다음 `./update.sh` 때 떠 있던 `tunnel` 컨테이너도 지워져요. 서버의 `tunnel-token` 파일과 `production.env`의 `CLOUDFLARED_IMAGE` 줄, Cloudflare Tunnel과 `api-tunnel` DNS는 손으로 지워요.
     - Cloudflare의 Workers(`audeniq-studio`, `audeniq-studio-proxy`, `audeniq-admin`, `audeniq-web`)와 D1 `audeniq-content`를 지워요.
     - studio·admin·landing의 `worker.ts`·`wrangler.jsonc`, `web/studio/migrations`, `crates/edge`를 저장소에서 지워요.
 

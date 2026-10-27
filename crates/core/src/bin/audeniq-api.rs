@@ -24,12 +24,15 @@ const SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(25);
 
 /// `audeniq-api healthcheck`: the container healthcheck (the image has no
 /// curl). Exit 0 only when this instance answers `/ready`, which also reads
-/// the database. Deploys wait on it before the tunnel sends traffic.
+/// the database. Deploys wait on it before CloudFront sends traffic.
 fn healthcheck() -> anyhow::Result<()> {
     use std::io::{Read, Write};
     let bind = std::env::var("API_BIND").unwrap_or_else(|_| "0.0.0.0:8080".into());
     let port = bind.rsplit(':').next().unwrap_or("8080");
-    let secret = std::env::var("EDGE_SERVICE_SECRET").unwrap_or_default();
+    // 앞단이 보내는 값과 같은 것 (EDGE_HEADER_SECRETS가 있으면 그 첫 값)
+    let secret =
+        api::edge_header_secrets(&std::env::var("EDGE_SERVICE_SECRET").unwrap_or_default())?
+            .swap_remove(0);
     let timeout = std::time::Duration::from_secs(4);
     let addr: std::net::SocketAddr = format!("127.0.0.1:{port}").parse()?;
     let mut tcp = std::net::TcpStream::connect_timeout(&addr, timeout)?;
@@ -59,6 +62,7 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
     let config = Config::from_env()?;
+    api::edge_header_secrets(&config.service_secret)?;
     if audeniq_core::config::kms_enabled()? {
         audeniq_core::payout_keys::KeyRing::from_env(true)?;
     }
@@ -84,7 +88,7 @@ async fn main() -> anyhow::Result<()> {
         Arc::new(DisabledStore)
     };
     // TCP_NODELAY: responses are small JSON bodies on keep-alive connections
-    // from the tunnel; Nagle + delayed ACK can hold one back for ~40 ms.
+    // from the edge; Nagle + delayed ACK can hold one back for ~40 ms.
     let listener = tokio::net::TcpListener::bind(&config.bind)
         .await?
         .tap_io(|tcp| {
@@ -143,7 +147,7 @@ async fn main() -> anyhow::Result<()> {
     let tls = match tls_listener {
         Some(listener) => {
             let app = audeniq_core::edge_tls::app(state.clone(), studio.clone(), listener.hosts());
-            Some(axum::serve(listener, app).with_graceful_shutdown(shutdown()))
+            Some(audeniq_core::edge_tls::serve(listener, app, shutdown()))
         }
         None => None,
     };
@@ -151,7 +155,7 @@ async fn main() -> anyhow::Result<()> {
     let plain = axum::serve(listener, app).with_graceful_shutdown(shutdown());
     let served = async move {
         match tls {
-            Some(tls) => tokio::try_join!(plain.into_future(), tls.into_future()).map(|_| ()),
+            Some(tls) => tokio::try_join!(plain.into_future(), tls).map(|_| ()),
             None => plain.await,
         }
     };

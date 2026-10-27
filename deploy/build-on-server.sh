@@ -16,7 +16,7 @@
 #
 # 환경 변수 (선택):
 #   AUDENIQ_SRC          저장소 위치 (기본 /opt/audeniq-src)
-#   DEPLOY_PATH          배포 폴더 (기본 /opt/audeniq, production.env·tunnel-token이 있는 곳)
+#   DEPLOY_PATH          배포 폴더 (기본 /opt/audeniq, production.env가 있는 곳)
 #   ENGINE_TOKEN_FILE    엔진 저장소 읽기 토큰 파일 (기본 ~/.audeniq-engine-token)
 #   BACKEND_CPU_VARIANT  portable(기본), ampere-a4, ampere-a1, graviton4, x86-64-v3 — CI와 같은 이름
 #   BUILD_ONLY=1         이미지만 만들고 배포는 하지 않는다 (출력된 digest로 나중에 ./deploy.sh)
@@ -96,7 +96,7 @@ if [ "${BUILD_ONLY:-}" = 1 ]; then
   exit 0
 fi
 
-# 배포 파일은 이미지(마이그레이션)와 같은 커밋이어야 한다. 비밀 파일(production.env, tunnel-token)은 건드리지 않는다.
+# 배포 파일은 이미지(마이그레이션)와 같은 커밋이어야 한다. 비밀 파일(production.env)은 건드리지 않는다.
 echo "build-on-server: 같은 커밋의 배포 파일을 $DEPLOY_PATH 로 복사"
 for f in compose.production.yaml bootstrap.sql grants.sql deploy.sh check-cpu.sh pg-upgrade.sh backup.sh restore-backup.sh archive.sh build-on-server.sh studio-release.sh; do
   [ -f "$SRC/deploy/$f" ] && install -m "$( [ "${f##*.}" = sh ] && echo 755 || echo 644 )" "$SRC/deploy/$f" "$DEPLOY_PATH/$f"
