@@ -123,3 +123,36 @@ docker exec audeniq-production-api-1 printenv AUDENIQ_STAFF_OPS_DATABASE_URL | s
 첫 줄 `audeniq_staff_ops`, 둘째 줄 `t`, 셋째 줄에 주소(비밀번호 가림)가 나오면 켜진 것이다.
 관리자 화면에 "이 서버에서는 운영 도구가 아직 꺼져 있어요"가 보이면 주소가 API에 안 들어간 것이다 — 2)·3)을 다시 확인한다.
 끄려면 `production.env`에서 `AUDENIQ_STAFF_OPS_DATABASE_URL=`을 비우고 `$C up -d --no-deps api`.
+
+## 5. 병합 전 브랜치를 서버에서 빌드·배포 (예: Studio 서빙 구조 시험)
+
+CI 이미지가 없는 커밋(main에 병합 전)은 서버에서 `build-on-server.sh`로 빌드해 배포한다. 백엔드 이미지와
+Studio 화면(`studio/releases/<커밋>`)을 **같은 커밋**으로 함께 올린다. 처음 한 번 준비(저장소 clone, 엔진 토큰,
+GHCR 로그인)는 `build-on-server.sh` 머리말을 따른다. 서버의 옛 스크립트는 main만 받으므로 브랜치의 새 스크립트로 실행한다:
+
+```bash
+B=claude/studio-serving-restructure-0gmhx6
+git -C /opt/audeniq-src fetch --quiet origin "$B"
+git -C /opt/audeniq-src show FETCH_HEAD:deploy/build-on-server.sh > /tmp/build-on-server.sh
+bash /tmp/build-on-server.sh "$B"
+```
+
+- 이미지 빌드(release, 수십 분) → 같은 커밋의 배포 파일 복사(`studio-release.sh` 포함) → Studio 화면 빌드
+  (`node:22-bookworm-slim` 컨테이너, 저장소는 건드리지 않음) → `studio-release.sh install` → `deploy.sh`.
+- 화면 빌드를 빼려면 `SKIP_STUDIO=1`, 이미지만 만들려면 `BUILD_ONLY=1`.
+- 지금의 Cloudflare Worker(`audeniq-studio`)는 `/api`만 넘기므로 이 배포로 사용자에게 바뀌는 건 없다.
+  화면이 Worker 대신 백엔드에서 나가는 건 프록시 Worker로 도메인을 옮긴 뒤다 ([STUDIO_SERVING.md](STUDIO_SERVING.md) 1단계 전환 순서).
+
+확인 (api 컨테이너 안에서 바로 — 서비스 비밀 없이 화면은 200, API는 403이어야 한다):
+
+```bash
+cd /opt/audeniq
+./studio-release.sh status
+C=audeniq-production-api-1
+docker logs "$C" 2>&1 | grep -m1 'studio release loaded'
+for p in / /releases/1 /assets/없는파일.js /api/me; do
+  printf '%-22s ' "$p"; docker run --rm --network "container:$C" curlimages/curl:8.11.1 -s -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:8080$p"
+done   # 200, 200, 404, 403
+```
+
+되돌리기: 백엔드는 `./deploy.sh --rollback`, 화면만은 `./studio-release.sh rollback`.
