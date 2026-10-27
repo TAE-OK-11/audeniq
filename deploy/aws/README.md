@@ -4,6 +4,7 @@
 > 설문(survey.audeniq.com)은 베타 전까지 D1 Worker 그대로라 이 구성에 없어요. R2(업로드 저장소)와 DNS는 Cloudflare 그대로예요.
 
 ALB도 터널도 없어요. 백엔드 api가 공인 인증서를 직접 들고 서버 443에서 CloudFront의 요청만 받아요.
+브라우저 ↔ CloudFront는 h2·h3, CloudFront ↔ 백엔드는 HTTP/1.1이에요(CloudFront 제약). 백엔드는 h2도 ALPN으로 받아요.
 
 ```
 브라우저 ── studio.audeniq.com ── CloudFront ──────────────── origin.audeniq.com:443 ── api (TLS 직접, 컨테이너 8443)

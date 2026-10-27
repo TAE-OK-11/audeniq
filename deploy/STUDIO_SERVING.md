@@ -103,7 +103,7 @@ curl -s  $H/api/status -H 'x-audeniq-service: forged' -H 'x-audeniq-client-ip: 1
 - **behavior와 캐시**: `/assets/*`만 CachingOptimized(gzip·br 캐시 키, 오리진 요청 정책 없음 → 브라우저 헤더는 오리진에 닿지 않음).
   나머지 `/*`(화면·`/api`)는 CachingDisabled + AllViewerExceptHostHeader, 요청·응답 모두 `edge.js`.
 - **헤더 원본은 백엔드**: CSP 등은 `_headers`로 백엔드가 붙여요. CloudFront 응답 헤더 정책에는 HSTS만 둬요.
-- **ALB·터널 없음**: api가 `TLS_BIND`(컨테이너 8443 → 서버 443)에서 인증서로 직접 받아요(`crates/core/src/edge_tls.rs`, 인증서는 `deploy/tls-cert.sh`).
+- **ALB·터널 없음**: api가 `TLS_BIND`(컨테이너 8443 → 서버 443)에서 인증서로 직접 받아요(HTTP/1.1과 h2, CloudFront는 HTTP/1.1로 붙어요)(`crates/core/src/edge_tls.rs`, 인증서는 `deploy/tls-cert.sh`).
   CloudFront 오리진 IP 대역이 아닌 연결은 TLS 전에 끊고, 서비스 비밀이 없는 요청은 화면 파일까지 403이에요.
   평문 `API_BIND`(8080)는 healthcheck와 전환 전 터널용이라 1단계 동작은 그대로예요.
 - **엣지 중립**: 백엔드는 `CF-Connecting-IP`·`X-Forwarded-For` 같은 엣지 고유 헤더를 읽지 않고 `x-audeniq-client-ip`만 읽어요.
