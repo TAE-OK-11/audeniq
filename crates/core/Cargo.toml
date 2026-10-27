@@ -82,3 +82,7 @@ harness = false
 [[bench]]
 name = "crypto_resources"
 harness = false
+
+[[bench]]
+name = "edge_resources"
+harness = false
