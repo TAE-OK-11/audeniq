@@ -1227,6 +1227,20 @@ mod tests {
             "origin = Let's Encrypt name"
         );
         let files_mode = settings(&files).unwrap().unwrap();
+        assert_eq!(files_mode.max_connections, DEFAULT_MAX_CONNECTIONS);
+        assert_eq!(
+            settings(&[BIND, CERT, KEY, ORIGIN, ("TLS_MAX_CONNECTIONS", "2000")])
+                .unwrap()
+                .unwrap()
+                .max_connections,
+            2000
+        );
+        for bad in ["0", "8", "99999", "many"] {
+            assert!(
+                settings(&[BIND, CERT, KEY, ORIGIN, ("TLS_MAX_CONNECTIONS", bad)]).is_err(),
+                "{bad}"
+            );
+        }
         assert!(matches!(
             files_mode.certificates,
             Certificates::Files { .. }
@@ -1412,11 +1426,15 @@ mod tests {
         Ok((text.lines().next().unwrap_or("").to_owned(), peer))
     }
 
-    async fn serve(sources: Sources) -> (SocketAddr, PathBuf) {
-        serve_for(sources, "localhost").await
+    async fn start(sources: Sources) -> (SocketAddr, PathBuf) {
+        start_with(sources, "localhost", DEFAULT_MAX_CONNECTIONS).await
     }
 
-    async fn serve_for(sources: Sources, origin: &str) -> (SocketAddr, PathBuf) {
+    async fn start_with(
+        sources: Sources,
+        origin: &str,
+        max_connections: usize,
+    ) -> (SocketAddr, PathBuf) {
         let dir = temp_dir("serve");
         let (cert, key) = write_pair(&dir, CERT_A, KEY_A);
         let listener = Settings {
@@ -1424,19 +1442,57 @@ mod tests {
             certificates: Certificates::Files { cert, key },
             sources,
             hosts: OriginHosts::new([origin.into()]),
+            max_connections,
         }
         .bind()
         .await
         .unwrap();
-        let addr = axum::serve::Listener::local_addr(&listener).unwrap();
+        let addr = listener.local_addr();
         let app = Router::new().route("/ping", axum::routing::get(|| async { "pong" }));
-        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        tokio::spawn(async move { serve(listener, app, std::future::pending()).await.unwrap() });
         (addr, dir)
     }
 
     #[tokio::test]
+    async fn connections_over_the_limit_are_closed() {
+        let (addr, dir) = start_with(Sources::Any, "localhost", 1).await;
+        // 첫 연결을 열어 둔 채로(요청 없이) 두 번째는 거절된다
+        let held = TcpStream::connect(addr).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(https_get(addr, CERT_A).await.is_err());
+        drop(held);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let (status, _) = https_get(addr, CERT_A).await.unwrap();
+        assert_eq!(
+            status, "HTTP/1.1 200 OK",
+            "a slot frees when the first connection closes"
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn idle_connections_time_out_and_traffic_keeps_them_open() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let (near, mut far) = tokio::io::duplex(64);
+        // 75초 대신 짧게: 시한보다 자주 바이트가 오가면 끊기지 않는다
+        let mut idle = Idle::new(near, Duration::from_millis(300));
+        for _ in 0..4 {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            far.write_all(b"x").await.unwrap();
+            let mut byte = [0u8; 1];
+            idle.read_exact(&mut byte).await.unwrap();
+        }
+        // 아무것도 오가지 않으면 시한 뒤 읽기가 실패한다
+        let started = std::time::Instant::now();
+        let mut byte = [0u8; 1];
+        let err = idle.read(&mut byte).await.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+        assert!(started.elapsed() >= Duration::from_millis(250));
+    }
+
+    #[tokio::test]
     async fn serves_https_with_the_configured_certificate() {
-        let (addr, dir) = serve(Sources::Any).await;
+        let (addr, dir) = start(Sources::Any).await;
         let (status, peer) = https_get(addr, CERT_A).await.unwrap();
         assert_eq!(status, "HTTP/1.1 200 OK");
         assert_eq!(peer, der(CERT_A));
@@ -1447,7 +1503,7 @@ mod tests {
 
     #[tokio::test]
     async fn offers_h2_to_clients_that_ask_for_it() {
-        let (addr, dir) = serve(Sources::Any).await;
+        let (addr, dir) = start(Sources::Any).await;
         let mut roots = rustls::RootCertStore::empty();
         roots
             .add(CertificateDer::from_pem_slice(CERT_A.as_bytes()).unwrap())
@@ -1481,7 +1537,12 @@ mod tests {
     #[tokio::test]
     async fn connections_for_another_name_are_closed_before_the_certificate() {
         // 인증서는 localhost용이지만 이 리스너의 오리진 이름은 api-origin.audeniq.test: SNI localhost는 거절
-        let (addr, dir) = serve_for(Sources::Any, "api-origin.audeniq.test").await;
+        let (addr, dir) = start_with(
+            Sources::Any,
+            "api-origin.audeniq.test",
+            DEFAULT_MAX_CONNECTIONS,
+        )
+        .await;
         assert!(https_get(addr, CERT_A).await.is_err());
         std::fs::remove_dir_all(dir).unwrap();
     }
@@ -1489,7 +1550,7 @@ mod tests {
     #[tokio::test]
     async fn connections_from_outside_cloudfront_are_closed_before_tls() {
         // 127.0.0.1은 CloudFront 대역이 아니다
-        let (addr, dir) = serve(Sources::CloudFront).await;
+        let (addr, dir) = start(Sources::CloudFront).await;
         assert!(https_get(addr, CERT_A).await.is_err());
         std::fs::remove_dir_all(dir).unwrap();
     }

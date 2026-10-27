@@ -313,7 +313,7 @@ pub fn router(s: AppState) -> Router {
         .layer(compression())
         .with_state(s)
 }
-/// Past this a request is abandoned: the tunnel in front gave up on it
+/// Past this a request is abandoned: the edge in front gave up on it
 /// already (about 100 s), and it would otherwise keep holding a database
 /// connection (pool of 6) or a storage call for up to 15 minutes. Covers the
 /// handler up to its response headers; a streamed body is not cut.
@@ -1101,7 +1101,7 @@ mod tests {
         let (old, new) = ("o".repeat(32), "n".repeat(40));
         assert_eq!(
             super::edge_header_secrets_from(None, &key).unwrap(),
-            [key.clone()]
+            std::slice::from_ref(&key)
         );
         assert_eq!(
             super::edge_header_secrets_from(Some(format!(" {old} , {new} ")), &key).unwrap(),
@@ -1109,7 +1109,7 @@ mod tests {
         );
         assert_eq!(
             super::edge_header_secrets_from(Some(new.clone()), &key).unwrap(),
-            [new.clone()]
+            std::slice::from_ref(&new)
         );
         for bad in [
             String::new(),

@@ -46,8 +46,8 @@ wait_ready() { # $1 = container
   die "$1 이 준비되지 않았어요"
 }
 
-echo "pg-upgrade: 서비스 멈춤 (api·worker·pgbouncer·tunnel·postgres)"
-"${COMPOSE[@]}" stop api worker pgbouncer tunnel postgres >/dev/null 2>&1 || true
+echo "pg-upgrade: 서비스 멈춤 (api·worker·pgbouncer·postgres)"
+"${COMPOSE[@]}" stop api worker pgbouncer postgres >/dev/null 2>&1 || true
 
 echo "pg-upgrade: 옛 데이터를 17로 열어 덤프"
 docker rm -f "$TEMP" >/dev/null 2>&1 || true

@@ -180,10 +180,13 @@ services:
     environment:
       APP_ENV: production
       APP_ORIGIN: ${APP_ORIGIN:?set exact HTTPS Studio origin}
-      API_BIND: 0.0.0.0:8080
+      # 평문 8080은 컨테이너 안 healthcheck만 (터널을 뺀 뒤로 바깥·다른 컨테이너에서 부르지 않는다)
+      API_BIND: 127.0.0.1:8080
       AUDENIQ_QC_ASSET_PARALLELISM: '${AUDENIQ_QC_ASSET_PARALLELISM:-}'
       AUDENIQ_AUDIO_PARSER_MEMORY_MIB: '${AUDENIQ_AUDIO_PARSER_MEMORY_MIB:-768}'
       EDGE_SERVICE_SECRET: ${EDGE_SERVICE_SECRET:?set random service secret}
+      # CloudFront가 x-audeniq-service로 보내는 값 (비우면 EDGE_SERVICE_SECRET). 교체할 때 "지금,새것" 둘 다
+      EDGE_HEADER_SECRETS: ${EDGE_HEADER_SECRETS:-}
       PAYOUT_KMS_ENABLED: '${PAYOUT_KMS_ENABLED:-false}'
       PAYOUT_KEYRING_FILE: ${PAYOUT_KEYRING_FILE:-}
       PAYOUT_ACCOUNT_KEY: ${PAYOUT_ACCOUNT_KEY:-}
@@ -263,7 +266,7 @@ services:
       # ./studio/releases/<커밋>에 풀고 current 심링크를 바꾸면 api가 다음 요청부터 새 화면을 준다(재시작 없음).
       # production.env에 STUDIO_DIR= (빈 값)을 넣으면 화면 서빙을 끈다.
       STUDIO_DIR: ${STUDIO_DIR-/srv/studio/current}
-      # AWS CloudFront가 직접 부르는 HTTPS (crates/core/src/edge_tls.rs, deploy/aws/README.md). TLS_BIND를 비우면 꺼짐(터널만).
+      # AWS CloudFront가 직접 부르는 HTTPS (crates/core/src/edge_tls.rs, deploy/aws/README.md). 앞단은 CloudFront뿐이라(터널 없음) production.env에 늘 TLS_BIND를 둔다.
       # 켜기: production.env에 TLS_BIND=0.0.0.0:8443 → deploy.sh가 compose.tls.yaml(서버 443 → 8443)을 붙인다.
       # 인증서: TLS_ACME_DOMAIN이 있으면 api가 Let's Encrypt에서 직접 받고 자동 갱신한다(crates/core/src/edge_acme.rs,
       # 볼륨 api_tls에 보관). 없으면 ./tls의 파일(./tls-cert.sh 등, 5분마다 다시 읽음).
@@ -273,6 +276,8 @@ services:
       # 예외: 스튜디오·관리자 주소(APP_ORIGIN·ADMIN_ORIGIN 호스트), TLS_EXTRA_HOSTS. 비우면 TLS_ACME_DOMAIN
       TLS_ORIGIN_DOMAIN: ${TLS_ORIGIN_DOMAIN:-}
       TLS_EXTRA_HOSTS: ${TLS_EXTRA_HOSTS:-}
+      # 443 동시 연결 상한 (기본 512, 연결마다 헤더 10초·유휴 75초 제한은 고정)
+      TLS_MAX_CONNECTIONS: ${TLS_MAX_CONNECTIONS:-512}
       TLS_ACME_DOMAIN: ${TLS_ACME_DOMAIN:-}
       TLS_ACME_EMAIL: ${TLS_ACME_EMAIL:-}
       TLS_ACME_DIRECTORY: ${TLS_ACME_DIRECTORY:-production}
@@ -370,28 +375,6 @@ services:
     mem_limit: ${WORKER_MEM_LIMIT:-768m}
     cpus: ${WORKER_CPUS:-1.0}
     cpu_shares: 512
-  tunnel:
-    image: ${CLOUDFLARED_IMAGE:?set tested cloudflared image digest}
-    restart: unless-stopped
-    command: [tunnel, --no-autoupdate, run, --token-file, /run/secrets/tunnel_token]
-    # cloudflared는 종료 신호를 받으면 처리 중인 요청을 최대 30초 기다린다(기본 grace-period).
-    # Docker 기본 10초면 그 전에 강제 종료되므로 여유를 준다.
-    stop_grace_period: 35s
-    secrets: [tunnel_token]
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    networks: [backend, egress]
-    depends_on:
-      api: {condition: service_healthy}
-    mem_limit: 256m
-    cpus: 0.5
-    logging:
-      driver: json-file
-      options: {max-size: 10m, max-file: '3'}
-secrets:
-  tunnel_token:
-    file: ./tunnel-token
 volumes:
   pg18_prod:
   # api의 Let's Encrypt 계정·인증서 (지우면 다음 시작 때 새로 받는다: 주당 발급 한도에 주의)

@@ -6,8 +6,8 @@
 #   ./deploy.sh --rollback                              # 직전 이미지로 되돌리기
 #   ./deploy.sh --status                                # 지금 이미지·컨테이너 상태
 #
-# 같은 폴더에 compose.production.yaml, bootstrap.sql, grants.sql, check-cpu.sh, pgbouncer/, production.env(비밀),
-# tunnel-token(비밀)이 있어야 한다. production.env의 AUDENIQ_IMAGE 줄을 이 스크립트가 바꾼다.
+# 같은 폴더에 compose.production.yaml, compose.tls.yaml, bootstrap.sql, grants.sql, check-cpu.sh, pgbouncer/,
+# production.env(비밀)가 있어야 한다. 앞단은 CloudFront → 서버 443(TLS_BIND)이고 터널(cloudflared)은 없다. production.env의 AUDENIQ_IMAGE 줄을 이 스크립트가 바꾼다.
 # 비공개 패키지면 먼저 `docker login ghcr.io` (read:packages 토큰) 하거나,
 # GHCR_USER와 GHCR_TOKEN_STDIN=1을 주고 토큰을 표준입력으로 넘긴다 (GitHub Actions 배포가 이렇게 한다).
 set -euo pipefail
@@ -15,7 +15,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 ENV_FILE=production.env
 COMPOSE=(docker compose -p audeniq-production -f compose.production.yaml --env-file "$ENV_FILE")
-# 서버에만 있는 조정 (예: 터널 토큰 전 임시 포트 매핑)은 compose.override.yaml에 둔다
+# 서버에만 있는 조정은 compose.override.yaml에 둔다
 [ -f compose.override.yaml ] && COMPOSE+=(-f compose.override.yaml)
 HISTORY=deploy-history.log
 
@@ -36,7 +36,10 @@ if [ -n "$SECRETS_ENV_FILE" ]; then
 fi
 [ -f compose.production.yaml ] || die "compose.production.yaml 이 없어요"
 # AWS CloudFront가 부르는 HTTPS(서버 443)를 켰으면 포트를 여는 파일을 붙인다 (deploy/aws/README.md)
-if [ -n "$(sed -n 's/^TLS_BIND=//p' "$ENV_FILE" | tail -n 1)" ]; then
+# 터널이 없어서 TLS_BIND가 없으면 바깥에서 api에 닿을 길이 없다
+if [ -z "$(sed -n 's/^TLS_BIND=//p' "$ENV_FILE" | tail -n 1)" ]; then
+  echo "deploy: 경고 — production.env에 TLS_BIND가 없어 api가 바깥(CloudFront)에서 닿지 않아요 (TLS_BIND=0.0.0.0:8443)" >&2
+else
   [ -f compose.tls.yaml ] || die "TLS_BIND가 있는데 compose.tls.yaml 이 없어요 (저장소의 deploy/compose.tls.yaml을 함께 복사)"
   # TLS_ACME_DOMAIN이 있으면 api가 Let's Encrypt에서 직접 받는다. 없으면 ./tls 파일이 있어야 한다
   if [ -z "$(sed -n 's/^TLS_ACME_DOMAIN=//p' "$ENV_FILE" | tail -n 1)" ]; then
