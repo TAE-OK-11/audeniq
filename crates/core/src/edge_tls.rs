@@ -108,8 +108,8 @@ impl Settings {
             .with_safe_default_protocol_versions()?
             .with_no_client_auth()
             .with_cert_resolver(certs.clone());
-        // CloudFront는 오리진에 HTTP/1.1로 붙는다. axum은 http2 기능 없이 빌드돼 h2를 광고하면 안 된다
-        config.alpn_protocols = vec![b"http/1.1".to_vec()];
+        // CloudFront는 오리진에 HTTP/1.1로 붙지만, h2를 내미는 상대(시험용 curl, 이후 gRPC 등)도 받는다
+        config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
         let acceptor = TlsAcceptor::from(Arc::new(config));
 
         let allow = Arc::new(match self.sources {
@@ -709,8 +709,8 @@ mod tests {
         .unwrap()
         .with_root_certificates(roots)
         .with_no_client_auth();
-        // 브라우저·curl처럼 h2를 먼저 내밀어도 http/1.1로 정해져야 한다 (axum은 http2 없이 빌드)
-        config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+        // CloudFront처럼 http/1.1만 내미는 클라이언트
+        config.alpn_protocols = vec![b"http/1.1".to_vec()];
         let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
         let tcp = TcpStream::connect(addr).await?;
         let name = rustls::pki_types::ServerName::try_from("localhost").unwrap();
@@ -751,6 +751,39 @@ mod tests {
         assert_eq!(peer, der(CERT_A));
         // 다른 인증서를 믿는 클라이언트는 핸드셰이크에서 거절한다
         assert!(https_get(addr, CERT_B).await.is_err());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn offers_h2_to_clients_that_ask_for_it() {
+        let (addr, dir) = serve(Sources::Any).await;
+        let mut roots = rustls::RootCertStore::empty();
+        roots
+            .add(CertificateDer::from_pem_slice(CERT_A.as_bytes()).unwrap())
+            .unwrap();
+        let mut config = rustls::ClientConfig::builder_with_provider(Arc::new(
+            rustls::crypto::aws_lc_rs::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+        config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+        let tcp = TcpStream::connect(addr).await.unwrap();
+        let name = rustls::pki_types::ServerName::try_from("localhost").unwrap();
+        let mut tls = tokio_rustls::TlsConnector::from(Arc::new(config))
+            .connect(name, tcp)
+            .await
+            .unwrap();
+        assert_eq!(tls.get_ref().1.alpn_protocol(), Some(&b"h2"[..]));
+        // h2 연결 서문 + 빈 SETTINGS → 서버도 SETTINGS 프레임(type 4)으로 답한다
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        tls.write_all(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n\0\0\0\x04\0\0\0\0\0")
+            .await
+            .unwrap();
+        let mut frame = [0u8; 9];
+        tls.read_exact(&mut frame).await.unwrap();
+        assert_eq!(frame[3], 4, "SETTINGS");
         std::fs::remove_dir_all(dir).unwrap();
     }
 
