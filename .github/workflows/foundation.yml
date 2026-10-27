@@ -316,7 +316,7 @@ jobs:
           # compose.tls.yaml을 붙이면(deploy.sh가 TLS_BIND를 보고) api만 서버 443 → 8443
           jq -e '.services.api.environment.TLS_BIND == "" and .services.api.environment.TLS_ALLOWED_SOURCES == "cloudfront" and ([.services.api.volumes[] | select(.target == "/run/audeniq-tls")] | length == 1 and .[0].read_only == true)' /tmp/production.json
           # Let's Encrypt(crate::edge_acme): 기본 꺼짐, 켜면 계정·인증서는 쓰기 가능한 이름 있는 볼륨에
-          jq -e '.services.api.environment.TLS_ACME_DOMAIN == "" and .services.api.environment.TLS_ACME_DIRECTORY == "production" and ([.services.api.volumes[] | select(.target == "/var/lib/audeniq-tls" and .type == "volume" and .source == "api_tls")] | length == 1)' /tmp/production.json
+          jq -e '.services.api.environment.TLS_ACME_DOMAIN == "" and .services.api.environment.TLS_ORIGIN_DOMAIN == "" and .services.api.environment.TLS_ACME_DIRECTORY == "production" and ([.services.api.volumes[] | select(.target == "/var/lib/audeniq-tls" and .type == "volume" and .source == "api_tls")] | length == 1)' /tmp/production.json
           TLS_BIND=0.0.0.0:8443 docker compose -f deploy/compose.production.yaml -f deploy/compose.tls.yaml config --format json > /tmp/production-tls.json
           jq -e '([.services | to_entries[] | select((.value.ports // []) | length > 0) | .key] == ["api"]) and (.services.api.ports | length == 1 and .[0].target == 8443 and .[0].published == "443") and .services.api.environment.TLS_BIND == "0.0.0.0:8443"' /tmp/production-tls.json
       - name: Deploy script lint

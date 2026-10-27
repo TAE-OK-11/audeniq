@@ -1,6 +1,6 @@
 //! 백엔드 HTTPS(crate::edge_tls) 인증서를 api가 Let's Encrypt에서 직접 받고 자동으로 갱신한다
 //!
-//! - 켜기: `TLS_ACME_DOMAIN=origin.audeniq.com` (CloudFront `ApiOriginDomain`과 같은 이름, DNS는 이 서버 IP).
+//! - 켜기: `TLS_ACME_DOMAIN=api-origin.audeniq.com` (CloudFront `ApiOriginDomain`과 같은 이름, DNS는 이 서버 IP).
 //!   `TLS_ACME_EMAIL`(선택)은 Let's Encrypt 계정 연락처. `TLS_ACME_DIRECTORY`는 production(기본)·staging·ACME URL.
 //! - 검증: TLS-ALPN-01(RFC 8737). Let's Encrypt가 이 서버 443에 ALPN `acme-tls/1`로 붙으면 검증용 자체 서명
 //!   인증서로 답한다. 그래서 80 포트·DNS API 토큰이 필요 없다. 검증 연결은 CloudFront 대역 밖에서 오므로
@@ -103,6 +103,10 @@ impl Acme {
                 .into(),
             ca_file,
         }))
+    }
+
+    pub(crate) fn domain(&self) -> &str {
+        &self.domain
     }
 
     /// ACME 서버마다 따로 (staging 인증서가 production 것으로 쓰이지 않게)
@@ -509,14 +513,14 @@ mod tests {
     #[test]
     fn settings_choose_the_directory_and_check_names() {
         assert!(settings(&[]).unwrap().is_none());
-        let acme = settings(&[("TLS_ACME_DOMAIN", "Origin.Audeniq.com")])
+        let acme = settings(&[("TLS_ACME_DOMAIN", "Api-Origin.Audeniq.com")])
             .unwrap()
             .unwrap();
-        assert_eq!(acme.domain, "origin.audeniq.com");
+        assert_eq!(acme.domain, "api-origin.audeniq.com");
         assert_eq!(acme.directory_url, LetsEncrypt::Production.url());
         assert_eq!(
             acme.cert_dir(),
-            PathBuf::from("/var/lib/audeniq-tls/letsencrypt/origin.audeniq.com")
+            PathBuf::from("/var/lib/audeniq-tls/letsencrypt/api-origin.audeniq.com")
         );
         let staging = settings(&[
             ("TLS_ACME_DOMAIN", "o.audeniq.com"),

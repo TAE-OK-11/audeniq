@@ -4,7 +4,7 @@
 # CloudFront는 공인 CA 인증서만 믿어서 자체 서명·Cloudflare Origin CA는 안 된다. 기본은 Let's Encrypt를
 # DNS-01(Cloudflare DNS API)로 받아 서버 포트 80을 열지 않는다. api는 ./tls 파일을 5분마다 다시 읽어 재시작 없이 바꾼다.
 #
-#   ./tls-cert.sh issue origin.audeniq.com 메일주소   처음 발급 (tls-cloudflare.ini 필요, 아래)
+#   ./tls-cert.sh issue api-origin.audeniq.com 메일주소   처음 발급 (tls-cloudflare.ini 필요, 아래)
 #   ./tls-cert.sh renew                               갱신(만료 30일 전부터만 실제로 바꾼다) — cron 매일
 #   ./tls-cert.sh install fullchain.pem privkey.pem   다른 곳에서 받은 인증서 (예: ACM 내보내기 인증서)
 #   ./tls-cert.sh status                              발급된 인증서·만료일

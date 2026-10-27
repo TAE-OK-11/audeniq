@@ -302,7 +302,7 @@ export async function template(name: string | undefined): Promise<Template> {
   if (hasApi) {
     parameters.ApiOriginDomain = {
       Type: 'String', MinLength: 1, AllowedPattern: '^[a-z0-9.-]+$',
-      Description: '백엔드 api의 HTTPS 주소 (예: origin.audeniq.com → 서버 IP, 서버 443에서 api가 인증서로 직접 받는다)',
+      Description: '백엔드 api의 HTTPS 주소 (예: api-origin.audeniq.com → 서버 IP, 서버 443에서 api가 인증서로 직접 받는다)',
     };
     parameters.ServiceSecret = {
       Type: 'String', NoEcho: true, MinLength: 32,

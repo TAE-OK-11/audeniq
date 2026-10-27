@@ -13,6 +13,8 @@
 //!   ip-ranges.json을 6시간마다 받고, 첫 응답 전에는 저장소 스냅샷(config/cloudfront-origin-facing.json)을 쓴다.
 //!   예외는 하나: 인증서를 받는 동안에만 Let's Encrypt 검증 연결(ALPN `acme-tls/1`, 그 도메인 SNI)에 검증용
 //!   인증서로 답하고 바로 닫는다. 요청은 받지 않는다.
+//! - 이름: 오리진 이름(`TLS_ORIGIN_DOMAIN`, 예: api-origin.audeniq.com) 하나만 받는다. TLS SNI가 다르면 인증서도
+//!   보내지 않고 끊고, HTTP Host(h2 :authority)가 다르면 403. 예외는 스튜디오·관리자 주소와 `TLS_EXTRA_HOSTS`.
 //! - 요청: 이 리스너로 온 요청은 화면 파일까지 모두 서비스 비밀(`x-audeniq-service`, CloudFront origin custom
 //!   header)이 있어야 한다. 다른 AWS 계정의 CloudFront가 이 서버를 오리진으로 걸어도 403이다.
 //!
@@ -79,6 +81,61 @@ pub struct Settings {
     pub bind: String,
     pub certificates: Certificates,
     pub sources: Sources,
+    /// 이 리스너가 받는 이름 (TLS SNI·HTTP Host). 맨 앞이 오리진 도메인
+    pub hosts: OriginHosts,
+}
+
+/// 오리진으로 받는 이름: `TLS_ORIGIN_DOMAIN`(= CloudFront ApiOriginDomain, 예: api-origin.audeniq.com)과
+/// 예외로 스튜디오·관리자 주소(`APP_ORIGIN`·`ADMIN_ORIGIN`의 호스트), `TLS_EXTRA_HOSTS`(쉼표).
+/// 그 밖의 이름으로 온 연결·요청은 거절한다 (서버 IP로 바로, 다른 도메인을 이 서버로 돌린 것 등).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OriginHosts(Arc<[String]>);
+
+impl OriginHosts {
+    fn new(names: impl IntoIterator<Item = String>) -> Self {
+        let mut hosts: Vec<String> = Vec::new();
+        for name in names {
+            let name = normalize_host(&name);
+            if !name.is_empty() && !hosts.contains(&name) {
+                hosts.push(name);
+            }
+        }
+        Self(hosts.into())
+    }
+
+    /// 오리진 도메인
+    pub fn origin(&self) -> &str {
+        &self.0[0]
+    }
+
+    /// `name`은 SNI 그대로이거나 Host 헤더(포트가 붙을 수 있다)
+    pub fn allows(&self, name: &str) -> bool {
+        let name = name.trim();
+        // [IPv6]:port, host:port → host. IP로 바로 온 요청은 어차피 목록에 없다
+        let host = match name.rsplit_once(':') {
+            Some((host, port))
+                if !host.contains(':') && port.bytes().all(|b| b.is_ascii_digit()) =>
+            {
+                host
+            }
+            _ => name,
+        };
+        let host = host.strip_suffix('.').unwrap_or(host);
+        self.0
+            .iter()
+            .any(|allowed| allowed.eq_ignore_ascii_case(host))
+    }
+}
+
+fn normalize_host(name: &str) -> String {
+    let name = name.trim().to_ascii_lowercase();
+    name.strip_suffix('.').map(str::to_owned).unwrap_or(name)
+}
+
+/// `https://studio.audeniq.com` → `studio.audeniq.com`
+fn origin_host(origin: Option<String>) -> Option<String> {
+    let url = url::Url::parse(&origin?).ok()?;
+    url.host_str().map(str::to_owned)
 }
 
 impl Settings {
@@ -116,10 +173,43 @@ impl Settings {
             sources == Sources::CloudFront || get("APP_ENV").as_deref() != Some("production"),
             "production accepts HTTPS only from CloudFront (TLS_ALLOWED_SOURCES=cloudfront)"
         );
+        // 오리진 도메인: TLS_ORIGIN_DOMAIN, 없으면 Let's Encrypt로 받는 이름 (둘 다면 같아야 한다)
+        let acme_domain = match &certificates {
+            Certificates::Acme(acme) => Some(acme.domain().to_owned()),
+            Certificates::Files { .. } => None,
+        };
+        let origin = match (
+            get("TLS_ORIGIN_DOMAIN").map(|d| normalize_host(&d)),
+            acme_domain,
+        ) {
+            (Some(origin), Some(acme)) => {
+                anyhow::ensure!(
+                    origin == acme,
+                    "TLS_ORIGIN_DOMAIN ({origin}) and TLS_ACME_DOMAIN ({acme}) must be the same name"
+                );
+                origin
+            }
+            (Some(origin), None) | (None, Some(origin)) => origin,
+            (None, None) => {
+                anyhow::bail!("TLS_BIND requires TLS_ORIGIN_DOMAIN (the CloudFront origin name)")
+            }
+        };
+        let extra = get("TLS_EXTRA_HOSTS").unwrap_or_default();
+        let hosts = OriginHosts::new(
+            [
+                Some(origin),
+                origin_host(get("APP_ORIGIN")),
+                origin_host(get("ADMIN_ORIGIN")),
+            ]
+            .into_iter()
+            .flatten()
+            .chain(extra.split(',').map(str::to_owned)),
+        );
         Ok(Some(Self {
             bind,
             certificates,
             sources,
+            hosts,
         }))
     }
 
@@ -149,6 +239,7 @@ impl Settings {
             bind = %local,
             sources = ?self.sources,
             prefixes = allow.len(),
+            hosts = ?self.hosts.0,
             certificate = match &self.certificates {
                 Certificates::Files { .. } => "files",
                 Certificates::Acme(_) => "letsencrypt",
@@ -169,17 +260,43 @@ impl Settings {
             tokio::spawn(refresh_ranges(allow.clone()));
         }
         let (tx, rx) = tokio::sync::mpsc::channel(64);
-        tokio::spawn(accept_loop(tcp, Arc::new(config), allow, challenges, tx));
-        Ok(TlsListener { rx, local })
+        let hosts = self.hosts.clone();
+        tokio::spawn(accept_loop(
+            tcp,
+            Arc::new(config),
+            allow,
+            challenges,
+            self.hosts,
+            tx,
+        ));
+        Ok(TlsListener { rx, local, hosts })
     }
 }
 
-/// 이 리스너로 서빙할 앱: 화면·API 모두 서비스 비밀이 있어야 한다.
-pub fn app(s: AppState, studio: Option<Arc<studio_static::Studio>>) -> Router {
-    studio_static::app(s.clone(), studio).layer(middleware::from_fn_with_state(s, require_edge))
+/// 이 리스너로 서빙할 앱: 화면·API 모두 오리진 이름(Host)과 서비스 비밀이 맞아야 한다.
+pub fn app(s: AppState, studio: Option<Arc<studio_static::Studio>>, hosts: OriginHosts) -> Router {
+    studio_static::app(s.clone(), studio)
+        .layer(middleware::from_fn_with_state((s, hosts), require_edge))
 }
 
-async fn require_edge(State(s): State<AppState>, req: Request, next: Next) -> Response {
+async fn require_edge(
+    State((s, hosts)): State<(AppState, OriginHosts)>,
+    req: Request,
+    next: Next,
+) -> Response {
+    // HTTP/1.1은 Host 헤더, h2는 :authority(uri)
+    let host = req
+        .headers()
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .or_else(|| req.uri().authority().map(|a| a.as_str()));
+    if !host.is_some_and(|h| hosts.allows(h)) {
+        tracing::warn!(
+            host = host.unwrap_or(""),
+            "HTTPS request for a name other than the origin"
+        );
+        return Error::Forbidden.into_response();
+    }
     if !s.edge_authenticated(req.headers()) {
         tracing::warn!(path = %req.uri().path(), "HTTPS request without the edge service secret");
         return Error::Forbidden.into_response();
@@ -191,6 +308,14 @@ async fn require_edge(State(s): State<AppState>, req: Request, next: Next) -> Re
 pub struct TlsListener {
     rx: tokio::sync::mpsc::Receiver<(TlsStream<TcpStream>, SocketAddr)>,
     local: SocketAddr,
+    hosts: OriginHosts,
+}
+
+impl TlsListener {
+    /// 요청에서 확인할 이름 ([`app`]에 넘긴다)
+    pub fn hosts(&self) -> OriginHosts {
+        self.hosts.clone()
+    }
 }
 
 impl axum::serve::Listener for TlsListener {
@@ -215,6 +340,7 @@ async fn accept_loop(
     config: Arc<ServerConfig>,
     allow: Arc<Allow>,
     challenges: Arc<edge_acme::Challenges>,
+    hosts: OriginHosts,
     tx: tokio::sync::mpsc::Sender<(TlsStream<TcpStream>, SocketAddr)>,
 ) {
     let handshakes = Arc::new(tokio::sync::Semaphore::new(MAX_HANDSHAKES));
@@ -252,9 +378,14 @@ async fn accept_loop(
         if let Err(error) = stream.set_nodelay(true) {
             tracing::debug!(%error, "TCP_NODELAY not set");
         }
-        let (config, challenges, tx) = (config.clone(), challenges.clone(), tx.clone());
+        let (config, challenges, hosts, tx) = (
+            config.clone(),
+            challenges.clone(),
+            hosts.clone(),
+            tx.clone(),
+        );
         tokio::spawn(async move {
-            let shake = handshake(stream, peer, allowed, config, &challenges);
+            let shake = handshake(stream, peer, allowed, config, &challenges, &hosts);
             match tokio::time::timeout(HANDSHAKE_TIMEOUT, shake).await {
                 Ok(Ok(Some(tls))) => {
                     drop(permit);
@@ -271,13 +402,14 @@ async fn accept_loop(
 }
 
 /// ClientHello를 보고 나눈다: Let's Encrypt 검증(acme-tls/1)이면 검증용 인증서로 답하고 닫고(None),
-/// 그 밖에는 CloudFront에서 온 연결만 보통 핸드셰이크를 마친다.
+/// 그 밖에는 CloudFront에서 온, 오리진 이름(SNI)으로 온 연결만 보통 핸드셰이크를 마친다.
 async fn handshake(
     stream: TcpStream,
     peer: SocketAddr,
     allowed: bool,
     config: Arc<ServerConfig>,
     challenges: &edge_acme::Challenges,
+    hosts: &OriginHosts,
 ) -> std::io::Result<Option<TlsStream<TcpStream>>> {
     let start = LazyConfigAcceptor::new(rustls::server::Acceptor::default(), stream).await?;
     let hello = start.client_hello();
@@ -292,6 +424,11 @@ async fn handshake(
     }
     if !allowed {
         tracing::debug!(peer = %peer.ip(), "HTTPS connection refused during ACME validation: not a CloudFront origin address");
+        return Ok(None);
+    }
+    // SNI 없이(IP로 바로) 오거나 다른 이름이면 인증서도 보내지 않고 닫는다
+    if !hello.server_name().is_some_and(|name| hosts.allows(name)) {
+        tracing::debug!(peer = %peer.ip(), sni = hello.server_name().unwrap_or(""), "HTTPS connection refused: not the origin name");
         return Ok(None);
     }
     Ok(Some(start.into_stream(config).await?))
@@ -887,17 +1024,17 @@ mod tests {
                     .map(|(_, v)| v.clone())
             })
         };
-        let files = [
-            ("TLS_BIND", "0.0.0.0:8443"),
-            ("TLS_CERT_FILE", "/tls/fullchain.pem"),
-            ("TLS_KEY_FILE", "/tls/privkey.pem"),
-        ];
+        const BIND: (&str, &str) = ("TLS_BIND", "0.0.0.0:8443");
+        const CERT: (&str, &str) = ("TLS_CERT_FILE", "/tls/fullchain.pem");
+        const KEY: (&str, &str) = ("TLS_KEY_FILE", "/tls/privkey.pem");
+        const ORIGIN: (&str, &str) = ("TLS_ORIGIN_DOMAIN", "api-origin.audeniq.com");
+        let files = [BIND, CERT, KEY, ORIGIN];
         assert!(settings(&[]).unwrap().is_none(), "off without TLS_BIND");
         let acme = settings(&[
-            files[0],
-            files[1],
-            files[2],
-            ("TLS_ACME_DOMAIN", "origin.audeniq.com"),
+            BIND,
+            CERT,
+            KEY,
+            ("TLS_ACME_DOMAIN", "api-origin.audeniq.com"),
         ])
         .unwrap()
         .unwrap();
@@ -905,39 +1042,100 @@ mod tests {
             matches!(acme.certificates, Certificates::Acme(_)),
             "Let's Encrypt wins over the compose default files"
         );
-        assert!(
-            matches!(
-                settings(&files).unwrap().unwrap().certificates,
-                Certificates::Files { .. }
-            ),
-            "files without TLS_ACME_DOMAIN"
-        );
-        assert!(
-            settings(&[files[0]]).is_err(),
-            "needs Let's Encrypt or certificate files"
-        );
-        assert!(settings(&files[..2]).is_err(), "key file missing");
         assert_eq!(
-            settings(&files).unwrap().unwrap().sources,
+            acme.hosts.origin(),
+            "api-origin.audeniq.com",
+            "origin = Let's Encrypt name"
+        );
+        let files_mode = settings(&files).unwrap().unwrap();
+        assert!(matches!(
+            files_mode.certificates,
+            Certificates::Files { .. }
+        ));
+        assert_eq!(
+            files_mode.sources,
             Sources::CloudFront,
             "CloudFront by default"
         );
         assert!(
-            settings(&[
-                files[0],
-                files[1],
-                files[2],
-                ("TLS_ALLOWED_SOURCES", "everyone")
-            ])
-            .is_err()
+            settings(&[BIND, ORIGIN]).is_err(),
+            "needs Let's Encrypt or certificate files"
         );
-        let any = [files[0], files[1], files[2], ("TLS_ALLOWED_SOURCES", "any")];
+        assert!(settings(&[BIND, CERT, ORIGIN]).is_err(), "key file missing");
+        assert!(
+            settings(&[BIND, CERT, KEY]).is_err(),
+            "needs the origin name"
+        );
+        assert!(
+            settings(&[BIND, ORIGIN, ("TLS_ACME_DOMAIN", "other.audeniq.com")]).is_err(),
+            "origin and Let's Encrypt names must match"
+        );
+        assert!(settings(&[BIND, CERT, KEY, ORIGIN, ("TLS_ALLOWED_SOURCES", "everyone")]).is_err());
+        let any = [BIND, CERT, KEY, ORIGIN, ("TLS_ALLOWED_SOURCES", "any")];
         assert_eq!(settings(&any).unwrap().unwrap().sources, Sources::Any);
-        let production = [any[0], any[1], any[2], any[3], ("APP_ENV", "production")];
+        let production = [
+            BIND,
+            CERT,
+            KEY,
+            ORIGIN,
+            ("TLS_ALLOWED_SOURCES", "any"),
+            ("APP_ENV", "production"),
+        ];
         assert!(
             settings(&production).is_err(),
             "production must not accept every source"
         );
+
+        // 오리진 이름 + 예외로 스튜디오·관리자 주소, TLS_EXTRA_HOSTS
+        let hosts = settings(&[
+            BIND,
+            CERT,
+            KEY,
+            ("TLS_ORIGIN_DOMAIN", "API-Origin.audeniq.com."),
+            ("APP_ORIGIN", "https://studio.audeniq.com"),
+            ("ADMIN_ORIGIN", "https://admin.audeniq.com"),
+            ("TLS_EXTRA_HOSTS", " ops.audeniq.com, ,studio.audeniq.com"),
+        ])
+        .unwrap()
+        .unwrap()
+        .hosts;
+        assert_eq!(
+            &*hosts.0,
+            [
+                "api-origin.audeniq.com",
+                "studio.audeniq.com",
+                "admin.audeniq.com",
+                "ops.audeniq.com"
+            ]
+        );
+    }
+
+    #[test]
+    fn only_origin_names_are_allowed() {
+        let hosts =
+            OriginHosts::new(["api-origin.audeniq.com".into(), "studio.audeniq.com".into()]);
+        for ok in [
+            "api-origin.audeniq.com",
+            "API-ORIGIN.audeniq.com",
+            "api-origin.audeniq.com:443",
+            "api-origin.audeniq.com.",
+            "studio.audeniq.com",
+        ] {
+            assert!(hosts.allows(ok), "{ok}");
+        }
+        for bad in [
+            "",
+            "203.0.113.10",
+            "203.0.113.10:443",
+            "[2001:db8::1]:443",
+            "audeniq.com",
+            "evil.com",
+            "api-origin.audeniq.com.evil.com",
+            "xapi-origin.audeniq.com",
+            "api-origin.audeniq.com:x",
+        ] {
+            assert!(!hosts.allows(bad), "{bad}");
+        }
     }
 
     const CERT_A: &str = include_str!("../tests/fixtures/tls/a.crt");
@@ -1036,12 +1234,17 @@ mod tests {
     }
 
     async fn serve(sources: Sources) -> (SocketAddr, PathBuf) {
+        serve_for(sources, "localhost").await
+    }
+
+    async fn serve_for(sources: Sources, origin: &str) -> (SocketAddr, PathBuf) {
         let dir = temp_dir("serve");
         let (cert, key) = write_pair(&dir, CERT_A, KEY_A);
         let listener = Settings {
             bind: "127.0.0.1:0".into(),
             certificates: Certificates::Files { cert, key },
             sources,
+            hosts: OriginHosts::new([origin.into()]),
         }
         .bind()
         .await
@@ -1093,6 +1296,14 @@ mod tests {
         let mut frame = [0u8; 9];
         tls.read_exact(&mut frame).await.unwrap();
         assert_eq!(frame[3], 4, "SETTINGS");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn connections_for_another_name_are_closed_before_the_certificate() {
+        // 인증서는 localhost용이지만 이 리스너의 오리진 이름은 api-origin.audeniq.test: SNI localhost는 거절
+        let (addr, dir) = serve_for(Sources::Any, "api-origin.audeniq.test").await;
+        assert!(https_get(addr, CERT_A).await.is_err());
         std::fs::remove_dir_all(dir).unwrap();
     }
 

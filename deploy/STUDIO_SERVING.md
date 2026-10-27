@@ -9,7 +9,7 @@ CloudFront(+ CloudFront Function)로 바뀌고, 백엔드·배포는 그대로�
                                    헤더만 다듬기                                     ├─ /api/*, /ready, /health, /.well-known/oauth-*  → API (boundary)
                                                                                     └─ 그 밖의 경로                                 → 화면 파일 (boundary 바깥)
 2단계 (AWS)
-브라우저 ── studio.audeniq.com ── CloudFront ── origin.audeniq.com:443 ── api (TLS 직접, 같은 화면 파일)
+브라우저 ── studio.audeniq.com ── CloudFront ── api-origin.audeniq.com:443 ── api (TLS 직접, 같은 화면 파일)
                                   edge.js Function: 헤더만                CloudFront IP 대역·서비스 비밀만 받음
                                   origin custom header: x-audeniq-service, x-audeniq-site
 ```

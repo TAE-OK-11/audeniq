@@ -7,7 +7,7 @@ ALB도 터널도 없어요. 백엔드 api가 공인 인증서를 직접 들고 �
 브라우저 ↔ CloudFront는 h2·h3, CloudFront ↔ 백엔드는 HTTP/1.1이에요(CloudFront 제약). 백엔드는 h2도 ALPN으로 받아요.
 
 ```
-브라우저 ── studio.audeniq.com ── CloudFront ──────────────── origin.audeniq.com:443 ── api (TLS 직접, 컨테이너 8443)
+브라우저 ── studio.audeniq.com ── CloudFront ──────────── api-origin.audeniq.com:443 ── api (TLS 직접, 컨테이너 8443)
                                   │ edge.js (viewer-request/response)     ├─ CloudFront 오리진 IP 대역만 연결 허용 (그 밖은 TLS 전에 끊음)
                                   │ origin custom header:                  ├─ 서비스 비밀 없는 요청은 화면 파일까지 403
                                   │   x-audeniq-service(비밀), x-audeniq-site └─ 화면(SPA 폴백·_headers·_redirects)·/api 모두 api가
@@ -39,14 +39,16 @@ ALB도 터널도 없어요. 백엔드 api가 공인 인증서를 직접 들고 �
 
 ## 보안 경계: AWS(CloudFront)가 아니면 거절
 
-백엔드 HTTPS 리스너(`TLS_BIND`)는 세 겹으로 막아요.
+백엔드 HTTPS 리스너(`TLS_BIND`)는 네 겹으로 막아요. 서버 443은 인터넷에 열려 있지만, CloudFront가 `api-origin.audeniq.com`으로 보낸 요청만 api에 닿아요.
 
 1. **연결 출처**: AWS가 공개하는 `CLOUDFRONT_ORIGIN_FACING` IP 대역에서 온 TCP 연결만 받아요. 그 밖의 연결은 TLS 핸드셰이크 전에 끊어요(로그: `HTTPS connection refused: not a CloudFront origin address`, 1분에 한 줄).
    - 대역은 api가 `https://ip-ranges.amazonaws.com/ip-ranges.json`을 6시간마다 받아 바꿔요(실패하면 10분 뒤 다시, 그동안은 이전 목록). 처음 뜰 때는 저장소 스냅샷 `config/cloudfront-origin-facing.json`(갱신: `python3 scripts/cloudfront-ranges.py > config/cloudfront-origin-facing.json`)을 써요.
    - production에서는 `TLS_ALLOWED_SOURCES=cloudfront`만 돼요(`any`면 시작하지 않아요).
    - 예외 하나: api가 Let's Encrypt 인증서를 받는 몇 초 동안만, ALPN `acme-tls/1` + 그 도메인 SNI인 검증 연결에 검증용 인증서로 답하고 바로 닫아요(요청은 받지 않아요, 로그: `ACME TLS-ALPN-01 challenge answered`). 그 밖의 연결은 그때도 끊어요.
 2. **서비스 비밀**: 이 리스너로 온 요청은 화면 파일까지 모두 `x-audeniq-service`(= `EDGE_SERVICE_SECRET`)가 맞아야 해요. 다른 AWS 계정이 자기 CloudFront로 이 서버를 오리진으로 걸어도(IP는 CloudFront라 1을 통과) 403이에요. 비밀은 CloudFront origin custom header로만 붙고, 브라우저가 같은 이름을 보내면 `edge.js`가 지우고 CloudFront가 덮어써요.
-3. **헤더 정리**: `edge.js`가 프록시 Worker와 같은 허용 목록만 남겨요. 사용자 IP는 `event.viewer.ip` → `x-audeniq-client-ip`(백엔드는 서비스 비밀이 맞을 때만 믿어요). `x-audeniq-site=admin`이면 관리자 경로만 열리는 규칙(`crates/core/src/sites.rs`)은 그대로예요.
+3. **이름**: 오리진으로 받는 이름은 `api-origin.audeniq.com`(`TLS_ORIGIN_DOMAIN`, Let's Encrypt를 쓰면 `TLS_ACME_DOMAIN`과 같은 값) 하나예요. TLS SNI가 이 이름이 아니면(서버 IP로 바로, 다른 도메인을 이 서버로 돌린 것) 인증서도 보내지 않고 끊고, HTTP `Host`(h2는 `:authority`)가 다르면 403이에요(로그: `HTTPS request for a name other than the origin`).
+   - 예외: 스튜디오·관리자 주소(`APP_ORIGIN`·`ADMIN_ORIGIN`의 호스트)와 `TLS_EXTRA_HOSTS`(쉼표). CloudFront는 오리진 요청 정책(Host 빼고 전달)으로 늘 `Host: api-origin.audeniq.com`을 보내서 보통은 쓰이지 않아요.
+4. **헤더 정리**: `edge.js`가 프록시 Worker와 같은 허용 목록만 남겨요. 사용자 IP는 `event.viewer.ip` → `x-audeniq-client-ip`(백엔드는 서비스 비밀이 맞을 때만 믿어요). `x-audeniq-site=admin`이면 관리자 경로만 열리는 규칙(`crates/core/src/sites.rs`)은 그대로예요.
 
 방화벽(서버 보안 그룹): Let's Encrypt 자동 발급(`TLS_ACME_DOMAIN`)을 쓰면 **443은 인터넷 전체에 열어 둬요**. Let's Encrypt 검증은 여러 곳에서 오고 주소가 공개돼 있지 않아서, 거르기는 위 1을 api가 해요.
 파일 인증서(`tls-cert.sh`)만 쓴다면 443을 CloudFront 관리형 prefix list `com.amazonaws.global.cloudfront.origin-facing`로 좁혀도 돼요(AWS 서버일 때).
@@ -55,14 +57,14 @@ ALB도 터널도 없어요. 백엔드 api가 공인 인증서를 직접 들고 �
 ## 인증서: api 내장 Let's Encrypt
 
 CloudFront는 오리진 인증서를 공인 CA로 검증하고, 이름이 `ApiOriginDomain`과 맞아야 해요(자체 서명·Cloudflare Origin CA는 안 돼요).
-`production.env`에 `TLS_ACME_DOMAIN=origin.audeniq.com`을 넣으면 api가 알아서 해요(`crates/core/src/edge_acme.rs`).
+`production.env`에 `TLS_ACME_DOMAIN=api-origin.audeniq.com`을 넣으면 api가 알아서 해요(`crates/core/src/edge_acme.rs`).
 
 - **발급**: 처음 뜰 때 저장된 인증서가 없으면 Let's Encrypt에 주문하고 **TLS-ALPN-01**로 검증받아요. 서버 443만 있으면 돼요(80 포트·DNS API 토큰·certbot·cron 없음). 보통 몇 초, 그동안 HTTPS 핸드셰이크만 실패하고 api(평문·healthcheck)는 그대로 떠요.
 - **갱신**: 12시간마다 보고 유효 기간의 마지막 1/3에 들어서면(90일 인증서면 만료 30일 전) 새로 받아요. 재시작 없이 다음 연결부터 새 인증서예요. 실패하면 5분부터 두 배씩(최대 6시간) 다시 하고, 그동안은 지금 인증서를 계속 써요.
 - **보관**: compose 볼륨 `api_tls`(`/var/lib/audeniq-tls/letsencrypt/<도메인>/`, 계정 키 `account.json`). 재시작·재배포해도 다시 받지 않아요. 볼륨을 지우면 새로 받아요(Let's Encrypt 주당 발급 한도: 같은 이름 5번).
 - **처음 시험**: `TLS_ACME_DIRECTORY=staging`이면 발급 한도가 넉넉한 시험 서버(신뢰되지 않는 인증서, CloudFront는 거절)예요. 로그에 `Let's Encrypt certificate issued`가 나오면 `production`으로 바꿔요(따로 보관돼서 섞이지 않아요).
 - **로그**: `Let's Encrypt certificate loaded|issued`(not_after 포함), 실패는 `Let's Encrypt certificate not issued; keeping the current one`(이유·다음 시도까지 초).
-- **조건**: `origin.audeniq.com`의 DNS(A)가 이 서버를 가리키고(DNS only), 서버 443이 인터넷에 열려 있어야 해요.
+- **조건**: `api-origin.audeniq.com`의 DNS(A)가 이 서버를 가리키고(DNS only), 서버 443이 인터넷에 열려 있어야 해요.
 
 다른 인증서를 쓰려면 `TLS_ACME_DOMAIN`을 비우고 `./tls`에 PEM을 둬요: `./tls-cert.sh issue <주소> <메일>`(Let's Encrypt DNS-01, Cloudflare DNS 토큰, cron으로 `renew`) 또는 `./tls-cert.sh install fullchain.pem privkey.pem`(ACM 내보내기 인증서 등). api가 5분마다 다시 읽어요.
 
@@ -85,18 +87,22 @@ CloudFront는 오리진 인증서를 공인 CA로 검증하고, 이름이 `ApiOr
 
 1. **백엔드 배포**: 이 커밋의 이미지로 배포해요. `TLS_BIND`가 비어 있어서 아직 아무것도 바뀌지 않아요(터널 그대로).
    - 아직 안 했다면 마이그레이션 0086 이후의 `deploy/grants.sql` 재실행, `production.env`에 `ADMIN_ORIGIN`.
-2. **오리진 주소**: Cloudflare DNS에 `origin.audeniq.com A <서버 공인 IP>`를 **DNS only**(회색 구름)로 만들어요. 터널이 쓰는 `api-origin.audeniq.com`은 건드리지 않아요.
+2. **오리진 주소** `api-origin.audeniq.com`: 지금은 이 이름이 Cloudflare Tunnel(프록시 Worker의 `BACKEND_URL` 기본값)이에요. 이 이름을 서버로 옮기기 전에 Worker를 다른 터널 이름으로 돌려요.
+   1. Cloudflare Zero Trust → Tunnels → 이 터널 → Public hostname에 `api-tunnel.audeniq.com` → `http://api:8080`을 추가해요.
+   2. Worker 두 개(`audeniq-studio-proxy`, `audeniq-admin`)의 변수 `BACKEND_URL=https://api-tunnel.audeniq.com`으로 다시 올리고, 스튜디오·관리자 화면이 그대로 되는지 봐요.
+   3. Public hostname에서 `api-origin.audeniq.com`을 빼고, DNS에 `api-origin.audeniq.com A <서버 공인 IP>`를 **DNS only**(회색 구름)로 만들어요.
+   - 이 뒤로 `api-origin.audeniq.com`은 CloudFront만 쓰는 오리진 이름이에요. Worker는 정리(11단계) 때까지 터널(평문 8080, 서비스 비밀)로 계속 돌아요.
 3. **방화벽**: 서버 방화벽·보안 그룹에서 TCP 443을 인터넷에 열어요(Let's Encrypt 검증. CloudFront가 아닌 연결은 api가 끊어요).
 4. **HTTPS 켜기**: `production.env`에 아래를 넣고 `./update.sh --force`(같은 버전을 다시 배포)로 api를 다시 올려요.
    ```sh
    TLS_BIND=0.0.0.0:8443
-   TLS_ACME_DOMAIN=origin.audeniq.com
+   TLS_ACME_DOMAIN=api-origin.audeniq.com
    TLS_ACME_EMAIL=ops@audeniq.com
    TLS_ACME_DIRECTORY=staging      # 처음 한 번 시험. issued 로그를 보면 production으로 바꾸고 다시 ./update.sh --force
    ```
    `deploy.sh`가 `TLS_BIND`를 보고 `compose.tls.yaml`(서버 443 → 컨테이너 8443)을 붙여요.
    - 로그 확인(`docker compose -p audeniq-production logs api | grep -E 'HTTPS listener|Let.s Encrypt|IP ranges'`): `HTTPS listener (TLS_BIND)`, `Let's Encrypt certificate issued`, `CloudFront origin-facing IP ranges updated`.
-   - 바깥에서 `curl -v https://origin.audeniq.com/` → 연결이 끊겨야 정상(CloudFront가 아님).
+   - 바깥에서 `curl -v https://api-origin.audeniq.com/` → 연결이 끊겨야 정상(CloudFront가 아님).
 5. **데이터 옮기기**(D1 공지·점검, 1차): 관리 화면에서 글을 잠시 쓰지 않는 시간에 실행해요.
    ```sh
    CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... node --experimental-strip-types deploy/aws/migrate-d1.ts > d1-import.sql
@@ -106,7 +112,7 @@ CloudFront는 오리진 인증서를 공인 CA로 검증하고, 이름이 `ApiOr
 7. **스택 만들기**(앱마다):
    ```sh
    AWS_UI_CERT_ARN=arn:aws:acm:us-east-1:...:certificate/... \
-   API_ORIGIN_DOMAIN=origin.audeniq.com EDGE_SERVICE_SECRET="<production.env 값>" \
+   API_ORIGIN_DOMAIN=api-origin.audeniq.com EDGE_SERVICE_SECRET="<production.env 값>" \
      deploy/aws/deploy-stack.sh studio        # admin도 같은 값, landing은 API 값 불필요
    ```
    - 예전에 S3로 만든 studio 스택이 있으면 같은 명령으로 갱신돼요. 버킷은 `Retain`이라 남으니 확인 뒤 손으로 지워요.
@@ -116,7 +122,7 @@ CloudFront는 오리진 인증서를 공인 CA로 검증하고, 이름이 `ApiOr
    - 전환 직전에 5단계를 한 번 더 실행해서 마지막 글까지 옮겨요. 이미 있는 id는 건너뛰어요.
 10. **확인**: 로그인, 공지 읽기·쓰기, 관리자 점검 등록 → 스튜디오 점검 화면, 백엔드 로그의 사용자 IP.
 11. **정리**(안정된 뒤):
-    - `compose.production.yaml`의 `tunnel` 서비스와 `tunnel-token`, Cloudflare Tunnel과 `api-origin` DNS를 지워요. 그 뒤 `API_BIND`는 `127.0.0.1:8080`(healthcheck만)으로 좁혀도 돼요.
+    - `compose.production.yaml`의 `tunnel` 서비스와 `tunnel-token`, Cloudflare Tunnel과 `api-tunnel` DNS를 지워요. 그 뒤 `API_BIND`는 `127.0.0.1:8080`(healthcheck만)으로 좁혀도 돼요.
     - Cloudflare의 Workers(`audeniq-studio`, `audeniq-studio-proxy`, `audeniq-admin`, `audeniq-web`)와 D1 `audeniq-content`를 지워요.
     - studio·admin·landing의 `worker.ts`·`wrangler.jsonc`, `web/studio/migrations`, `crates/edge`를 저장소에서 지워요.
 
@@ -131,7 +137,7 @@ curl -sI $H/ | grep -iE '^(HTTP|cache-control|content-security-policy|strict-tra
 curl -sI $H/releases/123 | grep -iE '^(HTTP|cache-control)'                                # SPA 폴백: 200, no-cache
 curl -sI $H/assets/$(curl -s $H/ | grep -oE 'index-[A-Za-z0-9_-]+\.js' | head -1) | grep -iE 'cache-control|x-cache'   # 1년 immutable, 두 번째부터 Hit
 curl -s  $H/api/status -H 'x-audeniq-service: forged' -H 'x-audeniq-client-ip: 1.2.3.4'     # 정상 응답 (위조 헤더는 버려짐)
-curl -sv https://origin.audeniq.com/ 2>&1 | tail -3                                           # 연결 끊김 (CloudFront가 아님)
+curl -sv https://api-origin.audeniq.com/ 2>&1 | tail -3                                           # 연결 끊김 (CloudFront가 아님)
 ```
 
 - api 로그(`docker compose ... logs api | grep -E 'static_request|http_request' | tail`)의 `client_ip`가 `1.2.3.4`가 아니라 내 IP인지 확인해요.
