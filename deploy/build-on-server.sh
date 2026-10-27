@@ -105,18 +105,9 @@ rm -rf "$DEPLOY_PATH/pgbouncer.new" && cp -r "$SRC/deploy/pgbouncer" "$DEPLOY_PA
 rm -rf "$DEPLOY_PATH/pgbouncer" && mv "$DEPLOY_PATH/pgbouncer.new" "$DEPLOY_PATH/pgbouncer"
 
 # Studio 화면도 같은 커밋으로 (api가 서빙한다: deploy/STUDIO_SERVING.md). SKIP_STUDIO=1이면 건너뛴다.
-# 저장소를 더럽히지 않게 임시 폴더에 꺼내 Node 컨테이너에서 빌드하고, studio-release.sh로 올린다.
+# 임시 폴더에 복사해 Node 컨테이너에서 빌드하고 올린다 (studio-release.sh build).
 if [ -x "$DEPLOY_PATH/studio-release.sh" ] && [ "${SKIP_STUDIO:-}" != 1 ]; then
-  echo "build-on-server: Studio 화면 빌드"
-  work=$(mktemp -d)
-  trap 'rm -f "$meta"; rm -rf "$work"' EXIT
-  git -C "$SRC" archive HEAD web tsconfig.json | tar -x -C "$work"
-  bun_version=$(tr -d '[:space:]' < "$work/web/studio/.bun-version")
-  docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -e npm_config_update_notifier=false \
-    -v "$work:/src" -w /src/web/studio/app "${STUDIO_BUILD_IMAGE:-node:22-bookworm-slim}" \
-    sh -c "npx --yes bun@$bun_version install --frozen-lockfile && npx --yes bun@$bun_version run build"
-  tar -C "$work/web/studio/public" -czf "$work/studio.tar.gz" .
-  "$DEPLOY_PATH/studio-release.sh" install "$sha" "$work/studio.tar.gz"
+  "$DEPLOY_PATH/studio-release.sh" build "$sha" "$SRC"
 fi
 
 cd "$DEPLOY_PATH"
