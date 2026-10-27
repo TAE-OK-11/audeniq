@@ -285,7 +285,6 @@ jobs:
       - name: Validate isolated production configuration
         env:
           AUDENIQ_IMAGE: audeniq:test
-          CLOUDFLARED_IMAGE: cloudflare/cloudflared:test
           APP_ORIGIN: https://studio.audeniq.test
           PAYOUT_ACCOUNT_KEY: 0000000000000000000000000000000000000000000000000000000000000000
         run: |

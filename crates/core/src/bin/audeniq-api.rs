@@ -24,7 +24,7 @@ const SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(25);
 
 /// `audeniq-api healthcheck`: the container healthcheck (the image has no
 /// curl). Exit 0 only when this instance answers `/ready`, which also reads
-/// the database. Deploys wait on it before the tunnel sends traffic.
+/// the database. Deploys wait on it before CloudFront sends traffic.
 fn healthcheck() -> anyhow::Result<()> {
     use std::io::{Read, Write};
     let bind = std::env::var("API_BIND").unwrap_or_else(|_| "0.0.0.0:8080".into());
@@ -88,7 +88,7 @@ async fn main() -> anyhow::Result<()> {
         Arc::new(DisabledStore)
     };
     // TCP_NODELAY: responses are small JSON bodies on keep-alive connections
-    // from the tunnel; Nagle + delayed ACK can hold one back for ~40 ms.
+    // from the edge; Nagle + delayed ACK can hold one back for ~40 ms.
     let listener = tokio::net::TcpListener::bind(&config.bind)
         .await?
         .tap_io(|tcp| {
