@@ -508,9 +508,14 @@ async fn accept_loop(
 ) {
     let handshakes = Arc::new(tokio::sync::Semaphore::new(MAX_HANDSHAKES));
     let mut rejected = 0u64;
-    let mut last_report = Instant::now();
+    // 거절 로그는 1분에 한 줄 (그 사이 건수를 모아서). 처음 한 건은 바로 남긴다
+    const REPORT_EVERY: Duration = Duration::from_secs(60);
+    let long_ago = Instant::now()
+        .checked_sub(REPORT_EVERY)
+        .unwrap_or_else(Instant::now);
+    let mut last_report = long_ago;
     let mut full = 0u64;
-    let mut last_full_report = Instant::now();
+    let mut last_full_report = long_ago;
     loop {
         let (stream, peer) = tokio::select! {
             accepted = tcp.accept() => match accepted {
@@ -529,7 +534,7 @@ async fn accept_loop(
         // 인증서를 받는 중이 아니면 CloudFront 밖의 연결은 ClientHello도 읽지 않는다
         if !allowed && !challenges.pending() {
             rejected += 1;
-            if rejected == 1 || last_report.elapsed() >= Duration::from_secs(60) {
+            if last_report.elapsed() >= REPORT_EVERY {
                 tracing::warn!(peer = %peer.ip(), rejected, "HTTPS connection refused: not a CloudFront origin address");
                 rejected = 0;
                 last_report = Instant::now();
@@ -538,7 +543,7 @@ async fn accept_loop(
         }
         let Ok(connection) = connections.clone().try_acquire_owned() else {
             full += 1;
-            if full == 1 || last_full_report.elapsed() >= Duration::from_secs(60) {
+            if last_full_report.elapsed() >= REPORT_EVERY {
                 tracing::warn!(peer = %peer.ip(), dropped = full, "HTTPS connection dropped: connection limit reached (TLS_MAX_CONNECTIONS)");
                 full = 0;
                 last_full_report = Instant::now();
