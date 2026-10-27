@@ -442,43 +442,120 @@ async fn reload_certs(certs: Arc<CertStore>, provider: Arc<CryptoProvider>) {
 }
 
 // ---- 연결 출처 ----
+// 연결마다 한 번 보는 값이라 싸게: 대역을 정수 구간으로 바꿔 합치고 정렬해 두고 이분 탐색한다
+// (지금 87개 대역 → 합친 구간 수십 개, 조회 6~7번 비교). 목록은 6시간마다 통째로 바꾼다.
 
-/// 연결을 받을 주소 대역. `None`은 아무 주소나.
+/// 연결을 받을 주소. `None`은 아무 주소나.
 struct Allow {
-    nets: Option<RwLock<Arc<Vec<IpNet>>>>,
+    ranges: Option<RwLock<Ranges>>,
 }
 
 impl Allow {
     fn cloudfront() -> Self {
-        let nets = parse_snapshot(SNAPSHOT).expect("config/cloudfront-origin-facing.json is valid");
         Self {
-            nets: Some(RwLock::new(Arc::new(nets))),
+            ranges: Some(RwLock::new(snapshot_ranges())),
         }
     }
 
     fn any() -> Self {
-        Self { nets: None }
+        Self { ranges: None }
     }
 
     fn len(&self) -> usize {
-        self.nets
+        self.ranges
             .as_ref()
-            .map_or(0, |n| n.read().unwrap_or_else(|e| e.into_inner()).len())
+            .map_or(0, |r| r.read().unwrap_or_else(|e| e.into_inner()).prefixes)
     }
 
     fn permits(&self, ip: IpAddr) -> bool {
-        let Some(nets) = &self.nets else { return true };
-        // 듀얼 스택 소켓의 ::ffff:a.b.c.d 는 IPv4로 본다
-        let ip = ip.to_canonical();
-        nets.read()
+        let Some(ranges) = &self.ranges else {
+            return true;
+        };
+        ranges
+            .read()
             .unwrap_or_else(|e| e.into_inner())
-            .iter()
-            .any(|n| n.contains(&ip))
+            .contains(ip)
     }
 
-    fn replace(&self, new: Vec<IpNet>) {
-        if let Some(nets) = &self.nets {
-            *nets.write().unwrap_or_else(|e| e.into_inner()) = Arc::new(new);
+    fn replace(&self, new: Ranges) {
+        if let Some(ranges) = &self.ranges {
+            *ranges.write().unwrap_or_else(|e| e.into_inner()) = new;
+        }
+    }
+}
+
+/// CloudFront 오리진 쪽 대역: 겹치거나 맞닿은 대역을 합친 [시작, 끝] 정수 구간, 시작 순
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Ranges {
+    v4: Box<[(u32, u32)]>,
+    v6: Box<[(u128, u128)]>,
+    /// 합치기 전 대역 수 (로그용)
+    prefixes: usize,
+}
+
+impl Ranges {
+    pub fn from_nets(nets: &[IpNet]) -> Self {
+        let mut v4 = Vec::new();
+        let mut v6 = Vec::new();
+        for net in nets {
+            match net {
+                IpNet::V4(n) => v4.push((u32::from(n.network()), u32::from(n.broadcast()))),
+                IpNet::V6(n) => v6.push((u128::from(n.network()), u128::from(n.broadcast()))),
+            }
+        }
+        Self {
+            v4: merge(v4),
+            v6: merge(v6),
+            prefixes: nets.len(),
+        }
+    }
+
+    /// 듀얼 스택 소켓의 ::ffff:a.b.c.d 는 IPv4로 본다
+    pub fn contains(&self, ip: IpAddr) -> bool {
+        match ip.to_canonical() {
+            IpAddr::V4(ip) => within(&self.v4, u32::from(ip)),
+            IpAddr::V6(ip) => within(&self.v6, u128::from(ip)),
+        }
+    }
+
+    /// 합친 구간 수 (IPv4, IPv6)
+    pub fn intervals(&self) -> (usize, usize) {
+        (self.v4.len(), self.v6.len())
+    }
+}
+
+fn merge<T: Ord + Copy + num_step::Step>(mut ranges: Vec<(T, T)>) -> Box<[(T, T)]> {
+    ranges.sort_unstable();
+    let mut merged: Vec<(T, T)> = Vec::with_capacity(ranges.len());
+    for (start, end) in ranges {
+        match merged.last_mut() {
+            Some(last) if last.1.next().is_none_or(|next| start <= next) => {
+                last.1 = last.1.max(end)
+            }
+            _ => merged.push((start, end)),
+        }
+    }
+    merged.into_boxed_slice()
+}
+
+fn within<T: Ord + Copy>(ranges: &[(T, T)], ip: T) -> bool {
+    let after = ranges.partition_point(|&(start, _)| start <= ip);
+    after > 0 && ip <= ranges[after - 1].1
+}
+
+/// u32·u128의 다음 값 (끝이면 None) — 맞닿은 구간 합치기용
+mod num_step {
+    pub trait Step: Sized {
+        fn next(self) -> Option<Self>;
+    }
+    impl Step for u32 {
+        fn next(self) -> Option<Self> {
+            self.checked_add(1)
+        }
+    }
+    impl Step for u128 {
+        fn next(self) -> Option<Self> {
+            self.checked_add(1)
         }
     }
 }
@@ -488,44 +565,66 @@ struct Snapshot {
     prefixes: Vec<IpNet>,
 }
 
-fn parse_snapshot(text: &str) -> anyhow::Result<Vec<IpNet>> {
-    let snapshot: Snapshot = serde_json::from_str(text)?;
-    check_prefixes(snapshot.prefixes)
+/// 저장소 스냅샷 (config/cloudfront-origin-facing.json)
+pub fn snapshot_ranges() -> Ranges {
+    let snapshot: Snapshot =
+        serde_json::from_str(SNAPSHOT).expect("config/cloudfront-origin-facing.json is valid");
+    check_prefixes(snapshot.prefixes).expect("config/cloudfront-origin-facing.json is valid")
+}
+
+/// AWS ip-ranges.json → CloudFront 오리진 쪽 대역.
+/// 2.7 MB·1만 8천 항목 중 CloudFront 것(약 90개)만 남긴다: 항목은 원문에서 빌려 읽어(문자열 할당 없음)
+/// 서비스 이름이 맞을 때만 대역을 해석한다.
+pub fn parse_aws_ranges(text: &[u8]) -> anyhow::Result<Ranges> {
+    let ranges: AwsRanges = serde_json::from_slice(text)?;
+    let mut nets = ranges.prefixes.0;
+    nets.extend(ranges.ipv6_prefixes.0);
+    check_prefixes(nets)
 }
 
 #[derive(serde::Deserialize)]
 struct AwsRanges {
-    prefixes: Vec<AwsV4>,
-    ipv6_prefixes: Vec<AwsV6>,
-}
-#[derive(serde::Deserialize)]
-struct AwsV4 {
-    ip_prefix: IpNet,
-    service: String,
-}
-#[derive(serde::Deserialize)]
-struct AwsV6 {
-    ipv6_prefix: IpNet,
-    service: String,
+    prefixes: CloudFrontOnly,
+    ipv6_prefixes: CloudFrontOnly,
 }
 
-/// AWS ip-ranges.json → CloudFront 오리진 쪽 대역
-fn parse_aws_ranges(text: &[u8]) -> anyhow::Result<Vec<IpNet>> {
-    let ranges: AwsRanges = serde_json::from_slice(text)?;
-    let v4 = ranges
-        .prefixes
-        .into_iter()
-        .filter(|p| p.service == CLOUDFRONT_SERVICE)
-        .map(|p| p.ip_prefix);
-    let v6 = ranges
-        .ipv6_prefixes
-        .into_iter()
-        .filter(|p| p.service == CLOUDFRONT_SERVICE)
-        .map(|p| p.ipv6_prefix);
-    check_prefixes(v4.chain(v6).collect())
+/// 배열을 읽으면서 CloudFront 오리진 쪽 항목만 모은다
+struct CloudFrontOnly(Vec<IpNet>);
+
+#[derive(serde::Deserialize)]
+struct AwsPrefix<'a> {
+    #[serde(alias = "ipv6_prefix", borrow)]
+    ip_prefix: std::borrow::Cow<'a, str>,
+    #[serde(borrow)]
+    service: std::borrow::Cow<'a, str>,
 }
 
-fn check_prefixes(mut nets: Vec<IpNet>) -> anyhow::Result<Vec<IpNet>> {
+impl<'de> serde::Deserialize<'de> for CloudFrontOnly {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visit;
+        impl<'de> serde::de::Visitor<'de> for Visit {
+            type Value = CloudFrontOnly;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("an array of AWS IP prefixes")
+            }
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                mut seq: A,
+            ) -> Result<CloudFrontOnly, A::Error> {
+                let mut nets = Vec::new();
+                while let Some(prefix) = seq.next_element::<AwsPrefix<'de>>()? {
+                    if prefix.service == CLOUDFRONT_SERVICE {
+                        nets.push(prefix.ip_prefix.parse().map_err(serde::de::Error::custom)?);
+                    }
+                }
+                Ok(CloudFrontOnly(nets))
+            }
+        }
+        deserializer.deserialize_seq(Visit)
+    }
+}
+
+fn check_prefixes(nets: Vec<IpNet>) -> anyhow::Result<Ranges> {
     let v4 = nets.iter().filter(|n| matches!(n, IpNet::V4(_))).count();
     anyhow::ensure!(
         v4 >= MIN_IPV4_PREFIXES,
@@ -537,10 +636,11 @@ fn check_prefixes(mut nets: Vec<IpNet>) -> anyhow::Result<Vec<IpNet>> {
             .all(|n| n.prefix_len() >= if n.addr().is_ipv4() { 8 } else { 16 }),
         "{CLOUDFRONT_SERVICE}: prefix too wide"
     );
-    nets.sort();
-    nets.dedup();
-    Ok(nets)
+    Ok(Ranges::from_nets(&nets))
 }
+
+/// ip-ranges.json은 지금 2.7 MB: 이보다 크면 받지 않는다
+const MAX_RANGES_BYTES: usize = 16 * 1024 * 1024;
 
 async fn refresh_ranges(allow: Arc<Allow>) {
     let client = match crate::external_http::client_builder(false)
@@ -555,12 +655,13 @@ async fn refresh_ranges(allow: Arc<Allow>) {
     };
     loop {
         let wait = match fetch_ranges(&client).await {
-            Ok(nets) => {
+            Ok(ranges) => {
                 tracing::info!(
-                    prefixes = nets.len(),
+                    prefixes = ranges.prefixes,
+                    intervals = ?ranges.intervals(),
                     "CloudFront origin-facing IP ranges updated"
                 );
-                allow.replace(nets);
+                allow.replace(ranges);
                 RANGES_REFRESH
             }
             Err(error) => {
@@ -572,25 +673,40 @@ async fn refresh_ranges(allow: Arc<Allow>) {
     }
 }
 
-async fn fetch_ranges(client: &reqwest::Client) -> anyhow::Result<Vec<IpNet>> {
-    let response = client
+/// 본문은 한 버퍼에 이어 붙인다 (Content-Length만큼 미리 잡아 다시 복사하지 않는다)
+async fn fetch_ranges(client: &reqwest::Client) -> anyhow::Result<Ranges> {
+    let mut response = client
         .get(AWS_IP_RANGES_URL)
         .send()
         .await?
         .error_for_status()?;
-    parse_aws_ranges(&response.bytes().await?)
+    let hint = response.content_length().unwrap_or(0) as usize;
+    let mut body = Vec::with_capacity(hint.min(MAX_RANGES_BYTES));
+    while let Some(chunk) = response.chunk().await? {
+        anyhow::ensure!(
+            body.len() + chunk.len() <= MAX_RANGES_BYTES,
+            "ip-ranges.json larger than {MAX_RANGES_BYTES} bytes"
+        );
+        body.extend_from_slice(&chunk);
+    }
+    let ranges = tokio::task::spawn_blocking(move || parse_aws_ranges(&body)).await??;
+    Ok(ranges)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn snapshot_nets() -> Vec<IpNet> {
+        serde_json::from_str::<Snapshot>(SNAPSHOT).unwrap().prefixes
+    }
+
     #[test]
     fn snapshot_is_cloudfront_origin_facing_only() {
         let allow = Allow::cloudfront();
         assert!(allow.len() >= MIN_IPV4_PREFIXES);
         // 스냅샷의 첫 대역 안쪽 주소는 받는다
-        let first = parse_snapshot(SNAPSHOT).unwrap()[0];
+        let first = snapshot_nets()[0];
         assert!(allow.permits(first.addr()));
         for outside in [
             "127.0.0.1",
@@ -607,8 +723,7 @@ mod tests {
     #[test]
     fn ipv4_mapped_peers_are_checked_as_ipv4() {
         let allow = Allow::cloudfront();
-        let first = parse_snapshot(SNAPSHOT)
-            .unwrap()
+        let first = snapshot_nets()
             .into_iter()
             .find_map(|n| match n {
                 IpNet::V4(v4) => Some(v4.addr()),
@@ -651,9 +766,11 @@ mod tests {
                 ("2600:1f00::/24", "AMAZON"),
             ],
         );
-        let nets = parse_aws_ranges(json.as_bytes()).unwrap();
-        assert_eq!(nets.len(), 13);
-        let allow = Allow::any_with(nets);
+        let ranges = parse_aws_ranges(json.as_bytes()).unwrap();
+        assert_eq!(ranges.prefixes, 13);
+        // 130.176.0.0/24 … 130.176.11.0/24는 맞닿아 한 구간이 된다
+        assert_eq!(ranges.intervals(), (1, 1));
+        let allow = Allow::any_with(ranges);
         assert!(allow.permits("130.176.3.9".parse().unwrap()));
         assert!(allow.permits("2600:9000:1000::1".parse().unwrap()));
         assert!(
@@ -686,11 +803,74 @@ mod tests {
     }
 
     impl Allow {
-        fn any_with(nets: Vec<IpNet>) -> Self {
+        fn any_with(ranges: Ranges) -> Self {
             Self {
-                nets: Some(RwLock::new(Arc::new(nets))),
+                ranges: Some(RwLock::new(ranges)),
             }
         }
+    }
+
+    /// 합친 구간 이분 탐색이 대역을 하나씩 보는 것과 같은 답을 내는지: 모든 대역의 경계 안팎
+    #[test]
+    fn merged_ranges_answer_like_a_linear_scan() {
+        let mut nets = snapshot_nets();
+        // 겹침·맞닿음·포함·끝 주소
+        for extra in [
+            "10.0.0.0/24",
+            "10.0.1.0/24",
+            "10.0.0.128/25",
+            "255.255.255.0/24",
+            "ffff::/16",
+            "2001:db8::/32",
+            "2001:db9::/32",
+        ] {
+            nets.push(extra.parse().unwrap());
+        }
+        let ranges = Ranges::from_nets(&nets);
+        let linear = |ip: IpAddr| nets.iter().any(|n| n.contains(&ip));
+        let mut probes: Vec<IpAddr> = Vec::new();
+        for n in &nets {
+            match n {
+                IpNet::V4(n) => {
+                    let (lo, hi) = (u32::from(n.network()), u32::from(n.broadcast()));
+                    for v in [
+                        lo.wrapping_sub(1),
+                        lo,
+                        lo + (hi - lo) / 2,
+                        hi,
+                        hi.wrapping_add(1),
+                    ] {
+                        probes.push(IpAddr::V4(v.into()));
+                    }
+                }
+                IpNet::V6(n) => {
+                    let (lo, hi) = (u128::from(n.network()), u128::from(n.broadcast()));
+                    for v in [
+                        lo.wrapping_sub(1),
+                        lo,
+                        lo + (hi - lo) / 2,
+                        hi,
+                        hi.wrapping_add(1),
+                    ] {
+                        probes.push(IpAddr::V6(v.into()));
+                    }
+                }
+            }
+        }
+        probes.extend(
+            [
+                "0.0.0.0",
+                "255.255.255.255",
+                "::",
+                "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+            ]
+            .map(|s| s.parse::<IpAddr>().unwrap()),
+        );
+        for ip in probes {
+            assert_eq!(ranges.contains(ip), linear(ip), "{ip}");
+        }
+        let (v4, v6) = ranges.intervals();
+        assert!(v4 + v6 < nets.len(), "adjacent and nested prefixes merge");
     }
 
     #[test]
