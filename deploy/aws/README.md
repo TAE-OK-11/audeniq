@@ -26,7 +26,7 @@ ALB도 터널도 없어요. 백엔드 api가 공인 인증서를 직접 들고 �
 | Studio 화면 서빙 | 백엔드 api 그대로 (`STUDIO_DIR`) | `crates/core/src/studio_static.rs`, [`../STUDIO_SERVING.md`](../STUDIO_SERVING.md) |
 | 관리자·랜딩 화면 (Workers Static Assets, SPA 폴백, 랜딩 라우팅) | S3 + CloudFront Function | `functions/admin.js`, `functions/landing.js` |
 | Cloudflare Tunnel (TLS는 Cloudflare) | api 내장 HTTPS, 서버 443 | `crates/core/src/edge_tls.rs`, `deploy/compose.production.yaml` |
-| 인증서 (Cloudflare가 관리) | Let's Encrypt(DNS-01, Cloudflare DNS) → `./tls`, api가 5분마다 다시 읽음 | `deploy/tls-cert.sh` |
+| 인증서 (Cloudflare가 관리) | api가 Let's Encrypt에서 직접 받고 자동 갱신 (TLS-ALPN-01, 443 하나로) | `crates/core/src/edge_acme.rs` (대안: `deploy/tls-cert.sh` → `./tls`) |
 | 공지·이벤트·서버 점검 (D1) | 백엔드 + Postgres `content` 스키마 | `crates/core/src/site_content.rs`, 마이그레이션 0086 |
 
 | 앱 | 화면 주소 | 화면 | 백엔드로 가는 경로 |
@@ -44,13 +44,27 @@ ALB도 터널도 없어요. 백엔드 api가 공인 인증서를 직접 들고 �
 1. **연결 출처**: AWS가 공개하는 `CLOUDFRONT_ORIGIN_FACING` IP 대역에서 온 TCP 연결만 받아요. 그 밖의 연결은 TLS 핸드셰이크 전에 끊어요(로그: `HTTPS connection refused: not a CloudFront origin address`, 1분에 한 줄).
    - 대역은 api가 `https://ip-ranges.amazonaws.com/ip-ranges.json`을 6시간마다 받아 바꿔요(실패하면 10분 뒤 다시, 그동안은 이전 목록). 처음 뜰 때는 저장소 스냅샷 `config/cloudfront-origin-facing.json`(갱신: `python3 scripts/cloudfront-ranges.py > config/cloudfront-origin-facing.json`)을 써요.
    - production에서는 `TLS_ALLOWED_SOURCES=cloudfront`만 돼요(`any`면 시작하지 않아요).
+   - 예외 하나: api가 Let's Encrypt 인증서를 받는 몇 초 동안만, ALPN `acme-tls/1` + 그 도메인 SNI인 검증 연결에 검증용 인증서로 답하고 바로 닫아요(요청은 받지 않아요, 로그: `ACME TLS-ALPN-01 challenge answered`). 그 밖의 연결은 그때도 끊어요.
 2. **서비스 비밀**: 이 리스너로 온 요청은 화면 파일까지 모두 `x-audeniq-service`(= `EDGE_SERVICE_SECRET`)가 맞아야 해요. 다른 AWS 계정이 자기 CloudFront로 이 서버를 오리진으로 걸어도(IP는 CloudFront라 1을 통과) 403이에요. 비밀은 CloudFront origin custom header로만 붙고, 브라우저가 같은 이름을 보내면 `edge.js`가 지우고 CloudFront가 덮어써요.
 3. **헤더 정리**: `edge.js`가 프록시 Worker와 같은 허용 목록만 남겨요. 사용자 IP는 `event.viewer.ip` → `x-audeniq-client-ip`(백엔드는 서비스 비밀이 맞을 때만 믿어요). `x-audeniq-site=admin`이면 관리자 경로만 열리는 규칙(`crates/core/src/sites.rs`)은 그대로예요.
 
-방화벽(서버 보안 그룹)도 443을 CloudFront 관리형 prefix list `com.amazonaws.global.cloudfront.origin-facing`로 좁히면 더 좋아요(AWS 서버일 때). 다른 클라우드 서버라면 위 1이 같은 일을 해요.
+방화벽(서버 보안 그룹): Let's Encrypt 자동 발급(`TLS_ACME_DOMAIN`)을 쓰면 **443은 인터넷 전체에 열어 둬요**. Let's Encrypt 검증은 여러 곳에서 오고 주소가 공개돼 있지 않아서, 거르기는 위 1을 api가 해요.
+파일 인증서(`tls-cert.sh`)만 쓴다면 443을 CloudFront 관리형 prefix list `com.amazonaws.global.cloudfront.origin-facing`로 좁혀도 돼요(AWS 서버일 때).
 평문 8080은 컨테이너 안 healthcheck와 (전환 전까지) 터널용이고, 서버 밖으로 열지 않아요.
 
-인증서 조건: CloudFront는 오리진 인증서를 공인 CA로 검증하고, 이름이 `ApiOriginDomain`과 맞아야 해요(자체 서명·Cloudflare Origin CA는 안 돼요). `tls-cert.sh`는 Let's Encrypt를 DNS-01로 받아서 서버 80을 열 필요가 없어요. ACM 내보내기 인증서 같은 다른 PEM은 `./tls-cert.sh install fullchain.pem privkey.pem`.
+## 인증서: api 내장 Let's Encrypt
+
+CloudFront는 오리진 인증서를 공인 CA로 검증하고, 이름이 `ApiOriginDomain`과 맞아야 해요(자체 서명·Cloudflare Origin CA는 안 돼요).
+`production.env`에 `TLS_ACME_DOMAIN=origin.audeniq.com`을 넣으면 api가 알아서 해요(`crates/core/src/edge_acme.rs`).
+
+- **발급**: 처음 뜰 때 저장된 인증서가 없으면 Let's Encrypt에 주문하고 **TLS-ALPN-01**로 검증받아요. 서버 443만 있으면 돼요(80 포트·DNS API 토큰·certbot·cron 없음). 보통 몇 초, 그동안 HTTPS 핸드셰이크만 실패하고 api(평문·healthcheck)는 그대로 떠요.
+- **갱신**: 12시간마다 보고 유효 기간의 마지막 1/3에 들어서면(90일 인증서면 만료 30일 전) 새로 받아요. 재시작 없이 다음 연결부터 새 인증서예요. 실패하면 5분부터 두 배씩(최대 6시간) 다시 하고, 그동안은 지금 인증서를 계속 써요.
+- **보관**: compose 볼륨 `api_tls`(`/var/lib/audeniq-tls/letsencrypt/<도메인>/`, 계정 키 `account.json`). 재시작·재배포해도 다시 받지 않아요. 볼륨을 지우면 새로 받아요(Let's Encrypt 주당 발급 한도: 같은 이름 5번).
+- **처음 시험**: `TLS_ACME_DIRECTORY=staging`이면 발급 한도가 넉넉한 시험 서버(신뢰되지 않는 인증서, CloudFront는 거절)예요. 로그에 `Let's Encrypt certificate issued`가 나오면 `production`으로 바꿔요(따로 보관돼서 섞이지 않아요).
+- **로그**: `Let's Encrypt certificate loaded|issued`(not_after 포함), 실패는 `Let's Encrypt certificate not issued; keeping the current one`(이유·다음 시도까지 초).
+- **조건**: `origin.audeniq.com`의 DNS(A)가 이 서버를 가리키고(DNS only), 서버 443이 인터넷에 열려 있어야 해요.
+
+다른 인증서를 쓰려면 `TLS_ACME_DOMAIN`을 비우고 `./tls`에 PEM을 둬요: `./tls-cert.sh issue <주소> <메일>`(Let's Encrypt DNS-01, Cloudflare DNS 토큰, cron으로 `renew`) 또는 `./tls-cert.sh install fullchain.pem privkey.pem`(ACM 내보내기 인증서 등). api가 5분마다 다시 읽어요.
 
 ## 파일
 
@@ -63,7 +77,8 @@ ALB도 터널도 없어요. 백엔드 api가 공인 인증서를 직접 들고 �
 | `deploy-stack.sh` | 스택 `audeniq-<app>-ui` 생성·갱신 |
 | `publish.ts` / `ci-publish.sh` | admin·landing 빌드 결과를 S3에 올리고 무효화 (studio는 건너뜀) |
 | `migrate-d1.ts` | D1 데이터 → Postgres 가져오기 SQL 생성 |
-| `../tls-cert.sh` | 백엔드 HTTPS 인증서 발급·갱신·설치 |
+| `crates/core/src/edge_tls.rs`, `edge_acme.rs` | 백엔드 HTTPS 리스너(CloudFront 대역·서비스 비밀), 내장 Let's Encrypt |
+| `../tls-cert.sh` | (대안) 바깥에서 받는 인증서 발급·갱신·설치 |
 | `../compose.tls.yaml` | HTTPS를 켰을 때만 붙는 compose 파일 (api만 서버 443) |
 
 ## 전환 순서
@@ -71,16 +86,16 @@ ALB도 터널도 없어요. 백엔드 api가 공인 인증서를 직접 들고 �
 1. **백엔드 배포**: 이 커밋의 이미지로 배포해요. `TLS_BIND`가 비어 있어서 아직 아무것도 바뀌지 않아요(터널 그대로).
    - 아직 안 했다면 마이그레이션 0086 이후의 `deploy/grants.sql` 재실행, `production.env`에 `ADMIN_ORIGIN`.
 2. **오리진 주소**: Cloudflare DNS에 `origin.audeniq.com A <서버 공인 IP>`를 **DNS only**(회색 구름)로 만들어요. 터널이 쓰는 `api-origin.audeniq.com`은 건드리지 않아요.
-3. **인증서** (서버, `/opt/audeniq`):
+3. **방화벽**: 서버 방화벽·보안 그룹에서 TCP 443을 인터넷에 열어요(Let's Encrypt 검증. CloudFront가 아닌 연결은 api가 끊어요).
+4. **HTTPS 켜기**: `production.env`에 아래를 넣고 `./update.sh --force`(같은 버전을 다시 배포)로 api를 다시 올려요.
    ```sh
-   printf 'dns_cloudflare_api_token = %s\n' '<Zone DNS:Edit 토큰>' > tls-cloudflare.ini && chmod 600 tls-cloudflare.ini
-   ./tls-cert.sh issue origin.audeniq.com ops@audeniq.com
-   ( crontab -l 2>/dev/null; echo '17 4 * * * cd /opt/audeniq && ./tls-cert.sh renew >> tls-cert.log 2>&1' ) | crontab -
+   TLS_BIND=0.0.0.0:8443
+   TLS_ACME_DOMAIN=origin.audeniq.com
+   TLS_ACME_EMAIL=ops@audeniq.com
+   TLS_ACME_DIRECTORY=staging      # 처음 한 번 시험. issued 로그를 보면 production으로 바꾸고 다시 ./update.sh --force
    ```
-4. **HTTPS 켜기**: `production.env`에 `TLS_BIND=0.0.0.0:8443`을 넣고 `./update.sh --force`(같은 버전을 다시 배포)로 api를 다시 올려요.
-   `deploy.sh`가 `TLS_BIND`를 보고 `compose.tls.yaml`(서버 443 → 컨테이너 8443)을 붙여요. 인증서(`./tls`)가 없으면 멈춰요.
-   - 서버 방화벽·보안 그룹에서 TCP 443을 열어요(가능하면 CloudFront prefix list로만).
-   - 로그 확인: `HTTPS listener (TLS_BIND)`, 잠시 뒤 `CloudFront origin-facing IP ranges updated`.
+   `deploy.sh`가 `TLS_BIND`를 보고 `compose.tls.yaml`(서버 443 → 컨테이너 8443)을 붙여요.
+   - 로그 확인(`docker compose -p audeniq-production logs api | grep -E 'HTTPS listener|Let.s Encrypt|IP ranges'`): `HTTPS listener (TLS_BIND)`, `Let's Encrypt certificate issued`, `CloudFront origin-facing IP ranges updated`.
    - 바깥에서 `curl -v https://origin.audeniq.com/` → 연결이 끊겨야 정상(CloudFront가 아님).
 5. **데이터 옮기기**(D1 공지·점검, 1차): 관리 화면에서 글을 잠시 쓰지 않는 시간에 실행해요.
    ```sh
