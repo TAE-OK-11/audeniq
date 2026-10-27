@@ -2,6 +2,7 @@
 # AUDENIQ Studio 화면 배포 — 빌드 결과(web/studio/public)를 이 서버에 올린다. api는 재시작하지 않는다.
 #
 #   ./studio-release.sh install <커밋> <studio.tar.gz>   # releases/<커밋>에 풀고 current를 바꾼다
+#   ./studio-release.sh build <커밋> <저장소 소스 폴더>   # 소스에서 화면을 빌드(Node 컨테이너)해 install
 #   ./studio-release.sh rollback                          # 직전 릴리스로 되돌리기
 #   ./studio-release.sh status                            # 지금 릴리스와 목록
 #
@@ -76,6 +77,25 @@ case "${1:-}" in
     switch_to "$rel"
     prune
     ;;
+  build)
+    # 저장소 소스(web/, tsconfig.json)에서 화면을 Node 컨테이너로 빌드해 install한다 (update.sh·build-on-server.sh)
+    rel=${2:-}; src=${3:-}
+    [[ "$rel" =~ ^[0-9a-f]{7,40}$ ]] || die "커밋은 16진수 sha여야 해요: $rel"
+    [ -f "$src/web/studio/app/package.json" ] || die "Studio 소스가 없어요: $src"
+    if [ "$(current)" = "$rel" ]; then echo "studio-release: 이미 $rel 이에요"; exit 0; fi
+    command -v docker >/dev/null || die "docker가 필요해요"
+    work=$(mktemp -d)
+    trap 'rm -rf "$work"' EXIT
+    cp -a "$src/web" "$work/web"
+    [ -f "$src/tsconfig.json" ] && cp "$src/tsconfig.json" "$work/"
+    bun_version=$(tr -d '[:space:]' < "$work/web/studio/.bun-version")
+    echo "studio-release: 화면 빌드 (bun $bun_version, ${STUDIO_BUILD_IMAGE:-node:22-bookworm-slim})"
+    docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -e npm_config_update_notifier=false \
+      -v "$work:/src" -w /src/web/studio/app "${STUDIO_BUILD_IMAGE:-node:22-bookworm-slim}" \
+      sh -c "npx --yes bun@$bun_version install --frozen-lockfile && npx --yes bun@$bun_version run build"
+    tar -C "$work/web/studio/public" -czf "$work/studio.tar.gz" .
+    "$(pwd)/$(basename "$0")" install "$rel" "$work/studio.tar.gz"
+    ;;
   rollback)
     [ -s "$HISTORY" ] || die "되돌릴 기록이 없어요 ($HISTORY)"
     cur=$(current)
@@ -88,6 +108,6 @@ case "${1:-}" in
     ls -1t "$DIR/releases"
     ;;
   *)
-    sed -n '2,11p' "$0"; exit 2
+    sed -n '2,12p' "$0"; exit 2
     ;;
 esac
