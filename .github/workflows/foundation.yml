@@ -310,8 +310,10 @@ jobs:
           jq -e '.services.antivirus.network_mode == "none" and .services.antivirus.read_only == true and .services.antivirus.pids_limit == 32' /tmp/production.json
           jq -e '[.services.antivirus.environment // {} | keys[]] | all(test("DATABASE|S3_|PAYOUT|PARTNER") | not)' /tmp/production.json
           jq -e '(.services.migrate.environment.DATABASE_URL | test("@postgres/"))' /tmp/production.json
+          # Studio 화면은 api가 읽기 전용 폴더에서 서빙한다 (deploy/STUDIO_SERVING.md)
+          jq -e '.services.api.environment.STUDIO_DIR == "/srv/studio/current" and ([.services.api.volumes[] | select(.target == "/srv/studio")] | length == 1 and .[0].read_only == true)' /tmp/production.json
       - name: Deploy script lint
-        run: shellcheck deploy/deploy.sh deploy/build-target.sh deploy/check-cpu.sh
+        run: shellcheck deploy/deploy.sh deploy/build-target.sh deploy/check-cpu.sh deploy/studio-release.sh
       - name: Build and start the stack
         env:
           AUDENIQ_GITHUB_TOKEN: ${{ secrets.AUDENIQ_GITHUB_TOKEN }}

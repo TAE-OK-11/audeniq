@@ -4,7 +4,7 @@ import worker from '../worker.ts';
 import adminWorker from '../../admin/worker.ts';
 
 // 공지·이벤트·서버 점검·인증 보조는 백엔드가 한다 (crates/core/tests/site_content.rs).
-// Worker는 화면 서빙과 /api 전달만 — 여기서는 전달 규칙을 확인한다.
+// Studio Worker는 프록시만(화면 파일도 백엔드, crates/core/src/studio_static.rs) — 여기서는 전달 규칙을 확인한다.
 const SECRET = 's'.repeat(40);
 const env = () => ({ EDGE_SERVICE_SECRET: SECRET, ASSETS: { fetch: async () => new Response('asset') } });
 
@@ -100,20 +100,14 @@ test('AI assistant (MCP) calls carry their bearer token and MCP headers; other /
   });
 });
 
-test('OAuth discovery documents at /.well-known come from the backend; other /.well-known paths stay assets', async () => {
+test('OAuth discovery documents and every other /.well-known path go to the backend', async () => {
   await withBackend(() => Response.json({ issuer: 'https://studio.audeniq.com' }), async seen => {
-    for (const path of ['/.well-known/oauth-authorization-server', '/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/api/mcp']) {
+    for (const path of ['/.well-known/oauth-authorization-server', '/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/api/mcp', '/.well-known/security.txt']) {
       const r = await worker.fetch(new Request(`https://studio.audeniq.com${path}`), env());
       assert.equal(r.status, 200);
       assert.equal(new URL(seen.at(-1)!.url).pathname, path);
       assert.equal(seen.at(-1)!.headers.get('x-audeniq-service'), SECRET);
     }
-    const before = seen.length;
-    const r = await worker.fetch(new Request('https://studio.audeniq.com/.well-known/security.txt'), env());
-    assert.equal(await r.text(), 'asset');
-    const post = await worker.fetch(new Request('https://studio.audeniq.com/.well-known/oauth-authorization-server', { method: 'POST', body: '{}' }), env());
-    assert.equal(await post.text(), 'asset');
-    assert.equal(seen.length, before);
   });
 });
 
@@ -131,7 +125,7 @@ test('backend maintenance answers pass through unchanged; a dead backend is 502;
     assert.equal((await r.json()).error.code, 'BACKEND_UNAVAILABLE');
   });
   await withBackend(() => { throw new Error('must not be called'); }, async seen => {
-    assert.equal((await worker.fetch(new Request('https://studio.audeniq.com/api/me'), { ASSETS: env().ASSETS })).status, 503);
+    assert.equal((await worker.fetch(new Request('https://studio.audeniq.com/api/me'), {})).status, 503);
     assert.equal(seen.length, 0);
   });
 });
@@ -149,33 +143,55 @@ test('admin /api/* goes to the backend as the admin site; the backend picks the 
   });
 });
 
-test('other paths go to assets; screen paths fall back to index.html when assets answer 404', async () => {
-  assert.equal(await (await worker.fetch(new Request('https://studio.audeniq.com/notices/abc'), env())).text(), 'asset');
-  const assets = { fetch: async (req: Request) => {
-    const p = new URL(req.url).pathname;
-    return p === '/' ? new Response('<html>', { headers: { 'Content-Security-Policy': "default-src 'self'" } }) : new Response('nf', { status: 404 });
-  } };
-  const e = { ...env(), ASSETS: assets };
-  const r = await worker.fetch(new Request('https://studio.audeniq.com/notices/abc'), e);
-  assert.equal(r.status, 200);
-  assert.equal(await r.text(), '<html>');
-  assert.equal(r.headers.get('Content-Security-Policy'), "default-src 'self'");
-  assert.equal(r.headers.get('Cache-Control'), 'no-cache');
-  assert.equal((await worker.fetch(new Request('https://studio.audeniq.com/missing.js'), e)).status, 404);
-  // Discovery paths the backend does not serve are a plain 404, never the app's HTML
-  for (const path of ['/.well-known/openid-configuration', '/.well-known/oauth-authorization-server/api/mcp']) {
-    assert.equal((await worker.fetch(new Request(`https://studio.audeniq.com${path}`), e)).status, 404, path);
-  }
-  // Workers Static Assets with single-page-application fallback answer missing files with index.html (200):
-  // under /.well-known that is still a JSON 404, and a real file there is served.
-  const spa = { fetch: async (req: Request) => new URL(req.url).pathname === '/.well-known/security.txt'
-    ? new Response('Contact: mailto:security@audeniq.com', { headers: { 'content-type': 'text/plain' } })
-    : new Response('<html>', { headers: { 'content-type': 'text/html; charset=utf-8' } }) };
-  const s = { ...env(), ASSETS: spa };
-  for (const path of ['/.well-known/openid-configuration', '/.well-known/oauth-authorization-server/api/mcp', '/.well-known/openid-configuration/api/mcp']) {
-    const res = await worker.fetch(new Request(`https://studio.audeniq.com${path}`), s);
-    assert.equal(res.status, 404, path);
-    assert.equal((await res.json()).error.code, 'NOT_FOUND');
-  }
-  assert.equal(await (await worker.fetch(new Request('https://studio.audeniq.com/.well-known/security.txt'), s)).text(), 'Contact: mailto:security@audeniq.com');
+test('screens and static files come from the backend; the Worker only rewrites headers', async () => {
+  const index = () => new Response('<html>', { headers: {
+    'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache', 'content-security-policy': "default-src 'self'",
+  } });
+  await withBackend(index, async seen => {
+    const r = await worker.fetch(new Request('https://studio.audeniq.com/notices/abc?x=1', {
+      headers: {
+        'x-audeniq-service': 'forged', 'x-audeniq-site': 'admin', 'x-audeniq-client-ip': '1.1.1.1', 'x-audeniq-audit-route': 'forged',
+        'cf-connecting-ip': '198.51.100.7', 'if-none-match': '"abc"', 'accept-encoding': 'br, gzip, zstd', cookie: 'sid=1',
+      },
+    }), env());
+    assert.equal(r.status, 200);
+    assert.equal(await r.text(), '<html>');
+    // 백엔드의 캐시·보안 헤더는 그대로, HSTS만 더한다. CORS 헤더는 /api에만
+    assert.equal(r.headers.get('Cache-Control'), 'no-cache');
+    assert.equal(r.headers.get('Content-Security-Policy'), "default-src 'self'");
+    assert.equal(r.headers.get('Strict-Transport-Security'), 'max-age=31536000; includeSubDomains');
+    assert.equal(r.headers.get('Access-Control-Allow-Origin'), null);
+    const req = seen[0];
+    assert.equal(new URL(req.url).href, 'https://api-origin.audeniq.com/notices/abc?x=1');
+    const h = req.headers;
+    assert.equal(h.get('x-audeniq-service'), SECRET);
+    assert.equal(h.get('x-audeniq-site'), 'studio');
+    assert.equal(h.get('x-audeniq-client-ip'), '198.51.100.7');
+    assert.equal(h.get('x-audeniq-audit-route'), null);
+    assert.equal(h.get('if-none-match'), '"abc"');
+    assert.equal(h.get('accept-encoding'), 'br, gzip');
+    // 화면 요청에도 쿠키는 그대로 (같은 주소의 /api와 구분하지 않는다)
+    assert.equal(h.get('cookie'), 'sid=1');
+    // 정적 파일·리다이렉트도 백엔드 응답 그대로
+    await worker.fetch(new Request('https://studio.audeniq.com/assets/app-1.js'), env());
+    assert.equal(new URL(seen[1].url).pathname, '/assets/app-1.js');
+  });
+  await withBackend(() => new Response(null, { status: 308, headers: { location: '/', 'cache-control': 'no-store' } }), async () => {
+    const r = await worker.fetch(new Request('https://studio.audeniq.com/studio'), env());
+    assert.equal(r.status, 308);
+    assert.equal(r.headers.get('location'), '/');
+  });
+  // /api 요청에는 조건부 헤더를 넘기지 않는다 (지금 동작 그대로)
+  await withBackend(() => Response.json({}), async seen => {
+    await worker.fetch(new Request('https://studio.audeniq.com/api/me', { headers: { 'if-none-match': '"x"' } }), env());
+    assert.equal(seen[0].headers.get('if-none-match'), null);
+  });
+});
+
+test('plain HTTP is refused before anything reaches the backend', async () => {
+  await withBackend(() => { throw new Error('must not be called'); }, async seen => {
+    const r = await worker.fetch(new Request('http://studio.audeniq.com/'), env());
+    assert.equal(r.status, 403);
+    assert.equal(seen.length, 0);
+  });
 });

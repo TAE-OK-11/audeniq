@@ -3,6 +3,7 @@ use audeniq_core::{
     config::Config,
     database,
     storage::{DisabledStore, ObjectStore, S3Store},
+    studio_static,
 };
 use axum::serve::ListenerExt;
 use std::sync::Arc;
@@ -107,7 +108,15 @@ async fn main() -> anyhow::Result<()> {
     // SHUTDOWN_GRACE is abandoned with a log line before Docker kills it.
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let (signalled, mut on_signal) = tokio::sync::watch::channel(false);
-    let server = axum::serve(listener, api::router(state)).with_graceful_shutdown(async move {
+    // STUDIO_DIR: the Studio screens are served here too, outside the API's
+    // service-secret boundary (crate::studio_static).
+    let studio = studio_static::Studio::from_env();
+    match &studio {
+        Some(_) => tracing::info!("serving Studio static files (STUDIO_DIR)"),
+        None => tracing::info!("Studio static files not served (STUDIO_DIR empty)"),
+    }
+    let app = studio_static::app(state, studio);
+    let server = axum::serve(listener, app).with_graceful_shutdown(async move {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {},
             _ = sigterm.recv() => {},

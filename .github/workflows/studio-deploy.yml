@@ -1,8 +1,10 @@
 name: Studio deploy
 # Studio(web/studio)가 바뀐 main PR에서 테스트 → 빌드를 돌리고,
-# main일 때만 Cloudflare Worker(audeniq-studio)로 배포한다. Worker는 화면 서빙과 /api 전달만 하고,
-# 공지·이벤트·서버 점검은 백엔드 Postgres에 있다 (crates/core/src/site_content.rs).
-# 필요한 저장소 Secrets: CLOUDFLARE_API_TOKEN (Workers Scripts:Edit), CLOUDFLARE_ACCOUNT_ID
+# main일 때만 빌드 결과를 production 서버로 올린다 (deploy/studio-release.sh, deploy/STUDIO_SERVING.md).
+# 화면 파일은 백엔드 api가 서빙하고(crates/core/src/studio_static.rs), Cloudflare Worker는 프록시만 한다.
+# Worker 배포(wrangler)는 이 워크플로에서 하지 않는다: 프록시 Worker(audeniq-studio-proxy)는 바뀔 때만 손으로 올리고,
+# 예전 정적 서빙 Worker(audeniq-studio)는 DNS 전환 뒤 롤백용으로 그대로 둔다.
+# 필요한 production 환경 Secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS (백엔드 배포와 같은 값)
 # 수동 실행: Actions → Studio deploy → Run workflow (main에서 실행하면 배포)
 on:
   push:
@@ -11,6 +13,7 @@ on:
       - web/studio/**
       - web/shared/**
       - deploy/aws/**
+      - deploy/studio-release.sh
       - .github/workflows/studio-deploy.yml
   pull_request:
     branches: [main]
@@ -18,6 +21,7 @@ on:
       - web/studio/**
       - web/shared/**
       - deploy/aws/**
+      - deploy/studio-release.sh
       - .github/workflows/studio-deploy.yml
   workflow_dispatch:
 permissions:
@@ -27,11 +31,9 @@ concurrency:
   group: studio-deploy-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      WRANGLER_SEND_METRICS: 'false'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -50,10 +52,75 @@ jobs:
         run: bun test test/
       - name: AWS (CloudFront) config tests
         run: node --experimental-strip-types --test deploy/aws/test/aws.test.ts
-      - name: Deploy audeniq-studio
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        working-directory: web/studio
+      - name: Package Studio build
+        # .br 사이드카(빌드가 만든 brotli)까지 함께. 링크·바깥 경로는 서버가 거절한다
+        run: |
+          test -f web/studio/public/index.html
+          tar -C web/studio/public -czf studio.tar.gz .
+          echo "Studio 빌드: $(tar -tzf studio.tar.gz | wc -l) 파일, $(du -h studio.tar.gz | cut -f1)" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: studio-build
+          path: studio.tar.gz
+          retention-days: 7
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    concurrency:
+      group: studio-release
+      cancel-in-progress: false
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/audeniq' }}
+      SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: studio-build
+      - name: Check deploy settings
+        id: settings
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx --yes wrangler@4.149.0 deploy
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          missing=""
+          [ -n "$DEPLOY_HOST" ] || missing="$missing DEPLOY_HOST"
+          [ -n "$DEPLOY_USER" ] || missing="$missing DEPLOY_USER"
+          [ -n "$KEY" ] || missing="$missing DEPLOY_SSH_KEY"
+          [ -n "$KNOWN" ] || missing="$missing DEPLOY_KNOWN_HOSTS"
+          # 시크릿이 하나도 없으면 자동 배포만 건너뛴다(백엔드 배포와 같은 규칙). 일부만 있거나 수동 실행이면 실패한다.
+          if [ "$EVENT" = push ] && [ "$missing" = " DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS" ]; then
+            echo "::warning::production 환경 시크릿이 없어 Studio 배포를 건너뜁니다. 빌드 결과(studio-build)를 받아 서버에서 ./studio-release.sh install로 올리세요."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -n "$missing" ]; then
+            echo "::error::production 환경 시크릿이 없어요:$missing (deploy/STUDIO_SERVING.md 참고)"
+            exit 1
+          fi
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+      - name: SSH setup
+        if: steps.settings.outputs.enabled == 'true'
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN" > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
+      - name: Upload and switch release
+        if: steps.settings.outputs.enabled == 'true'
+        run: |
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH/studio/releases'"
+          scp -i ~/.ssh/deploy_key deploy/studio-release.sh "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+          scp -i ~/.ssh/deploy_key studio.tar.gz "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/studio/upload-$SHA.tar.gz"
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd '$DEPLOY_PATH' && chmod +x studio-release.sh && ./studio-release.sh install '$SHA' 'studio/upload-$SHA.tar.gz'; status=\$?; rm -f 'studio/upload-$SHA.tar.gz'; exit \$status"
+          echo "Studio 배포됨: \`${SHA:0:7}\` → \`$DEPLOY_HOST:$DEPLOY_PATH/studio/current\` (되돌리기: \`./studio-release.sh rollback\`)" >> "$GITHUB_STEP_SUMMARY"
