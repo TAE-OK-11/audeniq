@@ -170,14 +170,16 @@ export function SystemStatus({ children }: { children: ReactNode }) {
   }, [refreshStatus, maintenance, serverDown]);
 
   // 점검이 끝나면 알린다 (앱은 그대로 남아 있어 이어서 쓸 수 있다)
+  // 점검과 서버 장애는 같은 전체 화면 레이어를 쓰므로, 본문 스크롤 잠금도
+  // 둘 다에 적용한다. 서버 장애만 있을 때는 이 잠금이 빠져 있었다.
   useEffect(() => {
     if (wasMaintenance.current && !maintenance) toast('점검이 끝났어요. 이어서 이용할 수 있어요.', 'success');
     wasMaintenance.current = maintenance;
-    if (!maintenance || adminPage) return;
+    if ((!maintenance && !serverDown) || adminPage) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = prev; };
-  }, [maintenance, adminPage, toast]);
+  }, [maintenance, serverDown, adminPage, toast]);
 
   // --- 온라인/오프라인 ---
   useEffect(() => {

@@ -326,7 +326,7 @@ fn not_deployed(req: &Request) -> Response {
         .headers()
         .get(header::ACCEPT)
         .and_then(|v| v.to_str().ok())
-        .is_some_and(|v| v.contains("text/html"));
+        .is_some_and(accepts_html);
     if !wants_html {
         return fail(StatusCode::SERVICE_UNAVAILABLE, "STUDIO_NOT_DEPLOYED");
     }
@@ -341,6 +341,33 @@ fn not_deployed(req: &Request) -> Response {
         "<!DOCTYPE html>\n<html lang=\"ko\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<meta http-equiv=\"refresh\" content=\"60\">\n<title>AUDENIQ STUDIO - 점검 중</title>\n<style>\nbody{margin:0;font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,\"Helvetica Neue\",Arial,sans-serif;background:#f2f2f7;color:#111;display:flex;min-height:100vh;align-items:center;justify-content:center}\nmain{background:#fff;border:0;border-radius:20px;padding:40px 32px;text-align:center;max-width:420px;width:calc(100% - 48px)}\n.code{font-size:14px;color:#8a8a93;margin:0 0 12px}\nh1{font-size:24px;margin:0 0 12px;line-height:1.4}\np{color:#636366;margin:0 0 24px;line-height:1.6;font-size:15px}\n</style>\n</head>\n<body>\n<main>\n<p class=\"code\">503</p>\n<h1>지금은 서버 점검 중이에요</h1>\n<p>스튜디오 화면이 아직 준비되지 않았어요. 60초마다 자동으로 다시 확인해요.</p>\n</main>\n</body>\n</html>\n",
     )
         .into_response()
+}
+
+/// `Accept` 미디어 타입과 파라미터 이름은 대소문자를 구분하지 않는다.
+/// 명시적인 `q=0`은 HTML을 받지 않겠다는 뜻이므로, `text/html`이
+/// 들어있다는 이유만으로 점검 HTML을 내면 안 된다. 파싱할 수 없는 q값은
+/// 명세가 정한 기본값(q=1)으로 보고 받아들인다.
+fn accepts_html(accept: &str) -> bool {
+    accept.split(',').any(|part| {
+        let mut values = part.split(';').map(str::trim);
+        if !values
+            .next()
+            .is_some_and(|media_type| media_type.eq_ignore_ascii_case("text/html"))
+        {
+            return false;
+        }
+        values.all(|parameter| {
+            let Some((name, value)) = parameter.split_once('=') else {
+                return true;
+            };
+            !name.trim().eq_ignore_ascii_case("q")
+                || value
+                    .trim()
+                    .parse::<f32>()
+                    .map(|q| q > 0.0)
+                    .unwrap_or(true)
+        })
+    })
 }
 
 fn not_found() -> Response {
@@ -790,6 +817,23 @@ mod tests {
         let r = studio.respond(head).await;
         assert_eq!(r.headers()["content-length"], "1");
         assert_eq!(text(r).await, "");
+    }
+
+    #[tokio::test]
+    async fn missing_snapshot_negotiates_maintenance_html() {
+        let dir = TempDir::new();
+        let studio = Studio::new(dir.path());
+
+        let r = get(&studio, "/", &[("accept", "TEXT/HTML; q=1")]).await;
+        assert_eq!(r.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(r.headers()[header::CONTENT_TYPE], "text/html; charset=utf-8");
+        assert_eq!(r.headers()[header::RETRY_AFTER], "60");
+        assert!(text(r).await.contains("http-equiv=\"refresh\" content=\"60\""));
+
+        let r = get(&studio, "/", &[("accept", "text/html;q=0, application/json")]).await;
+        assert_eq!(r.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(r.headers()[header::CONTENT_TYPE], "application/json");
+        assert!(text(r).await.contains("STUDIO_NOT_DEPLOYED"));
     }
 
     #[cfg(unix)]
