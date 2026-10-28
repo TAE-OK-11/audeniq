@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReleasePayload } from './types';
 import { ApiError, PartialSaveError } from './errors';
-import { setCsrf, setOrgId } from './http';
+import { downloadFile, setCsrf, setOrgId } from './http';
+import { SERVER_ISSUE_EVENT } from '../lib/systemEvents';
 import * as http from './http';
 import { cleanText, fixKind, remoteApi, sanitizeProfile, serverUpc, storedCoverData, uiStatus, uploadContentType } from './remote';
 
@@ -504,5 +505,35 @@ describe('remoteApi.uploadFile', () => {
   it('허용하지 않는 형식은 요청 전에 막는다', async () => {
     await expect(remoteApi.uploadFile(new File([''], 'a.mp3', { type: 'audio/mpeg' }), 'AUDIO')).rejects.toMatchObject({ code: 'UPLOAD_TYPE_UNSUPPORTED' });
     expect(calls).toHaveLength(0);
+  });
+});
+
+
+describe('download outage reporting', () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  it.each([
+    [500, 'INTERNAL_ERROR'], [502, 'UPSTREAM_UNAVAILABLE'],
+    [503, 'SERVICE_UNAVAILABLE'], [504, 'REQUEST_TIMEOUT'],
+  ])('reports a code-less %i download failure', async (status, code) => {
+    const listener = vi.fn();
+    window.addEventListener(SERVER_ISSUE_EVENT, listener);
+    try {
+      vi.stubGlobal('fetch', vi.fn(async () => new Response('Unavailable', { status })));
+      await expect(downloadFile('/api/reports.csv', 'reports.csv')).rejects.toMatchObject({ status, code });
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect((listener.mock.calls[0][0] as CustomEvent).detail).toEqual({ kind: 'down', status, code });
+    } finally { window.removeEventListener(SERVER_ISSUE_EVENT, listener); }
+  });
+
+  it('preserves backend maintenance details on download failure', async () => {
+    const listener = vi.fn();
+    const maintenance = { starts_at: '2026-10-28T00:00:00Z' };
+    window.addEventListener(SERVER_ISSUE_EVENT, listener);
+    try {
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: { code: 'MAINTENANCE' }, maintenance }), { status: 503 })));
+      await expect(downloadFile('/api/reports.csv', 'reports.csv')).rejects.toMatchObject({ code: 'MAINTENANCE' });
+      expect((listener.mock.calls[0][0] as CustomEvent).detail).toEqual({ kind: 'maintenance', status: 503, code: 'MAINTENANCE', window: maintenance });
+    } finally { window.removeEventListener(SERVER_ISSUE_EVENT, listener); }
   });
 });
