@@ -134,6 +134,11 @@ fi
 
 REF=$1
 REGISTRY=${DEPLOY_REGISTRY:-ghcr.io}
+# Values below enter Docker arguments and a sed replacement. Accept a registry
+# authority and a repository with exactly one tag or SHA-256 digest, never URLs,
+# whitespace, sed metacharacters or option-like references. Do not echo rejects.
+[[ "$REGISTRY" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]{1,5})?$ ]] || die "invalid deployment registry"
+[[ "$REF" =~ ^[a-z0-9][a-z0-9.:-]*/[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*(:[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}|@sha256:[a-f0-9]{64})$ ]] || die "invalid deployment image reference"
 case "$REF" in
   "$REGISTRY"/*) ;;
   *) die "$REGISTRY 이미지만 배포해요: $REF" ;;
@@ -152,10 +157,12 @@ repo=${REF%@*}; repo=${repo%:*}
 if [[ "$REF" == *@sha256:* ]]; then
   PINNED=$REF
 else
-  digest=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$REF" | grep -m1 "^$repo@sha256:" || true)
+  digest=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$REF" | awk -v prefix="$repo@sha256:" 'index($0, prefix) == 1 { print; exit }'  || true)
   [ -n "$digest" ] || die "digest를 찾지 못했어요: $REF"
   PINNED=$digest
 fi
+# A registry/daemon response must not introduce replacement syntax either.
+[[ "$PINNED" =~ ^[a-z0-9][a-z0-9.:-]*/[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*@sha256:[a-f0-9]{64}$ ]] || die "invalid resolved image digest"
 
 timing_phase image_verification
 # Architecture and CPU checks must precede the sandbox check and migrations:
@@ -193,16 +200,23 @@ docker run --rm --network none --cap-drop ALL --read-only   --security-opt no-ne
 # explicitly built PgBouncer is allowed to retain a build definition. Building
 # arbitrary overrides could replace the verified API/worker image locally.
 command -v python3 >/dev/null || die "python3 is required to check Compose build definitions"
-if ! extra_builds=$(AUDENIQ_IMAGE="$PINNED" "${COMPOSE[@]}" --profile '*' config --format json 2>/dev/null | python3 -c '
+if ! compose_plan=$(AUDENIQ_IMAGE="$PINNED" "${COMPOSE[@]}" --profile '*' config --format json 2>/dev/null | python3 -c '
 import json, sys
 model = json.load(sys.stdin)
 services = model["services"]
+print(" ".join(name for name, service in sorted(services.items())
+    if service.get("build") is not None and name != "pgbouncer"))
+# Only omit the exact immutable image already pulled and CPU/sandbox verified.
+# Refresh every other dependency, including services supplied by overrides.
 for name, service in sorted(services.items()):
-    if "build" in service and service["build"] is not None and name != "pgbouncer":
+    if service.get("image") != sys.argv[1] and service.get("build") is None:
         print(name)
-' 2>/dev/null); then
+' "$PINNED" 2>/dev/null); then
   die "cannot validate Compose build definitions; check compose files and required environment values (config --format json requires Docker Compose v2)"
 fi
+mapfile -t compose_plan_lines <<< "$compose_plan"
+extra_builds=${compose_plan_lines[0]}
+pull_services=("${compose_plan_lines[@]:1}")
 if [ -n "$extra_builds" ]; then
   die "unsupported buildable Compose services: $extra_builds; prepare each image separately, set its image reference and remove its build definition before deploying with --no-build — rollback: ./deploy.sh --rollback"
 fi
@@ -227,8 +241,13 @@ echo "     → $PINNED"
 # 새로 받아 만든다(바뀌었을 때만 패키지를 다시 설치). 새 postgres 이미지면 postgres가 한 번 다시 시작한다.
 # 레지스트리에 닿지 않으면 지금 이미지로 배포를 계속한다
 timing_phase dependency_pull
-"${COMPOSE[@]}" pull --quiet --ignore-buildable \
-  || echo "deploy: 경고 — postgres 등 이미지 갱신 실패, 서버에 있는 이미지로 계속" >&2
+if [ "${DEPLOY_TIMING:-0}" = 1 ]; then
+  printf 'deploy-timing dependency_pull_services=%s\n' "${#pull_services[@]}" >&2
+fi
+if [ "${#pull_services[@]}" -gt 0 ]; then
+  "${COMPOSE[@]}" pull --quiet --ignore-buildable "${pull_services[@]}" \
+    || echo "deploy: 경고 — postgres 등 이미지 갱신 실패, 서버에 있는 이미지로 계속" >&2
+fi
 timing_phase pgbouncer_build
 # Keep the base refresh and let Docker validate all build inputs/cache keys.
 # Build once, then forbid implicit rebuilds in both up calls. If the build

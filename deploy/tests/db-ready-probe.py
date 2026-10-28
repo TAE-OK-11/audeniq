@@ -99,6 +99,7 @@ probe() {
   return "${code:-1}"
 }
 COMPOSE=(probe)
+timing_phase() { :; }
 sleep() { SECONDS=$((SECONDS + 60)); }
 ''' + gate + '\nwait_database\n'
             return subprocess.run(['bash', '-c', script],

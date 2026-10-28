@@ -17,7 +17,10 @@ args = sys.argv[1:]
 with open(os.environ['CALLS'], 'a') as log:
     log.write(repr(args) + '\\n')
 if args[:2] == ['volume', 'inspect']: sys.exit(1)
-if args[:2] == ['image', 'inspect']: print('amd64'); sys.exit(0)
+if args[:2] == ['image', 'inspect']:
+    if '.RepoDigests' in args[args.index('--format') + 1]: print(os.environ.get('RESOLVED_DIGEST', os.environ['PINNED']))
+    else: print('amd64')
+    sys.exit(0)
 if args[0] == 'run':
     if 'sh' in args: print('x86-64')
     sys.exit(0)
@@ -33,7 +36,12 @@ if args[0] == 'compose':
     if 'config' in args:
         if os.environ.get('FAIL_CONFIG') == '1':
             print('test-secret-must-not-appear', file=sys.stderr); sys.exit(1)
-        services = {'pgbouncer': {'build': {'context': './pgbouncer'}}}
+        services = {'pgbouncer': {'build': {'context': './pgbouncer'}},
+                    'api': {'image': os.environ['PINNED']},
+                    'worker': {'image': os.environ['PINNED']},
+                    'migrate': {'image': os.environ['PINNED']},
+                    'postgres': {'image': 'postgres:18-trixie'},
+                    'grants': {'image': 'postgres:18-trixie'}}
         # Model a merged Compose result from the actual selected file list.
         for i, arg in enumerate(args):
             if arg == '-f' and args[i+1] in ['compose.override.yaml', 'compose.tls.yaml']:
@@ -52,7 +60,7 @@ if args[0] == 'compose':
 
 
 class DeploySpeedTests(unittest.TestCase):
-    def run_deploy(self, override=None, tls=None, **extra):
+    def run_deploy(self, override=None, tls=None, ref=PINNED, **extra):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for name in ['deploy.sh', 'compose.production.yaml', 'check-cpu.sh']:
@@ -75,13 +83,48 @@ class DeploySpeedTests(unittest.TestCase):
             env = dict(os.environ, PATH=str(binpath) + ':' + os.environ['PATH'],
                        CALLS=str(root / 'calls'), PINNED=PINNED, DEPLOY_TIMING='1', **extra)
             initial_env = (root / 'production.env').read_text()
-            result = subprocess.run(['bash', str(root / 'deploy.sh'), PINNED],
+            result = subprocess.run(['bash', str(root / 'deploy.sh'), ref],
                                     env=env, capture_output=True, text=True)
             # Guard failures must not rewrite production.env.
             if result.returncode and ('unsupported buildable' in result.stderr or 'cannot validate Compose' in result.stderr):
                 self.assertEqual(initial_env, (root / 'production.env').read_text())
                 self.assertNotIn('phase=environment_update', result.stderr)
-            return result, (root / 'calls').read_text(), (root / 'deploy-history.log').exists()
+            return result, (root / 'calls').read_text() if (root / 'calls').exists() else '', (root / 'deploy-history.log').exists()
+
+    def test_invalid_references_fail_before_pull(self):
+        for ref in [PINNED + '&x', 'ghcr.io/test/app:tag#oops',
+                    'ghcr.io/test/app@sha256:abc', 'ghcr.io/test/app:tag\nBAD=x']:
+            with self.subTest(ref=ref):
+                result, calls, history = self.run_deploy(ref=ref)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('invalid deployment image reference', result.stderr)
+                self.assertNotIn("'pull'", calls)
+                self.assertFalse(history)
+
+    def test_explicit_tag_resolves_to_verified_digest(self):
+        result, calls, history = self.run_deploy(ref='ghcr.io/test/app:sha-deadbeef')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(history)
+        self.assertIn('.RepoDigests', calls)
+
+    def test_invalid_resolved_digest_fails_before_verification(self):
+        result, calls, history = self.run_deploy(
+            ref='ghcr.io/test/app:sha-deadbeef', RESOLVED_DIGEST=PINNED + '&unsafe')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('invalid resolved image digest', result.stderr)
+        self.assertNotIn("'run'", calls)
+        self.assertFalse(history)
+
+    def test_dependency_pull_skips_only_verified_image(self):
+        import ast
+        result, calls, history = self.run_deploy(override='services:\n  local-helper:\n    image: test/helper:ready\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        pulls = [ast.literal_eval(line) for line in calls.splitlines() if "'compose'" in line and "'pull'" in line]
+        self.assertEqual(len(pulls), 1)
+        self.assertEqual(pulls[0][-3:], ['grants', 'local-helper', 'postgres'])
+        for name in ['api', 'worker', 'migrate']:
+            self.assertNotIn(name, pulls[0])
+        self.assertTrue(history)
 
     def test_override_build_fails_before_up_or_build(self):
         result, calls, history = self.run_deploy(override='services:\n  local-helper:\n    build: .\n    profiles: [manual]\n')
