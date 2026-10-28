@@ -16,6 +16,12 @@ cd "$(dirname "$0")"
 DIR=studio
 KEEP=${STUDIO_KEEP_RELEASES:-5}
 HISTORY=$DIR/release-history.log
+TIMING_START=$SECONDS
+release_timing() {
+  if [ "${DEPLOY_TIMING:-0}" = 1 ]; then
+    printf 'studio-release-timing phase=%s total_seconds=%s\n' "$1" "$((SECONDS - TIMING_START))" >&2
+  fi
+}
 
 die() { echo "studio-release: $*" >&2; exit 1; }
 current() { readlink "$DIR/current" 2>/dev/null | sed 's|^releases/||'; }
@@ -23,6 +29,8 @@ current() { readlink "$DIR/current" 2>/dev/null | sed 's|^releases/||'; }
 # 심링크를 한 번에 바꾼다 (rename은 원자적: 요청 중간에 빈 경로가 보이지 않는다)
 switch_to() {
   local rel=$1
+  [[ "$rel" =~ ^[0-9a-f]{7,40}$ ]] || die "invalid release identifier in history"
+  [ ! -L "$DIR/releases/$rel" ] || die "release directory must not be a symlink"
   [ -f "$DIR/releases/$rel/index.html" ] || die "릴리스가 없거나 index.html이 없어요: $rel"
   ln -sfn "releases/$rel" "$DIR/current.tmp"
   mv -Tf "$DIR/current.tmp" "$DIR/current"
@@ -68,6 +76,15 @@ case "${1:-}" in
     [[ "$rel" =~ ^[0-9a-f]{7,40}$ ]] || die "커밋은 16진수 sha여야 해요: $rel"
     [ -f "$archive" ] || die "압축 파일이 없어요: $archive"
     if [ "$(current)" = "$rel" ]; then echo "studio-release: 이미 $rel 이에요"; exit 0; fi
+    # Published paths are immutable: Studio caches snapshots by canonical path.
+    # Reuse a retained release for rollback; never replace bytes under that path.
+    if [ -e "$DIR/releases/$rel" ] || [ -L "$DIR/releases/$rel" ]; then
+      [ ! -L "$DIR/releases/$rel" ] || die "release directory must not be a symlink"
+      check_release "$DIR/releases/$rel"
+      switch_to "$rel"
+      release_timing retained_release
+      exit 0
+    fi
     tmp="$DIR/releases/.$rel.tmp"
     rm -rf "$tmp"
     mkdir -p "$tmp"
@@ -83,11 +100,11 @@ case "${1:-}" in
     tar -xzf "$archive" -C "$tmp" --no-same-owner --no-same-permissions
     chmod -R u=rwX,go=rX "$tmp"
     check_release "$tmp"
-    rm -rf "${DIR:?}/releases/${rel:?}"
     mv "$tmp" "$DIR/releases/$rel"
     trap - EXIT
     switch_to "$rel"
     prune
+    release_timing install
     ;;
   build)
     # 저장소 소스(web/, tsconfig.json)에서 화면을 Node 컨테이너로 빌드해 install한다 (update.sh·build-on-server.sh)
@@ -112,7 +129,7 @@ case "${1:-}" in
     ;;
   rollback)
     [ -s "$HISTORY" ] || die "되돌릴 기록이 없어요 ($HISTORY)"
-    cur=$(current)
+    cur=$(current || true)
     prev=$(awk -v cur="$cur" '$2 != cur { p = $2 } END { print p }' "$HISTORY")
     [ -n "$prev" ] || die "지금과 다른 이전 릴리스가 기록에 없어요"
     switch_to "$prev"
