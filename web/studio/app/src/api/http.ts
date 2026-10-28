@@ -91,8 +91,11 @@ async function send<T>(path: string, opts: ReqOptions): Promise<T> {
   opts.signal?.addEventListener('abort', abort, { once: true });
   if (opts.signal?.aborted) ctrl.abort();
   let res: Response;
+  let text: string;
   try {
     res = await fetch(`${API_BASE}${path}`, { method, headers, body, credentials: 'include', signal: ctrl.signal, cache: 'no-store' });
+    // Keep the deadline and caller cancellation active through body consumption.
+    text = await res.text();
   } catch (e) {
     const aborted = e instanceof DOMException && e.name === 'AbortError';
     // 기기가 온라인인데 연결 자체가 안 되면 서버 쪽 문제로 본다 (오프라인은 SystemStatus가 따로 알린다)
@@ -103,7 +106,6 @@ async function send<T>(path: string, opts: ReqOptions): Promise<T> {
     opts.signal?.removeEventListener('abort', abort);
   }
 
-  const text = await res.text();
   let data: unknown = null;
   if (text) {
     try { data = JSON.parse(text); } catch { data = null; }
@@ -237,7 +239,14 @@ export async function downloadFile(path: string, fallbackName: string): Promise<
     throw new ApiError(messageForCode(code, res.status), res.status, code);
   }
   const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? fallbackName;
-  const url = URL.createObjectURL(await res.blob());
+  let blob: Blob;
+  try {
+    blob = await res.blob();
+  } catch {
+    if (navigator.onLine) reportServerIssue({ kind: 'down', status: 0, code: 'NETWORK' });
+    throw new ApiError('네트워크 연결을 확인해 주세요.', 0, 'NETWORK');
+  }
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = name;

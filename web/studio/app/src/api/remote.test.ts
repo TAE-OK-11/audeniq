@@ -537,3 +537,42 @@ describe('download outage reporting', () => {
     } finally { window.removeEventListener(SERVER_ISSUE_EVENT, listener); }
   });
 });
+
+describe('response body deadline', () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+
+  it('times out a stalled body after headers arrive', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => ({
+      text: () => new Promise((_resolve, reject) => {
+        init.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+      }),
+    })));
+    const result = expect(http.req('/api/body-deadline', { timeoutMs: 100 })).rejects.toMatchObject({ code: 'TIMEOUT' });
+    await vi.advanceTimersByTimeAsync(100);
+    await result;
+  });
+
+  it('reports a connection lost while reading a body', async () => {
+    const listener = vi.fn();
+    window.addEventListener(SERVER_ISSUE_EVENT, listener);
+    try {
+      vi.stubGlobal('fetch', vi.fn(async () => ({ text: async () => { throw new TypeError('connection reset'); } })));
+      await expect(http.req('/api/body-reset')).rejects.toMatchObject({ code: 'NETWORK' });
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally { window.removeEventListener(SERVER_ISSUE_EVENT, listener); }
+  });
+});
+
+describe('download body interruption', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it('reports an outage when a successful download loses its body', async () => {
+    const listener = vi.fn();
+    window.addEventListener(SERVER_ISSUE_EVENT, listener);
+    try {
+      vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, headers: new Headers(), blob: async () => { throw new TypeError('connection reset'); } })));
+      await expect(downloadFile('/api/report.csv', 'report.csv')).rejects.toMatchObject({ code: 'NETWORK' });
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally { window.removeEventListener(SERVER_ISSUE_EVENT, listener); }
+  });
+});
