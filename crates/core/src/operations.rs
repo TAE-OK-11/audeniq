@@ -192,6 +192,7 @@ pub fn job_lease_seconds() -> i32 {
 /// Handlers are idempotent under lease-expiry retry already; this only makes
 /// the retry happen now instead of after JOB_LEASE_SECONDS.
 pub async fn release_lease(pool: &PgPool, id: Uuid, token: Uuid) -> Result<bool> {
+    let mut tx = pool.begin().await?;
     let n = sqlx::query(
         "UPDATE operations.jobs SET status='QUEUED', attempts=GREATEST(attempts-1,0), lock_token=NULL,
          lease_until=NULL, run_at=now(), last_error='RELEASED_ON_SHUTDOWN'
@@ -199,9 +200,22 @@ pub async fn release_lease(pool: &PgPool, id: Uuid, token: Uuid) -> Result<bool>
     )
     .bind(id)
     .bind(token)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?
     .rows_affected();
+    if n == 1 {
+        audit(
+            &mut tx,
+            None,
+            None,
+            Some(id),
+            "job.lease_released",
+            "RELEASED_ON_SHUTDOWN",
+            Uuid::new_v4(),
+        )
+        .await?;
+    }
+    tx.commit().await?;
     Ok(n == 1)
 }
 
