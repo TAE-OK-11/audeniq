@@ -188,6 +188,25 @@ bash ./check-cpu.sh "$image_arch" "$target_cpu"
 # Refuse a kernel/container profile that would leave upload parsers unconfined.
 docker run --rm --network none --cap-drop ALL --read-only   --security-opt no-new-privileges --entrypoint audeniq-admin "$PINNED" upload-sandbox-check   || die "업로드 샌드박스 실행 실패: Landlock ABI 3 이상과 seccomp 허용을 확인해 주세요"
 
+# Resolve every loaded compose file (including inactive profiles) without
+# printing the interpolated model: it contains production secrets. Only the
+# explicitly built PgBouncer is allowed to retain a build definition. Building
+# arbitrary overrides could replace the verified API/worker image locally.
+command -v python3 >/dev/null || die "python3 is required to check Compose build definitions"
+if ! extra_builds=$(AUDENIQ_IMAGE="$PINNED" "${COMPOSE[@]}" --profile '*' config --format json 2>/dev/null | python3 -c '
+import json, sys
+model = json.load(sys.stdin)
+services = model["services"]
+for name, service in sorted(services.items()):
+    if "build" in service and service["build"] is not None and name != "pgbouncer":
+        print(name)
+' 2>/dev/null); then
+  die "cannot validate Compose build definitions; check compose files and required environment values (config --format json requires Docker Compose v2)"
+fi
+if [ -n "$extra_builds" ]; then
+  die "unsupported buildable Compose services: $extra_builds; prepare each image separately, set its image reference and remove its build definition before deploying with --no-build — rollback: ./deploy.sh --rollback"
+fi
+
 timing_phase environment_update
 PREVIOUS=$(current_image)
 tmp=$(mktemp "$ENV_FILE.XXXXXX")
@@ -212,10 +231,10 @@ timing_phase dependency_pull
   || echo "deploy: 경고 — postgres 등 이미지 갱신 실패, 서버에 있는 이미지로 계속" >&2
 timing_phase pgbouncer_build
 # Keep the base refresh and let Docker validate all build inputs/cache keys.
-# Build once, then forbid implicit rebuilds in both up calls. On registry
-# failure, retain the previous local-cache build fallback (and rollback hint).
+# Build once, then forbid implicit rebuilds in both up calls. If the build
+# with base refresh fails, retry without --pull and retain the rollback hint.
 if ! "${COMPOSE[@]}" build --pull --quiet pgbouncer; then
-  echo "deploy: 경고 — pgbouncer 바탕 이미지 갱신 실패, 캐시로 계속" >&2
+  echo "deploy: 경고 — pgbouncer build --pull 실패, --pull 없이 다시 빌드" >&2
   "${COMPOSE[@]}" build --quiet pgbouncer \
     || die "DB startup (postgres → migrate → grants → pgbouncer) 실패; 확인: docker compose logs migrate grants pgbouncer — 되돌리려면: ./deploy.sh --rollback"
 fi
@@ -249,7 +268,7 @@ wait_database() {
 }
 timing_phase database_readiness
 wait_database
-# PgBouncer was already built successfully above.
+# All permitted build definitions were handled by the PgBouncer build above.
 timing_phase runtime_start_and_drain
 if ! "${COMPOSE[@]}" up -d --no-build --remove-orphans; then
   "${COMPOSE[@]}" logs --tail 80 migrate grants pgbouncer api worker || true
