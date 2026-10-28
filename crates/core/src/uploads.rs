@@ -836,6 +836,17 @@ pub struct StoredImage {
 
 /// Reads the registered image `id` of `org`; the caller authorizes.
 pub async fn stored_image(s: &AppState, org: Uuid, id: Uuid) -> Result<StoredImage> {
+    stored_image_with(&s.pool, &s.storage, s.antivirus_enabled, org, id).await
+}
+
+/// Shared worker/API admission: exact safety policy, caps and source hash.
+pub(crate) async fn stored_image_with(
+    pool: &sqlx::PgPool,
+    storage: &std::sync::Arc<dyn crate::storage::ObjectStore>,
+    antivirus_enabled: bool,
+    org: Uuid,
+    id: Uuid,
+) -> Result<StoredImage> {
     let row = sqlx::query(
         "SELECT a.object_key, a.content_type, a.size_bytes, a.sha256
            FROM catalog.assets a
@@ -846,8 +857,8 @@ pub async fn stored_image(s: &AppState, org: Uuid, id: Uuid) -> Result<StoredIma
     )
     .bind(org)
     .bind(id)
-    .bind(s.antivirus_enabled)
-    .fetch_optional(&s.pool)
+    .bind(antivirus_enabled)
+    .fetch_optional(pool)
     .await?
     .ok_or(Error::NotFound)?;
     let size: i64 = row.get("size_bytes");
@@ -857,7 +868,7 @@ pub async fn stored_image(s: &AppState, org: Uuid, id: Uuid) -> Result<StoredIma
     let sha256: String = row
         .get::<Option<String>, _>("sha256")
         .ok_or(Error::NotFound)?;
-    let bytes = s.storage.get(&row.get::<String, _>("object_key")).await?;
+    let bytes = storage.get(&row.get::<String, _>("object_key")).await?;
     if bytes.len() as i64 != size || crate::domain::sha256_hex(&bytes) != sha256 {
         tracing::warn!(asset = %id, "stored image does not match its recorded hash");
         return Err(Error::NotFound);

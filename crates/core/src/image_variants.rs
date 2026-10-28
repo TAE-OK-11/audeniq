@@ -7,6 +7,10 @@ use sqlx::Row;
 
 /// Explicit opt-in only. A wildcard is insufficient evidence of decoder support.
 pub(crate) fn quality(accept: Option<&str>, format: &str) -> f32 {
+    explicit_quality(accept, format).unwrap_or(0.0)
+}
+
+fn explicit_quality(accept: Option<&str>, format: &str) -> Option<f32> {
     let wanted = format!("image/{format}");
     let mut quality: Option<f32> = None;
     for part in accept.unwrap_or("").split(',') {
@@ -34,7 +38,16 @@ pub(crate) fn quality(accept: Option<&str>, format: &str) -> f32 {
         }
         quality = Some(quality.map_or(q, |old| old.min(q)));
     }
-    quality.unwrap_or(0.0)
+    quality
+}
+
+/// An AVIF opt-in permits the requested WebP fallback if AVIF is unavailable.
+/// An explicit WebP exclusion always wins; wildcards alone never opt in.
+pub(crate) fn accepts_variant(accept: Option<&str>, format: &str) -> bool {
+    quality(accept, format) > 0.0
+        || (format == "webp"
+            && quality(accept, "avif") > 0.0
+            && explicit_quality(accept, "webp").is_none())
 }
 
 /// Parent authorization and safety/hash checks have already run. Derivative
@@ -43,7 +56,7 @@ pub(crate) fn quality(accept: Option<&str>, format: &str) -> f32 {
 pub async fn negotiate(s: &AppState, mut image: StoredImage, h: &HeaderMap) -> StoredImage {
     let accept = h.get(header::ACCEPT).and_then(|v| v.to_str().ok());
     for format in ["avif", "webp"] {
-        if quality(accept, format) <= 0.0 {
+        if !accepts_variant(accept, format) {
             continue;
         }
         let mime = if format == "avif" {
@@ -93,6 +106,19 @@ pub(crate) fn verified(bytes: &[u8], size: i64, digest: &str, mime: &str) -> boo
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn avif_falls_back_to_webp_unless_explicitly_excluded() {
+        assert!(accepts_variant(Some("image/avif"), "webp"));
+        assert!(accepts_variant(Some("image/avif,image/webp"), "webp"));
+        for value in [
+            "*/*",
+            "image/avif;q=0",
+            "image/avif,image/webp;q=0",
+            "image/avif,image/webp;q=broken",
+        ] {
+            assert!(!accepts_variant(Some(value), "webp"));
+        }
+    }
     #[test]
     fn explicit_formats_and_quality_exclusions() {
         for value in [

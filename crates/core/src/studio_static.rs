@@ -258,7 +258,7 @@ impl Snapshot {
 
     fn serve(&self, req: &Request, asset: &Asset, rule_path: &str, fallback: bool) -> Response {
         // Sidecars preserve the source: cover.jpg.avif / cover.jpg.webp.
-        // Only an explicitly accepted format is eligible (not image/* or */*).
+        // Explicit AVIF allows WebP fallback unless excluded; wildcards do not opt in.
         let raster = matches!(asset.content_type, "image/jpeg" | "image/png");
         let asset = if raster {
             let accept = req
@@ -268,7 +268,7 @@ impl Snapshot {
             ["avif", "webp"]
                 .into_iter()
                 .find_map(|format| {
-                    (crate::image_variants::quality(accept, format) > 0.0)
+                    crate::image_variants::accepts_variant(accept, format)
                         .then(|| self.files.get(&format!("{rule_path}.{format}")))
                         .flatten()
                 })
@@ -924,6 +924,24 @@ mod tests {
         assert_eq!(
             text(get(&studio, "/webp.jpg", &[("accept", "image/avif,image/webp")]).await).await,
             "WEBP"
+        );
+        let fallback = get(&studio, "/webp.jpg", &[("accept", "image/avif")]).await;
+        assert_eq!(
+            fallback.headers()["cache-control"],
+            "public, max-age=3600, must-revalidate"
+        );
+        assert_eq!(text(fallback).await, "WEBP");
+        assert_eq!(
+            text(
+                get(
+                    &studio,
+                    "/webp.jpg",
+                    &[("accept", "image/avif,image/webp;q=0")]
+                )
+                .await
+            )
+            .await,
+            "JPEG"
         );
     }
 

@@ -73,6 +73,11 @@ rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs"
 # Pure Rust JPEG/PNG decode + lossless WebP; no default/native/AVIF codecs.
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 
+# Measured bundled-C libwebp; no codec executable. See round-4 offline report.
+webp = { version = "=0.3.1", default-features = false }
+# Disable assembly/tooling and threading; worker runs one codec at a time.
+ravif = { version = "=0.13.0", default-features = false }
+
 [dev-dependencies]
 # Independent oracle for the in-crate MD5 (crate::md5) tests only.
 md5_reference = { package = "md-5", version = "0.11.0" }
