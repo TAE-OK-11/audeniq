@@ -609,36 +609,41 @@ body:has(.auth-page){background:transparent}
   .auth-page>.aq-auth-brand{margin-bottom:18px}
   .auth-page>.aq-auth-brand img{width:118px}
 }
-/* 로그인만 정리 — 공유 인증 카드와 루트 배경은 그대로 둔다. */
-.auth-card.ui-card:has(.aq-login-form){box-shadow:var(--aq-shadow-lift)}
+/* 로그인만 노카드 — 구글 구조(카드 없는 한 열) + 어데닉 토큰.
+   회원가입·계정 찾기는 공유 인증 카드를 그대로 쓴다.
+   로그인 페이지에서만 루트 흐림 원을 끄고(흰 바탕), 카드 껍질을 벗긴다.
+   카드 안에서는 흰색이던 입력칸이 흰 바탕에서 안 보이므로, 로그인 입력칸은
+   회색 면·옅은 파랑 포커스로 되돌리고, 비밀번호 보기 알약은 흰색으로 둔다. */
+html:has(.aq-login-form){background-image:none}
+.auth-card.ui-card:has(.aq-login-form){
+  --aq-field-bg:var(--aq-field);--aq-field-hover-bg:var(--aq-field-hover);--aq-field-focus-bg:var(--aq-blue-150);
+  background:transparent;box-shadow:none;border-radius:0;padding:0;
+}
+.auth-card:has(.aq-login-form) .aq-auth-head .ui-icon{display:none}
 .auth-card:has(.aq-login-form) .aq-auth-head{margin-bottom:32px}
 .aq-login-form .ui-field{margin-bottom:20px}
-.aq-login-form .auth-submit{min-height:var(--aq-h-lg)}
+.aq-login-form .auth-submit{min-height:var(--aq-h-lg);--btn-r:var(--aq-r-ctl-lg)}
 .aq-login-form .aq-passkey-btn{
   --btn-bg:var(--aq-blue-200);--btn-bg-hover:var(--aq-blue-300);--btn-fg:var(--aq-primary-text);
+  --btn-r:var(--aq-r-ctl-md);
+  min-height:var(--aq-h-md);
   margin-top:12px;gap:10px;
 }
+.aq-login-form .aq-password-toggle{background:#fff}
 .auth-card:has(.aq-login-form) .auth-links{flex-wrap:wrap;column-gap:16px;row-gap:12px;margin-top:28px;line-height:1.6}
 .auth-card:has(.aq-login-form) .auth-links a{white-space:nowrap}
 /* iOS의 브라우저 바를 제외한 높이에 맞춘 로그인 간격.
    오류·키보드·추가 로그인 제공자로 내용이 늘면 자연스럽게 스크롤한다. */
 @media (max-width:760px){
   .auth-page:has(.aq-login-form){padding:var(--aq-s-4) var(--aq-s-5)}
-  .auth-page:has(.aq-login-form)>.aq-auth-brand{margin-bottom:var(--aq-s-3)}
+  .auth-page:has(.aq-login-form)>.aq-auth-brand{margin-bottom:var(--aq-s-4)}
   .auth-card.ui-card:has(.aq-login-form){
     --aq-field-h:var(--aq-h-md);--aq-field-r:var(--aq-r-ctl-md);
-    padding:var(--aq-s-5);
   }
-  .auth-card:has(.aq-login-form) .aq-auth-head{
-    display:grid;grid-template-columns:auto minmax(0,1fr);
-    column-gap:var(--aq-s-3);row-gap:var(--aq-s-1);margin-bottom:var(--aq-s-5);
-  }
-  .auth-card:has(.aq-login-form) .aq-auth-head .ui-icon{grid-row:span 2;margin-bottom:0}
-  .auth-card:has(.aq-login-form) .aq-auth-head .auth-sub{margin:0}
-  .aq-login-form .ui-field{margin-bottom:var(--aq-s-3)}
-  .aq-login-form .auth-submit{min-height:var(--aq-h-md);margin-top:var(--aq-s-1)}
-  .aq-login-form .aq-passkey-btn{margin-top:var(--aq-s-3);gap:var(--aq-s-2)}
-  .auth-card:has(.aq-login-form) .auth-links{margin-top:var(--aq-s-4)}
+  .aq-login-form .ui-field{margin-bottom:var(--aq-s-4)}
+  .aq-login-form .auth-submit{min-height:var(--aq-h-lg);--btn-r:var(--aq-r-ctl-lg);margin-top:var(--aq-s-1)}
+  .aq-login-form .aq-passkey-btn{margin-top:var(--aq-s-3);gap:var(--aq-s-2);min-height:var(--aq-h-md);--btn-r:var(--aq-r-ctl-md)}
+  .auth-card:has(.aq-login-form) .auth-links{margin-top:var(--aq-s-5)}
   .auth-page:has(.aq-login-form)>.auth-foot{
     min-height:var(--aq-h-md);margin:var(--aq-s-3) 0 0;
   }
