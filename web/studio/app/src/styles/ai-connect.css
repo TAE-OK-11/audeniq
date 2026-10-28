@@ -6,29 +6,29 @@
 
 /* 요청한 앱 — 신청서의 고르는 카드(aq-choice)와 같은 면 */
 .aq-connect-app-row{display:flex;align-items:center;gap:12px;padding:16px 18px;margin:4px 0 8px;border-radius:var(--aq-r-lg);background:var(--aq-gray-50)}
-.aq-connect-app-row strong{display:block;font-size:15px;font-weight:700;color:var(--aq-text)}
-.aq-connect-app-row small{display:block;font-size:13px;color:var(--aq-text-3)}
+.aq-connect-app-row strong{display:block;font-size:var(--aq-fs-lg);font-weight:var(--aq-fw-bold);color:var(--aq-text)}
+.aq-connect-app-row small{display:block;font-size:var(--aq-fs-sm);color:var(--aq-text-3)}
 .aq-connect-app-row .min-0{flex:1}
-.aq-connect-app-mark{display:grid;place-items:center;flex:none;width:40px;height:40px;border-radius:var(--aq-r-sm);background:var(--aq-primary-soft);color:var(--aq-primary-text);font-weight:800;font-size:17px}
+.aq-connect-app-mark{display:grid;place-items:center;flex:none;width:var(--aq-h-sm);height:var(--aq-h-sm);border-radius:var(--aq-r-sm);background:var(--aq-primary-soft);color:var(--aq-primary-text);font-weight:var(--aq-fw-heavy);font-size:17px}
 
-.aq-connect-tag{display:inline-flex;align-items:center;height:22px;margin-left:6px;padding:0 8px;border-radius:var(--aq-r-xs);background:var(--aq-gray-100);color:var(--aq-text-3);font-size:11.5px;font-weight:700;vertical-align:2px}
+.aq-connect-tag{display:inline-flex;align-items:center;height:22px;margin-left:6px;padding:0 8px;border-radius:var(--aq-r-xs);background:var(--aq-gray-100);color:var(--aq-text-3);font-size:11.5px;font-weight:var(--aq-fw-bold);vertical-align:2px}
 .aq-connect-tag.is-warn{background:var(--aq-amber-50);color:var(--aq-amber-700)}
 .aq-connect-tag.is-ok{flex:none;margin:0;background:var(--aq-green-50);color:var(--aq-green-700)}
 .aq-option.is-locked{cursor:default}
 
 /* 연결 코드 */
 .aq-connect-code-box{padding:18px;border-radius:var(--aq-r-lg);background:var(--aq-gray-50);text-align:center;font:800 26px/1.2 var(--font-mono);letter-spacing:.12em;color:var(--aq-text)}
-.aq-connect-code-input{text-align:center;font-family:var(--font-mono)!important;font-size:22px!important;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+.aq-connect-code-input{text-align:center;font-family:var(--font-mono)!important;font-size:var(--aq-fs-title-lg)!important;font-weight:var(--aq-fw-heavy);letter-spacing:.14em;text-transform:uppercase}
 
 .aq-connect-presets{margin-bottom:14px}
 
 /* 어떤 권한을 줘도 지켜지는 것 · 허용한 일 */
 .aq-connect-promise{display:grid;gap:10px;margin:0 0 8px;padding:16px 18px;border-radius:var(--aq-r-lg);background:var(--aq-gray-50);list-style:none}
-.aq-connect-promise li{position:relative;padding-left:24px;color:var(--aq-text-2);font-size:14px;line-height:1.55;word-break:keep-all}
+.aq-connect-promise li{position:relative;padding-left:24px;color:var(--aq-text-2);font-size:var(--aq-fs-md);line-height:1.55;word-break:keep-all}
 .aq-connect-promise li::before{content:"";position:absolute;left:0;top:3px;width:16px;height:16px;border-radius:50%;background:var(--aq-primary-soft) var(--aq-icon-check) center/0 no-repeat}
 .aq-connect-promise li::after{content:"";position:absolute;left:4px;top:7px;width:8px;height:8px;background:var(--aq-primary);-webkit-mask:var(--aq-icon-check) center/contain no-repeat;mask:var(--aq-icon-check) center/contain no-repeat}
 
-.aq-connect-facts{display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;margin:18px 2px 0;font-size:13px}
+.aq-connect-facts{display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;margin:18px 2px 0;font-size:var(--aq-fs-sm)}
 .aq-connect-facts dt{color:var(--aq-text-4,#9AA3B2)}
 .aq-connect-facts dd{margin:0;min-width:0;color:var(--aq-text-3);overflow-wrap:anywhere}
 
@@ -39,17 +39,17 @@
 .aq-connect-scope-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:24px}
 .aq-connect-scope-head .subhead{margin:0 0 12px}
 .aq-connect-scope-head .aq-connect-presets{margin:0 0 12px}
-.aq-connect-scope-head .ui-chip{min-width:0!important;height:34px;padding:0 12px;font-size:13px}
+.aq-connect-scope-head .ui-chip{min-width:0!important;height:34px;padding:0 12px;font-size:var(--aq-fs-sm)}
 .aq-connect-code-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:8px 0 0;padding:14px 18px;border-radius:var(--aq-r-lg);background:var(--aq-gray-50)}
-.aq-connect-code-row span{color:var(--aq-text-3);font-size:13px}
+.aq-connect-code-row span{color:var(--aq-text-3);font-size:var(--aq-fs-sm)}
 .aq-connect-code-row strong{font:800 20px/1.2 var(--font-mono);letter-spacing:.1em;color:var(--aq-text);white-space:nowrap}
 
 /* 항상 포함되는 권한은 고르는 카드가 아니라 한 줄 안내로 */
-.aq-connect-always{display:flex;align-items:flex-start;gap:8px;margin:0 0 10px;padding:12px 16px;border-radius:var(--aq-r-lg);border:1px dashed var(--aq-gray-200,#E3E7EE);color:var(--aq-text-3);font-size:13px;line-height:1.55;word-break:keep-all}
+.aq-connect-always{display:flex;align-items:flex-start;gap:8px;margin:0 0 10px;padding:12px 16px;border-radius:var(--aq-r-lg);border:1px dashed var(--aq-gray-200,#E3E7EE);color:var(--aq-text-3);font-size:var(--aq-fs-sm);line-height:1.55;word-break:keep-all}
 .aq-connect-always .aq-connect-tag{flex:none;margin:0}
 /* 앱 확인 주소 같은 기술 정보는 접어 둔다 */
-.aq-connect-more{margin:14px 2px 0;font-size:13px}
-.aq-connect-more summary{cursor:pointer;color:var(--aq-text-3);font-weight:600;list-style:none}
+.aq-connect-more{margin:14px 2px 0;font-size:var(--aq-fs-sm)}
+.aq-connect-more summary{cursor:pointer;color:var(--aq-text-3);font-weight:var(--aq-fw-medium);list-style:none}
 .aq-connect-more summary::-webkit-details-marker{display:none}
 .aq-connect-more summary::after{content:"›";display:inline-block;margin-left:6px;transition:transform .15s}
 .aq-connect-more[open] summary::after{transform:rotate(90deg)}
@@ -69,26 +69,26 @@
 /* 승인 화면 (/ai/approve/:id, /ai/actions/:id) — 계정 정보 화면(pages/Profile.tsx)의 프로필 줄·묶음 카드
    (aq-set-profile·aq-set-card·aq-set-row)를 그대로 쓰고, 보여 주기만 하는 줄과 두 줄 항목만 여기 둔다 */
 .aq-flow-hero>.ui-icon{margin:4px 0 20px}
-.aq-flow-avatar{display:grid!important;place-items:center;width:56px!important;height:56px!important;margin:4px 0 20px!important;font-size:24px!important;font-weight:800;border-radius:18px!important}
+.aq-flow-avatar{display:grid!important;place-items:center;width:var(--aq-h-lg)!important;height:var(--aq-h-lg)!important;margin:4px 0 20px!important;font-size:24px!important;font-weight:var(--aq-fw-heavy);border-radius:var(--aq-r-lg)!important}
 .aq-flow-row{cursor:default;align-items:flex-start;min-height:0;padding:14px 14px;gap:16px}
 .aq-flow-row:active{transform:none!important;filter:none!important}
 @media (hover:hover){.aq-set-card .aq-flow-row:hover{background:none}}
-.aq-flow-row .aq-set-label{font-size:15px;color:var(--aq-text-3);font-weight:500}
-.aq-flow-row .aq-set-value{font-size:15px;font-weight:600;color:var(--aq-text);white-space:pre-wrap;overflow:visible;overflow-wrap:anywhere;word-break:keep-all}
+.aq-flow-row .aq-set-label{font-size:var(--aq-fs-lg);color:var(--aq-text-3);font-weight:500}
+.aq-flow-row .aq-set-value{font-size:var(--aq-fs-lg);font-weight:var(--aq-fw-medium);color:var(--aq-text);white-space:pre-wrap;overflow:visible;overflow-wrap:anywhere;word-break:keep-all}
 .aq-flow-row.is-stack{flex-direction:column;gap:4px}
 .aq-flow-row.is-stack .aq-set-value{text-align:left;font-weight:500;line-height:1.6}
 .aq-flow-item{display:grid;gap:4px;padding:12px 14px 14px}
-.aq-flow-item strong{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:16px;font-weight:700;color:var(--aq-text)}
-.aq-flow-item span{color:var(--aq-text-3);font-size:14px;line-height:1.55;word-break:keep-all}
-.aq-flow-note{margin:2px 14px 10px;padding:12px 14px;border-radius:var(--aq-r-lg);background:var(--aq-amber-50);color:var(--aq-amber-700);font-size:13px;line-height:1.6;word-break:keep-all}
-.aq-flow-fine{margin:14px 2px 0;color:var(--aq-text-3);font-size:13px;line-height:1.6;word-break:keep-all}
+.aq-flow-item strong{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:var(--aq-fs-title-sm);font-weight:var(--aq-fw-bold);color:var(--aq-text)}
+.aq-flow-item span{color:var(--aq-text-3);font-size:var(--aq-fs-md);line-height:1.55;word-break:keep-all}
+.aq-flow-note{margin:2px 14px 10px;padding:12px 14px;border-radius:var(--aq-r-lg);background:var(--aq-amber-50);color:var(--aq-amber-700);font-size:var(--aq-fs-sm);line-height:1.6;word-break:keep-all}
+.aq-flow-fine{margin:14px 2px 0;color:var(--aq-text-3);font-size:var(--aq-fs-sm);line-height:1.6;word-break:keep-all}
 .aq-flow-set{margin-bottom:12px}
 /* 남은 시간 — 아래에 마감 시각, 5분 안 남으면 주황 */
-.aq-flow-row .aq-set-value small{display:block;margin-top:2px;font-size:13px;font-weight:500;color:var(--aq-text-3)}
+.aq-flow-row .aq-set-value small{display:block;margin-top:2px;font-size:var(--aq-fs-sm);font-weight:500;color:var(--aq-text-3)}
 .aq-flow-soon{color:var(--aq-amber-700)}
-.aq-flow-me{--av:32px;font-size:13px;cursor:default}
-.aq-connect-who{margin:-6px 2px 12px;color:var(--aq-text-3);font-size:13px;overflow-wrap:anywhere}
+.aq-flow-me{--av:32px;font-size:var(--aq-fs-sm);cursor:default}
+.aq-connect-who{margin:-6px 2px 12px;color:var(--aq-text-3);font-size:var(--aq-fs-sm);overflow-wrap:anywhere}
 /* 아는 AI 앱은 공식 로고(BrandMark) — 맨 위는 아바타와 같은 56px 둥근 칸 */
-.aq-flow-avatar-logo{margin:4px 0 20px;border-radius:18px}
+.aq-flow-avatar-logo{margin:4px 0 20px;border-radius:var(--aq-r-lg)}
 .aq-connect-app-row .aq-flow-brand{border-radius:var(--aq-r-sm)}
-.aq-connect-about{margin:-2px 2px 10px;color:var(--aq-text-3);font-size:13px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+.aq-connect-about{margin:-2px 2px 10px;color:var(--aq-text-3);font-size:var(--aq-fs-sm);line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}

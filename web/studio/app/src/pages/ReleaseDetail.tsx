@@ -1,3 +1,4 @@
+import { releaseDetailVisibility } from '../lib/releaseDetailVisibility';
 import { ReadFailure } from '../components/ReadFailure';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from '../lib/router';
@@ -176,8 +177,11 @@ export function ReleaseDetail() {
     u.searchParams.delete('track');
     window.history.replaceState(window.history.state, '', `${u.pathname}${u.search}${u.hash}`);
   }, [wantTrack, rel]);
-  // 주소로 '성과'를 열었는데 아직 발매 전이면 정보 탭으로
-  useEffect(() => { if (tab === 'stats' && rel && rel.status !== 'live' && rel.status !== 'closed') setTab('overview'); }, [tab, rel]);
+  const visibleTabs = rel ? releaseDetailVisibility(rel.status, rel.tracks.length, rel.draft?.history?.length ?? 0,
+    !!rel.draft?.application || docsForRelease(allDocs, rel.id, rel.title).length > 0) : null;
+  const activeTab = visibleTabs && !visibleTabs[tab as keyof typeof visibleTabs] ? 'overview' : tab;
+  // URL로 숨겨진 탭을 열거나 상태가 바뀌어도 빈 패널을 남기지 않는다.
+  useEffect(() => { if (tab !== activeTab) setTab(activeTab); }, [tab, activeTab]);
 
   if (loading && !rel) {
     // 불러오는 동안에도 실제 화면과 같은 뼈대 — '발매 목록' 링크는 데이터와 상관없으니 그대로 두고, 큰 카드 자리도 같은 높이로.
@@ -454,13 +458,13 @@ export function ReleaseDetail() {
 
       <div ref={tabsAnchor} aria-hidden="true" />
       <div ref={tabsBox} className="aq-detail-tabs" style={{ top: stickTop }}>
-        <Tabs label="발매 상세 메뉴" value={tab} items={released ? DETAIL_TABS : DETAIL_TABS.filter(x => x.value !== 'stats')} onChange={changeTab} className="is-fill" />
+        <Tabs label="발매 상세 메뉴" value={activeTab} items={DETAIL_TABS.filter(x => visibleTabs?.[x.value as keyof typeof visibleTabs])} onChange={changeTab} className="is-fill" />
       </div>
 
       {/* 탭을 붙인 채로 바꾸면 짧은 탭도 그 자리를 지킬 만큼 높이를 둔다 */}
-      <div id="releaseDetailBody" className="ui-tab-panel" key={tab}
+      <div id="releaseDetailBody" className="ui-tab-panel" key={activeTab}
         style={keepY !== null ? { minHeight: `calc(100dvh - ${stickTop + (tabsBox.current?.offsetHeight ?? 0)}px)` } : undefined}>
-        {tab === 'overview' && (
+        {activeTab === 'overview' && (
           <div className="aq-detail-stack">
             {prep && <AlbumPrep items={prep} go={prepGo} />}
             {/* 커버가 없으면 빈 커버 카드 대신 발매 정보를 넓게 — 커버 올리기는 위 '발매 준비'에서 */}
@@ -559,11 +563,11 @@ export function ReleaseDetail() {
           </div>
         )}
 
-        {tab === 'stats' && released && <ReleaseStats releaseId={rel.id} title={rel.title} />}
+        {activeTab === 'stats' && released && <ReleaseStats releaseId={rel.id} title={rel.title} />}
 
-        {tab === 'delivery' && (
+        {activeTab === 'delivery' && (
           <div className="aq-detail-stack">
-            <section className="aq-relinfo-card">
+            {!isDraft && <section className="aq-relinfo-card">
               <h2 className="subhead">배급 설정</h2>
               <dl className="ui-kv is-2">
                 <div><dt>배급 지역</dt><dd>{territorySummary(d?.territories)}</dd></div>
@@ -577,7 +581,7 @@ export function ReleaseDetail() {
                   <span className="muted small">플랫폼 미선택</span>
                 )}
               </div>
-            </section>
+            </section>}
             {delivery.error && <ReadFailure label="배급 진행" retry={async () => delivery.reload()} />}
             {!!delivery.data?.length && (
               <section className="aq-relinfo-card">
@@ -597,7 +601,7 @@ export function ReleaseDetail() {
                 </ul>
               </section>
             )}
-            <section className="aq-relinfo-card">
+            {(!isDraft || !!(d?.ownership || d?.phonogram || d?.copyright)) && <section className="aq-relinfo-card">
               <div className="ui-section-head">
                 <h2 className="subhead">권리</h2>
                 {rightsOk(d?.rightsChecks, d?.options)
@@ -609,8 +613,8 @@ export function ReleaseDetail() {
                 <div><dt>℗ 표기</dt><dd>{d?.phonogram || <Empty>입력 전</Empty>}</dd></div>
                 <div><dt>© 표기</dt><dd>{d?.copyright || <Empty>입력 전</Empty>}</dd></div>
               </dl>
-            </section>
-            <section className="aq-relinfo-card">
+            </section>}
+            {(!isDraft || !!d?.application || !!agreementDoc) && <section className="aq-relinfo-card">
               <h2 className="subhead">계약</h2>
               <ContractBundle
                 compact releaseId={rel.id} releaseTitle={rel.title}
@@ -618,7 +622,7 @@ export function ReleaseDetail() {
                 hasApplication={!!d?.application || !isDraft}
                 onOpenAgreement={docId => nav(`/contracts?doc=${encodeURIComponent(docId)}`)}
               />
-            </section>
+            </section>}
             {docs.some(x => x.kind === 'rights') && (
               <section className="aq-relinfo-card">
                 <h2 className="subhead">권리 서류</h2>
@@ -637,7 +641,7 @@ export function ReleaseDetail() {
           </div>
         )}
 
-        {tab === 'manage' && (
+        {activeTab === 'manage' && (
           // 발매 뒤에 하는 일을 성격별로 묶는다 — 카드 8장이 한 줄로 쌓이면 무엇이 어디 있는지 안 보인다
           <div className="aq-detail-stack">
             {isDraft ? <SplitsCard releaseId={rel.id} /> : (
@@ -670,7 +674,7 @@ export function ReleaseDetail() {
           </div>
         )}
 
-        {tab === 'history' && (
+        {activeTab === 'history' && (
           <div className="aq-relinfo-card">
             <h2 className="subhead">변경 기록</h2>
             {d?.history?.length ? (

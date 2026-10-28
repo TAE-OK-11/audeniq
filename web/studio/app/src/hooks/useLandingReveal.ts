@@ -1,6 +1,6 @@
 // 홈 등장 연출 — audeniq.com 랜딩과 같은 움직임만 가져온다 (색·배치는 스튜디오 그대로).
-// 덩어리가 16px 아래에서 떠오르고, 첫 화면은 날짜 → 이름 → 인사 → 큰 카드 순으로 몇십 ms씩 차이를 둔다(0.6초).
-// 화면 밖 덩어리는 스크롤로 화면에 닿기 조금 전에 시작해 더 짧게(0.48초) — 화면 안에 들어온 뒤에야 시작하면
+// 덩어리가 16px 아래에서 떠오르고, 첫 화면은 날짜 → 이름 → 인사 → 큰 카드 순으로 몇십 ms씩 차이를 둔다(0.36초).
+// 화면 밖 덩어리는 스크롤로 화면에 닿기 조금 전에 시작해 더 짧게(0.28초) — 화면 안에 들어온 뒤에야 시작하면
 // 내리는 동안 카드가 흐린 채로 보여 덜 불러온 것처럼 느껴졌다.
 // 초점이 들어가면 바로 제자리, 탭을 숨기면 진행 중인 연출을 끝낸다. 동작 줄이기·미지원 브라우저에서는 아무것도 하지 않는다.
 // (docs/DESIGN_SYSTEM.md 규칙 19의 예외 — 홈 첫 화면에만 쓴다. 다른 화면의 짧은 스크롤 등장은 useScrollReveal)
@@ -14,7 +14,7 @@ export interface RevealGroup {
 }
 
 const EASING = 'cubic-bezier(.22,.61,.36,1)';
-const SCROLL_MS = 480;
+const SCROLL_MS = 280;
 const SCROLL_RISE = rise(16);
 const WAITING = 'aq-motion-waiting';
 
@@ -28,8 +28,8 @@ export function useLandingReveal(root: RefObject<HTMLElement | null>, groups: Re
   // 그리기 전에 숨긴다 — 한 프레임이라도 제자리에 보였다가 사라지지 않게
   useLayoutEffect(() => {
     const box = root.current;
-    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (!box || reduced || typeof IntersectionObserver === 'undefined' || !box.animate) return;
+    const motionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    if (!box || motionQuery?.matches || typeof IntersectionObserver === 'undefined' || !box.animate) return;
     const initial = firstRun.current;
     firstRun.current = false;
     const motion = (entry.current ??= entryMotion());
@@ -92,12 +92,20 @@ export function useLandingReveal(root: RefObject<HTMLElement | null>, groups: Re
     document.addEventListener('focusin', onFocus);
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('beforeprint', showAll);
+    // 실행 중 설정을 켜도 대기 중인 콘텐츠와 현재 연출을 즉시 정지 상태로 돌린다.
+    const onMotionChange = () => {
+      if (!motionQuery?.matches) return;
+      showAll();
+    };
+    motionQuery?.addEventListener('change', onMotionChange);
 
     return () => {
       io.disconnect();
       document.removeEventListener('focusin', onFocus);
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('beforeprint', showAll);
+      motionQuery?.removeEventListener('change', onMotionChange);
+      settle();
       // 아직 나타나지 않은 것은 다음 차례(새로 그린 내용)에서 다시 맡는다 — 같은 커밋 안이라 깜빡이지 않는다
       pending.forEach(el => el.classList.remove(WAITING));
     };

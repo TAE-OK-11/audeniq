@@ -1,7 +1,7 @@
 // 공개 화면(발매·아티스트 소개·소식·디스코그래피·보도자료) 등장 — 스튜디오 useScrollReveal과 같은 움직임.
-// - 첫 화면: 카드의 덩어리(머리·커버·제목·설명·섹션)가 위에서부터 차례로 16px 아래에서 떠오른다 (0.6초,
-//   앞의 넷은 50ms씩, 그 뒤는 150ms부터 60ms씩 네 개마다 다시). 바깥 덩어리를 맡으면 그 안쪽은 따로 움직이지 않는다.
-// - 화면 아래 덩어리(selector — 소식 카드·발매 칸·응원 줄 등)는 그리기 전에 숨겨 두고 스크롤로 닿기 조금 전에 한 번에 떠오른다 (0.48초).
+// - 첫 화면: 카드의 덩어리(머리·커버·제목·설명·섹션)가 위에서부터 차례로 16px 아래에서 떠오른다 (0.36초,
+//   앞의 넷은 25ms씩, 그 뒤는 75ms부터 30ms씩 네 개마다 다시). 바깥 덩어리를 맡으면 그 안쪽은 따로 움직이지 않는다.
+// - 화면 아래 덩어리(selector — 소식 카드·발매 칸·응원 줄 등)는 그리기 전에 숨겨 두고 스크롤로 닿기 조금 전에 한 번에 떠오른다 (0.28초).
 // 숨김은 그리기 전에(useLayoutEffect) — 한 프레임이라도 보였다가 사라지지 않게. 첫 화면 것은 숨기지 않고 WAAPI의
 // 시작 전 채움(fill: backwards)만 쓰므로 새로고침 직후 다시 숨었다 나타나 튀지 않는다.
 // 늦게 그려지는 목록(응원·소식)도 잠시 지켜보고, 화면을 누르거나 키를 치면 그만 지켜본다(거르기·더 보기로 바뀐 내용은 바로 보인다).
@@ -10,16 +10,16 @@ import { useLayoutEffect, type RefObject } from 'react';
 
 const KEYFRAMES: Keyframe[] = [{ opacity: 0, transform: 'translateY(16px)' }, { opacity: 1, transform: 'none' }];
 const EASING = 'cubic-bezier(.22,.61,.36,1)';
-const FIRST_MS = 600;
-const SCROLL_MS = 480;
+const FIRST_MS = 360;
+const SCROLL_MS = 280;
 const WAITING = 'aq-pub-waiting';
 const WATCH_MS = 4000;
 /** 화면을 연 뒤 이 시간 안에 화면 안에 그려진 덩어리(늦게 온 목록)도 첫 화면 차례를 탄다 */
 const FIRST_WINDOW = 1500;
 
-/** 첫 화면 n번째 덩어리의 시작 지연 — 머리 넷은 50ms씩, 그 뒤 덩어리는 150ms부터 60ms씩 (네 개마다 다시) */
+/** 첫 화면 n번째 덩어리의 시작 지연 — 머리 넷은 25ms씩, 그 뒤 덩어리는 75ms부터 30ms씩 (네 개마다 다시) */
 export function firstDelay(n: number): number {
-  return n < 4 ? n * 50 : 150 + ((n - 4) % 4) * 60;
+  return n < 4 ? n * 25 : 75 + ((n - 4) % 4) * 30;
 }
 
 /** first: false — 첫 화면 차례 등장은 그곳 자체 연출(전체 메뉴 열림 등)에 맡기고, 화면 밖 덩어리의 스크롤 등장만 한다 */
@@ -27,16 +27,18 @@ export function usePublicReveal(root: RefObject<HTMLElement | null>, selector: s
   useLayoutEffect(() => {
     const host = root.current;
     if (!ready || !host) return;
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || typeof IntersectionObserver === 'undefined' || !Element.prototype.animate) return;
+    const motionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    if (motionQuery?.matches || typeof IntersectionObserver === 'undefined' || !Element.prototype.animate) return;
     const seen = new WeakSet<Element>();
     const pending = new Set<HTMLElement>();
-    const running = new Set<Animation>();
+    const running = new Map<HTMLElement, Animation>();
 
     const play = (el: HTMLElement, duration: number, delay = 0) => {
       if (document.hidden) return;
       const a = el.animate(KEYFRAMES, { duration, easing: EASING, fill: 'backwards', delay });
-      running.add(a);
-      a.finished.then(() => running.delete(a), () => running.delete(a));
+      running.set(el, a);
+      const forget = () => { if (running.get(el) === a) running.delete(el); };
+      a.finished.then(forget, forget);
     };
     const show = (el: HTMLElement, animate = true) => {
       if (!pending.delete(el)) return;
@@ -108,13 +110,24 @@ export function usePublicReveal(root: RefObject<HTMLElement | null>, selector: s
     const stop = window.setTimeout(stopWatching, WATCH_MS);
     host.addEventListener('pointerdown', stopWatching, { capture: true, once: true });
     host.addEventListener('keydown', stopWatching, { capture: true, once: true });
-    const onFocus = (e: FocusEvent) => { [...pending].forEach(el => { if (el.contains(e.target as Node)) show(el, false); }); };
-    const settle = () => { running.forEach(a => a.finish()); running.clear(); };
+    const onFocus = (e: FocusEvent) => {
+      const target = e.target as Node;
+      [...pending].forEach(el => { if (el.contains(target)) show(el, false); });
+      running.forEach((a, el) => { if (el.contains(target)) { a.cancel(); running.delete(el); } });
+    };
+    const settle = () => { running.forEach(a => a.cancel()); running.clear(); };
     const onVisibility = () => { if (document.hidden) settle(); };
     const showAll = () => { [...pending].forEach(el => show(el, false)); settle(); };
     document.addEventListener('focusin', onFocus);
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('beforeprint', showAll);
+    // 실행 중 설정을 켜도 대기 중인 콘텐츠와 현재 연출을 즉시 정지 상태로 돌린다.
+    const onMotionChange = () => {
+      if (!motionQuery?.matches) return;
+      stopWatching();
+      showAll();
+    };
+    motionQuery?.addEventListener('change', onMotionChange);
     return () => {
       window.clearTimeout(stop);
       mo.disconnect();
@@ -124,6 +137,8 @@ export function usePublicReveal(root: RefObject<HTMLElement | null>, selector: s
       document.removeEventListener('focusin', onFocus);
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('beforeprint', showAll);
+      motionQuery?.removeEventListener('change', onMotionChange);
+      settle();
       pending.forEach(el => el.classList.remove(WAITING));
       // 다시 열릴 때(전체 메뉴) 자체 CSS 등장이 돌아오게
       touched.forEach(el => { el.style.animation = ''; });

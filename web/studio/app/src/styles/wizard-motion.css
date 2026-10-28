@@ -26,7 +26,7 @@
 @media(min-width:1024px){
   .aq-wiz-rail .aq-wiz-steps button{transition:background-color .2s ease,color .2s ease}
   .aq-wiz-rail .aq-wiz-step-no{transition:background-color .2s ease,color .2s ease}
-  .aq-wiz-rail-progress i::after{transition:width .4s var(--aq-e-ease)}
+  .aq-wiz-rail-progress i::after{transition:width .3s var(--aq-e-ease)}
 }
 
 /* 보완 요청 패널 — 접고 펼칠 때 높이가 짧게 따라 바뀐다 */
