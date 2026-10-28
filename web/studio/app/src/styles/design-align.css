@@ -610,39 +610,16 @@ body:has(.auth-page){background:transparent}
   .auth-page>.aq-auth-brand img{width:118px}
 }
 /* 로그인만 정리 — 공유 인증 카드와 루트 배경은 그대로 둔다. */
-.auth-card.ui-card:has(.aq-login-form){box-shadow:var(--aq-shadow-lift)}
+.auth-card.ui-card:has(.aq-login-form){box-shadow:0 0 0 1px var(--aq-blue-200),var(--aq-shadow-lift)}
 .auth-card:has(.aq-login-form) .aq-auth-head{margin-bottom:32px}
 .aq-login-form .ui-field{margin-bottom:20px}
 .aq-login-form .auth-submit{min-height:var(--aq-h-lg)}
 .aq-login-form .aq-passkey-btn{
   --btn-bg:var(--aq-blue-200);--btn-bg-hover:var(--aq-blue-300);--btn-fg:var(--aq-primary-text);
-  margin-top:12px;gap:10px;
+  margin-top:12px;gap:10px;box-shadow:inset 0 0 0 1px var(--aq-primary);
 }
 .auth-card:has(.aq-login-form) .auth-links{flex-wrap:wrap;column-gap:16px;row-gap:12px;margin-top:28px;line-height:1.6}
 .auth-card:has(.aq-login-form) .auth-links a{white-space:nowrap}
-/* iOS의 브라우저 바를 제외한 높이에 맞춘 로그인 간격.
-   오류·키보드·추가 로그인 제공자로 내용이 늘면 자연스럽게 스크롤한다. */
-@media (max-width:760px){
-  .auth-page:has(.aq-login-form){padding:var(--aq-s-4) var(--aq-s-5)}
-  .auth-page:has(.aq-login-form)>.aq-auth-brand{margin-bottom:var(--aq-s-3)}
-  .auth-card.ui-card:has(.aq-login-form){
-    --aq-field-h:var(--aq-h-md);--aq-field-r:var(--aq-r-ctl-md);
-    padding:var(--aq-s-5);
-  }
-  .auth-card:has(.aq-login-form) .aq-auth-head{
-    display:grid;grid-template-columns:auto minmax(0,1fr);
-    column-gap:var(--aq-s-3);row-gap:var(--aq-s-1);margin-bottom:var(--aq-s-5);
-  }
-  .auth-card:has(.aq-login-form) .aq-auth-head .ui-icon{grid-row:span 2;margin-bottom:0}
-  .auth-card:has(.aq-login-form) .aq-auth-head .auth-sub{margin:0}
-  .aq-login-form .ui-field{margin-bottom:var(--aq-s-3)}
-  .aq-login-form .auth-submit{min-height:var(--aq-h-md);margin-top:var(--aq-s-1)}
-  .aq-login-form .aq-passkey-btn{margin-top:var(--aq-s-3);gap:var(--aq-s-2)}
-  .auth-card:has(.aq-login-form) .auth-links{margin-top:var(--aq-s-4)}
-  .auth-page:has(.aq-login-form)>.auth-foot{
-    min-height:var(--aq-h-md);margin:var(--aq-s-3) 0 0;
-  }
-}
 
 /* 회원가입 약관 동의 — 누르기 쉬운 체크 줄(면), '필수'는 회색 글자, 개인정보 안내는 작게 */
 .auth-agree{gap:8px}
