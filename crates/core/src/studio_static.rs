@@ -196,8 +196,12 @@ impl Studio {
         }
     }
 
+    // Studio build inputs/public artifacts contain no video files (2026-10-28).
+    // Range/206 is unsupported: revisit before shipping seekable media here.
     pub async fn respond(&self, req: Request) -> Response {
         if !matches!(*req.method(), Method::GET | Method::HEAD) {
+            // Non-navigation methods use the stable JSON error contract; browsers
+            // navigate with GET/HEAD, so an HTML variant is unnecessary.
             let mut r = fail(StatusCode::METHOD_NOT_ALLOWED, "METHOD_NOT_ALLOWED");
             r.headers_mut()
                 .insert(header::ALLOW, HeaderValue::from_static("GET, HEAD"));

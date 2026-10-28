@@ -159,8 +159,9 @@ export interface Template {
     OriginAccessControl?: Resource<'AWS::CloudFront::OriginAccessControl', { OriginAccessControlConfig: Record<string, unknown> }>;
     BucketPolicy?: Resource<'AWS::S3::BucketPolicy', { Bucket: Ref; PolicyDocument: Record<string, unknown> }>;
     ViewerFunction?: Resource<'AWS::CloudFront::Function', CloudFrontFunctionProperties>;
-    /** 백엔드로 가는 요청·응답 (functions/edge.js) */
+    /** Studio viewer-request v9; other apps use legacy functions/edge.js. */
     EdgeFunction?: Resource<'AWS::CloudFront::Function', CloudFrontFunctionProperties>;
+    MaintenanceFunction?: Resource<'AWS::CloudFront::Function', CloudFrontFunctionProperties>;
     AssetCache?: Resource<'AWS::CloudFront::CachePolicy', { CachePolicyConfig: Record<string, unknown> }>;
     ResponseHeaders: Resource<'AWS::CloudFront::ResponseHeadersPolicy', { ResponseHeadersPolicyConfig: ResponseHeadersPolicy & { Name: Sub } }>;
     Distribution: Resource<'AWS::CloudFront::Distribution', { DistributionConfig: DistributionConfig }>;
@@ -178,7 +179,7 @@ export async function functionCode(name: AppName): Promise<string> {
   return checkSize(app.function, code);
 }
 
-/** functions/edge.js 에 앱 값(CORS Origin, /api no-store)을 채운 코드 */
+/** Legacy function generator, retained for S3 apps and compatibility tests; Studio template uses v9. */
 export function edgeFunctionCode(name: AppName): string {
   const app = APPS[name];
   const code = readFileSync(resolve(HERE, 'functions', 'edge.js'), 'utf8')
@@ -252,22 +253,22 @@ function backendOrigin(site: string | undefined): ApiOrigin {
 
 const ALL_METHODS = ['GET', 'HEAD', 'OPTIONS', 'PUT', 'PATCH', 'POST', 'DELETE'];
 
-/** 캐시하지 않고 백엔드로: 요청·응답 모두 edge.js 를 거친다 */
-function backendBehavior(): DefaultCacheBehavior {
+/** Uncached backend behavior: Studio uses v9 request + maintenance response; other apps use edge.js. */
+function backendBehavior(studio = false): DefaultCacheBehavior {
   return {
     TargetOriginId: 'api',
     ViewerProtocolPolicy: 'redirect-to-https',
     AllowedMethods: ALL_METHODS,
     CachedMethods: ['GET', 'HEAD'],
     CachePolicyId: CACHING_DISABLED,
-    // edge.js 가 남긴 헤더와 쿠키·쿼리 전부 (Host는 오리진 주소로)
+    // Selected request function leaves headers/cookies/query; Host becomes the origin host.
     OriginRequestPolicyId: ALL_VIEWER_EXCEPT_HOST,
     ResponseHeadersPolicyId: { Ref: 'ResponseHeaders' },
     // 백엔드가 압축한다 (화면 파일은 빌드의 .br, JSON은 br/gzip)
     Compress: false,
     FunctionAssociations: [
       { EventType: 'viewer-request', FunctionARN: { 'Fn::GetAtt': ['EdgeFunction', 'FunctionARN'] } },
-      { EventType: 'viewer-response', FunctionARN: { 'Fn::GetAtt': ['EdgeFunction', 'FunctionARN'] } },
+      { EventType: 'viewer-response', FunctionARN: { 'Fn::GetAtt': [studio ? 'MaintenanceFunction' : 'EdgeFunction', 'FunctionARN'] } },
     ],
   };
 }
@@ -279,7 +280,9 @@ function edgeFunction(name: AppName): Resource<'AWS::CloudFront::Function', Clou
       Name: { 'Fn::Sub': '${AWS::StackName}-edge' },
       AutoPublish: true,
       FunctionConfig: { Comment: `AUDENIQ ${name} backend request headers`, Runtime: 'cloudfront-js-2.0' },
-      FunctionCode: edgeFunctionCode(name),
+      FunctionCode: name === 'studio'
+        ? checkSize('studio-edge-function-v9.js', readFileSync(resolve(HERE, '../cloudfront/studio-edge-function-v9.js'), 'utf8'))
+        : edgeFunctionCode(name),
     },
   };
 }
@@ -328,15 +331,19 @@ export async function template(name: string | undefined): Promise<Template> {
     // Public static files honor origin TTLs. Accept and normalized gzip/br
     // are in their cache key; cookies and query strings are not forwarded.
     // API/discovery always use the uncached, viewer-forwarding behavior.
+    // Pending Muse's behavior inventory: preserve current path/cache/origin policy
+    // choices; these are not asserted to match live. No independent error origin
+    // or CustomErrorResponses is inferred. Viewer-response is not origin failover.
+    // Studio stays same-origin with no CORS policy; cross-origin intent undecided.
     const distribution: DistributionConfig = {
       ...base,
       Origins: [backendOrigin(app.site)],
-      DefaultCacheBehavior: backendBehavior(),
+      DefaultCacheBehavior: backendBehavior(true),
       CacheBehaviors: [
         // These exclusions MUST precede extension patterns: CloudFront's *
         // matches slashes too, so /api/a.png must never use the public policy.
         ...['/api', '/api/*', '/.well-known/*'].map(PathPattern => ({
-          ...backendBehavior(), PathPattern,
+          ...backendBehavior(true), PathPattern,
         })),
         ...app.cached.map(PathPattern => ({
           PathPattern,
@@ -347,6 +354,8 @@ export async function template(name: string | undefined): Promise<Template> {
           CachePolicyId: { Ref: 'AssetCache' },
           ResponseHeadersPolicyId: { Ref: 'ResponseHeaders' },
           Compress: true,
+          // Pending Muse: exact live cached-behavior associations are unknown.
+          // Preserve these connections until that inventory is supplied.
           FunctionAssociations: [],
         })),
       ],
@@ -357,6 +366,15 @@ export async function template(name: string | undefined): Promise<Template> {
       Parameters: parameters,
       Resources: {
         EdgeFunction: edgeFunction(name),
+        MaintenanceFunction: {
+          Type: 'AWS::CloudFront::Function',
+          Properties: {
+            Name: { 'Fn::Sub': '${AWS::StackName}-maintenance' },
+            AutoPublish: true,
+            FunctionConfig: { Comment: 'Studio maintenance draft; origin errors require separate infrastructure', Runtime: 'cloudfront-js-2.0' },
+            FunctionCode: checkSize('studio-maintenance-function.js', readFileSync(resolve(HERE, '../cloudfront/studio-maintenance-function.js'), 'utf8')),
+          },
+        },
         AssetCache: {
           Type: 'AWS::CloudFront::CachePolicy',
           Properties: { CachePolicyConfig: {
