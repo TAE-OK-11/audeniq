@@ -77,7 +77,7 @@ pub async fn negotiate(s: &AppState, mut image: StoredImage, h: &HeaderMap) -> S
     image
 }
 
-fn verified(bytes: &[u8], size: i64, digest: &str, mime: &str) -> bool {
+pub(crate) fn verified(bytes: &[u8], size: i64, digest: &str, mime: &str) -> bool {
     let magic = match mime {
         "image/webp" => bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP"),
         "image/avif" => bytes.get(4..8) == Some(b"ftyp") && bytes.get(8..12) == Some(b"avif"),
