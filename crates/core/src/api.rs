@@ -350,7 +350,11 @@ async fn request_deadline(req: Request, next: middleware::Next) -> Response {
     if unbounded(req.uri().path()) {
         return next.run(req).await;
     }
-    let route = req.uri().path().to_owned();
+    let route = req
+        .extensions()
+        .get::<MatchedPath>()
+        .map(|v| v.as_str().to_owned())
+        .unwrap_or_else(|| "unmatched".into());
     match tokio::time::timeout(REQUEST_DEADLINE, next.run(req)).await {
         Ok(response) => response,
         Err(_) => {
