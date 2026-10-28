@@ -30,6 +30,8 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY config ./config
 COPY migrations ./migrations
+# Compile the same branded browser error pages used by CloudFront.
+COPY deploy/cloudfront/errors/500.html deploy/cloudfront/errors/503.html ./deploy/cloudfront/errors/
 RUN AUDENIQ_BUILD_METADATA_DIR=/meta audeniq-build-target "$TARGETARCH" "$TARGET_CPU" \
     cargo build --locked --profile "$CARGO_PROFILE" -p audeniq-core --bins \
     && mkdir -p /out /meta \
