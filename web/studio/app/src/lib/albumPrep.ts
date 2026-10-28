@@ -56,11 +56,11 @@ export function albumPrep({ rel, draft, coverReady, agreement, proofsDue }: Prep
     { key: 'cover', label: '커버아트', state: coverReady ? 'done' : 'todo', sub: coverReady ? '올렸어요' : '3000×3000 정사각형 이미지를 올려 주세요' },
     {
       key: 'audio', label: '음원 파일', state: n > 0 && withAudio === n ? 'done' : 'todo',
-      sub: n === 0 ? '곡을 등록해 주세요' : withAudio === n ? `${n}곡 모두 올렸어요` : `${n}곡 중 ${n - withAudio}곡이 남았어요`,
+      sub: n === 0 ? '곡을 등록하고 음원 파일을 올려 주세요' : withAudio === n ? `${n}곡 모두 올렸어요` : `${n}곡 중 ${n - withAudio}곡이 남았어요`,
     },
     {
       key: 'credits', label: '크레딧', state: n > 0 && credited === n ? 'done' : 'todo',
-      sub: n === 0 ? '곡을 등록해 주세요' : credited === n ? '작곡·작사를 모두 적었어요' : `${n - credited}곡의 작곡·작사가 비어 있어요`,
+      sub: n === 0 ? '곡을 등록하고 작곡·작사를 적어 주세요' : credited === n ? '작곡·작사를 모두 적었어요' : `${n - credited}곡의 작곡·작사가 비어 있어요`,
     },
     { key: 'date', label: '발매일', state: rel.release_date ? 'done' : 'todo', sub: rel.release_date ?? '발매일을 정해 주세요' },
     {

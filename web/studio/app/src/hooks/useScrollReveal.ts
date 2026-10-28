@@ -1,7 +1,7 @@
 // 화면 등장 연출 — audeniq.com 랜딩과 같은 움직임을 모든 화면에 (홈은 useLandingReveal, 발매 신청은 자체 단계 모션).
 // 머리(작은 제목 → 제목 → 설명 → 버튼)가 몇십 ms씩 차례로 16px 아래에서 떠오르고, 이어서 카드·목록 줄·섹션 머리가 나온다.
-// 처음부터 화면 안에 있던 덩어리는 0.6초 동안 차례로(앱을 연 첫 화면 — 화면을 옮겨 다닐 때는 0.36초로 짧게, entryMotion),
-// 화면 밖 덩어리는 스크롤로 닿기 조금 전에 시작해 0.48초.
+// 처음부터 화면 안에 있던 덩어리는 0.36초 동안 차례로(앱을 연 첫 화면 — 화면을 옮겨 다닐 때는 0.24초로 짧게, entryMotion),
+// 화면 밖 덩어리는 스크롤로 닿기 조금 전에 시작해 0.28초.
 // 늦게 그려지는 목록(불러오기 뒤)도 잠시 지켜보다 같은 방식으로 맡는다. 바깥 덩어리를 맡으면 그 안쪽은 따로 움직이지 않는다.
 // 사용자가 화면을 누르거나 키를 치면 지켜보기를 그만둔다 — 탭·필터로 바뀐 내용까지 맡으면 한 번 사라졌다가
 // 다시 떠올라 튀어 보였다(탭 패널은 자체 전환이 있다). 그 뒤로 바뀌는 내용은 바로 보인다.
@@ -26,15 +26,15 @@ const UNITS = [
 /** 아래에서 떠오르는 등장 */
 export const rise = (px: number): Keyframe[] => [{ opacity: 0, transform: `translateY(${px}px)` }, { opacity: 1, transform: 'none' }];
 const EASING = 'cubic-bezier(.22,.61,.36,1)';
-const SCROLL_MS = 480;
+const SCROLL_MS = 280;
 const SCROLL_RISE = rise(16);
 
-/** 화면 첫 등장의 크기 — 앱을 연 뒤 첫 화면은 랜딩처럼 길게(0.6초·16px), 그 뒤 탭·메뉴로 화면을 옮길 때는 짧고 작게
- * (0.36초·10px, 차례 간격도 절반쯤). 자주 오가는 화면마다 0.6초 계단을 다시 보면 느리고 꾸민 티가 났다.
+/** 화면 첫 등장의 크기 — 앱을 연 뒤 첫 화면은 랜딩처럼 길게(0.36초·16px), 그 뒤 탭·메뉴로 화면을 옮길 때는 짧고 작게
+ * (0.24초·10px, 차례 간격도 절반쯤). 자주 오가는 화면마다 0.36초 계단을 다시 보면 느리고 꾸민 티가 났다.
  * 처음 부른 뒤 잠깐(개발 모드에서 효과가 두 번 도는 사이) 안의 호출도 첫 화면으로 친다. */
 export interface EntryMotion { ms: number; keyframes: Keyframe[]; pace: number }
-const FULL_ENTRY: EntryMotion = { ms: 600, keyframes: rise(16), pace: 1 };
-const NAV_ENTRY: EntryMotion = { ms: 360, keyframes: rise(10), pace: 0.6 };
+const FULL_ENTRY: EntryMotion = { ms: 360, keyframes: rise(16), pace: 0.5 };
+const NAV_ENTRY: EntryMotion = { ms: 240, keyframes: rise(10), pace: 0.3 };
 let firstEntryAt = -1;
 export function entryMotion(): EntryMotion {
   const now = performance.now();
@@ -54,8 +54,8 @@ export function hasEntranceAnimation(el: HTMLElement): boolean {
 
 export function useScrollReveal(key: string) {
   useLayoutEffect(() => {
-    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    if (reduced || typeof IntersectionObserver === 'undefined' || !Element.prototype.animate) return;
+    const motionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    if (motionQuery?.matches || typeof IntersectionObserver === 'undefined' || !Element.prototype.animate) return;
     const root = document.getElementById('main');
     if (!root) return;
     const started = performance.now();
@@ -159,6 +159,13 @@ export function useScrollReveal(key: string) {
     document.addEventListener('focusin', onFocus);
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('beforeprint', showAll);
+    // 실행 중 설정을 켜도 대기 중인 콘텐츠와 현재 연출을 즉시 정지 상태로 돌린다.
+    const onMotionChange = () => {
+      if (!motionQuery?.matches) return;
+      stopWatching();
+      showAll();
+    };
+    motionQuery?.addEventListener('change', onMotionChange);
 
     return () => {
       window.clearTimeout(stop);
@@ -169,6 +176,8 @@ export function useScrollReveal(key: string) {
       document.removeEventListener('focusin', onFocus);
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('beforeprint', showAll);
+      motionQuery?.removeEventListener('change', onMotionChange);
+      settle();
       pending.forEach(el => el.classList.remove(WAITING));
     };
   }, [key]);

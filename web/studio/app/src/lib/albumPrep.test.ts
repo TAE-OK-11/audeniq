@@ -39,3 +39,15 @@ describe('albumPrep', () => {
     expect(items.every(i => i.state === 'done')).toBe(true);
   });
 });
+
+describe('empty draft preparation counts', () => {
+  it('accounts for seven items: one done, four tasks, two waiting', () => {
+    const items = albumPrep({ rel: { status: 'draft', release_date: null, tracks: [] }, coverReady: false, agreement: 'none', proofsDue: 0 });
+    expect(items).toHaveLength(7);
+    expect(items.filter(i => i.state === 'done')).toHaveLength(1);
+    expect(items.filter(i => i.state === 'todo')).toHaveLength(4);
+    expect(items.filter(i => i.state === 'wait')).toHaveLength(2);
+    expect(items.find(i => i.key === 'audio')?.sub).toContain('음원 파일');
+    expect(items.find(i => i.key === 'credits')?.sub).toContain('작곡·작사');
+  });
+});

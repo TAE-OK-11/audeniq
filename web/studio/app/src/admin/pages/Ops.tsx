@@ -102,7 +102,7 @@ function StepUp({ error, onDone }: { error: string; onDone: (code: string | null
             maxLength={6} value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} placeholder="000000" />
         </Field>
         <div className="adm-ops-actions">
-          <button type="button" className="ui-btn is-ghost" onClick={() => onDone(null)}>취소</button>
+          <button type="button" className="ui-btn is-ghost" onClick={() => onDone(null)}>닫기</button>
           <button type="submit" className="ui-btn is-primary" disabled={!ok}>확인</button>
         </div>
       </form>
@@ -905,7 +905,7 @@ function PayoutAction({ act, busy, onClose, onRun }: {
           </Field>
         )}
         <div className="adm-ops-actions">
-          <button type="button" className="ui-btn is-ghost" onClick={onClose}>취소</button>
+          <button type="button" className="ui-btn is-ghost" onClick={onClose}>닫기</button>
           <button type="submit" className="ui-btn is-primary" disabled={busy || !ok}>기록</button>
         </div>
       </form>
