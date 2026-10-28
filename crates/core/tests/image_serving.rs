@@ -1,9 +1,11 @@
-//! Synthetic payloads exercise storage, HTTP negotiation and retained revisions;
-//! these are not image encoder tests. Requires a disposable PostgreSQL database.
+//! Synthetic fixtures cover negotiation/revisions; the real producer test also
+//! encodes and decodes WebP in the parser sandbox. Disposable PostgreSQL only.
 use audeniq_core::{
     api::{AppState, router},
     config::Config,
-    database, uploads,
+    database,
+    storage::ObjectStore,
+    uploads,
 };
 use axum::{
     Router,
@@ -42,6 +44,16 @@ async fn setup(pool: PgPool) -> (AppState, Router, Arc<MemStore>, User) {
 }
 
 async fn asset(state: &AppState, store: &MemStore, org: Uuid, bytes: &[u8]) -> Uuid {
+    registered_asset(state, store, org, bytes, true).await
+}
+
+async fn registered_asset(
+    state: &AppState,
+    store: &MemStore,
+    org: Uuid,
+    bytes: &[u8],
+    safe: bool,
+) -> Uuid {
     let id = Uuid::new_v4();
     let key = format!("registered/{org}/{id}");
     let sha = audeniq_core::domain::sha256_hex(bytes);
@@ -58,8 +70,10 @@ async fn asset(state: &AppState, store: &MemStore, org: Uuid, bytes: &[u8]) -> U
         .unwrap();
     sqlx::query("INSERT INTO catalog.assets(id,org_id,kind,object_key,size_bytes,content_type,sha256,state) VALUES($1,$2,'IMAGE',$3,$4,'image/png',$5,'REGISTERED')")
         .bind(id).bind(org).bind(&key).bind(bytes.len() as i64).bind(&sha).execute(&state.pool).await.unwrap();
-    sqlx::query("INSERT INTO catalog.asset_safety(asset_id,org_id,source_key,source_sha256,safe_key,safe_sha256,rule_version) VALUES($1,$2,'quarantine/' || $1::text,$4,$3,$4,'1')")
+    if safe {
+        sqlx::query("INSERT INTO catalog.asset_safety(asset_id,org_id,source_key,source_sha256,safe_key,safe_sha256,rule_version) VALUES($1,$2,'quarantine/' || $1::text,$4,$3,$4,'1')")
         .bind(id).bind(org).bind(key).bind(sha).execute(&state.pool).await.unwrap();
+    }
     id
 }
 
@@ -224,5 +238,260 @@ async fn stored_derivatives_negotiate_without_cross_variant_revalidation(pool: P
             .await
             .content_type,
         "image/png"
+    );
+}
+
+// Fault injection is limited to derivative writes/read-back; source access is real.
+struct VariantFaultStore {
+    inner: Arc<MemStore>,
+    fail_write: bool,
+}
+#[async_trait::async_trait]
+impl audeniq_core::storage::ObjectStore for VariantFaultStore {
+    async fn presign_put(
+        &self,
+        _: &str,
+        _: i64,
+        _: &str,
+        _: &str,
+        _: chrono::DateTime<chrono::Utc>,
+    ) -> audeniq_core::error::Result<audeniq_core::storage::UploadGrant> {
+        Err(audeniq_core::error::Error::Storage)
+    }
+    async fn head(
+        &self,
+        key: &str,
+    ) -> audeniq_core::error::Result<Option<audeniq_core::storage::ObjectMeta>> {
+        self.inner.head(key).await
+    }
+    async fn freeze(&self, _: &str, _: &str, _: &str) -> audeniq_core::error::Result<()> {
+        Err(audeniq_core::error::Error::Storage)
+    }
+    async fn get(&self, key: &str) -> audeniq_core::error::Result<Vec<u8>> {
+        if key.starts_with("image-variants/") {
+            Ok(b"corrupt read-back".to_vec())
+        } else {
+            self.inner.get(key).await
+        }
+    }
+    async fn put_archive(
+        &self,
+        key: &str,
+        body: audeniq_core::storage::ArchiveBody<'_>,
+        mime: &str,
+        retain: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> audeniq_core::error::Result<()> {
+        if self.fail_write {
+            Err(audeniq_core::error::Error::Storage)
+        } else {
+            self.inner.put_archive(key, body, mime, retain).await
+        }
+    }
+}
+
+/// Real PNG -> sandboxed lossless WebP -> write-once registration -> HTTP bytes.
+/// AVIF-only clients still receive PNG: AVIF conversion is not implemented.
+#[sqlx::test]
+async fn real_webp_producer_verifies_source_and_serves_decodable_bytes(pool: PgPool) {
+    use audeniq_core::image_encoder::{WebpOptions, produce_webp};
+    use image::ImageFormat;
+    use std::{io::Cursor, path::Path};
+    let (state, app, store, u) = setup(pool).await;
+    let pixels = image::RgbaImage::from_fn(48, 32, |x, y| {
+        image::Rgba([
+            (x * 5) as u8,
+            (y * 7) as u8,
+            100,
+            if x < 12 { 64 } else { 255 },
+        ])
+    });
+    let mut png = Cursor::new(Vec::new());
+    pixels.write_to(&mut png, ImageFormat::Png).unwrap();
+    let source = png.into_inner();
+    let sha = audeniq_core::domain::sha256_hex(&source);
+    let id = asset(&state, &store, u.org, &source).await;
+    sqlx::query("INSERT INTO identity.resource_acl(org_id,resource_id,principal_party_id,action) VALUES($1,$2,$3,'read')")
+        .bind(u.org).bind(id).bind(u.party).execute(&state.pool).await.unwrap();
+    let executable = Path::new(env!("CARGO_BIN_EXE_audeniq-image-encode"));
+    let unsafe_id = registered_asset(&state, &store, u.org, &source, false).await;
+    let count_before = store.files.lock().await.len();
+    assert!(
+        produce_webp(
+            &state,
+            u.org,
+            unsafe_id,
+            &sha,
+            WebpOptions::default(),
+            executable
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(store.files.lock().await.len(), count_before);
+    assert!(
+        produce_webp(
+            &state,
+            u.org,
+            id,
+            &"0".repeat(64),
+            WebpOptions::default(),
+            executable
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(store.files.lock().await.len(), count_before);
+    for fail_write in [true, false] {
+        let failed_id = asset(&state, &store, u.org, &source).await;
+        let mut faulty = state.clone();
+        faulty.storage = Arc::new(VariantFaultStore {
+            inner: store.clone(),
+            fail_write,
+        });
+        assert!(
+            produce_webp(
+                &faulty,
+                u.org,
+                failed_id,
+                &sha,
+                WebpOptions::default(),
+                executable
+            )
+            .await
+            .is_err()
+        );
+        let count: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM catalog.image_variants WHERE asset_id=$1")
+                .bind(failed_id)
+                .fetch_one(&state.pool)
+                .await
+                .unwrap();
+        assert_eq!(count, 0, "storage failure must not publish a row");
+    }
+    let digest = produce_webp(&state, u.org, id, &sha, WebpOptions::default(), executable)
+        .await
+        .unwrap();
+    // Different resize settings cannot mutate an already registered representation.
+    assert_eq!(
+        produce_webp(
+            &state,
+            u.org,
+            id,
+            &sha,
+            WebpOptions { max_edge: 16 },
+            executable
+        )
+        .await
+        .unwrap(),
+        digest
+    );
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM catalog.image_variants WHERE asset_id=$1")
+            .bind(id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    assert_eq!(count, 1);
+    assert!(
+        sqlx::query("UPDATE catalog.image_variants SET size_bytes=size_bytes WHERE asset_id=$1")
+            .bind(id)
+            .execute(&state.pool)
+            .await
+            .is_err(),
+        "published variants must remain write-once"
+    );
+    let mut webp_tag = String::new();
+    for (accept, mime) in [
+        ("image/avif,image/webp", "image/webp"),
+        ("image/avif", "image/png"),
+        ("image/webp;q=0", "image/png"),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/orgs/{}/assets/{id}/image", u.org))
+                    .header("x-audeniq-service", SECRET)
+                    .header("cookie", &u.cookie)
+                    .header("accept", accept)
+                    .header("if-none-match", &webp_tag)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        assert_eq!(response.headers()["content-type"], mime);
+        assert_eq!(response.headers()["vary"], "Accept");
+        if mime == "image/webp" {
+            assert_eq!(response.headers()["cache-control"], "private, no-cache");
+            webp_tag = response.headers()["etag"].to_str().unwrap().to_owned();
+            assert!(webp_tag.contains(&digest));
+            let bytes = to_bytes(response.into_body(), 20971520).await.unwrap();
+            assert_eq!(&bytes[8..12], b"WEBP");
+            assert_eq!(
+                image::load_from_memory_with_format(&bytes, ImageFormat::WebP)
+                    .unwrap()
+                    .to_rgba8(),
+                pixels
+            );
+        } else {
+            assert_ne!(response.headers()["etag"], webp_tag);
+            assert_eq!(
+                to_bytes(response.into_body(), 20971520)
+                    .await
+                    .unwrap()
+                    .as_ref(),
+                source
+            );
+        }
+    }
+    let conditional = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/orgs/{}/assets/{id}/image", u.org))
+                .header("x-audeniq-service", SECRET)
+                .header("cookie", &u.cookie)
+                .header("accept", "image/webp")
+                .header("if-none-match", &webp_tag)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(conditional.status(), 304);
+    assert_eq!(conditional.headers()["etag"], webp_tag);
+    assert_eq!(conditional.headers()["vary"], "Accept");
+    assert_eq!(
+        uploads::stored_image(&state, u.org, id)
+            .await
+            .unwrap()
+            .bytes,
+        source
+    );
+    let key: String =
+        sqlx::query_scalar("SELECT object_key FROM catalog.image_variants WHERE asset_id=$1")
+            .bind(id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    store.files.lock().await.get_mut(&key).unwrap().0[0] ^= 1;
+    let mut headers = HeaderMap::new();
+    headers.insert("accept", "image/avif,image/webp".parse().unwrap());
+    let original = uploads::stored_image(&state, u.org, id).await.unwrap();
+    assert_eq!(
+        audeniq_core::image_variants::negotiate(&state, original, &headers)
+            .await
+            .bytes,
+        source
+    );
+    store.files.lock().await.remove(&key);
+    let original = uploads::stored_image(&state, u.org, id).await.unwrap();
+    assert_eq!(
+        audeniq_core::image_variants::negotiate(&state, original, &headers)
+            .await
+            .bytes,
+        source
     );
 }

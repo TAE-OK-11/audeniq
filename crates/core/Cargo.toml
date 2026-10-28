@@ -70,6 +70,8 @@ tower-service = "0.3.3"
 # CSR / TLS-ALPN-01 challenge certificate, both on aws-lc-rs.
 instant-acme = { version = "0.8.5", default-features = false, features = ["aws-lc-rs", "hyper-rustls", "rcgen"] }
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem", "crypto"] }
+# Pure Rust JPEG/PNG decode + lossless WebP; no default/native/AVIF codecs.
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 
 [dev-dependencies]
 # Independent oracle for the in-crate MD5 (crate::md5) tests only.

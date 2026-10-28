@@ -1,7 +1,7 @@
 # Studio images and cache policy (2026-10-28)
 
-This is an uncommitted implementation proposal. No AWS, database, server or CDN
-configuration has been applied. The serving survey below describes repository
+This is an uncommitted implementation proposal. No live AWS, database, server
+or CDN configuration has been applied. The serving survey below describes repository
 code, not a verified live deployment.
 
 ## Serving survey
@@ -47,9 +47,9 @@ code, not a verified live deployment.
 * `photo.rs` wraps **an external media engine**, `audeniq-music photo`.
   `deploy/Dockerfile` builds it at `deploy/audeniq-music.rev` into the runtime
   image. The workspace calls metadata/color/QR/OCR/sanitize/PDF operations;
-  it contains no AVIF/WebP encoder implementation or established derivative
-  upload command. The engine executable is absent in this environment. No
-  conversion has been run or claimed.
+  its pinned CLI source was inspected: `convert` chooses PNG for `.png`
+  destinations and JPEG otherwise. It cannot encode AVIF/WebP. The separate
+  trusted WebP producer described below does not depend on that engine.
 
 ## Cache classes
 
@@ -135,40 +135,101 @@ responses vary by Accept and remain outside shared CDN caches. A fallback for a
 client whose preferred format is not ready requires revalidation so adding a
 variant later does not leave that client stuck on a cached fallback.
 
-**No converter/producer is implemented or available here.** Consequently no real
-uploaded image becomes AVIF/WebP just by applying this patch. To enable it,
-propose a separately reviewed media-engine change and pinned engine revision:
+## Working offline WebP producer
 
-1. Add sandboxed AVIF and WebP encoders to the existing photo engine. Establish
-   explicit quality, alpha/color/orientation handling, pixel/resource bounds,
-   and visual comparisons; do not choose an unmeasured lower-quality default.
-2. After the existing sanitized source is accepted, encode derivatives into
-   separate files within the parser sandbox; never overwrite the source.
-3. Validate output decoding, MIME, limits and SHA-256, then write through the
-   existing server-side ObjectStore with unique derivative keys. Register each
-   derivative against the sanitized source digest only after its object exists.
-   The worker has insert/select permission, not update/delete permission.
-4. Publish derivatives before exposing a new source where possible. If a
-   converter is absent/fails, retain and serve JPEG/PNG. Do not register fake
-   output or claim the original is AVIF by changing its Content-Type.
-5. Test real AVIF/WebP decoding and visual quality in the built Docker image,
-   then verify CloudFront with different Accept/Accept-Encoding requests after
-   separately approved deployment. No new live IAM permission is expected
-   beyond the existing working-store object writer.
+`audeniq-image-encode` now produces real **lossless WebP**, using `image 0.25.10`
+with only `jpeg,png,webp` features. Its 12 additional locked packages are Rust
+code; no libwebp, dav1d, nasm, FFmpeg, or other native codec toolchain is added.
+The image crate's [WebP encoder documentation](https://docs.rs/image/0.25.10/image/codecs/webp/struct.WebPEncoder.html)
+explicitly supports lossless encoding only. AVIF via `ravif`/`rav1e` would add a
+substantially larger codec dependency graph and needs separate resource and
+quality validation. It is not enabled. FFmpeg exists on this development host
+but is deliberately absent from the runtime image, so it is not a runtime
+reference implementation. The existing engine is also unsuitable: the
+[pinned photo CLI](https://github.com/TAE-OK-11/audeniq-media/blob/add30dd14a51c8faba64ddfb5748ab42c4633408/crates/photo-cli/src/lib.rs)
+implements PNG/JPEG output only, even in its `convert` command.
 
-Synthetic test payloads verify selection, hashes and HTTP/cache behavior. They
-are explicitly not proof of real encoding or browser decoding quality. Database
-integration tests additionally cover retained old revisions, unknown revisions,
-page visibility, parent hash binding and format-specific ETags; their execution
-requires a disposable PostgreSQL instance. See the review summary for checks
-actually run and their results. Live CDN behavior, database role grants, Docker
-media-engine integration and real AVIF/WebP conversion remain unverified here.
+The binary is included in the proposed runtime Dockerfile. It is an explicit
+operator command, not an HTTP endpoint or automatic upload job:
 
-## Verification performed in this worktree
+```sh
+# Use the same private working-store settings as the worker, worker-role
+# DATABASE_URL, APP_ENV, APP_ORIGIN, EDGE_SERVICE_SECRET, and UPLOAD_AV_ENABLED.
+# Run only after separately approved deployment/migration/grants.
+audeniq-image-encode ORG_UUID ASSET_UUID SANITIZED_SOURCE_SHA256
+# Optional explicit resize and quality mode:
+audeniq-image-encode ORG_UUID ASSET_UUID SANITIZED_SOURCE_SHA256 2048 lossless
+```
 
-* `cargo check -p audeniq-core`: passed; `cargo check -p audeniq-core --test image_serving`: passed (type-check only).
-* Focused Rust library tests: 18 passed (13 static-serving, 1 revisions, 2 negotiation/verification, 2 image-cache policy). Test-only CLI overrides disabled dependency optimization and debug info; repository profiles were unchanged.
-* `bun run check`: passed. Full Studio frontend suite: 68 files passed, 288 tests passed, 1 skipped.
-* AWS template/function suite: 8 passed. `node --check deploy/aws/functions/edge.js`, Rust formatting and `git diff --check`: passed.
-* The two PostgreSQL integration tests in `image_serving.rs` were not executed: no disposable PostgreSQL/Docker environment was available. The existing database execution suite was not run.
-* No real converter, live CDN request/invalidation, deployment, migration or grant application ran. No shell scripts were changed.
+The command accepts a registered asset identity, never a raw upload path. It
+loads the source through `stored_image`, requiring the exact registered safety
+row, rule version, configured antivirus status, source size and SHA-256. It
+checks the operator's expected source hash before creating a child. The child
+receives only a private copy of those sanitized bytes and verifies the hash
+again. The existing mandatory Linux Landlock/seccomp sandbox clears credentials,
+denies networking, exposes the source read-only and a separate output directory
+writable, and limits address space to 1 GiB and CPU time to 600 seconds. Failure
+to establish the sandbox fails the command; there is no unsandboxed fallback.
+
+Input is limited to 20 MiB, 8192 pixels per edge, 16,777,216 total pixels and a
+128 MiB decoder allocation budget. Unsupported/16-bit inputs fail rather than
+silently losing precision. Defaults retain dimensions and decoded RGBA pixels;
+alpha and any remaining ICC profile are retained. The sanitizer already bakes
+orientation and normalizes color to sRGB. `MAX_EDGE` explicitly opts into
+Lanczos3 resizing without upscaling. Quality is **lossless**, including by
+default; other quality values fail rather than being ignored. Lossless WebP
+can exceed a JPEG's byte size; no bandwidth savings are promised.
+
+The output writer refuses bytes beyond the existing **20 MiB hard cap**.
+Before leaving the sandbox, the child decodes its output and compares every
+RGBA pixel to the intended image. The parent checks size, WebP signature and
+SHA-256, uploads under a fresh UUID in `image-variants/`, and reads the object
+back for exact byte comparison. It rechecks source safety/hash immediately
+before inserting the derivative registry row. `ON CONFLICT DO NOTHING` and the
+existing immutable trigger preserve the first published representation, even
+if another run chooses different size settings. Repeated runs reuse an existing
+size/hash-verified object without re-encoding; a corrupt or unavailable
+registered object is an error for the producer and a safe fallback for serving.
+The source object and safety row are never updated. A failed storage write/read-back or failed registration
+cannot publish a derivative. Crashes/concurrent losing producers may leave
+unreferenced objects: cleanup must use a separately reviewed inventory process;
+never delete an object after an uncertain commit.
+
+Serving retains the existing parent authorization/safety checks and verifies
+derivative hash, size and signature on every read. A missing or corrupt object
+falls back to the source. `Accept: image/avif,image/webp` therefore receives real
+WebP once registered; **`Accept: image/avif` alone still receives JPEG/PNG**.
+The former continues to require revalidation while its preferred AVIF is absent.
+Neither the original synthetic AVIF fixture nor its MIME header proves AVIF
+decodability. No actual AVIF conversion/serving is claimed.
+
+To finish AVIF, add a bounded sandbox encoder and independent decode/visual
+validation, publish through the same source-bound write-once protocol, then run
+an end-to-end test that decodes returned AVIF bytes. To make WebP automatic,
+add a separately reviewed worker enqueue/retry policy after sanitized upload
+registration (or run this explicit command for selected assets). Nothing here
+has been deployed, and no automatic background conversion has been enabled.
+
+## Reproducing image tests
+
+`bash deploy/tests/test-image-serving.sh` starts a fresh loopback-only
+`postgres:18-trixie` container, runs image unit/static tests, `image_serving`, and the focused
+artist-photo execution test changed by PR #353,
+and removes the container on exit. Requires Docker and the Rust toolchain, and
+Linux sandbox support for the real encoder test. It never reads a live database
+URL. With an independently provisioned disposable PostgreSQL instance, run:
+
+```sh
+DATABASE_URL=postgres://TEST_OWNER@127.0.0.1:TEST_PORT/postgres \
+  cargo test --locked -p audeniq-core --test image_serving -- --nocapture
+cargo test --locked -p audeniq-core --lib image_
+cargo test --locked -p audeniq-core --lib studio_static
+```
+
+The SQLx test owner must have `CREATEDB`; each test creates its own database and
+runs the full repository migrations. Fixtures create safety-registered synthetic
+assets; the real producer test additionally supplies an actual generated PNG,
+executes the sandboxed binary, registers the output, requests HTTP bytes and
+decodes WebP for exact RGBA comparison. It also proves AVIF-only fallback,
+source hash/safety rejection, write-once publication, and corrupt/missing object
+fallback. No frontend code changes are required.
