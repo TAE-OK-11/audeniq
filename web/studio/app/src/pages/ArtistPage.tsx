@@ -22,7 +22,7 @@ import { CountUp } from '../ui';
 /** 바탕에 흐리게 깔 커버 — 가장 최근 발매의 커버 (소개·소식·디스코그래피·보도자료가 같은 바탕) */
 export function artistBackdrop(page: { releases: { slug: string; cover: boolean }[] } | null): string | undefined {
   const latest = page?.releases.find(r => r.cover);
-  return latest && !MOCK ? `${API_BASE}/api/smart-links/${encodeURIComponent(latest.slug)}/cover` : undefined;
+  return latest && !MOCK ? `${API_BASE}/api/smart-links/${encodeURIComponent(latest.slug)}/cover?media=2` : undefined;
 }
 
 export interface ArtistRelease { slug: string; title: string; type: string; release_date: string | null; released: boolean; cover: boolean }
@@ -67,7 +67,7 @@ function when(r: Release, year = new Date().getFullYear()): string {
 
 function ReleaseCard({ r, from }: { r: Release; from: { path: string; name: string } }) {
   const [ok, setOk] = useState(true);
-  const cover = r.cover && ok && !MOCK ? `${API_BASE}/api/smart-links/${encodeURIComponent(r.slug)}/cover` : '';
+  const cover = r.cover && ok && !MOCK ? `${API_BASE}/api/smart-links/${encodeURIComponent(r.slug)}/cover?media=2` : '';
   return (
     <li>
       <Link to={releasePath(r.slug)} state={{ artist: from }} className="aq-artist-release">

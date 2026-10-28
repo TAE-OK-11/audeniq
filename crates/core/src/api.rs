@@ -487,12 +487,17 @@ async fn boundary(State(s): State<AppState>, mut req: Request, next: Next) -> Re
     let _entered = span.enter();
     let headers = response.headers_mut();
     headers.insert("x-request-id", request_id);
-    // no-store unless the handler chose a browser-only (private) policy for
-    // content-addressed bytes (a stored cover image keyed by its hash).
+    // Keep API responses out of shared caches. Image handlers may opt into
+    // private immutable assets or private aliases that revalidate every use.
     let private_cache = headers
         .get("cache-control")
         .and_then(|v| v.to_str().ok())
-        .is_some_and(|v| v.starts_with("private,") && v.contains("immutable"));
+        .is_some_and(|v| {
+            matches!(
+                v,
+                "private, max-age=31536000, immutable" | "private, no-cache"
+            )
+        });
     if !private_cache {
         headers.insert("cache-control", HeaderValue::from_static("no-store"));
     }
@@ -1088,7 +1093,8 @@ async fn asset_image(
 ) -> Result<Response> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
     let img = uploads::image(&s, &a, org, id).await?;
-    Ok(uploads::image_response(img, &h))
+    let img = crate::image_variants::negotiate(&s, img, &h).await;
+    Ok(uploads::immutable_image_response(img, &h))
 }
 async fn member(
     State(s): State<AppState>,

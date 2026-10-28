@@ -155,11 +155,26 @@ test('템플릿 studio: S3 없이 화면·API 모두 백엔드(443), 해시 에�
   assert.ok(def.AllowedMethods.includes('POST'));
   assert.deepEqual(def.FunctionAssociations.map(f => f.EventType), ['viewer-request', 'viewer-response']);
   assert.deepEqual(d.CacheBehaviors.map(b => [b.PathPattern, b.CachePolicyId, b.OriginRequestPolicyId]),
-    ['/assets/*', '/static/*', '/favicon.ico'].map(path => [path, { Ref: 'AssetCache' }, undefined]));
+    [
+      ...['/api', '/api/*', '/.well-known/*'].map(path => [path,
+        '4135ea2d-6df8-44a3-9df3-4b5a84be39ad', 'b689b0a8-53d0-40ab-baf2-68738e2966ac']),
+      ...(APPS.studio.origin === 'backend' ? APPS.studio.cached : []).map(path => [path, { Ref: 'AssetCache' }, undefined]),
+    ]);
   const cache = t.Resources.AssetCache!.Properties.CachePolicyConfig;
   assert.equal(cache.MinTTL, 0);
   assert.equal(cache.DefaultTTL, 0);
   assert.equal(cache.MaxTTL, 31536000);
+  const key = cache.ParametersInCacheKeyAndForwardedToOrigin as Record<string, unknown>;
+  assert.deepEqual(key.HeadersConfig, { HeaderBehavior: 'whitelist', Headers: ['Accept'] });
+  assert.equal(key.EnableAcceptEncodingBrotli, true);
+  assert.equal(key.EnableAcceptEncodingGzip, true);
+  assert.deepEqual(key.CookiesConfig, { CookieBehavior: 'none' });
+  assert.deepEqual(key.QueryStringsConfig, { QueryStringBehavior: 'none' });
+  // Simulate first-match behavior, including nested API files with image suffixes.
+  for (const path of ['/api/a.png', '/api/orgs/o/assets/a.jpg', '/.well-known/logo.avif']) {
+    const behavior = d.CacheBehaviors.find(b => new RegExp('^' + b.PathPattern.replace(/[.]/g, '\\.').replace(/\*/g, '.*') + '$').test(path));
+    assert.equal(behavior?.CachePolicyId, '4135ea2d-6df8-44a3-9df3-4b5a84be39ad', path);
+  }
   const policy = t.Resources.ResponseHeaders.Properties.ResponseHeadersPolicyConfig;
   assert.equal(policy.SecurityHeadersConfig.StrictTransportSecurity.AccessControlMaxAgeSec, 31536000);
   assert.equal(policy.SecurityHeadersConfig.ContentSecurityPolicy, undefined, 'CSP는 백엔드(_headers)가 붙인다');

@@ -576,7 +576,7 @@ async fn h_staff_image(
     h: HeaderMap,
 ) -> Result<axum::response::Response> {
     Ok(crate::uploads::image_response(
-        staff_image(&s, &h, id).await?,
+        crate::image_variants::negotiate(&s, staff_image(&s, &h, id).await?, &h).await,
         &h,
     ))
 }

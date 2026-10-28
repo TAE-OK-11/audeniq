@@ -65,7 +65,7 @@ export function ArtistAvatar({ slug, name, photo, version, sm }: { slug: string;
   if (photo && !failed && !MOCK) {
     return (
       <span className={`${cls} has-photo`} aria-hidden="true">
-        <img src={`${API_BASE}/api/artist-links/${encodeURIComponent(slug)}/photo${version ? `?v=${version}` : ''}`} alt="" decoding="async" onError={() => setFailed(true)} />
+        <img src={`${API_BASE}/api/artist-links/${encodeURIComponent(slug)}/photo?media=2${version ? `&v=${version}` : ''}`} alt="" decoding="async" onError={() => setFailed(true)} />
       </span>
     );
   }
