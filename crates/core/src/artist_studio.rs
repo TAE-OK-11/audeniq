@@ -161,20 +161,24 @@ pub async fn photo(
 
 /// The photo on the public artist page (only while the page is open).
 pub async fn public_photo(s: &AppState, slug: &str) -> Result<crate::uploads::StoredImage> {
+    let (org, _, asset) = public_photo_scope(s, slug).await?;
+    crate::uploads::stored_image(s, org, asset.ok_or(Error::NotFound)?).await
+}
+
+async fn public_photo_scope(s: &AppState, slug: &str) -> Result<(Uuid, Uuid, Option<Uuid>)> {
     if !crate::artist_links::valid_handle(slug) {
         return Err(Error::NotFound);
     }
-    let row = sqlx::query(
-        "SELECT k.org_id, p.asset_id FROM portal.artist_links k
+    sqlx::query_as(
+        "SELECT k.org_id, k.id, p.asset_id FROM portal.artist_links k
            JOIN catalog.artists a ON a.org_id=k.org_id AND a.id=k.artist_id
-           JOIN portal.artist_photos p ON p.org_id=k.org_id AND p.artist_id=k.artist_id
+           LEFT JOIN portal.artist_photos p ON p.org_id=k.org_id AND p.artist_id=k.artist_id
           WHERE k.slug=$1 AND k.enabled AND a.archived_at IS NULL",
     )
     .bind(slug)
     .fetch_optional(&s.pool)
     .await?
-    .ok_or(Error::NotFound)?;
-    crate::uploads::stored_image(s, row.get("org_id"), row.get("asset_id")).await
+    .ok_or(Error::NotFound)
 }
 
 #[derive(Deserialize)]
@@ -569,7 +573,7 @@ async fn h_photo(
 ) -> Result<Response> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
     Ok(crate::uploads::image_response(
-        photo(&s, &a, org, id).await?,
+        crate::image_variants::negotiate(&s, photo(&s, &a, org, id).await?, &h).await,
         &h,
     ))
 }
@@ -602,12 +606,21 @@ async fn h_send_photo(
 async fn h_public_photo(
     State(s): State<AppState>,
     Path(slug): Path<String>,
+    Query(query): Query<crate::image_revisions::RevisionQuery>,
     h: HeaderMap,
 ) -> Result<Response> {
-    Ok(crate::uploads::image_response(
-        public_photo(&s, &slug).await?,
+    let (org, scope, asset) = public_photo_scope(&s, &slug).await?;
+    crate::image_revisions::respond(
+        &s,
+        org,
+        scope,
+        "artist",
+        asset,
+        &format!("/api/artist-links/{slug}/photo"),
+        query,
         &h,
-    ))
+    )
+    .await
 }
 
 pub fn routes() -> Router<AppState> {

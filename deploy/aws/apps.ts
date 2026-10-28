@@ -54,7 +54,11 @@ export const APPS: Record<AppName, App> = {
     origin: 'backend',
     aliases: ['studio.audeniq.com'],
     site: 'studio',
-    cached: ['/assets/*', '/static/*', '/favicon.ico'],
+    cached: [
+      '/assets/*', '/static/*', '/favicon.ico', '/robots.txt',
+      ...['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'avif', 'ico',
+        'woff', 'woff2', 'ttf', 'otf', 'mp3', 'mp4', 'pdf'].map(ext => `/*.${ext}`),
+    ],
     corsOrigin: 'https://studio.audeniq.com',
   },
   admin: {

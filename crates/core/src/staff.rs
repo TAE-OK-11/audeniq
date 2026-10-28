@@ -3000,7 +3000,8 @@ async fn h_asset_image(
             .ok_or(Error::NotFound)?;
     tx.commit().await?;
     let img = crate::uploads::stored_image(&s, org, id).await?;
-    Ok(crate::uploads::image_response(img, &h))
+    let img = crate::image_variants::negotiate(&s, img, &h).await;
+    Ok(crate::uploads::immutable_image_response(img, &h))
 }
 async fn h_request_proof(
     State(s): State<AppState>,
