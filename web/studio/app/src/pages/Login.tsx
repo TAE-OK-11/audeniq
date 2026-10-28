@@ -76,7 +76,7 @@ export function Login() {
           {wrongPw && <> <Link to="/find-account" className="aq-inline-link">비밀번호 찾기</Link></>}
         </div>
       )}
-      <form className="aq-login-form" onSubmit={submit} noValidate>
+      <form onSubmit={submit} noValidate>
         <div className="ui-field">
           <label htmlFor="loginEmail">이메일</label>
           <input

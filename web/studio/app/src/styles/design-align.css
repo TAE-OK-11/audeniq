@@ -572,25 +572,14 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 /* ==========================================================================
    로그인·회원가입·계정 찾기 — 은은한 빛 번짐 배경 (왼쪽 위 파랑, 오른쪽 아래 보라) + 살짝 비치는 카드
    ========================================================================== */
-/* 루트 배경은 문서 캔버스(오버스크롤·safe-area 포함)까지 칠해진다.
-   기존 흐림 원의 크기·위치·색·80px blur를 SVG 배경으로 그대로 옮긴다.
-   요소/고정 레이어로 그리면 페이지 끝에서 잘리거나 Safari 상단 색 추출을 방해한다.
-   body는 투명하게 두어 루트 배경을 가리지 않고, 당김/스크롤 동작은 유지한다. */
-html:has(.auth-page){
-  background-color:#fff;
-  background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%221040%22%20height%3D%221040%22%3E%3Cfilter%20id%3D%22b%22%20x%3D%22-200%25%22%20y%3D%22-200%25%22%20width%3D%22500%25%22%20height%3D%22500%25%22%20color-interpolation-filters%3D%22sRGB%22%3E%3CfeGaussianBlur%20stdDeviation%3D%2280%22%2F%3E%3C%2Ffilter%3E%3Ccircle%20cx%3D%22140%22%20cy%3D%22120%22%20r%3D%22260%22%20fill%3D%22%23c9d8ff%22%20opacity%3D%22.9%22%20filter%3D%22url%28%23b%29%22%2F%3E%3C%2Fsvg%3E"),
-    url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22960%22%20height%3D%22960%22%3E%3Cfilter%20id%3D%22b%22%20x%3D%22-200%25%22%20y%3D%22-200%25%22%20width%3D%22500%25%22%20height%3D%22500%25%22%20color-interpolation-filters%3D%22sRGB%22%3E%3CfeGaussianBlur%20stdDeviation%3D%2280%22%2F%3E%3C%2Ffilter%3E%3Ccircle%20cx%3D%22840%22%20cy%3D%22880%22%20r%3D%22240%22%20fill%3D%22%23e2d6ff%22%20opacity%3D%22.9%22%20filter%3D%22url%28%23b%29%22%2F%3E%3C%2Fsvg%3E");
-  background-position:left top,right bottom;
-  background-repeat:no-repeat;
-}
-body:has(.auth-page){background:transparent}
-.auth-page{background:transparent;overflow:visible}
+.auth-page{background:#fff}
 .auth-page>.aq-auth-glow{display:none}
+.auth-page::before,.auth-page::after{content:"";position:absolute;z-index:0;border-radius:50%;filter:blur(80px);pointer-events:none}
+.auth-page::before{width:520px;height:520px;left:-120px;top:-140px;background:#c9d8ff;opacity:.9}
+.auth-page::after{width:480px;height:480px;right:-120px;bottom:-160px;background:#e2d6ff;opacity:.9}
 @media (max-width:760px){
-  html:has(.auth-page){
-    background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22680%22%20height%3D%22680%22%3E%3Cfilter%20id%3D%22b%22%20x%3D%22-200%25%22%20y%3D%22-200%25%22%20width%3D%22500%25%22%20height%3D%22500%25%22%20color-interpolation-filters%3D%22sRGB%22%3E%3CfeGaussianBlur%20stdDeviation%3D%2280%22%2F%3E%3C%2Ffilter%3E%3Ccircle%20cx%3D%2230%22%20cy%3D%2250%22%20r%3D%22170%22%20fill%3D%22%23c9d8ff%22%20opacity%3D%22.9%22%20filter%3D%22url%28%23b%29%22%2F%3E%3C%2Fsvg%3E"),
-      url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22640%22%20height%3D%22640%22%3E%3Cfilter%20id%3D%22b%22%20x%3D%22-200%25%22%20y%3D%22-200%25%22%20width%3D%22500%25%22%20height%3D%22500%25%22%20color-interpolation-filters%3D%22sRGB%22%3E%3CfeGaussianBlur%20stdDeviation%3D%2280%22%2F%3E%3C%2Ffilter%3E%3Ccircle%20cx%3D%22620%22%20cy%3D%22600%22%20r%3D%22160%22%20fill%3D%22%23e2d6ff%22%20opacity%3D%22.9%22%20filter%3D%22url%28%23b%29%22%2F%3E%3C%2Fsvg%3E");
-  }
+  .auth-page::before{width:340px;height:340px;left:-140px;top:-120px}
+  .auth-page::after{width:320px;height:320px;right:-140px;bottom:-120px}
 }
 
 /* 카드는 스튜디오 디자인 그대로 — 스튜디오 머리와 같은 로고 줄(로고 + STUDIO 표시)을 카드 위에 두고,
@@ -609,41 +598,6 @@ body:has(.auth-page){background:transparent}
   .auth-page>.aq-auth-brand{margin-bottom:18px}
   .auth-page>.aq-auth-brand img{width:118px}
 }
-/* 로그인만 정리 — 공유 인증 카드와 루트 배경은 그대로 둔다. */
-.auth-card.ui-card:has(.aq-login-form){box-shadow:var(--aq-shadow-lift)}
-.auth-card:has(.aq-login-form) .aq-auth-head{margin-bottom:32px}
-.aq-login-form .ui-field{margin-bottom:20px}
-.aq-login-form .auth-submit{min-height:var(--aq-h-lg)}
-.aq-login-form .aq-passkey-btn{
-  --btn-bg:var(--aq-blue-200);--btn-bg-hover:var(--aq-blue-300);--btn-fg:var(--aq-primary-text);
-  margin-top:12px;gap:10px;
-}
-.auth-card:has(.aq-login-form) .auth-links{flex-wrap:wrap;column-gap:16px;row-gap:12px;margin-top:28px;line-height:1.6}
-.auth-card:has(.aq-login-form) .auth-links a{white-space:nowrap}
-/* iOS의 브라우저 바를 제외한 높이에 맞춘 로그인 간격.
-   오류·키보드·추가 로그인 제공자로 내용이 늘면 자연스럽게 스크롤한다. */
-@media (max-width:760px){
-  .auth-page:has(.aq-login-form){padding:var(--aq-s-4) var(--aq-s-5)}
-  .auth-page:has(.aq-login-form)>.aq-auth-brand{margin-bottom:var(--aq-s-3)}
-  .auth-card.ui-card:has(.aq-login-form){
-    --aq-field-h:var(--aq-h-md);--aq-field-r:var(--aq-r-ctl-md);
-    padding:var(--aq-s-5);
-  }
-  .auth-card:has(.aq-login-form) .aq-auth-head{
-    display:grid;grid-template-columns:auto minmax(0,1fr);
-    column-gap:var(--aq-s-3);row-gap:var(--aq-s-1);margin-bottom:var(--aq-s-5);
-  }
-  .auth-card:has(.aq-login-form) .aq-auth-head .ui-icon{grid-row:span 2;margin-bottom:0}
-  .auth-card:has(.aq-login-form) .aq-auth-head .auth-sub{margin:0}
-  .aq-login-form .ui-field{margin-bottom:var(--aq-s-3)}
-  .aq-login-form .auth-submit{min-height:var(--aq-h-md);margin-top:var(--aq-s-1)}
-  .aq-login-form .aq-passkey-btn{margin-top:var(--aq-s-3);gap:var(--aq-s-2)}
-  .auth-card:has(.aq-login-form) .auth-links{margin-top:var(--aq-s-4)}
-  .auth-page:has(.aq-login-form)>.auth-foot{
-    min-height:var(--aq-h-md);margin:var(--aq-s-3) 0 0;
-  }
-}
-
 /* 회원가입 약관 동의 — 누르기 쉬운 체크 줄(면), '필수'는 회색 글자, 개인정보 안내는 작게 */
 .auth-agree{gap:8px}
 .auth-terms{font-size:13px;line-height:1.55;color:var(--aq-text)}
