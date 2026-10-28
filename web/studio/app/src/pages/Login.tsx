@@ -1,3 +1,4 @@
+import { Glyph } from '../components/Glyph';
 import { loginRedirect } from '../lib/loginRedirect';
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from '../lib/router';
@@ -103,7 +104,8 @@ export function Login() {
         </button>
         {!MOCK && passkeySupported() && (
           <button type="button" className="ui-btn auth-submit aq-passkey-btn" onClick={() => void withPasskey()} disabled={busy}>
-            비밀번호 대신 패스키로 로그인
+            <Glyph name="key" size={20} />
+            <span>비밀번호 대신 패스키로 로그인</span>
           </button>
         )}
       </form>
