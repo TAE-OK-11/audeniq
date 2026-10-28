@@ -224,11 +224,16 @@ export async function downloadFile(path: string, fallbackName: string): Promise<
   try {
     res = await fetch(`${API_BASE}${path}`, { credentials: 'include', cache: 'no-store' });
   } catch {
+    if (navigator.onLine) reportServerIssue({ kind: 'down', status: 0, code: 'NETWORK' });
     throw new ApiError('네트워크 연결을 확인해 주세요.', 0, 'NETWORK');
   }
   if (!res.ok) {
-    let code = STATUS_CODES[res.status] ?? '';
-    try { code = (await res.json())?.error?.code ?? code; } catch { /* 본문 없음 */ }
+    let data: { error?: { code?: string }; maintenance?: unknown } | null = null;
+    try { data = await res.json(); } catch { /* 본문 없음 */ }
+    const code = data?.error?.code ?? STATUS_CODES[res.status] ?? '';
+    const issue = classifyServerIssue(res.status, code);
+    if (issue?.kind === 'maintenance') issue.window = data?.maintenance;
+    if (issue) reportServerIssue(issue);
     throw new ApiError(messageForCode(code, res.status), res.status, code);
   }
   const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? fallbackName;
