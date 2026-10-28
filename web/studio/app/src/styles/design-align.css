@@ -625,21 +625,14 @@ body:has(.auth-page){background:transparent}
    오류·키보드·추가 로그인 제공자로 내용이 늘면 자연스럽게 스크롤한다. */
 @media (max-width:760px){
   .auth-page:has(.aq-login-form){padding:var(--aq-s-4) var(--aq-s-5)}
-  .auth-page:has(.aq-login-form)>.aq-auth-brand{margin-bottom:var(--aq-s-4)}
+  .auth-page:has(.aq-login-form)>.aq-auth-brand{margin-bottom:18px}
   .auth-card.ui-card:has(.aq-login-form){
-    --aq-field-h:var(--aq-h-md);--aq-field-r:var(--aq-r-ctl-md);
-    padding:28px 22px 28px;
+    padding:28px 22px 26px;
   }
-  .auth-card:has(.aq-login-form) .aq-auth-head{
-    display:grid;grid-template-columns:auto minmax(0,1fr);
-    column-gap:var(--aq-s-3);row-gap:var(--aq-s-1);margin-bottom:var(--aq-s-5);
-  }
-  .auth-card:has(.aq-login-form) .aq-auth-head .ui-icon{grid-row:span 2;margin-bottom:0}
-  .auth-card:has(.aq-login-form) .aq-auth-head .auth-sub{margin:0}
-  .aq-login-form .ui-field{margin-bottom:var(--aq-s-4)}
-  .aq-login-form .auth-submit{min-height:var(--aq-h-md);margin-top:var(--aq-s-1)}
+  .aq-login-form .ui-field{margin-bottom:20px}
+  .aq-login-form .auth-submit{min-height:54px;margin-top:var(--aq-s-1)}
   .aq-login-form .aq-passkey-btn{margin-top:var(--aq-s-3);gap:var(--aq-s-2)}
-  .auth-card:has(.aq-login-form) .auth-links{margin-top:var(--aq-s-5)}
+  .auth-card:has(.aq-login-form) .auth-links{margin-top:28px}
   .auth-page:has(.aq-login-form)>.auth-foot{
     min-height:var(--aq-h-md);margin:var(--aq-s-3) 0 0;
   }
