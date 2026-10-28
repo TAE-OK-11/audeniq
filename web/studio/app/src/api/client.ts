@@ -1,6 +1,6 @@
 // API 진입점 — 화면은 이 파일의 `api`만 쓴다.
 // `bun run build:edge`(또는 VITE_MOCK=false)로 빌드하면 실제 서버
-// (엣지 Worker → Workers VPC → Cloudflare Tunnel → 메인 서버)를 호출하고,
+// (CloudFront + audeniq-studio-edge Function → 메인 서버)를 호출하고,
 // 기본값은 브라우저 저장소 기반 체험(목) 모드다.
 import type { AssetChecks, DeliveryItem, DspAvailability, Invitation, OrgMember, WithdrawQuota, Org, PreflightIssue, Release, ReleaseDetail, ReleasePayload, SaveResult, UploadKind, UploadResult, User, TakedownState } from './types';
 import { ApiError } from './errors';

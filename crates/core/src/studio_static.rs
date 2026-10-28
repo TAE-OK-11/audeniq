@@ -1,6 +1,6 @@
 //! Studio 화면(정적 파일) 서빙 — 예전 Cloudflare Workers Static Assets의 몫
 //!
-//! 앞단(Cloudflare Worker, 나중에는 AWS CloudFront)은 헤더만 다듬어 모든 요청을 이 서버로 넘긴다.
+//! 앞단(AWS CloudFront + audeniq-studio-edge Function)은 헤더만 다듬어 모든 요청을 이 서버로 넘긴다.
 //! `/api/*`·`/ready`·`/health`·OAuth 발견 문서는 지금처럼 API 라우터(boundary 안)로 가고,
 //! 그 밖의 경로는 여기서 답한다. 화면 파일은 누구에게나 공개라 boundary(서비스 비밀) **바깥**에서 돈다.
 //!
@@ -10,6 +10,16 @@
 //!   `_headers`에 캐시 규칙이 없으면 index.html은 no-cache, `/assets/*`는 1년 immutable.
 //! - SPA 폴백: 확장자 없는 경로는 `/index.html`(no-cache). 확장자 있는 없는 파일은 404
 //!   (예전 배포의 스크립트가 HTML로 "로드"되지 않게), `/.well-known/*`의 없는 문서는 JSON 404.
+//! - 오류 포맷은 클라이언트 기준으로 나눈 의도된 구분이다: 브라우저 탐색은 HTML
+//!   (스냅샷이 없으면 503 점검 HTML, 아래 `not_deployed`), 에셋은 plain 404,
+//!   `/.well-known/*`·API는 JSON. 전부를 한 포맷으로 통일하면 안 된다.
+//! - 교차 출처 브라우저 클라이언트는 지원 대상이 아니다: Studio는 동일 출처이고
+//!   MCP는 브라우저가 아니므로, `/api` OPTIONS 프리플라이트를 새로 열지 않는다.
+//!   프리플라이트가 404/403으로 답하는 것은 의도된 동작이다.
+//! - 경로 정규화: `decode_path`는 빈 조각(`//dashboard`)을 버리지 않는다. 브라우저가
+//!   정규화하므로 확장자 없는 이중 슬래시는 SPA 폴백으로 간다. 라이브와 로컬이
+//!   다르게 보였던 `/dashboard/`는 코드 차이가 아니라 빌드 산출물(해당 경로의
+//!   index.html 유무)·엣지 캐시로 갈리는 경우라, 여기서 경로를 바꾸지 않는다.
 //! - 압축: 빌드가 만든 `.br` 사이드카(web/shared/compress-assets.ts)를 Accept-Encoding에 맞춰 보낸다.
 //!
 //! 앞단 함수는 헤더만 다룬다(CloudFront Function으로 옮길 수 있게): 폴백·리다이렉트·캐시 규칙은 모두 여기.
@@ -194,7 +204,7 @@ impl Studio {
             return r;
         }
         let Some(snap) = self.current().await else {
-            return fail(StatusCode::SERVICE_UNAVAILABLE, "STUDIO_NOT_DEPLOYED");
+            return not_deployed(&req);
         };
         snap.respond(&req)
     }
@@ -238,7 +248,7 @@ impl Snapshot {
         }
         match self.files.get("/index.html") {
             Some(index) => self.serve(req, index, "/index.html", true),
-            None => fail(StatusCode::SERVICE_UNAVAILABLE, "STUDIO_NOT_DEPLOYED"),
+            None => not_deployed(req),
         }
     }
 
@@ -306,6 +316,31 @@ impl Snapshot {
         *r.headers_mut() = headers;
         r
     }
+}
+
+/// 스냅샷이 없을 때: 브라우저 탐색이면 503 점검 HTML을, 그 외면 JSON을 낸다.
+/// 2026-10-28 감사에서 `/`를 열었을 때 503 JSON이 그대로 보였던 문제의 수정이다.
+/// 상태 코드는 503 그대로 유지하고, URL 리다이렉트는 하지 않는다.
+fn not_deployed(req: &Request) -> Response {
+    let wants_html = req
+        .headers()
+        .get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.contains("text/html"));
+    if !wants_html {
+        return fail(StatusCode::SERVICE_UNAVAILABLE, "STUDIO_NOT_DEPLOYED");
+    }
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        [
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-store"),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+            (header::RETRY_AFTER, "60"),
+        ],
+        "<!DOCTYPE html>\n<html lang=\"ko\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<meta http-equiv=\"refresh\" content=\"60\">\n<title>AUDENIQ STUDIO - 점검 중</title>\n<style>\nbody{margin:0;font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,\"Helvetica Neue\",Arial,sans-serif;background:#f2f2f7;color:#111;display:flex;min-height:100vh;align-items:center;justify-content:center}\nmain{background:#fff;border:0;border-radius:20px;padding:40px 32px;text-align:center;max-width:420px;width:calc(100% - 48px)}\n.code{font-size:14px;color:#8a8a93;margin:0 0 12px}\nh1{font-size:24px;margin:0 0 12px;line-height:1.4}\np{color:#636366;margin:0 0 24px;line-height:1.6;font-size:15px}\n</style>\n</head>\n<body>\n<main>\n<p class=\"code\">503</p>\n<h1>지금은 서버 점검 중이에요</h1>\n<p>스튜디오 화면이 아직 준비되지 않았어요. 60초마다 자동으로 다시 확인해요.</p>\n</main>\n</body>\n</html>\n",
+    )
+        .into_response()
 }
 
 fn not_found() -> Response {
