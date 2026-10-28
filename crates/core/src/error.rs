@@ -128,7 +128,9 @@ pub fn db_unavailable(e: &sqlx::Error) -> bool {
         // 08xxx connection exception, 57P01-57P03 admin/crash shutdown,
         // cannot connect now.
         sqlx::Error::Database(d) => d.code().is_some_and(|c| {
-            c.starts_with("08") || matches!(c.as_ref(), "57P01" | "57P02" | "57P03")
+            c.starts_with("08")
+                || c.starts_with("28")
+                || matches!(c.as_ref(), "57P01" | "57P02" | "57P03")
         }),
         _ => false,
     }

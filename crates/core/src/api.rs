@@ -528,12 +528,17 @@ fn release_in_path(path: &str) -> Option<Uuid> {
     None
 }
 async fn ready(State(s): State<AppState>) -> Result<Json<Value>> {
+    let started = std::time::Instant::now();
     // Doubles as the database check: contracted partners switched on.
-    let live_partners: i64 = sqlx::query_scalar(
+    let live_partners: i64 = tokio::time::timeout(std::time::Duration::from_secs(6), sqlx::query_scalar(
         "SELECT count(*) FROM execution.adapter_profiles WHERE delivery_enabled AND activation_kind='CONTRACTED'",
     )
-    .fetch_one(&s.pool)
-    .await?;
+    .fetch_one(&s.pool))
+    .await.unwrap_or(Err(sqlx::Error::PoolTimedOut)).map_err(|error| {
+        tracing::warn!(db_failure=crate::database::failure_kind(&error),
+            elapsed_ms=started.elapsed().as_millis(), "database_readiness_failed");
+        crate::error::Error::Database(error)
+    })?;
     Ok(Json(json!({"database":true,"submission":false,
                "distribution":live_partners > 0 && crate::launch::live_transmission_enabled(),
                "live_partners":live_partners,
@@ -1150,6 +1155,7 @@ mod tests {
     #[tokio::test]
     async fn service_boundary_does_not_accept_forged_identity() {
         let pool = sqlx::postgres::PgPoolOptions::new()
+            .acquire_timeout(std::time::Duration::from_millis(100))
             .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
             .unwrap();
         let config = Config {
@@ -1184,9 +1190,24 @@ mod tests {
             .header("x-audeniq-service", &config.service_secret)
             .body(axum::body::Body::empty())
             .unwrap();
-        let response = app.oneshot(request).await.unwrap();
+        let response = app.clone().oneshot(request).await.unwrap();
         assert_eq!(response.status(), axum::http::StatusCode::OK);
         assert_eq!(response.headers()["cache-control"], "no-store");
+        let request = axum::http::Request::builder()
+            .uri("/ready")
+            .header("x-audeniq-service", &config.service_secret)
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(
+            response.status(),
+            axum::http::StatusCode::SERVICE_UNAVAILABLE
+        );
+        let body = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .unwrap();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["error"]["code"], "DATABASE_UNAVAILABLE");
     }
     #[tokio::test]
     async fn json_is_compressed_for_the_accepted_encoding() {
