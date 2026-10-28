@@ -175,7 +175,7 @@ export function SmartLink() {
 
   if (missing) return <PublicMissing text="링크가 꺼졌거나 주소가 잘못됐어요." />;
   if (!page) return <PublicLoading hero="cover" />;
-  const cover = page.cover && coverOk ? `${API_BASE}${base}/cover` : '';
+  const cover = page.cover && coverOk ? `${API_BASE}${base}/cover?media=2` : '';
   const fromArtist = from && /^\/link\/artist\/([^/]+)$/.exec(from.path)?.[1];
 
   return (

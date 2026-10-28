@@ -253,6 +253,34 @@ impl Snapshot {
     }
 
     fn serve(&self, req: &Request, asset: &Asset, rule_path: &str, fallback: bool) -> Response {
+        // Sidecars preserve the source: cover.jpg.avif / cover.jpg.webp.
+        // Only an explicitly accepted format is eligible (not image/* or */*).
+        let raster = matches!(asset.content_type, "image/jpeg" | "image/png");
+        let asset = if raster {
+            let accept = req
+                .headers()
+                .get(header::ACCEPT)
+                .and_then(|h| h.to_str().ok());
+            ["avif", "webp"]
+                .into_iter()
+                .find_map(|format| {
+                    (crate::image_variants::quality(accept, format) > 0.0)
+                        .then(|| self.files.get(&format!("{rule_path}.{format}")))
+                        .flatten()
+                })
+                .unwrap_or(asset)
+        } else {
+            asset
+        };
+        let accept = req
+            .headers()
+            .get(header::ACCEPT)
+            .and_then(|h| h.to_str().ok());
+        let pending = raster
+            && ((crate::image_variants::quality(accept, "avif") > 0.0
+                && asset.content_type != "image/avif")
+                || (crate::image_variants::quality(accept, "webp") > 0.0
+                    && !matches!(asset.content_type, "image/avif" | "image/webp")));
         let mut headers = HeaderMap::new();
         for rule in self.rules.iter().filter(|r| r.matches(rule_path)) {
             for name in &rule.remove {
@@ -267,12 +295,21 @@ impl Snapshot {
             "no-store"
         } else if fallback || asset.content_type.starts_with("text/html") {
             "no-cache"
+        } else if fingerprinted_asset(rule_path) && pending {
+            "public, max-age=0, must-revalidate"
         } else if fingerprinted_asset(rule_path) {
             "public, max-age=31536000, immutable"
         } else if rule_path.starts_with("/static/") {
             "public, max-age=86400, stale-while-revalidate=604800"
-        } else if asset.content_type.starts_with("image/") {
+        } else if asset.content_type.starts_with("image/")
+            || asset.content_type.starts_with("font/")
+            || asset.content_type.starts_with("audio/")
+            || asset.content_type.starts_with("video/")
+            || asset.content_type == "application/pdf"
+        {
             "public, max-age=3600, must-revalidate"
+        } else if rule_path == "/robots.txt" {
+            "public, max-age=300, must-revalidate"
         } else {
             "public, max-age=0, must-revalidate"
         };
@@ -289,8 +326,16 @@ impl Snapshot {
             let q = encoding_quality(accept, "br");
             q > 0.0 && q >= encoding_quality(accept, "gzip")
         });
-        if asset.br.is_some() {
-            headers.insert(header::VARY, HeaderValue::from_static("Accept-Encoding"));
+        // CloudFront forwards Accept in the static cache key as well. Vary
+        // must include Accept for fallback and derivatives, including 304s.
+        let vary = match (raster, asset.br.is_some()) {
+            (true, true) => Some("Accept, Accept-Encoding"),
+            (true, false) => Some("Accept"),
+            (false, true) => Some("Accept-Encoding"),
+            (false, false) => None,
+        };
+        if let Some(vary) = vary {
+            headers.insert(header::VARY, HeaderValue::from_static(vary));
         }
         let etag = match br {
             Some(_) => format!("\"{}-br\"", asset.etag),
@@ -768,6 +813,117 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn cache_classes_cover_static_media_and_revalidation() {
+        let dir = release(&[
+            ("index.html", b"app"),
+            ("static/picture.png", b"png"),
+            ("font.woff2", b"font"),
+            ("sample.mp3", b"audio"),
+            ("film.mp4", b"video"),
+            ("press.pdf", b"pdf"),
+            ("robots.txt", b"User-agent: *"),
+            ("app.webmanifest", b"{}"),
+        ]);
+        let studio = Studio::new(dir.path());
+        for (path, policy) in [
+            (
+                "/static/picture.png",
+                "public, max-age=86400, stale-while-revalidate=604800",
+            ),
+            ("/font.woff2", "public, max-age=3600, must-revalidate"),
+            ("/sample.mp3", "public, max-age=3600, must-revalidate"),
+            ("/film.mp4", "public, max-age=3600, must-revalidate"),
+            ("/press.pdf", "public, max-age=3600, must-revalidate"),
+            ("/robots.txt", "public, max-age=300, must-revalidate"),
+            ("/app.webmanifest", "public, max-age=0, must-revalidate"),
+        ] {
+            let response = get(&studio, path, &[]).await;
+            assert_eq!(response.headers()["cache-control"], policy, "{path}");
+            let conditional = get(
+                &studio,
+                path,
+                &[(
+                    "if-none-match",
+                    response.headers()["etag"].to_str().unwrap(),
+                )],
+            )
+            .await;
+            assert_eq!(conditional.status(), 304);
+            assert_eq!(conditional.headers()["cache-control"], policy);
+        }
+    }
+
+    #[tokio::test]
+    async fn image_negotiation_isolates_variants_and_conditional_responses() {
+        // Synthetic payloads test routing/headers, not encoder output.
+        let dir = release(&[
+            ("index.html", b"app"),
+            ("cover.jpg", b"JPEG"),
+            ("cover.jpg.avif", b"AVIF"),
+            ("cover.jpg.webp", b"WEBP"),
+            ("cover.jpg.avif.br", b"BR-AVIF"),
+            ("only.png", b"PNG"),
+            ("webp.jpg", b"JPEG"),
+            ("webp.jpg.webp", b"WEBP"),
+        ]);
+        let studio = Studio::new(dir.path());
+        let mut tags = Vec::new();
+        for (accept, mime, body) in [
+            ("image/avif,image/webp", "image/avif", "AVIF"),
+            ("image/webp", "image/webp", "WEBP"),
+            ("image/jpeg", "image/jpeg", "JPEG"),
+            ("*/*", "image/jpeg", "JPEG"),
+            ("image/avif;q=0,image/webp", "image/webp", "WEBP"),
+            ("image/avif;q=broken", "image/jpeg", "JPEG"),
+        ] {
+            let r = get(&studio, "/cover.jpg", &[("accept", accept)]).await;
+            assert_eq!(r.headers()["content-type"], mime);
+            assert!(r.headers()["vary"].to_str().unwrap().contains("Accept"));
+            assert_eq!(
+                r.headers()["cache-control"],
+                "public, max-age=3600, must-revalidate"
+            );
+            let tag = r.headers()["etag"].to_str().unwrap().to_owned();
+            assert_eq!(text(r).await, body);
+            let r = get(
+                &studio,
+                "/cover.jpg",
+                &[("accept", accept), ("if-none-match", &tag)],
+            )
+            .await;
+            assert_eq!(r.status(), 304);
+            assert!(r.headers()["vary"].to_str().unwrap().contains("Accept"));
+            tags.push(tag);
+        }
+        assert_ne!(tags[0], tags[1]);
+        assert_ne!(tags[1], tags[2]);
+        let cross = get(
+            &studio,
+            "/cover.jpg",
+            &[("accept", "image/jpeg"), ("if-none-match", &tags[0])],
+        )
+        .await;
+        assert_eq!(cross.status(), 200);
+        assert_eq!(text(cross).await, "JPEG");
+        let br = get(
+            &studio,
+            "/cover.jpg",
+            &[("accept", "image/avif"), ("accept-encoding", "br")],
+        )
+        .await;
+        assert_eq!(br.headers()["vary"], "Accept, Accept-Encoding");
+        assert_eq!(text(br).await, "BR-AVIF");
+        assert_eq!(
+            text(get(&studio, "/only.png", &[("accept", "image/avif,image/webp")]).await).await,
+            "PNG"
+        );
+        assert_eq!(
+            text(get(&studio, "/webp.jpg", &[("accept", "image/avif,image/webp")]).await).await,
+            "WEBP"
+        );
+    }
+
+    #[tokio::test]
     async fn spa_fallback_and_missing_files() {
         let dir = studio_files();
         let studio = Studio::new(dir.path());
@@ -869,7 +1025,7 @@ mod tests {
         );
         assert_eq!(
             get(&studio, "/robots.txt", &[]).await.headers()["cache-control"],
-            "public, max-age=0, must-revalidate"
+            "public, max-age=300, must-revalidate"
         );
         let post = axum::http::Request::builder()
             .method("POST")

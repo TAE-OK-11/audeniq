@@ -314,7 +314,7 @@ function ShareBars({ rows, unit }: { rows: [string, number][]; unit: string }) {
 }
 
 function ReleaseRow({ r }: { r: ReleaseInsight }) {
-  const cover = r.cover && r.link?.visible && !MOCK ? `${API_BASE}/api/smart-links/${encodeURIComponent(r.link.slug)}/cover` : null;
+  const cover = r.cover && r.link?.visible && !MOCK ? `${API_BASE}/api/smart-links/${encodeURIComponent(r.link.slug)}/cover?media=2` : null;
   // 스마트링크가 없으면 아래 줄 설명이 대신 말한다 (배지를 겹치지 않는다)
   const status = !r.link ? null
     : !r.link.enabled ? { tone: 'gray' as const, text: '꺼짐' }

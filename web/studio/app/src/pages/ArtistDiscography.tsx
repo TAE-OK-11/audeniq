@@ -42,7 +42,7 @@ function DiscoItem({ r }: { r: DiscoRelease }) {
   const [ok, setOk] = useState(true);
   const [open, setOpen] = useState(false);
   const fold = r.tracks.length > 6;
-  const cover = r.cover && ok && !MOCK ? `${API_BASE}/api/smart-links/${encodeURIComponent(r.slug)}/cover` : '';
+  const cover = r.cover && ok && !MOCK ? `${API_BASE}/api/smart-links/${encodeURIComponent(r.slug)}/cover?media=2` : '';
   const discs = new Set(r.tracks.map(t => t.disc)).size;
   const row = (t: DiscoTrack) => (
     <li key={`${t.disc}-${t.number}`}>

@@ -827,6 +827,8 @@ pub async fn checks(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Valu
 /// same checks as delivery: registered, sanitized at upload (and scanned when
 /// the scanner is on), and the bytes still matching their recorded hash.
 pub struct StoredImage {
+    pub org_id: Uuid,
+    pub asset_id: Uuid,
     pub bytes: Vec<u8>,
     pub content_type: &'static str,
     pub sha256: String,
@@ -866,6 +868,8 @@ pub async fn stored_image(s: &AppState, org: Uuid, id: Uuid) -> Result<StoredIma
         "image/jpeg"
     };
     Ok(StoredImage {
+        org_id: org,
+        asset_id: id,
         bytes,
         content_type,
         sha256,
@@ -882,9 +886,42 @@ pub async fn image(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Store
     stored_image(s, org, id).await
 }
 
-/// The HTTP response for a [`StoredImage`]: content-addressed, so cached
-/// privately for a year and answered 304 to a matching `If-None-Match`.
+/// Mutable image aliases must revalidate: a digest ETag does not make the URL
+/// content-addressed. Only asset/revision routes opt into immutable caching.
 pub fn image_response(img: StoredImage, h: &axum::http::HeaderMap) -> axum::response::Response {
+    image_response_with_policy(img, h, "private, no-cache")
+}
+
+/// Only for URLs identifying a retained asset or a recorded content revision.
+pub fn immutable_image_response(
+    img: StoredImage,
+    h: &axum::http::HeaderMap,
+) -> axum::response::Response {
+    // A missing preferred derivative may be published later. Do not freeze a
+    // fallback representation in a modern client's cache for a year.
+    let accept = h
+        .get(axum::http::header::ACCEPT)
+        .and_then(|v| v.to_str().ok());
+    let pending = (crate::image_variants::quality(accept, "avif") > 0.0
+        && img.content_type != "image/avif")
+        || (crate::image_variants::quality(accept, "webp") > 0.0
+            && !matches!(img.content_type, "image/avif" | "image/webp"));
+    image_response_with_policy(
+        img,
+        h,
+        if pending {
+            "private, no-cache"
+        } else {
+            "private, max-age=31536000, immutable"
+        },
+    )
+}
+
+fn image_response_with_policy(
+    img: StoredImage,
+    h: &axum::http::HeaderMap,
+    policy: &'static str,
+) -> axum::response::Response {
     use axum::http::{HeaderValue, StatusCode, header};
     use axum::response::IntoResponse;
     let etag = format!("\"{}\"", img.sha256);
@@ -898,6 +935,7 @@ pub fn image_response(img: StoredImage, h: &axum::http::HeaderMap) -> axum::resp
         img.bytes.into_response()
     };
     let hd = res.headers_mut();
+    hd.insert(header::VARY, HeaderValue::from_static("Accept"));
     hd.insert(
         header::CONTENT_TYPE,
         HeaderValue::from_static(img.content_type),
@@ -905,10 +943,7 @@ pub fn image_response(img: StoredImage, h: &axum::http::HeaderMap) -> axum::resp
     if let Ok(v) = HeaderValue::from_str(&etag) {
         hd.insert(header::ETAG, v);
     }
-    hd.insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static("private, max-age=31536000, immutable"),
-    );
+    hd.insert(header::CACHE_CONTROL, HeaderValue::from_static(policy));
     hd.insert(
         header::X_CONTENT_TYPE_OPTIONS,
         HeaderValue::from_static("nosniff"),
@@ -1000,4 +1035,81 @@ pub async fn cancel(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Valu
         tracing::warn!(error = %e, "multipart abort failed; lifecycle rule will drop it");
     }
     Ok(json!({"cancelled":true,"duplicate":false}))
+}
+
+#[cfg(test)]
+mod image_cache_tests {
+    use super::*;
+    use axum::http::{HeaderMap, HeaderValue, header};
+    fn image(bytes: &[u8]) -> StoredImage {
+        StoredImage {
+            org_id: Uuid::nil(),
+            asset_id: Uuid::nil(),
+            bytes: bytes.to_vec(),
+            content_type: "image/jpeg",
+            sha256: crate::domain::sha256_hex(bytes),
+        }
+    }
+    #[test]
+    fn missing_preferred_derivatives_never_freeze_fallbacks() {
+        let mut h = HeaderMap::new();
+        h.insert(
+            header::ACCEPT,
+            HeaderValue::from_static("image/avif,image/webp"),
+        );
+        assert_eq!(
+            immutable_image_response(image(b"source"), &h).headers()[header::CACHE_CONTROL],
+            "private, no-cache"
+        );
+        let mut webp = image(b"webp");
+        webp.content_type = "image/webp";
+        assert_eq!(
+            immutable_image_response(webp, &h).headers()[header::CACHE_CONTROL],
+            "private, no-cache"
+        );
+        let mut avif = image(b"avif");
+        avif.content_type = "image/avif";
+        let response = immutable_image_response(avif, &h);
+        assert_eq!(
+            response.headers()[header::CACHE_CONTROL],
+            "private, max-age=31536000, immutable"
+        );
+        assert_eq!(response.headers()[header::VARY], "Accept");
+        h.insert(header::ACCEPT, HeaderValue::from_static("image/webp"));
+        let mut webp = image(b"webp");
+        webp.content_type = "image/webp";
+        assert_eq!(
+            immutable_image_response(webp, &h).headers()[header::CACHE_CONTROL],
+            "private, max-age=31536000, immutable"
+        );
+    }
+
+    #[test]
+    fn mutable_aliases_revalidate_and_retained_assets_are_private_immutable() {
+        let h = HeaderMap::new();
+        let old = image_response(image(b"old"), &h);
+        let changed = image_response(image(b"new"), &h);
+        assert_eq!(old.headers()[header::CACHE_CONTROL], "private, no-cache");
+        assert_ne!(old.headers()[header::ETAG], changed.headers()[header::ETAG]);
+        let mut conditional = HeaderMap::new();
+        conditional.insert(header::IF_NONE_MATCH, old.headers()[header::ETAG].clone());
+        assert_eq!(image_response(image(b"new"), &conditional).status(), 200);
+        let cached = immutable_image_response(image(b"old"), &h);
+        assert_eq!(
+            cached.headers()[header::CACHE_CONTROL],
+            "private, max-age=31536000, immutable"
+        );
+        assert_eq!(cached.headers()[header::VARY], "Accept");
+        conditional.insert(
+            header::IF_NONE_MATCH,
+            HeaderValue::from_str(cached.headers()[header::ETAG].to_str().unwrap()).unwrap(),
+        );
+        let r = immutable_image_response(image(b"old"), &conditional);
+        assert_eq!(r.status(), 304);
+        assert_eq!(r.headers()[header::VARY], "Accept");
+        assert_eq!(
+            r.headers()[header::CACHE_CONTROL],
+            cached.headers()[header::CACHE_CONTROL]
+        );
+    }
 }

@@ -138,7 +138,7 @@ export function SmartLinkCard({ releaseId, promo }: { releaseId: string; promo?:
               <ChannelLinksButton className={TOOL} url={pageUrl(l.slug)} views={st.stats.sources ?? {}} days={st.stats.days} />
               <QrButton className={TOOL} url={channelUrl(pageUrl(l.slug), 'qr')} title="스마트링크 QR 코드" filename={`smartlink-${l.slug}.png`} />
               {promo && <EmbedButton className={TOOL} input={{ url: channelUrl(pageUrl(l.slug), 'blog'), title: promo.title, artist: promo.artist, released: !promo.releaseDate || promo.releaseDate <= todayStr(),
-                cover: promo.cover ? `${API_BASE || window.location.origin}/api/smart-links/${l.slug}/cover` : undefined }} />}
+                cover: promo.cover ? `${API_BASE || window.location.origin}/api/smart-links/${l.slug}/cover?media=2` : undefined }} />}
             </div>
           )}
           <p className="small aq-manage-stat">최근 {st.stats.days}일 · 조회 <b>{st.stats.views.toLocaleString()}</b> · 클릭 <b>{clicks.toLocaleString()}</b>

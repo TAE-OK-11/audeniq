@@ -334,3 +334,9 @@ IF EXISTS (SELECT FROM pg_roles WHERE rolname='audeniq_staff_ops') THEN
   GRANT EXECUTE ON FUNCTION identity.staff_set(uuid,uuid,text,text), identity.staff_reset_mfa(uuid,uuid) TO audeniq_staff_ops;
 END IF;
 END $$;
+
+-- Retained public image revisions and trusted derivative metadata (0161).
+GRANT SELECT,INSERT ON portal.image_revisions TO audeniq_api;
+GRANT SELECT ON catalog.image_variants TO audeniq_api;
+GRANT SELECT,INSERT ON catalog.image_variants TO audeniq_worker;
+REVOKE UPDATE,DELETE,TRUNCATE ON portal.image_revisions,catalog.image_variants FROM audeniq_api,audeniq_worker;
