@@ -73,8 +73,13 @@ case "${1:-}" in
     mkdir -p "$tmp"
     trap 'rm -rf "$tmp"' EXIT
     # 압축 안에 절대 경로·..·링크가 있으면 거절한다
-    if tar -tvzf "$archive" | cut -c1 | grep -q '[^-d]'; then die "압축에 링크나 특수 파일이 있어요"; fi
-    if tar -tzf "$archive" | grep -Eq '^/|(^|/)\.\.(/|$)'; then die "압축에 바깥 경로가 있어요"; fi
+    # Materialize listings before checking them: grep -q in a pipe can give
+    # tar SIGPIPE under pipefail and turn a rejected archive into a false pass.
+    tar -tvzf "$archive" > "$tmp/types" || die "cannot read archive metadata"
+    tar -tzf "$archive" > "$tmp/paths" || die "cannot read archive paths"
+    if grep -Eq '^[^-d]' "$tmp/types"; then die "압축에 링크나 특수 파일이 있어요"; fi
+    if grep -Eq '^/|(^|/)\.\.(/|$)' "$tmp/paths"; then die "압축에 바깥 경로가 있어요"; fi
+    rm "$tmp/types" "$tmp/paths"
     tar -xzf "$archive" -C "$tmp" --no-same-owner --no-same-permissions
     chmod -R u=rwX,go=rX "$tmp"
     check_release "$tmp"
@@ -90,12 +95,14 @@ case "${1:-}" in
     [[ "$rel" =~ ^[0-9a-f]{7,40}$ ]] || die "커밋은 16진수 sha여야 해요: $rel"
     [ -f "$src/web/studio/app/package.json" ] || die "Studio 소스가 없어요: $src"
     if [ "$(current)" = "$rel" ]; then echo "studio-release: 이미 $rel 이에요"; exit 0; fi
+    [ -s "$src/web/studio/.bun-version" ] || die "Studio .bun-version is missing or empty"
+    bun_version=$(tr -d '[:space:]' < "$src/web/studio/.bun-version")
+    [[ "$bun_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "Studio .bun-version must be a numeric release (major.minor.patch)"
     command -v docker >/dev/null || die "docker가 필요해요"
     work=$(mktemp -d)
     trap 'rm -rf "$work"' EXIT
     cp -a "$src/web" "$work/web"
     [ -f "$src/tsconfig.json" ] && cp "$src/tsconfig.json" "$work/"
-    bun_version=$(tr -d '[:space:]' < "$work/web/studio/.bun-version")
     echo "studio-release: 화면 빌드 (bun $bun_version, ${STUDIO_BUILD_IMAGE:-node:22-bookworm-slim})"
     docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -e npm_config_update_notifier=false \
       -v "$work:/src" -w /src/web/studio/app "${STUDIO_BUILD_IMAGE:-node:22-bookworm-slim}" \

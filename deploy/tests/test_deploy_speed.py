@@ -11,7 +11,7 @@ DEPLOY = Path(__file__).resolve().parents[1]
 PINNED = 'ghcr.io/test/app@sha256:' + 'a' * 64
 
 DOCKER = '''#!/usr/bin/env python3
-import os, sys
+import os, sys, json
 from pathlib import Path
 args = sys.argv[1:]
 with open(os.environ['CALLS'], 'a') as log:
@@ -30,6 +30,17 @@ if args[0] == 'inspect':
     else: print('healthy')
     sys.exit(0)
 if args[0] == 'compose':
+    if 'config' in args:
+        if os.environ.get('FAIL_CONFIG') == '1':
+            print('test-secret-must-not-appear', file=sys.stderr); sys.exit(1)
+        services = {'pgbouncer': {'build': {'context': './pgbouncer'}}}
+        # Model a merged Compose result from the actual selected file list.
+        for i, arg in enumerate(args):
+            if arg == '-f' and args[i+1] in ['compose.override.yaml', 'compose.tls.yaml']:
+                content = Path(args[i+1]).read_text()
+                name = 'local-helper' if args[i+1] == 'compose.override.yaml' else 'tls-helper'
+                services[name] = {'build': {'context': '.'}} if 'build:' in content else {'image': 'test/helper:ready'}
+        print(json.dumps({'services': services})); sys.exit(0)
     if 'build' in args:
         if os.environ.get('FAIL_BUILD') == 'all': sys.exit(1)
         if '--pull' in args and os.environ.get('FAIL_BUILD') == 'pull': sys.exit(1)
@@ -41,7 +52,7 @@ if args[0] == 'compose':
 
 
 class DeploySpeedTests(unittest.TestCase):
-    def run_deploy(self, **extra):
+    def run_deploy(self, override=None, tls=None, **extra):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for name in ['deploy.sh', 'compose.production.yaml', 'check-cpu.sh']:
@@ -49,6 +60,12 @@ class DeploySpeedTests(unittest.TestCase):
             shutil.copytree(DEPLOY / 'pgbouncer', root / 'pgbouncer')
             (root / 'production.env').write_text('AUDENIQ_IMAGE=' + PINNED + '\nPAYOUT_ACCOUNT_KEY=test-only\n')
             (root / 'production.env').chmod(0o600)
+            if override is not None:
+                (root / 'compose.override.yaml').write_text(override)
+            if tls is not None:
+                (root / 'compose.tls.yaml').write_text(tls)
+                with (root / 'production.env').open('a') as envfile:
+                    envfile.write('TLS_BIND=0.0.0.0:8443\nTLS_ACME_DOMAIN=test.invalid\n')
             binpath = root / 'bin'
             binpath.mkdir()
             for name, body in [('docker', DOCKER), ('sleep', '#!/bin/sh\nexit 0\n'),
@@ -57,9 +74,47 @@ class DeploySpeedTests(unittest.TestCase):
                 (binpath / name).chmod(0o755)
             env = dict(os.environ, PATH=str(binpath) + ':' + os.environ['PATH'],
                        CALLS=str(root / 'calls'), PINNED=PINNED, DEPLOY_TIMING='1', **extra)
+            initial_env = (root / 'production.env').read_text()
             result = subprocess.run(['bash', str(root / 'deploy.sh'), PINNED],
                                     env=env, capture_output=True, text=True)
+            # Guard failures must not rewrite production.env.
+            if result.returncode and ('unsupported buildable' in result.stderr or 'cannot validate Compose' in result.stderr):
+                self.assertEqual(initial_env, (root / 'production.env').read_text())
+                self.assertNotIn('phase=environment_update', result.stderr)
             return result, (root / 'calls').read_text(), (root / 'deploy-history.log').exists()
+
+    def test_override_build_fails_before_up_or_build(self):
+        result, calls, history = self.run_deploy(override='services:\n  local-helper:\n    build: .\n    profiles: [manual]\n')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('local-helper', result.stderr)
+        self.assertIn('prepare each image separately', result.stderr)
+        self.assertIn('./deploy.sh --rollback', result.stderr)
+        self.assertIn("'--profile', '*', 'config', '--format', 'json'", calls)
+        self.assertNotIn("'up'", calls)
+        self.assertNotIn("'build'", calls)
+        self.assertFalse(history)
+
+    def test_override_without_build_uses_both_no_build_calls(self):
+        result, calls, history = self.run_deploy(override='services:\n  local-helper:\n    image: test/helper:ready\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("'-f', 'compose.override.yaml'", calls)
+        self.assertEqual(calls.count("'--no-build'"), 2)
+        self.assertTrue(history)
+
+    def test_tls_build_is_also_rejected(self):
+        result, calls, history = self.run_deploy(tls='services:\n  tls-helper:\n    build: .\n')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('tls-helper', result.stderr)
+        self.assertNotIn("'up'", calls)
+        self.assertFalse(history)
+
+    def test_invalid_compose_fails_closed_without_logging_config(self):
+        result, calls, history = self.run_deploy(FAIL_CONFIG='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('cannot validate Compose', result.stderr)
+        self.assertNotIn('test-secret-must-not-appear', result.stderr + result.stdout)
+        self.assertNotIn("'up'", calls)
+        self.assertFalse(history)
 
     def test_single_build_and_combined_verification(self):
         result, calls, history = self.run_deploy()
