@@ -59,7 +59,80 @@ pub fn app(s: AppState, studio: Option<Arc<Studio>>) -> Router {
         )),
         None => api,
     };
-    api.layer(middleware::from_fn_with_state(s, edge_span))
+    api.layer(middleware::from_fn(browser_errors))
+        .layer(middleware::from_fn_with_state(s, edge_span))
+}
+
+/// Negotiate only browser-page 500/502/503/504 responses, outside all API layers.
+/// Error::into_response deliberately remains the stable JSON contract.
+async fn browser_errors(req: Request, next: Next) -> Response {
+    let path = req.uri().path();
+    let browser = !api_path(path)
+        && !path.starts_with("/.well-known/")
+        && req
+            .headers()
+            .get(header::ACCEPT)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(accepts_html)
+        && req
+            .headers()
+            .get("sec-fetch-mode")
+            .is_none_or(|v| v == "navigate");
+    let head = req.method() == Method::HEAD;
+    let mut response = next.run(req).await;
+    if !browser || !matches!(response.status().as_u16(), 500 | 502 | 503 | 504) {
+        return response;
+    }
+    // Keep explicit HTML (including the missing-snapshot maintenance page).
+    if response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| {
+            v.split(';')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .eq_ignore_ascii_case("text/html")
+        })
+    {
+        return response;
+    }
+    let html = if response.status() == StatusCode::SERVICE_UNAVAILABLE {
+        include_str!("../../../deploy/cloudfront/errors/503.html").to_owned()
+    } else {
+        include_str!("../../../deploy/cloudfront/errors/500.html").replace(
+            "<p class=\"code\">500</p>",
+            &format!("<p class=\"code\">{}</p>", response.status().as_u16()),
+        )
+    };
+    // Retain status, Retry-After, security headers and logging extensions, but
+    // discard metadata describing the replaced (possibly compressed) body.
+    for name in [
+        header::CONTENT_LENGTH,
+        header::CONTENT_ENCODING,
+        header::ETAG,
+        header::CONTENT_RANGE,
+    ] {
+        response.headers_mut().remove(name);
+    }
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/html; charset=utf-8"),
+    );
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response.headers_mut().insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    *response.body_mut() = if head {
+        Body::empty()
+    } else {
+        Body::from(html)
+    };
+    response
 }
 
 /// 앞단이 넣은 사용자 IP. 서비스 비밀이 맞을 때만 믿는다(브라우저가 직접 보낸 값은 버림).
@@ -735,6 +808,215 @@ mod tests {
             .await
             .unwrap();
         String::from_utf8(b.to_vec()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn browser_errors_preserve_real_error_json_and_metadata() {
+        use tower::ServiceExt;
+        for unavailable in [false, true] {
+            for path in [
+                "/api",
+                "/api/example",
+                "/ready",
+                "/health",
+                "/.well-known/example",
+                "/",
+            ] {
+                let error = || {
+                    if unavailable {
+                        crate::error::Error::Storage
+                    } else {
+                        crate::error::Error::Internal
+                    }
+                };
+                let expected = text(error().into_response()).await;
+                let app = Router::new()
+                    .fallback(move || async move {
+                        let mut r = if unavailable {
+                            crate::error::Error::Storage
+                        } else {
+                            crate::error::Error::Internal
+                        }
+                        .into_response();
+                        r.extensions_mut().insert(123_u32);
+                        r
+                    })
+                    .layer(middleware::from_fn(browser_errors));
+                let r = app
+                    .oneshot(
+                        Request::builder()
+                            .uri(path)
+                            .header(header::ACCEPT, "text/html")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(r.status().as_u16(), if unavailable { 503 } else { 500 });
+                assert_eq!(r.extensions().get::<u32>(), Some(&123));
+                assert!(r.extensions().get::<crate::error::ErrorCode>().is_some());
+                assert_eq!(r.headers()[header::CACHE_CONTROL], "no-store");
+                if unavailable {
+                    assert_eq!(r.headers()[header::RETRY_AFTER], "5");
+                }
+                if path == "/" {
+                    assert!(text(r).await.starts_with("<!DOCTYPE html>"));
+                } else {
+                    assert_eq!(text(r).await, expected);
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn browser_errors_respect_navigation_and_head() {
+        use tower::ServiceExt;
+        for (method, mode, html) in [
+            ("GET", "navigate", true),
+            ("HEAD", "navigate", true),
+            ("GET", "cors", false),
+            ("POST", "navigate", true),
+        ] {
+            let app = Router::new()
+                .fallback(|| async { crate::error::Error::Internal })
+                .layer(middleware::from_fn(browser_errors));
+            let r = app
+                .oneshot(
+                    Request::builder()
+                        .method(method)
+                        .uri("/")
+                        .header(header::ACCEPT, "text/html")
+                        .header("sec-fetch-mode", mode)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(r.status(), StatusCode::INTERNAL_SERVER_ERROR);
+            assert_eq!(
+                r.headers()[header::CONTENT_TYPE],
+                if html {
+                    "text/html; charset=utf-8"
+                } else {
+                    "application/json"
+                }
+            );
+            if method == "HEAD" {
+                assert_eq!(text(r).await, "");
+            }
+        }
+    }
+
+    // Exercise the real middleware with an in-memory router; no DB or network.
+    #[tokio::test]
+    async fn browser_error_negotiation_contract() {
+        use tower::ServiceExt;
+        for status in [500, 502, 503, 504, 403, 404, 405, 501] {
+            for path in [
+                "/",
+                "/releases/one",
+                "/api",
+                "/api/releases",
+                "/ready",
+                "/health",
+                "/.well-known/example",
+            ] {
+                for accept in [
+                    "text/html",
+                    "TEXT/HTML; q=0.5",
+                    "text/html;q=0, application/json",
+                    "application/json",
+                    "*/*",
+                    "",
+                ] {
+                    for maintenance in [false, true] {
+                        if maintenance && status != 503 {
+                            continue;
+                        }
+                        let original = if maintenance {
+                            serde_json::json!({"error":{"code":"MAINTENANCE","message":"Scheduled"},"maintenance":{"title":"Scheduled","starts_at":"2026-10-28T00:00:00Z"}})
+                        } else {
+                            serde_json::json!({"error":{"code":"TEST_ERROR"}})
+                        };
+                        let payload = original.clone();
+                        let app = Router::new()
+                            .fallback(move || {
+                                let payload = payload.clone();
+                                async move {
+                                    let mut r = (
+                                        StatusCode::from_u16(status).unwrap(),
+                                        axum::Json(payload),
+                                    )
+                                        .into_response();
+                                    r.headers_mut().insert(
+                                        header::CACHE_CONTROL,
+                                        HeaderValue::from_static("no-store"),
+                                    );
+                                    if status == 503 {
+                                        r.headers_mut().insert(
+                                            header::RETRY_AFTER,
+                                            HeaderValue::from_static("60"),
+                                        );
+                                    }
+                                    r
+                                }
+                            })
+                            .layer(middleware::from_fn(browser_errors));
+                        let response = app
+                            .oneshot(
+                                Request::builder()
+                                    .uri(path)
+                                    .header(header::ACCEPT, accept)
+                                    .body(Body::empty())
+                                    .unwrap(),
+                            )
+                            .await
+                            .unwrap();
+                        assert_eq!(response.status().as_u16(), status);
+                        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+                        assert!(!response.headers().contains_key(header::LOCATION));
+                        if status == 503 {
+                            assert_eq!(response.headers()[header::RETRY_AFTER], "60");
+                        }
+                        let html = matches!(status, 500 | 502 | 503 | 504)
+                            && matches!(path, "/" | "/releases/one")
+                            && accepts_html(accept);
+                        if html {
+                            assert_eq!(
+                                response.headers()[header::CONTENT_TYPE],
+                                "text/html; charset=utf-8"
+                            );
+                            assert_eq!(
+                                response.headers()[header::X_CONTENT_TYPE_OPTIONS],
+                                "nosniff"
+                            );
+                            let body = text(response).await;
+                            assert!(body.contains(
+                                "<span class=\"aq-logo\">AUDENIQ</span><span>STUDIO</span>"
+                            ));
+                            assert!(body.contains("audeniq-font@308d641"));
+                            for code in [500, 502, 503, 504] {
+                                assert_eq!(
+                                    body.contains(&format!("<p class=\"code\">{code}</p>")),
+                                    code == status
+                                );
+                            }
+                            assert!(!body.contains("starts_at"));
+                        } else {
+                            assert_eq!(
+                                response.headers()[header::CONTENT_TYPE],
+                                "application/json"
+                            );
+                            assert_eq!(
+                                serde_json::from_str::<serde_json::Value>(&text(response).await)
+                                    .unwrap(),
+                                original
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[tokio::test]
