@@ -71,9 +71,13 @@ services:
       - -c
       - max_wal_size=1GB
       - -c
-      - log_min_duration_statement=500ms
+      - log_min_duration_statement=-1
       - -c
-      - log_lock_waits=on
+      - log_statement=none
+      - -c
+      - log_duration=off
+      - -c
+      - log_lock_waits=off
       # PITR(시점 복구)용 WAL 보관. 기본은 꺼짐; 켜면 deploy/archive.sh wal이 암호화해 WORM 버킷으로 옮긴다
       # (docs/DOCUMENT_ARCHIVE.md). archive_mode를 바꾸면 postgres를 재시작해야 한다.
       - -c
@@ -104,9 +108,16 @@ services:
     cpus: 0.5
   grants:
     image: postgres:18-trixie
+    user: postgres
     command: [psql, -h, postgres, -U, audeniq_owner, -d, audeniq_prod, -v, ON_ERROR_STOP=1, -f, /opt/grants.sql]
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 32
+    mem_limit: 128m
+    cpus: 0.5
     volumes: ['./grants.sql:/opt/grants.sql:ro']
     networks: [backend]
     depends_on:
@@ -126,7 +137,8 @@ services:
       PGBOUNCER_POOL_SIZE: '${PGBOUNCER_POOL_SIZE:-8}'
       PGBOUNCER_MAX_DB_CONN: '${PGBOUNCER_MAX_DB_CONN:-20}'
     read_only: true
-    tmpfs: ['/run/pgbouncer:size=1m,mode=1777']
+    tmpfs: ['/run/pgbouncer:size=1m,mode=1777,noexec,nosuid,nodev']
+    pids_limit: 64
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     networks: [backend]

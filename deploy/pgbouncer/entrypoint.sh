@@ -4,6 +4,20 @@
 set -eu
 : "${PGBOUNCER_DB:?}" "${POSTGRES_HOST:=postgres}" "${POSTGRES_PORT:=5432}"
 : "${API_DB_PASSWORD:?}" "${WORKER_DB_PASSWORD:?}"
+# Reject config/userlist injection without echoing supplied values.
+for value in "$PGBOUNCER_DB" "$POSTGRES_HOST" "$POSTGRES_PORT" \
+  "${PGBOUNCER_MAX_PREPARED:-1000}" "${PGBOUNCER_MAX_CLIENT_CONN:-200}" \
+  "${PGBOUNCER_POOL_SIZE:-10}" "${PGBOUNCER_MAX_DB_CONN:-30}"; do
+  case "$value" in ''|*[!a-zA-Z0-9_.:-]*) echo 'pgbouncer: invalid configuration' >&2; exit 21 ;; esac
+done
+for value in "$POSTGRES_PORT" "${PGBOUNCER_MAX_PREPARED:-1000}" \
+  "${PGBOUNCER_MAX_CLIENT_CONN:-200}" "${PGBOUNCER_POOL_SIZE:-10}" "${PGBOUNCER_MAX_DB_CONN:-30}"; do
+  case "$value" in *[!0-9]*|0) echo 'pgbouncer: invalid numeric setting' >&2; exit 21 ;; esac
+done
+for value in "$API_DB_PASSWORD" "$WORKER_DB_PASSWORD"; do
+  case "$value" in *'
+'*|*"$(printf '\r')"*) echo 'pgbouncer: password contains a line break' >&2; exit 21 ;; esac
+done
 # Probes use the same environment as userlist generation. Never print psql's
 # raw stderr (it can contain names/values from server configuration).
 check_path() {
@@ -62,8 +76,8 @@ pool_mode = transaction
 ; Retry backend login after transient outages; this does not repair bad auth.
 server_login_retry = 2
 server_connect_timeout = 3
-; Read-only console inspection, no admin commands.
-stats_users = audeniq_api,audeniq_worker
+; Runtime credentials must not inspect other clients or their queries.
+stats_users =
 ; sqlx prepares every statement; PgBouncer tracks them per server connection.
 max_prepared_statements = ${PGBOUNCER_MAX_PREPARED:-1000}
 max_client_conn = ${PGBOUNCER_MAX_CLIENT_CONN:-200}
@@ -83,4 +97,5 @@ stats_period = 300
 logfile =
 pidfile =
 INI
+unset API_DB_PASSWORD WORKER_DB_PASSWORD password value
 exec pgbouncer "$dir/pgbouncer.ini"

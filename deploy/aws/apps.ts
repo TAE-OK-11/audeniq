@@ -19,7 +19,7 @@ interface Common {
 export interface BackendApp extends Common {
   origin: 'backend';
   site: string;
-  /** 이름에 해시가 든 파일: CloudFront가 캐시한다 (나머지는 매번 백엔드로) */
+  /** Public static paths; origin headers determine fingerprinted vs mutable TTL. */
   cached: string[];
 }
 
@@ -54,7 +54,7 @@ export const APPS: Record<AppName, App> = {
     origin: 'backend',
     aliases: ['studio.audeniq.com'],
     site: 'studio',
-    cached: ['/assets/*'],
+    cached: ['/assets/*', '/static/*', '/favicon.ico'],
     corsOrigin: 'https://studio.audeniq.com',
   },
   admin: {

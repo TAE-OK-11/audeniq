@@ -304,6 +304,8 @@ END $$;
 -- re-check that the actor is an OWNER.
 DO $$ BEGIN
 IF EXISTS (SELECT FROM pg_roles WHERE rolname='audeniq_staff_ops') THEN
+  -- PUBLIC CONNECT was revoked above; this optional session login needs its own grant.
+  EXECUTE format('GRANT CONNECT ON DATABASE %I TO audeniq_staff_ops', current_database());
   GRANT USAGE ON SCHEMA identity,catalog,operations,execution,distribution,finance,portal TO audeniq_staff_ops;
   GRANT SELECT ON ALL TABLES IN SCHEMA identity,catalog,execution,distribution,finance,portal TO audeniq_staff_ops;
   GRANT INSERT ON operations.audit_events TO audeniq_staff_ops;

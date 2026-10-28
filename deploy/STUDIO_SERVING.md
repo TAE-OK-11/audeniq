@@ -1,5 +1,9 @@
 # Studio 서빙 구조: 백엔드가 화면을 서빙하고, 엣지는 프록시만
 
+> Current CloudFront deployment and caching: [CDN end state](cloudfront/cdn-caching-and-transition.md).
+> Worker/Tunnel migration commands below are historical. Do not reconnect Studio to Workers or create tunnel tokens for the CloudFront deployment.
+
+
 1단계(지금)는 Cloudflare에서 이 구조로 바꿔 시험해요. 2단계(AWS 이주)에서는 엣지만 Cloudflare Worker에서
 CloudFront(+ CloudFront Function)로 바뀌고, 백엔드·배포는 그대로예요. DNS와 R2(업로드 저장소)는 계속 Cloudflare예요.
 

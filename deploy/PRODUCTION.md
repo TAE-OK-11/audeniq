@@ -1,5 +1,9 @@
 # Deployment boundary — NOT an operational launch approval
 
+> Current CloudFront deployment and caching: [CDN end state](cloudfront/cdn-caching-and-transition.md).
+> Worker/Tunnel migration commands below are historical. Do not reconnect Studio to Workers or create tunnel tokens for the CloudFront deployment.
+
+
 The root Compose file is a LAB development environment. It has passed a disposable GitHub Actions Compose smoke test; this is not production validation. Never repoint its database volume/credentials to production. API/worker images run as UID 10001. Only loopback ports are mapped; PostgreSQL is on an internal network. An egress network is provided for private R2 API calls. Memory limits target development, not capacity guarantees.
 
 For a separate production deployment:

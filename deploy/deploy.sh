@@ -12,6 +12,9 @@
 # GHCR_USER와 GHCR_TOKEN_STDIN=1을 주고 토큰을 표준입력으로 넘긴다 (GitHub Actions 배포가 이렇게 한다).
 set -euo pipefail
 
+# Help is read-only and does not require production secrets or Docker.
+case "${1:-}" in -h|--help) sed -n '2,12p' "$0"; exit 0 ;; esac
+
 cd "$(dirname "$0")"
 ENV_FILE=production.env
 COMPOSE=(docker compose -p audeniq-production -f compose.production.yaml --env-file "$ENV_FILE")
@@ -20,9 +23,38 @@ COMPOSE=(docker compose -p audeniq-production -f compose.production.yaml --env-f
 HISTORY=deploy-history.log
 
 die() { echo "deploy: $*" >&2; exit 1; }
+# Fixed phase labels only: never record commands, environment or probe output.
+TIMING_START=$SECONDS
+TIMING_LAST=$SECONDS
+TIMING_PHASE=preflight
+REGISTRY_LOGGED_IN=0
+timing_phase() {
+  if [ "${DEPLOY_TIMING:-0}" = 1 ]; then
+    printf 'deploy-timing phase=%s seconds=%s total_seconds=%s\n' \
+      "$TIMING_PHASE" "$((SECONDS - TIMING_LAST))" "$((SECONDS - TIMING_START))" >&2
+  fi
+  TIMING_LAST=$SECONDS
+  TIMING_PHASE=$1
+}
+deploy_exit() {
+  local code=$?
+  timing_phase finished
+  if [ "${DEPLOY_TIMING:-0}" = 1 ]; then
+    printf 'deploy-timing exit=%s total_seconds=%s\n' "$code" "$((SECONDS - TIMING_START))" >&2
+  fi
+  if [ "$REGISTRY_LOGGED_IN" = 1 ]; then docker logout "$REGISTRY" >/dev/null 2>&1 || true; fi
+  return "$code"
+}
+trap deploy_exit EXIT
 current_image() { sed -n 's/^AUDENIQ_IMAGE=//p' "$ENV_FILE" | tail -n 1; }
 
+# Serialize releases before mutating environment, migrations or containers.
+umask 077
+exec 9>.deploy.lock
+flock -n 9 || die "another deployment is running"
+[ ! -L "$ENV_FILE" ] || die "production.env must not be a symlink"
 [ -f "$ENV_FILE" ] || die "$ENV_FILE 이 없어요 (production.env.example 참고, chmod 600)"
+[ "$(stat -c '%u %a' "$ENV_FILE")" = "$(id -u) 600" ] || die "production.env must be owned by the deploy user with mode 0600"
 # 시크릿 매니저(AWS/GCP/OCI)에서 tmpfs로 받은 비밀값: production.env 뒤에 읽어 같은 이름을 덮는다
 SECRETS_ENV_FILE=$(sed -n 's/^SECRETS_ENV_FILE=//p' "$ENV_FILE" | tail -n 1)
 if [ -n "$SECRETS_ENV_FILE" ]; then
@@ -110,9 +142,10 @@ esac
 if [ "${GHCR_TOKEN_STDIN:-}" = 1 ]; then
   [ -n "${GHCR_USER:-}" ] || die "GHCR_USER가 필요해요"
   docker login "$REGISTRY" -u "$GHCR_USER" --password-stdin >/dev/null
-  trap 'docker logout "$REGISTRY" >/dev/null 2>&1 || true' EXIT
+  REGISTRY_LOGGED_IN=1
 fi
 
+timing_phase image_pull
 echo "deploy: 이미지 받는 중 $REF"
 docker pull --quiet "$REF" >/dev/null
 repo=${REF%@*}; repo=${repo%:*}
@@ -124,6 +157,7 @@ else
   PINNED=$digest
 fi
 
+timing_phase image_verification
 # Architecture and CPU checks must precede the sandbox check and migrations:
 # even audeniq-admin can SIGILL if a tuned image lands on the wrong CPU.
 image_arch=$(docker image inspect --format '{{.Architecture}}' "$PINNED")
@@ -136,7 +170,13 @@ case "$(uname -m):$image_arch" in
   x86_64:amd64|aarch64:arm64) ;;
   *) die "서버와 이미지의 아키텍처가 달라요: $(uname -m)/$image_arch" ;;
 esac
-target_cpu=$(docker run --rm --network none --entrypoint sh "$PINNED" -c '
+# Binary presence and CPU metadata need only one shell-only container; no
+# AUDENIQ binary executes until the host CPU has passed check-cpu.sh.
+target_cpu=$(docker run --rm --network none --cap-drop ALL --read-only \
+  --security-opt no-new-privileges --entrypoint sh "$PINNED" -c '
+  for b in audeniq-api audeniq-worker audeniq-migrate audeniq-music; do
+    command -v "$b" >/dev/null || { echo "missing $b" >&2; exit 1; }
+  done
   if [ -f /usr/local/share/audeniq/target-cpu ]; then
     cat /usr/local/share/audeniq/target-cpu
   else
@@ -145,14 +185,10 @@ target_cpu=$(docker run --rm --network none --entrypoint sh "$PINNED" -c '
   fi') || die "이미지 CPU 정보 확인 실패: $PINNED"
 bash ./check-cpu.sh "$image_arch" "$target_cpu"
 
-# 이미지가 필요한 바이너리를 갖췄는지 먼저 확인 (잘못된 이미지로 DB 마이그레이션이 도는 것을 막는다)
-docker run --rm --entrypoint sh "$PINNED" -c \
-  'for b in audeniq-api audeniq-worker audeniq-migrate audeniq-music; do command -v "$b" >/dev/null || { echo "missing $b"; exit 1; }; done' \
-  || die "이미지 확인 실패: $PINNED"
-
 # Refuse a kernel/container profile that would leave upload parsers unconfined.
 docker run --rm --network none --cap-drop ALL --read-only   --security-opt no-new-privileges --entrypoint audeniq-admin "$PINNED" upload-sandbox-check   || die "업로드 샌드박스 실행 실패: Landlock ABI 3 이상과 seccomp 허용을 확인해 주세요"
 
+timing_phase environment_update
 PREVIOUS=$(current_image)
 tmp=$(mktemp "$ENV_FILE.XXXXXX")
 chmod 600 "$tmp"
@@ -171,16 +207,25 @@ echo "     → $PINNED"
 # Debian 패키지에 머문다. 배포마다 보안 패치를 받는다: 태그 이미지는 새로 받고, pgbouncer는 바탕 이미지를
 # 새로 받아 만든다(바뀌었을 때만 패키지를 다시 설치). 새 postgres 이미지면 postgres가 한 번 다시 시작한다.
 # 레지스트리에 닿지 않으면 지금 이미지로 배포를 계속한다
+timing_phase dependency_pull
 "${COMPOSE[@]}" pull --quiet --ignore-buildable \
   || echo "deploy: 경고 — postgres 등 이미지 갱신 실패, 서버에 있는 이미지로 계속" >&2
-"${COMPOSE[@]}" build --pull --quiet pgbouncer \
-  || echo "deploy: 경고 — pgbouncer 바탕 이미지 갱신 실패, 캐시로 계속" >&2
+timing_phase pgbouncer_build
+# Keep the base refresh and let Docker validate all build inputs/cache keys.
+# Build once, then forbid implicit rebuilds in both up calls. On registry
+# failure, retain the previous local-cache build fallback (and rollback hint).
+if ! "${COMPOSE[@]}" build --pull --quiet pgbouncer; then
+  echo "deploy: 경고 — pgbouncer 바탕 이미지 갱신 실패, 캐시로 계속" >&2
+  "${COMPOSE[@]}" build --quiet pgbouncer \
+    || die "DB startup (postgres → migrate → grants → pgbouncer) 실패; 확인: docker compose logs migrate grants pgbouncer — 되돌리려면: ./deploy.sh --rollback"
+fi
 # Studio 화면 폴더(api가 읽기 전용으로 마운트): docker가 root 소유로 만들지 않게 배포 사용자가 먼저 만든다.
 # 화면 파일은 studio-release.sh가 넣는다 (deploy/STUDIO_SERVING.md)
 mkdir -p studio/releases
 # Authenticate both runtime roles directly and through the pooler BEFORE
 # replacing API/worker. Do not treat an open TCP socket as DB readiness.
-if ! "${COMPOSE[@]}" up -d --build postgres migrate grants pgbouncer; then
+timing_phase database_start_migrate_grants
+if ! "${COMPOSE[@]}" up -d --no-build postgres migrate grants pgbouncer; then
   die "DB startup (postgres → migrate → grants → pgbouncer) 실패; 확인: docker compose logs migrate grants pgbouncer — 되돌리려면: ./deploy.sh --rollback"
 fi
 wait_database() {
@@ -198,13 +243,15 @@ wait_database() {
       20|21) die "DB login/config broken: $result; deploy/db-ready-diagnosis.md의 직접/풀러 인증 점검 — 되돌리려면: ./deploy.sh --rollback" ;;
     esac
     echo "deploy: DB not ready yet ($((deadline - SECONDS))s remaining): ${result:-pgbouncer probe unavailable}"
-    sleep 2
+    sleep 1
   done
   die "DB readiness timeout (120s): ${result:-pgbouncer probe unavailable}; postgres/pgbouncer 로그 확인 — 되돌리려면: ./deploy.sh --rollback"
 }
+timing_phase database_readiness
 wait_database
-# --build: pgbouncer 이미지는 서버에서 deploy/pgbouncer로 만든다 (바뀐 게 없으면 캐시)
-if ! "${COMPOSE[@]}" up -d --build --remove-orphans; then
+# PgBouncer was already built successfully above.
+timing_phase runtime_start_and_drain
+if ! "${COMPOSE[@]}" up -d --no-build --remove-orphans; then
   "${COMPOSE[@]}" logs --tail 80 migrate grants pgbouncer api worker || true
   die "compose up 실패 — 이전 이미지로 되돌리려면: ./deploy.sh --rollback"
 fi
@@ -213,6 +260,7 @@ if [ "$av_enabled" = false ]; then
   "${COMPOSE[@]}" --profile antivirus stop antivirus antivirus-update
 fi
 
+timing_phase runtime_stability
 # api·worker가 새 이미지로 재시작 없이 30초 동안 떠 있는지 지켜본다
 declare -A start
 for svc in api worker; do
@@ -236,6 +284,7 @@ if [ -n "$bad" ]; then
   die "컨테이너가 안정적으로 뜨지 않았어요:$bad — 되돌리려면: ./deploy.sh --rollback"
 fi
 
+timing_phase api_readiness
 # 떠 있는 것만으로는 부족하다: api가 /ready(DB 포함)에 답할 때까지 기다린다 (compose healthcheck)
 api_id=$("${COMPOSE[@]}" ps -q api)
 health=none
@@ -243,7 +292,14 @@ ready_deadline=$((SECONDS + 120))
 while (( SECONDS < ready_deadline )); do
   health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$api_id")
   case "$health" in
-    healthy) break ;;
+    healthy)
+      # A previous healthy result must not hide a crashed/restarted runtime.
+      for svc in api worker; do
+        id=$("${COMPOSE[@]}" ps -q "$svc")
+        [ -n "$id" ] || die "$svc disappeared during readiness gate"
+        [ "$(docker inspect --format '{{.State.Running}} {{.RestartCount}}' "$id")" = "true ${start[$svc]}" ] || die "$svc restarted or stopped during readiness gate"
+      done
+      break ;;
     none) die "api healthcheck missing — 되돌리려면: ./deploy.sh --rollback" ;;
   esac
   # Catch a DB regression while the API is starting, with classified checks.
@@ -256,7 +312,7 @@ while (( SECONDS < ready_deadline )); do
       *) echo "deploy: API /ready waiting ($health); DB not ready yet" ;;
     esac
   fi
-  sleep 2
+  sleep 1
 done
 case "$health" in
   healthy) ;;
