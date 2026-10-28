@@ -105,6 +105,12 @@ impl IntoResponse for Error {
             None => serde_json::json!({"error":{"code":code}}),
         };
         let mut response = (status, Json(body)).into_response();
+        // Also covers rejections before boundary stamping (bad service secret,
+        // Origin or oversized headers), which must never be shared by a CDN.
+        response.headers_mut().insert(
+            axum::http::header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("no-store"),
+        );
         response.extensions_mut().insert(ErrorCode(code));
         if status == StatusCode::SERVICE_UNAVAILABLE {
             response
@@ -264,6 +270,14 @@ mod unavailable_tests {
             response.extensions().get::<ErrorCode>().map(|c| c.0),
             Some("INVALID_INPUT")
         );
+    }
+
+    #[test]
+    fn early_rejections_are_never_shared() {
+        for error in [Error::Forbidden, Error::HeadersTooLarge, Error::Internal] {
+            let response = error.into_response();
+            assert_eq!(response.headers()["cache-control"], "no-store");
+        }
     }
 
     #[test]

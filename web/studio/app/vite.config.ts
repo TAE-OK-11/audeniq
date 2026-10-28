@@ -1,5 +1,5 @@
 /// <reference types="vitest/config" />
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 import { retainAssets } from './build/retain-assets';
@@ -8,14 +8,17 @@ import { hoverGuard } from './build/hover-guard';
 
 const src = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
-// 엣지 Worker 배포용 서버 연결 빌드는 `vite build --mode edge` → web/studio/edge-dist/connected
+// CloudFront + Rust origin production build: `vite build --mode edge` → web/studio/edge-dist/connected
 // (저장소의 public/connected는 체험(목) 모드 빌드)
 const API_TARGET = process.env.AUDENIQ_API ?? 'http://127.0.0.1:8080';
 const SERVICE_SECRET = process.env.EDGE_SERVICE_SECRET;
-// 공지·이벤트는 운영에서 엣지 Worker(D1)가 서빙한다. 로컬에서는 `wrangler dev` 주소를 지정하면 그쪽으로 보낸다.
-const CONTENT_TARGET = process.env.EDGE_CONTENT_URL;
 
-export default defineConfig(({ command, mode }) => ({
+export default defineConfig(({ command, mode }) => {
+  const env = loadEnv(mode, process.cwd(), 'VITE_');
+  if (command === 'build' && mode === 'edge' && env.VITE_API_BASE?.trim()) {
+    throw new Error('Studio production API requests must use the same CloudFront origin; remove VITE_API_BASE');
+  }
+  return ({
   base: '/',
   plugins: [react(), retainAssets()],
   css: {
@@ -41,14 +44,15 @@ export default defineConfig(({ command, mode }) => ({
     // 로컬 백엔드 연동: 엣지 Worker처럼 서비스 비밀 헤더를 붙여 API로 전달한다.
     // 실행: EDGE_SERVICE_SECRET=... bun run dev:api  (APP_ORIGIN=http://localhost:5173)
     proxy: {
-      ...(CONTENT_TARGET ? { '^/api/(notices|events)': { target: CONTENT_TARGET, changeOrigin: true } } : {}),
       '/api': {
         target: API_TARGET,
         headers: SERVICE_SECRET ? { 'x-audeniq-service': SERVICE_SECRET } : undefined,
         configure: proxy => {
           // 브라우저가 보낸 서비스 신원·IP 헤더는 엣지와 같이 버린다
           proxy.on('proxyReq', req => {
-            req.removeHeader('x-audeniq-client-ip');
+            for (const name of req.getHeaderNames()) {
+              if (name.toLowerCase().startsWith('x-audeniq-')) req.removeHeader(name);
+            }
             if (SERVICE_SECRET) req.setHeader('x-audeniq-service', SERVICE_SECRET);
             else req.removeHeader('x-audeniq-service');
           });
@@ -60,4 +64,5 @@ export default defineConfig(({ command, mode }) => ({
     environment: 'jsdom',
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'build/**/*.test.ts'],
   },
-}));
+  });
+});
