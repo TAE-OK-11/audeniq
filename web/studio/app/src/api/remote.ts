@@ -1,5 +1,5 @@
 // 실제 백엔드 어댑터 — 메인 서버(Rust API) 계약을 화면 모델로 변환한다.
-// 경로: 브라우저 → Cloudflare Worker(엣지) → Workers VPC / Cloudflare Tunnel → 메인 서버
+// 경로: 브라우저 → CloudFront + audeniq-studio-edge Function → 메인 서버
 //
 // 백엔드 규칙 요약 (docs/API.md)
 // - 로그인 응답에 csrf_token, 이후 모든 변경 요청에 X-CSRF-Token

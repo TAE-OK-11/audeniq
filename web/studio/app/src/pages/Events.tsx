@@ -26,7 +26,7 @@ const STATUS_LABEL: Record<AudenEvent['status'], string> = {
   ended: '종료',
 };
 
-// 예시 이벤트 — Worker(D1)가 없는 로컬 체험 모드에서만 보인다. 실제 글은 /api/events (진행 상태는 서버가 날짜로 계산)
+// 예시 이벤트 — 백엔드가 없는 로컬 체험 모드에서만 보인다. 실제 글은 /api/events (진행 상태는 서버가 날짜로 계산)
 function seedStatus(e: AudenEvent): AudenEvent['status'] {
   const today = todayStr();
   if (today < e.date) return 'upcoming';
