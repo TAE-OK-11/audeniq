@@ -25,7 +25,6 @@ const STATUS_DURING_SERVER_DOWN_MS = 30_000;
 const VERSION_EVERY_MS = 5 * 60_000;
 /** ‘지금 새로고침’을 누른 대상 버전 — 새로고침 뒤에도 같은 차이면 다시 묻지 않는다 */
 const RELOADED_FOR_KEY = 'aq-update-reloaded-for';
-const SERVER_DIALOG_COOLDOWN_MS = 60_000;
 
 const DISMISS_KEY = 'aq.maintenance-dismissed';
 const DEVICE_KEY = 'aq.device-checked';
@@ -124,6 +123,8 @@ export function SystemStatus({ children }: { children: ReactNode }) {
   const toast = useToast();
   const loc = useLocation();
   const loginFrom = loginRedirect(loc.state);
+  // Matches site_content::gate's admin bypass: keep recovery controls reachable.
+  // Also keep them navigable during failures; individual requests surface errors.
   const adminPage = loc.pathname.startsWith('/admin') || loc.pathname.startsWith('/content-admin')
     || (loc.pathname === '/login' && !!loginFrom?.startsWith('/admin'));
 
@@ -135,7 +136,6 @@ export function SystemStatus({ children }: { children: ReactNode }) {
   const [updateReady, setUpdateReady] = useState(false);
   const [deviceIssues, setDeviceIssues] = useState<DeviceIssue[]>([]);
   const [dismissed, setDismissed] = useState(() => safeGet('local', DISMISS_KEY) ?? '');
-  const lastServerDialog = useRef(0);
   const wasMaintenance = useRef(false);
   const updateDismissedFor = useRef<string | null>(null);
 
@@ -156,9 +156,8 @@ export function SystemStatus({ children }: { children: ReactNode }) {
     setUpcoming(st.maintenance.upcoming);
     if (!st.maintenance.active) setServerSaysMaintenance(false);
     // 상태 확인이 다시 되면 서버는 살아있다는 뜻이다. 전체 화면 서버 장애를
-    // 내리고, 다음 실패가 다시 바로 보일 수 있게 쿨다운도 초기화한다.
+    // 내린다. 다음 실패는 시간 제한 없이 다시 표시한다.
     setServerIssue(null);
-    lastServerDialog.current = 0;
   }, []);
 
   const maintenance = !!active || serverSaysMaintenance;
@@ -200,9 +199,8 @@ export function SystemStatus({ children }: { children: ReactNode }) {
     const onIssue = (e: Event) => {
       const issue = (e as CustomEvent<ServerIssue>).detail;
       if (!issue) return;
-      // revision은 실제로 화면 상태가 바뀌는 장애에만 올린다. 쿨다운에
-      // 걸려 무시되는 중복 실패까지 올리면, 그 실패보다 뒤에 시작한
-      // 탐침이 성공해도 화면을 못 내리고 한 번 더 기다리게 된다.
+      // Every new failure invalidates older successful probes. The existing
+      // visible dialog is deduplicated by setServerIssue, never by a time window.
       if (issue.kind === 'maintenance') {
         issueRevision.current++;
         const w = issue.window as MaintenanceWindow | undefined;
@@ -211,9 +209,6 @@ export function SystemStatus({ children }: { children: ReactNode }) {
         return;
       }
       if (!navigator.onLine) return; // 오프라인은 배너로 안내
-      const now = Date.now();
-      if (now - lastServerDialog.current < SERVER_DIALOG_COOLDOWN_MS) return;
-      lastServerDialog.current = now;
       issueRevision.current++;
       setServerIssue(cur => cur ?? { issue, meta: incidentMeta(issue.status ? `${issue.code} (${issue.status})` : issue.code) });
     };
@@ -323,6 +318,8 @@ export function SystemStatus({ children }: { children: ReactNode }) {
       <div className="aq-app-shell" inert={blocking || undefined} aria-hidden={blocking || undefined}>{children}</div>
       {overlay}
 
+      {/* Version and device state are already independent; priority prevents
+          stacked modals, and dismissing the version prompt reveals device issues. */}
       {!blocking && !serverIssue && updateReady && (
         <Modal title="새 버전이 준비됐어요" onClose={() => { updateDismissedFor.current = currentEntry(); setUpdateReady(false); }} modalClass="aq-sysdialog-mode">
           <DialogBody

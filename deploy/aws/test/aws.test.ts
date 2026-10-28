@@ -1,6 +1,7 @@
 // node --experimental-strip-types --test deploy/aws/test/aws.test.ts
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { APPS, cacheGroups, isAppName, parseHeaders } from '../apps.ts';
 import type { AppName } from '../apps.ts';
@@ -104,7 +105,7 @@ const BROWSER = {
   'x-forwarded-for': '9.9.9.9', 'x-real-ip': '9.9.9.9', 'x-partner-signature': 'sig', 'cf-connecting-ip': '8.8.8.8', referer: 'r',
 };
 
-test('edge 함수: 프록시 Worker(backendHeaders)와 같은 헤더만 백엔드로, 사용자 IP는 CloudFront 값', () => {
+test('legacy edge helper: 프록시 Worker(backendHeaders)와 같은 헤더만 백엔드로, 사용자 IP는 CloudFront 값', () => {
   const run = edge('studio');
   const paths = ['/', '/releases/1', '/assets/a.js', '/api/me', '/api/auth/login', '/api/mcp', '/api/oauth/token',
     '/api/partner-hooks/acme/status', ...MCP_DISCOVERY_PATHS, '/ready'];
@@ -124,7 +125,7 @@ test('edge 함수: 프록시 Worker(backendHeaders)와 같은 헤더만 백엔�
   assert.equal(run.request('/api/mcp', BROWSER).headers.authorization.value, 'Bearer leak');
 });
 
-test('edge 함수 응답: studio /api는 CORS, admin /api는 CORS 없이 no-store', () => {
+test('legacy edge helper 응답: studio CORS 옵션, admin no-store (Studio template uses v9)', () => {
   const studio = edge('studio').response('/api/me', { 'access-control-allow-origin': '*' });
   assert.equal(studio['access-control-allow-origin'].value, 'https://studio.audeniq.com');
   assert.equal(studio['access-control-allow-credentials'].value, 'true');
@@ -214,4 +215,25 @@ test('_headers Cache-Control → 업로드 그룹, HTML은 마지막 no-cache', 
   assert.equal(commands.at(-1)?.at(-1), 'no-cache');
   assert.ok(commands.every(c => c.includes('*.br') && c.includes('_headers')));
   assert.throws(() => syncCommands('studio', 'bucket'), /백엔드/);
+});
+
+
+test('Studio template uses checked-in functions; unknown cached associations are preserved', async () => {
+  const t = await template('studio');
+  assert.equal(t.Resources.EdgeFunction!.Properties.FunctionCode,
+    readFileSync(new URL('../../cloudfront/studio-edge-function-v9.js', import.meta.url), 'utf8'));
+  assert.equal(t.Resources.MaintenanceFunction!.Properties.FunctionCode,
+    readFileSync(new URL('../../cloudfront/studio-maintenance-function.js', import.meta.url), 'utf8'));
+  const d = t.Resources.Distribution.Properties.DistributionConfig;
+  for (const b of [d.DefaultCacheBehavior, ...d.CacheBehaviors]) {
+    if (typeof b.CachePolicyId !== 'string') {
+      assert.deepEqual(b.FunctionAssociations, [], 'Live cached connections await inventory');
+      continue;
+    }
+    assert.deepEqual(b.FunctionAssociations, [
+      { EventType: 'viewer-request', FunctionARN: { 'Fn::GetAtt': ['EdgeFunction', 'FunctionARN'] } },
+      { EventType: 'viewer-response', FunctionARN: { 'Fn::GetAtt': ['MaintenanceFunction', 'FunctionARN'] } },
+    ]);
+  }
+  assert.equal(d.CustomErrorResponses, undefined, 'Independent error origin is an undecided infrastructure change');
 });

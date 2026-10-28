@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { orgPath, req } from '../api/http';
 import { errorMessage } from '../api/errors';
+import { ReadFailure } from './ReadFailure';
 import { MOCK } from '../lib/mode';
 import { useToast } from './Toast';
 import { ManageHead } from './ManageHead';
@@ -28,6 +29,7 @@ const pctLabel = (bps: number) => `${(bps / 100).toLocaleString(undefined, { max
 
 export function SplitsCard({ releaseId, embedded = false }: { releaseId: string; embedded?: boolean }) {
   const toast = useToast();
+  const [loadFailed, setLoadFailed] = useState(false);
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const [rows, setRows] = useState<Record<string, Row[]>>({});
   const [dirty, setDirty] = useState(false);
@@ -42,9 +44,11 @@ export function SplitsCard({ releaseId, embedded = false }: { releaseId: string;
         id: sh.id, name: sh.name, email: '', pct: fromBps(sh.share_bps), status: sh.status, masked: sh.email,
       }))])));
       setDirty(false);
-    } catch { /* 볼 수 없으면 숨긴다 */ }
+      setLoadFailed(false);
+    } catch { setLoadFailed(true); }
   }, [base]);
   useEffect(() => { void load(); }, [load]);
+  if (loadFailed) return <ReadFailure label="수익 분배" retry={load} />;
   if (!sheet || !sheet.tracks.length) return null;
   const anyShare = sheet.tracks.some(t => t.shares.length);
   if (!sheet.editable && !anyShare) return null;
