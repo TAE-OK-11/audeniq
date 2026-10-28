@@ -11,15 +11,21 @@ use std::path::Path;
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     // Internal mode is invoked only by the sandboxed parent, with cleared env.
-    if args.first().map(String::as_str) == Some("sandbox-webp") {
+    if let Some(codec) = args.first().and_then(|v| match v.as_str() {
+        "sandbox-webp" => Some(image_encoder::Codec::LosslessWebp),
+        "sandbox-lossy-webp" => Some(image_encoder::Codec::LossyWebp),
+        "sandbox-avif" => Some(image_encoder::Codec::Avif),
+        _ => None,
+    }) {
         anyhow::ensure!(args.len() == 5, "invalid sandbox arguments");
-        return image_encoder::sandbox_webp(
+        return image_encoder::sandbox_variant(
             Path::new(&args[1]),
             Path::new(&args[2]),
             &args[3],
             WebpOptions {
                 max_edge: args[4].parse()?,
             },
+            codec,
         );
     }
     anyhow::ensure!(

@@ -403,7 +403,7 @@ async fn real_webp_producer_verifies_source_and_serves_decodable_bytes(pool: PgP
     let mut webp_tag = String::new();
     for (accept, mime) in [
         ("image/avif,image/webp", "image/webp"),
-        ("image/avif", "image/png"),
+        ("image/avif", "image/webp"),
         ("image/webp;q=0", "image/png"),
     ] {
         let response = app
@@ -414,7 +414,6 @@ async fn real_webp_producer_verifies_source_and_serves_decodable_bytes(pool: PgP
                     .header("x-audeniq-service", SECRET)
                     .header("cookie", &u.cookie)
                     .header("accept", accept)
-                    .header("if-none-match", &webp_tag)
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -493,5 +492,194 @@ async fn real_webp_producer_verifies_source_and_serves_decodable_bytes(pool: PgP
             .await
             .bytes,
         source
+    );
+}
+
+#[sqlx::test]
+async fn automatic_image_queue_is_bounded_and_keeps_running_work(pool: PgPool) {
+    let (state, _, store, u) = setup(pool).await;
+    let id = asset(&state, &store, u.org, b"registered source").await;
+    let sha = audeniq_core::domain::sha256_hex(b"registered source");
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM catalog.image_jobs WHERE asset_id=$1 AND source_sha256=$2 AND status='QUEUED'")
+        .bind(id).bind(&sha).fetch_one(&state.pool).await.unwrap();
+    assert_eq!(count, 1, "registration atomically schedules its revision");
+    // Fill the fixed slots without generating hundreds of unrelated assets.
+    sqlx::query("UPDATE catalog.image_jobs SET org_id=$1,asset_id=$2,source_sha256=$3,status='QUEUED',queued_at=now()-interval '1 hour'")
+        .bind(u.org).bind(id).bind(&sha).execute(&state.pool).await.unwrap();
+    sqlx::query("UPDATE catalog.image_jobs SET status='RUNNING',attempts=1 WHERE slot=1")
+        .execute(&state.pool)
+        .await
+        .unwrap();
+    let next = asset(&state, &store, u.org, b"next registered source").await;
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM catalog.image_jobs")
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 256);
+    let running: Uuid = sqlx::query_scalar(
+        "SELECT asset_id FROM catalog.image_jobs WHERE slot=1 AND status='RUNNING'",
+    )
+    .fetch_one(&state.pool)
+    .await
+    .unwrap();
+    assert_eq!(running, id);
+    let replacement: Uuid =
+        sqlx::query_scalar("SELECT asset_id FROM catalog.image_jobs WHERE slot=2")
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    assert_eq!(replacement, next, "oldest waiting slot evicted first");
+    // No new revision: no duplicate job on an idempotent completion/update.
+    sqlx::query("UPDATE catalog.assets SET state='REGISTERED' WHERE id=$1")
+        .bind(next)
+        .execute(&state.pool)
+        .await
+        .unwrap();
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM catalog.image_jobs WHERE asset_id=$1")
+            .bind(next)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    assert_eq!(count, 1);
+}
+
+#[sqlx::test]
+async fn automatic_worker_retries_three_times_and_recovers_crashes(pool: PgPool) {
+    let (state, _, store, u) = setup(pool).await;
+    // Larger than the tiny-source skip; a missing trusted binary forces failure.
+    let source = vec![42; 2048];
+    let id = asset(&state, &store, u.org, &source).await;
+    sqlx::query("UPDATE operations.jobs SET status='SUCCEEDED',lock_token=NULL,lease_until=NULL WHERE status IN ('QUEUED','RUNNING')")
+        .execute(&state.pool).await.unwrap();
+    let storage: Arc<dyn ObjectStore> = store;
+    let binary = std::path::Path::new("/nonexistent/audeniq-image-encode");
+    // Simulate a crash after the durable claim. Recovery must retain attempts.
+    sqlx::query("UPDATE catalog.image_jobs SET status='RUNNING',attempts=1 WHERE asset_id=$1")
+        .bind(id)
+        .execute(&state.pool)
+        .await
+        .unwrap();
+    for attempt in [2_i16, 3] {
+        assert!(
+            audeniq_core::image_jobs::tick(&state.pool, &storage, false, binary)
+                .await
+                .unwrap()
+        );
+        let row: (String, i16) =
+            sqlx::query_as("SELECT status,attempts FROM catalog.image_jobs WHERE asset_id=$1")
+                .bind(id)
+                .fetch_one(&state.pool)
+                .await
+                .unwrap();
+        assert_eq!(row.1, attempt);
+        assert_eq!(row.0, if attempt == 3 { "FAILED" } else { "QUEUED" });
+        if attempt == 2 {
+            assert!(
+                !audeniq_core::image_jobs::tick(&state.pool, &storage, false, binary)
+                    .await
+                    .unwrap(),
+                "retry must honor backoff"
+            );
+            sqlx::query(
+                "UPDATE catalog.image_jobs SET run_at=now()-interval '1 second' WHERE asset_id=$1",
+            )
+            .bind(id)
+            .execute(&state.pool)
+            .await
+            .unwrap();
+        }
+    }
+    let image = uploads::stored_image(&state, u.org, id).await.unwrap();
+    assert_eq!(
+        image.bytes, source,
+        "failed optional work preserves original serving"
+    );
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM catalog.image_variants WHERE asset_id=$1")
+            .bind(id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    assert_eq!(count, 0);
+}
+
+#[sqlx::test]
+async fn automatic_worker_registers_only_after_verified_output(pool: PgPool) {
+    use image::{
+        ExtendedColorType, ImageEncoder,
+        codecs::png::{CompressionType, FilterType, PngEncoder},
+    };
+    let (state, _, store, u) = setup(pool).await;
+    let pixels =
+        image::RgbaImage::from_fn(128, 128, |x, y| image::Rgba([x as u8, y as u8, 100, 255]));
+    let mut source = Vec::new();
+    PngEncoder::new_with_quality(
+        &mut source,
+        CompressionType::Uncompressed,
+        FilterType::NoFilter,
+    )
+    .write_image(&pixels, 128, 128, ExtendedColorType::Rgba8)
+    .unwrap();
+    let id = asset(&state, &store, u.org, &source).await;
+    sqlx::query("UPDATE operations.jobs SET status='SUCCEEDED',lock_token=NULL,lease_until=NULL WHERE status IN ('QUEUED','RUNNING')")
+        .execute(&state.pool).await.unwrap();
+    let mut headers = HeaderMap::new();
+    headers.insert("accept", "image/avif".parse().unwrap());
+    let original = uploads::stored_image(&state, u.org, id).await.unwrap();
+    let before = audeniq_core::image_variants::negotiate(&state, original, &headers).await;
+    let before = uploads::immutable_image_response(before, &headers);
+    assert_eq!(before.headers()["content-type"], "image/png");
+    assert_eq!(before.headers()["cache-control"], "private, no-cache");
+    let old_tag = before.headers()["etag"].clone();
+    let storage: Arc<dyn ObjectStore> = store;
+    assert!(
+        audeniq_core::image_jobs::tick(
+            &state.pool,
+            &storage,
+            false,
+            std::path::Path::new(env!("CARGO_BIN_EXE_audeniq-image-encode"))
+        )
+        .await
+        .unwrap()
+    );
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM catalog.image_jobs WHERE asset_id=$1")
+            .bind(id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    assert_eq!(status, "DONE");
+    headers.insert("if-none-match", old_tag.clone());
+    let original = uploads::stored_image(&state, u.org, id).await.unwrap();
+    assert_eq!(original.bytes, source);
+    let after = audeniq_core::image_variants::negotiate(&state, original, &headers).await;
+    assert!(after.bytes.len() < source.len());
+    // AVIF has signature/hash/storage verification, not a worker decoder.
+    assert_eq!(after.content_type, "image/avif");
+    assert_eq!(after.bytes.get(4..12), Some(b"ftypavif".as_slice()));
+    let after = uploads::immutable_image_response(after, &headers);
+    assert_eq!(after.status(), 200);
+    assert_eq!(after.headers()["content-type"], "image/avif");
+    assert_eq!(after.headers()["vary"], "Accept");
+    assert_eq!(
+        after.headers()["cache-control"],
+        "private, max-age=31536000, immutable"
+    );
+    assert_ne!(after.headers()["etag"], old_tag);
+
+    headers.insert("accept", "image/webp".parse().unwrap());
+    let original = uploads::stored_image(&state, u.org, id).await.unwrap();
+    let fallback = audeniq_core::image_variants::negotiate(&state, original, &headers).await;
+    assert_eq!(fallback.content_type, "image/webp");
+    let decoded = image::load_from_memory_with_format(&fallback.bytes, image::ImageFormat::WebP)
+        .unwrap()
+        .to_rgba8();
+    assert_eq!(decoded.dimensions(), pixels.dimensions());
+    assert!(
+        decoded
+            .pixels()
+            .zip(pixels.pixels())
+            .all(|(a, b)| a[3] == b[3])
     );
 }

@@ -340,3 +340,6 @@ GRANT SELECT,INSERT ON portal.image_revisions TO audeniq_api;
 GRANT SELECT ON catalog.image_variants TO audeniq_api;
 GRANT SELECT,INSERT ON catalog.image_variants TO audeniq_worker;
 REVOKE UPDATE,DELETE,TRUNCATE ON portal.image_revisions,catalog.image_variants FROM audeniq_api,audeniq_worker;
+
+-- Optional image jobs: only the upload trigger schedules; only workers execute.
+GRANT SELECT,UPDATE ON catalog.image_jobs TO audeniq_worker;
