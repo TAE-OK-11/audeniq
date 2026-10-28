@@ -200,8 +200,11 @@ export function SystemStatus({ children }: { children: ReactNode }) {
     const onIssue = (e: Event) => {
       const issue = (e as CustomEvent<ServerIssue>).detail;
       if (!issue) return;
-      issueRevision.current++;
+      // revision은 실제로 화면 상태가 바뀌는 장애에만 올린다. 쿨다운에
+      // 걸려 무시되는 중복 실패까지 올리면, 그 실패보다 뒤에 시작한
+      // 탐침이 성공해도 화면을 못 내리고 한 번 더 기다리게 된다.
       if (issue.kind === 'maintenance') {
+        issueRevision.current++;
         const w = issue.window as MaintenanceWindow | undefined;
         if (w && typeof w === 'object' && typeof w.starts_at === 'string') setActive(w);
         setServerSaysMaintenance(true);
@@ -211,6 +214,7 @@ export function SystemStatus({ children }: { children: ReactNode }) {
       const now = Date.now();
       if (now - lastServerDialog.current < SERVER_DIALOG_COOLDOWN_MS) return;
       lastServerDialog.current = now;
+      issueRevision.current++;
       setServerIssue(cur => cur ?? { issue, meta: incidentMeta(issue.status ? `${issue.code} (${issue.status})` : issue.code) });
     };
     window.addEventListener(SERVER_ISSUE_EVENT, onIssue);
