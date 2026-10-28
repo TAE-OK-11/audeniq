@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 
 const P: Record<string, ReactNode> = {
+  key: <><circle cx="8" cy="9" r="5" /><path d="m11.5 12.5 8 8 2-2-2-2 1.5-1.5-2-2-1.5 1.5-2.5-2.5" /></>,
   pencil: <><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Z" /><path d="m13.5 6.5 4 4" /></>,
   doc: <><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" /><path d="M14 3v5h5M9 13h6M9 17h4" /></>,
   music: <><path d="M9 18V6l11-2v12" /><circle cx="6.5" cy="18" r="2.5" /><circle cx="17.5" cy="16" r="2.5" /></>,
