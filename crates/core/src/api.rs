@@ -174,12 +174,17 @@ pub fn router(s: AppState) -> Router {
         .route("/api/auth/password", post(change_password))
         .route("/api/auth/passkey/options", post(passkey_login_options))
         .route("/api/auth/passkey/login", post(passkey_login))
+        .route(
+            "/api/auth/passkey/reauth/options",
+            post(passkey_step_up_options),
+        )
+        .route("/api/auth/passkey/reauth", post(passkey_step_up))
         .route("/api/auth/passkeys", get(passkey_list))
         .route("/api/auth/passkeys/options", post(passkey_register_options))
         .route("/api/auth/passkeys/register", post(passkey_register))
         .route(
             "/api/auth/passkeys/{id}",
-            axum::routing::delete(passkey_remove),
+            axum::routing::delete(passkey_remove).patch(passkey_rename),
         )
         .route("/api/document-keys", get(document_keys))
         .route("/api/print-stamps", post(print_stamp))
@@ -592,7 +597,7 @@ pub async fn dsp_availability(s: &AppState, a: &auth::Actor, org: Uuid) -> Resul
 async fn register(
     State(s): State<AppState>,
     h: HeaderMap,
-    Json(i): Json<auth::Credentials>,
+    Json(i): Json<auth::SignupInput>,
 ) -> Result<Json<Value>> {
     auth::register(&s, &h, i).await
 }
@@ -678,6 +683,16 @@ async fn passkey_login(
 ) -> Result<(HeaderMap, Json<Value>)> {
     crate::passkey::login(&s, &h, i).await
 }
+async fn passkey_step_up_options(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
+    Ok(Json(crate::passkey::step_up_options(&s, &h).await?))
+}
+async fn passkey_step_up(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Json(i): Json<crate::passkey::LoginInput>,
+) -> Result<(HeaderMap, Json<Value>)> {
+    crate::passkey::step_up(&s, &h, i).await
+}
 async fn passkey_list(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     Ok(Json(crate::passkey::list(&s, &h).await?))
 }
@@ -690,6 +705,14 @@ async fn passkey_register(
     Json(i): Json<crate::passkey::RegisterInput>,
 ) -> Result<Json<Value>> {
     Ok(Json(crate::passkey::register(&s, &h, i).await?))
+}
+async fn passkey_rename(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(i): Json<crate::passkey::RenameInput>,
+) -> Result<Json<Value>> {
+    Ok(Json(crate::passkey::rename(&s, &h, id, i).await?))
 }
 async fn passkey_remove(
     State(s): State<AppState>,

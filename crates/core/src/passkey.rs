@@ -15,8 +15,8 @@
 //! - Discoverable credentials (passkeys): the login options name no account,
 //!   so they do not reveal whether an email exists. The email entered first
 //!   must belong to the passkey that signs.
-//! - Adding a passkey needs the current password, so a stolen session cannot
-//!   plant its own login.
+//! - Adding a passkey needs a fresh session-bound passkey proof or the emergency
+//!   password, so a stolen session cannot plant its own login.
 use crate::{
     api::AppState,
     auth,
@@ -91,7 +91,12 @@ fn decode(v: &str, max: usize) -> Option<Vec<u8>> {
         .filter(|b| !b.is_empty() && b.len() <= max)
 }
 
-async fn new_challenge(s: &AppState, purpose: &str, user: Option<Uuid>) -> Result<(Uuid, String)> {
+async fn new_challenge(
+    s: &AppState,
+    purpose: &str,
+    user: Option<Uuid>,
+    session: Option<&[u8]>,
+) -> Result<(Uuid, String)> {
     let mut raw = [0u8; 32];
     {
         use rand::{TryRng, rngs::SysRng};
@@ -107,14 +112,15 @@ async fn new_challenge(s: &AppState, purpose: &str, user: Option<Uuid>) -> Resul
     .execute(&s.pool)
     .await?;
     sqlx::query(
-        "INSERT INTO identity.webauthn_challenges(id,challenge_hash,purpose,user_id,expires_at)
-         VALUES($1,$2,$3,$4,now()+make_interval(secs=>$5))",
+        "INSERT INTO identity.webauthn_challenges(id,challenge_hash,purpose,user_id,expires_at,session_hash)
+         VALUES($1,$2,$3,$4,now()+make_interval(secs=>$5),$6)",
     )
     .bind(id)
     .bind(Sha256::digest(challenge.as_bytes()).to_vec())
     .bind(purpose)
     .bind(user)
     .bind(f64::from(CHALLENGE_SECONDS))
+    .bind(session)
     .execute(&s.pool)
     .await?;
     Ok((id, challenge))
@@ -126,15 +132,17 @@ async fn consume(
     id: Uuid,
     purpose: &str,
     user: Option<Uuid>,
+    session: Option<&[u8]>,
 ) -> Result<Option<Vec<u8>>> {
     Ok(sqlx::query_scalar(
         "UPDATE identity.webauthn_challenges SET consumed_at=now()
-          WHERE id=$1 AND purpose=$2 AND user_id IS NOT DISTINCT FROM $3
+          WHERE id=$1 AND purpose=$2 AND user_id IS NOT DISTINCT FROM $3 AND session_hash IS NOT DISTINCT FROM $4
             AND consumed_at IS NULL AND expires_at>now() RETURNING challenge_hash",
     )
     .bind(id)
     .bind(purpose)
     .bind(user)
+    .bind(session)
     .fetch_optional(c)
     .await?)
 }
@@ -236,7 +244,7 @@ pub async fn login_options(s: &AppState, h: &HeaderMap) -> Result<Value> {
     auth::origin(h, &s.config)?;
     let (src, factor) = source(h);
     auth::rate(&s.pool, &format!("passkey-options:src:{src}"), 60 * factor).await?;
-    let (id, challenge) = new_challenge(s, "LOGIN", None).await?;
+    let (id, challenge) = new_challenge(s, "LOGIN", None, None).await?;
     Ok(json!({
         "challenge_id": id,
         "public_key": {
@@ -270,6 +278,58 @@ struct Verified {
 }
 
 pub async fn login(s: &AppState, h: &HeaderMap, i: LoginInput) -> Result<(HeaderMap, Json<Value>)> {
+    authenticate(s, h, i, None).await
+}
+
+pub async fn step_up(
+    s: &AppState,
+    h: &HeaderMap,
+    i: LoginInput,
+) -> Result<(HeaderMap, Json<Value>)> {
+    let a = auth::actor(&s.pool, h, &s.config, true).await?;
+    authenticate(s, h, i, Some(a)).await
+}
+
+pub async fn step_up_options(s: &AppState, h: &HeaderMap) -> Result<Value> {
+    let a = auth::actor(&s.pool, h, &s.config, true).await?;
+    auth::rate(&s.pool, &format!("passkey-step-up:{}", a.user), 20).await?;
+    let (id, challenge) = new_challenge(s, "STEP_UP", Some(a.user), Some(&a.session_hash)).await?;
+    Ok(
+        json!({"challenge_id":id,"public_key":{"challenge":challenge,"rpId":rp_id(s)?,
+        "timeout":CHALLENGE_SECONDS*1000,"userVerification":"required","allowCredentials":[]}}),
+    )
+}
+
+/// Consume in the protected operation's transaction. Proofs are session-bound,
+/// expire after five minutes and cannot authorize a second operation.
+pub(crate) async fn consume_proof(
+    c: &mut sqlx::PgConnection,
+    a: &auth::Actor,
+    proof: &str,
+) -> Result<()> {
+    if proof.len() != 64 {
+        return Err(Error::InvalidCode("PASSKEY_STEP_UP_REQUIRED"));
+    }
+    // Match session-management lock order: account, then session, then proof.
+    sqlx::query("SELECT id FROM identity.users WHERE id=$1 FOR UPDATE")
+        .bind(a.user)
+        .execute(&mut *c)
+        .await?;
+    auth::lock_current_session(c, a).await?;
+    let n = sqlx::query("DELETE FROM identity.passkey_proofs WHERE token_hash=$1 AND session_hash=$2 AND user_id=$3 AND expires_at>clock_timestamp()")
+        .bind(auth::hash_token(proof)).bind(&a.session_hash).bind(a.user).execute(c).await?.rows_affected();
+    if n != 1 {
+        return Err(Error::InvalidCode("PASSKEY_STEP_UP_REQUIRED"));
+    }
+    Ok(())
+}
+
+async fn authenticate(
+    s: &AppState,
+    h: &HeaderMap,
+    i: LoginInput,
+    actor: Option<auth::Actor>,
+) -> Result<(HeaderMap, Json<Value>)> {
     auth::origin(h, &s.config)?;
     let (src, factor) = source(h);
     auth::rate(
@@ -292,9 +352,27 @@ pub async fn login(s: &AppState, h: &HeaderMap, i: LoginInput) -> Result<(Header
     };
     let rp = rp_id(s)?;
     let mut tx = s.pool.begin().await?;
-    let Some(challenge_hash) = consume(&mut tx, i.challenge_id, "LOGIN", None).await? else {
+    let Some(challenge_hash) = consume(
+        &mut tx,
+        i.challenge_id,
+        if actor.is_some() { "STEP_UP" } else { "LOGIN" },
+        actor.as_ref().map(|a| a.user),
+        actor.as_ref().map(|a| a.session_hash.as_slice()),
+    )
+    .await?
+    else {
         return Err(Error::InvalidCode("PASSKEY_CHALLENGE_INVALID"));
     };
+    // Acquire the account lock before the credential lock, matching removal
+    // and session revocation. Otherwise session issuance's user FK can deadlock
+    // with a simultaneous credential removal.
+    let owner: Option<Uuid> = sqlx::query_scalar("SELECT u.id FROM identity.users u JOIN identity.passkeys p ON p.user_id=u.id WHERE p.credential_id=$1 AND u.status='ACTIVE' FOR SHARE OF u")
+        .bind(&cred).fetch_optional(&mut *tx).await?;
+    if let Some(a) = &actor
+        && owner == Some(a.user)
+    {
+        auth::lock_current_session(&mut tx, a).await?;
+    }
     let row = sqlx::query(
         "SELECT p.id,p.user_id,p.public_key,p.alg,p.sign_count FROM identity.passkeys p
            JOIN identity.users u ON u.id=p.user_id AND u.status='ACTIVE'
@@ -307,7 +385,8 @@ pub async fn login(s: &AppState, h: &HeaderMap, i: LoginInput) -> Result<(Header
         let user: Uuid = r.get("user_id");
         let stored: i64 = r.get("sign_count");
         let data = auth_data(&ad, &rp)?;
-        let ok = email_user.is_none_or(|e| e == Some(user))
+        let ok = actor.as_ref().is_none_or(|a| a.user == user)
+            && email_user.is_none_or(|e| e == Some(user))
             && i.user_handle
                 .as_deref()
                 .is_none_or(|u| decode(u, 64).as_deref() == Some(user.as_bytes().as_slice()))
@@ -347,6 +426,29 @@ pub async fn login(s: &AppState, h: &HeaderMap, i: LoginInput) -> Result<(Header
     .bind(v.backed_up)
     .execute(&mut *tx)
     .await?;
+    if let Some(a) = actor {
+        let token = auth::random_token();
+        sqlx::query("DELETE FROM identity.passkey_proofs WHERE expires_at<now()")
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("INSERT INTO identity.passkey_proofs(token_hash,session_hash,user_id,expires_at) VALUES($1,$2,$3,now()+interval '5 minutes')")
+            .bind(auth::hash_token(&token)).bind(&a.session_hash).bind(a.user).execute(&mut *tx).await?;
+        operations::audit(
+            &mut tx,
+            Some(a.user),
+            None,
+            Some(a.user),
+            "auth.passkey.step_up",
+            "WEBAUTHN",
+            a.request,
+        )
+        .await?;
+        tx.commit().await?;
+        return Ok((
+            HeaderMap::new(),
+            Json(json!({"reauth_token":token,"expires_in":300})),
+        ));
+    }
     auth::issue_session(s, tx, h, v.user, "PASSKEY", true).await
 }
 
@@ -394,7 +496,7 @@ pub async fn register_options(s: &AppState, h: &HeaderMap) -> Result<Value> {
         return Err(Error::PolicyGate("PASSKEY_LIMIT"));
     }
     let email = crate::pii::user_email(&s.payout_keys, &s.pool, a.user).await?;
-    let (id, challenge) = new_challenge(s, "REGISTER", Some(a.user)).await?;
+    let (id, challenge) = new_challenge(s, "REGISTER", Some(a.user), None).await?;
     let params: Vec<Value> = ALGS
         .iter()
         .map(|alg| json!({"type": "public-key", "alg": alg}))
@@ -426,7 +528,9 @@ pub async fn register_options(s: &AppState, h: &HeaderMap) -> Result<Value> {
 #[serde(deny_unknown_fields)]
 pub struct RegisterInput {
     pub challenge_id: Uuid,
+    #[serde(default)]
     pub current_password: String,
+    pub reauth_token: Option<String>,
     pub name: String,
     pub credential_id: String,
     pub client_data_json: String,
@@ -453,36 +557,52 @@ pub async fn register(s: &AppState, h: &HeaderMap, i: RegisterInput) -> Result<V
     ) else {
         return Err(Error::InvalidCode("PASSKEY_INVALID"));
     };
-    // Re-authenticate with the password before binding a new authenticator.
-    let hash: String = sqlx::query_scalar(
-        "SELECT password_hash FROM identity.users WHERE id=$1 AND status='ACTIVE'",
-    )
-    .bind(a.user)
-    .fetch_optional(&s.pool)
-    .await?
-    .ok_or(Error::Unauthorized)?;
-    let permit = s
-        .password_slots
-        .clone()
-        .acquire_owned()
-        .await
-        .map_err(|_| Error::Internal)?;
-    let password = i.current_password;
-    let valid = crate::password_work::run(permit, move || auth::verify_password(&password, &hash))
-        .await
-        .map(|(_, ok)| ok)
-        .unwrap_or(false);
-    if !valid {
-        return Err(Error::InvalidCode("CURRENT_PASSWORD_INVALID"));
-    }
+    // A fresh passkey proof can replace emergency password verification.
+    let password_hash = if i.reauth_token.is_none() {
+        let hash: String = sqlx::query_scalar(
+            "SELECT password_hash FROM identity.users WHERE id=$1 AND status='ACTIVE'",
+        )
+        .bind(a.user)
+        .fetch_optional(&s.pool)
+        .await?
+        .ok_or(Error::Unauthorized)?;
+        let permit = s
+            .password_slots
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| Error::Internal)?;
+        let password = i.current_password;
+        let verified_hash = hash.clone();
+        let valid =
+            crate::password_work::run(permit, move || auth::verify_password(&password, &hash))
+                .await
+                .map(|(_, ok)| ok)
+                .unwrap_or(false);
+        if !valid {
+            return Err(Error::InvalidCode("CURRENT_PASSWORD_INVALID"));
+        }
+        Some(verified_hash)
+    } else {
+        None
+    };
     let rp = rp_id(s)?;
     let mut tx = s.pool.begin().await?;
     // One registration at a time per account (the limit below holds).
-    sqlx::query("SELECT 1 FROM identity.users WHERE id=$1 FOR UPDATE")
-        .bind(a.user)
-        .execute(&mut *tx)
-        .await?;
-    let Some(challenge_hash) = consume(&mut tx, i.challenge_id, "REGISTER", Some(a.user)).await?
+    if let Some(proof) = &i.reauth_token {
+        consume_proof(&mut tx, &a, proof).await?;
+    } else {
+        sqlx::query("SELECT id FROM identity.users WHERE id=$1 FOR UPDATE")
+            .bind(a.user)
+            .execute(&mut *tx)
+            .await?;
+        auth::lock_current_session(&mut tx, &a).await?;
+    }
+    if let Some(hash) = password_hash {
+        auth::current_password(&mut tx, a.user, &hash).await?;
+    }
+    let Some(challenge_hash) =
+        consume(&mut tx, i.challenge_id, "REGISTER", Some(a.user), None).await?
     else {
         return Err(Error::InvalidCode("PASSKEY_CHALLENGE_INVALID"));
     };
@@ -542,9 +662,76 @@ pub async fn register(s: &AppState, h: &HeaderMap, i: RegisterInput) -> Result<V
     list_for(s, a.user).await
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RenameInput {
+    pub name: String,
+}
+
+pub async fn rename(s: &AppState, h: &HeaderMap, id: Uuid, i: RenameInput) -> Result<Value> {
+    let a = auth::actor(&s.pool, h, &s.config, true).await?;
+    let name = i.name.trim();
+    if name.is_empty() || name.chars().count() > 60 {
+        return Err(Error::Invalid);
+    }
+    crate::text_policy::check(name)?;
+    let mut tx = s.pool.begin().await?;
+    sqlx::query("SELECT id FROM identity.users WHERE id=$1 FOR UPDATE")
+        .bind(a.user)
+        .execute(&mut *tx)
+        .await?;
+    auth::lock_current_session(&mut tx, &a).await?;
+    let n = sqlx::query("UPDATE identity.passkeys SET name=$3 WHERE id=$1 AND user_id=$2")
+        .bind(id)
+        .bind(a.user)
+        .bind(name)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    if n != 1 {
+        return Err(Error::NotFound);
+    }
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        None,
+        Some(a.user),
+        "auth.passkey.renamed",
+        "WEBAUTHN",
+        a.request,
+    )
+    .await?;
+    tx.commit().await?;
+    list_for(s, a.user).await
+}
+
 pub async fn remove(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<Value> {
     let a = auth::actor(&s.pool, h, &s.config, true).await?;
     let mut tx = s.pool.begin().await?;
+    // Shared with OAuth unlink and registration: concurrent removals cannot
+    // each observe the other credential and strand the account.
+    sqlx::query("SELECT id FROM identity.users WHERE id=$1 FOR UPDATE")
+        .bind(a.user)
+        .execute(&mut *tx)
+        .await?;
+    // Evaluate alternatives in a new READ COMMITTED statement after the lock
+    // has been acquired; subqueries in the locking statement can see stale rows.
+    let alternatives: bool = sqlx::query_scalar("SELECT password_hash LIKE '$argon2%' OR EXISTS(SELECT 1 FROM identity.oauth_identities WHERE user_id=$1) OR EXISTS(SELECT 1 FROM identity.passkeys WHERE user_id=$1 AND id<>$2) FROM identity.users WHERE id=$1")
+        .bind(a.user).bind(id).fetch_one(&mut *tx).await?;
+    auth::lock_current_session(&mut tx, &a).await?;
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM identity.passkeys WHERE id=$1 AND user_id=$2)",
+    )
+    .bind(id)
+    .bind(a.user)
+    .fetch_one(&mut *tx)
+    .await?;
+    if !exists {
+        return Err(Error::NotFound);
+    }
+    if !alternatives {
+        return Err(Error::PolicyGate("PASSKEY_LAST_SIGN_IN_METHOD"));
+    }
     let n = sqlx::query("DELETE FROM identity.passkeys WHERE id=$1 AND user_id=$2")
         .bind(id)
         .bind(a.user)
