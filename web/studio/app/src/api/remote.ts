@@ -269,13 +269,14 @@ const realLive = (r: ServerRelease) => (r.live_status_by_dsp ?? []).filter(l => 
 
 function toSummary(r: ServerRelease): Release {
   const d = readDraft(r);
-  const status = uiStatus(r.status, realLive(r).length > 0, r.agreement_status ?? null);
+  const live = realLive(r);
+  const status = uiStatus(r.status, live.length > 0, r.agreement_status ?? null);
   return {
     id: r.id,
     title: r.title,
     status,
     fixKind: fixKind(r.status, status),
-    livePlatforms: realLive(r).map(l => l.dsp ?? l.partner_id),
+    livePlatforms: live.map(l => l.dsp ?? l.partner_id),
     release_date: (typeof r.draft?.release_date === 'string' && r.draft.release_date) || null,
     created_at: (r.created_at ?? '').slice(0, 10),
     updated_at: typeof r.draft?.saved_at === 'string' ? r.draft.saved_at : r.created_at,
