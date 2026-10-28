@@ -1,9 +1,8 @@
 name: Studio deploy
 # Studio(web/studio)가 바뀐 main PR에서 테스트 → 빌드를 돌리고,
 # main일 때만 빌드 결과를 production 서버로 올린다 (deploy/studio-release.sh, deploy/STUDIO_SERVING.md).
-# 화면 파일은 백엔드 api가 서빙하고(crates/core/src/studio_static.rs), Cloudflare Worker는 프록시만 한다.
-# Worker 배포(wrangler)는 이 워크플로에서 하지 않는다: 프록시 Worker(audeniq-studio-proxy)는 바뀔 때만 손으로 올리고,
-# 예전 정적 서빙 Worker(audeniq-studio)는 DNS 전환 뒤 롤백용으로 그대로 둔다.
+# CloudFront forwards to the Rust HTTPS origin, which serves UI files and API.
+# Legacy Worker tests remain regression coverage; this workflow never publishes Workers.
 # 필요한 production 환경 Secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS (백엔드 배포와 같은 값)
 # 수동 실행: Actions → Studio deploy → Run workflow (main에서 실행하면 배포)
 on:

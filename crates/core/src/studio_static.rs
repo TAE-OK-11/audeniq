@@ -7,7 +7,7 @@
 //! - 파일: `STUDIO_DIR`(배포: `/srv/studio/current` → `releases/<커밋>` 심링크, deploy/studio-release.sh).
 //!   폴더를 통째로 메모리에 읽고, 심링크가 다른 릴리스를 가리키면 다음 요청에서 새로 읽는다(api 재시작 없음).
 //! - 규칙: 빌드 결과의 `_headers`(보안 헤더·캐시)와 `_redirects`를 그대로 따른다. Workers·S3 배포와 같은 원본.
-//!   `_headers`에 캐시 규칙이 없으면 index.html은 no-cache, `/assets/*`는 1년 immutable.
+//!   HTML은 no-cache, 해시 이름 에셋만 1년 immutable (캐시 안전 규칙은 빌드 헤더보다 우선).
 //! - SPA 폴백: 확장자 없는 경로는 `/index.html`(no-cache). 확장자 있는 없는 파일은 404
 //!   (예전 배포의 스크립트가 HTML로 "로드"되지 않게), `/.well-known/*`의 없는 문서는 JSON 404.
 //! - 오류 포맷은 클라이언트 기준으로 나눈 의도된 구분이다: 브라우저 탐색은 HTML
@@ -262,17 +262,21 @@ impl Snapshot {
                 headers.insert(name.clone(), value.clone());
             }
         }
-        if fallback || asset.content_type.starts_with("text/html") {
-            // 화면 HTML은 늘 새로 확인한다: 새 배포의 스크립트 이름을 바로 받게
-            headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
-        } else if !headers.contains_key(header::CACHE_CONTROL) {
-            let policy = if rule_path.starts_with("/assets/") {
-                "public, max-age=31536000, immutable"
-            } else {
-                "public, max-age=0, must-revalidate"
-            };
-            headers.insert(header::CACHE_CONTROL, HeaderValue::from_static(policy));
-        }
+        // Cache correctness is a serving invariant, even with stale _headers.
+        let policy = if rule_path.starts_with("/.well-known/") {
+            "no-store"
+        } else if fallback || asset.content_type.starts_with("text/html") {
+            "no-cache"
+        } else if fingerprinted_asset(rule_path) {
+            "public, max-age=31536000, immutable"
+        } else if rule_path.starts_with("/static/") {
+            "public, max-age=86400, stale-while-revalidate=604800"
+        } else if asset.content_type.starts_with("image/") {
+            "public, max-age=3600, must-revalidate"
+        } else {
+            "public, max-age=0, must-revalidate"
+        };
+        headers.insert(header::CACHE_CONTROL, HeaderValue::from_static(policy));
         headers.insert(
             header::CONTENT_TYPE,
             HeaderValue::from_static(asset.content_type),
@@ -318,6 +322,29 @@ impl Snapshot {
     }
 }
 
+/// Vite emits name-HASH.ext with an eight-character URL-safe content hash.
+/// Public copies and manifests under /assets are not necessarily fingerprinted.
+fn fingerprinted_asset(path: &str) -> bool {
+    if !path.starts_with("/assets/") {
+        return false;
+    }
+    let name = path.rsplit('/').next().unwrap_or("");
+    let Some((stem, extension)) = name.rsplit_once('.') else {
+        return false;
+    };
+    let Some(split) = stem.len().checked_sub(9) else {
+        return false;
+    };
+    let Some(suffix) = stem.get(split..) else {
+        return false;
+    };
+    extension != "html"
+        && suffix.starts_with('-')
+        && suffix[1..]
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
 /// 스냅샷이 없을 때: 브라우저 탐색이면 503 점검 HTML을, 그 외면 JSON을 낸다.
 /// 2026-10-28 감사에서 `/`를 열었을 때 503 JSON이 그대로 보였던 문제의 수정이다.
 /// 상태 코드는 503 그대로 유지하고, URL 리다이렉트는 하지 않는다.
@@ -361,11 +388,7 @@ fn accepts_html(accept: &str) -> bool {
                 return true;
             };
             !name.trim().eq_ignore_ascii_case("q")
-                || value
-                    .trim()
-                    .parse::<f32>()
-                    .map(|q| q > 0.0)
-                    .unwrap_or(true)
+                || value.trim().parse::<f32>().map(|q| q > 0.0).unwrap_or(true)
         })
     })
 }
@@ -642,8 +665,8 @@ mod tests {
         release(&[
             ("index.html", b"<!doctype html>app"),
             ("index.html.br", b"BR-HTML"),
-            ("assets/app-abc.js", b"console.log(1)"),
-            ("assets/app-abc.js.br", b"BR-JS"),
+            ("assets/app-Ab12_cdE.js", b"console.log(1)"),
+            ("assets/app-Ab12_cdE.js.br", b"BR-JS"),
             ("static/logo.svg", b"<svg/>"),
             ("_headers", HEADERS.as_bytes()),
             ("_redirects", b"/index.html / 308\n/studio / 308\n"),
@@ -676,7 +699,7 @@ mod tests {
         assert_eq!(r.headers()["content-type"], "text/html; charset=utf-8");
         assert_eq!(text(r).await, "<!doctype html>app");
 
-        let r = get(&studio, "/assets/app-abc.js", &[]).await;
+        let r = get(&studio, "/assets/app-Ab12_cdE.js", &[]).await;
         assert_eq!(
             r.headers()["cache-control"],
             "public, max-age=31536000, immutable"
@@ -686,7 +709,10 @@ mod tests {
         assert_eq!(text(r).await, "console.log(1)");
 
         let r = get(&studio, "/static/logo.svg", &[]).await;
-        assert_eq!(r.headers()["cache-control"], "public, max-age=86400");
+        assert_eq!(
+            r.headers()["cache-control"],
+            "public, max-age=86400, stale-while-revalidate=604800"
+        );
         assert_eq!(r.headers()["content-type"], "image/svg+xml");
         // _headers·_redirects·사이드카는 파일로 내보내지 않는다
         // (확장자 없는 /_headers는 화면 HTML로 폴백)
@@ -698,9 +724,47 @@ mod tests {
             );
         }
         assert_eq!(
-            get(&studio, "/assets/app-abc.js.br", &[]).await.status(),
+            get(&studio, "/assets/app-Ab12_cdE.js.br", &[])
+                .await
+                .status(),
             404
         );
+    }
+
+    #[tokio::test]
+    async fn cache_rules_cannot_make_discovery_or_mutable_assets_immutable() {
+        let dir = release(&[
+            ("index.html", b"app"),
+            ("assets/compat-entries.json", b"[]"),
+            ("assets/cover-aB12_c-D.webp", b"image"),
+            ("logo.png", b"image"),
+            (".well-known/security.txt", b"contact"),
+            (
+                "_headers",
+                b"/*\n  Cache-Control: public, max-age=31536000, immutable\n",
+            ),
+        ]);
+        let studio = Studio::new(dir.path());
+        for (path, policy) in [
+            (
+                "/assets/compat-entries.json",
+                "public, max-age=0, must-revalidate",
+            ),
+            (
+                "/assets/cover-aB12_c-D.webp",
+                "public, max-age=31536000, immutable",
+            ),
+            ("/logo.png", "public, max-age=3600, must-revalidate"),
+            ("/.well-known/security.txt", "no-store"),
+            ("/dashboard", "no-cache"),
+        ] {
+            let response = get(&studio, path, &[]).await;
+            assert_eq!(response.headers()["cache-control"], policy, "{path}");
+            let etag = response.headers()["etag"].to_str().unwrap();
+            let conditional = get(&studio, path, &[("if-none-match", etag)]).await;
+            assert_eq!(conditional.status(), 304);
+            assert_eq!(conditional.headers()["cache-control"], policy);
+        }
     }
 
     #[tokio::test]
@@ -723,7 +787,11 @@ mod tests {
         assert_eq!(r.status(), 404);
         assert!(text(r).await.contains("NOT_FOUND"));
         // 경로 조작
-        for path in ["/%2e%2e/etc/passwd", "/assets/..%2fapp-abc.js", "/a%ZZ"] {
+        for path in [
+            "/%2e%2e/etc/passwd",
+            "/assets/..%2fapp-Ab12_cdE.js",
+            "/a%ZZ",
+        ] {
             assert_eq!(get(&studio, path, &[]).await.status(), 404, "{path}");
         }
     }
@@ -747,7 +815,7 @@ mod tests {
         let studio = Studio::new(dir.path());
         let r = get(
             &studio,
-            "/assets/app-abc.js",
+            "/assets/app-Ab12_cdE.js",
             &[("accept-encoding", "gzip, br")],
         )
         .await;
@@ -761,14 +829,14 @@ mod tests {
         assert_eq!(text(r).await, "BR-JS");
         let r = get(
             &studio,
-            "/assets/app-abc.js",
+            "/assets/app-Ab12_cdE.js",
             &[("accept-encoding", "br;q=0.5, gzip")],
         )
         .await;
         assert!(r.headers().get("content-encoding").is_none());
         let r = get(
             &studio,
-            "/assets/app-abc.js",
+            "/assets/app-Ab12_cdE.js",
             &[("accept-encoding", "br"), ("if-none-match", &etag)],
         )
         .await;
@@ -797,7 +865,7 @@ mod tests {
         );
         assert_eq!(
             get(&studio, "/assets/a.js", &[]).await.headers()["cache-control"],
-            "public, max-age=31536000, immutable"
+            "public, max-age=0, must-revalidate"
         );
         assert_eq!(
             get(&studio, "/robots.txt", &[]).await.headers()["cache-control"],
@@ -826,11 +894,23 @@ mod tests {
 
         let r = get(&studio, "/", &[("accept", "TEXT/HTML; q=1")]).await;
         assert_eq!(r.status(), StatusCode::SERVICE_UNAVAILABLE);
-        assert_eq!(r.headers()[header::CONTENT_TYPE], "text/html; charset=utf-8");
+        assert_eq!(
+            r.headers()[header::CONTENT_TYPE],
+            "text/html; charset=utf-8"
+        );
         assert_eq!(r.headers()[header::RETRY_AFTER], "60");
-        assert!(text(r).await.contains("http-equiv=\"refresh\" content=\"60\""));
+        assert!(
+            text(r)
+                .await
+                .contains("http-equiv=\"refresh\" content=\"60\"")
+        );
 
-        let r = get(&studio, "/", &[("accept", "text/html;q=0, application/json")]).await;
+        let r = get(
+            &studio,
+            "/",
+            &[("accept", "text/html;q=0, application/json")],
+        )
+        .await;
         assert_eq!(r.status(), StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(r.headers()[header::CONTENT_TYPE], "application/json");
         assert!(text(r).await.contains("STUDIO_NOT_DEPLOYED"));
@@ -919,7 +999,7 @@ mod tests {
             app.clone().oneshot(b.body(Body::empty()).unwrap())
         };
         // 화면: 비밀 없이 200 (boundary 바깥), SPA 폴백 포함
-        for path in ["/", "/releases/1", "/assets/app-abc.js"] {
+        for path in ["/", "/releases/1", "/assets/app-Ab12_cdE.js"] {
             assert_eq!(call(path, &[]).await.unwrap().status(), 200, "{path}");
         }
         let r = call("/releases/1", &[]).await.unwrap();

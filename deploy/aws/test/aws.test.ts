@@ -155,7 +155,11 @@ test('템플릿 studio: S3 없이 화면·API 모두 백엔드(443), 해시 에�
   assert.ok(def.AllowedMethods.includes('POST'));
   assert.deepEqual(def.FunctionAssociations.map(f => f.EventType), ['viewer-request', 'viewer-response']);
   assert.deepEqual(d.CacheBehaviors.map(b => [b.PathPattern, b.CachePolicyId, b.OriginRequestPolicyId]),
-    [['/assets/*', '658327ea-f89d-4fab-a63d-7e88639e58f6', undefined]]);
+    ['/assets/*', '/static/*', '/favicon.ico'].map(path => [path, { Ref: 'AssetCache' }, undefined]));
+  const cache = t.Resources.AssetCache!.Properties.CachePolicyConfig;
+  assert.equal(cache.MinTTL, 0);
+  assert.equal(cache.DefaultTTL, 0);
+  assert.equal(cache.MaxTTL, 31536000);
   const policy = t.Resources.ResponseHeaders.Properties.ResponseHeadersPolicyConfig;
   assert.equal(policy.SecurityHeadersConfig.StrictTransportSecurity.AccessControlMaxAgeSec, 31536000);
   assert.equal(policy.SecurityHeadersConfig.ContentSecurityPolicy, undefined, 'CSP는 백엔드(_headers)가 붙인다');

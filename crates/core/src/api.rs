@@ -362,13 +362,9 @@ async fn request_deadline(req: Request, next: middleware::Next) -> Response {
 /// A handler bug that panics answers like any other server error (500 with
 /// the standard error body) and is logged, instead of dropping the
 /// connection, which the edge reports as "Private API unavailable".
-fn panic_response(err: Box<dyn std::any::Any + Send + 'static>) -> Response {
-    let detail = err
-        .downcast_ref::<String>()
-        .map(String::as_str)
-        .or_else(|| err.downcast_ref::<&str>().copied())
-        .unwrap_or("non-string panic");
-    tracing::error!(panic = detail, "request handler panicked");
+fn panic_response(_err: Box<dyn std::any::Any + Send + 'static>) -> Response {
+    // Panic payloads can include user data, SQL or credentials.
+    tracing::error!("request handler panicked");
     Error::Internal.into_response()
 }
 /// JSON responses are compressed for whichever encoding the caller accepts

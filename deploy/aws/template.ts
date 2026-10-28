@@ -81,7 +81,7 @@ interface BehaviorBase {
   ViewerProtocolPolicy: string;
   AllowedMethods: string[];
   CachedMethods: string[];
-  CachePolicyId: string;
+  CachePolicyId: string | Ref;
   ResponseHeadersPolicyId: Ref;
   Compress: boolean;
   FunctionAssociations: FunctionAssociation[];
@@ -161,6 +161,7 @@ export interface Template {
     ViewerFunction?: Resource<'AWS::CloudFront::Function', CloudFrontFunctionProperties>;
     /** 백엔드로 가는 요청·응답 (functions/edge.js) */
     EdgeFunction?: Resource<'AWS::CloudFront::Function', CloudFrontFunctionProperties>;
+    AssetCache?: Resource<'AWS::CloudFront::CachePolicy', { CachePolicyConfig: Record<string, unknown> }>;
     ResponseHeaders: Resource<'AWS::CloudFront::ResponseHeadersPolicy', { ResponseHeadersPolicyConfig: ResponseHeadersPolicy & { Name: Sub } }>;
     Distribution: Resource<'AWS::CloudFront::Distribution', { DistributionConfig: DistributionConfig }>;
   };
@@ -324,7 +325,7 @@ export async function template(name: string | undefined): Promise<Template> {
   };
 
   if (app.origin === 'backend') {
-    // 화면·API 모두 백엔드. 해시 이름 파일만 CloudFront가 캐시한다(gzip·br 캐시 키, 오리진 요청 정책 없음 →
+    // 화면·API 모두 백엔드. 공개 에셋은 원본 TTL을 따른다(gzip·br 캐시 키, 오리진 요청 정책 없음 →
     // 브라우저 헤더는 오리진에 닿지 않는다). 나머지는 매번 백엔드가 ETag·no-cache로 답한다.
     const distribution: DistributionConfig = {
       ...base,
@@ -336,7 +337,7 @@ export async function template(name: string | undefined): Promise<Template> {
         ViewerProtocolPolicy: 'redirect-to-https',
         AllowedMethods: ['GET', 'HEAD'],
         CachedMethods: ['GET', 'HEAD'],
-        CachePolicyId: CACHING_OPTIMIZED,
+        CachePolicyId: { Ref: 'AssetCache' },
         ResponseHeadersPolicyId: { Ref: 'ResponseHeaders' },
         Compress: true,
         FunctionAssociations: [],
@@ -348,6 +349,19 @@ export async function template(name: string | undefined): Promise<Template> {
       Parameters: parameters,
       Resources: {
         EdgeFunction: edgeFunction(name),
+        AssetCache: {
+          Type: 'AWS::CloudFront::CachePolicy',
+          Properties: { CachePolicyConfig: {
+            Name: { 'Fn::Sub': '${AWS::StackName}-assets' },
+            MinTTL: 0, DefaultTTL: 0, MaxTTL: 31536000,
+            ParametersInCacheKeyAndForwardedToOrigin: {
+              EnableAcceptEncodingBrotli: true, EnableAcceptEncodingGzip: true,
+              HeadersConfig: { HeaderBehavior: 'none' },
+              CookiesConfig: { CookieBehavior: 'none' },
+              QueryStringsConfig: { QueryStringBehavior: 'none' },
+            },
+          } },
+        },
         // 보안 헤더(CSP 등)는 백엔드가 _headers로 붙인다. 여기는 HSTS만 (Workers secureResponse와 같은 값)
         ResponseHeaders: {
           Type: 'AWS::CloudFront::ResponseHeadersPolicy',

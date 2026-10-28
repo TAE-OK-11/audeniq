@@ -148,6 +148,7 @@ class CpuCompatibilityTests(unittest.TestCase):
             # A local PII key (dummy) satisfies deploy.sh's key check, so the probe reaches the CPU gate.
             previous = "AUDENIQ_IMAGE=ghcr.io/test/audeniq@sha256:previous\nPAYOUT_ACCOUNT_KEY=" + "0" * 64 + "\n"
             (task_dir / "production.env").write_text(previous)
+            (task_dir / "production.env").chmod(0o600)
             (task_dir / "uname").write_text(f"#!/bin/sh\necho {host_arch}\n")
             (task_dir / "uname").chmod(0o755)
             (task_dir / "docker").write_text('''#!/usr/bin/env python3

@@ -1,15 +1,13 @@
 # AUDENIQ STUDIO
 
-studio.audeniq.com의 화면(React 빌드 `public/`, `app/`에서 `bun run build`)은 **백엔드 api가 서빙**해요
-(`crates/core/src/studio_static.rs`). Cloudflare Worker(`worker.ts`, 이름 `audeniq-studio-proxy`)는 프록시만 해요:
-브라우저가 보낸 `x-audeniq-*` 헤더를 버리고, 실제 사용자 IP를 `x-audeniq-client-ip`로, 서비스 식별 헤더를 넣어 모든 요청을 백엔드로 넘겨요.
-구조·배포·롤백·AWS(CloudFront) 전환 설계는 [`deploy/STUDIO_SERVING.md`](../../deploy/STUDIO_SERVING.md)를 보세요. noindex는 검색 제외일 뿐 접근제어가 아닙니다.
+Studio is served by the Rust backend through AWS CloudFront at `studio.audeniq.com`.
+CI builds `app/` and installs `public/` with `deploy/studio-release.sh`; the backend
+loads an atomic release snapshot. API calls use the same origin.
 
-## 배포
-
-- 화면: main에 병합하면 CI(Studio deploy)가 빌드 결과를 서버의 `studio/releases/<커밋>`에 올리고 `current`를 바꿔요(`deploy/studio-release.sh`). api 재시작은 없어요.
-- 프록시 Worker: 바뀔 때만 손으로 올려요. `cd web/studio && npx --yes wrangler@4.149.0 deploy` (CI에서는 올리지 않아요)
-- 예전 `audeniq-studio` Worker(정적 서빙)는 DNS 전환 뒤 롤백용으로 그대로 둬요. 이 폴더에서 이름을 `audeniq-studio`로 바꿔 배포하지 마세요.
+See [CDN caching and transition](../../deploy/cloudfront/cdn-caching-and-transition.md)
+for cache policies, release checks and remaining live cleanup. `worker.ts` is a
+legacy proxy retained for reference, not the production deployment path.
+Its workers.dev and preview URLs are disabled in repository configuration.
 
 ## 공지·이벤트 올리기
 
@@ -25,7 +23,7 @@ studio.audeniq.com의 화면(React 빌드 `public/`, `app/`에서 `bun run build
 - 시작 72시간 전부터 스튜디오 맨 위에 예고 띠가 보여요 (사용자가 닫을 수 있음).
 - 시작 시각이 되면 스튜디오 전체가 점검 화면으로 바뀌고, 1분마다 상태를 다시 확인해요. `내리기`하거나 종료 시각이 지나면 자동으로 돌아와요.
 - 관리 화면(`/admin/content`)과 로그인은 점검 중에도 열려요. 계정·권한 검증용 백엔드가 응답해야 게시할 수 있어요.
-- 처음 한 번 `npx wrangler d1 migrations apply audeniq-content --remote`로 `0002_maintenance.sql`을 적용해 주세요. 적용 전에는 점검 기능만 꺼진 채로 동작해요.
+- 공지·이벤트·점검 정보는 백엔드 PostgreSQL에서 관리해요 (migration 0086).
 
 ## 긴급 점검
 
