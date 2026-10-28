@@ -1,4 +1,3 @@
-import { Glyph } from '../components/Glyph';
 import { loginRedirect } from '../lib/loginRedirect';
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from '../lib/router';
@@ -76,7 +75,7 @@ export function Login() {
           {wrongPw && <> <Link to="/find-account" className="aq-inline-link">비밀번호 찾기</Link></>}
         </div>
       )}
-      <form className="aq-login-form" onSubmit={submit} noValidate>
+      <form onSubmit={submit} noValidate>
         <div className="ui-field">
           <label htmlFor="loginEmail">이메일</label>
           <input
@@ -104,8 +103,7 @@ export function Login() {
         </button>
         {!MOCK && passkeySupported() && (
           <button type="button" className="ui-btn auth-submit aq-passkey-btn" onClick={() => void withPasskey()} disabled={busy}>
-            <Glyph name="key" size={20} />
-            <span>비밀번호 대신 패스키로 로그인</span>
+            비밀번호 대신 패스키로 로그인
           </button>
         )}
       </form>
