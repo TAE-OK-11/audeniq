@@ -711,10 +711,10 @@
   /* 칩·개수는 살짝 튀게 */
   .adm-jump button span.is-bad{animation:adm-scale-in var(--aq-motion-long) var(--adm-ease) both}
   /* 2인 승인·확인 필요 표시는 한 번 퍼지는 빛 */
-  .adm-check-mark{animation:adm-scale-in var(--aq-motion-long) var(--adm-ease) both,adm-glow 1.2s ease-out .4s 1}
+  .adm-check-mark{animation:adm-scale-in var(--aq-motion-long) var(--adm-ease) both}
   .adm-check.is-sensitive .adm-check-mark{animation:adm-scale-in var(--aq-motion-long) var(--adm-ease) both}
   /* 담당 상태 점: 내 담당이면 은은하게 숨쉬기 */
-  .adm-claim.is-mine .adm-claim-who i{animation:adm-breathe 2.4s ease-in-out infinite}
+  .adm-claim.is-mine .adm-claim-who i{animation:none}
   @keyframes adm-breathe{0%,100%{box-shadow:0 0 0 3px rgba(74,222,128,.18)}50%{box-shadow:0 0 0 6px rgba(74,222,128,.08)}}
   /* 선택 칩·탭 전환 */
   :is(.adm-jump button){transition:background-color .22s var(--adm-ease),color .22s var(--adm-ease),transform .16s var(--adm-ease),box-shadow .22s var(--adm-ease)}

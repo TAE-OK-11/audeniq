@@ -18,8 +18,8 @@ export function AlbumPrep({ items, go }: { items: PrepItem[]; go: (key: PrepItem
     <section className="aq-relinfo-card aq-prep" aria-labelledby="albumPrepTitle">
       <div className="aq-prep-head">
         <div className="min-0">
-          <h2 className="subhead" id="albumPrepTitle">발매 준비</h2>
-          <p className="aq-prep-sub">{todo ? `내가 할 일 ${todo}개가 남았어요` : done === items.length ? '모두 끝났어요' : '남은 일은 AUDENIQ이 하고 있어요'}</p>
+          <h2 className="subhead" id="albumPrepTitle">발매 준비 항목</h2>
+          <p className="aq-prep-sub">{todo ? `내가 할 일 ${todo}개 · 대기 ${items.filter(i => i.state === 'wait').length}개` : done === items.length ? '모두 끝났어요' : '남은 일은 AUDENIQ이 하고 있어요'}</p>
         </div>
         <p className="aq-prep-count" aria-label={`${items.length}개 중 ${done}개 끝남`}><b>{done}</b>/{items.length}</p>
       </div>
@@ -53,7 +53,7 @@ export function AlbumPrep({ items, go }: { items: PrepItem[]; go: (key: PrepItem
       </ul>
       {todo > 0 && shown.length < items.length || all ? (
         <button type="button" className="aq-task-more" aria-expanded={all} onClick={() => setAll(v => !v)}>
-          {all ? '할 일만 보기' : `나머지 ${items.length - shown.length}개 보기`}
+          {all ? '할 일만 보기' : `완료·대기 ${items.length - shown.length}개 보기`}
           <Glyph name="chevron-down" size={14} className={all ? 'is-flip' : undefined} />
         </button>
       ) : null}
