@@ -1,4 +1,4 @@
-use sqlx::{Connection, PgPool, postgres::PgPoolOptions};
+use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::time::Duration;
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations");
 
@@ -11,35 +11,18 @@ pub fn behind_pooler() -> bool {
     std::env::var("DATABASE_POOLER").is_ok_and(|v| v.eq_ignore_ascii_case("pgbouncer"))
 }
 
-/// A pooled connection idle for longer than this is pinged before use.
-/// sqlx's default pings on *every* acquire: one extra database round trip
-/// per query/transaction (2–3 per API request). A connection that was just
-/// returned to the pool is known-good; only one that sat idle long enough
-/// for PgBouncer/PostgreSQL/a network hop to drop it is worth checking.
-const PING_AFTER_IDLE: Duration = Duration::from_secs(15);
-
 pub async fn connect(url: &str, max: u32) -> Result<PgPool, sqlx::Error> {
-    // Keep a couple of connections open even when idle: after a quiet spell
-    // the first request no longer pays connect + SCRAM auth (cold start).
-    // Connections above that floor are closed after 10 idle minutes (a
-    // traffic spike does not pin PgBouncer/PostgreSQL slots forever), and all
-    // are recycled every 30 min so server-side state (PgBouncer restarts,
-    // role setting changes) does not live forever.
+    // Validate every checkout, including immediately after a DB/pooler restart.
+    // sqlx evicts failed pings and retries acquisition within this budget. Its
+    // mandatory release ping also evicts failures; do not suppress that check.
+    // These are CLIENT lifetimes, independent of PgBouncer's server lifetimes.
     let options = PgPoolOptions::new()
         .max_connections(max)
-        .min_connections(max.min(2))
+        .min_connections(0)
         .max_lifetime(Duration::from_secs(30 * 60))
-        .idle_timeout(Duration::from_secs(10 * 60))
+        .idle_timeout(Duration::from_secs(240))
         .acquire_timeout(Duration::from_secs(5))
-        .test_before_acquire(false)
-        .before_acquire(|c, meta| {
-            Box::pin(async move {
-                if meta.idle_for >= PING_AFTER_IDLE {
-                    c.ping().await?;
-                }
-                Ok(true)
-            })
-        });
+        .test_before_acquire(true);
     if behind_pooler() {
         return options.connect(url).await;
     }
@@ -70,5 +53,52 @@ pub fn max_connections(default: u32) -> anyhow::Result<u32> {
         }
         Err(std::env::VarError::NotPresent) => Ok(default),
         Err(error) => Err(error.into()),
+    }
+}
+
+/// Safe, bounded labels only: never emit a DB message or connection URL.
+pub fn failure_kind(error: &sqlx::Error) -> &'static str {
+    match error {
+        sqlx::Error::PoolTimedOut => "timeout",
+        sqlx::Error::Io(_)
+        | sqlx::Error::Tls(_)
+        | sqlx::Error::PoolClosed
+        | sqlx::Error::WorkerCrashed => "unreachable",
+        sqlx::Error::Database(d) => {
+            let code = d.code();
+            let code = code.as_deref().unwrap_or("");
+            if code.starts_with("28") {
+                "auth"
+            } else if d.message().contains("server_login_retry") {
+                // PgBouncer caches backend connection failures, including
+                // network errors. This alone does NOT prove bad credentials.
+                "backend_login_retry"
+            } else if code == "3D000" || code == "42501" {
+                "configuration"
+            } else if code == "57014" {
+                "timeout"
+            } else if code.starts_with("08") || code.starts_with("57P0") {
+                "unreachable"
+            } else {
+                "query"
+            }
+        }
+        _ => "query",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn failure_labels_do_not_include_error_details() {
+        assert_eq!(super::failure_kind(&sqlx::Error::PoolTimedOut), "timeout");
+        assert_eq!(super::failure_kind(&sqlx::Error::PoolClosed), "unreachable");
+        assert_eq!(
+            super::failure_kind(&sqlx::Error::Io(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "sensitive detail"
+            ))),
+            "unreachable"
+        );
     }
 }
