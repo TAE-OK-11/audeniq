@@ -142,11 +142,16 @@ export function SystemStatus({ children }: { children: ReactNode }) {
   // --- 서버 점검 상태 ---
   // 탭 전환·온라인 복귀가 겹쳐도 상태 확인은 5초에 한 번만
   const lastStatusAt = useRef(0);
+  const statusPending = useRef(false);
+  const issueRevision = useRef(0);
   const refreshStatus = useCallback(async () => {
-    if (Date.now() - lastStatusAt.current < 5_000) return;
+    if (statusPending.current || Date.now() - lastStatusAt.current < 5_000) return;
     lastStatusAt.current = Date.now();
-    const st = await fetchStatus();
-    if (!st) return;
+    const revision = issueRevision.current;
+    statusPending.current = true;
+    const st = await fetchStatus().finally(() => { statusPending.current = false; });
+    // A probe started before a newer failure cannot establish recovery.
+    if (!st || revision !== issueRevision.current) return;
     setActive(st.maintenance.active);
     setUpcoming(st.maintenance.upcoming);
     if (!st.maintenance.active) setServerSaysMaintenance(false);
@@ -195,6 +200,7 @@ export function SystemStatus({ children }: { children: ReactNode }) {
     const onIssue = (e: Event) => {
       const issue = (e as CustomEvent<ServerIssue>).detail;
       if (!issue) return;
+      issueRevision.current++;
       if (issue.kind === 'maintenance') {
         const w = issue.window as MaintenanceWindow | undefined;
         if (w && typeof w === 'object' && typeof w.starts_at === 'string') setActive(w);
@@ -313,7 +319,7 @@ export function SystemStatus({ children }: { children: ReactNode }) {
       <div className="aq-app-shell" inert={blocking || undefined} aria-hidden={blocking || undefined}>{children}</div>
       {overlay}
 
-      {!serverIssue && updateReady && (
+      {!blocking && !serverIssue && updateReady && (
         <Modal title="새 버전이 준비됐어요" onClose={() => { updateDismissedFor.current = currentEntry(); setUpdateReady(false); }} modalClass="aq-sysdialog-mode">
           <DialogBody
             kind="update"
@@ -327,7 +333,7 @@ export function SystemStatus({ children }: { children: ReactNode }) {
         </Modal>
       )}
 
-      {!serverIssue && !updateReady && deviceIssues.length > 0 && (
+      {!blocking && !serverIssue && !updateReady && deviceIssues.length > 0 && (
         <Modal title="기기 확인이 필요해요" onClose={() => { safeSet('session', DEVICE_KEY, '1'); setDeviceIssues([]); }} modalClass="aq-sysdialog-mode">
           <DialogBody
             kind="device"
