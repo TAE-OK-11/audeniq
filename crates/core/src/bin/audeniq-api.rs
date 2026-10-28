@@ -33,7 +33,7 @@ fn healthcheck() -> anyhow::Result<()> {
     let secret =
         api::edge_header_secrets(&std::env::var("EDGE_SERVICE_SECRET").unwrap_or_default())?
             .swap_remove(0);
-    let timeout = std::time::Duration::from_secs(4);
+    let timeout = std::time::Duration::from_secs(7);
     let addr: std::net::SocketAddr = format!("127.0.0.1:{port}").parse()?;
     let mut tcp = std::net::TcpStream::connect_timeout(&addr, timeout)?;
     tcp.set_read_timeout(Some(timeout))?;

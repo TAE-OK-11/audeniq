@@ -178,6 +178,31 @@ echo "     → $PINNED"
 # Studio 화면 폴더(api가 읽기 전용으로 마운트): docker가 root 소유로 만들지 않게 배포 사용자가 먼저 만든다.
 # 화면 파일은 studio-release.sh가 넣는다 (deploy/STUDIO_SERVING.md)
 mkdir -p studio/releases
+# Authenticate both runtime roles directly and through the pooler BEFORE
+# replacing API/worker. Do not treat an open TCP socket as DB readiness.
+if ! "${COMPOSE[@]}" up -d --build postgres migrate grants pgbouncer; then
+  die "DB startup (postgres → migrate → grants → pgbouncer) 실패; 확인: docker compose logs migrate grants pgbouncer — 되돌리려면: ./deploy.sh --rollback"
+fi
+wait_database() {
+  local deadline=$((SECONDS + 120)) result code
+  while (( SECONDS < deadline )); do
+    if result=$("${COMPOSE[@]}" exec -T pgbouncer /usr/local/bin/pgbouncer-entrypoint --healthcheck 2>/dev/null); then
+      echo "deploy: $result"
+      return 0
+    else
+      code=$?
+    fi
+    # Print only the probe's bounded labels, never arbitrary container output.
+    result=$(printf '%s\n' "$result" | grep '^db_check path=' || true)
+    case "$code" in
+      20|21) die "DB login/config broken: $result; deploy/db-ready-diagnosis.md의 직접/풀러 인증 점검 — 되돌리려면: ./deploy.sh --rollback" ;;
+    esac
+    echo "deploy: DB not ready yet ($((deadline - SECONDS))s remaining): ${result:-pgbouncer probe unavailable}"
+    sleep 2
+  done
+  die "DB readiness timeout (120s): ${result:-pgbouncer probe unavailable}; postgres/pgbouncer 로그 확인 — 되돌리려면: ./deploy.sh --rollback"
+}
+wait_database
 # --build: pgbouncer 이미지는 서버에서 deploy/pgbouncer로 만든다 (바뀐 게 없으면 캐시)
 if ! "${COMPOSE[@]}" up -d --build --remove-orphans; then
   "${COMPOSE[@]}" logs --tail 80 migrate grants pgbouncer api worker || true
@@ -214,13 +239,27 @@ fi
 # 떠 있는 것만으로는 부족하다: api가 /ready(DB 포함)에 답할 때까지 기다린다 (compose healthcheck)
 api_id=$("${COMPOSE[@]}" ps -q api)
 health=none
-for _ in $(seq 1 30); do
+ready_deadline=$((SECONDS + 120))
+while (( SECONDS < ready_deadline )); do
   health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$api_id")
-  case "$health" in healthy|none) break ;; esac
+  case "$health" in
+    healthy) break ;;
+    none) die "api healthcheck missing — 되돌리려면: ./deploy.sh --rollback" ;;
+  esac
+  # Catch a DB regression while the API is starting, with classified checks.
+  if probe=$("${COMPOSE[@]}" exec -T pgbouncer /usr/local/bin/pgbouncer-entrypoint --healthcheck 2>/dev/null); then
+    echo "deploy: API /ready waiting ($health); DB authenticated"
+  else
+    probe_code=$?
+    case "$probe_code" in
+      20|21) die "DB login/config broken: $(printf '%s\n' "$probe" | grep '^db_check path=' || true) — 되돌리려면: ./deploy.sh --rollback" ;;
+      *) echo "deploy: API /ready waiting ($health); DB not ready yet" ;;
+    esac
+  fi
   sleep 2
 done
 case "$health" in
-  healthy|none) ;;
+  healthy) ;;
   *)
     "${COMPOSE[@]}" logs --tail 80 api || true
     die "api가 준비되지 않았어요 ($health) — 되돌리려면: ./deploy.sh --rollback"
