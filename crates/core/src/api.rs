@@ -161,11 +161,7 @@ pub fn router(s: AppState) -> Router {
             // 2026-10-28 장애에서 /ready는 DB가 죽으면 헬스도 죽었기 때문에,
             // 프로세스 생존 확인은 이 경로, DB 확인은 /ready로 나눈다.
             // version/build는 라이브와 로컬을 구분하는 식별자 (archive.rs와 같은 규칙).
-            get(|| async {
-                Json(json!({"service":"audeniq-api","operational_release":false,
-                    "version":env!("CARGO_PKG_VERSION"),
-                    "build":std::env::var("AUDENIQ_BUILD").unwrap_or_default()}))
-            }),
+            get(health),
         )
         .route("/ready", get(ready))
         .route("/api/auth/register", post(register))
@@ -528,7 +524,16 @@ fn release_in_path(path: &str) -> Option<Uuid> {
     }
     None
 }
-async fn ready(State(s): State<AppState>) -> Result<Json<Value>> {
+// Probes must never reuse a successful observation from a shared cache.
+fn probe_response(value: Value) -> impl IntoResponse {
+    ([("cache-control", "no-store")], Json(value))
+}
+async fn health() -> impl IntoResponse {
+    probe_response(json!({"service":"audeniq-api","operational_release":false,
+        "version":env!("CARGO_PKG_VERSION"),
+        "build":std::env::var("AUDENIQ_BUILD").unwrap_or_default()}))
+}
+async fn ready(State(s): State<AppState>) -> Result<impl IntoResponse> {
     let started = std::time::Instant::now();
     // Doubles as the database check: contracted partners switched on.
     let live_partners: i64 = tokio::time::timeout(std::time::Duration::from_secs(6), sqlx::query_scalar(
@@ -540,12 +545,16 @@ async fn ready(State(s): State<AppState>) -> Result<Json<Value>> {
             elapsed_ms=started.elapsed().as_millis(), "database_readiness_failed");
         crate::error::Error::Database(error)
     })?;
-    Ok(Json(json!({"database":true,"submission":false,
+    Ok(ready_response(live_partners))
+}
+// Success path separated from the DB query so its HTTP contract is testable offline.
+fn ready_response(live_partners: i64) -> impl IntoResponse {
+    probe_response(json!({"database":true,"submission":false,
                "distribution":live_partners > 0 && crate::launch::live_transmission_enabled(),
                "live_partners":live_partners,
                "live_transmission":crate::launch::live_transmission_enabled(),"payout":false,
                "version":env!("CARGO_PKG_VERSION"),
-               "build":std::env::var("AUDENIQ_BUILD").unwrap_or_default()})))
+               "build":std::env::var("AUDENIQ_BUILD").unwrap_or_default()}))
 }
 async fn available_dsps(
     State(s): State<AppState>,
@@ -1124,6 +1133,16 @@ async fn acl(
 }
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn successful_probes_are_not_cacheable() {
+        for response in [
+            health().await.into_response(),
+            ready_response(0).into_response(),
+        ] {
+            assert_eq!(response.status(), axum::http::StatusCode::OK);
+            assert_eq!(response.headers()["cache-control"], "no-store");
+        }
+    }
     #[test]
     fn edge_header_secrets_rotate_without_the_derivation_key() {
         let key = "k".repeat(32);

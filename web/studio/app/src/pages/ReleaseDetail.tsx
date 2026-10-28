@@ -1,3 +1,4 @@
+import { ReadFailure } from '../components/ReadFailure';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from '../lib/router';
 import { api, type DeliveryItem } from '../api/client';
@@ -154,7 +155,7 @@ export function ReleaseDetail() {
     [id], { key: `release:${id}` });
   // 배급 탭을 열 때만 플랫폼별 진행을 불러온다 (준비 전이면 빈 목록)
   const delivery = useAsync<DeliveryItem[]>(
-    () => (tab === 'delivery' ? api.getDelivery(id).catch(() => []) : Promise.resolve([])),
+    () => (tab === 'delivery' ? api.getDelivery(id) : Promise.resolve([])),
     [id, tab],
   );
   // 훅은 아래 조기 반환보다 먼저 — 불러오기 전후로 호출 순서가 바뀌면 화면 오류가 난다
@@ -264,7 +265,10 @@ export function ReleaseDetail() {
   const askByInquiry = () => nav(`/inquiries?new=cancel&release=${encodeURIComponent(rel.id)}`);
   const handleWithdraw = async () => {
     let q;
-    try { q = await api.withdrawQuota(); } catch { q = null; }
+    try { q = await api.withdrawQuota(); } catch {
+      await confirm({ title: '불러오지 못했어요', message: '취소 가능 횟수를 확인하지 못했어요. 신청 취소 버튼을 눌러 다시 시도해 주세요.', confirmLabel: '확인' });
+      return;
+    }
     if (q && q.remaining <= 0) {
       const go = await confirm({
         title: '이번 달 취소 횟수를 모두 썼어요',
@@ -574,6 +578,7 @@ export function ReleaseDetail() {
                 )}
               </div>
             </section>
+            {delivery.error && <ReadFailure label="배급 진행" retry={async () => delivery.reload()} />}
             {!!delivery.data?.length && (
               <section className="aq-relinfo-card">
                 <h2 className="subhead">플랫폼별 진행 상황</h2>

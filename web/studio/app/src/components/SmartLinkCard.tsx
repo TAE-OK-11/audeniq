@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { API_BASE, orgPath, req } from '../api/http';
 import { errorMessage } from '../api/errors';
+import { ReadFailure } from './ReadFailure';
 import { MOCK } from '../lib/mode';
 import { PLATFORM_NAMES } from '../lib/platformNames';
 import { useToast } from './Toast';
@@ -62,6 +63,7 @@ export interface PromoRelease {
 
 export function SmartLinkCard({ releaseId, promo }: { releaseId: string; promo?: PromoRelease }) {
   const toast = useToast();
+  const [loadFailed, setLoadFailed] = useState(false);
   const [st, setSt] = useState<State | null>(null);
   const [edit, setEdit] = useState(false);
   const [links, setLinks] = useState<Record<string, string>>({});
@@ -85,9 +87,10 @@ export function SmartLinkCard({ releaseId, promo }: { releaseId: string; promo?:
   }, [edit, links, base]);
   const load = useCallback(async () => {
     if (MOCK) return;
-    try { setSt(await req<State>(base(), { quiet401: true })); } catch { /* 볼 수 없으면 숨긴다 */ }
+    try { setSt(await req<State>(base(), { quiet401: true })); setLoadFailed(false); } catch { setLoadFailed(true); }
   }, [base]);
   useEffect(() => { void load(); }, [load]);
+  if (loadFailed) return <ReadFailure label="스마트링크" retry={load} />;
   if (!st || (!st.link && !st.can_create)) return null;
   const l = st.link;
 
