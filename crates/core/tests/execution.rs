@@ -6238,7 +6238,7 @@ async fn artist_studio_insights_photo_and_platform_photo_requests(pool: PgPool) 
         None,
     )
     .await;
-    assert_eq!(s, StatusCode::OK);
+    assert_eq!(s, StatusCode::TEMPORARY_REDIRECT);
     let (_, page) = call(
         &app,
         "GET",

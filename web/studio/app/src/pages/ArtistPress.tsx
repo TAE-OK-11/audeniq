@@ -18,7 +18,7 @@ import { MOCK_PUBLIC_PRESS, fullText, type PressProfile, type PublicPressRelease
 import { RELEASE_TYPE, artistBackdrop, useArtistPage, type ArtistRelease } from './ArtistPage';
 import { ArtistSubHead, PublicFoot, PublicLoading, PublicMissing, PublicShell } from '../components/PublicPage';
 
-const coverUrl = (slug: string) => `${API_BASE}/api/smart-links/${encodeURIComponent(slug)}/cover`;
+const coverUrl = (slug: string) => `${API_BASE}/api/smart-links/${encodeURIComponent(slug)}/cover?media=2`;
 const dotted = (d: string | null) => (d ? d.replace(/-/g, '.') : '발매일 미정');
 /** 사실 — 적은 것만 */
 const facts = (p: PressProfile): [string, string][] =>
@@ -148,8 +148,8 @@ export function ArtistPress() {
           <section aria-labelledby="pressPhoto">
             <h2 id="pressPhoto" className="aq-smartlink-list-title">사진</h2>
             <div className="aq-press-photo">
-              <img src={`${API_BASE}/api/artist-links/${encodeURIComponent(slug)}/photo${page.photo_v ? `?v=${page.photo_v}` : ''}`} alt={`${page.name} 프로필 사진`} loading="lazy" />
-              <a className="ui-btn is-sm" href={`${API_BASE}/api/artist-links/${encodeURIComponent(slug)}/photo${page.photo_v ? `?v=${page.photo_v}` : ''}`}
+              <img src={`${API_BASE}/api/artist-links/${encodeURIComponent(slug)}/photo?media=2${page.photo_v ? `&v=${page.photo_v}` : ''}`} alt={`${page.name} 프로필 사진`} loading="lazy" />
+              <a className="ui-btn is-sm" href={`${API_BASE}/api/artist-links/${encodeURIComponent(slug)}/photo?media=2${page.photo_v ? `&v=${page.photo_v}` : ''}`}
                 download={`${page.name}-profile.jpg`} target="_blank" rel="noopener noreferrer"><Glyph name="download" size={14} />프로필 사진 받기</a>
             </div>
           </section>

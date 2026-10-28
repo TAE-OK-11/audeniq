@@ -130,3 +130,6 @@ pub mod privacy_maintenance;
 pub mod profanity;
 pub mod seal;
 pub mod video;
+
+pub mod image_revisions;
+pub mod image_variants;

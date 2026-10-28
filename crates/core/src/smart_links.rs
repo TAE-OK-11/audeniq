@@ -817,13 +817,23 @@ async fn h_public(
 async fn h_cover(
     State(s): State<AppState>,
     Path(slug): Path<String>,
+    Query(query): Query<crate::image_revisions::RevisionQuery>,
     h: HeaderMap,
 ) -> Result<Response> {
-    Ok(crate::uploads::image_response(
-        public_cover(&s, &slug).await?,
+    let row = visible(&s, &slug).await?;
+    crate::image_revisions::respond(
+        &s,
+        row.get("org_id"),
+        row.get("id"),
+        "cover",
+        row.get("artwork_asset_id"),
+        &format!("/api/smart-links/{slug}/cover"),
+        query,
         &h,
-    ))
+    )
+    .await
 }
+
 async fn h_click(
     State(s): State<AppState>,
     Path(slug): Path<String>,

@@ -325,23 +325,31 @@ export async function template(name: string | undefined): Promise<Template> {
   };
 
   if (app.origin === 'backend') {
-    // 화면·API 모두 백엔드. 공개 에셋은 원본 TTL을 따른다(gzip·br 캐시 키, 오리진 요청 정책 없음 →
-    // 브라우저 헤더는 오리진에 닿지 않는다). 나머지는 매번 백엔드가 ETag·no-cache로 답한다.
+    // Public static files honor origin TTLs. Accept and normalized gzip/br
+    // are in their cache key; cookies and query strings are not forwarded.
+    // API/discovery always use the uncached, viewer-forwarding behavior.
     const distribution: DistributionConfig = {
       ...base,
       Origins: [backendOrigin(app.site)],
       DefaultCacheBehavior: backendBehavior(),
-      CacheBehaviors: app.cached.map(PathPattern => ({
-        PathPattern,
-        TargetOriginId: 'api',
-        ViewerProtocolPolicy: 'redirect-to-https',
-        AllowedMethods: ['GET', 'HEAD'],
-        CachedMethods: ['GET', 'HEAD'],
-        CachePolicyId: { Ref: 'AssetCache' },
-        ResponseHeadersPolicyId: { Ref: 'ResponseHeaders' },
-        Compress: true,
-        FunctionAssociations: [],
-      })),
+      CacheBehaviors: [
+        // These exclusions MUST precede extension patterns: CloudFront's *
+        // matches slashes too, so /api/a.png must never use the public policy.
+        ...['/api', '/api/*', '/.well-known/*'].map(PathPattern => ({
+          ...backendBehavior(), PathPattern,
+        })),
+        ...app.cached.map(PathPattern => ({
+          PathPattern,
+          TargetOriginId: 'api',
+          ViewerProtocolPolicy: 'redirect-to-https',
+          AllowedMethods: ['GET', 'HEAD'],
+          CachedMethods: ['GET', 'HEAD'],
+          CachePolicyId: { Ref: 'AssetCache' },
+          ResponseHeadersPolicyId: { Ref: 'ResponseHeaders' },
+          Compress: true,
+          FunctionAssociations: [],
+        })),
+      ],
     };
     return {
       AWSTemplateFormatVersion: '2010-09-09',
@@ -356,7 +364,7 @@ export async function template(name: string | undefined): Promise<Template> {
             MinTTL: 0, DefaultTTL: 0, MaxTTL: 31536000,
             ParametersInCacheKeyAndForwardedToOrigin: {
               EnableAcceptEncodingBrotli: true, EnableAcceptEncodingGzip: true,
-              HeadersConfig: { HeaderBehavior: 'none' },
+              HeadersConfig: { HeaderBehavior: 'whitelist', Headers: ['Accept'] },
               CookiesConfig: { CookieBehavior: 'none' },
               QueryStringsConfig: { QueryStringBehavior: 'none' },
             },
