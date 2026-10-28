@@ -230,7 +230,7 @@ img{max-width:100%}
 
 /* ---------- 인증 화면 ---------- */
 .auth-page{position:relative;overflow:hidden}
-.aq-auth-glow{position:absolute;inset:-20% -10% auto;height:520px;background:radial-gradient(420px 260px at 20% 30%,#e8eeff,transparent 70%),radial-gradient(360px 240px at 80% 10%,#f1ecff,transparent 70%);pointer-events:none;z-index:0;animation:aq-fade-in 1s ease both}
+.aq-auth-glow{position:absolute;inset:-20% -10% auto;height:520px;background:radial-gradient(420px 260px at 20% 30%,#e8eeff,transparent 70%),radial-gradient(360px 240px at 80% 10%,#f1ecff,transparent 70%);pointer-events:none;z-index:0;animation:aq-fade-in .24s ease both}
 .auth-page>*:not(.aq-auth-glow){position:relative;z-index:1}
 .auth-card{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) both}
 .aq-auth-brand{display:inline-flex;align-items:center;gap:8px;margin-bottom:26px}
@@ -1063,7 +1063,7 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 .aq-cadmin-emergency.is-active .aq-cadmin-emergency-head strong{color:var(--aq-e-red)}
 .aq-cadmin-emergency>p{margin:8px 0 0;font-size:14px;color:var(--aq-text-2)}
 .aq-cadmin-dot{width:10px;height:10px;border-radius:50%;background:var(--aq-e-green);box-shadow:0 0 0 4px var(--aq-e-green-soft)}
-.aq-cadmin-pulse{width:10px;height:10px;border-radius:50%;background:var(--aq-e-red);animation:aq-cadmin-pulse 1.6s ease-in-out infinite}
+.aq-cadmin-pulse{width:10px;height:10px;border-radius:50%;background:var(--aq-e-red);animation:none}
 @keyframes aq-cadmin-pulse{0%,100%{box-shadow:0 0 0 0 rgba(194,59,59,.35)}50%{box-shadow:0 0 0 7px rgba(194,59,59,0)}}
 @media (prefers-reduced-motion:reduce){.aq-cadmin-pulse{animation:none}}
 .aq-cadmin-emergency-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}

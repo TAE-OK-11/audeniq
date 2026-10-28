@@ -786,7 +786,7 @@ summary::-webkit-details-marker{display:none}
 .aq-verify-wait strong{font-size:var(--aq-fs-lg);font-weight:var(--aq-fw-bold);color:var(--aq-text)}
 .aq-verify-wait p{margin:-6px 0 4px;color:var(--aq-text-3);font-size:var(--aq-fs-sm);line-height:1.6}
 .aq-verify-wait .aq-verify-resend{justify-self:center}
-.aq-verify-pulse{display:grid;place-items:center;width:64px;height:64px;margin-top:8px;border-radius:50%;background:var(--aq-blue-50);color:var(--aq-blue-500);animation:aq-verify-pulse 1.6s ease-in-out infinite}
+.aq-verify-pulse{display:grid;place-items:center;width:64px;height:64px;margin-top:8px;border-radius:50%;background:var(--aq-blue-50);color:var(--aq-blue-500);animation:none}
 @keyframes aq-verify-pulse{0%,100%{box-shadow:0 0 0 0 rgba(59,99,243,.25)}50%{box-shadow:0 0 0 12px rgba(59,99,243,0)}}
 @media(prefers-reduced-motion:reduce){.aq-verify-pulse{animation:none}}
 /* 해외 납세 의무 */
