@@ -7,7 +7,7 @@ describe('classifyServerIssue', () => {
     expect(classifyServerIssue(502, 'BACKEND_UNAVAILABLE')).toEqual({ kind: 'down', status: 502, code: 'BACKEND_UNAVAILABLE' });
     expect(classifyServerIssue(504, '')).toEqual({ kind: 'down', status: 504, code: 'HTTP_504' });
     expect(classifyServerIssue(503, 'MAINTENANCE')?.kind).toBe('maintenance');
-    expect(classifyServerIssue(500, 'INTERNAL_ERROR')).toBeNull();
+    expect(classifyServerIssue(500, 'INTERNAL_ERROR')).toEqual({ kind: 'down', status: 500, code: 'INTERNAL_ERROR' });
     expect(classifyServerIssue(404, 'NOT_FOUND')).toBeNull();
     expect(classifyServerIssue(409, 'CONFLICT')).toBeNull();
   });
