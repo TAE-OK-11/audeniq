@@ -20,7 +20,7 @@ class StudioReleaseTests(unittest.TestCase):
 
     def run_release(self, *args):
         return subprocess.run(['bash', str(self.root / 'studio-release.sh'), *args],
-                              capture_output=True, text=True)
+                              capture_output=True, text=True, env=dict(os.environ, DEPLOY_TIMING='1'))
 
     def archive(self, unsafe=False):
         archive = self.root / 'studio.tar.gz'
@@ -44,6 +44,33 @@ class StudioReleaseTests(unittest.TestCase):
         result = self.run_release('install', 'abcdef0', self.archive())
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(os.readlink(self.root / 'studio/current'), 'releases/abcdef0')
+
+    def test_retained_release_is_reused_without_overwriting(self):
+        archive = self.archive()
+        self.assertEqual(self.run_release('install', 'abcdef0', archive).returncode, 0)
+        original = self.root / 'studio/releases/abcdef0/assets/app.js'
+        original.write_text('retained bytes')
+        self.assertEqual(self.run_release('install', 'abcdef1', archive).returncode, 0)
+        result = self.run_release('install', 'abcdef0', archive)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('phase=retained_release total_seconds=', result.stderr)
+        self.assertEqual(original.read_text(), 'retained bytes')
+        self.assertEqual(os.readlink(self.root / 'studio/current'), 'releases/abcdef0')
+
+    def test_rollback_rejects_history_path_traversal(self):
+        (self.root / 'studio').mkdir()
+        (self.root / 'studio/release-history.log').write_text('date ../../outside\n')
+        result = self.run_release('rollback')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('invalid release identifier', result.stderr)
+
+    def test_retained_symlink_is_rejected(self):
+        releases = self.root / 'studio/releases'
+        releases.mkdir(parents=True)
+        (releases / 'abcdef0').symlink_to(self.root, target_is_directory=True)
+        result = self.run_release('install', 'abcdef0', self.archive())
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('must not be a symlink', result.stderr)
 
     def test_large_archive_with_link_is_rejected_before_extraction(self):
         result = self.run_release('install', 'abcdef0', self.archive(unsafe=True))
