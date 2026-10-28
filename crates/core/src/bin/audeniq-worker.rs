@@ -222,6 +222,41 @@ async fn main() -> anyhow::Result<()> {
         tasks.spawn(listen_for_jobs(listen_url, wakeups.clone()));
     }
 
+    {
+        let pool = pool.clone();
+        let store = store.clone();
+        let limiter = limiter.clone();
+        let shutdown = shutdown.clone();
+        let antivirus_enabled = audeniq_core::config::antivirus_enabled()?;
+        let executable = std::env::current_exe()?.with_file_name("audeniq-image-encode");
+        tasks.spawn(async move {
+            let mut probe = adaptive::Probe::new();
+            loop {
+                let load = probe.sample();
+                if shutdown.load(Ordering::SeqCst) {
+                    return;
+                }
+                // Unknown pressure defers optional work; the next sample retries.
+                if image_headroom(load) {
+                    if let Ok(_permit) = limiter.clone().try_acquire_owned() {
+                        if audeniq_core::image_jobs::tick(
+                            &pool,
+                            &store,
+                            antivirus_enabled,
+                            &executable,
+                        )
+                        .await
+                        .is_err()
+                        {
+                            tracing::warn!("image_job_tick_failed");
+                        }
+                    }
+                }
+                tokio::time::sleep(Duration::from_secs(10)).await;
+            }
+        });
+    }
+
     let mut configured_workers = 0usize;
     for queue in QUEUES {
         let key = format!("QUEUE_{}_CONCURRENCY", queue.to_uppercase());
@@ -491,4 +526,27 @@ async fn main() -> anyhow::Result<()> {
     }
     anyhow::ensure!(!unexpected, "worker task unexpectedly exited");
     Ok(())
+}
+
+/// Optional derivatives start only with substantial measured cgroup headroom.
+fn image_headroom(load: adaptive::Load) -> bool {
+    load.cpu.is_some_and(|v| v < 0.50) && load.mem.is_some_and(|v| v < 0.70)
+}
+
+#[cfg(test)]
+mod image_load_tests {
+    use super::*;
+    #[test]
+    fn pressure_or_unknown_counters_defer_optional_work() {
+        let load = |cpu, mem| adaptive::Load { cpu, mem };
+        assert!(image_headroom(load(Some(0.49), Some(0.69))));
+        for value in [
+            load(None, Some(0.1)),
+            load(Some(0.1), None),
+            load(Some(0.5), Some(0.1)),
+            load(Some(0.1), Some(0.7)),
+        ] {
+            assert!(!image_headroom(value));
+        }
+    }
 }
