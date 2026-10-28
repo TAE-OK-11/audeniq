@@ -4,6 +4,42 @@
 set -eu
 : "${PGBOUNCER_DB:?}" "${POSTGRES_HOST:=postgres}" "${POSTGRES_PORT:=5432}"
 : "${API_DB_PASSWORD:?}" "${WORKER_DB_PASSWORD:?}"
+# Probes use the same environment as userlist generation. Never print psql's
+# raw stderr (it can contain names/values from server configuration).
+check_path() {
+  path=$1
+  case "$path" in
+    direct) host=$POSTGRES_HOST; port=$POSTGRES_PORT ;;
+    pooled) host=127.0.0.1; port=6432 ;;
+  esac
+  for role in audeniq_api audeniq_worker; do
+    case "$role" in
+      audeniq_api) password=$API_DB_PASSWORD ;;
+      audeniq_worker) password=$WORKER_DB_PASSWORD ;;
+    esac
+    if detail=$(LC_ALL=C PGPASSWORD="$password" PGCONNECT_TIMEOUT=2 \
+      timeout 4 \
+      psql -X -w -h "$host" -p "$port" -U "$role" -d "$PGBOUNCER_DB" \
+      -v ON_ERROR_STOP=1 -Atqc 'SELECT 1' 2>&1); then
+      [ "$detail" = 1 ] || { echo "db_check path=$path role=$role kind=configuration"; return 21; }
+    else
+      case "$detail" in
+        *"password authentication failed"*|*"SASL authentication failed"*|*"no pg_hba.conf entry"*|*"auth failed"*|*"not permitted to log in"*) kind=auth; code=20 ;;
+        *"does not exist"*|*"no such database"*|*"no such user"*) kind=configuration; code=21 ;;
+        *"server_login_retry"*) kind=backend_login_retry; code=1 ;;
+        *) kind=unreachable_or_timeout; code=1 ;;
+      esac
+      echo "db_check path=$path role=$role kind=$kind"
+      return "$code"
+    fi
+  done
+  echo "db_check path=$path kind=ready"
+}
+case "${1:-}" in
+  --check-direct) check_path direct; exit $? ;;
+  --check-pooled) check_path pooled; exit $? ;;
+  --healthcheck) check_path direct; check_path pooled; exit $? ;;
+esac
 dir=/run/pgbouncer
 mkdir -p "$dir"
 umask 077
@@ -23,6 +59,11 @@ unix_socket_dir =
 auth_type = scram-sha-256
 auth_file = ${dir}/userlist.txt
 pool_mode = transaction
+; Retry backend login after transient outages; this does not repair bad auth.
+server_login_retry = 2
+server_connect_timeout = 3
+; Read-only console inspection, no admin commands.
+stats_users = audeniq_api,audeniq_worker
 ; sqlx prepares every statement; PgBouncer tracks them per server connection.
 max_prepared_statements = ${PGBOUNCER_MAX_PREPARED:-1000}
 max_client_conn = ${PGBOUNCER_MAX_CLIENT_CONN:-200}

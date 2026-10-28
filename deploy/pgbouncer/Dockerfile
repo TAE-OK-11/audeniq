@@ -7,7 +7,7 @@
 ARG BASE=debian:13-slim
 FROM ${BASE}
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends pgbouncer ca-certificates \
+    && apt-get install -y --no-install-recommends pgbouncer postgresql-client ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && pgbouncer --version
 COPY entrypoint.sh /usr/local/bin/pgbouncer-entrypoint

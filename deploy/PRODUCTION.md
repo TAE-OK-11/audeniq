@@ -318,3 +318,47 @@ docker exec -e DATABASE_URL="postgres://audeniq_owner:$POSTGRES_PASSWORD@postgre
 ## 업로드 검사 배포
 
 [UPLOAD_SECURITY.md](../docs/UPLOAD_SECURITY.md)의 비공개 R2·Landlock·정적 변환 조건을 확인한다. 기본 `UPLOAD_AV_ENABLED=false`에서는 API/worker가 백신 없이 파일을 정규화하며 백신/갱신 컨테이너가 실행되지 않는다. `production.env`에서 true로 바꾸면 `deploy.sh`가 `antivirus` 프로필을 활성화한다. 이때 공식 정의 초기화·메모리 조건을 준비해야 하며 엔진 부재/오래된 정의 파일은 업로드를 차단한다. 비활성화할 때 배포 스크립트는 이전 엔진도 정지한다. 재활성화하면 `SKIPPED` 파일은 새 업로드로 검사해야 한다.
+
+#### DB readiness and the 2026-10-28 incident
+
+The gate is PostgreSQL → migrations/grants → PgBouncer authenticated SELECT
+(both API and worker roles, direct and pooled) → API → local `/ready` → deploy
+success. `/health` is process-only and never queries the DB. CloudFront `/ready`
+responses may be cached by an existing distribution: deployment uses the local
+container healthcheck, never the edge response.
+
+PgBouncer previously checked only an open TCP port. The authenticated probe now
+uses existing runtime password environment variables, returning safe path/role/
+failure labels. deploy.sh retries transient failures for a 120-second budget
+(a probe already in progress may add up to 16 seconds), but fails immediately on
+explicit authentication/HBA/role/database errors. A second 120-second API gate
+requires an actual healthy state; missing healthchecks no longer pass. The
+rollback command and migration rollback limitations are unchanged.
+
+`server_login_retry` is PgBouncer's temporary cache of a failed backend connection,
+not sqlx's cache and not proof of a password mismatch. Its retry interval is now
+2 seconds (connect timeout 3 seconds); broken credentials still need operator
+reconciliation. sqlx's release ping hard-closes a connection on EOF; normal
+transaction pooling/server lifetime does not require closing client connections.
+Every checkout now validates, with a 5-second acquire budget, zero idle floor,
+240-second idle timeout and 30-minute client lifetime. PgBouncer's backend idle
+and lifetime remain 300/3600 seconds; those are separate connection layers.
+This costs an additional ping per checkout in exchange for quicker detection.
+
+`/ready` retains its JSON shape and DATABASE_UNAVAILABLE/503 contract, adds a
+6-second total query/acquire deadline and safe `db_failure` log labels. Class-28
+DB authentication errors now also map to DATABASE_UNAVAILABLE rather than 500.
+No mutation is retried; sqlx acquisition retries and successive readiness probes
+allow recovery from transient outages without rebuilding the API pool.
+
+Existing volumes do **not** re-run bootstrap.sql. Updating API_DB_PASSWORD or
+WORKER_DB_PASSWORD in production.env/the tmpfs SECRETS_ENV_FILE changes container
+credentials but does not rotate the existing PostgreSQL role passwords. grants.sql
+only grants privileges/settings. Do not re-run bootstrap or reset passwords as a
+diagnostic. The read-only checks and precise values to reconcile are in
+[db-ready-diagnosis.md](db-ready-diagnosis.md). No live server cause was established
+from source alone; EOF plus cached backend login failures require those checks.
+PgBouncer's read-only stats console is available to API/worker roles; admin access
+is not enabled. Raw psql stderr and connection strings are never emitted by the
+probe. See [PgBouncer configuration](https://www.pgbouncer.org/config) for login
+retry and SCRAM/userlist semantics.
