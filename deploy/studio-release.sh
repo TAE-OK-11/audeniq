@@ -56,6 +56,13 @@ prune() {
 
 mkdir -p "$DIR/releases"
 case "${1:-}" in
+  install|rollback)
+    exec 9>"$DIR/.release.lock"
+    flock -n 9 || die "another Studio release is running"
+    ;;
+esac
+[[ "$KEEP" =~ ^[1-9][0-9]*$ ]] || die "STUDIO_KEEP_RELEASES must be positive"
+case "${1:-}" in
   install)
     rel=${2:-}; archive=${3:-}
     [[ "$rel" =~ ^[0-9a-f]{7,40}$ ]] || die "커밋은 16진수 sha여야 해요: $rel"

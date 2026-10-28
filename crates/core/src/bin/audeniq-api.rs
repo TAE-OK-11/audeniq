@@ -61,6 +61,11 @@ async fn main() -> anyhow::Result<()> {
         .json()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
+    if std::env::var("APP_ENV").as_deref() == Ok("production") {
+        // The default hook prints payloads and optional backtraces even when
+        // CatchPanicLayer catches the unwind. Keep production logs redacted.
+        std::panic::set_hook(Box::new(|_| tracing::error!("process task panicked")));
+    }
     let config = Config::from_env()?;
     api::edge_header_secrets(&config.service_secret)?;
     if audeniq_core::config::kms_enabled()? {

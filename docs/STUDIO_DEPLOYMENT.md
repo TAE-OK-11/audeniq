@@ -1,5 +1,9 @@
 # Studio / Workers / rented server
 
+> Current CloudFront deployment and caching: [CDN end state](../deploy/cloudfront/cdn-caching-and-transition.md).
+> Worker/Tunnel migration commands below are historical. Do not reconnect Studio to Workers or create tunnel tokens for the CloudFront deployment.
+
+
 ## Requested changes on the restored deployment
 
 The Studio application changes are based on GitHub commit `643f41fe3ea99f34dc3657742caea5b2bb4b31a4`, which produced the restored Worker version `d8c362df-792e-4e0c-a443-dd6250b409e9`. Later Studio changes from `b16a52b` are not merged into this branch. The standalone Admin retains its previously deployed `b16a52b` staff response types and review labels.
