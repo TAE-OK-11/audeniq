@@ -163,7 +163,7 @@ if 'upload-sandbox-check' in args: sys.exit(23)
             (task_dir / "docker").chmod(0o755)
             log = task_dir / "docker-log"
             result = subprocess.run(
-                ["bash", str(task_dir / "deploy.sh"), "ghcr.io/test/audeniq@sha256:new"],
+                ["bash", str(task_dir / "deploy.sh"), "ghcr.io/test/audeniq@sha256:" + "a" * 64],
                 env=dict(os.environ, PATH=str(task_dir) + os.pathsep + os.environ["PATH"], TASK_DOCKER_LOG=str(log), TASK_IMAGE_ARCH=image_arch, TASK_TARGET_CPU=target_cpu),
                 capture_output=True, text=True, check=False,
             )
