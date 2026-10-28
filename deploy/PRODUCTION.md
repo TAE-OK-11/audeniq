@@ -366,3 +366,45 @@ PgBouncer's read-only stats console is available to API/worker roles; admin acce
 is not enabled. Raw psql stderr and connection strings are never emitted by the
 probe. See [PgBouncer configuration](https://www.pgbouncer.org/config) for login
 retry and SCRAM/userlist semantics.
+
+### Compose build preflight and SQL diagnostics (2026-10-28)
+
+`deploy.sh` requires Python 3 and Docker Compose v2 with `config --format json`.
+Before changing `AUDENIQ_IMAGE`, it inspects the merged production, optional
+TLS and override configuration with all profiles enabled. PgBouncer is the only
+permitted build definition because the script explicitly builds it before both
+`up --no-build` calls. For any other named buildable service, prepare its image
+separately, specify `image:` and remove `build:` from the loaded configuration.
+This also prevents an override build from replacing the locally verified runtime
+image. Configuration validation fails closed; the interpolated model is never
+printed because it includes secrets. Existing file order and deployment gates
+remain unchanged.
+
+Keep the PostgreSQL 18 settings in `compose.production.yaml` unchanged:
+`log_min_duration_statement=-1`, `log_statement=none`, `log_duration=off`,
+`log_lock_waits=off`, both parameter caps at `0`, and
+`log_min_error_statement=panic`.
+
+The [PostgreSQL 18 logging documentation](https://www.postgresql.org/docs/18/runtime-config-logging.html)
+distinguishes bind values from SQL text: the zero parameter caps suppress bind
+values, not literals or comments embedded in SQL. A duration threshold such as
+500ms forces query text into the log even with `log_statement=none`. It cannot
+meet the no-SQL-text/no-secret requirement. Sampling reduces volume, not exposure.
+
+[`pg_stat_statements`](https://www.postgresql.org/docs/18/pgstatstatements.html)
+is not enabled by this Compose setup (no preload configuration or extension
+initialization). It requires preload, restart and extension setup; it stores
+representative SQL in a disk file. Normalization is not a secrecy guarantee, and
+`showtext=false` only omits returned text, not stored text. Do not enable it as a
+secret-free substitute.
+
+A safer existing diagnostic source is the numeric counters in
+[`pg_stat_database` and `pg_stat_io`](https://www.postgresql.org/docs/18/monitoring-stats.html),
+selecting only reviewed numeric fields, never query text from `pg_stat_activity`.
+These identify aggregate contention and I/O pressure, not individual slow SQL.
+For future per-operation latency, use application histograms with fixed operation
+labels and no SQL, parameters, error strings or user-provided labels; this round
+does not add application instrumentation. PostgreSQL also documents duration-only
+`log_duration=on`, but that emits every statement duration rather than a slow-only
+signal; leave it off to avoid introducing log volume without an operational review.
+No logging, database privileges or live configuration are changed here.
