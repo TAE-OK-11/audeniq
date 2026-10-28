@@ -220,29 +220,40 @@ export function putToGrant(grant: UploadGrant, file: Blob, onProgress?: (ratio: 
 
 /** 서버가 만든 파일(CSV 등)을 받아 저장한다. 오류는 JSON 요청과 같은 문구로 알린다. */
 export async function downloadFile(path: string, fallbackName: string): Promise<void> {
-  let res: Response;
+  // Include body consumption: a stalled blob must also reach the deadline.
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 120_000);
   try {
-    res = await fetch(`${API_BASE}${path}`, { credentials: 'include', cache: 'no-store' });
-  } catch {
-    if (navigator.onLine) reportServerIssue({ kind: 'down', status: 0, code: 'NETWORK' });
-    throw new ApiError('네트워크 연결을 확인해 주세요.', 0, 'NETWORK');
+    let res: Response;
+    try {
+      res = await fetch(`${API_BASE}${path}`, { credentials: 'include', cache: 'no-store', signal: controller.signal });
+    } catch (error) {
+      if (controller.signal.aborted) throw error;
+      if (navigator.onLine) reportServerIssue({ kind: 'down', status: 0, code: 'NETWORK' });
+      throw new ApiError('네트워크 연결을 확인해 주세요.', 0, 'NETWORK');
+    }
+    if (!res.ok) {
+      let data: { error?: { code?: string }; maintenance?: unknown } | null = null;
+      try { data = await res.json(); } catch (error) { if (controller.signal.aborted) throw error; /* 본문 없음 */ }
+      const code = data?.error?.code ?? STATUS_CODES[res.status] ?? '';
+      const issue = classifyServerIssue(res.status, code);
+      if (issue?.kind === 'maintenance') issue.window = data?.maintenance;
+      if (issue) reportServerIssue(issue);
+      throw new ApiError(messageForCode(code, res.status), res.status, code);
+    }
+    const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? fallbackName;
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (error) {
+    if (controller.signal.aborted) throw new ApiError('다운로드 시간이 초과됐어요. 다시 시도해 주세요.', 0, 'TIMEOUT');
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
   }
-  if (!res.ok) {
-    let data: { error?: { code?: string }; maintenance?: unknown } | null = null;
-    try { data = await res.json(); } catch { /* 본문 없음 */ }
-    const code = data?.error?.code ?? STATUS_CODES[res.status] ?? '';
-    const issue = classifyServerIssue(res.status, code);
-    if (issue?.kind === 'maintenance') issue.window = data?.maintenance;
-    if (issue) reportServerIssue(issue);
-    throw new ApiError(messageForCode(code, res.status), res.status, code);
-  }
-  const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? fallbackName;
-  const url = URL.createObjectURL(await res.blob());
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

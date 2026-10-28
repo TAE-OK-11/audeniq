@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { orgPath, req } from '../api/http';
 import { errorMessage } from '../api/errors';
+import { ReadFailure } from './ReadFailure';
 import { MOCK } from '../lib/mode';
 import { useToast } from './Toast';
 import { useConfirm } from './Confirm';
@@ -26,6 +27,7 @@ const plus = (d: string, n: number) => { const t = new Date(`${d}T00:00:00Z`); t
 
 export function TermCard({ releaseId }: { releaseId: string }) {
   const toast = useToast();
+  const [loadFailed, setLoadFailed] = useState(false);
   const confirm = useConfirm();
   const [term, setTerm] = useState<Term | null | undefined>(undefined);
   const [open, setOpen] = useState(false);
@@ -37,9 +39,10 @@ export function TermCard({ releaseId }: { releaseId: string }) {
   const base = useCallback(() => orgPath(`/releases/${encodeURIComponent(releaseId)}/term`), [releaseId]);
   const load = useCallback(async () => {
     if (MOCK) { setTerm(null); return; }
-    try { setTerm((await req<{ term: Term | null }>(base(), { quiet401: true })).term); } catch { setTerm(undefined); }
+    try { setTerm((await req<{ term: Term | null }>(base(), { quiet401: true })).term); setLoadFailed(false); } catch { setLoadFailed(true); }
   }, [base]);
   useEffect(() => { void load(); }, [load]);
+  if (loadFailed) return <ReadFailure label="배급 종료·권리 만료" retry={load} />;
   if (term === undefined) return null;
   const min = plus(kstToday(), NOTICE(reason) ? 30 : 1);
   const transfer = reason === 'TRANSFER';

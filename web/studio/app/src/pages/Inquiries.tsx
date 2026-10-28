@@ -1,3 +1,4 @@
+import { ReadFailure } from '../components/ReadFailure';
 // 문의 (/inquiries) — 담당자에게 보내는 모든 요청을 하나의 티켓 목록으로. 일반 문의(답변 대화)와
 // 플랫폼 요청(아티스트 페이지 정리·유튜브 Content ID, 플랫폼 처리 단계)을 같은 목록·같은 작성 창에서 다룬다.
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -352,10 +353,11 @@ export function Inquiries() {
 
   // 플랫폼 요청 (아티스트 페이지·Content ID)
   const [requests, setRequests] = useState<PlatformRequest[] | null>(MOCK ? [] : null);
+  const [requestsFailed, setRequestsFailed] = useState(false);
   const loadRequests = async () => {
     if (MOCK) return;
-    try { setRequests((await req<{ items: PlatformRequest[] }>(orgPath('/platform-requests'))).items); }
-    catch { setRequests(r => r ?? []); }
+    try { setRequests((await req<{ items: PlatformRequest[] }>(orgPath('/platform-requests'))).items); setRequestsFailed(false); }
+    catch { setRequestsFailed(true); }
   };
   useEffect(() => { void loadRequests(); }, []);
 
@@ -456,7 +458,7 @@ export function Inquiries() {
     return true;
   };
 
-  const listLoading = requests === null && !tickets.length;
+  const listLoading = !requestsFailed && requests === null && !tickets.length;
 
   return (
     <div id="view-inquiries" className="view">
@@ -467,8 +469,9 @@ export function Inquiries() {
         actions={<button type="button" className="ui-btn is-primary" onClick={() => setShowForm(true)}><Glyph name="plus" size={14} />새 문의</button>}
       />
 
+      {requestsFailed && <ReadFailure label="플랫폼 요청" retry={loadRequests} />}
       {/* 내 문의가 있으면 답변 상태가 먼저 — 자주 묻는 질문 다섯 줄 아래에 묻혀 있었다. 없으면 질문부터 보여 스스로 답을 찾게 */}
-      {!listLoading && !rows.length && <HelpFaq />}
+      {!listLoading && !requestsFailed && !rows.length && <HelpFaq />}
 
       {listLoading ? (
         <SkeletonList rows={3} />
@@ -488,7 +491,7 @@ export function Inquiries() {
           ))}
         </div>
         </section>
-      ) : (
+      ) : requestsFailed ? null : (
         <EmptyState
           icon={<Glyph name="inquiry" size={22} />} title="작성한 문의가 없어요" as="h2"
           actions={<button type="button" className="ui-btn is-primary" onClick={() => setShowForm(true)}>문의 작성하기</button>}
