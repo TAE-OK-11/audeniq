@@ -1,8 +1,11 @@
 import { loginRedirect } from '../lib/loginRedirect';
 // 서비스·기기 상태 알림
-// - 서버 점검: /api/status(D1·비상 스위치)에 진행 중인 점검이 있거나 API가 503 MAINTENANCE로 답하면
+// - 서버 점검: /api/status(백엔드·비상 스위치)에 진행 중인 점검이 있거나 API가 503 MAINTENANCE로 답하면
 //   점검 화면을 앱 위에 덮는다 (앱은 그대로 두어 작성 중인 내용이 남는다). 72시간 안의 점검은 상단 예고
-// - 서버 장애: API가 502/503/504·연결 실패면 오류 창 (1분에 한 번까지)
+// - 서버 장애: API가 500/502/503/504·연결 실패면 닫기 없는 전체 화면 점검으로 덮는다
+//   (2026-10-28 수정: 닫을 수 있는 모달은 닫으면 뒤 로그인 화면이 보여서, 점검 화면과
+//   같은 전체 화면으로 바꿨다. 앱은 inert로 가리고 언마운트하지 않으므로, 서버가
+//   복구되면 작성 중인 입력은 그대로 이어서 쓸 수 있다. 관리 화면은 점검과 같이 제외한다)
 // - 새 버전: 배포로 index의 앱 번들이 바뀌면 새로고침 안내 창
 // - 기기 문제: 오프라인 배너, 쿠키·저장소 차단, 보안 연결이 아닌 경우 안내 창
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
@@ -15,9 +18,10 @@ import { SERVER_ISSUE_EVENT, type ServerIssue } from '../lib/systemEvents';
 import { fetchStatus, type MaintenanceWindow } from '../api/content';
 import { Glyph } from './Glyph';
 
-// 긴급 점검을 1분 안에 알아차리도록 (Worker의 /api/status는 D1 한 번 읽기라 가볍다)
+// 긴급 점검을 1분 안에 알아차리도록 (백엔드의 /api/status는 가벼운 상태 읽기다)
 const STATUS_EVERY_MS = 60_000;
-const STATUS_DURING_MAINTENANCE_MS = 30_000;
+// 점검·서버 장애 중에는 같은 간격으로 상태를 확인해, 복구되면 전체 화면을 자동으로 내린다.
+const STATUS_DURING_SERVER_DOWN_MS = 30_000;
 const VERSION_EVERY_MS = 5 * 60_000;
 /** ‘지금 새로고침’을 누른 대상 버전 — 새로고침 뒤에도 같은 차이면 다시 묻지 않는다 */
 const RELOADED_FOR_KEY = 'aq-update-reloaded-for';
@@ -58,7 +62,7 @@ function currentEntry(): string | null {
 }
 async function latestEntry(): Promise<string | null> {
   try {
-    // 주소마다 다른 쿼리를 붙여 CDN(Cloudflare) 캐시를 건너뛴다. '/'는 엣지에 캐시돼(cf-cache-status: HIT) 연달아 배포한 뒤
+    // 주소마다 다른 쿼리를 붙여 CDN(CloudFront) 캐시를 건너뛴다. '/'는 엣지에 캐시돼 연달아 배포한 뒤
     // 한동안 옛 index를 돌려줬다 — 새 버전 화면에서도 '다른 버전'으로 보여 새로고침해도 이 창이 계속 떴다
     const res = await fetch(`${import.meta.env.BASE_URL}?__v=${Date.now()}`, { cache: 'no-store', credentials: 'same-origin', headers: { Accept: 'text/html' } });
     if (!res.ok) return null;
@@ -146,19 +150,24 @@ export function SystemStatus({ children }: { children: ReactNode }) {
     setActive(st.maintenance.active);
     setUpcoming(st.maintenance.upcoming);
     if (!st.maintenance.active) setServerSaysMaintenance(false);
+    // 상태 확인이 다시 되면 서버는 살아있다는 뜻이다. 전체 화면 서버 장애를
+    // 내리고, 다음 실패가 다시 바로 보일 수 있게 쿨다운도 초기화한다.
+    setServerIssue(null);
+    lastServerDialog.current = 0;
   }, []);
 
   const maintenance = !!active || serverSaysMaintenance;
+  const serverDown = !!serverIssue;
   useEffect(() => {
     void refreshStatus();
     const t = window.setInterval(() => {
       if (document.visibilityState === 'visible') void refreshStatus();
-    }, maintenance ? STATUS_DURING_MAINTENANCE_MS : STATUS_EVERY_MS);
+    }, maintenance || serverDown ? STATUS_DURING_SERVER_DOWN_MS : STATUS_EVERY_MS);
     // 다른 탭에 있다가 돌아오면 바로 확인
     const onVisible = () => { if (document.visibilityState === 'visible') void refreshStatus(); };
     document.addEventListener('visibilitychange', onVisible);
     return () => { window.clearInterval(t); document.removeEventListener('visibilitychange', onVisible); };
-  }, [refreshStatus, maintenance]);
+  }, [refreshStatus, maintenance, serverDown]);
 
   // 점검이 끝나면 알린다 (앱은 그대로 남아 있어 이어서 쓸 수 있다)
   useEffect(() => {
@@ -229,30 +238,47 @@ export function SystemStatus({ children }: { children: ReactNode }) {
     else safeSet('session', DEVICE_KEY, '1');
   }, []);
 
-  // 점검 중이면 앱 위에 점검 화면을 덮는다 (관리 화면은 그대로 열어 둔다).
-  // 앱을 내리지 않으므로 작성 중이던 입력은 점검이 끝난 뒤 그대로 이어서 쓸 수 있다.
-  const blocking = maintenance && !adminPage;
+  // 점검·서버 장애 중이면 앱 위에 전체 화면을 덮는다 (관리 화면은 그대로 열어 둔다).
+  // 앱을 내리지 않으므로 작성 중이던 입력은 복구 뒤 그대로 이어서 쓸 수 있다.
+  // 닫기 버튼을 두지 않는다: 닫으면 뒤 로그인 화면이 보이는 것이 2026-10-28 스크린샷의 문제였다.
+  const blocking = (maintenance || serverDown) && !adminPage;
   const emergency = active?.kind === 'emergency';
   const overlay = blocking && createPortal(
-    <div className="aq-maint-layer" role="dialog" aria-modal="true" aria-label="서버 점검">
-      <ErrorScreen
-        kind="maintenance" fullPage
-        eyebrow={emergency ? '긴급 점검' : '서버 점검'}
-        title={emergency ? '긴급 점검 중이에요' : '지금은 서버 점검 중이에요'}
-        description={(
-          <>
-            {active && <p className="aq-errscreen-window">{windowLabel(active)}</p>}
-            <p>
-              {active?.body || (emergency
-                ? '서비스를 안정적으로 되돌리고 있어요. 끝나는 대로 자동으로 다시 열려요.'
-                : '점검이 끝나면 자동으로 다시 열려요.')}
-            </p>
-            <p>이 창을 닫지 않으면 작성하던 내용은 그대로 남아 있어요.</p>
-          </>
-        )}
-        actions={[{ label: '상태 다시 확인', onClick: () => void refreshStatus(), primary: true }]}
-        meta={[active ? active.title : '서버 점검', '30초마다 자동으로 확인해요']}
-      />
+    <div className="aq-maint-layer" role="dialog" aria-modal="true" aria-label={maintenance ? '서버 점검' : '서버 장애'}>
+      {maintenance ? (
+        <ErrorScreen
+          kind="maintenance" fullPage
+          eyebrow={emergency ? '긴급 점검' : '서버 점검'}
+          title={emergency ? '긴급 점검 중이에요' : '지금은 서버 점검 중이에요'}
+          description={(
+            <>
+              {active && <p className="aq-errscreen-window">{windowLabel(active)}</p>}
+              <p>
+                {active?.body || (emergency
+                  ? '서비스를 안정적으로 되돌리고 있어요. 끝나는 대로 자동으로 다시 열려요.'
+                  : '점검이 끝나면 자동으로 다시 열려요.')}
+              </p>
+              <p>이 창을 닫지 않으면 작성하던 내용은 그대로 남아 있어요.</p>
+            </>
+          )}
+          actions={[{ label: '상태 다시 확인', onClick: () => void refreshStatus(), primary: true }]}
+          meta={[active ? active.title : '서버 점검', '30초마다 자동으로 확인해요']}
+        />
+      ) : serverIssue ? (
+        <ErrorScreen
+          kind="server" fullPage
+          eyebrow="서버 장애"
+          title="서버에 연결하지 못했어요"
+          description={(
+            <>
+              <p>잠시 서버가 응답하지 않아요. 서버가 복구되면 이 화면은 자동으로 사라져요. 새로고침하면 저장하지 않은 입력은 사라질 수 있어요.</p>
+              <p>계속되면 아래 오류 코드와 함께 문의해 주세요.</p>
+            </>
+          )}
+          actions={[{ label: '상태 다시 확인', onClick: () => void refreshStatus(), primary: true }]}
+          meta={[...serverIssue.meta, '30초마다 자동으로 확인해요']}
+        />
+      ) : null}
     </div>,
     document.body,
   );
@@ -284,21 +310,6 @@ export function SystemStatus({ children }: { children: ReactNode }) {
       )}
       <div className="aq-app-shell" inert={blocking || undefined} aria-hidden={blocking || undefined}>{children}</div>
       {overlay}
-
-      {serverIssue && (
-        <Modal title="서버에 연결하지 못했어요" onClose={() => setServerIssue(null)} modalClass="aq-sysdialog-mode">
-          <DialogBody
-            kind="server"
-            title="서버에 연결하지 못했어요"
-            body={<p>잠시 서버가 응답하지 않아요. 이 창을 닫고 잠시 뒤 다시 시도해 주세요. 새로고침하면 저장하지 않은 입력은 사라질 수 있어요. 계속되면 아래 오류 코드와 함께 문의해 주세요.</p>}
-            meta={serverIssue.meta}
-            actions={[
-              { label: '닫기', onClick: () => setServerIssue(null) },
-              { label: '새로고침', onClick: () => window.location.reload(), primary: true },
-            ]}
-          />
-        </Modal>
-      )}
 
       {!serverIssue && updateReady && (
         <Modal title="새 버전이 준비됐어요" onClose={() => { updateDismissedFor.current = currentEntry(); setUpdateReady(false); }} modalClass="aq-sysdialog-mode">

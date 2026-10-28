@@ -1,4 +1,4 @@
-// 실제 API 호출 계층 — Cloudflare Worker(엣지)를 거쳐 Workers VPC → 메인 서버로 전달된다.
+// 실제 API 호출 계층 — CloudFront + audeniq-studio-edge Function을 거쳐 메인 서버로 전달된다.
 // 브라우저는 세션 쿠키(HttpOnly)와 CSRF 토큰만 다루고, 서비스 비밀값은 엣지만 가진다.
 import { ApiError, messageForCode } from './errors';
 import { clearAsyncCache } from '../lib/asyncCache';
@@ -13,10 +13,15 @@ export function apiUrl(src: string | null | undefined): string {
 
 let csrfToken = '';
 
-// 엣지 Worker가 직접 돌려주는 오류(본문이 JSON이 아님)를 상태 코드로 분류
+// 엣지·게이트웨이가 직접 돌려주는 오류(본문이 JSON이 아님)를 상태 코드로 분류.
+// 2026-10-28 수정: 502/503/504를 전부 DATABASE_UNAVAILABLE로 합치지 않는다.
+// 백엔드가 준 코드가 있으면 그 코드가 우선이고, 코드가 없을 때만 이 표를 쓴다.
+// - 502: 상류(게이트웨이) 불가, 504: 상류 타임아웃, 503 코드 없음: 서비스 불가.
+// - 500은 이전 표에 없어 서버 장애로 분류되지 않았으므로 INTERNAL_ERROR로 추가한다.
 const STATUS_CODES: Record<number, string> = {
   401: 'UNAUTHENTICATED', 403: 'FORBIDDEN', 404: 'NOT_FOUND', 413: 'PAYLOAD_TOO_LARGE',
-  429: 'RATE_LIMITED', 502: 'DATABASE_UNAVAILABLE', 503: 'DATABASE_UNAVAILABLE', 504: 'DATABASE_UNAVAILABLE',
+  429: 'RATE_LIMITED', 500: 'INTERNAL_ERROR', 502: 'UPSTREAM_UNAVAILABLE',
+  503: 'SERVICE_UNAVAILABLE', 504: 'REQUEST_TIMEOUT',
 };
 let currentOrgId = '';
 
@@ -182,7 +187,7 @@ export interface UploadGrant {
 }
 
 /**
- * 서명된 URL로 R2에 파일을 직접 올린다 (음원 원본은 엣지 Worker를 거치지 않음).
+ * 서명된 URL로 R2에 파일을 직접 올린다 (음원 원본은 CloudFront를 거치지 않음).
  * 진행률을 받기 위해 XHR을 쓴다.
  */
 export function putToGrant(grant: UploadGrant, file: Blob, onProgress?: (ratio: number) => void, signal?: AbortSignal): Promise<void> {

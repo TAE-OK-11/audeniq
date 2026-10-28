@@ -437,7 +437,9 @@ describe('remoteApi (가짜 서버)', () => {
 
   it('엣지가 본문 없이 돌려준 503도 안내 문구로 바뀐다', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('Private API unavailable', { status: 503 })));
-    await expect(remoteApi.listReleases()).rejects.toMatchObject({ code: 'DATABASE_UNAVAILABLE', status: 503 });
+    // 2026-10-28: 코드 없는 503은 DB 불가로 단정하지 않는다. 백엔드가 준
+    // DATABASE_UNAVAILABLE 코드가 있을 때만 그 코드가 된다.
+    await expect(remoteApi.listReleases()).rejects.toMatchObject({ code: 'SERVICE_UNAVAILABLE', status: 503 });
   });
 });
 
