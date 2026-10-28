@@ -157,7 +157,15 @@ pub fn router(s: AppState) -> Router {
     Router::new()
         .route(
             "/health",
-            get(|| async { Json(json!({"service":"audeniq-api","operational_release":false})) }),
+            // DB를 건드리지 않는 경량 헬스: /ready(DB 쿼리)와 분리한다.
+            // 2026-10-28 장애에서 /ready는 DB가 죽으면 헬스도 죽었기 때문에,
+            // 프로세스 생존 확인은 이 경로, DB 확인은 /ready로 나눈다.
+            // version/build는 라이브와 로컬을 구분하는 식별자 (archive.rs와 같은 규칙).
+            get(|| async {
+                Json(json!({"service":"audeniq-api","operational_release":false,
+                    "version":env!("CARGO_PKG_VERSION"),
+                    "build":std::env::var("AUDENIQ_BUILD").unwrap_or_default()}))
+            }),
         )
         .route("/ready", get(ready))
         .route("/api/auth/register", post(register))
@@ -317,6 +325,18 @@ pub fn router(s: AppState) -> Router {
 /// already (about 100 s), and it would otherwise keep holding a database
 /// connection (pool of 6) or a storage call for up to 15 minutes. Covers the
 /// handler up to its response headers; a streamed body is not cut.
+///
+/// Timeout budget, one place (2026-10-28 audit: three different timeouts
+/// made the same outage look different per user):
+/// - Studio user requests: frontend `req` default 20 s (web/studio/app/src/api/http.ts).
+/// - Studio status probe: frontend `fetchStatus` 8 s, quiet — it must NOT
+///   trigger the server-down overlay on its own (see content.ts).
+/// - This backend deadline: 120 s, last resort only. It is deliberately
+///   longer than a single user request, so do NOT "fix" an edge timeout by
+///   lowering it alone: the CloudFront origin timeout is a distribution
+///   setting, not code, and must be checked first. A frontend abort does
+///   not cancel work already accepted here; mutations must therefore stay
+///   retry-safe (idempotency keys, not a second submit from the client).
 const REQUEST_DEADLINE: std::time::Duration = std::time::Duration::from_secs(120);
 
 /// Not bounded: live streams (they end on their own) and upload completion
@@ -517,7 +537,9 @@ async fn ready(State(s): State<AppState>) -> Result<Json<Value>> {
     Ok(Json(json!({"database":true,"submission":false,
                "distribution":live_partners > 0 && crate::launch::live_transmission_enabled(),
                "live_partners":live_partners,
-               "live_transmission":crate::launch::live_transmission_enabled(),"payout":false})))
+               "live_transmission":crate::launch::live_transmission_enabled(),"payout":false,
+               "version":env!("CARGO_PKG_VERSION"),
+               "build":std::env::var("AUDENIQ_BUILD").unwrap_or_default()})))
 }
 async fn available_dsps(
     State(s): State<AppState>,

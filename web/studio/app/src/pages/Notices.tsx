@@ -15,7 +15,7 @@ interface Notice {
   body: string;
 }
 
-// 예시 공지 — Worker(D1)가 없는 로컬 체험 모드에서만 보인다. 실제 글은 /api/notices
+// 예시 공지 — 백엔드가 없는 로컬 체험 모드에서만 보인다. 실제 글은 /api/notices
 const NOTICES: Notice[] = [
   {
     id: 'n1',

@@ -1,5 +1,5 @@
 // 포털 API — 프로필·수령 계좌·문의·알림·서류·신청서·정산·리포트 (메인 서버)
-// 공지·이벤트는 엣지 Worker가 D1에서 바로 서빙한다 (/api/notices, /api/events).
+// 공지·이벤트는 백엔드가 바로 서빙한다 (/api/notices, /api/events).
 // 서버 응답을 화면에서 쓰는 모양(스토어 타입)으로 바꿔서 돌려준다.
 import { downloadFile, orgPath, req } from './http';
 import { cleanText, remoteApi } from './remote';

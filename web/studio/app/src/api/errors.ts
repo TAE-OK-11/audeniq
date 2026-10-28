@@ -147,6 +147,10 @@ const CODE_MESSAGES: Record<string, string> = {
   TIN_INVALID: '납세자번호는 영문·숫자 4~30자로 입력해 주세요.',
   STORAGE_UNAVAILABLE: '파일 저장소에 잠시 연결할 수 없어요. 잠시 후 다시 시도해 주세요.',
   DATABASE_UNAVAILABLE: '서버가 잠시 바빠요. 잠시 후 다시 시도해 주세요.',
+  // 2026-10-28: 코드 없는 503은 더 이상 DB 불가로 단정하지 않는다 (http.ts STATUS_CODES).
+  SERVICE_UNAVAILABLE: '서비스가 잠시 이용할 수 없어요. 잠시 후 다시 시도해 주세요.',
+  UPSTREAM_UNAVAILABLE: '서버 연결이 잠시 끊겼어요. 잠시 후 다시 시도해 주세요.',
+  REQUEST_TIMEOUT: '서버 응답이 늦어요. 잠시 후 다시 시도해 주세요.',
   INTERNAL_ERROR: '서버에서 문제가 생겼어요. 잠시 후 다시 시도해 주세요.',
   REQUEST_HEADERS_TOO_LARGE: '요청이 너무 커요. 새로고침 후 다시 시도해 주세요.',
   TEXT_INVALID_CHARACTERS: '입력한 글자 중 쓸 수 없는 문자(보이지 않는 제어 문자 등)가 있어요.',

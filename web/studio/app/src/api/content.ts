@@ -1,4 +1,4 @@
-// 공지·이벤트 — 엣지 Worker가 D1(CONTENT_DB)에서 바로 서빙한다.
+// 공지·이벤트 — 백엔드가 바로 서빙한다.
 // 읽기: /api/notices, /api/events (로그인 불필요)
 // 관리: /api/content/{notices|events} (관리자 세션 + CSRF)
 import { req } from './http';
@@ -6,7 +6,7 @@ import { ApiError } from './errors';
 import { MOCK } from '../lib/mode';
 
 // ---------------------------------------------------------------------------
-// 공지·이벤트 (엣지 Worker + D1)
+// 공지·이벤트 (백엔드)
 // ---------------------------------------------------------------------------
 export interface ContentNotice { id: string; title: string; body: string; pinned: boolean; published_at: string }
 export interface ContentEvent {
@@ -25,6 +25,10 @@ export interface MaintenanceWindow {
   end_unknown?: boolean;
 }
 export interface ServiceStatus { now: string; maintenance: { active: MaintenanceWindow | null; upcoming: MaintenanceWindow | null } }
+/** 상태 확인은 조용한 탐침이다: 8초 타임아웃으로 실패해도 서버 장애 화면을 띄우지 않는다.
+ * 탐침 실패는 "상태를 모른다"는 뜻이지 "서버가 죽었다"는 뜻이 아니다. 서버 장애 화면은
+ * 실제 사용자 요청(req, quietServer 아님)이 500/502/503/504로 실패할 때만 뜬다.
+ * 탐침이 다시 성공하면 SystemStatus가 서버 장애 화면을 자동으로 내린다. */
 export async function fetchStatus(): Promise<ServiceStatus | null> {
   try {
     const r = await req<ServiceStatus>('/api/status', { quiet401: true, quietServer: true, timeoutMs: 8000 });
@@ -40,14 +44,14 @@ function items<T>(r: { items?: T[] } | null): T[] {
 }
 
 /**
- * 공지·이벤트는 로그인·체험 모드와 관계없이 항상 D1(Worker)에서 읽는다.
- * 체험 모드에서 Worker가 아예 없을 때(로컬 vite, 정적 미리보기)만 예시 글을 보여 준다.
+ * 공지·이벤트는 로그인·체험 모드와 관계없이 항상 백엔드에서 읽는다.
+ * 체험 모드에서 백엔드가 아예 없을 때(로컬 vite, 정적 미리보기)만 예시 글을 보여 준다.
  */
 export async function loadContent<T, U>(fetcher: () => Promise<T[]>, map: (row: T) => U, demo: U[]): Promise<U[]> {
   try {
     return (await fetcher()).map(map);
   } catch (e) {
-    // Worker가 없어 다른 서버(로컬 프록시 등)가 답한 경우만. Worker의 오류(CONTENT_*)는 그대로 보여 준다.
+    // 백엔드가 없어 다른 서버(로컬 프록시 등)가 답한 경우만. 백엔드의 오류(CONTENT_*)는 그대로 보여 준다.
     const unavailable = e instanceof ApiError && !e.code.startsWith('CONTENT_')
       && [0, 404, 405, 502, 503, 504].includes(e.status);
     if (MOCK && unavailable) return demo;
