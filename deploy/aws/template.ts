@@ -55,7 +55,7 @@ export interface S3Origin {
 }
 
 export interface ApiOrigin {
-  Id: 'api';
+  Id: 'api' | 'api-origin.audeniq.com-mvqm79ra3ic';
   DomainName: Ref;
   CustomOriginConfig: {
     OriginProtocolPolicy: string;
@@ -162,7 +162,6 @@ export interface Template {
     /** Studio viewer-request v9; other apps use legacy functions/edge.js. */
     EdgeFunction?: Resource<'AWS::CloudFront::Function', CloudFrontFunctionProperties>;
     MaintenanceFunction?: Resource<'AWS::CloudFront::Function', CloudFrontFunctionProperties>;
-    AssetCache?: Resource<'AWS::CloudFront::CachePolicy', { CachePolicyConfig: Record<string, unknown> }>;
     ResponseHeaders: Resource<'AWS::CloudFront::ResponseHeadersPolicy', { ResponseHeadersPolicyConfig: ResponseHeadersPolicy & { Name: Sub } }>;
     Distribution: Resource<'AWS::CloudFront::Distribution', { DistributionConfig: DistributionConfig }>;
   };
@@ -277,7 +276,7 @@ function edgeFunction(name: AppName): Resource<'AWS::CloudFront::Function', Clou
   return {
     Type: 'AWS::CloudFront::Function',
     Properties: {
-      Name: { 'Fn::Sub': '${AWS::StackName}-edge' },
+      Name: { 'Fn::Sub': name === 'studio' ? 'audeniq-studio-edge' : '${AWS::StackName}-edge' },
       AutoPublish: true,
       FunctionConfig: { Comment: `AUDENIQ ${name} backend request headers`, Runtime: 'cloudfront-js-2.0' },
       FunctionCode: name === 'studio'
@@ -328,35 +327,25 @@ export async function template(name: string | undefined): Promise<Template> {
   };
 
   if (app.origin === 'backend') {
-    // Public static files honor origin TTLs. Accept and normalized gzip/br
-    // are in their cache key; cookies and query strings are not forwarded.
-    // API/discovery always use the uncached, viewer-forwarding behavior.
-    // Pending Muse's behavior inventory: preserve current path/cache/origin policy
-    // choices; these are not asserted to match live. No independent error origin
-    // or CustomErrorResponses is inferred. Viewer-response is not origin failover.
-    // Studio stays same-origin with no CORS policy; cross-origin intent undecided.
+    // Confirmed console inventory: E29B1S5744RYI0, 2026-10-28 21:52 UTC.
+    // No separate static-cache behaviors exist live; do not emit planned ones.
+    // The independent error bucket is not connected: no error origin or custom errors.
+    // Other settings below are retained; this inventory does not confirm them.
+    const originId = 'api-origin.audeniq.com-mvqm79ra3ic' as const;
+    const studioBehavior = (): DefaultCacheBehavior => {
+      const behavior = backendBehavior(true);
+      behavior.TargetOriginId = originId;
+      delete behavior.OriginRequestPolicyId;
+      return behavior;
+    };
     const distribution: DistributionConfig = {
       ...base,
-      Origins: [backendOrigin(app.site)],
-      DefaultCacheBehavior: backendBehavior(true),
+      Origins: [{ ...backendOrigin(app.site), Id: originId }],
+      DefaultCacheBehavior: { ...studioBehavior(), CachePolicyId: CACHING_OPTIMIZED },
       CacheBehaviors: [
-        // These exclusions MUST precede extension patterns: CloudFront's *
-        // matches slashes too, so /api/a.png must never use the public policy.
-        ...['/api', '/api/*', '/.well-known/*'].map(PathPattern => ({
-          ...backendBehavior(true), PathPattern,
-        })),
-        ...app.cached.map(PathPattern => ({
-          PathPattern,
-          TargetOriginId: 'api',
-          ViewerProtocolPolicy: 'redirect-to-https',
-          AllowedMethods: ['GET', 'HEAD'],
-          CachedMethods: ['GET', 'HEAD'],
-          CachePolicyId: { Ref: 'AssetCache' },
-          ResponseHeadersPolicyId: { Ref: 'ResponseHeaders' },
-          Compress: true,
-          // Pending Muse: exact live cached-behavior associations are unknown.
-          // Preserve these connections until that inventory is supplied.
-          FunctionAssociations: [],
+        { ...studioBehavior(), PathPattern: '/api/*', OriginRequestPolicyId: ALL_VIEWER_EXCEPT_HOST },
+        ...['/ready', '/health', '/.well-known/*'].map(PathPattern => ({
+          ...studioBehavior(), PathPattern,
         })),
       ],
     };
@@ -369,24 +358,11 @@ export async function template(name: string | undefined): Promise<Template> {
         MaintenanceFunction: {
           Type: 'AWS::CloudFront::Function',
           Properties: {
-            Name: { 'Fn::Sub': '${AWS::StackName}-maintenance' },
+            Name: { 'Fn::Sub': 'audeniq-studio-maintenance' },
             AutoPublish: true,
             FunctionConfig: { Comment: 'Studio maintenance draft; origin errors require separate infrastructure', Runtime: 'cloudfront-js-2.0' },
             FunctionCode: checkSize('studio-maintenance-function.js', readFileSync(resolve(HERE, '../cloudfront/studio-maintenance-function.js'), 'utf8')),
           },
-        },
-        AssetCache: {
-          Type: 'AWS::CloudFront::CachePolicy',
-          Properties: { CachePolicyConfig: {
-            Name: { 'Fn::Sub': '${AWS::StackName}-assets' },
-            MinTTL: 0, DefaultTTL: 0, MaxTTL: 31536000,
-            ParametersInCacheKeyAndForwardedToOrigin: {
-              EnableAcceptEncodingBrotli: true, EnableAcceptEncodingGzip: true,
-              HeadersConfig: { HeaderBehavior: 'whitelist', Headers: ['Accept'] },
-              CookiesConfig: { CookieBehavior: 'none' },
-              QueryStringsConfig: { QueryStringBehavior: 'none' },
-            },
-          } },
         },
         // 보안 헤더(CSP 등)는 백엔드가 _headers로 붙인다. 여기는 HSTS만 (Workers secureResponse와 같은 값)
         ResponseHeaders: {

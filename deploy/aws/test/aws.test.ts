@@ -136,13 +136,14 @@ test('legacy edge helper 응답: studio CORS 옵션, admin no-store (Studio temp
   assert.equal(admin['x-content-type-options'].value, 'nosniff');
 });
 
-test('템플릿 studio: S3 없이 화면·API 모두 백엔드(443), 해시 에셋만 캐시', async () => {
+test('Studio confirmed live inventory: ordered paths, managed policies, single origin, no custom errors', async () => {
   const t = await template('studio');
   assert.equal(t.Resources.Bucket, undefined);
   assert.equal(t.Resources.ViewerFunction, undefined);
   assert.equal(t.Outputs.BucketName, undefined);
   const d = t.Resources.Distribution.Properties.DistributionConfig;
-  assert.deepEqual(d.Origins.map(o => o.Id), ['api']);
+  assert.deepEqual(d.Origins.map(o => o.Id), ['api-origin.audeniq.com-mvqm79ra3ic']);
+  // Unconfirmed transport/header settings: local regression checks only.
   const api = d.Origins[0] as ApiOrigin;
   assert.equal(api.CustomOriginConfig.HTTPSPort, ORIGIN_HTTPS_PORT);
   assert.equal(api.CustomOriginConfig.OriginProtocolPolicy, 'https-only');
@@ -151,31 +152,27 @@ test('템플릿 studio: S3 없이 화면·API 모두 백엔드(443), 해시 에�
     { HeaderName: 'x-audeniq-site', HeaderValue: 'studio' },
   ]);
   const def = d.DefaultCacheBehavior;
-  assert.equal(def.TargetOriginId, 'api');
-  assert.equal(def.CachePolicyId, '4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
-  assert.ok(def.AllowedMethods.includes('POST'));
-  assert.deepEqual(def.FunctionAssociations.map(f => f.EventType), ['viewer-request', 'viewer-response']);
-  assert.deepEqual(d.CacheBehaviors.map(b => [b.PathPattern, b.CachePolicyId, b.OriginRequestPolicyId]),
-    [
-      ...['/api', '/api/*', '/.well-known/*'].map(path => [path,
-        '4135ea2d-6df8-44a3-9df3-4b5a84be39ad', 'b689b0a8-53d0-40ab-baf2-68738e2966ac']),
-      ...(APPS.studio.origin === 'backend' ? APPS.studio.cached : []).map(path => [path, { Ref: 'AssetCache' }, undefined]),
-    ]);
-  const cache = t.Resources.AssetCache!.Properties.CachePolicyConfig;
-  assert.equal(cache.MinTTL, 0);
-  assert.equal(cache.DefaultTTL, 0);
-  assert.equal(cache.MaxTTL, 31536000);
-  const key = cache.ParametersInCacheKeyAndForwardedToOrigin as Record<string, unknown>;
-  assert.deepEqual(key.HeadersConfig, { HeaderBehavior: 'whitelist', Headers: ['Accept'] });
-  assert.equal(key.EnableAcceptEncodingBrotli, true);
-  assert.equal(key.EnableAcceptEncodingGzip, true);
-  assert.deepEqual(key.CookiesConfig, { CookieBehavior: 'none' });
-  assert.deepEqual(key.QueryStringsConfig, { QueryStringBehavior: 'none' });
-  // Simulate first-match behavior, including nested API files with image suffixes.
-  for (const path of ['/api/a.png', '/api/orgs/o/assets/a.jpg', '/.well-known/logo.avif']) {
-    const behavior = d.CacheBehaviors.find(b => new RegExp('^' + b.PathPattern.replace(/[.]/g, '\\.').replace(/\*/g, '.*') + '$').test(path));
-    assert.equal(behavior?.CachePolicyId, '4135ea2d-6df8-44a3-9df3-4b5a84be39ad', path);
+  const disabled = '4135ea2d-6df8-44a3-9df3-4b5a84be39ad';
+  const optimized = '658327ea-f89d-4fab-a63d-7e88639e58f6';
+  const allViewerExceptHost = 'b689b0a8-53d0-40ab-baf2-68738e2966ac';
+  // User-supplied console inventory, 2026-10-28 21:52 UTC; no AWS access.
+  assert.deepEqual(d.CacheBehaviors.map(b => [b.PathPattern, b.CachePolicyId, b.OriginRequestPolicyId]), [
+    ['/api/*', disabled, allViewerExceptHost],
+    ['/ready', disabled, undefined],
+    ['/health', disabled, undefined],
+    ['/.well-known/*', disabled, undefined],
+  ]);
+  assert.equal(def.CachePolicyId, optimized);
+  assert.equal(def.OriginRequestPolicyId, undefined);
+  for (const b of [def, ...d.CacheBehaviors]) {
+    assert.equal(b.TargetOriginId, 'api-origin.audeniq.com-mvqm79ra3ic');
   }
+  assert.equal(d.CustomErrorResponses, undefined, 'Confirmed: zero custom error responses');
+  assert.equal(Object.values(t.Resources).map(r => String(r.Type)).includes('AWS::CloudFront::CachePolicy'), false);
+  assert.equal(Object.values(t.Resources).some(r => r.Type === 'AWS::S3::Bucket'), false);
+  // Unconfirmed by this live inventory: retain existing transport, methods,
+  // origin headers and response-header policy; these checks are local regressions.
+  assert.ok(def.AllowedMethods.includes('POST'));
   const policy = t.Resources.ResponseHeaders.Properties.ResponseHeadersPolicyConfig;
   assert.equal(policy.SecurityHeadersConfig.StrictTransportSecurity.AccessControlMaxAgeSec, 31536000);
   assert.equal(policy.SecurityHeadersConfig.ContentSecurityPolicy, undefined, 'CSP는 백엔드(_headers)가 붙인다');
@@ -218,22 +215,20 @@ test('_headers Cache-Control → 업로드 그룹, HTML은 마지막 no-cache', 
 });
 
 
-test('Studio template uses checked-in functions; unknown cached associations are preserved', async () => {
+test('Studio confirmed live associations: v9 request and maintenance response on all five behaviors', async () => {
   const t = await template('studio');
   assert.equal(t.Resources.EdgeFunction!.Properties.FunctionCode,
     readFileSync(new URL('../../cloudfront/studio-edge-function-v9.js', import.meta.url), 'utf8'));
   assert.equal(t.Resources.MaintenanceFunction!.Properties.FunctionCode,
     readFileSync(new URL('../../cloudfront/studio-maintenance-function.js', import.meta.url), 'utf8'));
+  assert.deepEqual(t.Resources.EdgeFunction!.Properties.Name, { 'Fn::Sub': 'audeniq-studio-edge' });
+  assert.deepEqual(t.Resources.MaintenanceFunction!.Properties.Name, { 'Fn::Sub': 'audeniq-studio-maintenance' });
   const d = t.Resources.Distribution.Properties.DistributionConfig;
   for (const b of [d.DefaultCacheBehavior, ...d.CacheBehaviors]) {
-    if (typeof b.CachePolicyId !== 'string') {
-      assert.deepEqual(b.FunctionAssociations, [], 'Live cached connections await inventory');
-      continue;
-    }
     assert.deepEqual(b.FunctionAssociations, [
       { EventType: 'viewer-request', FunctionARN: { 'Fn::GetAtt': ['EdgeFunction', 'FunctionARN'] } },
       { EventType: 'viewer-response', FunctionARN: { 'Fn::GetAtt': ['MaintenanceFunction', 'FunctionARN'] } },
     ]);
   }
-  assert.equal(d.CustomErrorResponses, undefined, 'Independent error origin is an undecided infrastructure change');
+  assert.equal(d.CustomErrorResponses, undefined, 'Confirmed: independent error bucket is not connected');
 });
