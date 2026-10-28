@@ -40,6 +40,8 @@ struct Grant {
 
 #[derive(Clone)]
 struct Fixture {
+    pool: PgPool,
+    revoke_link: Arc<Mutex<bool>>,
     base: String,
     grants: Arc<Mutex<HashMap<String, Grant>>>,
     rsa: Arc<RsaKeyPair>,
@@ -131,7 +133,7 @@ impl Fixture {
     }
 }
 
-async fn fixture() -> Fixture {
+async fn fixture(pool: PgPool) -> Fixture {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let apple_pkcs8 = EcdsaKeyPair::generate_pkcs8(
@@ -145,6 +147,8 @@ async fn fixture() -> Fixture {
     )
     .unwrap();
     let fx = Fixture {
+        pool,
+        revoke_link: Default::default(),
         base: base.clone(),
         grants: Default::default(),
         rsa: Arc::new(RsaKeyPair::generate(KeySize::Rsa2048).unwrap()),
@@ -223,7 +227,16 @@ async fn sign_in(
     signup: bool,
 ) -> Done {
     let body = match linking {
-        Some(_) => json!({"mode": "link"}),
+        Some(u) => {
+            // Isolate OAuth proof consumption here; real authenticator proof
+            // issuance and session binding are covered in passkeys.rs.
+            let token = audeniq_core::auth::random_token();
+            let cookie_token = u.cookie.split_once('=').unwrap().1;
+            sqlx::query("INSERT INTO identity.passkey_proofs(token_hash,session_hash,user_id,expires_at) VALUES($1,$2,$3,now()+interval '5 minutes')")
+                .bind(audeniq_core::auth::hash_token(&token))
+                .bind(audeniq_core::auth::hash_token(cookie_token)).bind(u.user).execute(&fx.pool).await.unwrap();
+            json!({"mode":"link","reauth_token":token})
+        }
         None => {
             json!({"return_to": "/releases", "signup": signup, "terms_version": "AUD-TERMS 2026.10.1", "privacy_notice_version": "AUD-PRIVACY 1.0-draft"})
         }
@@ -237,6 +250,17 @@ async fn sign_in(
     )
     .await;
     assert_eq!(s, StatusCode::OK, "{v}");
+    let revoke = *fx.revoke_link.lock().unwrap();
+    if revoke {
+        let u = linking.unwrap();
+        sqlx::query("UPDATE identity.sessions SET revoked_at=now() WHERE token_hash=$1")
+            .bind(audeniq_core::auth::hash_token(
+                u.cookie.split_once('=').unwrap().1,
+            ))
+            .execute(&fx.pool)
+            .await
+            .unwrap();
+    }
     let url = url::Url::parse(v["url"].as_str().unwrap()).unwrap();
     assert!(
         url.as_str()
@@ -306,7 +330,7 @@ async fn me(app: &Router, cookie: &str) -> Value {
 
 #[sqlx::test]
 async fn google_and_apple_sign_in(pool: PgPool) {
-    let fx = fixture().await;
+    let fx = fixture(pool.clone()).await;
     let (app, _) = app(pool.clone()).await;
     let (_, v) = send(&app, "GET", "/api/auth/oauth/providers", Value::Null, None).await;
     assert_eq!(v, json!({"google": true, "apple": true}));
@@ -446,6 +470,16 @@ async fn google_and_apple_sign_in(pool: PgPool) {
     assert_eq!(d.location, "/login?oauth_error=OAUTH_TOKEN_INVALID");
     *fx.forged_nonce.lock().unwrap() = None;
 
+    let (_, denied) = send(
+        &app,
+        "POST",
+        "/api/auth/oauth/google/start",
+        json!({"mode":"link"}),
+        Some(&owner.0),
+    )
+    .await;
+    assert_eq!(denied["error"]["code"], "PASSKEY_STEP_UP_REQUIRED");
+
     // A password account connects Google from its settings, then signs in with it.
     let d = sign_in(
         &app,
@@ -541,6 +575,32 @@ async fn google_and_apple_sign_in(pool: PgPool) {
     )
     .await;
     assert_eq!(v["error"]["code"], "OAUTH_LAST_SIGN_IN_METHOD");
+
+    let lost = user_with_email(&app, &pool).await;
+    *fx.revoke_link.lock().unwrap() = true;
+    let d = sign_in(
+        &app,
+        &fx,
+        "google",
+        "g-revoked-link",
+        Some(&lost.1),
+        json!(true),
+        Some(&lost.0),
+        false,
+    )
+    .await;
+    *fx.revoke_link.lock().unwrap() = false;
+    assert_eq!(d.location, "/profile?oauth_error=OAUTH_FAILED");
+    let linked: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM identity.oauth_identities WHERE user_id=$1")
+            .bind(lost.0.user)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        linked, 0,
+        "revoked initiating sessions cannot finish linking"
+    );
 
     let reasons: Vec<String> = sqlx::query_scalar(
         "SELECT action||':'||reason_code FROM operations.audit_events WHERE action IN ('auth.register','auth.login','auth.oauth.linked','auth.oauth.unlinked')",

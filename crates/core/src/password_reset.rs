@@ -184,7 +184,7 @@ pub async fn verify_phone(s: &AppState, a: &Actor, i: PhoneVerify) -> Result<Val
         .execute(&mut *tx)
         .await?;
     let verified_at: DateTime<Utc> = sqlx::query_scalar(
-        "INSERT INTO portal.account_phones(user_id,phone_hash,phone_last4) VALUES($1,$2,$3)
+        "INSERT INTO portal.account_phones(user_id,phone_hash,phone_last4,verified_at) VALUES($1,$2,$3,now())
          ON CONFLICT(user_id) DO UPDATE SET phone_hash=EXCLUDED.phone_hash,phone_last4=EXCLUDED.phone_last4,
            verified_at=now(),row_version=portal.account_phones.row_version+1
          RETURNING verified_at",
@@ -264,7 +264,7 @@ pub async fn start_reset(s: &AppState, h: &HeaderMap, i: ResetStart) -> Result<V
     let hash = sms::phone_hash(&s.config.service_secret, &phone);
     let user: Option<Uuid> = sqlx::query_scalar(
         "SELECT u.id FROM identity.users u JOIN portal.account_phones p ON p.user_id=u.id
-         WHERE (u.email=$1 OR u.email_bidx=ANY($3)) AND u.status='ACTIVE' AND p.phone_hash=$2",
+         WHERE (u.email=$1 OR u.email_bidx=ANY($3)) AND u.status='ACTIVE' AND p.phone_hash=$2 AND p.verified_at IS NOT NULL",
     )
     .bind(&email)
     .bind(&hash)
@@ -418,7 +418,7 @@ pub async fn registered_phone(s: &AppState, user: Uuid) -> Result<Value> {
             .fetch_optional(&s.pool)
             .await?;
     Ok(row.map_or(Value::Null, |r| {
-        json!({"last4": r.get::<String, _>("phone_last4"), "verified_at": r.get::<DateTime<Utc>, _>("verified_at")})
+        json!({"last4": r.get::<String, _>("phone_last4"), "verified_at": r.get::<Option<DateTime<Utc>>, _>("verified_at")})
     }))
 }
 
