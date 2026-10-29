@@ -12,6 +12,7 @@ import { CheckIcon } from '../components/Check';
 import { patchProfile } from '../store/profile';
 import { rememberLoginEmail } from '../lib/lastEmail';
 import { formatPhone, isPhone } from '../lib/phone';
+import { clearPhoneHandoff, hasPhoneHandoff, preparePhoneHandoff } from '../lib/phoneHandoff';
 
 export { formatPhone, isPhone };
 import { clearPasskeyHandoff, hasPasskeyHandoff, preparePasskeyHandoff } from '../lib/passkeyHandoff';
@@ -36,7 +37,8 @@ export function Signup() {
   const [params, setParams] = useSearchParams();
   const steps = !MOCK && passkeySupported() ? 3 : 2;
   const [name, setName] = useState('');
-  // 전화번호 — 지금은 입력 칸만 있고 서버로 보내지 않는다(저장할 곳이 아직 없다). 저장을 붙일 때 개인정보 안내 항목도 함께 바꾼다
+  // 전화번호 — 서버는 문자 인증을 마친 번호만 저장하고 인증은 로그인한 뒤에만 된다. 계정을 만든 직후
+  // 휴대폰 번호 확인 화면(pages/PhoneSetup)에서 인증번호로 확인한다 (비밀번호 찾기에 쓴다)
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -119,13 +121,15 @@ export function Signup() {
     setBusy(true);
     // 가입 직후 이 기기에 패스키를 만들지 묻는다 — 다음 로그인부터 비밀번호 없이 (pages/PasskeySetup)
     preparePasskeyHandoff(password, '/', true);
+    preparePhoneHandoff(phone);
     try {
       await signup(email.trim(), password);
       patchProfile({ name: name.trim(), email: email.trim() });
       rememberLoginEmail(email.trim());
-      nav(hasPasskeyHandoff() ? '/passkey-setup' : '/', { replace: true });
+      nav(hasPhoneHandoff() ? '/phone-setup' : hasPasskeyHandoff() ? '/passkey-setup' : '/', { replace: true });
     } catch (err) {
       clearPasskeyHandoff();
+      clearPhoneHandoff();
       setBusy(false);
       // 이미 가입된 이메일이면 이메일 단계로 돌아가 그 칸에서 알려 준다
       if (err instanceof ApiError && err.code === 'CONFLICT') {
@@ -248,6 +252,7 @@ export function Signup() {
             <summary>가입 정보는 계정 생성과 서비스 제공에 써요. <span>자세히</span></summary>
             <p>
               회원가입 정보(이메일·비밀번호·활동명)는 요청한 계정 생성과 서비스 제공을 위해 처리해요.
+              휴대폰 번호는 가입 직후 문자 인증으로 확인한 뒤 비밀번호 재설정에 써요.
               계정정보는 원칙적으로 탈퇴 또는 처리 목적 종료 시까지 보관하며, 법정 보존자료는 별도로 관리해요.
               자세한 항목·보유기간과 권리 행사방법은 <a href="/privacy" target="_blank" rel="noopener" className="aq-inline-link">개인정보 처리방침</a>에서 확인해 주세요.
               선택 기능에 필요한 별도 동의는 해당 기능을 이용할 때 안내해요.
