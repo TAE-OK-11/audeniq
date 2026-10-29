@@ -334,7 +334,7 @@ export function Settlement() {
                   <h3 className="settle-day-head">{dayLabel(d)}</h3>
                   {rows.map(s => (
                     <button type="button" key={s.id} className="ui-row aq-statement-card settle-entry" onClick={() => setDetail({ kind: 'statement', id: s.id })}>
-                      <span className={`aq-statement-icon${s.amount < 0 ? ' is-minus' : ''}`} aria-hidden="true"><Glyph name={s.amount < 0 ? 'minus' : 'plus'} size={17} /></span>
+                      <span className={`aq-statement-icon${s.amount < 0 ? ' is-minus' : ''}`} aria-hidden="true"><Glyph name={s.amount < 0 ? 'arrow-up-right' : 'won'} size={17} /></span>
                       <div className="min-0">
                         <span className="ui-row-title">{entryTitle(s)}</span>
                         <span className="ui-row-meta">{[entryKind(s), s.platform, s.period && `${s.period}분`].filter(Boolean).map(t => <span key={t}>{t}</span>)}</span>

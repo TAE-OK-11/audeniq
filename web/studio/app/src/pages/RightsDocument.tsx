@@ -37,7 +37,7 @@ export function RightsDocument() {
   if (error || !doc?.electronic) return <div className="ui-empty"><h1>문서를 확인할 수 없어요.</h1><p>{error || '이 계정에서 볼 수 있는 전자 문서가 없어요.'}</p><button className="ui-btn is-soft" onClick={() => nav('/rights')}>권리 서류로 돌아가기</button></div>;
   const e = doc.electronic;
   return <div className="aq-doc-view view-enter">
-    <div className="aq-doc-toolbar"><button className="ui-btn is-white is-sm" onClick={() => nav('/rights')}>권리·보완 서류</button><button className="ui-btn is-primary" onClick={() => void printWithStamp({ kind: 'DOCUMENT', ref: id ?? '', root: document.querySelector('.aq-paper') })}>인쇄 · PDF 저장</button></div>
+    <div className="aq-doc-toolbar"><button className="ui-btn is-white is-sm" onClick={() => nav('/rights')}>권리·보완 서류</button><button className="ui-btn is-soft" onClick={() => void printWithStamp({ kind: 'DOCUMENT', ref: id ?? '', root: document.querySelector('.aq-paper') })}>인쇄 · PDF 저장</button></div>
     <article className="aq-paper" aria-label="권리자 서명 전자 문서">
       <header className="aq-paper-head"><div className="aq-paper-brand"><img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" /><dl className="aq-paper-meta"><div><dt>문서 번호</dt><dd>AUD-RIGHTS-{e.document_no}</dd></div><div><dt>서식</dt><dd>{e.form}</dd></div><div><dt>서명 일시</dt><dd>{localStamp(doc.localSignatureAt)}</dd></div></dl></div><h1>{doc.title}</h1></header>
       <div className="aq-rights-paper-body">{doc.content}</div>

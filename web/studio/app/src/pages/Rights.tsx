@@ -149,20 +149,20 @@ export function Rights() {
 
   return (
     <div id="view-rights" className="view">
-      <div className="ui-page-head">
+      <div className="ui-page-head aq-head-inline">
         <div>
           <p className="eyebrow">계약·권리</p>
           <h1>권리·보완 서류</h1>
           <p>발매별 권리 증빙을 내고, 보완 요청에 답해요.</p>
         </div>
         <button type="button" className="ui-btn is-primary" onClick={() => setFormOpen(true)}>
-          <Glyph name="plus" size={14} />권리 서류 작성·제출
+          <Glyph name="plus" size={14} />새 서류
         </button>
       </div>
 
       {fix > 0 && (
         <button type="button" className="aq-doc-alert" onClick={() => setOpenId(fixDocs[0].id)}>
-          <Glyph name="alert" size={18} />
+          <span className="ui-icon" aria-hidden="true"><Glyph name="doc" size={18} /></span>
           <span className="min-0">
             <strong>보완 요청 {fix}건이 있어요</strong>
             <small>{fixDocs[0].reviewNote || '요청 사유를 확인하고 새 원본을 제출해 주세요.'}</small>
@@ -173,13 +173,13 @@ export function Rights() {
 
       <SigningRequests releases={releases} tick={signingTick} onOpenDoc={setOpenId} />
 
-      <section id="rightsList" className="aq-doc-list" aria-labelledby="rightsListHeading">
-        <h2 id="rightsListHeading">
-          서류 <span className="aq-doc-count">{rights.length}</span>
-          {rights.length > 0 && <small>제출 필요 {needed} · 검토 중 {review}</small>}
-        </h2>
+      <section id="rightsList" className="ui-card aq-doc-list" aria-labelledby="rightsListHeading">
+        <div className="ui-section-head">
+          <h2 id="rightsListHeading">서류 <span className="aq-doc-count">{rights.length}</span></h2>
+          {rights.length > 0 && <small className="aq-doc-sum">제출 필요 {needed} · 검토 중 {review}</small>}
+        </div>
         {rights.length ? (
-          <div className="aq-doc-rows aq-stagger">
+          <div className="ui-list aq-doc-rows aq-stagger">
             {rights.map(c => <DocRow key={c.id} c={c} onOpen={setOpenId} />)}
           </div>
         ) : (

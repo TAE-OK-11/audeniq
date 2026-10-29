@@ -71,14 +71,6 @@ const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
   },
 ];
 
-/** 아래 탭 바(휴대폰) — 가장 자주 가는 네 곳 */
-const TAB_ITEMS: NavItem[] = [
-  { to: '/', label: '홈', icon: 'home' },
-  { to: '/releases', label: '발매', icon: 'disc' },
-  { to: '/reports', label: '리포트', icon: 'chart' },
-  { to: '/settlement', label: '정산', icon: 'won' },
-];
-
 const isActive = (pathname: string, to: string) =>
   to === '/' ? pathname === '/' : pathname === to || pathname.startsWith(to + '/');
 
@@ -102,7 +94,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const unread = useUnreadCount();
   const payment = usePayment();
   const docs = useDocs();
-  // 메뉴·왼쪽 메뉴의 '보완·작성 중' 개수와 아래 탭 바 '발매'의 보완 점 — 화면을 옮길 때마다(메뉴를 열 때도) 새로 받는다.
+  // 메뉴·왼쪽 메뉴의 '보완·작성 중' 개수 — 화면을 옮길 때마다(메뉴를 열 때도) 새로 받는다.
   // 화면들과 같은 발매 목록 캐시('releases')를 쓴다 — 받아 둔 목록으로 바로 세고, 화면이 같은 목록을 동시에 받으면 요청이 하나로 합쳐진다
   const [menuOpen, setMenuOpen] = useState(false);
   const { data: rels } = useAsync(() => api.listReleases(), [menuOpen, loc.pathname], { key: 'releases' });
@@ -119,7 +111,6 @@ export function Layout({ children }: { children: ReactNode }) {
     window.addEventListener(LIVE_NOTICE_EVENT, on);
     return () => window.removeEventListener(LIVE_NOTICE_EVENT, on);
   }, [toast]);
-  const onTabPage = TAB_ITEMS.some(t => isActive(loc.pathname, t.to));
   // 탭 제목 — 지금 화면 이름 + 읽지 않은 알림 수. 모든 화면이 'AUDENIQ STUDIO'면 탭·방문 기록에서 구분이 안 되고
   // 화면이 바뀐 것을 스크린리더가 알려 주지 못한다
   useEffect(() => {
@@ -166,7 +157,7 @@ export function Layout({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!menuOpen) return;
     const onClick = (e: MouseEvent) => {
-      if (!(e.target as HTMLElement).closest('.portal-header, .aq-tabbar')) closeMenuRef.current();
+      if (!(e.target as HTMLElement).closest('.portal-header')) closeMenuRef.current();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -247,12 +238,6 @@ export function Layout({ children }: { children: ReactNode }) {
     '/contracts': toSign ? { tone: 'blue', text: `서명 ${toSign}` } : undefined,
     '/rights': docFix ? { tone: 'amber', text: `보완 ${docFix}` } : docNeeded ? { tone: 'blue', text: `제출 ${docNeeded}` } : undefined,
   };
-  // 탭 바 점 — '발매'는 보완할 발매, '전체'는 탭 바에 없는 메뉴 안의 할 일(서명·보완 서류·계좌).
-  // 읽지 않은 알림은 머리의 종 숫자로 이미 보이므로 '전체'에 점을 또 찍지 않는다
-  const tabDot: Record<string, string | undefined> = {
-    '/releases': relCounts?.needs ? `보완할 발매 ${relCounts.needs}건` : undefined,
-  };
-  const menuTodo = [toSign && `서명할 계약서 ${toSign}건`, docFix && `보완할 서류 ${docFix}건`, !isPaymentRegistered(payment) && '정산 계좌 등록 전'].filter(Boolean).join(', ');
   const initial = (profile.name || user?.email || 'A').slice(0, 1).toUpperCase();
   const navVisible = menuOpen || menuClosing;
   // 전체 메뉴 — 처음 보이는 묶음은 메뉴 열림 연출 그대로, 화면 아래 묶음(정보·지원 등)은 스크롤로 닿을 때 떠오른다
@@ -406,31 +391,6 @@ export function Layout({ children }: { children: ReactNode }) {
           {children}
         </ViewEnter>
       </main>
-
-      {/* 휴대폰 아래 탭 바 — 자주 가는 4곳은 한 번에, 나머지는 '전체'에서 */}
-      <nav className="aq-tabbar" aria-label="주요 화면">
-        {TAB_ITEMS.map(t => {
-          const active = isActive(loc.pathname, t.to);
-          // 전체 메뉴를 열면 켜진 탭은 '전체' 하나만 — 지금 화면 탭까지 켜져 있으면 어디에 있는지 헷갈린다
-          return (
-            <Link key={t.to} to={t.to} className={`aq-tab-item${active && !menuOpen ? ' is-active' : ''}`} aria-current={active ? 'page' : undefined}
-              onPointerDown={() => prefetchRoute(t.to)}>
-              <Glyph name={t.icon} size={22} />
-              <span>{t.label}</span>
-              {tabDot[t.to] && <i className="aq-tab-dot is-warn" aria-hidden="true" />}
-              {tabDot[t.to] && <span className="sr-only">, {tabDot[t.to]}</span>}
-            </Link>
-          );
-        })}
-        {/* 아래 탭에 없는 화면(계약서·알림 등)에 있을 때도 '전체'를 켠다 — 아무 탭도 안 켜져 있으면 길을 잃은 것처럼 보인다 */}
-        <button type="button" className={`aq-tab-item${menuOpen || !onTabPage ? ' is-active' : ''}`} aria-expanded={menuOpen} aria-controls="portalNav"
-          onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}>
-          <Glyph name="list" size={22} />
-          <span>전체</span>
-          {menuTodo && <i className="aq-tab-dot" aria-hidden="true" />}
-          {menuTodo && <span className="sr-only">, {menuTodo}</span>}
-        </button>
-      </nav>
     </>
   );
 }

@@ -133,7 +133,9 @@ export function Notifications() {
       </div>
 
       {shown.length ? (
-        <div className="aq-catalog-cards aq-stagger" key={filter}>
+        // 옅은 파랑 카드 하나에 구분선으로 — 알림마다 따로 카드가 쌓이면 화면이 덩어리져 보였다 (줄마다 흰 카드를 또 두르지 않는다)
+        <div className="ui-card aq-notice-list">
+        <div className="ui-list is-inset aq-stagger" key={filter}>
           {shown.map(n => (
             <button
               key={n.id} type="button"
@@ -153,6 +155,7 @@ export function Notifications() {
               </span>
             </button>
           ))}
+        </div>
         </div>
       ) : (
         <div className="ui-empty">
