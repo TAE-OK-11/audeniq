@@ -40,6 +40,7 @@ export const pageLoaders = {
   ArtistStudio: () => import('./pages/ArtistStudio'),
   SplitInvite: () => import('./pages/SplitInvite'),
   Admin: () => import('./admin/AdminApp'),
+  Layout: () => import('./components/Layout'),
 };
 
 type PageName = keyof typeof pageLoaders;
@@ -86,6 +87,7 @@ function load(name: PageName) {
 export function prefetchRoute(path: string) {
   const p = path.split('?')[0];
   for (const [re, names] of ROUTE_PAGES) if (re.test(p)) names.forEach(load);
+  if (isPortalPath(p)) load('Layout');
 }
 
 /** 로그인 후 브라우저가 한가할 때 자주 쓰는 화면을 미리 받는다 (데이터 절약 모드·느린 회선에서는 생략) */
@@ -93,7 +95,7 @@ export function prefetchCommonRoutes() {
   const conn = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
   if (conn?.saveData || /2g/.test(conn?.effectiveType ?? '')) return;
   // 위자드(가장 큰 청크)는 메뉴 호버 때만 받는다
-  const run = () => (['Dashboard', 'Releases', 'ReleaseDetail'] as PageName[]).forEach(load);
+  const run = () => (['Layout', 'Dashboard', 'Releases', 'ReleaseDetail'] as PageName[]).forEach(load);
   if ('requestIdleCallback' in window) window.requestIdleCallback(run, { timeout: 4000 });
   else setTimeout(run, 1500);
 }
@@ -106,5 +108,10 @@ export function prefetchInitialRoute() {
   } else {
     prefetchRoute(path);
   }
+}
+
+/** 머리글·메뉴가 있는 포털 화면인지 (로그인·공개·관리·AI 연결 화면이 아닌 곳) */
+export function isPortalPath(path: string): boolean {
+  return !/^\/(login|signup|find-account|passkey-setup|phone-setup|sign\/|terms|privacy|verify|rights-report|link\/|l\/|a\/|splits\/|admin|ai\/|content-admin)/.test(path);
 }
 

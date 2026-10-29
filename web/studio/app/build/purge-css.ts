@@ -37,6 +37,28 @@ export function collectTokens(paths: string[]): { exact: Set<string>; prefixes: 
   return { exact, prefixes };
 }
 
+/** 소스의 모든 .css 파일에서 animation·사용자 속성 값에 쓰인 이름 (한 번만 읽는다) */
+let animNames: Set<string> | null = null;
+function cssAnimNames(roots: string[]): Set<string> {
+  if (animNames) return animNames;
+  animNames = new Set();
+  const files: string[] = [];
+  const walkCss = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const p = join(dir, name);
+      if (statSync(p).isDirectory()) walkCss(p);
+      else if (name.endsWith('.css')) files.push(p);
+    }
+  };
+  for (const r of roots) if (statSync(r).isDirectory()) walkCss(r);
+  for (const f of files) {
+    for (const m of readFileSync(f, 'utf8').matchAll(/(?:animation(?:-name)?|--[\w-]+)\s*:([^;}]*)/g)) {
+      for (const t of m[1].matchAll(/[A-Za-z_][\w-]*/g)) animNames.add(t[0]);
+    }
+  }
+  return animNames;
+}
+
 const STRIP_PSEUDO = /:(not|is|where)\((?:[^()]|\([^()]*\))*\)/g;
 
 function selectorUsed(sel: string, used: (name: string) => boolean): boolean {
@@ -70,8 +92,9 @@ export function purgeCss(opts: { content: string[]; safelist?: RegExp[] }): Plug
       root.walkAtRules((at: AtRule) => {
         if (at.nodes && at.nodes.length === 0) at.remove();
       });
-      // 사용되지 않는 @keyframes 제거
-      const animUsed = new Set<string>();
+      // 사용되지 않는 @keyframes 제거 — CSS는 파일마다 따로 처리되므로 다른 스타일 파일에서 쓰는 이름도 쓰는 것으로 본다
+      // (예전엔 enhance.css의 aq-badge-pop을 design-align.css만 써서 정의가 지워져 D-day 배지가 튀지 않았다)
+      const animUsed = new Set<string>(cssAnimNames(opts.content));
       // 사용자 속성(--x: 이름)으로 넘겨 animation: var(--x)로 쓰는 키프레임도 쓰는 것으로 본다
       root.walkDecls(/^((-webkit-)?animation(-name)?|--.+)$/, d => {
         for (const m of d.value.matchAll(/[A-Za-z_][\w-]*/g)) animUsed.add(m[0]);

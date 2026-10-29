@@ -3,11 +3,6 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { prefetchInitialRoute } from './routes';
-import { initPressFeedback } from './lib/press';
-import { initRowNav } from './lib/rowNav';
-import { initExpand } from './lib/expand';
-import { initTopCover } from './lib/topCover';
-import { initEnterNext } from './lib/enterNext';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('#root 요소를 찾을 수 없어요.');
@@ -32,16 +27,14 @@ if (isIOS) {
 
 // iOS Safari는 터치 리스너가 없으면 :active를 적용하지 않는다 — 누르는 순간의 피드백을 켠다
 document.addEventListener('touchstart', () => {}, { passive: true });
-// 짧게 톡 눌러도 눌린 모습이 보이게 (.is-pressed)
-initPressFeedback();
-// 탭·칩 줄: 고른 칸이 줄 밖이면 보이게, 화살표 키로 옮기기
-initRowNav();
-// 누르면 나타나는 입력 폼·패널은 높이가 자라며 펼쳐지게
-initExpand();
-// 키보드가 떠 있는 동안 상태 표시줄 칸으로 뒤 내용이 비치지 않게 (iOS 26)
-initTopCover();
-// 폼 밖 입력 화면(발매 신청 등): 키보드의 '다음'으로 다음 칸, 마지막 칸은 '완료'로 키보드 내리기
-initEnterNext();
+// 누름 피드백·펼침·탭 줄·키보드 보조는 첫 화면을 그린 뒤 한가할 때 받는다 (lib/interactions).
+// 그 전에 먼저 누르거나 키를 치면 그때 바로 받는다
+const loadInteractions = () => { void import('./lib/interactions').then(m => m.initInteractions()); };
+const early = () => { loadInteractions(); removeEventListener('pointerdown', early, true); removeEventListener('keydown', early, true); };
+addEventListener('pointerdown', early, { capture: true, passive: true });
+addEventListener('keydown', early, { capture: true, passive: true });
+if ('requestIdleCallback' in window) window.requestIdleCallback(early, { timeout: 2000 });
+else setTimeout(early, 1200);
 
 prefetchInitialRoute();
 

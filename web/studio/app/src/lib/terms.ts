@@ -1,12 +1,9 @@
 // AUDENIQ 음원 배급 서비스 이용약관 — 원문(content/terms-ko.txt)을 화면용 블록으로 나눈다.
 // 이름·판(version)은 lib/legal (원문을 고치면 그곳의 version도 올린다).
-import raw from '../content/terms-ko.txt?raw';
-import settlementRaw from '../content/settlement-terms-ko.txt?raw';
-import privacyRaw from '../content/privacy-ko.txt?raw';
+// 원문은 문서마다 따로 받는다 — 셋을 한 조각으로 묶으면 정산 약관 하나를 보려 해도 120KB를 다 받았다.
 import { LEGAL_META, type LegalKey } from './legal';
 
 export { TERMS_TITLE, TERMS_VERSION, type LegalKey } from './legal';
-export const TERMS_TEXT = raw;
 
 export type TermsBlock =
   | { kind: 'chapter'; id: string; text: string }
@@ -16,7 +13,7 @@ export type TermsBlock =
 
 export interface ParsedTerms { meta: string[]; blocks: TermsBlock[] }
 
-export function parseTerms(text: string = raw): ParsedTerms {
+export function parseTerms(text: string): ParsedTerms {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const meta: string[] = [];
   const blocks: TermsBlock[] = [];
@@ -43,8 +40,28 @@ export function parseTerms(text: string = raw): ParsedTerms {
   return { meta, blocks };
 }
 
-/** 앱에서 볼 수 있는 약관 — /terms/<키> (이름·판·주소 + 원문) */
-const TEXT: Record<LegalKey, string> = { service: raw, settlement: settlementRaw, privacy: privacyRaw };
-export const LEGAL_DOCS = Object.fromEntries(
-  (Object.keys(LEGAL_META) as LegalKey[]).map(k => [k, { ...LEGAL_META[k], text: TEXT[k] }]),
-) as Record<LegalKey, (typeof LEGAL_META)[LegalKey] & { text: string }>;
+/** 앱에서 볼 수 있는 약관 — /terms/<키> (이름·판·주소). 원문은 loadLegalText로 */
+export const LEGAL_DOCS = LEGAL_META;
+
+const LOADERS: Record<LegalKey, () => Promise<{ default: string }>> = {
+  service: () => import('../content/terms-ko.txt?raw'),
+  settlement: () => import('../content/settlement-terms-ko.txt?raw'),
+  privacy: () => import('../content/privacy-ko.txt?raw'),
+};
+const loaded = new Map<LegalKey, string>();
+const pending = new Map<LegalKey, Promise<string>>();
+
+/** 이미 받은 원문 (없으면 undefined) — 다시 열 때 자리표시 없이 바로 그린다 */
+export const legalTextNow = (doc: LegalKey) => loaded.get(doc);
+
+/** 원문을 받는다 (같은 문서는 한 번만) */
+export function loadLegalText(doc: LegalKey): Promise<string> {
+  const hit = loaded.get(doc);
+  if (hit !== undefined) return Promise.resolve(hit);
+  let p = pending.get(doc);
+  if (!p) {
+    p = LOADERS[doc]().then(m => { loaded.set(doc, m.default); return m.default; }).finally(() => pending.delete(doc));
+    pending.set(doc, p);
+  }
+  return p;
+}

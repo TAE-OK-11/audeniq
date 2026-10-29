@@ -3,12 +3,13 @@ import { useMemo } from 'react';
 import { printWithStamp } from '../lib/printStamp';
 import { Link, useNavigate } from '../lib/router';
 import { LEGAL_DOCS, parseTerms, type LegalKey } from '../lib/terms';
-import { LegalBody } from '../components/LegalDoc';
+import { LegalBody, useLegalText } from '../components/LegalDoc';
 
 export function Terms({ doc = 'service' }: { doc?: LegalKey }) {
   const nav = useNavigate();
   const d = LEGAL_DOCS[doc];
-  const chapters = useMemo(() => parseTerms(d.text).blocks.filter(b => b.kind === 'chapter'), [d.text]);
+  const { text } = useLegalText(doc);
+  const chapters = useMemo(() => (text ? parseTerms(text).blocks.filter(b => b.kind === 'chapter') : []), [text]);
   return (
     <main className="aq-terms-page">
       <header className="aq-sign-top">
