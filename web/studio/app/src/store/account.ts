@@ -33,6 +33,8 @@ export interface AccountInfo {
   tax: TaxResidency | null;
   /** 본인인증 기관 연결 상태 (실서버) — name 'test'는 개발·테스트 환경 */
   provider?: { ready: boolean; name: string | null };
+  /** 비밀번호 재설정 문자를 받을 휴대폰 번호 (실서버, 뒷자리만) */
+  phone?: { last4: string; verifiedAt: string | null } | null;
 }
 
 export const EMPTY_ACCOUNT: AccountInfo = { realName: '', verified: null, tax: null };

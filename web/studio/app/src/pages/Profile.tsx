@@ -11,6 +11,7 @@ import { patchAccount, taxCountryLabel, useAccount, verifyLabel, TAX_COUNTRIES, 
 import { refreshAccount } from '../store/portalSync';
 import { IdentityVerify } from '../components/IdentityVerify';
 import { PasskeySettings } from '../components/PasskeySettings';
+import { PhoneSettings } from '../components/PhoneSettings';
 import { ConnectedAccounts } from '../components/ConnectedAccounts';
 import { AiConnections } from '../components/AiConnections';
 import { DeveloperApps } from '../developer/DeveloperApps';
@@ -198,6 +199,7 @@ export function Profile() {
   const [accountEdit, setAccountEdit] = useState<'verify' | 'tax' | null>(null);
   const [showPayment, setShowPayment] = useState(false);
   const [showPasskeys, setShowPasskeys] = useState(false);
+  const [showPhone, setShowPhone] = useState(false);
   const [showConnected, setShowConnected] = useState(false);
   const [showAi, setShowAi] = useState(false);
   const [showDev, setShowDev] = useState(false);
@@ -316,6 +318,10 @@ export function Profile() {
         <section className="aq-set-card" aria-labelledby="setSignIn">
           <h2 id="setSignIn">로그인</h2>
           <SetRow id="accountRowPasskey" label="패스키" empty="비밀번호 대신 지문·얼굴로 로그인" onClick={() => setShowPasskeys(true)} />
+          <SetRow
+            id="accountRowPhone" label="휴대폰 번호" value={account.phone ? `···${account.phone.last4}` : undefined}
+            empty="비밀번호 찾기에 쓸 번호 등록" onClick={() => setShowPhone(true)}
+          />
           <SetRow id="accountRowConnected" label="연결된 계정" empty="Google · Apple" onClick={() => setShowConnected(true)} />
           <SetRow id="accountRowAi" label="연결된 AI 앱" empty="ChatGPT · Claude 등" onClick={() => setShowAi(true)} />
         </section>
@@ -354,6 +360,11 @@ export function Profile() {
       {showPasskeys && (
         <Modal title="패스키" onClose={() => setShowPasskeys(false)} modalClass="aq-set-modal">
           <PasskeySettings />
+        </Modal>
+      )}
+      {showPhone && (
+        <Modal title="휴대폰 번호" onClose={() => setShowPhone(false)} modalClass="aq-set-modal">
+          <PhoneSettings />
         </Modal>
       )}
       {showConnected && (
