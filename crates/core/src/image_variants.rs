@@ -23,17 +23,17 @@ fn explicit_quality(accept: Option<&str>, format: &str) -> Option<f32> {
         }
         let mut q = 1.0_f32;
         for parameter in parts {
-            if let Some((key, value)) = parameter.split_once('=') {
-                if key.trim().eq_ignore_ascii_case("q") {
-                    q = q.min(
-                        value
-                            .trim()
-                            .parse::<f32>()
-                            .ok()
-                            .filter(|v| v.is_finite() && (0.0..=1.0).contains(v))
-                            .unwrap_or(0.0),
-                    );
-                }
+            if let Some((key, value)) = parameter.split_once('=')
+                && key.trim().eq_ignore_ascii_case("q")
+            {
+                q = q.min(
+                    value
+                        .trim()
+                        .parse::<f32>()
+                        .ok()
+                        .filter(|v| v.is_finite() && (0.0..=1.0).contains(v))
+                        .unwrap_or(0.0),
+                );
             }
         }
         quality = Some(quality.map_or(q, |old| old.min(q)));
@@ -77,13 +77,13 @@ pub async fn negotiate(s: &AppState, mut image: StoredImage, h: &HeaderMap) -> S
         };
         let digest: String = row.get("sha256");
         let size: i64 = row.get("size_bytes");
-        if let Ok(bytes) = s.storage.get(&row.get::<String, _>("object_key")).await {
-            if verified(&bytes, size, &digest, mime) {
-                image.bytes = bytes;
-                image.sha256 = digest;
-                image.content_type = mime;
-                return image;
-            }
+        if let Ok(bytes) = s.storage.get(&row.get::<String, _>("object_key")).await
+            && verified(&bytes, size, &digest, mime)
+        {
+            image.bytes = bytes;
+            image.sha256 = digest;
+            image.content_type = mime;
+            return image;
         }
         tracing::warn!(asset = %image.asset_id, format, "image_variant_unavailable_or_unverified");
     }
