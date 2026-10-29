@@ -133,15 +133,11 @@ function NoticeCard({ g, onOpen }: { g: NoticeGroup; onOpen: (g: NoticeGroup) =>
     <button type="button" className={`aq-notice-card${n.read ? ' is-read' : ''}`} onClick={() => onOpen(g)} aria-label={`${n.kind || '안내'} 알림${n.read ? '' : ', 읽지 않음'}: ${n.title}${more ? `, 같은 알림 ${more}건 더` : ''}`}>
       <span className="aq-notice-symbol" aria-hidden="true">{noticeSymbol(n.kind)}{!n.read && <i className="aq-unread" />}</span>
       <span className="aq-notice-copy">
-        <span className="aq-notice-top">
-          <strong>{n.title}</strong>
-          <span className="aq-notice-side">
-            <time dateTime={n.time}>{relativeTime(n.time) || n.time}</time>
-            {more > 0 && <span className="aq-notice-more">외 {more}건</span>}
-          </span>
-        </span>
-        {n.detail && <span className="aq-notice-detail">{n.detail}</span>}
+        <strong>{n.title}</strong>
+        {/* 문의 카드의 '분류 · 날짜' 줄처럼 시각을 회색 줄 앞에 — 오른쪽 칸이 제목 자리를 좁혀 두 줄로 꺾였다 */}
+        <span className="aq-notice-detail"><time dateTime={n.time}>{relativeTime(n.time) || n.time}</time>{n.detail && <> · {n.detail}</>}</span>
       </span>
+      {more > 0 && <span className="aq-notice-more">외 {more}건</span>}
     </button>
   );
 }
