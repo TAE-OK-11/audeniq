@@ -4,6 +4,7 @@ import { initRowNav } from './rowNav';
 import { initExpand } from './expand';
 import { initTopCover } from './topCover';
 import { initEnterNext } from './enterNext';
+import { startVitals } from './vitals';
 
 let started = false;
 export function initInteractions() {
@@ -19,4 +20,6 @@ export function initInteractions() {
   initTopCover();
   // 폼 밖 입력 화면(발매 신청 등): 키보드의 '다음'으로 다음 칸, 마지막 칸은 '완료'로 키보드 내리기
   initEnterNext();
+  // 실사용 성능 지표 — 수집 주소가 설정됐거나 점검 표시(aq.perf)가 켜졌을 때만 (lib/vitals)
+  startVitals();
 }
