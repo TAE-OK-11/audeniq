@@ -173,13 +173,13 @@ export function Rights() {
 
       <SigningRequests releases={releases} tick={signingTick} onOpenDoc={setOpenId} />
 
-      <section id="rightsList" className="aq-doc-list" aria-labelledby="rightsListHeading">
-        <h2 id="rightsListHeading">
-          서류 <span className="aq-doc-count">{rights.length}</span>
-          {rights.length > 0 && <small>제출 필요 {needed} · 검토 중 {review}</small>}
-        </h2>
+      <section id="rightsList" className="ui-card aq-doc-list" aria-labelledby="rightsListHeading">
+        <div className="ui-section-head">
+          <h2 id="rightsListHeading">서류 <span className="aq-doc-count">{rights.length}</span></h2>
+          {rights.length > 0 && <small className="aq-doc-sum">제출 필요 {needed} · 검토 중 {review}</small>}
+        </div>
         {rights.length ? (
-          <div className="aq-doc-rows aq-stagger">
+          <div className="ui-list aq-doc-rows aq-stagger">
             {rights.map(c => <DocRow key={c.id} c={c} onOpen={setOpenId} />)}
           </div>
         ) : (
