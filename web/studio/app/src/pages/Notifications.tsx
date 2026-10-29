@@ -107,19 +107,18 @@ function noticeSymbol(kind: string) {
   return <Glyph size={17} name={kind === '지급' ? 'won' : kind === '발매' ? 'music' : kind === '서류' ? 'doc' : kind === '문의' ? 'mail' : kind === '계정' ? 'user' : 'bell'} />;
 }
 
-/** 알림 카드 하나 — 누르면 관련 화면으로 바로 간다(관련 화면이 없을 때만 내용 창) */
+/** 알림 카드 하나 — 누르면 관련 화면으로 바로 간다(관련 화면이 없을 때만 내용 창).
+ * 분류는 아이콘으로만, 시각은 제목 줄 오른쪽 — 세 줄(분류·시각 / 제목 / 설명)에 꺾쇠·점까지 한 줄에 놓여 글자 자리가 좁고 빽빽했다 */
 function NoticeCard({ n, onOpen }: { n: Notice; onOpen: (n: Notice) => void }) {
   return (
-    <button type="button" className={`ui-row aq-notice-card${n.read ? ' is-read' : ''}`} onClick={() => onOpen(n)}>
-      <span className="aq-notice-symbol" aria-hidden="true">{noticeSymbol(n.kind)}</span>
-      <span className="min-0 aq-notice-copy">
-        <span className="aq-notice-meta">{n.kind || '안내'} · {relativeTime(n.time) || n.time}</span>
-        <strong>{n.title}</strong>
+    <button type="button" className={`aq-notice-card${n.read ? ' is-read' : ''}`} onClick={() => onOpen(n)} aria-label={`${n.kind || '안내'} 알림${n.read ? '' : ', 읽지 않음'}: ${n.title}`}>
+      <span className="aq-notice-symbol" aria-hidden="true">{noticeSymbol(n.kind)}{!n.read && <i className="aq-unread" />}</span>
+      <span className="aq-notice-copy">
+        <span className="aq-notice-top">
+          <strong>{n.title}</strong>
+          <time dateTime={n.time}>{relativeTime(n.time) || n.time}</time>
+        </span>
         {n.detail && <span className="aq-notice-detail">{n.detail}</span>}
-      </span>
-      <span className="aq-notice-end">
-        {!n.read && <i className="aq-unread" aria-label="읽지 않음" />}
-        <Glyph name="chevron-right" size={18} className="aq-notice-reopen" />
       </span>
     </button>
   );
