@@ -605,7 +605,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
    아이폰 Safari는 아래 주소창 위에서 화면을 끊어, 카드가 화면보다 길면 아래가 잘린 것처럼 보였다(로그인 카드는 약 140pt 넘쳤다).
    위에서부터 쌓고, 아이콘 칸을 제목 왼쪽으로 옮기고, 칸·여백을 조금씩 줄였다 */
 @media (max-width:760px){
-  .auth-page{justify-content:flex-start;padding:18px 16px 24px}
+  .auth-page{justify-content:center;padding:18px 16px 24px}
   .auth-page>.aq-auth-brand{margin-bottom:14px}
   .auth-card.ui-card{--aq-field-h:52px;padding:22px 20px 16px}
   .aq-auth-head{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;column-gap:14px;margin-bottom:16px}
