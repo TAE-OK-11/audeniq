@@ -1901,6 +1901,10 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
    비밀번호로 로그인·가입한 직후에는 '다음부터는 비밀번호 없이' 화면(pages/PasskeySetup)으로 패스키 만들기를 권한다 */
 .aq-passkey-first{display:grid;gap:10px;margin:0 0 22px}
 .aq-passkey-first .auth-submit{margin-top:0}
+/* 로그인 — 이메일 칸은 '이메일로 로그인'을 누르면 펼친다. 버튼 자리에서 칸이 살며시 내려오듯 */
+.aq-login-email-open{gap:8px;margin-top:4px}
+.aq-login-form-open{animation:aq-reveal .32s var(--aq-enter) both}
+@media (prefers-reduced-motion:reduce){.aq-login-form-open{animation:none}}
 .aq-passkey-main{gap:10px}
 .aq-passkey-first .aq-social-divider{margin-top:14px}
 .auth-fine{margin:0;color:var(--aq-text-4);font-size:13px;line-height:1.55;text-align:center}

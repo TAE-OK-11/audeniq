@@ -11,6 +11,10 @@ import { ApiError, messageForCode } from '../api/errors';
 import { SocialSignIn } from '../components/SocialSignIn';
 import { takeOAuthResult } from '../api/oauth';
 import { clearPasskeyHandoff, hasPasskeyHandoff, preparePasskeyHandoff } from '../lib/passkeyHandoff';
+import { readJSON, writeJSON } from '../lib/storage';
+
+/** 이 기기에서 마지막으로 로그인한 방법 — 비밀번호로 들어왔던 기기면 이메일 칸을 처음부터 펼쳐 둔다 */
+const METHOD_KEY = 'login.lastMethod';
 
 export function Login() {
   const { login, loginPasskey } = useAuth();
@@ -28,6 +32,14 @@ export function Login() {
   const [wrongPw, setWrongPw] = useState(false);
   const [fieldErr, setFieldErr] = useState<{ email?: string; password?: string }>({});
   const [busy, setBusy] = useState(false);
+  const passkeyFirst = !MOCK && passkeySupported();
+  // 패스키가 첫 길이면 이메일·비밀번호 칸은 접어 두고 '이메일로 로그인'을 누를 때 펼친다 — 카드가 짧아 휴대폰 한 화면에 들어온다.
+  // 패스키를 못 쓰는 기기, 이메일을 채워서 온 경우, 이 기기에서 지난번에 비밀번호로 들어온 경우는 처음부터 펼친다
+  const [showForm, setShowForm] = useState(() => !passkeyFirst || typeof presetEmail === 'string' || readJSON<string>(METHOD_KEY, '') === 'password');
+  const openForm = () => {
+    setShowForm(true);
+    requestAnimationFrame(() => document.getElementById('loginEmail')?.focus());
+  };
   // Google·Apple에서 돌아왔는데 로그인하지 못한 경우
   useEffect(() => { const r = takeOAuthResult(); if (r.error) setError(messageForCode(r.error)); }, []);
 
@@ -48,6 +60,7 @@ export function Login() {
     preparePasskeyHandoff(password, from ?? '/');
     try {
       await login(email.trim(), password);
+      writeJSON(METHOD_KEY, 'password');
       nav(hasPasskeyHandoff() ? '/passkey-setup' : from ?? '/', { replace: true });
     } catch (err) {
       clearPasskeyHandoff();
@@ -66,6 +79,7 @@ export function Login() {
     setBusy(true);
     try {
       await loginPasskey(email.trim());
+      writeJSON(METHOD_KEY, 'passkey');
       nav(from ?? '/', { replace: true });
     } catch (err) {
       setError(err instanceof ApiError && err.code.startsWith('PASSKEY') ? err.message : authErrorMessage(err, 'login'));
@@ -73,7 +87,6 @@ export function Login() {
     }
   }
 
-  const passkeyFirst = !MOCK && passkeySupported();
   const errorBox = error && (
     <div className="ui-callout is-danger aq-shake" role="alert" key={error}>
       {error}
@@ -92,10 +105,17 @@ export function Login() {
             <span>패스키로 로그인</span>
           </button>
           <p className="auth-fine">지문·얼굴·화면 잠금(PIN)으로 확인해요.</p>
-          <div className="aq-social-divider" role="separator"><span>또는 이메일로 로그인</span></div>
+          {showForm
+            ? <div className="aq-social-divider" role="separator"><span>또는 이메일로 로그인</span></div>
+            : (
+              <button type="button" className="ui-btn is-soft auth-submit aq-login-email-open" onClick={openForm} disabled={busy} aria-expanded={false} aria-controls="loginForm">
+                <Glyph name="mail" size={18} />
+                <span>이메일로 로그인</span>
+              </button>
+            )}
         </div>
       )}
-      <form onSubmit={submit} noValidate>
+      {showForm && <form id="loginForm" onSubmit={submit} noValidate className={passkeyFirst ? 'aq-login-form-open' : undefined}>
         <div className="ui-field">
           <label htmlFor="loginEmail">이메일</label>
           <input
@@ -122,7 +142,7 @@ export function Login() {
         <button className={`ui-btn ${passkeyFirst ? 'is-soft' : 'is-primary'} auth-submit${busy ? ' is-busy' : ''}`} type="submit" disabled={busy} aria-busy={busy}>
           {busy ? '들어가는 중' : passkeyFirst ? '비밀번호로 로그인' : '로그인'}
         </button>
-      </form>
+      </form>}
       <SocialSignIn onError={setError} returnTo={from ?? undefined} />
       <div className="auth-links">
         <Link to="/find-account">이메일 · 비밀번호 찾기</Link>
