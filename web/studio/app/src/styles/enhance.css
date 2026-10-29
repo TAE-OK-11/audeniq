@@ -912,7 +912,7 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 .aq-nboard-date{font-size:13px;color:var(--n-weak);font-variant-numeric:tabular-nums}
 .aq-nboard-tag{display:inline-block;vertical-align:2px;margin-right:8px;padding:2px 8px;border-radius:var(--aq-r-xs);background:var(--aq-blue-150);color:var(--aq-e-blue);font-style:normal;font-size:12px;font-weight:800;letter-spacing:0;line-height:1.5}
 .aq-nboard-pages{display:flex;justify-content:center;align-items:center;gap:4px;margin:44px 0 8px}
-.aq-nboard-pages button{min-width:40px;height:40px;padding:0 6px;border:0;border-radius:var(--aq-r-md);background:none;color:var(--n-weak);font-size:15px;font-weight:700;cursor:pointer;font-variant-numeric:tabular-nums;transition:background-color .2s,color .2s}
+.aq-nboard-pages button{min-width:40px;height:40px;padding:0 6px;border:0;border-radius:var(--aq-r-md);background:none;color:var(--n-weak);font-size:15px;font-weight:700;cursor:pointer;font-variant-numeric:tabular-nums}
 .aq-nboard-pages button:hover:not(:disabled){background:var(--n-soft);color:var(--aq-e-ink)}
 .aq-nboard-pages button.is-current{background:var(--aq-e-blue)!important;color:#fff!important}
 .aq-nboard-pages .aq-nboard-arrow{font-size:20px}

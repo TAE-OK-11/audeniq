@@ -18,8 +18,19 @@ export function initTopCover() {
     cover.style.top = `${Math.round(window.scrollY - h)}px`;
     cover.style.height = `${h}px`;
   };
-  const schedule = () => { if (!raf) raf = requestAnimationFrame(place); };
-  place();
+  // 덮개는 키보드가 떠 있을 때(입력 칸에 포커스)만 둔다. 스크롤을 한 박자 늦게 따라가므로 평소에 두면
+  // 위로 빠르게 스크롤할 때 화면 맨 위로 내려와 내용을 하얗게 가렸다(알림 화면 녹화)
+  const typing = () => {
+    const el = document.activeElement as HTMLElement | null;
+    return !!el && (el.isContentEditable || /^(TEXTAREA|SELECT)$/.test(el.tagName)
+      || (el.tagName === 'INPUT' && !/^(checkbox|radio|button|submit|reset|range|color|file|image)$/.test((el as HTMLInputElement).type)));
+  };
+  const toggle = () => { cover.hidden = !typing(); if (!cover.hidden) place(); };
+  toggle();
+  document.addEventListener('focusin', toggle);
+  // focusout 시점에는 다음 포커스가 아직 정해지지 않았다 — 칸에서 칸으로 옮길 때 깜빡이지 않게 한 박자 뒤에 본다
+  document.addEventListener('focusout', () => setTimeout(toggle, 0));
+  const schedule = () => { if (!raf && !cover.hidden) raf = requestAnimationFrame(place); };
   const vv = window.visualViewport;
   window.addEventListener('scroll', schedule, { passive: true });
   window.addEventListener('resize', schedule);
