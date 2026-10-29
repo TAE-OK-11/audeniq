@@ -200,6 +200,13 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .ui-btn.aq-danger-text{--btn-fg:var(--aq-red-600);--btn-bg-hover:var(--aq-red-50);--btn-fg-hover:var(--aq-red-600)}
 .aq-detail-actions .ui-btn.aq-danger-text{flex:none!important}
 @media(min-width:761px){.aq-detail-actions.is-wide .ui-btn.aq-danger-text{width:auto;align-self:center;--btn-h:var(--aq-h-xs)}}
+/* 휴대폰 발매 카드 — 주 버튼은 카드 안 맨 아래 한 줄(카드 밖에 떠 있지 않게), 삭제·신청 취소는 화면 맨 아래 가운데 */
+#view-release .aq-detail-hero>.aq-detail-actions.is-narrow{grid-column:1/-1;margin:4px 0 0;gap:8px}
+#view-release .aq-detail-actions.is-narrow .ui-btn{flex:1 1 0;--btn-h:var(--aq-h-md);--btn-r:var(--aq-r-ctl-md);--btn-fs:var(--aq-fs-md)}
+#view-release .aq-detail-actions.is-narrow .ui-btn.is-soft{--btn-bg:#fff;--btn-bg-hover:var(--aq-blue-100)}
+.aq-detail-danger{display:flex;justify-content:center;gap:4px;margin:28px 0 8px}
+.aq-detail-danger .ui-btn{--btn-h:var(--aq-h-sm);--btn-fs:var(--aq-fs-sm)}
+@media(min-width:761px){.aq-detail-danger{display:none}}
 
 /* 발매 상세 — 보완 요청·커버아트: 옅은 파랑 카드 안에 흰 칸을 겹치지 않고 줄로, 단계 표시는 주황 알약 대신 글자 */
 #view-release .aq-fix-top .ui-badge{padding:0;background:none!important;font-size:13px}
