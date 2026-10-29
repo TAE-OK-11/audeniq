@@ -5,7 +5,7 @@
 
 /** 펼쳐지는 블록 — 누르면 나타나는 입력 폼·패널. 다른 곳은 data-expand를 붙이면 같이 움직인다 */
 const EXPAND = [
-  '.aq-reveal', '.aq-correction-form', '.aq-fix-panel', '.track-detail-body', '.aq-takedown-list',
+  '.aq-reveal', '.aq-option-detail', '.cover-track-fields', '.aq-correction-form', '.aq-fix-panel', '.track-detail-body', '.aq-takedown-list',
   '.aq-tax-more', '.aq-report-note', '.aq-splits-row', '[data-expand]',
 ].join(',');
 /** 누른 뒤 이 시간 안에 붙은 블록만 펼친다 (서버 응답 뒤 열리는 폼까지 포함) */
@@ -67,6 +67,8 @@ function expand(el: HTMLElement) {
   const { closed, open } = frames(getComputedStyle(el), h);
   const prevOverflow = el.style.overflow;
   el.style.overflow = 'hidden';
+  // CSS로 걸린 나타남(.aq-reveal의 위에서 내려오며 흐려졌다 선명해짐)은 끈다 — 높이 펼침과 겹쳐 두 번 움직이며 덜컹거렸다
+  if (typeof CSSAnimation !== 'undefined') for (const a of el.getAnimations()) if (a instanceof CSSAnimation) a.cancel();
   // 높이가 먼저 자라고 글자는 살짝 늦게 떠오른다 — 빈 칸이 먼저 열리고 내용이 채워지는 느낌
   const anim = el.animate([
     { ...closed, opacity: 0 },

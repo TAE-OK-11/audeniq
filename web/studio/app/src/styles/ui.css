@@ -87,7 +87,12 @@
 .ui-btn.is-block{display:flex;width:100%}
 .ui-btn.is-icon{width:var(--btn-h);padding:0;flex:none}
 .ui-btn.is-busy{cursor:progress}
-.ui-btn.is-busy::after{content:"";flex:none;width:15px;height:15px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:aq-spin .7s linear infinite}
+/* 글자 버튼은 '접수하는 중'처럼 글자가 이미 알려 준다 — 글자 옆에 붙어 돌던 원은 빼고 버튼이 은은하게 숨 쉰다.
+   글자가 없는 아이콘 버튼만 아이콘 자리에 원을 돌린다 */
+.ui-btn.is-busy:not(.is-icon){animation:aq-btn-busy 1.3s ease-in-out infinite}
+@keyframes aq-btn-busy{50%{opacity:.72}}
+.ui-btn.is-icon.is-busy::after{content:"";flex:none;width:15px;height:15px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:aq-spin .7s linear infinite}
+@media (prefers-reduced-motion:reduce){.ui-btn.is-busy:not(.is-icon){animation:none;opacity:.8}}
 /* 버튼 끝 화살표 (발매 등록하기 →) */
 .ui-btn-arrow{display:grid;place-items:center;flex:none;transition:transform var(--aq-dur) var(--aq-ease)}
 .ui-btn:not(:disabled):hover>.ui-btn-arrow{transform:translateX(3px)}

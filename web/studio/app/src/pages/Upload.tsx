@@ -28,7 +28,7 @@ import { fixCountWord, fixPath, isDocumentFix, resolveCorrection, splitCorrectio
 import { checkAudioFile, formatDuration, specLabel } from '../lib/audioSpec';
 import { AGREEMENTS, SIGNER_ROLES, compactSignature, createApplication } from '../lib/application';
 import {
-  artistIssue, artistWarning, COVER_MAX, COVER_MIN, coverIssue, isrcValid, LEAD_DAYS, minReleaseDate, mmssToSeconds, normalizeIsrc,
+  artistIssue, artistWarning, COVER_MAX, COVER_MIN, coverIssue, expectedReleaseType, isrcValid, LEAD_DAYS, minReleaseDate, mmssToSeconds, normalizeIsrc,
   profileLinkIssue, PROFILE_LINKS, releaseTypeIssue, rightsLineIssue, titleIssue, titleWarning, upcValid,
 } from '../lib/dsp';
 import { uid } from '../lib/store';
@@ -46,23 +46,18 @@ import { SplitsCard } from '../components/SplitsCard';
 import { fetchArtistPages, type ArtistPages } from '../lib/artistPages';
 import { TERRITORY_GROUPS, WORLD, parseTerritories, territoryName, territorySummary, worldExcept } from '../lib/territories';
 import { revealField } from '../lib/motion';
+import { maskPreviewInput, previewLabel, previewSecs, settlePreviewInput } from '../lib/previewTime';
 import { addCredit, creditChips, type CreditHistory } from '../lib/credits';
 
 /** 동시 발매로 고를 수 있는 한국 시간 (서버는 정각·30분만 받는다) */
 const RELEASE_TIMES = ['00:00', '09:00', '12:00', '13:00', '18:00', '19:00', '20:00'];
 
-/** 'm:ss' 또는 초 → 서버에 보낼 초 (비었거나 형식이 틀리면 '') */
-function previewSecs(v: string | undefined): string {
-  const s = (v ?? '').trim();
-  if (!s) return '';
-  const m = /^(\d{1,2}):([0-5]\d)$/.exec(s);
-  if (m) { const n = Number(m[1]) * 60 + Number(m[2]); return n <= 3600 ? String(n) : ''; }
-  return /^\d{1,4}$/.test(s) && Number(s) <= 3600 ? String(Number(s)) : '';
-}
-/** 저장된 초 → 화면 'm:ss' */
-function previewLabel(v: string | number | undefined): string {
-  const n = typeof v === 'number' ? v : /^\d+$/.test(String(v ?? '')) ? Number(v) : NaN;
-  return Number.isFinite(n) ? `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}` : '';
+/** 미리듣기 시작 지점이 맞는지 — 형식, 그리고 곡 길이를 알면 그보다 앞이어야 한다 (끝 30초 전까지 클립이 나오게 하지는 않는다) */
+function previewOk(t: { previewStart: string; duration: string }): boolean {
+  const secs = previewSecs(t.previewStart);
+  if (!secs) return false;
+  const len = mmssToSeconds(t.duration);
+  return !len || Number(secs) < len;
 }
 /** 'YYYY-MM-DD'에 일수를 더한다 */
 function shiftDate(d: string, days: number): string {
@@ -122,8 +117,9 @@ interface Track {
   audioSpec: string;
 }
 
-/** 파일 업로드 진행 상태 (저장하지 않는 화면 전용 상태) */
-interface UploadState { pct: number; state: 'uploading' | 'done' | 'error'; message?: string }
+/** 파일 업로드 진행 상태 (저장하지 않는 화면 전용 상태)
+ *  received: 파일은 저장소에 다 올라갔고 서버가 마무리 확인 중 — 기다리지 않고 다음 단계로 넘어갈 수 있다(접수할 때만 기다린다) */
+interface UploadState { pct: number; state: 'uploading' | 'received' | 'done' | 'error'; message?: string }
 
 interface CoverTrackInfo {
   trackId: string;
@@ -890,6 +886,8 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
   // 권리 단계의 '해당하는 항목' 7개는 대부분 해당이 없다 — 먼저 '특별한 경우가 있나요?'를 묻고 '있어요'일 때만 펼친다.
   // 이미 고른 항목이 있으면 처음부터 펼쳐 둔다
   const anyRights = RIGHTS_OPTIONS.some(([id]) => !!o[id]);
+  // 곡에 적은 피처링 아티스트 — 권리 확인의 '피처링·공동 실연'과 이어 준다
+  const featNames = group === 'rights' ? [...new Set(form.tracks.flatMap(t => t.featuring.split(',').map(x => x.trim()).filter(Boolean)))].slice(0, 3) : [];
   const [special, setSpecial] = useState(anyRights);
   const showList = group === 'service' || special || anyRights;
 
@@ -908,6 +906,12 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
             <button type="button" role="radio" aria-checked={!showList} className={`ui-chip${!showList ? ' is-on' : ''}`} disabled={anyRights} onClick={() => setSpecial(false)}>없어요</button>
             <button type="button" role="radio" aria-checked={showList} className={`ui-chip${showList ? ' is-on' : ''}`} onClick={() => setSpecial(true)}>있어요</button>
           </div>
+          {featNames.length > 0 && !o.featured && (
+            <div className="ui-callout is-row aq-reveal" role="status">
+              <span>피처링 아티스트(<b>{featNames.join(', ')}</b>)를 적은 곡이 있어요. ‘피처링·공동 실연’으로 참여자 동의를 함께 확인해 주세요.</span>
+              <button type="button" className="ui-btn is-primary is-sm" onClick={() => { setSpecial(true); setOpt('featured', true); }}>피처링 선택</button>
+            </div>
+          )}
           {showList && <p className="aq-option-intro">해당하는 항목을 모두 선택해 주세요. 누르면 바로 아래에 필요한 확인 사항이 열려요.</p>}
         </>
       )}
@@ -994,7 +998,8 @@ function FinalReviewBanner({ form }: { form: WizardForm }) {
   });
   const noLyrics = named.filter(t => !t.instrumental && !t.lyrics.trim()).length;
   if (noLyrics) warnings.push(`가사가 없는 보컬 곡이 ${noLyrics}곡 있어요. 국내 플랫폼 가사 노출을 원하면 곡 상세 정보에 가사를 입력해 주세요.`);
-  const incomplete = form.tracks.filter(t => !t.audioName || !t.title || !t.composers).length;
+  // 단계 목록의 '입력 필요'와 같은 기준 (작사는 연주곡이면 없어도 된다)
+  const incomplete = form.tracks.filter(t => !t.audioName || !t.title.trim() || !t.composers.trim() || (!t.instrumental && !t.lyricists.trim())).length;
   const withAudio = form.tracks.filter(t => t.audioName).length;
   return (
     <div className="aq-req-banner">
@@ -1024,13 +1029,13 @@ function FinalReviewBanner({ form }: { form: WizardForm }) {
 
 /** 업로드 진행 표시 */
 function UploadStatus({ upload, idle }: { upload?: UploadState; idle: string }) {
-  if (!upload || upload.state === 'done') return <p className="ui-field-help">{idle}</p>;
+  if (!upload || upload.state === 'done' || upload.state === 'received') return <p className="ui-field-help">{idle}</p>;
   if (upload.state === 'error') return <p className="ui-field-help aq-help-error" role="alert">{upload.message || '파일을 올리지 못했어요. 다시 선택해 주세요.'}</p>;
   const pct = Math.round(upload.pct * 100);
   return (
     <div className="aq-upload-progress" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="업로드 진행률">
       <span><i style={{ width: `${Math.max(4, pct)}%` }} /></span>
-      <small>{pct < 100 ? `업로드 중 ${pct}%` : '서버에서 확인하는 중…'}</small>
+      <small>{pct < 100 ? `업로드 중 ${pct}%` : '거의 다 올렸어요…'}</small>
     </div>
   );
 }
@@ -1109,6 +1114,11 @@ const TrackEditor = memo(function TrackEditor({
         <label htmlFor={`tr-${i}-featuring`}>피처링 아티스트</label>
         <input id={`tr-${i}-featuring`} value={t.featuring} onChange={e => setTrack(t.id, 'featuring', e.target.value)} placeholder="없으면 비워 두세요 · 여러 명은 쉼표로 구분" maxLength={200} />
       </div>
+      {/* 작사 칸보다 먼저 — 다 적은 뒤에야 '연주곡'을 보게 되면 작사를 비울 수 있다는 걸 몰랐다 */}
+      <label className="ui-check is-plain aq-inst-line">
+        <input type="checkbox" checked={t.instrumental} onChange={e => setTrack(t.id, 'instrumental', e.target.checked)} />
+        <span><strong>가사 없는 연주곡이에요</strong><small>보컬·가사가 없으면 작사와 가사를 입력하지 않아도 돼요.</small></span>
+      </label>
       <div className="form-grid">
         <div className="ui-field">
           <label htmlFor={`tr-${i}-composers`}>작곡 <span className="required">*</span></label>
@@ -1125,10 +1135,6 @@ const TrackEditor = memo(function TrackEditor({
           {!t.instrumental && <CreditChips names={credits?.lyricists} value={t.lyricists} label="작사" onAdd={v => setTrack(t.id, 'lyricists', v)} />}
         </div>
       </div>
-      <label className="ui-check is-plain aq-inst-line">
-        <input type="checkbox" checked={t.instrumental} onChange={e => setTrack(t.id, 'instrumental', e.target.checked)} />
-        <span><strong>가사 없는 연주곡이에요</strong><small>보컬·가사가 없으면 작사와 가사를 입력하지 않아도 돼요.</small></span>
-      </label>
       <div className="ui-field">
         <label htmlFor={`trackFile-${i}`}>음원 파일 <span className="required">*</span></label>
         <FilePicker
@@ -1137,7 +1143,7 @@ const TrackEditor = memo(function TrackEditor({
           onChange={e => onTrackAudio(t.id, e)} placeholder="음원 파일을 선택해 주세요"
         />
         <UploadStatus upload={upload} idle={t.audioName
-          ? `${t.audioName}${t.audioSpec ? ` · ${t.audioSpec}` : t.audioSize ? ` · ${fileSize(t.audioSize)}` : ''}${t.assetId ? ' · 업로드 완료' : MOCK ? '' : ' · 업로드되지 않았어요. 파일을 다시 선택해 주세요.'}`
+          ? `${t.audioName}${t.audioSpec ? ` · ${t.audioSpec}` : t.audioSize ? ` · ${fileSize(t.audioSize)}` : ''}${t.assetId || upload?.state === 'received' ? ' · 올렸어요' : MOCK ? '' : ' · 업로드되지 않았어요. 파일을 다시 선택해 주세요.'}`
           : '무손실 원본 WAV·FLAC·ALAC(.m4a)·AIFF·WavPack(.wv)·TTA · 44.1kHz 이상, 16bit 이상, 스테레오'} />
         {!MOCK && t.assetId && upload?.state !== 'uploading' && <TrackChecks assetId={t.assetId} />}
       </div>
@@ -1406,6 +1412,8 @@ export function Upload() {
   // 접수 요청 자체가 실패했을 때 (입력 오류와 따로, 다시 시도 버튼과 함께 보여 준다)
   const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // 접수 직전 서버가 올린 파일을 마무리하는 동안
+  const [finishing, setFinishing] = useState(false);
   // 중복 제출 방지용 ref (비동기 경계에서도 동작)
   const submittingRef = useRef(false);
   const [loadingEdit, setLoadingEdit] = useState(!!editId);
@@ -1416,6 +1424,7 @@ export function Upload() {
   const [expandedTracks, setExpandedTracks] = useState<Set<string>>(new Set());
   // 레이블 표기·앨범 소개는 선택 항목이라 접어 둔다 — 첫 단계에 칸이 여덟 개라 무엇이 꼭 필요한지 흐렸다
   const [moreInfo, setMoreInfo] = useState(false);
+  const [typeNudge, setTypeNudge] = useState(false);
   // 트랙 단계: 곡이 여럿이면 하나만 펼친다 (null = 다 접음)
   const [openTrack, setOpenTrack] = useState<string | null | undefined>(undefined);
   const [save, setSave] = useState<SaveState>({ kind: 'idle' });
@@ -1423,6 +1432,8 @@ export function Upload() {
   // 업로드 진행 상태 — 키: 트랙 ID 또는 'cover'
   const [uploads, setUploads] = useState<Record<string, UploadState>>({});
   const uploadAborts = useRef(new Map<string, AbortController>());
+  // 서버가 마무리 중인 업로드 — 접수할 때 이것만 기다린다
+  const uploadPending = useRef(new Map<string, Promise<string | null>>());
   const setUpload = useCallback((key: string, u: UploadState | null) => {
     setUploads(prev => {
       const next = { ...prev };
@@ -1436,20 +1447,30 @@ export function Upload() {
     const ctrl = new AbortController();
     uploadAborts.current.set(key, ctrl);
     setUpload(key, { pct: 0, state: 'uploading' });
-    try {
-      const r = await api.uploadFile(file, kind, pct => setUpload(key, { pct, state: 'uploading' }), ctrl.signal);
-      if (ctrl.signal.aborted) return null;
-      setUpload(key, { pct: 1, state: 'done' });
-      // '올리는 중' 안내가 떠 있었다면 끝났으니 지운다
-      setError(prev => (prev.includes('올리는 중이에요') ? '' : prev));
-      return r.assetId;
-    } catch (e) {
-      if (ctrl.signal.aborted) return null;
-      setUpload(key, { pct: 0, state: 'error', message: errorMessage(e, '파일을 올리지 못했어요. 다시 선택해 주세요.') });
-      return null;
-    } finally {
-      if (uploadAborts.current.get(key) === ctrl) uploadAborts.current.delete(key);
-    }
+    const run = (async () => {
+      try {
+        const r = await api.uploadFile(file, kind, pct => setUpload(key, { pct, state: 'uploading' }), ctrl.signal, () => {
+          // 저장소에 다 올라갔다 — 서버의 마무리 확인을 기다리지 않고 '올렸어요'로 두고 다음으로 넘어갈 수 있게
+          if (ctrl.signal.aborted) return;
+          setUpload(key, { pct: 1, state: 'received' });
+          setError(prev => (prev.includes('올리는 중이에요') ? '' : prev));
+        });
+        if (ctrl.signal.aborted) return null;
+        setUpload(key, { pct: 1, state: 'done' });
+        // '올리는 중' 안내가 떠 있었다면 끝났으니 지운다
+        setError(prev => (prev.includes('올리는 중이에요') ? '' : prev));
+        return r.assetId;
+      } catch (e) {
+        if (ctrl.signal.aborted) return null;
+        setUpload(key, { pct: 0, state: 'error', message: errorMessage(e, '파일을 올리지 못했어요. 다시 선택해 주세요.') });
+        return null;
+      } finally {
+        if (uploadAborts.current.get(key) === ctrl) uploadAborts.current.delete(key);
+      }
+    })();
+    uploadPending.current.set(key, run);
+    void run.finally(() => { if (uploadPending.current.get(key) === run) uploadPending.current.delete(key); });
+    return run;
   }, [setUpload]);
   const attachOptionDocument = useCallback(async (name: keyof ReleaseOptions, asset: keyof ReleaseOptions, file: File) => {
     if (!/\.(pdf|png|jpe?g)$/i.test(file.name) || file.size > 20 * 1024 * 1024) {
@@ -1810,7 +1831,7 @@ export function Upload() {
         const up = uploads[t.id];
         if (up?.state === 'uploading') return fail(`트랙 ${k + 1}의 음원을 올리는 중이에요. 업로드가 끝나면 다음으로 넘어갈 수 있어요.`, null);
         if (up?.state === 'error') return fail(`트랙 ${k + 1}의 음원 파일을 올리지 못했어요. 다시 선택해 주세요.`, `#trackFile-${k}`);
-        if (!MOCK && !t.assetId) return fail(`트랙 ${k + 1}의 음원을 올린 기록이 없어요. 파일을 다시 선택해 주세요.`, `#trackFile-${k}`);
+        if (!MOCK && !t.assetId && up?.state !== 'received') return fail(`트랙 ${k + 1}의 음원을 올린 기록이 없어요. 파일을 다시 선택해 주세요.`, `#trackFile-${k}`);
         const dupIsrc = t.isrc.trim() && form.tracks.findIndex(o => o.isrc.trim() && normalizeIsrc(o.isrc) === normalizeIsrc(t.isrc)) !== k;
         if (dupIsrc) {
           setExpandedTracks(prev => new Set(prev).add(t.id));
@@ -1822,15 +1843,16 @@ export function Upload() {
         }
       }
     }
-    if (i === 1) {
-      const typeErr = releaseTypeIssue(form.type, form.tracks.map(t => mmssToSeconds(t.duration)));
-      if (typeErr) return fail(typeErr, null);
+    if (i === 1 && typeIssue) {
+      // 돌아가서 바꾸라고만 하지 않고, 트랙 목록 아래의 '○○로 바꾸기' 버튼을 띄워 그 자리에서 바꾼다
+      flushSync(() => setTypeNudge(true));
+      return fail(`${kindLabel(suggestedType)}(으)로 바꾸면 바로 넘어갈 수 있어요.`, '#aqTypeFix');
     }
     if (i === 2) {
       if (!form.coverName) return fail('커버아트를 등록해 주세요.', '#coverFile');
       if (uploads.cover?.state === 'uploading') return fail('커버아트를 올리는 중이에요. 업로드가 끝나면 다음으로 넘어갈 수 있어요.', null);
       if (uploads.cover?.state === 'error') return fail('커버아트를 올리지 못했어요. 이미지를 다시 선택해 주세요.', '#coverFile');
-      if (!MOCK && !form.coverAssetId) return fail('커버아트를 올린 기록이 없어요. 이미지를 다시 선택해 주세요.', '#coverFile');
+      if (!MOCK && !form.coverAssetId && uploads.cover?.state !== 'received') return fail('커버아트를 올린 기록이 없어요. 이미지를 다시 선택해 주세요.', '#coverFile');
     }
     if (i === 3) {
       if (!form.releaseDate) return fail('발매일을 선택해 주세요.', '#f-releaseDate');
@@ -1843,8 +1865,14 @@ export function Upload() {
       if (form.preorderStart && (form.preorderStart >= form.releaseDate || form.preorderStart < shiftDate(form.releaseDate, -90))) {
         return fail('사전 공개 시작일은 발매일 1–90일 전으로 골라 주세요.', '#f-preorder');
       }
-      const badPreview = form.tracks.find(t => t.previewStart.trim() && !previewSecs(t.previewStart));
-      if (badPreview) return fail(`'${badPreview.title}' 미리듣기 시작점을 m:ss 형식으로 적어 주세요. (예: 1:05)`, '.aq-preview-starts');
+      const named = form.tracks.filter(t => t.title.trim());
+      const badPreview = named.findIndex(t => t.previewStart.trim() && !previewOk(t));
+      if (badPreview >= 0) {
+        const t = named[badPreview];
+        return fail(previewSecs(t.previewStart)
+          ? `'${t.title}' 미리듣기 시작 지점이 곡 길이(${t.duration})보다 뒤예요. 곡 안의 시간으로 골라 주세요.`
+          : `'${t.title}' 미리듣기 시작 지점을 확인해 주세요. 초는 59까지 쓸 수 있어요. (예: 1:05)`, `#f-preview-${badPreview}`);
+      }
       const tp = parseTerritories(form.territories);
       if (!tp.world && !tp.included.length) return fail('배급할 지역을 하나 이상 골라 주세요. 모든 지역에 배급하려면 ‘전 세계 배급’을 켜 주세요.', '#aqTerritories');
       if (!dsps) return fail(dspError || '플랫폼 배급 가능 상태를 확인하는 중이에요.', '#aqPlatforms');
@@ -1949,6 +1977,22 @@ export function Upload() {
     setSubmitting(true);
     setSubmitError('');
     try {
+      // 서버가 아직 마무리 중인 파일이 있으면 여기서만 기다린다 (단계 이동은 기다리지 않았다)
+      if (uploadPending.current.size) {
+        setFinishing(true);
+        await Promise.all(uploadPending.current.values());
+        setFinishing(false);
+        // 마무리 중 실패한 파일이 있으면 그 단계로 — 자산 ID가 들어간 뒤 상태로 다시 확인한다
+        await new Promise(r => requestAnimationFrame(r));
+        const f0 = formRef.current;
+        const badTrack = f0.tracks.findIndex(t => !MOCK && !t.assetId);
+        if (badTrack >= 0 || (!MOCK && !f0.coverAssetId)) {
+          const to = badTrack >= 0 ? 1 : 2;
+          goStep(to);
+          setError(badTrack >= 0 ? `트랙 ${badTrack + 1}의 음원을 서버가 받지 못했어요. 파일을 다시 선택해 주세요.` : '커버아트를 서버가 받지 못했어요. 이미지를 다시 선택해 주세요.');
+          return;
+        }
+      }
       await saveChain.current.catch(() => {});
       // 기다리는 동안 자동 저장이 서버 트랙 id를 받아 왔을 수 있다 — 클로저의 form이 아니라 최신 상태로 보낸다(트랙 중복 방지)
       const f = formRef.current;
@@ -1985,6 +2029,7 @@ export function Upload() {
     } finally {
       submittingRef.current = false;
       setSubmitting(false);
+      setFinishing(false);
     }
   };
 
@@ -2042,15 +2087,20 @@ export function Upload() {
       setForm(f => ({ ...f, coverData: thumb.data, coverAssetId: '', coverThumbAssetId: '', coverPreviewAssetId: '' }));
       const assetId = await startUpload('cover', file, 'IMAGE');
       if (assetId) {
-        // 화면에 보여 줄 미리보기도 서버에 보관한다 — 원본(3000px 이상, 수 MB)은 배급용으로 서버에만 두고 화면엔 쓰지 않는다.
-        // 목록용 240px와 상세의 큰 커버용 1080px 두 가지 (실패하면 작은 미리보기로 보여 준다)
-        const [thumbId, previewId] = MOCK ? ['', ''] : await Promise.all([
-          uploadCoverPreview(thumb.data).catch(() => ''),
-          scaleCover(file, 1080, 0.86).then(p => uploadCoverPreview(p.data)).catch(() => ''),
-        ]);
-        setForm(f => (f.coverName === file.name ? { ...f, coverAssetId: assetId, coverThumbAssetId: thumbId, coverPreviewAssetId: previewId } : f));
+        // 원본이 등록되면 바로 반영한다 — 미리보기 두 장까지 기다렸다 넣으면 그동안 '다음'을 눌렀을 때 '올린 기록이 없어요'가 떴다
         dirtyRef.current = true;
-        toast('커버 이미지를 올렸어요.');
+        setForm(f => (f.coverName === file.name ? { ...f, coverAssetId: assetId } : f));
+        if (!MOCK) {
+          // 화면에 보여 줄 미리보기도 서버에 보관한다 — 원본(3000px 이상, 수 MB)은 배급용으로 서버에만 두고 화면엔 쓰지 않는다.
+          // 목록용 240px와 상세의 큰 커버용 1080px 두 가지 (실패하면 작은 미리보기로 보여 준다)
+          void Promise.all([
+            uploadCoverPreview(thumb.data).catch(() => ''),
+            scaleCover(file, 1080, 0.86).then(p => uploadCoverPreview(p.data)).catch(() => ''),
+          ]).then(([thumbId, previewId]) => {
+            dirtyRef.current = true;
+            setForm(f => (f.coverAssetId === assetId ? { ...f, coverThumbAssetId: thumbId, coverPreviewAssetId: previewId } : f));
+          });
+        }
       }
     } catch {
       toast('커버 이미지를 불러오지 못했어요.');
@@ -2144,19 +2194,36 @@ export function Upload() {
     return () => window.clearTimeout(timer);
   }, [focusField, step, loadingEdit]);
 
+  // 발매일 기본값 — 배급 설정에 처음 오면 가장 빠른 날짜를 넣어 둔다(눌러서 바꾼다). 자동으로 넣은 날짜는
+  // 신속 발매를 켜고 끌 때 새 기준의 가장 빠른 날짜로 따라 바뀌고, 직접 고른 날짜는 건드리지 않는다
+  const autoDate = useRef('');
+  const earliest = minReleaseDate(form.options.express);
+  useEffect(() => {
+    if (loadingEdit || step < 3) return;
+    if (form.releaseDate && form.releaseDate !== autoDate.current) return;
+    if (form.releaseDate === earliest) return;
+    autoDate.current = earliest;
+    set('releaseDate', earliest);
+  }, [step, earliest, form.releaseDate, loadingEdit, set]);
+
   // 서명자 기본값: 권리자 → 아티스트 정보의 이름
   const signerName = signer.touched ? signer.name : (form.ownership || profile.name || '');
   const resubmit = !!editId && origStatus !== 'draft' && hasApplication;
   const s = STEPS[step];
   const showMoreInfo = moreInfo || !!form.label.trim() || !!form.notes.trim() || fixes.some(f => !!f.field && MORE_INFO_FIELDS.includes(f.field));
   // 곡 입력이 다 됐는지 — 접힌 곡 요약의 '입력 완료/필요' 표시
-  const trackComplete = (t: Track) => !!(t.title.trim() && t.composers.trim() && (t.instrumental || t.lyricists.trim()) && t.audioName && (MOCK || t.assetId));
+  const trackComplete = (t: Track) => !!(t.title.trim() && t.composers.trim() && (t.instrumental || t.lyricists.trim()) && t.audioName && (MOCK || t.assetId || uploads[t.id]?.state === 'received'));
   // 처음엔 아직 덜 채운 첫 곡(없으면 첫 곡)을 펼친다
   const shownTrack = openTrack === undefined
     ? (form.tracks.find(t => !trackComplete(t)) ?? form.tracks[0])?.id ?? null
     : openTrack;
-  const nextLabel = submitting ? '접수하는 중' : step === STEPS.length - 1 ? (resubmit ? '다시 접수하기' : editId && origStatus !== 'draft' ? '서명하고 수정 완료' : '서명하고 접수하기') : '다음으로';
+  const nextLabel = finishing ? '파일 마무리 중' : submitting ? '접수하는 중' : step === STEPS.length - 1 ? (resubmit ? '다시 접수하기' : editId && origStatus !== 'draft' ? '서명하고 수정 완료' : '서명하고 접수하기') : '다음으로';
   const genreIsCustom = form.genre === '__other__';
+  // 발매 유형이 곡 구성과 맞지 않을 때 — 모든 곡의 길이를 알게 되면(또는 넘어가려 하면) 바꾸기 버튼을 띄운다
+  const trackSecs = form.tracks.map(t => mmssToSeconds(t.duration));
+  const typeIssue = releaseTypeIssue(form.type, trackSecs);
+  const suggestedType = expectedReleaseType(trackSecs);
+  const showTypeFix = !!typeIssue && (typeNudge || trackSecs.every(Boolean));
   const availablePlatforms = dsps?.filter(d => d.available).map(d => d.slug) ?? [];
   // '모두 배급'은 Content ID를 뺀 음악 플랫폼 전체 — Content ID는 켜져 있든 아니든 따로 본다
   const basePlatforms = availablePlatforms.filter(p => !isContentId(p));
@@ -2475,6 +2542,18 @@ export function Upload() {
                 />
               ))}
             </div>
+            {showTypeFix && (
+              <div id="aqTypeFix" className="ui-callout is-warn is-row aq-reveal" role="status" tabIndex={-1}>
+                <span>
+                  <strong>{form.tracks.length}곡{trackSecs.every(Boolean) ? ` · 총 ${Math.round(trackSecs.reduce((a, b) => a + b, 0) / 60)}분` : ''}</strong>
+                  {' '}구성은 플랫폼 기준으로 ‘{kindLabel(suggestedType)}’이에요. 지금은 ‘{kindLabel(form.type)}’으로 골라져 있어요.
+                </span>
+                <button
+                  type="button" className="ui-btn is-primary is-sm"
+                  onClick={() => { set('type', suggestedType); setTypeNudge(false); clearFieldError(); setError(''); toast(`발매 유형을 ${kindLabel(suggestedType)}(으)로 바꿨어요.`, 'success'); }}
+                >{kindLabel(suggestedType)}(으)로 바꾸기</button>
+              </div>
+            )}
             <div className="spaced-actions">
               <button
                 type="button" className="ui-btn is-soft"
@@ -2522,7 +2601,7 @@ export function Upload() {
                   <small>{form.coverName ? '다른 이미지로 바꾸려면 다시 선택해 주세요.' : `JPG · PNG, 정사각형 ${COVER_MIN}~${COVER_MAX}px (최대 20MB)`}</small>
                 </span>
               </label>
-              {uploads.cover && uploads.cover.state !== 'done' && <UploadStatus upload={uploads.cover} idle="" />}
+              {uploads.cover && <UploadStatus upload={uploads.cover} idle="올렸어요. 바로 다음 단계로 넘어가도 돼요." />}
               {coverWarn && <p className="ui-field-help aq-help-warn">{coverWarn}</p>}
             </div>
             {form.coverData && (
@@ -2561,7 +2640,8 @@ export function Upload() {
                 value={form.releaseDate} min={origDate && origDate < minReleaseDate(form.options.express) ? origDate : minReleaseDate(form.options.express)}
                 onChange={v => set('releaseDate', v)}
                 help={<>
-                  가장 빠른 날짜는 <b>{formatKoreanDate(minReleaseDate(form.options.express))}</b>이에요{form.options.express ? ' (신속 발매, 최소 3일)' : ' (플랫폼 검수에 2주가 걸려요)'}.
+                  {form.releaseDate && form.releaseDate === autoDate.current ? <>가장 빠른 날짜로 넣어 두었어요. 원하는 날이 있으면 눌러서 바꿔 주세요{form.options.express ? ' (신속 발매, 최소 3일)' : ' (플랫폼 검수에 2주가 걸려요)'}.</>
+                    : <>가장 빠른 날짜는 <b>{formatKoreanDate(earliest)}</b>이에요{form.options.express ? ' (신속 발매, 최소 3일)' : ' (플랫폼 검수에 2주가 걸려요)'}.</>}
                   {' '}플레이리스트 추천을 받으려면 3~4주 뒤를 권해요.
                   {!form.options.express && <>
                     {' '}<button type="button" className="aq-inline-link" onClick={() => {
@@ -2616,13 +2696,15 @@ export function Upload() {
                         <span className="ui-row-meta">{t.duration ? `길이 ${t.duration}` : '미리듣기 시작'}</span>
                       </span>
                       <input className="ui-input" inputMode="numeric" placeholder="0:00" maxLength={5} value={t.previewStart}
+                        id={`f-preview-${i}`} autoComplete="off"
                         aria-label={`${t.title} 미리듣기 시작 지점`}
-                        aria-invalid={!!t.previewStart.trim() && !previewSecs(t.previewStart)}
-                        onChange={e => setTrack(t.id, 'previewStart', e.target.value.replace(/[^0-9:]/g, ''))} />
+                        aria-invalid={!!t.previewStart.trim() && !previewOk(t)}
+                        onChange={e => setTrack(t.id, 'previewStart', maskPreviewInput(e.target.value))}
+                        onBlur={e => { const v = settlePreviewInput(e.target.value); if (v !== t.previewStart) setTrack(t.id, 'previewStart', v); }} />
                     </label>
                   ))}
                 </div>
-                <small className="ui-field-help">곡별 미리듣기·숏폼 클립이 시작하는 곳이에요. 비우면 플랫폼이 정해요. 예: 1:05</small>
+                <small className="ui-field-help">곡별 미리듣기·숏폼 클립이 시작하는 곳이에요. 숫자만 입력하면 돼요 (0105 → 1:05). 비우면 플랫폼이 정해요.</small>
               </div>
             )}
             <h2 className="subhead">배급 지역</h2>
@@ -2700,6 +2782,10 @@ export function Upload() {
             </div>
             )}
             {!dsps && <p className="ui-field-help" role="status">{dspError || '플랫폼 목록을 서버에서 불러오는 중이에요.'}</p>}
+            {/* 공동작업자 수익 분배 — 정산은 배급 조건이라 권리 확인이 아니라 여기서 정한다. 임시 저장된 발매(서버의 곡 목록)를 기준으로 */}
+            {draftIdRef.current
+              ? <SplitsCard releaseId={draftIdRef.current} embedded />
+              : !MOCK && <p className="small muted">임시 저장이 끝나면 공동작업자 수익 분배를 정할 수 있어요.</p>}
             <div className="aq-fix-zone"><OptionsSection form={form} set={set} group="service" onDocument={attachOptionDocument} uploads={uploads} onElectronic={kind => void openElectronic(kind)} onOpenDoc={setOpenDocId} releaseId={draftIdRef.current ?? undefined} onGuardian={() => void openGuardian()} /></div>
           </section>
         )}
@@ -2785,10 +2871,6 @@ export function Upload() {
               허락서·동의서는 위의 AUDENIQ 전자 문서 도구에서 작성하고 권리자가 직접 서명할 수 있어요. 완성된 서류는 ‘권리·보완 서류’에도 보관돼요.
             </div>
             <OptionDocsBanner options={form.options} />
-            {/* 공동작업자 수익 분배: 임시 저장된 발매(서버의 곡 목록)를 기준으로 정한다 */}
-            {draftIdRef.current
-              ? <SplitsCard releaseId={draftIdRef.current} embedded />
-              : !MOCK && <p className="small muted">임시 저장이 끝나면 공동작업자 수익 분배를 정할 수 있어요.</p>}
           </section>
         )}
 
