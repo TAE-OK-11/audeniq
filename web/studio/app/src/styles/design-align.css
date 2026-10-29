@@ -1918,3 +1918,12 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
   background:var(--aq-blue-50)!important;box-shadow:none!important;font-size:15px;line-height:1.45;resize:none;field-sizing:content}
 #tReply#tReply:is(:focus,:focus-visible){background:var(--aq-blue-100)!important;outline:0}
 .aq-thread-compose .ui-btn.is-icon{flex:none;align-self:flex-end;width:48px!important;min-width:48px;height:48px!important;min-height:48px;padding:0;border-radius:50%}
+/* 문의 대화 창 — 보내는 동안 화살표 대신 도는 원만 (둘이 나란히 보이지 않게) */
+.ui-btn.is-icon.is-busy>svg{display:none}
+/* 휴대폰: 대화 창은 처음부터 최대 높이로 열어 둔다. 내용 높이에 맞춰 두었더니 글자를 입력해 칸이 한 줄 늘거나
+   메시지를 보낼 때마다 시트가 위로 자라 제목이 들썩였다. 대화는 안에서 스크롤되고 입력칸은 늘 바닥에 */
+@media (max-width:760px){
+  #modal.aq-chat-mode>.modal-inner{height:100dvh!important;display:flex!important;flex-direction:column}
+  #modal.aq-chat-mode #modalBody{flex:1 0 auto;display:flex;flex-direction:column}
+  #modal.aq-chat-mode .aq-thread-reply{margin-top:auto}
+}
