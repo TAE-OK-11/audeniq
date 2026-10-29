@@ -551,7 +551,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 @media (prefers-reduced-motion:reduce){.aq-smartlink-list a:is(:active,.is-pressed){transform:none}}
 
 /* 발매 신청 > 배급 플랫폼 칸 — 'YouTube M…'·'Anghami (…'처럼 이름이 잘려 무슨 플랫폼인지 모르던 것: 세 줄까지 보여 준다 */
-.aq-dsp-name{white-space:normal;word-break:keep-all;overflow-wrap:anywhere;line-height:1.3;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+.aq-dsp-name{white-space:normal;word-break:keep-all;overflow-wrap:break-word;line-height:1.3;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
 @media (max-width:600px){.aq-dsp-name{font-size:13px;letter-spacing:-.01em}}
 
 /* 발매 신청 > 트랙: 곡이 여럿이면 고치는 곡만 펼치고 나머지는 한 줄 요약 (번호 · 제목 · 작곡·음원 · 입력 상태) */
@@ -1856,3 +1856,10 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 @media(hover:hover){.aq-notice-list .aq-notice-card:hover{background:transparent}.aq-notice-list .aq-notice-card:hover strong{color:var(--aq-blue-500)}}
 .aq-notice-list .aq-notice-card .aq-notice-symbol{background:#fff}
 @media(max-width:560px){.aq-notice-list{padding:2px 16px}}
+
+/* 서명 전·검토 중 안내 카드 — 파란 바탕에 초록 글자가 섞여 있었다. 설명은 회색으로 */
+.aq-doc-done.is-pending .min-0 span{color:var(--aq-text-3)}
+/* 문서 화면 맨 위 줄(뒤로 · 신청서 보기 · 인쇄) — 휴대폰에서 뒤로 링크와 같은 작은 버튼 크기로 */
+@media(max-width:760px){
+  .aq-doc-toolbar .row-actions .ui-btn{--btn-h:var(--aq-h-sm);--btn-r:var(--aq-r-ctl-sm);--btn-px:14px;--btn-fs:13px}
+}

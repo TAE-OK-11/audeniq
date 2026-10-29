@@ -97,7 +97,7 @@ export function Application() {
         <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={() => nav(`/releases/${rel.id}`)}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />발매 상세</button>
         <div className="row-actions">
           {/* 신청 직후엔 다음 할 일(홈)이 주 버튼, 인쇄는 원할 때만 — 한 화면에 파란 버튼은 하나 */}
-          <button type="button" className={`ui-btn ${done ? 'is-soft' : 'is-primary'}`} onClick={() => void printWithStamp({ kind: 'APPLICATION', ref: id, root: document.querySelector('.aq-paper') })}>인쇄 · PDF 저장</button>
+          <button type="button" className="ui-btn is-soft" onClick={() => void printWithStamp({ kind: 'APPLICATION', ref: id, root: document.querySelector('.aq-paper') })}>인쇄 · PDF 저장</button>
           {done && <button type="button" className="ui-btn is-primary" onClick={() => nav('/')}>홈으로 가기</button>}
         </div>
       </div>
