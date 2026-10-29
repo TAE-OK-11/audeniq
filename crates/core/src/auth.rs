@@ -725,7 +725,7 @@ pub(crate) async fn issue_session(
     method: &'static str,
     mfa: bool,
 ) -> Result<(HeaderMap, Json<Value>)> {
-    let token = random_token();
+    let token = zeroize::Zeroizing::new(random_token());
     let token_hash = hash_token(&token);
     let csrf = session_csrf(&s.config.service_secret, &token_hash);
     sqlx::query("INSERT INTO identity.sessions(token_hash,user_id,csrf_hash,expires_at,mfa_at) VALUES($1,$2,$3,now()+make_interval(secs=>$4),CASE WHEN $5 THEN now() END)")
