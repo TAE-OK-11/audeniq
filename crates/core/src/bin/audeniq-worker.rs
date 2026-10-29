@@ -237,20 +237,13 @@ async fn main() -> anyhow::Result<()> {
                     return;
                 }
                 // Unknown pressure defers optional work; the next sample retries.
-                if image_headroom(load) {
-                    if let Ok(_permit) = limiter.clone().try_acquire_owned() {
-                        if audeniq_core::image_jobs::tick(
-                            &pool,
-                            &store,
-                            antivirus_enabled,
-                            &executable,
-                        )
+                if image_headroom(load)
+                    && let Ok(_permit) = limiter.clone().try_acquire_owned()
+                    && audeniq_core::image_jobs::tick(&pool, &store, antivirus_enabled, &executable)
                         .await
                         .is_err()
-                        {
-                            tracing::warn!("image_job_tick_failed");
-                        }
-                    }
+                {
+                    tracing::warn!("image_job_tick_failed");
                 }
                 tokio::time::sleep(Duration::from_secs(10)).await;
             }
