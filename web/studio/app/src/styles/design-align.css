@@ -1219,8 +1219,10 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
 /* 스튜디오 — 소식·팬 응원 관리 창 (ArtistCommunityManager.tsx) */
 .aq-community-mgr{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
 .aq-community-mgr>.aq-alert-pref{margin:0}
-.aq-mgr-post{display:grid;gap:6px}
-.aq-mgr-actions{display:flex;justify-content:flex-end;gap:6px}
+/* 소식 관리 — 글 카드와 고치기·지우기 줄을 한 카드로 묶는다 */
+.aq-mgr-post{display:grid;gap:0;overflow:hidden;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
+.aq-mgr-post>.aq-post{background:none;border-radius:0}
+.aq-mgr-actions{display:flex;justify-content:flex-end;gap:2px;margin:0 12px;padding:6px 0 8px;border-top:1px solid var(--aq-blue-150)}
 .aq-mgr-open{display:inline-flex;align-items:center;justify-self:center;gap:4px;font-size:13px;font-weight:700;color:var(--aq-text-3);text-decoration:none}
 @media (hover:hover){.aq-mgr-open:hover{color:var(--aq-primary)}}
 .aq-mgr-cheer-actions{display:flex;gap:2px}
