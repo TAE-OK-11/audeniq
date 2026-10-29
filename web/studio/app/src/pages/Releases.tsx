@@ -145,7 +145,7 @@ export function Releases() {
 
   return (
     <div id="view-catalog" className="view">
-      <div className="ui-page-head">
+      <div className="ui-page-head aq-head-inline">
         <div>
           <p className="eyebrow">내 작업실</p>
           <h1 id="catalogTitle">발매·곡 관리</h1>
