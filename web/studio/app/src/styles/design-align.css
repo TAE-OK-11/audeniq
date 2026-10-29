@@ -1839,13 +1839,25 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
   #portalNav .aq-nav-foot .aq-nav-legal{justify-content:center;column-gap:14px}
 }
 
-/* 알림 목록 — 옅은 파랑 카드 하나 안에 구분선으로 나눈 줄 (줄마다 카드를 또 두르지 않는다). 안 읽은 알림은 파란 점, 읽은 알림은 글자만 옅게 */
-.aq-notice-list{padding:4px 20px}
-.aq-notice-list .ui-list.is-inset>.aq-notice-card{padding:18px 0;border-radius:0;box-shadow:none;border-bottom:1px solid var(--aq-blue-150)}
-.aq-notice-list .ui-list.is-inset>.aq-notice-card:last-child{border-bottom:0}
-@media(hover:hover){.aq-notice-list .aq-notice-card:hover{background:transparent}.aq-notice-list .aq-notice-card:hover strong{color:var(--aq-blue-500)}}
-.aq-notice-list .aq-notice-card .aq-notice-symbol{background:#fff}
-@media(max-width:560px){.aq-notice-list{padding:2px 16px}}
+/* 알림 목록 — 날짜로 묶은 촘촘한 줄 (카드로 감싸지 않는다). 분류는 아이콘, 시각은 오른쪽 위, 설명은 한 줄.
+   안 읽은 알림: 아이콘 모서리 파란 점 + 굵은 제목 / 읽은 알림: 회색 아이콘 + 보통 굵기 */
+.aq-notice-feed{display:grid;gap:22px;margin-top:10px}
+.aq-notice-day{margin:0 0 4px;font-size:var(--aq-fs-sm);font-weight:700;color:var(--aq-text-4)}
+.aq-notice-rows{margin:0;padding:0;list-style:none}
+.aq-notice-rows>li+li .aq-notice-row{border-top:1px solid var(--aq-line)}
+.aq-notice-row{display:grid;grid-template-columns:40px minmax(0,1fr) auto;column-gap:14px;align-items:start;width:100%;padding:14px 0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.aq-notice-row .aq-notice-symbol{position:relative;width:40px;height:40px;flex:none;border-radius:var(--aq-r-md);background:var(--aq-blue-100);color:var(--aq-blue-500)}
+.aq-notice-row .aq-unread{position:absolute;top:-2px;right:-2px;width:10px;height:10px;border:2px solid #fff;border-radius:50%;background:var(--aq-blue-500)}
+.aq-notice-row .aq-notice-copy{display:grid;gap:2px;min-width:0;padding-top:1px}
+.aq-notice-row strong{overflow:hidden;color:var(--aq-text);font-size:15px;font-weight:700;line-height:1.4;text-overflow:ellipsis;white-space:nowrap}
+.aq-notice-row .aq-notice-detail{overflow:hidden;color:var(--aq-text-3);font-size:13px;line-height:1.5;text-overflow:ellipsis;white-space:nowrap}
+.aq-notice-time{padding-top:3px;color:var(--aq-text-4);font-size:12px;font-weight:500;white-space:nowrap;font-variant-numeric:tabular-nums}
+.aq-notice-row.is-read .aq-notice-symbol{background:var(--aq-gray-50);color:var(--aq-text-4)}
+.aq-notice-row.is-read strong{font-weight:500;color:var(--aq-text-2)}
+.aq-notice-row.is-read .aq-notice-detail{color:var(--aq-text-4)}
+@media(hover:hover){.aq-notice-row:hover strong{color:var(--aq-blue-500)}}
+.aq-notice-row:focus-visible{outline:var(--aq-focus);outline-offset:2px;border-radius:var(--aq-r-md)}
+.aq-notice-more span{margin-left:4px;color:var(--aq-text-4);font-weight:600}
 
 /* 서명 전·검토 중 안내 카드 — 파란 바탕에 초록 글자가 섞여 있었다. 설명은 회색으로 */
 .aq-doc-done.is-pending .min-0 span{color:var(--aq-text-3)}
