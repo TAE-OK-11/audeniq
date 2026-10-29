@@ -32,6 +32,41 @@ use sqlx::Row;
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
+// Static labels and durations only: no ceremony, account or credential data.
+struct CeremonyTimer {
+    ceremony: &'static str,
+    start: std::time::Instant,
+    overhead: std::time::Duration,
+    last: std::time::Instant,
+}
+impl CeremonyTimer {
+    fn new(ceremony: &'static str) -> Self {
+        let now = std::time::Instant::now();
+        Self {
+            ceremony,
+            start: now,
+            overhead: std::time::Duration::ZERO,
+            last: now,
+        }
+    }
+    fn section(&mut self, section: &'static str) {
+        let end = std::time::Instant::now();
+        tracing::debug!(target: "passkey_timing", ceremony = self.ceremony, section,
+            elapsed_us = end.duration_since(self.last).as_micros() as u64);
+        // Exclude synchronous subscriber/formatting work from the next section
+        // and handler total, including when the probe writes JSON to stdout.
+        self.last = std::time::Instant::now();
+        self.overhead += self.last.duration_since(end);
+    }
+}
+
+impl Drop for CeremonyTimer {
+    fn drop(&mut self) {
+        tracing::debug!(target: "passkey_timing", ceremony = self.ceremony,
+            section = "total", elapsed_us = self.start.elapsed().saturating_sub(self.overhead).as_micros() as u64);
+    }
+}
+
 const CHALLENGE_SECONDS: i32 = 300;
 const MAX_PER_USER: i64 = 10;
 const FLAG_UP: u8 = 0x01;
@@ -125,8 +160,8 @@ fn decode(v: &str, max: usize) -> Option<Vec<u8>> {
         .filter(|b| !b.is_empty() && b.len() <= max)
 }
 
-async fn new_challenge(
-    s: &AppState,
+async fn new_challenge<'e>(
+    db: impl sqlx::PgExecutor<'e>,
     purpose: &str,
     user: Option<Uuid>,
     session: Option<&[u8]>,
@@ -159,7 +194,7 @@ async fn new_challenge(
     .bind(user)
     .bind(f64::from(CHALLENGE_SECONDS))
     .bind(session)
-    .execute(&s.pool)
+    .execute(db)
     .await?;
     Ok((id, challenge))
 }
@@ -288,10 +323,13 @@ fn source(h: &HeaderMap) -> (String, i32) {
 }
 
 pub async fn login_options(s: &AppState, h: &HeaderMap) -> Result<Value> {
+    let mut timing = CeremonyTimer::new("login_options");
     auth::origin(h, &s.config)?;
     let (src, factor) = source(h);
     auth::rate(&s.pool, &format!("passkey-options:src:{src}"), 60 * factor).await?;
-    let (id, challenge) = new_challenge(s, "LOGIN", None, None).await?;
+    timing.section("origin_rate");
+    let (id, challenge) = new_challenge(&s.pool, "LOGIN", None, None).await?;
+    timing.section("challenge");
     Ok(json!({
         "challenge_id": id,
         "public_key": {
@@ -341,7 +379,8 @@ pub async fn step_up(
 pub async fn step_up_options(s: &AppState, h: &HeaderMap) -> Result<Value> {
     let a = auth::actor(&s.pool, h, &s.config, true).await?;
     auth::rate(&s.pool, &format!("passkey-step-up:{}", a.user), 20).await?;
-    let (id, challenge) = new_challenge(s, "STEP_UP", Some(a.user), Some(&a.session_hash)).await?;
+    let (id, challenge) =
+        new_challenge(&s.pool, "STEP_UP", Some(a.user), Some(&a.session_hash)).await?;
     Ok(
         json!({"challenge_id":id,"public_key":{"challenge":challenge,"rpId":rp_id(s)?,
         "timeout":CHALLENGE_SECONDS*1000,"userVerification":"required","allowCredentials":[]}}),
@@ -378,6 +417,7 @@ async fn authenticate(
     i: LoginInput,
     actor: Option<auth::Actor>,
 ) -> Result<(HeaderMap, Json<Value>)> {
+    let mut timing = CeremonyTimer::new(if actor.is_some() { "step_up" } else { "login" });
     auth::origin(h, &s.config)?;
     let (src, factor) = source(h);
     auth::rate(
@@ -394,12 +434,17 @@ async fn authenticate(
     ) else {
         return Err(Error::Unauthorized);
     };
+    timing.section("origin_rate_decode");
+    // Reuse the lookup connection for the transaction; all locks and checks
+    // still run in their original order and READ COMMITTED statements.
+    let mut connection = s.pool.acquire().await?;
     let email_user = match i.email.as_deref().map(str::trim).filter(|e| !e.is_empty()) {
-        Some(e) => Some(crate::pii::user_by_email(&s.payout_keys, &s.pool, e).await?),
+        Some(e) => Some(crate::pii::user_by_email(&s.payout_keys, &mut *connection, e).await?),
         None => None,
     };
+    timing.section("email");
     let rp = rp_id(s)?;
-    let mut tx = s.pool.begin().await?;
+    let mut tx = sqlx::Connection::begin(&mut *connection).await?;
     let Some(challenge_hash) = consume(
         &mut tx,
         i.challenge_id,
@@ -411,6 +456,7 @@ async fn authenticate(
     else {
         return Err(Error::InvalidCode("PASSKEY_CHALLENGE_INVALID"));
     };
+    timing.section("begin_consume");
     // Acquire the account lock before the credential lock, matching removal
     // and session revocation. Otherwise session issuance's user FK can deadlock
     // with a simultaneous credential removal.
@@ -429,6 +475,7 @@ async fn authenticate(
     .bind(&cred)
     .fetch_optional(&mut *tx)
     .await?;
+    timing.section("owner_credential_locks");
     let verified = row.and_then(|r| {
         let user: Uuid = r.get("user_id");
         let stored: i64 = r.get("sign_count");
@@ -454,6 +501,7 @@ async fn authenticate(
             backup_eligible: data.flags & FLAG_BE != 0,
         })
     });
+    timing.section("verification");
     let Some(v) = verified else {
         operations::audit(
             &mut tx,
@@ -477,6 +525,7 @@ async fn authenticate(
     .bind(v.backup_eligible)
     .execute(&mut *tx)
     .await?;
+    timing.section("counter_update");
     if let Some(a) = actor {
         let token = auth::random_token();
         sqlx::query("DELETE FROM identity.passkey_proofs WHERE expires_at<now()")
@@ -500,7 +549,9 @@ async fn authenticate(
             Json(json!({"reauth_token":token,"expires_in":300})),
         ));
     }
-    auth::issue_session(s, tx, h, v.user, "PASSKEY", true).await
+    let result = auth::issue_session(s, tx, h, v.user, "PASSKEY", true).await;
+    timing.section("session_audit_commit");
+    result
 }
 
 // ---------------------------------------------------------------------------
@@ -509,16 +560,16 @@ async fn authenticate(
 
 pub async fn list(s: &AppState, h: &HeaderMap) -> Result<Value> {
     let a = auth::actor(&s.pool, h, &s.config, false).await?;
-    list_for(s, a.user).await
+    list_for(&s.pool, a.user).await
 }
 
-async fn list_for(s: &AppState, user: Uuid) -> Result<Value> {
+async fn list_for<'e>(db: impl sqlx::PgExecutor<'e>, user: Uuid) -> Result<Value> {
     let rows = sqlx::query(
         "SELECT id,name,authenticator_name,backed_up,authenticator_attachment,transports,backup_eligible,created_at,last_used_at FROM identity.passkeys
           WHERE user_id=$1 ORDER BY created_at",
     )
     .bind(user)
-    .fetch_all(&s.pool)
+    .fetch_all(db)
     .await?;
     let items: Vec<Value> = rows
         .iter()
@@ -540,18 +591,26 @@ async fn list_for(s: &AppState, user: Uuid) -> Result<Value> {
 }
 
 pub async fn register_options(s: &AppState, h: &HeaderMap) -> Result<Value> {
+    let mut timing = CeremonyTimer::new("register_options");
     let a = auth::actor(&s.pool, h, &s.config, true).await?;
     auth::rate(&s.pool, &format!("passkey-register:{}", a.user), 20).await?;
+    timing.section("actor_rate");
+    // Reuse a validated connection across the measured sequential metadata
+    // and challenge reads, preserving their original statement order.
+    let mut connection = s.pool.acquire().await?;
     let existing: Vec<Vec<u8>> =
         sqlx::query_scalar("SELECT credential_id FROM identity.passkeys WHERE user_id=$1")
             .bind(a.user)
-            .fetch_all(&s.pool)
+            .fetch_all(&mut *connection)
             .await?;
     if existing.len() as i64 >= MAX_PER_USER {
         return Err(Error::PolicyGate("PASSKEY_LIMIT"));
     }
-    let email = crate::pii::user_email(&s.payout_keys, &s.pool, a.user).await?;
-    let (id, challenge) = new_challenge(s, "REGISTER", Some(a.user), None).await?;
+    timing.section("credentials");
+    let email = crate::pii::user_email(&s.payout_keys, &mut *connection, a.user).await?;
+    timing.section("email");
+    let (id, challenge) = new_challenge(&mut *connection, "REGISTER", Some(a.user), None).await?;
+    timing.section("challenge");
     let params: Vec<Value> = ALGS
         .iter()
         .map(|alg| json!({"type": "public-key", "alg": alg}))
@@ -600,6 +659,11 @@ pub struct RegisterInput {
 }
 
 pub async fn register(s: &AppState, h: &HeaderMap, i: RegisterInput) -> Result<Value> {
+    let mut timing = CeremonyTimer::new(if i.reauth_token.is_some() {
+        "register_proof"
+    } else {
+        "register_password"
+    });
     let current_password = zeroize::Zeroizing::new(i.current_password);
     let a = auth::actor(&s.pool, h, &s.config, true).await?;
     auth::rate(&s.pool, &format!("passkey-register:{}", a.user), 20).await?;
@@ -628,6 +692,7 @@ pub async fn register(s: &AppState, h: &HeaderMap, i: RegisterInput) -> Result<V
     ) else {
         return Err(Error::InvalidCode("PASSKEY_INVALID"));
     };
+    timing.section("actor_rate_decode");
     // A fresh passkey proof can replace emergency password verification.
     let password_hash = if i.reauth_token.is_none() {
         let hash: String = sqlx::query_scalar(
@@ -657,8 +722,12 @@ pub async fn register(s: &AppState, h: &HeaderMap, i: RegisterInput) -> Result<V
     } else {
         None
     };
+    timing.section("reauth_password");
     let rp = rp_id(s)?;
-    let mut tx = s.pool.begin().await?;
+    // Acquire only after password work, and reuse after commit for the response
+    // list. No pooled connection is held during Argon2 or its semaphore wait.
+    let mut connection = s.pool.acquire().await?;
+    let mut tx = sqlx::Connection::begin(&mut *connection).await?;
     // One registration at a time per account (the limit below holds).
     if let Some(proof) = &i.reauth_token {
         consume_proof(&mut tx, &a, proof).await?;
@@ -672,11 +741,13 @@ pub async fn register(s: &AppState, h: &HeaderMap, i: RegisterInput) -> Result<V
     if let Some(hash) = password_hash {
         auth::current_password(&mut tx, a.user, &hash).await?;
     }
+    timing.section("transaction_reauth_locks");
     let Some(challenge_hash) =
         consume(&mut tx, i.challenge_id, "REGISTER", Some(a.user), None).await?
     else {
         return Err(Error::InvalidCode("PASSKEY_CHALLENGE_INVALID"));
     };
+    timing.section("consume");
     let data = auth_data(&ad, &rp);
     // Passkeys are added in the studio only (the admin site cannot reach this route).
     let ok = client_data_ok(
@@ -694,6 +765,7 @@ pub async fn register(s: &AppState, h: &HeaderMap, i: RegisterInput) -> Result<V
         return Err(Error::InvalidCode("PASSKEY_INVALID"));
     }
     let data = data.ok_or(Error::Internal)?;
+    timing.section("verification");
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM identity.passkeys WHERE user_id=$1")
         .bind(a.user)
         .fetch_one(&mut *tx)
@@ -701,6 +773,7 @@ pub async fn register(s: &AppState, h: &HeaderMap, i: RegisterInput) -> Result<V
     if count >= MAX_PER_USER {
         return Err(Error::PolicyGate("PASSKEY_LIMIT"));
     }
+    timing.section("count");
     let authenticator_name = data.aaguid.and_then(authenticator_name);
     let name = authenticator_name.unwrap_or(&name);
     let inserted = sqlx::query(
@@ -726,6 +799,7 @@ pub async fn register(s: &AppState, h: &HeaderMap, i: RegisterInput) -> Result<V
     if inserted != 1 {
         return Err(Error::InvalidCode("PASSKEY_ALREADY_REGISTERED"));
     }
+    timing.section("insert");
     operations::audit(
         &mut tx,
         Some(a.user),
@@ -736,8 +810,12 @@ pub async fn register(s: &AppState, h: &HeaderMap, i: RegisterInput) -> Result<V
         a.request,
     )
     .await?;
+    timing.section("audit");
     tx.commit().await?;
-    list_for(s, a.user).await
+    timing.section("commit");
+    let result = list_for(&mut *connection, a.user).await;
+    timing.section("list");
+    result
 }
 
 #[derive(Deserialize)]
@@ -780,7 +858,7 @@ pub async fn rename(s: &AppState, h: &HeaderMap, id: Uuid, i: RenameInput) -> Re
     )
     .await?;
     tx.commit().await?;
-    list_for(s, a.user).await
+    list_for(&s.pool, a.user).await
 }
 
 pub async fn remove(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<Value> {
@@ -830,7 +908,7 @@ pub async fn remove(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<Value> {
     )
     .await?;
     tx.commit().await?;
-    list_for(s, a.user).await
+    list_for(&s.pool, a.user).await
 }
 
 #[cfg(test)]
