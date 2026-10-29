@@ -6,6 +6,13 @@ import { currentPath } from './lib/router';
 import { isPublicPath } from './lib/publicRoute';
 import { isChunkError } from './lib/chunkRecovery';
 
+// '지금 새로고침'(SystemStatus)이 캐시를 건너뛰려고 붙인 표시는 열리자마자 주소에서 지운다
+if (/[?&]__r=/.test(location.search)) {
+  const u = new URL(location.href);
+  u.searchParams.delete('__r');
+  history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+}
+
 const root = document.getElementById('root');
 if (!root) throw new Error('#root 요소를 찾을 수 없어요.');
 
