@@ -161,11 +161,14 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .aq-bundle:not(.is-compact) .aq-bundle-docs li:not(.is-done) .aq-bundle-no{background:var(--aq-blue-150);color:var(--aq-blue-500)}
 
 /* 권리·보완 서류 — 숫자 칸 3개·주황 카드 대신: 보완 요청은 위 알림 줄 하나, 서류는 계정 정보 화면 같은 옅은 파랑 카드 안의 줄 */
-.aq-doc-alert{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;width:100%;margin:0 0 12px;padding:14px 16px;border:0;border-radius:var(--aq-r-lg);background:var(--aq-amber-50);color:var(--aq-amber-700);font:inherit;text-align:left;cursor:pointer;transition:background-color .2s ease}
+.aq-doc-alert{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:14px;width:100%;margin:0 0 14px;padding:18px 18px 18px 20px;border:0;border-radius:var(--aq-r-2xl);background:var(--aq-amber-50);color:var(--aq-text);font:inherit;text-align:left;cursor:pointer;transition:background-color .2s ease}
 @media(hover:hover){.aq-doc-alert:hover{background:var(--aq-amber-100)}}
-.aq-doc-alert .min-0{display:grid;gap:2px}
-.aq-doc-alert strong{font-size:var(--aq-fs-lg);font-weight:700}
-.aq-doc-alert small{font-size:var(--aq-fs-sm);color:var(--aq-text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 보완 알림 — 홈 '먼저 할 일'처럼 옅은 주황 면 + 흰 아이콘 칸, 제목은 진한 글자, 사유는 두 줄까지 */
+.aq-doc-alert .ui-icon{--ic:44px;--tone-bg:#fff;--tone-fg:var(--aq-amber-700)}
+.aq-doc-alert .min-0{display:grid;gap:3px}
+.aq-doc-alert strong{color:var(--aq-text);font-size:var(--aq-fs-lg);font-weight:var(--aq-fw-bold);line-height:1.4}
+.aq-doc-alert small{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;color:var(--aq-text-3);font-size:var(--aq-fs-sm);line-height:1.5}
+.aq-doc-alert>.aq-glyph:last-child{color:var(--aq-amber-700)}
 .aq-doc-list{padding:6px;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
 .aq-doc-list>h2{display:flex;align-items:baseline;gap:6px;margin:0;padding:14px 14px 6px;font-size:var(--aq-fs-md);font-weight:700;letter-spacing:0;color:var(--aq-text-3)}
 .aq-doc-list>h2 small{margin-left:auto;font-size:var(--aq-fs-xs);font-weight:600;color:var(--aq-text-4)}

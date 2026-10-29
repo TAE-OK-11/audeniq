@@ -162,7 +162,7 @@ export function Rights() {
 
       {fix > 0 && (
         <button type="button" className="aq-doc-alert" onClick={() => setOpenId(fixDocs[0].id)}>
-          <Glyph name="alert" size={18} />
+          <span className="ui-icon" aria-hidden="true"><Glyph name="doc" size={18} /></span>
           <span className="min-0">
             <strong>보완 요청 {fix}건이 있어요</strong>
             <small>{fixDocs[0].reviewNote || '요청 사유를 확인하고 새 원본을 제출해 주세요.'}</small>
