@@ -363,6 +363,7 @@ impl SftpTransport {
 impl FileTransport for SftpTransport {
     async fn put_all(&self, uploads: &[Upload]) -> TResult<()> {
         let tmp = tempdir()?;
+        let _cleanup = ScratchDir(tmp.clone());
         let mut script = String::new();
         let mut made = std::collections::BTreeSet::new();
         for (i, u) in uploads.iter().enumerate() {
@@ -432,6 +433,7 @@ impl FileTransport for SftpTransport {
             return Err(TransportError::Failed("invalid path".into()));
         }
         let tmp = tempdir()?;
+        let _cleanup = ScratchDir(tmp.clone());
         let local = tmp.join("download");
         let script = format!(
             "get {} {}\n",
@@ -467,9 +469,23 @@ impl FileTransport for SftpTransport {
     }
 }
 
+/// Covers early errors and cancellation as well as the normal async cleanup.
+/// SIGKILL leftovers are handled by temp_sweep.
+struct ScratchDir(PathBuf);
+
+impl Drop for ScratchDir {
+    fn drop(&mut self) {
+        if let Err(error) = std::fs::remove_dir_all(&self.0)
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!("SFTP scratch cleanup failed; deferred to temp sweep");
+        }
+    }
+}
+
 fn tempdir() -> TResult<PathBuf> {
     let p = std::env::temp_dir().join(format!("audeniq-xfer-{}", uuid::Uuid::new_v4().simple()));
-    std::fs::create_dir_all(&p).map_err(|e| TransportError::Failed(e.to_string()))?;
+    std::fs::create_dir(&p).map_err(|e| TransportError::Failed(e.to_string()))?;
     Ok(p)
 }
 

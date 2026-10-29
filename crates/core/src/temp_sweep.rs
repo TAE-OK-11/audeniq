@@ -12,14 +12,24 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-/// Older than any live use: the longest job (a DSP transfer or a decode) is
-/// bounded at an hour, and a live staging directory is touched as it fills.
+/// Default grace period for upload and delivery staging leftovers.
 pub const MAX_AGE: Duration = Duration::from_secs(6 * 3600);
 
+// SftpTransport permits six-hour transfers. Its inline files stop touching
+// the scratch directory before the transfer starts, so allow an extra hour.
+const TRANSFER_MAX_AGE: Duration = Duration::from_secs(7 * 3600);
+
 /// Removes `audeniq-*` entries directly under `dir` last modified more than
-/// `max_age` ago. Returns how many were removed. Symlinks are removed, never
-/// followed.
+/// `max_age` ago (at least seven hours for SFTP scratch directories). Returns
+/// how many were removed. Symlinks are removed, never followed.
 pub fn sweep(dir: &Path, max_age: Duration) -> usize {
+    // A misconfigured or replaced sweep root must not redirect deletion.
+    let Ok(root) = std::fs::symlink_metadata(dir) else {
+        return 0;
+    };
+    if !root.is_dir() || root.file_type().is_symlink() {
+        return 0;
+    }
     let Ok(entries) = std::fs::read_dir(dir) else {
         return 0;
     };
@@ -31,6 +41,15 @@ pub fn sweep(dir: &Path, max_age: Duration) -> usize {
         }
         let Ok(meta) = std::fs::symlink_metadata(entry.path()) else {
             continue;
+        };
+        let max_age = if entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with("audeniq-xfer-")
+        {
+            max_age.max(TRANSFER_MAX_AGE)
+        } else {
+            max_age
         };
         let stale = meta
             .modified()
@@ -47,9 +66,9 @@ pub fn sweep(dir: &Path, max_age: Duration) -> usize {
         };
         match result {
             Ok(()) => removed += 1,
-            Err(error) => {
-                tracing::warn!(path = %entry.path().display(), %error, "stale temp entry not removed")
-            }
+            // API and worker may sweep the same volume concurrently.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => tracing::warn!("stale temp entry not removed"),
         }
     }
     removed
@@ -76,6 +95,34 @@ pub fn spawn(dirs: Vec<std::path::PathBuf>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_symlink_roots_and_never_follows_entry_symlinks() {
+        use std::os::unix::fs::symlink;
+        let root = std::env::temp_dir().join(format!("sweep-test-{}", uuid::Uuid::new_v4()));
+        let target = root.join("target");
+        let scratch = root.join("scratch");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::create_dir(&scratch).unwrap();
+        std::fs::write(target.join("audeniq-keep"), b"keep").unwrap();
+        symlink(&target, root.join("linked-root")).unwrap();
+        symlink(&target, scratch.join("audeniq-link")).unwrap();
+        assert_eq!(sweep(&root.join("linked-root"), Duration::ZERO), 0);
+        assert_eq!(sweep(&scratch, Duration::ZERO), 1);
+        assert!(target.join("audeniq-keep").exists());
+        assert_eq!(sweep(&scratch, Duration::ZERO), 0);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn transfer_scratch_has_grace_beyond_the_six_hour_transfer_limit() {
+        let root = std::env::temp_dir().join(format!("sweep-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("audeniq-xfer-live")).unwrap();
+        assert_eq!(sweep(&root, Duration::ZERO), 0);
+        assert!(root.join("audeniq-xfer-live").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn removes_only_old_audeniq_entries() {
