@@ -26,6 +26,21 @@ const PASSWORD: &str = "Long-test-password-123!";
 const RP: &str = "localhost";
 const ADMIN: &str = "http://admin.localhost:5174";
 
+async fn app(pool: PgPool) -> (Router, std::sync::Arc<MemStore>) {
+    static CONFIG: std::sync::Once = std::sync::Once::new();
+    CONFIG.call_once(|| {
+        // Initialize once before any test app reads keys or caches admin origin.
+        // This test binary always uses these same fixture values.
+        unsafe {
+            std::env::set_var("PAYOUT_ACCOUNT_KEY", "3a".repeat(32));
+            std::env::set_var("STAFF_MFA_REQUIRED", "true");
+            std::env::set_var("ADMIN_ORIGIN", ADMIN);
+            std::env::set_var("PASSKEY_RP_ID", RP);
+        }
+    });
+    support::app(pool).await
+}
+
 enum Key {
     Ec(EcdsaKeyPair),
     Ed(Ed25519KeyPair),
@@ -128,6 +143,18 @@ async fn enroll(
     password: &str,
     proof: Option<&str>,
 ) -> (StatusCode, Value) {
+    enroll_metadata(app, u, a, password, proof, 0x45, json!({})).await
+}
+
+async fn enroll_metadata(
+    app: &Router,
+    u: &User,
+    a: &Authenticator,
+    password: &str,
+    proof: Option<&str>,
+    flags: u8,
+    metadata: Value,
+) -> (StatusCode, Value) {
     let (s, o) = send(
         app,
         "POST",
@@ -142,24 +169,22 @@ async fn enroll(
     assert_eq!(pk["authenticatorSelection"]["userVerification"], "required");
     assert_eq!(pk["user"]["id"], B64.encode(u.user.as_bytes()));
     let cdj = client_data("webauthn.create", pk["challenge"].as_str().unwrap(), ORIGIN);
-    send(
-        app,
-        "POST",
-        "/api/auth/passkeys/register",
-        json!({
-            "challenge_id": o["challenge_id"],
-            "current_password": password,
-            "reauth_token": proof,
-            "name": "테스트 기기",
-            "credential_id": B64.encode(&a.id),
-            "client_data_json": B64.encode(&cdj),
-            "authenticator_data": B64.encode(a.auth_data(0x45, true)),
-            "public_key": B64.encode(a.spki()),
-            "alg": a.alg(),
-        }),
-        Some(u),
-    )
-    .await
+    let mut input = json!({
+        "challenge_id": o["challenge_id"],
+        "current_password": password,
+        "reauth_token": proof,
+        "name": "테스트 기기",
+        "credential_id": B64.encode(&a.id),
+        "client_data_json": B64.encode(&cdj),
+        "authenticator_data": B64.encode(a.auth_data(flags, true)),
+        "public_key": B64.encode(a.spki()),
+        "alg": a.alg(),
+    });
+    input
+        .as_object_mut()
+        .unwrap()
+        .extend(metadata.as_object().unwrap().clone());
+    send(app, "POST", "/api/auth/passkeys/register", input, Some(u)).await
 }
 
 struct Assertion {
@@ -273,14 +298,6 @@ async fn step_up(app: &Router, u: &User, a: &Authenticator) -> Value {
 
 #[sqlx::test]
 async fn sign_in_with_email_and_passkey_instead_of_password(pool: PgPool) {
-    // Safety: this test binary only ever sets these values.
-    unsafe {
-        std::env::set_var("PAYOUT_ACCOUNT_KEY", "3a".repeat(32));
-        std::env::set_var("STAFF_MFA_REQUIRED", "true");
-        // One passkey for both sites: the RP ID is their common parent.
-        std::env::set_var("ADMIN_ORIGIN", ADMIN);
-        std::env::set_var("PASSKEY_RP_ID", RP);
-    }
     let (app, _) = app(pool.clone()).await;
     let u = user(&app).await;
     let keys = audeniq_core::payout_keys::KeyRing::from_env(false).unwrap();
@@ -526,11 +543,6 @@ async fn sign_in_with_email_and_passkey_instead_of_password(pool: PgPool) {
 
 #[sqlx::test]
 async fn signup_profiles_optional_passkeys_and_fresh_reauthentication(pool: PgPool) {
-    unsafe {
-        std::env::set_var("PAYOUT_ACCOUNT_KEY", "3a".repeat(32));
-        std::env::set_var("PASSKEY_RP_ID", RP);
-        std::env::set_var("ADMIN_ORIGIN", ADMIN);
-    }
     let (app, _) = app(pool.clone()).await;
     for (account_type, org_kind, party_kind) in [
         ("personal", "PERSONAL", "PERSON"),
@@ -842,11 +854,6 @@ fn authenticator_data_checks_rp_and_reads_the_credential_id() {
 
 #[sqlx::test]
 async fn provider_names_are_stored_and_listed_without_exposing_credentials(pool: PgPool) {
-    unsafe {
-        std::env::set_var("PAYOUT_ACCOUNT_KEY", "3a".repeat(32));
-        std::env::set_var("PASSKEY_RP_ID", RP);
-        std::env::set_var("ADMIN_ORIGIN", ADMIN);
-    }
     let (app, _) = app(pool.clone()).await;
     let u = user(&app).await;
     for (aaguid, expected) in [
@@ -960,11 +967,6 @@ async fn challenge_cleanup_is_bounded_skips_locks_and_preserves_live_hashes(pool
 
 #[sqlx::test]
 async fn registration_rejects_a_challenge_expiring_while_waiting_for_account_lock(pool: PgPool) {
-    unsafe {
-        std::env::set_var("PAYOUT_ACCOUNT_KEY", "3a".repeat(32));
-        std::env::set_var("PASSKEY_RP_ID", RP);
-        std::env::set_var("ADMIN_ORIGIN", ADMIN);
-    }
     let (app, _) = app(pool.clone()).await;
     let u = user(&app).await;
     let first = Authenticator::ed_synced();
@@ -1043,4 +1045,174 @@ async fn registration_rejects_a_challenge_expiring_while_waiting_for_account_loc
         .await
         .unwrap();
     assert_eq!(count, 1);
+}
+
+#[sqlx::test]
+async fn authenticator_metadata_and_backup_flags(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let a = Authenticator::ed_synced();
+    let (status, registered) = enroll_metadata(
+        &app, &u, &a, PASSWORD, None, 0x4d,
+        json!({"authenticator_attachment":"cross-platform", "transports":["usb","nfc","ble","hybrid","internal"]}),
+    ).await;
+    assert_eq!(status, StatusCode::OK, "{registered}");
+    let item = &registered["items"][0];
+    assert_eq!(item["authenticator_attachment"], "cross-platform");
+    assert_eq!(
+        item["transports"],
+        json!(["usb", "nfc", "ble", "hybrid", "internal"])
+    );
+    assert_eq!(item["backup_eligible"], true);
+    assert_eq!(item["synced"], false);
+    let id = item["id"].as_str().unwrap();
+    let stored: (Option<String>, Option<Vec<String>>, Option<bool>, bool) = sqlx::query_as(
+        "SELECT authenticator_attachment,transports,backup_eligible,backed_up FROM identity.passkeys WHERE credential_id=$1")
+        .bind(&a.id).fetch_one(&pool).await.unwrap();
+    assert_eq!(stored.0.as_deref(), Some("cross-platform"));
+    assert_eq!(
+        stored.1.unwrap(),
+        vec!["usb", "nfc", "ble", "hybrid", "internal"]
+    );
+    assert_eq!((stored.2, stored.3), (Some(true), false));
+    // Cloud sync turns on, then off. BE is refreshed too, including legacy NULLs.
+    sqlx::query("UPDATE identity.passkeys SET backup_eligible=NULL WHERE credential_id=$1")
+        .bind(&a.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    for (flags, eligible, synced) in [(0x1d, true, true), (0x05, false, false)] {
+        let (status, body, _) = login(
+            &app,
+            &a,
+            Assertion {
+                flags,
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let stored: (Option<bool>, bool) = sqlx::query_as(
+            "SELECT backup_eligible,backed_up FROM identity.passkeys WHERE credential_id=$1",
+        )
+        .bind(&a.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(stored, (Some(eligible), synced));
+        let (status, list) = send(&app, "GET", "/api/auth/passkeys", Value::Null, Some(&u)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(list["items"][0]["backup_eligible"], eligible);
+        assert_eq!(list["items"][0]["synced"], synced);
+    }
+    // Rejected assertions must not change the stored display hints.
+    let (status, _, _) = login(
+        &app,
+        &a,
+        Assertion {
+            flags: 0x1d,
+            origin: "https://invalid.example",
+            ..Default::default()
+        },
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let stored: (Option<bool>, bool) = sqlx::query_as(
+        "SELECT backup_eligible,backed_up FROM identity.passkeys WHERE credential_id=$1",
+    )
+    .bind(&a.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(stored, (Some(false), false));
+    let (status, renamed) = send(
+        &app,
+        "PATCH",
+        &format!("/api/auth/passkeys/{id}"),
+        json!({"name":"Renamed"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{renamed}");
+    assert_eq!(renamed["items"][0]["transports"], item["transports"]);
+    assert_eq!(
+        renamed["items"][0]["authenticator_attachment"],
+        item["authenticator_attachment"]
+    );
+    let b = Authenticator::ec();
+    let (status, legacy_input) = register(&app, &u, &b, PASSWORD).await;
+    assert_eq!(status, StatusCode::OK, "{legacy_input}");
+    let item = legacy_input["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"] != id)
+        .unwrap();
+    assert!(item["authenticator_attachment"].is_null());
+    assert!(item["transports"].is_null());
+    assert_eq!(item["backup_eligible"], false);
+    // Rows predating 0165 serialize all new fields as explicit NULL.
+    sqlx::query("UPDATE identity.passkeys SET backup_eligible=NULL WHERE credential_id=$1")
+        .bind(&b.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (status, removed) = send(
+        &app,
+        "DELETE",
+        &format!("/api/auth/passkeys/{id}"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{removed}");
+    for field in ["authenticator_attachment", "transports", "backup_eligible"] {
+        assert_eq!(removed["items"][0].get(field), Some(&Value::Null));
+    }
+}
+
+#[sqlx::test]
+async fn registration_metadata_validation(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    for metadata in [
+        json!({"authenticator_attachment":"unknown"}),
+        json!({"transports":["unknown"]}),
+        json!({"transports":["usb", "usb", "usb", "usb", "usb", "usb"]}),
+    ] {
+        let (status, body) = enroll_metadata(
+            &app,
+            &u,
+            &Authenticator::ec(),
+            PASSWORD,
+            None,
+            0x45,
+            metadata,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert_eq!(body["error"]["code"], "PASSKEY_INVALID");
+    }
+    for metadata in [
+        json!({"authenticator_attachment":"platform", "transports":[]}),
+        json!({"authenticator_attachment":null, "transports":null}),
+    ] {
+        let (status, body) = enroll_metadata(
+            &app,
+            &u,
+            &Authenticator::ec(),
+            PASSWORD,
+            None,
+            0x45,
+            metadata.clone(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let item = body["items"].as_array().unwrap().last().unwrap();
+        assert_eq!(
+            item["authenticator_attachment"],
+            metadata["authenticator_attachment"]
+        );
+        assert_eq!(item["transports"], metadata["transports"]);
+    }
 }

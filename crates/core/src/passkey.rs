@@ -36,6 +36,7 @@ const CHALLENGE_SECONDS: i32 = 300;
 const MAX_PER_USER: i64 = 10;
 const FLAG_UP: u8 = 0x01;
 const FLAG_UV: u8 = 0x04;
+const FLAG_BE: u8 = 0x08;
 const FLAG_BS: u8 = 0x10;
 const FLAG_AT: u8 = 0x40;
 /// COSE algorithm ids, preferred first.
@@ -321,6 +322,7 @@ struct Verified {
     user: Uuid,
     sign_count: u32,
     backed_up: bool,
+    backup_eligible: bool,
 }
 
 pub async fn login(s: &AppState, h: &HeaderMap, i: LoginInput) -> Result<(HeaderMap, Json<Value>)> {
@@ -449,6 +451,7 @@ async fn authenticate(
             user,
             sign_count: data.sign_count,
             backed_up: data.flags & FLAG_BS != 0,
+            backup_eligible: data.flags & FLAG_BE != 0,
         })
     });
     let Some(v) = verified else {
@@ -466,11 +469,12 @@ async fn authenticate(
         return Err(Error::Unauthorized);
     };
     sqlx::query(
-        "UPDATE identity.passkeys SET sign_count=$2,backed_up=$3,last_used_at=now() WHERE id=$1",
+        "UPDATE identity.passkeys SET sign_count=$2,backed_up=$3,backup_eligible=$4,last_used_at=now() WHERE id=$1",
     )
     .bind(v.passkey)
     .bind(i64::from(v.sign_count))
     .bind(v.backed_up)
+    .bind(v.backup_eligible)
     .execute(&mut *tx)
     .await?;
     if let Some(a) = actor {
@@ -510,7 +514,7 @@ pub async fn list(s: &AppState, h: &HeaderMap) -> Result<Value> {
 
 async fn list_for(s: &AppState, user: Uuid) -> Result<Value> {
     let rows = sqlx::query(
-        "SELECT id,name,authenticator_name,backed_up,created_at,last_used_at FROM identity.passkeys
+        "SELECT id,name,authenticator_name,backed_up,authenticator_attachment,transports,backup_eligible,created_at,last_used_at FROM identity.passkeys
           WHERE user_id=$1 ORDER BY created_at",
     )
     .bind(user)
@@ -523,6 +527,9 @@ async fn list_for(s: &AppState, user: Uuid) -> Result<Value> {
                 "id": r.get::<Uuid, _>("id"),
                 "name": r.get::<String, _>("name"),
                 "authenticator_name": r.get::<Option<String>, _>("authenticator_name"),
+                "authenticator_attachment": r.get::<Option<String>, _>("authenticator_attachment"),
+                "transports": r.get::<Option<Vec<String>>, _>("transports"),
+                "backup_eligible": r.get::<Option<bool>, _>("backup_eligible"),
                 "synced": r.get::<bool, _>("backed_up"),
                 "created_at": r.get::<chrono::DateTime<chrono::Utc>, _>("created_at"),
                 "last_used_at": r.get::<Option<chrono::DateTime<chrono::Utc>>, _>("last_used_at"),
@@ -587,6 +594,9 @@ pub struct RegisterInput {
     pub public_key: String,
     /// `getPublicKeyAlgorithm()` (COSE).
     pub alg: i32,
+    /// Browser-reported display hints only; never used for authentication decisions.
+    pub authenticator_attachment: Option<String>,
+    pub transports: Option<Vec<String>>,
 }
 
 pub async fn register(s: &AppState, h: &HeaderMap, i: RegisterInput) -> Result<Value> {
@@ -596,6 +606,18 @@ pub async fn register(s: &AppState, h: &HeaderMap, i: RegisterInput) -> Result<V
     let name = i.name.trim().to_owned();
     if name.is_empty() || name.chars().count() > 60 || current_password.len() > 128 {
         return Err(Error::Invalid);
+    }
+    if i.authenticator_attachment
+        .as_deref()
+        .is_some_and(|v| !matches!(v, "platform" | "cross-platform"))
+        || i.transports.as_ref().is_some_and(|values| {
+            values.len() > 5
+                || values
+                    .iter()
+                    .any(|v| !matches!(v.as_str(), "usb" | "nfc" | "ble" | "hybrid" | "internal"))
+        })
+    {
+        return Err(Error::InvalidCode("PASSKEY_INVALID"));
     }
     crate::text_policy::check(&name)?;
     let (Some(cred), Some(cdj), Some(ad), Some(spki)) = (
@@ -682,8 +704,8 @@ pub async fn register(s: &AppState, h: &HeaderMap, i: RegisterInput) -> Result<V
     let authenticator_name = data.aaguid.and_then(authenticator_name);
     let name = authenticator_name.unwrap_or(&name);
     let inserted = sqlx::query(
-        "INSERT INTO identity.passkeys(id,user_id,credential_id,public_key,alg,sign_count,backed_up,name,aaguid,authenticator_name)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(credential_id) DO NOTHING",
+        "INSERT INTO identity.passkeys(id,user_id,credential_id,public_key,alg,sign_count,backed_up,name,aaguid,authenticator_name,authenticator_attachment,transports,backup_eligible)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT(credential_id) DO NOTHING",
     )
     .bind(Uuid::new_v4())
     .bind(a.user)
@@ -695,6 +717,9 @@ pub async fn register(s: &AppState, h: &HeaderMap, i: RegisterInput) -> Result<V
     .bind(name)
     .bind(data.aaguid.filter(|id| !id.is_nil()))
     .bind(authenticator_name)
+    .bind(i.authenticator_attachment)
+    .bind(i.transports)
+    .bind(data.flags & FLAG_BE != 0)
     .execute(&mut *tx)
     .await?
     .rows_affected();
