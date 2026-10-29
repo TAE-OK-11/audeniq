@@ -629,14 +629,23 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 /* 비밀번호 조건을 이름표 오른쪽에 — 칸 아래 한 줄을 줄였다 */
 label>.aq-pw-rule{float:right;margin-top:2px;font-size:12px;font-weight:600}
 label>.aq-pw-rule[data-score="1"]{color:var(--aq-amber-600,#B7791F)}
-/* 로그인·회원가입(단계마다)·계정 찾기·패스키 — 카드 높이를 모두 같게. 내용이 짧으면 아래 링크 줄이 카드 바닥에 붙는다.
-   휴대폰은 로그인 카드 높이(600px, 아이폰 Safari 한 화면 안), PC는 로그인 카드 높이 */
-.auth-card.ui-card{display:flex;flex-direction:column;min-height:676px}
+/* 로그인·회원가입(단계마다)·계정 찾기·패스키 — 카드 높이를 모두 같게(--auth-card-h). 내용이 짧으면 아래 링크 줄이 카드 바닥에 붙는다.
+   화면이 낮으면(휴대폰, 가로로 든 태블릿, 노트북) 카드 모양은 그대로 두고 여백·칸·아이콘만 조금씩 줄여
+   로고부터 아래 저작권 줄까지 한 화면에 들어오게 한다. 높이 값은 가장 긴 화면(로그인·가입 1단계)에 맞췄다 */
+.auth-page{--auth-card-h:636px}
+.auth-card.ui-card{display:flex;flex-direction:column;min-height:var(--auth-card-h)}
 .auth-card.ui-card>*{flex:none}
 .auth-card.ui-card>.auth-links{margin-top:auto;padding-top:24px}
-@media (max-width:760px){
-  .auth-card.ui-card{min-height:600px}
-  .auth-page .auth-card.ui-card>.auth-links{margin-top:auto;padding-top:10px}
+@media (max-width:760px),(max-height:860px){
+  .auth-page{--auth-card-h:556px;padding-top:20px;padding-bottom:20px}
+  .auth-page>.aq-auth-brand{margin-bottom:14px}
+  .auth-page .auth-card.ui-card{--aq-field-h:52px;padding-top:26px;padding-bottom:22px}
+  .auth-page .aq-auth-head{margin-bottom:20px}
+  .auth-page .aq-auth-head .ui-icon{--ic:46px;margin-bottom:14px}
+  .auth-page .auth-card .ui-field{margin-bottom:14px}
+  .auth-page .aq-passkey-alt{margin-top:14px;gap:12px}
+  .auth-page .auth-card.ui-card>.auth-links{padding-top:14px}
+  .auth-page>.auth-foot{margin-top:18px}
 }
 /* 개인정보 안내 — 첫 줄 + '자세히'(누르면 펼침) */
 details.auth-privacy>summary{display:block;cursor:pointer;list-style:none}
