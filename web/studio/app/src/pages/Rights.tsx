@@ -149,14 +149,14 @@ export function Rights() {
 
   return (
     <div id="view-rights" className="view">
-      <div className="ui-page-head">
+      <div className="ui-page-head aq-head-inline">
         <div>
           <p className="eyebrow">계약·권리</p>
           <h1>권리·보완 서류</h1>
           <p>발매별 권리 증빙을 내고, 보완 요청에 답해요.</p>
         </div>
         <button type="button" className="ui-btn is-primary" onClick={() => setFormOpen(true)}>
-          <Glyph name="plus" size={14} />권리 서류 작성·제출
+          <Glyph name="plus" size={14} />새 서류
         </button>
       </div>
 
