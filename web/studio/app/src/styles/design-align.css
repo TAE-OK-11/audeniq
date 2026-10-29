@@ -1863,3 +1863,10 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 @media(max-width:760px){
   .aq-doc-toolbar .row-actions .ui-btn{--btn-h:var(--aq-h-sm);--btn-r:var(--aq-r-ctl-sm);--btn-px:14px;--btn-fs:13px}
 }
+
+/* 발매 신청 6단계 최종 확인 — 항목마다 따로 카드가 8개 넘게 쌓이지 않게, 옅은 파랑 카드 하나에 구분선으로 (PC는 두 칸 배치 그대로) */
+@media(max-width:1023px){
+  #view-new .step-section>.aq-catalog-cards:has(.aq-review-card){gap:0!important;padding:4px 18px;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
+  #view-new .step-section>.aq-catalog-cards>.aq-review-card{margin:0!important;padding:16px 0;border-radius:0;background:none;border-bottom:1px solid var(--aq-blue-150)}
+  #view-new .step-section>.aq-catalog-cards>.aq-review-card:last-child{border-bottom:0}
+}
