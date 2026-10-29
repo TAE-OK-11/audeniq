@@ -1957,7 +1957,14 @@ export function Upload() {
     if (vt?.finished) vt.finished.then(done, done); else done();
   };
 
-  const goStep = (to: number) => {
+  // 수익 분배에 저장하지 않은 입력이 있으면 단계를 옮기기 전에 대신 저장한다 — 예전엔 '다음으로'를 누르면 조용히 사라졌다.
+  // 입력이 잘못됐으면(이름·비율) 그 단계에 머물고 이유를 보여 준다
+  const splitsSave = useRef<(() => Promise<boolean>) | null>(null);
+  const registerSplitsSave = useCallback((fn: (() => Promise<boolean>) | null) => { splitsSave.current = fn; }, []);
+  const flushSplits = async () => !splitsSave.current || splitsSave.current();
+
+  const goStep = async (to: number) => {
+    if (to !== step && !(await flushSplits())) return;
     setStep(to);
     setReached(r => Math.max(r, to));
     setError('');
@@ -2785,7 +2792,7 @@ export function Upload() {
             {!dsps && <p className="ui-field-help" role="status">{dspError || '플랫폼 목록을 서버에서 불러오는 중이에요.'}</p>}
             {/* 공동작업자 수익 분배 — 정산은 배급 조건이라 권리 확인이 아니라 여기서 정한다. 임시 저장된 발매(서버의 곡 목록)를 기준으로 */}
             {draftIdRef.current
-              ? <SplitsCard releaseId={draftIdRef.current} embedded />
+              ? <SplitsCard releaseId={draftIdRef.current} embedded registerSave={registerSplitsSave} />
               : !MOCK && <p className="small muted">임시 저장이 끝나면 공동작업자 수익 분배를 정할 수 있어요.</p>}
             <div className="aq-fix-zone"><OptionsSection form={form} set={set} group="service" onDocument={attachOptionDocument} uploads={uploads} onElectronic={kind => void openElectronic(kind)} onOpenDoc={setOpenDocId} releaseId={draftIdRef.current ?? undefined} onGuardian={() => void openGuardian()} /></div>
           </section>

@@ -16,6 +16,10 @@ export interface LiveOptions {
 
 const MAX_FAILS = 3;
 const RETRY_LIVE_MS = 120_000;
+/** 서버의 20초 keep-alive는 SSE 주석이라 EventSource가 화면에 알려 주지 않는다 — 대신 연결이 끊겼을 법한 순간에 직접 다시 붙는다:
+ *  인터넷 복귀, 오래(1분) 다른 탭·앱에 있다 돌아옴, 기기가 잠들었다 깸(타이머가 크게 밀림). 다시 붙으면 'ready'가 놓친 변경을 따라잡는다 */
+const AWAY_MS = 60_000;
+const TICK_MS = 15_000;
 
 /** 연결을 닫는 함수 — connected()로 지금 실시간 연결이 살아 있는지 알 수 있다 */
 export type LiveHandle = (() => void) & { connected: () => boolean };
@@ -60,11 +64,35 @@ export function openLive(path: string, opts: LiveOptions): LiveHandle {
     };
   };
 
+  const reconnect = () => {
+    if (stopped || poll) return; // 대체 주기 새로 고침 중이면 그쪽이 다시 시도한다
+    es?.close(); es = null;
+    fails = 0;
+    connect();
+  };
+  let hiddenAt = 0;
+  const onVisible = () => {
+    if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
+    if (hiddenAt && Date.now() - hiddenAt > AWAY_MS) reconnect();
+    hiddenAt = 0;
+  };
+  let lastTick = Date.now();
+  const tick = window.setInterval(() => {
+    const now = Date.now();
+    if (now - lastTick > TICK_MS * 3) reconnect(); // 잠들었다 깸
+    lastTick = now;
+  }, TICK_MS);
+  window.addEventListener('online', reconnect);
+  document.addEventListener('visibilitychange', onVisible);
+
   connect();
   const stop = () => {
     stopped = true;
     es?.close(); es = null;
     stopFallback();
+    window.clearInterval(tick);
+    window.removeEventListener('online', reconnect);
+    document.removeEventListener('visibilitychange', onVisible);
   };
   return Object.assign(stop, { connected: () => es?.readyState === 1 /* EventSource.OPEN */ });
 }
