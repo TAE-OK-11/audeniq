@@ -107,18 +107,35 @@ function noticeSymbol(kind: string) {
   return <Glyph size={17} name={kind === '지급' ? 'won' : kind === '발매' ? 'music' : kind === '서류' ? 'doc' : kind === '문의' ? 'mail' : kind === '계정' ? 'user' : 'bell'} />;
 }
 
+/** 누르면 무엇을 하게 되는지 — 카드 아래 파란 한 줄로 (어디로 가는지 몰라 내용을 다시 읽어야 했다) */
+function noticeAction(n: Notice): string {
+  const to = n.link ?? '';
+  if (!to) return '내용 보기';
+  if (to.startsWith('/releases')) return /보완/.test(n.title) ? '보완하러 가기' : '발매 보기';
+  if (to.startsWith('/contracts')) return '계약서 보기';
+  if (to.startsWith('/rights')) return '서류 보기';
+  if (to.startsWith('/settlement')) return '정산 보기';
+  if (to.startsWith('/inquiries')) return '답변 보기';
+  if (to.startsWith('/reports')) return '리포트 보기';
+  if (to.startsWith('/upload')) return '이어서 작성하기';
+  if (to.startsWith('/artist')) return '아티스트 페이지 보기';
+  if (to.startsWith('/profile')) return '계정 정보 보기';
+  if (to.startsWith('/notices')) return '공지 보기';
+  if (to.startsWith('/events')) return '이벤트 보기';
+  return '자세히 보기';
+}
+
 /** 알림 카드 하나 — 누르면 관련 화면으로 바로 간다(관련 화면이 없을 때만 내용 창).
- * 분류는 아이콘으로만, 시각은 제목 줄 오른쪽 — 세 줄(분류·시각 / 제목 / 설명)에 꺾쇠·점까지 한 줄에 놓여 글자 자리가 좁고 빽빽했다 */
+ * 큰 제목 · 설명 · 할 일 한 줄. 분류는 아이콘, 시각은 제목 위 작은 글자 */
 function NoticeCard({ n, onOpen }: { n: Notice; onOpen: (n: Notice) => void }) {
   return (
     <button type="button" className={`aq-notice-card${n.read ? ' is-read' : ''}`} onClick={() => onOpen(n)} aria-label={`${n.kind || '안내'} 알림${n.read ? '' : ', 읽지 않음'}: ${n.title}`}>
       <span className="aq-notice-symbol" aria-hidden="true">{noticeSymbol(n.kind)}{!n.read && <i className="aq-unread" />}</span>
       <span className="aq-notice-copy">
-        <span className="aq-notice-top">
-          <strong>{n.title}</strong>
-          <time dateTime={n.time}>{relativeTime(n.time) || n.time}</time>
-        </span>
+        <span className="aq-notice-meta">{n.kind || '안내'} · <time dateTime={n.time}>{relativeTime(n.time) || n.time}</time></span>
+        <strong>{n.title}</strong>
         {n.detail && <span className="aq-notice-detail">{n.detail}</span>}
+        <span className="aq-notice-go">{noticeAction(n)}<Glyph name="chevron-right" size={14} /></span>
       </span>
     </button>
   );
@@ -160,11 +177,11 @@ export function Notifications() {
 
   return (
     <div id="view-notifications" className="view">
-      <div className="ui-page-head">
+      {/* 설명 줄 없이 짧게 — 머리가 길어 알림이 늦게 보였다 */}
+      <div className="ui-page-head aq-notice-pagehead">
         <div>
           <p className="eyebrow">계정·지원</p>
           <h1>알림</h1>
-          <p>발매·정산·서류에 생긴 변화를 알려 드려요. 누르면 관련 화면으로 바로 이동해요.</p>
         </div>
       </div>
 
