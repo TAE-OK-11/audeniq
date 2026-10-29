@@ -23,6 +23,7 @@ const STATUS_EVERY_MS = 60_000;
 // 점검·서버 장애 중에는 같은 간격으로 상태를 확인해, 복구되면 전체 화면을 자동으로 내린다.
 const STATUS_DURING_SERVER_DOWN_MS = 30_000;
 const VERSION_EVERY_MS = 5 * 60_000;
+const VERSION_MIN_GAP_MS = 60_000;
 /** ‘지금 새로고침’을 누른 대상 버전 — 새로고침 뒤에도 같은 차이면 다시 묻지 않는다 */
 const RELOADED_FOR_KEY = 'aq-update-reloaded-for';
 
@@ -222,9 +223,12 @@ export function SystemStatus({ children }: { children: ReactNode }) {
     const mine = currentEntry();
     if (!mine) return;
     let busy = false;
+    // 탭을 자주 오가도 index를 매번 받지 않게 — 마지막 확인 뒤 1분이 지났을 때만
+    let lastAt = Date.now();
     const check = async () => {
-      if (busy || document.visibilityState !== 'visible') return;
+      if (busy || document.visibilityState !== 'visible' || Date.now() - lastAt < VERSION_MIN_GAP_MS) return;
       busy = true;
+      lastAt = Date.now();
       const latest = await latestEntry();
       busy = false;
       // 이 버전으로 가려고 이미 새로고침했는데도 그대로면(엣지·브라우저 캐시가 옛 화면을 준 경우) 다시 묻지 않는다 —

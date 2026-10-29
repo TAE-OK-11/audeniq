@@ -11,7 +11,7 @@ import { setPayment } from './payment';
 import { EMPTY_ACCOUNT, setAccount } from './account';
 import { noticesStore } from './support';
 import { ticketsStore } from './tickets';
-import { setDocs } from './docs';
+import { getDocsSnapshot, setDocs } from './docs';
 import { financeListsLoaded, financeStore, payoutsStore, statementsNextStore, statementsStore } from './settlement';
 
 export const PORTAL_REFRESH_EVENT = 'aq:portal-refresh';
@@ -19,17 +19,22 @@ export const PORTAL_REFRESH_EVENT = 'aq:portal-refresh';
 
 const quiet = <T,>(p: Promise<T>) => p.catch(err => { console.warn('[portal]', err); return undefined; });
 
+/** 새로 받은 목록이 지금과 같으면 그대로 둔다 — 주기 새로 고침마다 머리글·메뉴가 통째로 다시 그려지지 않게 */
+const setIfChanged = <T,>(store: { get: () => T; set: (v: T) => void }, next: T) => {
+  if (JSON.stringify(store.get()) !== JSON.stringify(next)) store.set(next);
+};
+
 export async function refreshNotifications() {
   const n = await quiet(portal.fetchNotifications());
-  if (n) noticesStore.set(n);
+  if (n) setIfChanged(noticesStore, n);
 }
 export async function refreshTickets() {
   const t = await quiet(portal.fetchInquiries());
-  if (t) ticketsStore.set(t);
+  if (t) setIfChanged(ticketsStore, t);
 }
 export async function refreshDocs() {
   const d = await quiet(portal.fetchDocuments());
-  if (d) setDocs(d);
+  if (d && JSON.stringify(getDocsSnapshot()) !== JSON.stringify(d)) setDocs(d);
 }
 /** 잔액 요약만 새로 받는다 (로그인할 때 — 내역 목록은 정산·지급 화면이 refreshFinance로 받는다) */
 export async function refreshFinanceSummary() {
@@ -111,7 +116,7 @@ async function refreshNotificationsAndAlert() {
 }
 
 /** 처음 채운 직후에는 실시간 연결의 첫 'ready'가 같은 목록(알림·문의·서류)을 또 받지 않게 한다 — 로그인할 때마다 세 번씩 더 불렀다.
- *  채운 요청과 연결 사이 아주 짧은 틈에 생긴 변경은 다음 실시간 이벤트·주기 새로 고침(알림·서류 60초)이 따라잡는다 */
+ *  채운 요청과 연결 사이 아주 짧은 틈에 생긴 변경은 다음 실시간 이벤트·주기 새로 고침(알림·서류, 실시간 연결 중에는 5분·끊기면 60초)이 따라잡는다 */
 const RESYNC_AFTER_HYDRATE_MS = 5_000;
 
 export function startPortalSync(): () => void {
@@ -132,21 +137,24 @@ export function startPortalSync(): () => void {
       if (Date.now() - hydratedAt < RESYNC_AFTER_HYDRATE_MS) return;
       void refreshNotifications(); void refreshTickets(); void refreshDocs();
     },
-  }) : () => {};
+  }) : null;
   // 탭·앱을 자주 오가도 알림 요청은 15초에 한 번만 (Worker·API 호출 절약)
   let last = Date.now();
-  const refresh = () => {
-    if (Date.now() - last < 15_000) return;
+  const refresh = (gap = 15_000) => {
+    if (Date.now() - last < gap) return;
     last = Date.now();
     void refreshNotificationsAndDocs();
   };
-  const timer = window.setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, 60_000);
-  const onFocus = refresh;
+  // 실시간 연결이 살아 있으면 바뀔 때 알려 주므로 주기 새로 고침은 5분에 한 번만 (끊긴 줄 모르는 연결 대비)
+  const timer = window.setInterval(() => {
+    if (document.visibilityState === 'visible') refresh(stopLive?.connected() ? 5 * 60_000 : 15_000);
+  }, 60_000);
+  const onFocus = () => refresh();
   const onRefresh = () => { void Promise.all([refreshNotifications(), refreshDocs(), financeListsLoaded.get() ? refreshFinance() : refreshFinanceSummary(), refreshTickets()]); };
   window.addEventListener('focus', onFocus);
   window.addEventListener(PORTAL_REFRESH_EVENT, onRefresh);
   return () => {
-    stopLive();
+    stopLive?.();
     window.clearInterval(timer);
     window.removeEventListener('focus', onFocus);
     window.removeEventListener(PORTAL_REFRESH_EVENT, onRefresh);

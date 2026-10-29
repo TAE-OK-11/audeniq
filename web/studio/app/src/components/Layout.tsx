@@ -25,7 +25,8 @@ function ViewEnter({ pathname, children }: { pathname: string; children: ReactNo
     if (!el) return;
     if (first.current) { first.current = false; return; } // 첫 마운트는 CSS가 자동 재생
     el.classList.remove('view-enter');
-    void el.offsetWidth; // reflow로 애니메이션 리트리거
+    // 스타일만 다시 계산해 애니메이션을 처음부터 — offsetWidth는 새 화면 전체의 배치까지 미리 계산하게 했다
+    void getComputedStyle(el).animationName;
     el.classList.add('view-enter');
   }, [pathname]);
   return <div ref={ref} className="view-enter">{children}</div>;
@@ -113,6 +114,9 @@ export function Layout({ children }: { children: ReactNode }) {
   // 무언가 바꾼 뒤(캐시를 비움), 새 알림이 왔을 때(담당자 처리), 다른 탭·앱에서 돌아왔을 때(15초에 한 번), 메뉴를 열 때.
   // 화면들과 같은 발매 목록 캐시('releases')를 쓴다 — 발매 목록·홈 화면이 받은 목록이 그대로 개수에 반영된다
   const [menuOpen, setMenuOpen] = useState(false);
+  // 메뉴를 연 횟수 — 열 때만 새로 받는다 (menuOpen을 그대로 쓰면 닫을 때도 한 번 더 받았다)
+  const [menuOpens, setMenuOpens] = useState(0);
+  useEffect(() => { if (menuOpen) setMenuOpens(n => n + 1); }, [menuOpen]);
   const cacheClears = useCacheClears();
   const notices = useNotices();
   const latestNotice = `${notices.length}:${notices[0]?.id ?? ''}:${notices.at(-1)?.id ?? ''}`;
@@ -127,7 +131,7 @@ export function Layout({ children }: { children: ReactNode }) {
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, []);
-  const { data: rels } = useAsync(() => api.listReleases(), [menuOpen, cacheClears, latestNotice, returned], { key: 'releases' });
+  const { data: rels } = useAsync(() => api.listReleases(), [menuOpens, cacheClears, latestNotice, returned], { key: 'releases' });
   const relCounts = useMemo(() => (rels ? {
     needs: rels.filter(r => r.status === 'needs').length,
     drafts: rels.filter(r => r.status === 'draft').length,

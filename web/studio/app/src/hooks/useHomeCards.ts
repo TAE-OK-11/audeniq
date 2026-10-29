@@ -4,10 +4,12 @@
 import { useEffect, useState } from 'react';
 import type { Release } from '../api/types';
 import { api } from '../api/client';
-import { orgPath, req } from '../api/http';
+import { orgId, orgPath, req } from '../api/http';
 import { fetchEvents, fetchNotices, loadContent } from '../api/content';
 import { MOCK } from '../lib/mode';
+import { cacheAge, cacheGet, cacheSet } from '../lib/asyncCache';
 import { deliverySummary, type DeliverySummary } from '../lib/delivery';
+import { HOME_FRESH_MS } from './useHomeSignals';
 import { pickNews, pickPromo, promoCandidates, type NewsItem, type PromoPick, type SmartLinkStats } from '../lib/home';
 
 export interface HomeCards {
@@ -22,11 +24,16 @@ interface SmartLinkState { link: { slug: string; enabled: boolean } | null; stat
 const DELIVERING = ['scheduled', 'live'];
 
 export function useHomeCards(releases: Release[], loading: boolean, upcoming: Release | undefined): HomeCards {
-  const [cards, setCards] = useState<HomeCards>({ news: [] });
   const key = releases.map(r => `${r.id}:${r.status}:${r.release_date ?? ''}`).join('|');
+  const cacheKey = `${orgId()}|home-cards|${key}|${upcoming?.id ?? ''}:${upcoming?.status ?? ''}`;
+  // 다시 들어온 홈은 지난번 카드를 바로 (useHomeSignals와 같은 규칙)
+  const [cards, setCards] = useState<HomeCards>(() => cacheGet<HomeCards>(cacheKey) ?? { news: [] });
 
   useEffect(() => {
     if (loading) return;
+    const cached = cacheGet<HomeCards>(cacheKey);
+    if (cached) setCards(cached);
+    if (cached && cacheAge(cacheKey) < HOME_FRESH_MS) return;
     let alive = true;
 
     const promo = MOCK ? Promise.resolve(undefined) : Promise.all(promoCandidates(releases).map(r =>
@@ -52,11 +59,13 @@ export function useHomeCards(releases: Release[], loading: boolean, upcoming: Re
     ]).then(([n, e]) => pickNews(n, e));
 
     void Promise.all([promo, delivery, news]).then(([p, d, n]) => {
-      if (alive) setCards({ promo: p, delivery: d, news: n });
+      const next = { promo: p, delivery: d, news: n };
+      cacheSet(cacheKey, next);
+      if (alive) setCards(next);
     });
     return () => { alive = false; };
-    // releases는 key로 본다
-  }, [key, loading, upcoming?.id, upcoming?.status]); // eslint-disable-line react-hooks/exhaustive-deps
+    // releases·upcoming은 cacheKey로 본다
+  }, [cacheKey, loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return cards;
 }

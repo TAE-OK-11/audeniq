@@ -17,7 +17,10 @@ export interface LiveOptions {
 const MAX_FAILS = 3;
 const RETRY_LIVE_MS = 120_000;
 
-export function openLive(path: string, opts: LiveOptions): () => void {
+/** 연결을 닫는 함수 — connected()로 지금 실시간 연결이 살아 있는지 알 수 있다 */
+export type LiveHandle = (() => void) & { connected: () => boolean };
+
+export function openLive(path: string, opts: LiveOptions): LiveHandle {
   const fallbackMs = opts.fallbackMs ?? 15_000;
   let es: EventSource | null = null;
   let fails = 0;
@@ -58,9 +61,10 @@ export function openLive(path: string, opts: LiveOptions): () => void {
   };
 
   connect();
-  return () => {
+  const stop = () => {
     stopped = true;
     es?.close(); es = null;
     stopFallback();
   };
+  return Object.assign(stop, { connected: () => es?.readyState === 1 /* EventSource.OPEN */ });
 }
