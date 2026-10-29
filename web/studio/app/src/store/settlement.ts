@@ -41,6 +41,8 @@ export const payoutsStore = createStore<Payout[]>(MOCK ? INITIAL_PAYOUTS : [], {
 /** held: 분쟁·중단으로 보류된 곡의 정산금 — 보류가 풀릴 때까지 요청할 수 없다 */
 export interface FinanceState { payable: number; pending: number; available: number; held: number; minimum: number; loaded: boolean }
 export const financeStore = createStore<FinanceState>({ payable: 0, pending: 0, available: 0, held: 0, minimum: 10000, loaded: false });
+/** 정산·지급 내역 목록을 받았는지 (실서버) — 로그인할 때는 요약만 받고, 목록은 정산·지급 화면을 열 때 받는다 */
+export const financeListsLoaded = createStore(false);
 
 /** 화면용 잔액 — 체험 모드는 기록 합계, 실서버는 원장 요약 */
 export function useBalance(): { total: number; used: number; left: number; minimum: number; held: number } {

@@ -12,7 +12,7 @@ import { EMPTY_ACCOUNT, setAccount } from './account';
 import { noticesStore } from './support';
 import { ticketsStore } from './tickets';
 import { setDocs } from './docs';
-import { financeStore, payoutsStore, statementsNextStore, statementsStore } from './settlement';
+import { financeListsLoaded, financeStore, payoutsStore, statementsNextStore, statementsStore } from './settlement';
 
 export const PORTAL_REFRESH_EVENT = 'aq:portal-refresh';
 
@@ -31,9 +31,15 @@ export async function refreshDocs() {
   const d = await quiet(portal.fetchDocuments());
   if (d) setDocs(d);
 }
+/** 잔액 요약만 새로 받는다 (로그인할 때 — 내역 목록은 정산·지급 화면이 refreshFinance로 받는다) */
+export async function refreshFinanceSummary() {
+  const s = await quiet(portal.fetchFinanceSummary());
+  if (s) financeStore.set({ ...s, loaded: true });
+}
 export async function refreshFinance() {
   const f = await quiet(portal.fetchFinance());
   if (!f) return;
+  financeListsLoaded.set(true);
   // '더 보기'로 받아 둔 이전 쪽은 주기적 새로고침에도 남긴다 (첫 쪽만 새로 받는다)
   const loadedMore = statementsNextStore.get() !== f.statementsNext && statementsStore.get().length > f.statements.length;
   if (loadedMore) {
@@ -64,7 +70,7 @@ export async function hydratePortal() {
     refreshNotifications(),
     refreshTickets(),
     refreshDocs(),
-    refreshFinance(),
+    refreshFinanceSummary(),
   ]);
 }
 
@@ -79,6 +85,7 @@ export function clearPortal() {
   statementsStore.set([]);
   statementsNextStore.set(null);
   payoutsStore.set([]);
+  financeListsLoaded.set(false);
   financeStore.set({ payable: 0, pending: 0, available: 0, held: 0, minimum: 10000, loaded: false });
 }
 
@@ -103,7 +110,12 @@ async function refreshNotificationsAndAlert() {
   }
 }
 
+/** 처음 채운 직후에는 실시간 연결의 첫 'ready'가 같은 목록(알림·문의·서류)을 또 받지 않게 한다 — 로그인할 때마다 세 번씩 더 불렀다.
+ *  채운 요청과 연결 사이 아주 짧은 틈에 생긴 변경은 다음 실시간 이벤트·주기 새로 고침(알림·서류 60초)이 따라잡는다 */
+const RESYNC_AFTER_HYDRATE_MS = 5_000;
+
 export function startPortalSync(): () => void {
+  const hydratedAt = Date.now();
   void hydratePortal();
   let path = '';
   try { path = orgPath('/live'); } catch { /* 작업 공간 없음 — 실시간 연결 없이 주기 새로 고침만 */ }
@@ -116,7 +128,10 @@ export function startPortalSync(): () => void {
       },
     },
     // 다시 연결되면 놓친 담당자 처리가 있을 수 있어 서류도 새로 받는다
-    resync: () => { void refreshNotifications(); void refreshTickets(); void refreshDocs(); },
+    resync: () => {
+      if (Date.now() - hydratedAt < RESYNC_AFTER_HYDRATE_MS) return;
+      void refreshNotifications(); void refreshTickets(); void refreshDocs();
+    },
   }) : () => {};
   // 탭·앱을 자주 오가도 알림 요청은 15초에 한 번만 (Worker·API 호출 절약)
   let last = Date.now();
@@ -127,7 +142,7 @@ export function startPortalSync(): () => void {
   };
   const timer = window.setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, 60_000);
   const onFocus = refresh;
-  const onRefresh = () => { void Promise.all([refreshNotifications(), refreshDocs(), refreshFinance(), refreshTickets()]); };
+  const onRefresh = () => { void Promise.all([refreshNotifications(), refreshDocs(), financeListsLoaded.get() ? refreshFinance() : refreshFinanceSummary(), refreshTickets()]); };
   window.addEventListener('focus', onFocus);
   window.addEventListener(PORTAL_REFRESH_EVENT, onRefresh);
   return () => {
