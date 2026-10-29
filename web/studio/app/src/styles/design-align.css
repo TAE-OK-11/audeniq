@@ -1855,3 +1855,18 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 @media(max-width:760px){
   .aq-doc-toolbar .row-actions .ui-btn{--btn-h:var(--aq-h-sm);--btn-r:var(--aq-r-ctl-sm);--btn-px:14px;--btn-fs:13px}
 }
+
+/* 알림 — 새 알림(안 읽음)과 지난 알림으로 나눠 할 일이 먼저 보이게. 지난 알림 카드는 한 단계 옅게,
+   설명은 두 줄까지(한 줄에서 잘려 열어 봐야 알던 것), 알림 받는 방법은 목록 아래로 */
+.aq-notice-sections{display:grid;gap:28px}
+.aq-notice-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:32px;margin:0 2px 10px}
+.aq-notice-head h2{margin:0;font-size:var(--aq-fs-lg);font-weight:var(--aq-fw-bold);color:var(--aq-text)}
+.aq-notice-head h2 span{margin-left:4px;color:var(--aq-blue-500)}
+.aq-notice-card .aq-notice-copy strong{white-space:normal}
+.aq-notice-card .aq-notice-detail{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal}
+.aq-notice-card.is-read{background:var(--aq-gray-25)}
+@media(hover:hover){.aq-notice-card.is-read:hover{background:var(--aq-gray-50)}}
+.aq-notice-sections .aq-pager{margin-top:-8px}
+.aq-notice-settings{display:grid;gap:10px;margin-top:36px}
+.aq-notice-settings:empty{display:none}
+.aq-notice-settings>.aq-alert-pref{margin:0}
