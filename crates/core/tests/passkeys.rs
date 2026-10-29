@@ -106,6 +106,25 @@ async fn register(
     a: &Authenticator,
     password: &str,
 ) -> (StatusCode, Value) {
+    enroll(app, u, a, password, None).await
+}
+
+async fn register_with_proof(
+    app: &Router,
+    u: &User,
+    a: &Authenticator,
+    proof: &str,
+) -> (StatusCode, Value) {
+    enroll(app, u, a, "", Some(proof)).await
+}
+
+async fn enroll(
+    app: &Router,
+    u: &User,
+    a: &Authenticator,
+    password: &str,
+    proof: Option<&str>,
+) -> (StatusCode, Value) {
     let (s, o) = send(
         app,
         "POST",
@@ -127,6 +146,7 @@ async fn register(
         json!({
             "challenge_id": o["challenge_id"],
             "current_password": password,
+            "reauth_token": proof,
             "name": "테스트 기기",
             "credential_id": B64.encode(&a.id),
             "client_data_json": B64.encode(&cdj),
@@ -224,6 +244,28 @@ async fn login(
         serde_json::from_slice(&bytes).unwrap_or(Value::Null),
         cookie,
     )
+}
+
+async fn step_up(app: &Router, u: &User, a: &Authenticator) -> Value {
+    let (status, o) = send(
+        app,
+        "POST",
+        "/api/auth/passkey/reauth/options",
+        json!({}),
+        Some(u),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{o}");
+    let cdj = client_data(
+        "webauthn.get",
+        o["public_key"]["challenge"].as_str().unwrap(),
+        ORIGIN,
+    );
+    let ad = a.auth_data(0x05, false);
+    let mut msg = ad.clone();
+    msg.extend_from_slice(&Sha256::digest(&cdj));
+    json!({"challenge_id":o["challenge_id"],"credential_id":B64.encode(&a.id),
+        "client_data_json":B64.encode(cdj),"authenticator_data":B64.encode(ad),"signature":B64.encode(a.sign(&msg))})
 }
 
 #[sqlx::test]
@@ -454,6 +496,321 @@ async fn sign_in_with_email_and_passkey_instead_of_password(pool: PgPool) {
     ] {
         assert!(actions.iter().any(|x| x == a), "{a}: {actions:?}");
     }
+    // The last passkey may be removed when a real emergency password remains.
+    let (_, list) = send(&app, "GET", "/api/auth/passkeys", Value::Null, Some(&u)).await;
+    let last = list["items"][0]["id"].as_str().unwrap();
+    let (status, v) = send(
+        &app,
+        "DELETE",
+        &format!("/api/auth/passkeys/{last}"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{v}");
+    assert!(v["items"].as_array().unwrap().is_empty());
+}
+
+#[sqlx::test]
+async fn signup_profiles_optional_passkeys_and_fresh_reauthentication(pool: PgPool) {
+    unsafe {
+        std::env::set_var("PAYOUT_ACCOUNT_KEY", "3a".repeat(32));
+        std::env::set_var("PASSKEY_RP_ID", RP);
+        std::env::set_var("ADMIN_ORIGIN", ADMIN);
+    }
+    let (app, _) = app(pool.clone()).await;
+    for (account_type, org_kind, party_kind) in [
+        ("personal", "PERSONAL", "PERSON"),
+        ("label", "LABEL", "LEGAL_ENTITY"),
+    ] {
+        let email = format!("{}@example.test", Uuid::new_v4());
+        let (status, v) = send(
+            &app,
+            "POST",
+            "/api/auth/register",
+            json!({
+                "email":email,"password":PASSWORD,"terms_version":"AUD-TERMS 2026.10.1",
+                "name":"Sample Artist","phone":"010-1234-5678","account_type":account_type
+            }),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{v}");
+        let user: Uuid = v["user_id"].as_str().unwrap().parse().unwrap();
+        let stored: (String, String, String, String, String, Option<chrono::DateTime<chrono::Utc>>) = sqlx::query_as(
+            "SELECT o.kind,p.kind,p.display_name,o.name,ph.phone_last4,ph.verified_at FROM identity.users u JOIN identity.parties p ON p.id=u.party_id JOIN identity.orgs o ON o.id=p.org_id JOIN portal.account_phones ph ON ph.user_id=u.id WHERE u.id=$1")
+            .bind(user).fetch_one(&pool).await.unwrap();
+        assert_eq!(
+            stored,
+            (
+                org_kind.into(),
+                party_kind.into(),
+                "Sample Artist".into(),
+                "Sample Artist".into(),
+                "5678".into(),
+                None
+            )
+        );
+        let phone_hash: String =
+            sqlx::query_scalar("SELECT phone_hash FROM portal.account_phones WHERE user_id=$1")
+                .bind(user)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            phone_hash,
+            audeniq_core::sms::phone_hash(SECRET, "01012345678")
+        );
+        let count: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM identity.passkeys WHERE user_id=$1")
+                .bind(user)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(count, 0, "skipping enrollment completes signup");
+        let (status, v) = send(
+            &app,
+            "POST",
+            "/api/auth/login",
+            json!({"email":email,"password":PASSWORD}),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{v}");
+    }
+    for profile in [
+        json!({"name":" "}),
+        json!({"name":"x".repeat(201)}),
+        json!({"phone":"invalid"}),
+        json!({"account_type":"company"}),
+    ] {
+        let mut body = json!({"email":format!("{}@example.test", Uuid::new_v4()),"password":PASSWORD,"terms_version":"AUD-TERMS 2026.10.1"});
+        body.as_object_mut()
+            .unwrap()
+            .extend(profile.as_object().unwrap().clone());
+        let (status, _) = send(&app, "POST", "/api/auth/register", body, None).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+    // The helper signs up without profile fields, then uses the emergency password.
+    let u = user(&app).await;
+    let first = Authenticator::ed_synced();
+    assert_eq!(register(&app, &u, &first, PASSWORD).await.0, StatusCode::OK);
+    let (status, v, cookie) = login(&app, &first, Assertion::default()).await;
+    assert_eq!(status, StatusCode::OK, "{v}");
+    let session = User {
+        cookie: cookie.unwrap(),
+        csrf: v["csrf_token"].as_str().unwrap().into(),
+        ..u.clone()
+    };
+    let assertion = step_up(&app, &session, &first).await;
+    let (status, proof) = send(
+        &app,
+        "POST",
+        "/api/auth/passkey/reauth",
+        assertion.clone(),
+        Some(&session),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{proof}");
+    let (_, replay) = send(
+        &app,
+        "POST",
+        "/api/auth/passkey/reauth",
+        assertion,
+        Some(&session),
+    )
+    .await;
+    assert_eq!(replay["error"]["code"], "PASSKEY_CHALLENGE_INVALID");
+    // A challenge issued to one session cannot be completed in another.
+    let bound = step_up(&app, &session, &first).await;
+    let (_, denied) = send(&app, "POST", "/api/auth/passkey/reauth", bound, Some(&u)).await;
+    assert_eq!(denied["error"]["code"], "PASSKEY_CHALLENGE_INVALID");
+    let expired = step_up(&app, &session, &first).await;
+    sqlx::query(
+        "UPDATE identity.webauthn_challenges SET expires_at=now()-interval '1 second' WHERE id=$1",
+    )
+    .bind(
+        expired["challenge_id"]
+            .as_str()
+            .unwrap()
+            .parse::<Uuid>()
+            .unwrap(),
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (_, denied) = send(
+        &app,
+        "POST",
+        "/api/auth/passkey/reauth",
+        expired,
+        Some(&session),
+    )
+    .await;
+    assert_eq!(denied["error"]["code"], "PASSKEY_CHALLENGE_INVALID");
+    let token = proof["reauth_token"].as_str().unwrap();
+    let second = Authenticator::ed_synced();
+    let (_, wrong_session) = register_with_proof(&app, &u, &second, token).await;
+    assert_eq!(wrong_session["error"]["code"], "PASSKEY_STEP_UP_REQUIRED");
+    let (status, v) = register_with_proof(&app, &session, &second, token).await;
+    assert_eq!(status, StatusCode::OK, "{v}");
+    let (_, replay) = register_with_proof(&app, &session, &Authenticator::ec(), token).await;
+    assert_eq!(replay["error"]["code"], "PASSKEY_STEP_UP_REQUIRED");
+    let assertion = step_up(&app, &session, &first).await;
+    let (_, proof) = send(
+        &app,
+        "POST",
+        "/api/auth/passkey/reauth",
+        assertion,
+        Some(&session),
+    )
+    .await;
+    let expired_token = proof["reauth_token"].as_str().unwrap();
+    sqlx::query("UPDATE identity.passkey_proofs SET expires_at=now()-interval '1 second' WHERE token_hash=$1")
+        .bind(audeniq_core::auth::hash_token(expired_token)).execute(&pool).await.unwrap();
+    let (_, denied) =
+        register_with_proof(&app, &session, &Authenticator::ec(), expired_token).await;
+    assert_eq!(denied["error"]["code"], "PASSKEY_STEP_UP_REQUIRED");
+    // Passkey sessions can access settings, revoke sessions and logout without a password.
+    assert_eq!(
+        send(&app, "GET", "/api/me/account", Value::Null, Some(&session))
+            .await
+            .0,
+        StatusCode::OK
+    );
+    let (status, listed) = send(
+        &app,
+        "GET",
+        "/api/auth/sessions",
+        Value::Null,
+        Some(&session),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{listed}");
+    let other = listed["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|v| v["current"] == false)
+        .unwrap();
+    let path = format!(
+        "/api/auth/sessions/{}/revoke",
+        other["id"].as_str().unwrap()
+    );
+    assert_eq!(
+        send(&app, "POST", &path, json!({}), Some(&session)).await.0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        send(&app, "GET", "/api/me", Value::Null, Some(&u)).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    let (_, list) = send(
+        &app,
+        "GET",
+        "/api/auth/passkeys",
+        Value::Null,
+        Some(&session),
+    )
+    .await;
+    let path = format!(
+        "/api/auth/passkeys/{}",
+        list["items"][0]["id"].as_str().unwrap()
+    );
+    let (status, renamed) = send(
+        &app,
+        "PATCH",
+        &path,
+        json!({"name":"Travel key"}),
+        Some(&session),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{renamed}");
+    assert_eq!(renamed["items"][0]["name"], "Travel key");
+    sqlx::query("UPDATE identity.users SET password_hash='!oauth' WHERE id=$1")
+        .bind(u.user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (_, list) = send(
+        &app,
+        "GET",
+        "/api/auth/passkeys",
+        Value::Null,
+        Some(&session),
+    )
+    .await;
+    let ids: Vec<String> = list["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v["id"].as_str().unwrap().into())
+        .collect();
+    assert_eq!(
+        send(
+            &app,
+            "DELETE",
+            &format!("/api/auth/passkeys/{}", ids[0]),
+            Value::Null,
+            Some(&session)
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let (_, blocked) = send(
+        &app,
+        "DELETE",
+        &format!("/api/auth/passkeys/{}", ids[1]),
+        Value::Null,
+        Some(&session),
+    )
+    .await;
+    assert_eq!(blocked["error"]["code"], "PASSKEY_LAST_SIGN_IN_METHOD");
+    let oauth_id = Uuid::new_v4();
+    sqlx::query("INSERT INTO identity.oauth_identities(id,provider,subject,user_id) VALUES($1,'google',$2,$3)")
+        .bind(oauth_id).bind(Uuid::new_v4().to_string()).bind(u.user).execute(&pool).await.unwrap();
+    let passkey_path = format!("/api/auth/passkeys/{}", ids[1]);
+    let oauth_path = format!("/api/auth/oauth/identities/{oauth_id}");
+    let (passkey_result, oauth_result) = tokio::join!(
+        send(&app, "DELETE", &passkey_path, Value::Null, Some(&session)),
+        send(&app, "DELETE", &oauth_path, Value::Null, Some(&session))
+    );
+    assert_eq!(
+        usize::from(passkey_result.0 == StatusCode::OK)
+            + usize::from(oauth_result.0 == StatusCode::OK),
+        1,
+        "concurrent removals must preserve one method: {passkey_result:?}, {oauth_result:?}"
+    );
+    let remaining: i64 = sqlx::query_scalar("SELECT (SELECT count(*) FROM identity.passkeys WHERE user_id=$1)+(SELECT count(*) FROM identity.oauth_identities WHERE user_id=$1)")
+        .bind(u.user).fetch_one(&pool).await.unwrap();
+    assert_eq!(remaining, 1);
+    assert_eq!(
+        send(
+            &app,
+            "POST",
+            "/api/auth/logout-all",
+            json!({}),
+            Some(&session)
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        send(
+            &app,
+            "GET",
+            "/api/auth/sessions",
+            Value::Null,
+            Some(&session)
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let emergency: i64 = sqlx::query_scalar("SELECT count(*) FROM operations.audit_events WHERE resource_id=$1 AND action='auth.emergency_password_login'").bind(u.user).fetch_one(&pool).await.unwrap();
+    assert!(emergency > 0);
 }
 
 #[test]

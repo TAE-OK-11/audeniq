@@ -453,6 +453,7 @@ fn safe_return(to: Option<&str>) -> String {
 pub struct StartInput {
     /// "login" (default) or "link" (connect to the signed-in account).
     pub mode: Option<String>,
+    pub reauth_token: Option<String>,
     pub return_to: Option<String>,
     /// Started from the sign-up page after agreeing to the required terms:
     /// a first sign-in may create the account. Otherwise it is sent there.
@@ -466,9 +467,18 @@ pub async fn start(s: &AppState, h: &HeaderMap, name: &str, i: StartInput) -> Re
     auth::origin(h, &s.config)?;
     let kind = kind(name)?;
     let p = provider(kind).ok_or(Error::PolicyGate("OAUTH_PROVIDER_NOT_CONFIGURED"))?;
+    let mut link_session = None;
     let user = match i.mode.as_deref() {
         None | Some("login") => None,
-        Some("link") => Some(auth::actor(&s.pool, h, &s.config, true).await?.user),
+        Some("link") => {
+            let a = auth::actor(&s.pool, h, &s.config, true).await?;
+            let mut tx = s.pool.begin().await?;
+            crate::passkey::consume_proof(&mut tx, &a, i.reauth_token.as_deref().unwrap_or(""))
+                .await?;
+            tx.commit().await?;
+            link_session = Some(a.session_hash);
+            Some(a.user)
+        }
         Some(_) => return Err(Error::Invalid),
     };
     let (src, factor) = match auth::client_ip_key(h) {
@@ -498,8 +508,8 @@ pub async fn start(s: &AppState, h: &HeaderMap, name: &str, i: StartInput) -> Re
         .execute(&s.pool)
         .await?;
     sqlx::query(
-        "INSERT INTO identity.oauth_states(id,state_hash,provider,purpose,user_id,nonce_hash,code_verifier,return_to,allow_signup,expires_at,terms_version,privacy_notice_version)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,now()+make_interval(secs=>$10),$11,$12)",
+        "INSERT INTO identity.oauth_states(id,state_hash,provider,purpose,user_id,nonce_hash,code_verifier,return_to,allow_signup,expires_at,terms_version,privacy_notice_version,session_hash)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,now()+make_interval(secs=>$10),$11,$12,$13)",
     )
     .bind(Uuid::new_v4())
     .bind(auth::hash_token(&state))
@@ -513,6 +523,7 @@ pub async fn start(s: &AppState, h: &HeaderMap, name: &str, i: StartInput) -> Re
     .bind(f64::from(STATE_SECONDS))
     .bind(i.terms_version.as_deref().map(str::trim))
     .bind(i.privacy_notice_version.as_deref().map(str::trim))
+    .bind(link_session)
     .execute(&s.pool)
     .await?;
     let challenge = B64.encode(Sha256::digest(verifier.as_bytes()));
@@ -544,6 +555,7 @@ pub struct CallbackParams {
 }
 
 struct Pending {
+    session_hash: Option<Vec<u8>>,
     purpose: String,
     user: Option<Uuid>,
     nonce_hash: Vec<u8>,
@@ -637,13 +649,14 @@ async fn consume(s: &AppState, kind: Kind, state: Option<&str>) -> Result<Option
     let row = sqlx::query(
         "UPDATE identity.oauth_states SET consumed_at=now()
           WHERE state_hash=$1 AND provider=$2 AND consumed_at IS NULL AND expires_at>now()
-          RETURNING purpose,user_id,nonce_hash,code_verifier,return_to,allow_signup,terms_version,privacy_notice_version",
+          RETURNING purpose,user_id,nonce_hash,code_verifier,return_to,allow_signup,terms_version,privacy_notice_version,session_hash",
     )
     .bind(auth::hash_token(state))
     .bind(kind.name())
     .fetch_optional(&s.pool)
     .await?;
     Ok(row.map(|r| Pending {
+        session_hash: r.get("session_hash"),
         purpose: r.get("purpose"),
         user: r.get("user_id"),
         nonce_hash: r.get("nonce_hash"),
@@ -675,6 +688,23 @@ async fn complete(
         })?;
     let email = claims.verified_email();
     let mut tx = s.pool.begin().await?;
+    if let Some(user) = pending.user {
+        sqlx::query("SELECT id FROM identity.users WHERE id=$1 FOR UPDATE")
+            .bind(user)
+            .execute(&mut *tx)
+            .await?;
+        // A logout/revocation while the provider is open cancels the link.
+        let live: Option<Uuid> = sqlx::query_scalar("SELECT user_id FROM identity.sessions WHERE token_hash=$1 AND user_id=$2 AND revoked_at IS NULL AND expires_at>now() FOR SHARE")
+            .bind(&pending.session_hash).bind(user).fetch_optional(&mut *tx).await?;
+        if live.is_none() {
+            return Err(Error::Unauthorized);
+        }
+    }
+    if pending.user.is_none() {
+        // Login takes the same account-before-identity order as unlink.
+        let _: Option<Uuid> = sqlx::query_scalar("SELECT u.id FROM identity.users u JOIN identity.oauth_identities i ON i.user_id=u.id WHERE i.provider=$1 AND i.subject=$2 FOR SHARE OF u")
+            .bind(kind.name()).bind(&claims.sub).fetch_optional(&mut *tx).await?;
+    }
     let existing: Option<(Uuid, Uuid, String)> = sqlx::query_as(
         "SELECT i.id,i.user_id,u.status FROM identity.oauth_identities i JOIN identity.users u ON u.id=i.user_id
           WHERE i.provider=$1 AND i.subject=$2 FOR UPDATE OF i",
@@ -827,16 +857,22 @@ async fn list_for(s: &AppState, user: Uuid) -> Result<Value> {
 pub async fn unlink(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<Value> {
     let a = auth::actor(&s.pool, h, &s.config, true).await?;
     let mut tx = s.pool.begin().await?;
+    sqlx::query("SELECT id FROM identity.users WHERE id=$1 FOR UPDATE")
+        .bind(a.user)
+        .execute(&mut *tx)
+        .await?;
+    // Read alternatives only after acquiring the lock, using a fresh snapshot.
     let others: bool = sqlx::query_scalar(
         "SELECT u.password_hash LIKE '$argon2%'
              OR EXISTS(SELECT 1 FROM identity.passkeys p WHERE p.user_id=u.id)
              OR EXISTS(SELECT 1 FROM identity.oauth_identities o WHERE o.user_id=u.id AND o.id<>$2)
-           FROM identity.users u WHERE u.id=$1 FOR UPDATE",
+           FROM identity.users u WHERE u.id=$1",
     )
     .bind(a.user)
     .bind(id)
     .fetch_one(&mut *tx)
     .await?;
+    auth::lock_current_session(&mut tx, &a).await?;
     if !others {
         return Err(Error::PolicyGate("OAUTH_LAST_SIGN_IN_METHOD"));
     }

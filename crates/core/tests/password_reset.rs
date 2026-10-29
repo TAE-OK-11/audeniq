@@ -155,6 +155,25 @@ async fn phone_registration_and_password_reset(pool: PgPool) {
     assert_eq!(a["sms_ready"], false);
 
     unsafe { std::env::set_var("SMS_PROVIDER", "test") };
+    // A signup-style pending number is visible but cannot recover a password.
+    sqlx::query("INSERT INTO portal.account_phones(user_id,phone_hash,phone_last4,verified_at) SELECT user_id,$2,'6789',NULL FROM identity.sessions WHERE token_hash=$1")
+        .bind(audeniq_core::auth::hash_token(u.cookie.split_once('=').unwrap().1))
+        .bind(audeniq_core::sms::phone_hash(SECRET,"01023456789"))
+        .execute(&pool).await.unwrap();
+    let (s, pending) = call(&app, "GET", "/api/me/account", Value::Null, Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{pending}");
+    assert_eq!(pending["phone"]["last4"], "6789");
+    assert!(pending["phone"]["verified_at"].is_null());
+    let (s, pending) = call(
+        &app,
+        "POST",
+        "/api/auth/password-reset/start",
+        json!({"email":u.email,"phone":phone}),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{pending}");
+    assert!(audeniq_core::sms::test_last_code(phone).is_none());
     // Register the phone (signed in).
     let (s, e) = call(
         &app,
