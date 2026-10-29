@@ -442,7 +442,7 @@ button.ui-avatar:hover{transform:scale(1.06);background:var(--aq-blue-200)}
 .ui-callout.is-neutral{--tone-bg:var(--aq-surface-2);--tone-fg:var(--aq-text-2)}
 
 /* ---------- 빈 상태 (EmptyState) ---------- */
-.ui-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;min-height:220px;padding:44px 28px;border-radius:var(--aq-r-2xl);background:var(--aq-surface);text-align:center;animation:aq-fade-up .4s var(--aq-ease) both}
+.ui-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;min-height:220px;padding:44px 28px;border-radius:var(--aq-r-2xl);background:var(--aq-surface);text-align:center;animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) both}
 .ui-empty .ui-icon{margin-bottom:14px}
 .ui-empty h2,.ui-empty h3{margin:0;font-size:var(--aq-fs-title);font-weight:var(--aq-fw-bold);letter-spacing:var(--aq-tracking-heading);color:var(--aq-text)}
 .ui-empty p{max-width:360px;margin:6px 0 0;font-size:var(--aq-fs-md);line-height:1.7;color:var(--aq-text-3)}
@@ -768,7 +768,7 @@ summary::-webkit-details-marker{display:none}
 .aq-otp-cell{position:relative;display:grid;place-items:center;height:56px;border-radius:14px;background:var(--aq-field);color:var(--aq-text);font-size:24px;font-weight:var(--aq-fw-bold);font-variant-numeric:tabular-nums;transition:background-color .15s ease,box-shadow .15s ease}
 .aq-otp-cell.is-active{background:#fff;box-shadow:inset 0 0 0 2px var(--aq-blue-500)}
 .aq-otp-cell.is-active:not(.is-filled)::after{content:"";width:2px;height:24px;border-radius:1px;background:var(--aq-blue-500);animation:aq-otp-caret 1s steps(1) infinite}
-.aq-otp-cell.is-filled{animation:aq-check-pop .22s var(--aq-e-spring)}
+.aq-otp-cell.is-filled{animation:aq-check-pop var(--aq-motion-base) var(--aq-enter)}
 @keyframes aq-otp-caret{50%{opacity:0}}
 @media(prefers-reduced-motion:reduce){.aq-otp-cell{animation:none!important}.aq-otp-cell.is-active::after{animation:none}}
 .aq-otp-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:-4px;font-size:var(--aq-fs-sm);color:var(--aq-blue-500);font-weight:var(--aq-fw-bold);font-variant-numeric:tabular-nums}
@@ -819,7 +819,7 @@ summary::-webkit-details-marker{display:none}
   .aq-picker.is-sheet{overflow:hidden}
   .aq-picker.is-sheet .aq-picker-box{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.99);box-shadow:0 calc(100vh + 30px) 0 100vh rgba(255,255,255,.99)}
 }
-.aq-picker.is-pop .aq-picker-box{position:fixed;overflow:auto;padding:6px;border-radius:var(--aq-r-xl);box-shadow:0 18px 44px -14px rgba(27,47,95,.3),0 0 0 1px rgba(23,27,41,.05);animation:aq-picker-pop .18s var(--aq-enter) both}
+.aq-picker.is-pop .aq-picker-box{position:fixed;overflow:auto;padding:6px;border-radius:var(--aq-r-xl);box-shadow:0 18px 44px -14px rgba(27,47,95,.3),0 0 0 1px rgba(23,27,41,.05);animation:aq-picker-pop var(--aq-motion-base) var(--aq-enter) both}
 .aq-picker-grip{display:block;width:38px;height:5px;margin:2px auto 12px;border-radius:3px;background:var(--aq-gray-150)}
 /* 시트 머리(손잡이·제목) — 상자 위 여백까지 덮으며 위에 붙는다 */
 .aq-picker-head{position:sticky;top:-8px;z-index:1;margin:-8px -12px 0;padding:8px 12px 10px;background:#fff}
@@ -1108,14 +1108,14 @@ legend{padding:0}
 .aq-picker.is-leaving{pointer-events:none;z-index:1199}
 .aq-picker.is-leaving.is-sheet{animation:aq-picker-scrim-out .22s ease forwards}
 .aq-picker.is-leaving.is-sheet .aq-picker-box{animation:aq-picker-down .22s cubic-bezier(.4,0,1,1) forwards}
-.aq-picker.is-leaving.is-pop .aq-picker-box{animation:aq-picker-pop-out .15s cubic-bezier(.4,0,1,1) forwards}
+.aq-picker.is-leaving.is-pop .aq-picker-box{animation:aq-picker-pop-out var(--aq-motion-short) var(--aq-exit) forwards}
 @media (prefers-reduced-motion:reduce){.aq-picker.is-leaving{display:none}}
 
 /* 탭 내용 — 누른 탭이 있는 쪽에서 들어온다 (lib/rowNav.ts가 is-from-right / is-from-left를 단다) */
 @keyframes aq-panel-from-right{from{opacity:.35;transform:translate3d(14px,0,0)}}
 @keyframes aq-panel-from-left{from{opacity:.35;transform:translate3d(-14px,0,0)}}
-.ui-tab-panel.is-from-right{animation:aq-panel-from-right .34s var(--aq-ease) both}
-.ui-tab-panel.is-from-left{animation:aq-panel-from-left .34s var(--aq-ease) both}
+.ui-tab-panel.is-from-right{animation:aq-panel-from-right var(--aq-motion-long) var(--aq-enter) both}
+.ui-tab-panel.is-from-left{animation:aq-panel-from-left var(--aq-motion-long) var(--aq-enter) both}
 @media (prefers-reduced-motion:reduce){.ui-tab-panel:is(.is-from-right,.is-from-left){animation:none}}
 
 /* 복사 버튼 — 누르면 잠깐 초록 '복사됨 ✓' (components/CopyButton.tsx) */

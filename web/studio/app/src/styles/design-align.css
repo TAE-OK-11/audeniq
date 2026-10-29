@@ -124,7 +124,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 }
 /* 빠진 입력칸은 흔들지 않고(옅은 빨강 면으로 이미 표시됨), 오류 안내는 살짝 떠오르기만 */
 .aq-invalid{animation:none}
-.aq-shake{animation:aq-fade-up .22s var(--aq-e-ease) both}
+.aq-shake{animation:aq-fade-up var(--aq-motion-base) var(--aq-enter) both}
 /* 큰 등장 하나만 길던 곳을 같은 박자로 */
 .auth-card{animation-duration:.45s}
 @media(hover:hover){.dashboard-grid .service-item:hover{background:var(--aq-blue-100)}}
@@ -336,7 +336,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 #view-new .aq-review-card .ui-btn.aq-review-edit{flex:none;position:static;margin:0;min-width:52px;font-size:13px}
 
 /* ---------- 접수 실패 ---------- */
-.aq-submit-error{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px 12px;margin-top:20px;padding:18px;border-radius:var(--aq-r-2xl);background:var(--aq-red-50);animation:aq-fade-up .32s var(--aq-e-spring) both}
+.aq-submit-error{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px 12px;margin-top:20px;padding:18px;border-radius:var(--aq-r-2xl);background:var(--aq-red-50);animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) both}
 .aq-submit-error-icon{display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:var(--aq-red-500);color:#fff}
 .aq-submit-error-text strong{display:block;margin:4px 0 4px;font-size:15px;letter-spacing:0;color:var(--aq-red-700)}
 .aq-submit-error-text p{margin:0;font-size:14px;line-height:1.6;color:var(--portal-ink);overflow-wrap:anywhere}
@@ -358,7 +358,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 @keyframes aq-menu-in{from{opacity:0;transform:translate3d(0,-8px,0) scale(.98)}to{opacity:1;transform:none}}
 @keyframes aq-menu-out{to{opacity:0;transform:translate3d(0,-6px,0) scale(.98)}}
 .portal-header #portalNav{transform-origin:calc(100% - 28px) 0;animation:aq-menu-in var(--aq-motion-base) var(--aq-enter) both!important}
-.portal-header #portalNav.is-closing{animation:aq-menu-out .15s cubic-bezier(.4,0,1,1) forwards!important;pointer-events:none}
+.portal-header #portalNav.is-closing{animation:aq-menu-out var(--aq-motion-short) var(--aq-exit) forwards!important;pointer-events:none}
 #portalNav.is-closing>*{animation:none}
 #portalNav .aq-nav-card button,#portalNav .aq-nav-me button{animation:none!important}
 @media (max-width:760px){
@@ -1328,7 +1328,7 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
 .aq-cheer-done{animation:aq-soft-pop var(--aq-motion-base) var(--aq-enter) both}
 .aq-cheer{border-radius:var(--aq-r-lg)}
 .aq-cheer.is-fresh{animation:aq-land-fade .5s cubic-bezier(.22,.61,.36,1) both,aq-cheer-glow 1.8s ease-out}
-.aq-cheer.is-leaving{animation:aq-leave .26s var(--aq-enter) forwards;pointer-events:none}
+.aq-cheer.is-leaving{animation:aq-leave var(--aq-motion-base) var(--aq-exit) forwards;pointer-events:none}
 .aq-cheer.is-hidden{transition:opacity var(--aq-dur) var(--aq-ease)}
 .aq-cheer-heart{animation:aq-soft-pop var(--aq-motion-base) var(--aq-enter) both}
 .aq-cheer-empty{display:grid;justify-items:center;gap:6px}
@@ -1373,7 +1373,7 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
 
 /* 스튜디오 관리 창 — 글쓰기↔목록이 부드럽게 바뀌고, 지운 줄은 접히듯 사라진다 */
 .aq-mgr-swap{animation:aq-soft-pop var(--aq-motion-long) var(--aq-enter) both}
-.aq-mgr-post.is-leaving{animation:aq-leave .26s var(--aq-enter) forwards;pointer-events:none}
+.aq-mgr-post.is-leaving{animation:aq-leave var(--aq-motion-base) var(--aq-exit) forwards;pointer-events:none}
 .aq-mgr-post.is-saved>.aq-post{animation:aq-saved-ring .9s ease-out .15s}
 .aq-mgr-actions .ui-btn{transition:background-color var(--aq-dur) var(--aq-ease),transform var(--aq-press-out) var(--aq-press-spring)}
 .aq-heart-pop{display:inline-flex;animation:aq-heart-pop .45s var(--aq-enter)}
@@ -2016,7 +2016,7 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 
 /* ---------- 기다림을 덜 느끼게 ----------
    목록 자리표시(SkeletonList)도 다른 자리표시처럼 150ms 뒤에 살며시 — 금방 오는 응답에는 아예 보이지 않아 깜빡이지 않는다 */
-.ui-skel-rows,.aq-acct-skel{animation:aq-fade-in .2s ease .15s both}
+.ui-skel-rows,.aq-acct-skel{animation:aq-fade-in var(--aq-motion-base) var(--aq-enter) .15s both}
 .aq-acct-skel .aq-skel-lines{padding:0}
 .aq-acct-skel .aq-skel-lines>.aq-skel{height:13px}
 .aq-acct-skel .aq-skel-lines>.aq-skel+.aq-skel{height:11px}

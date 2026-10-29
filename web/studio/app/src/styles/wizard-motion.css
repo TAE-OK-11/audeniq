@@ -14,7 +14,7 @@
   /* 보완 요청 패널은 제목과 함께 한 덩어리로 */
   #view-new .aq-fix-panel{animation:aq-wiz-step-in var(--aq-motion-base) var(--aq-enter) backwards}
   /* 오류 안내는 살짝 나타나고, 빠진 칸은 옅은 빨강으로 한 번 물든다 */
-  #view-new #wizardError.aq-shake{animation:aq-wiz-step-in .18s ease-out backwards}
+  #view-new #wizardError.aq-shake{animation:aq-wiz-step-in var(--aq-motion-base) var(--aq-enter) backwards}
   #view-new .aq-invalid:is(input,select,textarea){animation:aq-wiz-invalid 1.2s ease 1}
   #view-new .aq-invalid:not(input,select,textarea){animation:none}
 }
