@@ -5284,15 +5284,46 @@ async fn smart_link_public_page_counts_views_and_clicks(pool: PgPool) {
         .execute(&pool)
         .await
         .unwrap();
-        let (s, _) = call(
-            &ctx.app,
-            "GET",
-            &format!("{public}/cover"),
-            Value::Null,
-            None,
-        )
-        .await;
-        assert_eq!(s, StatusCode::OK);
+        // Public aliases redirect to a retained revision; follow it explicitly
+        // because the in-process Router does not follow HTTP redirects.
+        let alias = ctx
+            .app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("{public}/cover"))
+                    .header("x-audeniq-service", SECRET)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(alias.status(), StatusCode::TEMPORARY_REDIRECT);
+        assert_eq!(alias.headers()["cache-control"], "no-store");
+        let location = alias.headers()["location"].to_str().unwrap();
+        let sha: String = sqlx::query_scalar(
+            "SELECT sha256 FROM catalog.assets WHERE id=(SELECT artwork_asset_id FROM catalog.releases WHERE id=$1)",
+        ).bind(ctx.release).fetch_one(&pool).await.unwrap();
+        assert_eq!(location, format!("{public}/cover?revision={sha}"));
+        let revision = ctx
+            .app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(location)
+                    .header("x-audeniq-service", SECRET)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(revision.status(), StatusCode::OK);
+        assert!(
+            !axum::body::to_bytes(revision.into_body(), 16 * 1024 * 1024)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
     let (s, _) = call(
         &ctx.app,
