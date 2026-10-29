@@ -65,6 +65,7 @@ interface ServerAccountInfo {
   verified: ServerVerified | null;
   tax: { foreign: boolean; country: string; tin_last4: string | null; us_person: boolean; row_version: number } | null;
   identity_provider: { ready: boolean; name: string | null };
+  phone: { last4: string; verified_at: string | null } | null;
 }
 let taxVersion = 0;
 
@@ -79,6 +80,7 @@ export async function fetchAccountInfo(): Promise<AccountInfo> {
     verified: verifiedFrom(a.verified),
     tax: a.tax ? { foreign: a.tax.foreign, country: a.tax.country, tin: '', usPerson: a.tax.us_person, tinLast4: a.tax.tin_last4 } : null,
     provider: a.identity_provider,
+    phone: a.phone ? { last4: a.phone.last4, verifiedAt: a.phone.verified_at } : null,
   };
 }
 

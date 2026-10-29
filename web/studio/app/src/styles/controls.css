@@ -94,14 +94,9 @@
 :where(input,textarea){caret-color:var(--aqc-blue)}
 :where(input,textarea)::placeholder{color:var(--aq-text-disabled);opacity:1}
 
-/* ---------- 스크롤 막대: 얇고 둥글게 ---------- */
-html{scrollbar-color:#cfd7e6 transparent}
-:where(*){scrollbar-width:thin}
-::-webkit-scrollbar{width:10px;height:10px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{border:3px solid transparent;border-radius:10px;background:#cfd7e6 padding-box}
-::-webkit-scrollbar-thumb:hover{background:#b6c1d6 padding-box}
-::-webkit-scrollbar-corner{background:transparent}
+/* ---------- 스크롤 막대: 보이지 않게 (휠·터치·키보드 스크롤은 그대로) ---------- */
+:where(*){scrollbar-width:none}
+::-webkit-scrollbar{display:none}
 
 /* ---------- 선택 영역·탭 하이라이트 ---------- */
 ::selection{background:#dfe7ff;color:var(--aqc-ink)}
