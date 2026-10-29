@@ -1820,12 +1820,11 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
     --btn-bg-hover:var(--aq-btn-soft-hover,var(--aq-primary-soft-hover));--btn-fg-hover:var(--btn-fg);
     --btn-h:var(--aq-h-sm);--btn-r:var(--aq-r-ctl-sm);--btn-px:14px;--btn-fs:13px;gap:6px;width:auto
   }
-  /* 권리·보완 서류·발매·곡 관리 — 파란 작은 버튼을 제목 줄 오른쪽에 (분류 줄은 그 위) */
+  /* 권리·보완 서류·발매·곡 관리 — 홈 '새 발매'와 같은 옅은 파랑 작은 버튼을 제목 줄 오른쪽에 (분류 줄은 그 위) */
   .ui-page-head.aq-head-inline{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:12px;row-gap:0;align-items:center}
   .ui-page-head.aq-head-inline>div:first-child{display:contents}
   .ui-page-head.aq-head-inline>div:first-child>*{grid-column:1/-1}
   .ui-page-head.aq-head-inline>div:first-child>.eyebrow{grid-row:1}
   .ui-page-head.aq-head-inline>div:first-child>h1{grid-column:1;grid-row:2}
-  .ui-page-head.aq-head-inline>.ui-btn.is-primary{grid-column:2;grid-row:2;
-    --btn-bg:var(--aq-btn-primary,var(--aq-primary));--btn-fg:var(--aq-btn-primary-fg,#fff);--btn-bg-hover:var(--aq-btn-primary-hover,var(--aq-primary-hover))}
+  .ui-page-head.aq-head-inline>.ui-btn{grid-column:2;grid-row:2}
 }
