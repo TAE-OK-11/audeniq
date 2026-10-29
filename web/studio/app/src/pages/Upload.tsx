@@ -2284,7 +2284,8 @@ export function Upload() {
           <span className="wizard-top-title">{editId ? (origStatus === 'draft' ? '발매 이어서 작성' : '발매 정보 수정') : '새로운 발매'}</span>
           <span className="aq-save-slot" aria-live="polite">
             {saveLabel && (
-              <span className={`aq-save-state is-${canAutoSave ? save.kind : 'edit'}`} title={saveTitle}>{saveLabel}</span>
+              // 상태가 바뀔 때마다 새로 그려 '저장 중 → 저장됨'이 살며시 바뀐다
+              <span key={canAutoSave ? save.kind : 'edit'} className={`aq-save-state is-${canAutoSave ? save.kind : 'edit'}`} title={saveTitle}>{saveLabel}</span>
             )}
           </span>
         </div>

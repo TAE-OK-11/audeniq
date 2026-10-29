@@ -242,7 +242,9 @@ img{max-width:100%}
 /* ---------- 위자드 ---------- */
 .wizard-topbar{position:relative}
 .aq-save-state{margin-left:auto;font-size:11px;font-weight:700;color:var(--aq-text-4);padding:5px 10px;border-radius:var(--aq-r-sm);background:var(--aq-gray-50);white-space:nowrap;animation:aq-fade-in var(--aq-motion-long) var(--aq-enter) both;max-width:52vw;overflow:hidden;text-overflow:ellipsis}
-.aq-save-state.is-saving::before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;border:1.5px solid currentColor;border-right-color:transparent;animation:aq-spin .7s linear infinite;margin-right:6px;vertical-align:-1px}
+/* 저장하는 동안은 글자 앞 점이 은은하게 깜빡인다 — 돌던 원은 버튼의 '처리 중'과 결이 달랐다 */
+.aq-save-state.is-saving::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;animation:aq-dot-pulse 1.1s ease-in-out infinite;margin-right:6px;vertical-align:1px}
+@keyframes aq-dot-pulse{50%{opacity:.25}}
 .aq-step-kicker{font-size:11px;font-weight:800;letter-spacing:.14em;color:var(--aq-e-blue);margin:0 0 10px}
 .aq-seg-link{cursor:pointer}
 .aq-seg-link:hover{filter:brightness(1.12)}

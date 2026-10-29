@@ -1888,8 +1888,8 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
   .ui-page-head.aq-head-inline>:is(.ui-btn,.ui-page-actions){grid-column:2;grid-row:2;width:auto}
 }
 
-/* 계정 정보 맨 위 프로필 — 아래 설정 카드들과 같은 옅은 파랑 카드로 (흰 바탕에 혼자 떠 있지 않게) */
-@media(max-width:1023px){
+/* 계정 정보 맨 위 프로필 — 아래 설정 카드들과 같은 옅은 파랑 카드로 (흰 바탕에 혼자 떠 있지 않게). 태블릿부터는 왼쪽 프로필 카드(desktop.css) */
+@media(max-width:759.98px){
   .aq-settings>.ui-page-head{margin-bottom:18px}
   .aq-settings>.aq-set-profile{padding:18px 16px;background:var(--aq-surface);border-radius:var(--aq-r-2xl)}
   @media(hover:hover){.aq-settings>.aq-set-profile:hover{background:var(--aq-blue-100)}}
