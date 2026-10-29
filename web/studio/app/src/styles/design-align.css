@@ -1219,8 +1219,10 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
 /* 스튜디오 — 소식·팬 응원 관리 창 (ArtistCommunityManager.tsx) */
 .aq-community-mgr{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
 .aq-community-mgr>.aq-alert-pref{margin:0}
-.aq-mgr-post{display:grid;gap:6px}
-.aq-mgr-actions{display:flex;justify-content:flex-end;gap:6px}
+/* 소식 관리 — 글 카드와 고치기·지우기 줄을 한 카드로 묶는다 */
+.aq-mgr-post{display:grid;gap:0;overflow:hidden;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
+.aq-mgr-post>.aq-post{background:none;border-radius:0}
+.aq-mgr-actions{display:flex;justify-content:flex-end;gap:2px;margin:0 12px;padding:6px 0 8px;border-top:1px solid var(--aq-blue-150)}
 .aq-mgr-open{display:inline-flex;align-items:center;justify-self:center;gap:4px;font-size:13px;font-weight:700;color:var(--aq-text-3);text-decoration:none}
 @media (hover:hover){.aq-mgr-open:hover{color:var(--aq-primary)}}
 .aq-mgr-cheer-actions{display:flex;gap:2px}
@@ -1927,3 +1929,22 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
   #modal.aq-chat-mode #modalBody{flex:1 0 auto;display:flex;flex-direction:column}
   #modal.aq-chat-mode .aq-thread-reply{margin-top:auto}
 }
+
+
+/* ---------- 계정 정보 › 패스키 · 연결된 계정 · 연결된 AI 앱 — 같은 줄 모양 ----------
+   아이콘 칸(흰) · 이름 · 한 줄 정보 · 오른쪽 조용한 버튼. 지우기·해제·연결 끊기는 빨간 글자, 연결은 옅은 버튼 */
+.aq-acct-list{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.aq-acct-list>li{display:grid;grid-template-columns:40px minmax(0,1fr) auto;align-items:center;gap:12px;padding:14px 12px 14px 14px;border-radius:var(--aq-r-xl);background:var(--aq-surface)}
+.aq-acct-ico{display:grid;place-items:center;width:40px;height:40px;border-radius:var(--aq-r-md);background:#fff;color:var(--aq-blue-500)}
+.aq-acct-ico.is-apple{background:#000;color:#fff}
+.aq-acct-copy{display:grid;gap:2px}
+.aq-acct-copy strong{display:flex;align-items:center;gap:6px;color:var(--aq-text);font-size:15px;font-weight:700}
+.aq-acct-copy small{overflow:hidden;color:var(--aq-text-3);font-size:13px;text-overflow:ellipsis;white-space:nowrap}
+.aq-acct-copy small.is-on{color:var(--aq-green-600,#1E8E5A)}
+.aq-acct-tag{padding:1px 7px;border-radius:var(--aq-r-pill);background:#fff;color:var(--aq-blue-600,#2F55D4);font-size:11px;font-style:normal;font-weight:700}
+.aq-acct-empty{display:flex;align-items:center;gap:12px;padding:16px;border-radius:var(--aq-r-xl);background:var(--aq-surface)}
+.aq-acct-empty strong{display:block;font-size:15px;color:var(--aq-text)}
+.aq-acct-empty small{display:block;margin-top:2px;font-size:13px;color:var(--aq-text-3)}
+.aq-passkeys>.ui-btn.is-block,.aq-passkeys .aq-reveal>.ui-btn.is-block{gap:6px}
+.aq-acct-form{display:grid;gap:4px;padding:16px;border-radius:var(--aq-r-xl);background:var(--aq-surface)}
+.aq-acct-list .ui-btn.is-text{flex:none;white-space:nowrap}

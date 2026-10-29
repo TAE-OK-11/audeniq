@@ -157,9 +157,10 @@ export function PostsManager({ artistId, artist, slug, onCount }: { artistId: st
             {items.map(p => (
               <li key={p.id} className={`aq-mgr-post${leaving === p.id ? ' is-leaving' : ''}${justSaved === p.id ? ' is-saved' : ''}`}>
                 <PostCard post={p} artist={artist} clamp />
+                {/* 고치기·지우기는 카드 안 아래 줄에 조용한 글자 버튼으로 — 카드 밖에 큰 버튼 두 개가 떠 있었다. 지우기는 빨간 글자 */}
                 <div className="aq-mgr-actions">
-                  <button type="button" className="ui-btn is-sm is-soft" onClick={() => setEditing(p)}><Glyph name="pencil" size={14} />고치기</button>
-                  <button type="button" className="ui-btn is-sm is-soft" onClick={() => void remove(p)}><Glyph name="trash" size={14} />지우기</button>
+                  <button type="button" className="ui-btn is-text is-sm" onClick={() => setEditing(p)}><Glyph name="pencil" size={14} />고치기</button>
+                  <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => void remove(p)}><Glyph name="trash" size={14} />지우기</button>
                 </div>
               </li>
             ))}
