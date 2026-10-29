@@ -120,7 +120,7 @@ function TicketThread({ ticket, onClosed }: { ticket: Ticket; onClosed: () => vo
         <form onSubmit={send} className="aq-thread-reply aq-sticky-foot">
           <label htmlFor="tReply" className="sr-only">추가 메시지</label>
           <div className="aq-thread-compose">
-            <textarea id="tReply" rows={2} maxLength={4000} value={reply} onChange={e => setReply(e.target.value)} placeholder="담당자에게 더 전할 내용" />
+            <textarea id="tReply" rows={1} maxLength={4000} value={reply} onChange={e => setReply(e.target.value)} placeholder="담당자에게 더 전할 내용" />
             <button type="submit" className={`ui-btn is-primary is-icon${busy ? ' is-busy' : ''}`} aria-label="보내기" disabled={busy || !reply.trim()}>
               <Glyph name="arrow-up" size={18} />
             </button>

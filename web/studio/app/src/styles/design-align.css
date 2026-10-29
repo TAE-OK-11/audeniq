@@ -1613,9 +1613,6 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-request-cancel{margin-top:-4px}
 /* 문의 대화 — 꼬리표 · 보낼 칸(입력 + 동그란 보내기) · 종료는 작은 글자 버튼 */
 .aq-ticket-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0;color:var(--aq-text-3);font-size:13px}
-.aq-thread-compose{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:8px;padding:6px 6px 6px 0;border-radius:var(--aq-r-xl);background:var(--aq-blue-50)}
-.aq-thread-reply .aq-thread-compose textarea{min-height:48px;max-height:180px;margin:0;background:transparent;resize:none}
-.aq-thread-compose .ui-btn.is-icon{width:44px;height:44px;border-radius:50%}
 .aq-thread-end{justify-self:center;color:var(--aq-text-3)}
 /* 부가서비스 — 신청서의 부가서비스 칸·최종 확인 합계·결제(신청 완료 화면, 발매 상세)·발매 상세의 부가서비스 칸 */
 .aq-addon-summary{display:grid;gap:14px;margin:16px 0 24px;padding:20px;border-radius:var(--aq-r-xl);background:var(--aq-blue-50)}
@@ -1912,9 +1909,12 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-passkey-offer .auth-submit{gap:8px;margin-top:4px}
 .auth-later{justify-self:center;min-height:44px;color:var(--aq-text-3)}
 .aq-passkey-offer .auth-fine{margin-top:2px}
-/* 문의 대화 입력칸 — 눌렀을 때 둥근 상자 안에 다른 색 네모가 하나 더 생겼다(입력칸 자체의 초점 바탕). 바탕은 바깥 상자 하나만 바뀐다 */
-/* 전역 입력칸 초점 규칙(:is(#root,#modal) … :focus, 우선순위 1-4-1)보다 강하게 — id 두 번 */
-#tReply#tReply,#tReply#tReply:is(:focus,:focus-visible){background:transparent!important;background-color:transparent!important;box-shadow:none!important;outline:0}
-@media(hover:hover){.aq-thread-reply .aq-thread-compose textarea:hover{background:transparent!important}}
-.aq-thread-compose{transition:background-color var(--aq-dur) var(--aq-ease)}
-.aq-thread-compose:focus-within{background:var(--aq-blue-100)}
+/* 문의 대화 입력줄 — 둥근 입력칸 하나 + 오른쪽 동그란 보내기 버튼 (메신저처럼).
+   예전엔 옅은 파랑 상자 안에 입력칸을 또 넣어 상자가 두 겹으로 보였고, 버튼은 상자 오른쪽 끝에 붙고
+   높이가 늘어나 길쭉해졌다. 이제 입력칸이 곧 상자이고, 버튼은 48px 원으로 고정해 입력칸 아래쪽에 맞춘다 */
+.aq-thread-compose{display:flex;align-items:flex-end;gap:10px;padding:0;background:none}
+/* 전역 입력칸 규칙(:is(#root,#modal) … textarea, 우선순위 1-4-1)보다 강하게 id 두 번 */
+#tReply#tReply{flex:1 1 auto;width:auto!important;min-width:0;min-height:48px;max-height:160px;margin:0;padding:13px 18px;border:0;border-radius:24px;
+  background:var(--aq-blue-50)!important;box-shadow:none!important;font-size:15px;line-height:1.45;resize:none;field-sizing:content}
+#tReply#tReply:is(:focus,:focus-visible){background:var(--aq-blue-100)!important;outline:0}
+.aq-thread-compose .ui-btn.is-icon{flex:none;align-self:flex-end;width:48px!important;min-width:48px;height:48px!important;min-height:48px;padding:0;border-radius:50%}
