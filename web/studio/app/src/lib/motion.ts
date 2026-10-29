@@ -48,3 +48,10 @@ export function revealField(el: HTMLElement | null) {
   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   afterScroll(land);
 }
+
+/** 목록 맨 위로 바로 옮긴다 (쪽 넘기기) — 이미 목록 맨 위가 보이면 그대로 둔다.
+ *  html의 부드러운 스크롤을 타지 않게 'instant'로: 새 쪽 목록이 미끄러져 지나가는 모습이 작위적이었다 */
+export function jumpToTop(el: HTMLElement | null) {
+  if (!el || el.getBoundingClientRect().top >= 0) return;
+  el.scrollIntoView({ block: 'start', behavior: 'instant' as ScrollBehavior });
+}

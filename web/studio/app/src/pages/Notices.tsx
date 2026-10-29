@@ -6,6 +6,7 @@ import { SkeletonRows } from '../components/Skeleton';
 import { toKstDate } from '../lib/date';
 import { Glyph } from '../components/Glyph';
 import { TextBody } from '../components/TextBody';
+import { jumpToTop } from '../lib/motion';
 
 interface Notice {
   id: string;
@@ -92,7 +93,7 @@ export function Notices() {
   const numbers = Array.from({ length: Math.min(5, pages) }, (_, i) => first + i);
   const go = (p: number) => {
     setParams(p > 1 ? { page: String(p) } : {});
-    document.getElementById('aqNoticeAll')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    jumpToTop(document.getElementById('aqNoticeAll'));
   };
 
   return (

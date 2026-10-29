@@ -3,6 +3,7 @@ import { useNavigate } from '../lib/router';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { localStamp } from '../lib/format';
+import { jumpToTop } from '../lib/motion';
 import { parseStamp, relativeTime } from '../lib/date';
 import { markAllNoticesRead, markNoticeRead, useNotices, useUnreadCount, type Notice } from '../store/support';
 import { Glyph } from '../components/Glyph';
@@ -168,10 +169,11 @@ export function Notifications() {
     { key: 'week', title: '이번 주' },
     { key: 'older', title: '이전 알림' },
   ].map(s => ({ ...s, items: pageCards.filter(c => c.section === s.key).map(c => c.group) })).filter(s => s.items.length);
-  // 쪽을 바꾸면 목록 맨 위로 — 아래 쪽 번호를 눌렀는데 화면이 그대로 아래에 있으면 바뀐 줄 몰랐다
+  // 쪽을 바꾸면 목록 맨 위로 — 아래 쪽 번호를 눌렀는데 화면이 그대로 아래에 있으면 바뀐 줄 몰랐다.
+  // 부드럽게 굴리지 않고 바로 옮긴다: 새 쪽 목록이 먼 거리를 미끄러져 지나가는 모습이 작위적이었다
   const goPage = (p: number) => {
     setPage(p);
-    document.getElementById('noticeList')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    jumpToTop(document.getElementById('noticeList'));
   };
 
   const readAll = () => {
