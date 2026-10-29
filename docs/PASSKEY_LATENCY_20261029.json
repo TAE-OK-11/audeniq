@@ -1,0 +1,456 @@
+{
+  "before": {
+    "login/begin_consume": {
+      "n": 80,
+      "p50_us": 608.0,
+      "p95_us": 1586
+    },
+    "login/counter_update": {
+      "n": 80,
+      "p50_us": 273.5,
+      "p95_us": 727
+    },
+    "login/email": {
+      "n": 80,
+      "p50_us": 550.5,
+      "p95_us": 1430
+    },
+    "login/origin_rate_decode": {
+      "n": 80,
+      "p50_us": 616.0,
+      "p95_us": 1732
+    },
+    "login/owner_credential_locks": {
+      "n": 80,
+      "p50_us": 490.0,
+      "p95_us": 1835
+    },
+    "login/session_audit_commit": {
+      "n": 80,
+      "p50_us": 808.5,
+      "p95_us": 2250
+    },
+    "login/total": {
+      "n": 80,
+      "p50_us": 3707.5,
+      "p95_us": 8670
+    },
+    "login/verification": {
+      "n": 80,
+      "p50_us": 164.5,
+      "p95_us": 272
+    },
+    "login_options/challenge": {
+      "n": 80,
+      "p50_us": 706.5,
+      "p95_us": 1978
+    },
+    "login_options/origin_rate": {
+      "n": 80,
+      "p50_us": 693.5,
+      "p95_us": 2270
+    },
+    "login_options/total": {
+      "n": 80,
+      "p50_us": 1520.5,
+      "p95_us": 4100
+    },
+    "register_options/actor_rate": {
+      "n": 160,
+      "p50_us": 922.0,
+      "p95_us": 3209
+    },
+    "register_options/challenge": {
+      "n": 160,
+      "p50_us": 706.5,
+      "p95_us": 1608
+    },
+    "register_options/credentials": {
+      "n": 160,
+      "p50_us": 388.0,
+      "p95_us": 1106
+    },
+    "register_options/email": {
+      "n": 160,
+      "p50_us": 366.5,
+      "p95_us": 1033
+    },
+    "register_options/total": {
+      "n": 160,
+      "p50_us": 2681.0,
+      "p95_us": 6827
+    },
+    "register_password/actor_rate_decode": {
+      "n": 80,
+      "p50_us": 944.5,
+      "p95_us": 3282
+    },
+    "register_password/audit": {
+      "n": 80,
+      "p50_us": 262.5,
+      "p95_us": 846
+    },
+    "register_password/commit": {
+      "n": 80,
+      "p50_us": 250.0,
+      "p95_us": 574
+    },
+    "register_password/consume": {
+      "n": 80,
+      "p50_us": 407.5,
+      "p95_us": 826
+    },
+    "register_password/count": {
+      "n": 80,
+      "p50_us": 257.0,
+      "p95_us": 893
+    },
+    "register_password/insert": {
+      "n": 80,
+      "p50_us": 354.5,
+      "p95_us": 918
+    },
+    "register_password/list": {
+      "n": 80,
+      "p50_us": 634.5,
+      "p95_us": 1267
+    },
+    "register_password/reauth_password": {
+      "n": 80,
+      "p50_us": 27559.0,
+      "p95_us": 35749
+    },
+    "register_password/total": {
+      "n": 80,
+      "p50_us": 33101.5,
+      "p95_us": 49163
+    },
+    "register_password/transaction_reauth_locks": {
+      "n": 80,
+      "p50_us": 1162.0,
+      "p95_us": 4111
+    },
+    "register_password/verification": {
+      "n": 80,
+      "p50_us": 78.5,
+      "p95_us": 112
+    },
+    "register_proof/actor_rate_decode": {
+      "n": 80,
+      "p50_us": 820.5,
+      "p95_us": 2242
+    },
+    "register_proof/audit": {
+      "n": 80,
+      "p50_us": 215.5,
+      "p95_us": 747
+    },
+    "register_proof/commit": {
+      "n": 80,
+      "p50_us": 169.5,
+      "p95_us": 541
+    },
+    "register_proof/consume": {
+      "n": 80,
+      "p50_us": 292.5,
+      "p95_us": 866
+    },
+    "register_proof/count": {
+      "n": 80,
+      "p50_us": 207.5,
+      "p95_us": 586
+    },
+    "register_proof/insert": {
+      "n": 80,
+      "p50_us": 279.0,
+      "p95_us": 765
+    },
+    "register_proof/list": {
+      "n": 80,
+      "p50_us": 469.0,
+      "p95_us": 784
+    },
+    "register_proof/reauth_password": {
+      "n": 80,
+      "p50_us": 0.0,
+      "p95_us": 1
+    },
+    "register_proof/total": {
+      "n": 80,
+      "p50_us": 3314.5,
+      "p95_us": 8245
+    },
+    "register_proof/transaction_reauth_locks": {
+      "n": 80,
+      "p50_us": 652.0,
+      "p95_us": 1760
+    },
+    "register_proof/verification": {
+      "n": 80,
+      "p50_us": 36.0,
+      "p95_us": 69
+    },
+    "step_up/begin_consume": {
+      "n": 80,
+      "p50_us": 603.5,
+      "p95_us": 1312
+    },
+    "step_up/counter_update": {
+      "n": 80,
+      "p50_us": 277.5,
+      "p95_us": 825
+    },
+    "step_up/email": {
+      "n": 80,
+      "p50_us": 1.0,
+      "p95_us": 2
+    },
+    "step_up/origin_rate_decode": {
+      "n": 80,
+      "p50_us": 458.0,
+      "p95_us": 1357
+    },
+    "step_up/owner_credential_locks": {
+      "n": 80,
+      "p50_us": 502.0,
+      "p95_us": 2280
+    },
+    "step_up/total": {
+      "n": 80,
+      "p50_us": 2894.5,
+      "p95_us": 7179
+    },
+    "step_up/verification": {
+      "n": 80,
+      "p50_us": 152.0,
+      "p95_us": 247
+    }
+  },
+  "after": {
+    "login/begin_consume": {
+      "n": 80,
+      "p50_us": 426.5,
+      "p95_us": 946
+    },
+    "login/counter_update": {
+      "n": 80,
+      "p50_us": 253.0,
+      "p95_us": 636
+    },
+    "login/email": {
+      "n": 80,
+      "p50_us": 533.5,
+      "p95_us": 1116
+    },
+    "login/origin_rate_decode": {
+      "n": 80,
+      "p50_us": 627.5,
+      "p95_us": 1289
+    },
+    "login/owner_credential_locks": {
+      "n": 80,
+      "p50_us": 299.0,
+      "p95_us": 1183
+    },
+    "login/session_audit_commit": {
+      "n": 80,
+      "p50_us": 690.0,
+      "p95_us": 1682
+    },
+    "login/total": {
+      "n": 80,
+      "p50_us": 3051.0,
+      "p95_us": 6142
+    },
+    "login/verification": {
+      "n": 80,
+      "p50_us": 166.0,
+      "p95_us": 238
+    },
+    "login_options/challenge": {
+      "n": 80,
+      "p50_us": 718.5,
+      "p95_us": 1705
+    },
+    "login_options/origin_rate": {
+      "n": 80,
+      "p50_us": 597.0,
+      "p95_us": 1497
+    },
+    "login_options/total": {
+      "n": 80,
+      "p50_us": 1428.5,
+      "p95_us": 3276
+    },
+    "register_options/actor_rate": {
+      "n": 160,
+      "p50_us": 791.5,
+      "p95_us": 2084
+    },
+    "register_options/challenge": {
+      "n": 160,
+      "p50_us": 492.5,
+      "p95_us": 1514
+    },
+    "register_options/credentials": {
+      "n": 160,
+      "p50_us": 306.5,
+      "p95_us": 1112
+    },
+    "register_options/email": {
+      "n": 160,
+      "p50_us": 230.0,
+      "p95_us": 584
+    },
+    "register_options/total": {
+      "n": 160,
+      "p50_us": 2011.5,
+      "p95_us": 4417
+    },
+    "register_password/actor_rate_decode": {
+      "n": 80,
+      "p50_us": 885.0,
+      "p95_us": 2257
+    },
+    "register_password/audit": {
+      "n": 80,
+      "p50_us": 227.5,
+      "p95_us": 774
+    },
+    "register_password/commit": {
+      "n": 80,
+      "p50_us": 244.5,
+      "p95_us": 662
+    },
+    "register_password/consume": {
+      "n": 80,
+      "p50_us": 384.0,
+      "p95_us": 976
+    },
+    "register_password/count": {
+      "n": 80,
+      "p50_us": 230.0,
+      "p95_us": 901
+    },
+    "register_password/insert": {
+      "n": 80,
+      "p50_us": 339.0,
+      "p95_us": 957
+    },
+    "register_password/list": {
+      "n": 80,
+      "p50_us": 350.5,
+      "p95_us": 713
+    },
+    "register_password/reauth_password": {
+      "n": 80,
+      "p50_us": 26163.5,
+      "p95_us": 35350
+    },
+    "register_password/total": {
+      "n": 80,
+      "p50_us": 30860.5,
+      "p95_us": 40833
+    },
+    "register_password/transaction_reauth_locks": {
+      "n": 80,
+      "p50_us": 1002.5,
+      "p95_us": 3492
+    },
+    "register_password/verification": {
+      "n": 80,
+      "p50_us": 84.0,
+      "p95_us": 111
+    },
+    "register_proof/actor_rate_decode": {
+      "n": 80,
+      "p50_us": 774.5,
+      "p95_us": 2498
+    },
+    "register_proof/audit": {
+      "n": 80,
+      "p50_us": 190.5,
+      "p95_us": 711
+    },
+    "register_proof/commit": {
+      "n": 80,
+      "p50_us": 180.5,
+      "p95_us": 656
+    },
+    "register_proof/consume": {
+      "n": 80,
+      "p50_us": 298.5,
+      "p95_us": 1267
+    },
+    "register_proof/count": {
+      "n": 80,
+      "p50_us": 192.5,
+      "p95_us": 895
+    },
+    "register_proof/insert": {
+      "n": 80,
+      "p50_us": 271.5,
+      "p95_us": 769
+    },
+    "register_proof/list": {
+      "n": 80,
+      "p50_us": 269.0,
+      "p95_us": 723
+    },
+    "register_proof/reauth_password": {
+      "n": 80,
+      "p50_us": 0.0,
+      "p95_us": 1
+    },
+    "register_proof/total": {
+      "n": 80,
+      "p50_us": 2911.0,
+      "p95_us": 14225
+    },
+    "register_proof/transaction_reauth_locks": {
+      "n": 80,
+      "p50_us": 617.5,
+      "p95_us": 2835
+    },
+    "register_proof/verification": {
+      "n": 80,
+      "p50_us": 35.0,
+      "p95_us": 62
+    },
+    "step_up/begin_consume": {
+      "n": 80,
+      "p50_us": 443.0,
+      "p95_us": 1111
+    },
+    "step_up/counter_update": {
+      "n": 80,
+      "p50_us": 237.0,
+      "p95_us": 807
+    },
+    "step_up/email": {
+      "n": 80,
+      "p50_us": 89.5,
+      "p95_us": 577
+    },
+    "step_up/origin_rate_decode": {
+      "n": 80,
+      "p50_us": 369.0,
+      "p95_us": 840
+    },
+    "step_up/owner_credential_locks": {
+      "n": 80,
+      "p50_us": 406.0,
+      "p95_us": 1770
+    },
+    "step_up/total": {
+      "n": 80,
+      "p50_us": 2670.0,
+      "p95_us": 6648
+    },
+    "step_up/verification": {
+      "n": 80,
+      "p50_us": 145.5,
+      "p95_us": 203
+    }
+  }
+}

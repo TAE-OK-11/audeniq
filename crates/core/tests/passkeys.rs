@@ -1216,3 +1216,77 @@ async fn registration_metadata_validation(pool: PgPool) {
         assert_eq!(item["transports"], metadata["transports"]);
     }
 }
+
+/// Serial, disposable-database latency probe. Software signing occurs outside
+/// the measured handler sections; no browser/biometric time is included.
+#[sqlx::test]
+#[ignore = "manual latency measurement; run alone with --nocapture"]
+async fn ceremony_latency_sections(pool: PgPool) {
+    unsafe {
+        std::env::set_var("PAYOUT_ACCOUNT_KEY", "3a".repeat(32));
+        std::env::set_var("PASSKEY_RP_ID", RP);
+        std::env::set_var("ADMIN_ORIGIN", ADMIN);
+    }
+    tracing_subscriber::fmt()
+        .with_env_filter("passkey_timing=debug")
+        .json()
+        .without_time()
+        .with_writer(std::io::stdout)
+        .try_init()
+        .unwrap();
+    let (app, _) = app(pool.clone()).await;
+    // Separate accounts keep the normal per-account limits and credential cap.
+    // Source buckets are reset only between samples in this disposable test DB.
+    for sample in 0..45 {
+        let u = user(&app).await;
+        let a = if sample % 2 == 0 {
+            Authenticator::ed_synced()
+        } else {
+            Authenticator::ec()
+        };
+        let keys = audeniq_core::payout_keys::KeyRing::from_env(false).unwrap();
+        let email = audeniq_core::pii::user_email(&keys, &pool, u.user)
+            .await
+            .unwrap();
+        println!("LATENCY_SAMPLE {sample}");
+        assert_eq!(register(&app, &u, &a, PASSWORD).await.0, StatusCode::OK);
+        assert_eq!(
+            login(
+                &app,
+                &a,
+                Assertion {
+                    email: Some(email),
+                    ..Default::default()
+                }
+            )
+            .await
+            .0,
+            StatusCode::OK
+        );
+        let assertion = step_up(&app, &u, &a).await;
+        let (status, proof) = send(
+            &app,
+            "POST",
+            "/api/auth/passkey/reauth",
+            assertion,
+            Some(&u),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{proof}");
+        assert_eq!(
+            register_with_proof(
+                &app,
+                &u,
+                &Authenticator::ed_synced(),
+                proof["reauth_token"].as_str().unwrap()
+            )
+            .await
+            .0,
+            StatusCode::OK
+        );
+        sqlx::query("DELETE FROM identity.auth_limits")
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+}
