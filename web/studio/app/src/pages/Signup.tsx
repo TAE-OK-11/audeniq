@@ -150,7 +150,11 @@ export function Signup() {
             {emailDone && !fe.email && <EmailSuggest value={email} onApply={setEmail} />}
           </div>
           <div className="ui-field">
-            <label htmlFor="suPassword">비밀번호</label>
+            {/* 조건은 이름표 옆에 늘 보이게 — 칸 안 안내 글자는 치기 시작하면 사라졌다. 채우면 초록 체크 */}
+            <label htmlFor="suPassword">
+              비밀번호
+              <span className={`aq-pw-rule${longEnough ? ' is-ok' : ''}`} id="suPwRule">{longEnough && <CheckIcon size={12} />}{PASSWORD_MIN}자 이상</span>
+            </label>
             <PasswordInput
               id="suPassword" required autoComplete="new-password" minLength={PASSWORD_MIN}
               aria-describedby={fe.password ? 'suPasswordErr' : 'suPwRule suPwHelp'}
@@ -159,12 +163,6 @@ export function Signup() {
               show={showPw} onToggle={() => setShowPw(v => !v)}
             />
             <FieldError id="suPasswordErr">{fe.password}</FieldError>
-            {/* 조건은 입력 전부터 보이게 — 칸 안 안내 글자는 치기 시작하면 사라졌다. 채우면 초록 체크 */}
-            {!fe.password && (
-              <p className={`ui-field-help aq-pw-rule${longEnough ? ' is-ok' : ''}`} id="suPwRule">
-                {longEnough && <CheckIcon size={12} />}{PASSWORD_MIN}자 이상
-              </p>
-            )}
             {password && !fe.password && (
               <div className="aq-pw-meter" data-score={pw.score} id="suPwHelp">
                 <span><i /></span>
@@ -211,22 +209,28 @@ export function Signup() {
             <FieldError id="suNameErr">{fe.name}</FieldError>
           </div>
           {terms}
-          <p className="auth-privacy">
-            회원가입 정보(이메일·비밀번호·활동명)는 요청한 계정 생성과 서비스 제공을 위해 처리해요.
-            계정정보는 원칙적으로 탈퇴 또는 처리 목적 종료 시까지 보관하며, 법정 보존자료는 별도로 관리해요.
-            자세한 항목·보유기간과 권리 행사방법은 <a href="/privacy" target="_blank" rel="noopener" className="aq-inline-link">개인정보 처리방침</a>에서 확인해 주세요.
-            선택 기능에 필요한 별도 동의는 해당 기능을 이용할 때 안내해요.
-          </p>
+          {/* 개인정보 안내는 첫 줄만 보이고 눌러서 펼친다 — 다섯 줄이 카드를 길게 늘였다. 내용은 그대로 */}
+          <details className="auth-privacy">
+            <summary>회원가입 정보(이메일·비밀번호·활동명)는 계정 생성과 서비스 제공을 위해 처리해요. <span>자세히</span></summary>
+            <p>
+              계정정보는 원칙적으로 탈퇴 또는 처리 목적 종료 시까지 보관하며, 법정 보존자료는 별도로 관리해요.
+              자세한 항목·보유기간과 권리 행사방법은 <a href="/privacy" target="_blank" rel="noopener" className="aq-inline-link">개인정보 처리방침</a>에서 확인해 주세요.
+              선택 기능에 필요한 별도 동의는 해당 기능을 이용할 때 안내해요.
+            </p>
+          </details>
           <button className={`ui-btn is-primary auth-submit${busy ? ' is-busy' : ''}`} type="submit" disabled={busy} aria-busy={busy}>
             {busy ? '계정을 만드는 중' : steps === 3 ? '계정 만들고 다음' : '가입 완료'}
           </button>
           <button type="button" className="ui-btn is-text auth-later" onClick={() => go(1)} disabled={busy}>이전으로</button>
         </form>
       )}
-      <div className="auth-links">
-        <span>이미 계정이 있으신가요?</span>
-        <Link to="/login">로그인</Link>
-      </div>
+      {/* 로그인으로 가는 길은 첫 단계에만 — 2단계에는 '이전으로'가 있다 */}
+      {step === 1 && (
+        <div className="auth-links">
+          <span>이미 계정이 있으신가요?</span>
+          <Link to="/login">로그인</Link>
+        </div>
+      )}
     </AuthLayout>
   );
 }
