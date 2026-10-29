@@ -543,8 +543,9 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .aq-smartlink-list a:focus-visible{outline:var(--aq-focus);outline-offset:2px}
 .aq-smartlink-logo{border-radius:12px!important}
 .aq-smartlink-name{display:grid;gap:2px;min-width:0}
-.aq-smartlink-name strong{font-size:var(--aq-fs-lg);font-weight:700;letter-spacing:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.aq-smartlink-name small{font-size:var(--aq-fs-xs);color:var(--aq-text-4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 이름·설명은 두 줄까지 — 한 줄로 자르면 휴대폰에서 'YouTube Mu…'처럼 플랫폼 이름이 잘렸다 */
+.aq-smartlink-name strong{font-size:var(--aq-fs-lg);font-weight:700;letter-spacing:0;line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow-wrap:anywhere}
+.aq-smartlink-name small{font-size:var(--aq-fs-xs);color:var(--aq-text-4);line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
 .aq-smartlink-go{display:inline-flex;align-items:center;gap:2px;height:var(--aq-h-xs,32px);padding:0 10px 0 14px;border-radius:var(--aq-r-pill);background:var(--aq-primary);color:#fff;font-size:13px;font-weight:700;white-space:nowrap}
 .aq-smartlink-list a:hover .aq-smartlink-go{background:var(--aq-primary-hover)}
 @media (prefers-reduced-motion:reduce){.aq-smartlink-list a:is(:active,.is-pressed){transform:none}}

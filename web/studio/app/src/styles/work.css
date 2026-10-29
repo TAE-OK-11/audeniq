@@ -171,8 +171,10 @@
 .adm-w-holidays .adm-w-inline .ui-input{flex:1 1 160px;max-width:240px}
 
 @media (max-width:640px){
-  .adm-w-inbox-row{grid-template-columns:minmax(0,1fr) auto}
+  /* 휴대폰: 배지·기한은 제목 아래 한 줄로 — 오른쪽에 두면 제목이 'Paper / Moon'처럼 좁게 꺾였다 */
+  .adm-w-inbox-row{grid-template-columns:minmax(0,1fr)}
   .adm-w-inbox-row>.adm-w-inbox-icon{display:none}
+  .adm-w-inbox-row>.ui-row-end{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-start}
   .adm-w-exc-top{grid-template-columns:minmax(0,1fr)}
   .adm-w-exc-top>.adm-w-inbox-icon{display:none}
   .adm-w-ellipsis{max-width:200px}

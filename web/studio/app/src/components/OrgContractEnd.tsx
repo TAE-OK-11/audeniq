@@ -27,6 +27,8 @@ export function OrgContractEnd() {
     try { setData(await req(orgPath('/contract-end'), { quiet401: true })); } catch { setData(null); }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  // 처리 중에는 다시 누를 수 없게 — 두 번 눌러 요청이 두 번 갔다
+  const [busy, setBusy] = useState(false);
   if (!data) return null;
   const owner = !org?.role || org.role === 'OWNER';
   const t = data.term;
@@ -35,12 +37,16 @@ export function OrgContractEnd() {
     if (!date || date < plus(30)) { toast('계약 종료일은 30일 뒤 이후로 골라 주세요.', 'error'); return; }
     const ok = await confirm({ title: '배급 계약을 종료할까요?', message: `${date}에 모든 발매가 플랫폼에서 내려가고, 새 발매 신청을 받지 않아요. 남은 수익은 그 뒤 90일 안에 최종 정산해요.`, confirmLabel: '계약 종료 예약', danger: true });
     if (!ok) return;
-    try { await req(orgPath('/contract-end'), { method: 'PUT', body: { end_date: date } }); setOpen(false); await load(); }
+    setBusy(true);
+    try { await req(orgPath('/contract-end'), { method: 'PUT', body: { end_date: date } }); setOpen(false); await load(); toast(`${date}에 배급 계약이 끝나도록 예약했어요.`, 'success'); }
     catch (e) { toast(errorMessage(e), 'error'); }
+    finally { setBusy(false); }
   };
   const cancel = async () => {
+    setBusy(true);
     try { await req(orgPath('/contract-end/cancel'), { method: 'POST', body: {} }); await load(); toast('계약 종료를 취소했어요.', 'success'); }
     catch (e) { toast(errorMessage(e), 'error'); }
+    finally { setBusy(false); }
   };
 
   return (
@@ -48,7 +54,7 @@ export function OrgContractEnd() {
       <h2 id="orgTermHeading" className="subhead">배급 계약 종료</h2>
       {t ? (
         <p>{t.status === 'ENDED' ? `${t.end_date}에 배급 계약이 끝났어요.` : `${t.end_date}에 배급 계약이 끝나요. 새 발매 신청은 받지 않아요.`}
-          {t.status === 'SCHEDULED' && owner && !t.set_by_staff && <button type="button" className="ui-btn is-text is-sm" onClick={() => void cancel()}>종료 취소</button>}</p>
+          {t.status === 'SCHEDULED' && owner && !t.set_by_staff && <button type="button" className={`ui-btn is-text is-sm${busy ? ' is-busy' : ''}`} disabled={busy} onClick={() => void cancel()}>{busy ? '취소하는 중' : '종료 취소'}</button>}</p>
       ) : owner && (
         <>
           <p className="small muted">배급을 그만두려면 30일 전에 종료일을 정해 주세요.</p>
@@ -63,7 +69,7 @@ export function OrgContractEnd() {
               </div>
               <div className="aq-confirm-actions">
                 <button type="button" className="ui-btn is-soft" onClick={() => setOpen(false)}>닫기</button>
-                <button type="button" className="ui-btn is-primary" onClick={() => void save()}>종료 예약</button>
+                <button type="button" className={`ui-btn is-primary${busy ? ' is-busy' : ''}`} disabled={busy} onClick={() => void save()}>{busy ? '예약하는 중' : '종료 예약'}</button>
               </div>
             </div>
           </Reveal>
