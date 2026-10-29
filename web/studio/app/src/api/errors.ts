@@ -139,6 +139,7 @@ const CODE_MESSAGES: Record<string, string> = {
   IDENTITY_EXPIRED: '본인확인한 지 30분이 지났어요. 다시 본인확인한 뒤 서명해 주세요.',
   IDENTITY_ACCOUNT_MISMATCH: '이 계정은 다른 분 명의로 본인인증을 마쳤어요. 계정 주인만 다시 인증할 수 있어요.',
   SMS_PROVIDER_NOT_CONFIGURED: '문자 인증 서비스를 준비하고 있어요. 계정 도움이 필요하면 고객지원에 문의해 주세요.',
+  SMS_SEND_FAILED: '인증번호 문자를 보내지 못했어요. 잠시 후 다시 시도해 주세요.',
   PHONE_INVALID: '휴대폰 번호를 확인해 주세요. (예: 010-1234-5678)',
   SMS_CODE_INVALID: '인증번호가 맞지 않거나 시간이 지났어요. 인증번호를 다시 받아 주세요.',
   RESET_CODE_INVALID: '인증번호가 맞지 않거나 시간이 지났어요. 이메일·휴대폰 번호를 확인하고 인증번호를 다시 받아 주세요.',

@@ -47,3 +47,20 @@ export async function verifyPhoneRegistration(challengeId: string, code: string)
   });
   return { last4: r.phone.last4, verifiedAt: r.phone.verified_at };
 }
+
+/** 이메일 찾기 1. 그 번호를 인증해 둔 계정이 있을 때만 문자가 간다 — 없어도 같은 모양으로 답한다 */
+export async function startFindEmail(phone: string): Promise<SmsChallenge> {
+  if (MOCK) return mockReject();
+  const r = await req<{ find_id: string; expires_at: string; phone_last4: string }>('/api/auth/find-email/start', {
+    method: 'POST', body: { phone }, quiet401: true,
+  });
+  return { id: r.find_id, expiresAt: r.expires_at, phoneLast4: r.phone_last4 };
+}
+
+/** 이메일 찾기 2. 인증번호가 맞으면 그 번호를 쓰는 계정의 이메일 (앞부분은 가려서 온다) */
+export async function verifyFindEmail(findId: string, code: string): Promise<string[]> {
+  const r = await req<{ emails: string[] }>('/api/auth/find-email/verify', {
+    method: 'POST', body: { find_id: findId, code }, quiet401: true,
+  });
+  return r.emails;
+}

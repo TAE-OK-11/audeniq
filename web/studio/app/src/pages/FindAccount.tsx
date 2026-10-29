@@ -9,11 +9,11 @@ import { useAuth } from '../api/auth';
 import { MOCK, PASSWORD_MIN } from '../api/client';
 import { passkeySupported } from '../api/passkey';
 import { ApiError, authErrorMessage, errorMessage } from '../api/errors';
-import { completePasswordReset, startPasswordReset, verifyPasswordReset, type SmsChallenge } from '../api/recovery';
+import { completePasswordReset, startFindEmail, startPasswordReset, verifyFindEmail, verifyPasswordReset, type SmsChallenge } from '../api/recovery';
 import { formatPhone, isPhone } from '../lib/phone';
 import { lastLoginEmail } from '../lib/lastEmail';
 
-// 가입한 이메일 찾기는 아직 자동으로 하지 못해 고객지원으로 안내한다. 비밀번호는 계정에 등록한 휴대폰 문자로 재설정한다.
+// 이메일 찾기·비밀번호 재설정 모두 계정에 등록(문자 인증)한 휴대폰 번호로 한다. 번호를 등록하지 않았으면 고객지원으로.
 const supportMail = (tab: 'id' | 'password') => {
   const subject = tab === 'id' ? '가입한 이메일 찾기 요청' : '비밀번호 재설정 요청';
   const body = tab === 'id'
@@ -230,6 +230,129 @@ function PasswordReset() {
   );
 }
 
+/** 이메일 찾기 — 휴대폰 번호 → 문자 인증번호 → 그 번호로 가입한 이메일(앞부분 가림) */
+function FindEmail({ onReset }: { onReset: () => void }) {
+  const [phone, setPhone] = useState('');
+  const [challenge, setChallenge] = useState<SmsChallenge | null>(null);
+  const [code, setCode] = useState('');
+  const [emails, setEmails] = useState<string[] | null>(null);
+  const [fe, setFe] = useState('');
+  const [error, setError] = useState('');
+  const [unavailable, setUnavailable] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const left = useCountdown(challenge?.expiresAt ?? '');
+
+  const fail = (err: unknown, fallback: string) => {
+    setUnavailable(SMS_UNAVAILABLE.has(codeOf(err)));
+    setError(errorMessage(err, fallback));
+  };
+
+  const send = async () => {
+    setError('');
+    setBusy(true);
+    try {
+      setChallenge(await startFindEmail(phone));
+      setCode('');
+    } catch (err) {
+      fail(err, '인증번호를 보내지 못했어요. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitPhone = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (busy) return;
+    const n = !phone ? '휴대폰 번호를 입력해 주세요.' : !isPhone(phone) ? '휴대폰 번호를 확인해 주세요. (예: 010-1234-5678)' : '';
+    setFe(n);
+    if (n) { focusFirst(['findPhone']); return; }
+    void send();
+  };
+
+  const submitCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (busy || !challenge) return;
+    if (left === 0) return setError('인증 시간이 지났어요. 인증번호를 다시 받아 주세요.');
+    if (code.length !== 6) return setError('인증번호 6자리를 입력해 주세요.');
+    setError('');
+    setBusy(true);
+    try {
+      setEmails(await verifyFindEmail(challenge.id, code));
+    } catch (err) {
+      fail(err, '인증번호를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.');
+      setCode('');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const errorBox = error && (
+    <div className="ui-callout is-danger aq-shake" role="alert" key={error}>
+      {error}
+      {unavailable && <> <a href={supportMail('id')} className="aq-inline-link">고객지원에 이메일 보내기</a></>}
+    </div>
+  );
+
+  if (emails) {
+    return (
+      <div className="aq-find-panel" role="tabpanel">
+        {emails.length ? (
+          <>
+            <p className="aq-muted">이 번호로 가입한 이메일이에요. 개인정보 보호를 위해 앞부분 일부만 보여 드려요.</p>
+            <ul className="aq-found-emails">
+              {emails.map(m => <li key={m}><Glyph name="mail" size={16} /><strong>{m}</strong></li>)}
+            </ul>
+            <Link to="/login" className="ui-btn is-primary auth-submit">로그인하기</Link>
+            <button type="button" className="aq-verify-resend" onClick={onReset}>비밀번호가 기억나지 않아요</button>
+          </>
+        ) : (
+          <>
+            <p className="aq-muted">이 번호로 확인된 계정을 찾지 못했어요. 고객지원에 문의해 주세요.</p>
+            <a href={supportMail('id')} className="ui-btn is-primary auth-submit">고객지원에 이메일 보내기</a>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  if (challenge) {
+    return (
+      <form className="aq-find-panel aq-verify" role="tabpanel" onSubmit={submitCode} noValidate>
+        {errorBox}
+        {/* 그 번호로 가입한 계정이 없어도 서버는 같은 답을 준다 — 보냈다고 단정하지 않는다 */}
+        <p className="aq-verify-lead">이 번호로 가입한 계정이 있다면 ···{challenge.phoneLast4}로 인증번호 6자리를 보냈어요.</p>
+        <SmsCodeInput id="findCode" value={code} onChange={v => { setCode(v); setError(''); }} left={left} onResend={() => void send()} resending={busy} />
+        <button type="submit" className={`ui-btn is-primary auth-submit${busy ? ' is-busy' : ''}`} disabled={busy} aria-busy={busy}>
+          {busy ? '확인하는 중' : '확인'}
+        </button>
+        <button type="button" className="aq-verify-resend" onClick={() => { setChallenge(null); setError(''); }}>휴대폰 번호 다시 입력</button>
+      </form>
+    );
+  }
+
+  return (
+    <form className="aq-find-panel" role="tabpanel" onSubmit={submitPhone} noValidate>
+      {errorBox}
+      <p className="aq-muted">계정에 등록한 휴대폰 번호를 입력하면 문자로 인증번호를 보내 드려요.</p>
+      <div className="ui-field">
+        <label htmlFor="findPhone">휴대폰 번호</label>
+        <input
+          id="findPhone" type="tel" inputMode="numeric" required autoComplete="tel-national" enterKeyHint="send" maxLength={13}
+          autoFocus={AUTO_FOCUS} placeholder="010-1234-5678" aria-invalid={!!fe} aria-describedby={fe ? 'findPhoneErr' : undefined}
+          value={phone} onChange={e => { setPhone(formatPhone(e.target.value)); setFe(''); }}
+        />
+        <FieldError id="findPhoneErr">{fe}</FieldError>
+      </div>
+      <button type="submit" className={`ui-btn is-primary auth-submit${busy ? ' is-busy' : ''}`} disabled={busy} aria-busy={busy}>
+        {busy ? '보내는 중' : '인증번호 받기'}
+      </button>
+      <p className="aq-muted">
+        휴대폰 번호를 등록하지 않았다면 <a href={supportMail('id')} className="aq-inline-link">고객지원</a>에 문의해 주세요.
+      </p>
+    </form>
+  );
+}
+
 export function FindAccount() {
   const { loginPasskey } = useAuth();
   const nav = useNavigate();
@@ -255,20 +378,14 @@ export function FindAccount() {
   return (
     <AuthLayout
       icon="info" title="계정을 찾고 있나요?"
-      sub={tab === 'id' ? '가입한 이메일 찾기는 고객지원에서 안내해 드려요.' : '등록한 휴대폰 번호로 비밀번호를 다시 정할 수 있어요.'}
+      sub={tab === 'id' ? '등록한 휴대폰 번호로 가입한 이메일을 찾을 수 있어요.' : '등록한 휴대폰 번호로 비밀번호를 다시 정할 수 있어요.'}
     >
       {error && <div className="ui-callout is-danger aq-shake" role="alert" key={error}>{error}</div>}
       <Segmented
         tabs className="aq-seg-tabs" label="계정 찾기 구분" value={tab} onChange={setTab}
         options={[{ value: 'id', label: '이메일 찾기' }, { value: 'password', label: '비밀번호 찾기' }] as const}
       />
-      {tab === 'id' ? (
-        <div className="aq-find-panel" role="tabpanel">
-          <p className="aq-muted">가입한 이메일이 기억나지 않으면 고객지원에 문의해 주세요. 아직은 자동으로 찾아 드리지 못해요.</p>
-          {/* 메일 제목·본문을 미리 채워 두어 무엇을 적어야 할지 고민하지 않게 */}
-          <a href={supportMail('id')} className="ui-btn is-primary auth-submit">고객지원에 이메일 보내기</a>
-        </div>
-      ) : <PasswordReset />}
+      {tab === 'id' ? <FindEmail onReset={() => setTab('password')} /> : <PasswordReset />}
       {/* 이 기기에 패스키가 있으면 이메일·비밀번호 없이 바로 — '또는'으로 조용히 */}
       {canPasskey && (
         <div className="aq-passkey-alt">

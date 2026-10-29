@@ -1809,6 +1809,9 @@ a.aq-inline-link{display:inline-block;max-width:100%}
 
 /* 계정 찾기 — 카드 안에 흰 칸을 겹치지 않고 안내 글 + 버튼만 */
 .aq-find-panel{display:grid;gap:18px;margin-top:4px}
+.aq-found-emails{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.aq-found-emails li{display:flex;align-items:center;gap:10px;padding:14px 16px;border-radius:14px;background:var(--aq-field);color:var(--aq-text-2)}
+.aq-found-emails strong{color:var(--aq-text);font-weight:var(--aq-fw-bold);font-variant-numeric:tabular-nums;word-break:break-all}
 
 /* 홈 추가 카드 — 플랫폼 반영의 '/ 전체' 숫자는 작고 흐리게, 플랫폼 줄은 카드 면 위에 바로(흰 칸 없음) */
 #view-home .aq-home-of{margin-left:6px;font-size:var(--aq-fs-lg,18px);font-weight:var(--aq-fw-bold);letter-spacing:0;color:var(--aq-text-4)}
