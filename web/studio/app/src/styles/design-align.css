@@ -1884,3 +1884,6 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-notice-settings{display:grid;gap:10px;margin-top:40px}
 .aq-notice-settings:empty{display:none}
 .aq-notice-settings>.aq-alert-pref{margin:0}
+/* 목록은 제목·시각 두 줄 + 오른쪽 꺾쇠(누르면 내용 창) */
+#view-notifications .aq-notice-chev{color:var(--aq-text-disabled)}
+#view-notifications .aq-notice-detail{font-size:13px}
