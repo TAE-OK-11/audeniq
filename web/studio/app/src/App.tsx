@@ -7,6 +7,7 @@ import { artistPath, artistPressPath, releasePath } from './lib/publicLinks';
 import { AuthProvider, useAuth } from './api/auth';
 import { Layout } from './components/Layout';
 import { ToastProvider } from './components/Toast';
+import { hasPasskeyHandoff } from './lib/passkeyHandoff';
 import { ConfirmProvider } from './components/Confirm';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { SystemStatus } from './components/SystemStatus';
@@ -41,6 +42,7 @@ function lazyPage<M>(load: () => Promise<M>, pick: (m: M) => ComponentType) {
 }
 
 const Login = lazyPage(pageLoaders.Login, m => m.Login);
+const PasskeySetup = lazyPage(pageLoaders.PasskeySetup, m => m.PasskeySetup);
 const Signup = lazyPage(pageLoaders.Signup, m => m.Signup);
 const FindAccount = lazyPage(pageLoaders.FindAccount, m => m.FindAccount);
 const Sign = lazyPage(pageLoaders.Sign, m => m.Sign);
@@ -111,6 +113,8 @@ function GuestOnly({ children }: { children: ReactNode }) {
   rememberAiConnectReturn(loc.search);
   if (loading) return <BootScreen />;
   if (user) {
+    // 비밀번호로 막 로그인·가입했으면 홈을 거치지 않고 패스키 만들기 화면으로 (pages/PasskeySetup)
+    if (hasPasskeyHandoff()) return <Navigate to="/passkey-setup" replace />;
     const from = loginRedirect(loc.state);
     return <Navigate to={from ?? '/'} replace />;
   }
@@ -196,6 +200,7 @@ export function App() {
                     <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
                     <Route path="/signup" element={<GuestOnly><Signup /></GuestOnly>} />
                     <Route path="/find-account" element={<GuestOnly><FindAccount /></GuestOnly>} />
+                    <Route path="/passkey-setup" element={<Protected><PasskeySetup /></Protected>} />
                     {/* 권리자 서명 — 로그인 없이 받은 링크로 (본인확인 후 직접 서명) */}
                     <Route path="/sign/:token" element={<Sign />} />
                     <Route path="/terms" element={<Terms />} />

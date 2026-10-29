@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from '../lib/router';
 import { useAuth } from '../api/auth';
-import { PASSWORD_MIN } from '../api/client';
+import { MOCK, PASSWORD_MIN } from '../api/client';
+import { passkeySupported } from '../api/passkey';
 import { authErrorMessage, messageForCode } from '../api/errors';
 import { SocialSignIn } from '../components/SocialSignIn';
 import { takeOAuthResult } from '../api/oauth';
@@ -9,6 +10,7 @@ import { AUTO_FOCUS, AuthLayout, EMAIL_INPUT, EmailSuggest, FieldError, Password
 import { ApiError } from '../api/errors';
 import { CheckIcon } from '../components/Check';
 import { patchProfile } from '../store/profile';
+import { clearPasskeyHandoff, hasPasskeyHandoff, preparePasskeyHandoff } from '../lib/passkeyHandoff';
 
 export function strength(pw: string): { score: number; label: string } {
   // 최소 길이보다 짧으면 조합과 상관없이 '너무 짧아요' — 6자 'abc123'이 '보통'으로 보였다
@@ -68,11 +70,14 @@ export function Signup() {
       return;
     }
     setBusy(true);
+    // 가입 직후 이 기기에 패스키를 만들지 묻는다 — 다음 로그인부터 비밀번호 없이 (pages/PasskeySetup)
+    preparePasskeyHandoff(password, '/');
     try {
       await signup(email.trim(), password);
       patchProfile({ name: name.trim(), email: email.trim() });
-      nav('/', { replace: true });
+      nav(hasPasskeyHandoff() ? '/passkey-setup' : '/', { replace: true });
     } catch (err) {
+      clearPasskeyHandoff();
       setError(authErrorMessage(err, 'signup'));
       setTaken(err instanceof ApiError && err.code === 'CONFLICT');
       setBusy(false);
@@ -80,7 +85,7 @@ export function Signup() {
   }
 
   return (
-    <AuthLayout icon="user" title="AUDENIQ과 함께 시작해요." sub="아티스트 계정을 만들고 발매를 준비해 보세요.">
+    <AuthLayout icon="user" title="AUDENIQ과 함께 시작해요." sub={!MOCK && passkeySupported() ? '계정을 만든 뒤 패스키를 등록하면 다음부터 비밀번호 없이 로그인해요.' : '아티스트 계정을 만들고 발매를 준비해 보세요.'}>
       {error && (
         <div className="ui-callout is-danger aq-shake" role="alert" key={error}>
           {error}
