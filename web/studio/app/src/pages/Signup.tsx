@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Link, useNavigate } from '../lib/router';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from '../lib/router';
 import { useAuth } from '../api/auth';
 import { MOCK, PASSWORD_MIN } from '../api/client';
 import { passkeySupported } from '../api/passkey';
@@ -10,6 +10,7 @@ import { AUTO_FOCUS, AuthLayout, EMAIL_INPUT, EmailSuggest, FieldError, Password
 import { ApiError } from '../api/errors';
 import { CheckIcon } from '../components/Check';
 import { patchProfile } from '../store/profile';
+import { rememberLoginEmail } from '../lib/lastEmail';
 import { clearPasskeyHandoff, hasPasskeyHandoff, preparePasskeyHandoff } from '../lib/passkeyHandoff';
 
 export function strength(pw: string): { score: number; label: string } {
@@ -38,8 +39,8 @@ export function Signup() {
   const { signup } = useAuth();
   const nav = useNavigate();
   // 한 번에 다 받지 않고 단계로 — ① 로그인할 이메일·비밀번호 ② 활동명·약관 동의(여기서 계정을 만든다) ③ 패스키(PasskeySetup)
-  const [step, setStep] = useState<1 | 2>(1);
-  const [back, setBack] = useState(false);
+  // 단계는 주소(?step=2)에도 남긴다 — 휴대폰 '뒤로'를 누르면 가입 화면을 떠나지 않고 앞 단계로, 적은 내용은 그대로
+  const [params, setParams] = useSearchParams();
   const steps = !MOCK && passkeySupported() ? 3 : 2;
   const [name, setName] = useState('');
   // 전화번호 — 지금은 입력 칸만 있고 서버로 보내지 않는다(저장할 곳이 아직 없다). 저장을 붙일 때 개인정보 안내 항목도 함께 바꾼다
@@ -68,13 +69,30 @@ export function Signup() {
   const mismatch = confirmReady && password !== confirm;
   const matched = confirmReady && !!password && password === confirm;
   const longEnough = password.length >= PASSWORD_MIN;
+  // 1단계를 마쳐야 2단계 — 새로 고침 등으로 비어 있는데 주소만 ?step=2면 1단계를 보여 준다
+  const step1Done = isEmail(email) && longEnough && password === confirm;
+  const step: 1 | 2 = params.get('step') === '2' && step1Done ? 2 : 1;
+  // 앞으로 왔는지 뒤로 왔는지 — 단계 칸이 들어오는 방향(뒤로면 왼쪽에서)
+  const [shown, setShown] = useState(step);
+  const [back, setBack] = useState(false);
+  if (shown !== step) { setBack(step < shown); setShown(step); }
+  const prevStep = useRef(step);
+  const pushed = useRef(false);
+  useEffect(() => {
+    if (params.get('step') === '2' && !step1Done) setParams({}, { replace: true });
+  }, [params, step1Done, setParams]);
+  // 단계가 바뀌면 그 단계 첫 칸으로 — 휴대폰 키보드가 내려갔다 올라오지 않게 바로 옮긴다
+  useEffect(() => {
+    if (prevStep.current === step) return;
+    prevStep.current = step;
+    requestAnimationFrame(() => document.getElementById(step === 1 ? 'suEmail' : 'suName')?.focus({ preventScroll: true }));
+  }, [step]);
 
   const go = (to: 1 | 2) => {
-    setBack(to < step);
-    setStep(to);
     setError('');
-    // 다음 단계 첫 칸으로 — 휴대폰 키보드가 내려갔다 올라오지 않게 바로 옮긴다
-    requestAnimationFrame(() => document.getElementById(to === 1 ? 'suEmail' : 'suName')?.focus({ preventScroll: true }));
+    if (to === 2) { pushed.current = true; setParams({ step: '2' }); return; }
+    // 앞으로 올 때 쌓은 기록이 있으면 브라우저 '뒤로'와 똑같이 — 그래야 다시 '뒤로'를 눌러도 2단계로 돌아오지 않는다
+    if (pushed.current) { pushed.current = false; nav(-1); } else setParams({}, { replace: true });
   };
 
   // 1단계 — 이메일·비밀번호만 확인하고 다음으로 (이미 가입된 이메일인지는 계정을 만들 때 서버가 알려 준다)
@@ -111,6 +129,7 @@ export function Signup() {
     try {
       await signup(email.trim(), password);
       patchProfile({ name: name.trim(), email: email.trim() });
+      rememberLoginEmail(email.trim());
       nav(hasPasskeyHandoff() ? '/passkey-setup' : '/', { replace: true });
     } catch (err) {
       clearPasskeyHandoff();
@@ -141,7 +160,7 @@ export function Signup() {
     <AuthLayout
       icon={step === 1 ? 'user' : 'music'} step={{ at: step, of: steps, onBack: step === 2 && !busy ? () => go(1) : undefined }}
       title={step === 1 ? 'AUDENIQ과 함께 시작해요.' : '어떤 이름으로 활동하나요?'}
-      sub=''
+      sub={step === 2 ? `가입 이메일 · ${email.trim()}` : ''}
     >
       {error && (
         <div className="ui-callout is-danger aq-shake" role="alert" key={error}>
@@ -164,21 +183,24 @@ export function Signup() {
           </div>
           <div className="ui-field">
             {/* 조건은 이름표 옆에 늘 보이게 — 칸 안 안내 글자는 치기 시작하면 사라졌다. 채우면 초록 체크 */}
-            <label htmlFor="suPassword">
-              비밀번호
-              {/* 길이를 채우면 같은 자리에 강도를 — 칸 아래 강도 막대가 생기며 카드가 늘어나지 않게 */}
-              <span className={`aq-pw-rule${longEnough ? ' is-ok' : ''}`} id="suPwRule" data-score={longEnough ? pw.score : undefined} aria-live="polite">
-                {longEnough ? <><CheckIcon size={12} />{pw.label}</> : `${PASSWORD_MIN}자 이상`}
-              </span>
-            </label>
+            <label htmlFor="suPassword">비밀번호</label>
             <PasswordInput
               id="suPassword" required autoComplete="new-password" minLength={PASSWORD_MIN}
-              aria-describedby={fe.password ? 'suPasswordErr' : 'suPwRule'}
+              aria-describedby={fe.password ? 'suPasswordErr' : 'suPwHelp'}
               aria-invalid={!!fe.password} enterKeyHint="next"
               value={password} onChange={e => { setPassword(e.target.value); clear('password'); }} onKeyDown={nextOnEnter('suConfirm')}
               show={showPw} onToggle={() => setShowPw(v => !v)}
             />
             <FieldError id="suPasswordErr">{fe.password}</FieldError>
+            {/* 칸 아래 한 줄 — 입력 전에는 조건(12자 이상), 입력하면 같은 자리에 차오르는 강도 막대. 줄 높이가 같아 카드가 늘지 않는다 */}
+            {!fe.password && (password ? (
+              <div className="aq-pw-meter" data-score={pw.score} id="suPwHelp" aria-live="polite">
+                <span><i /></span>
+                <small className={longEnough ? 'is-ok' : undefined}>{longEnough && <CheckIcon size={12} />}{pw.label}</small>
+              </div>
+            ) : (
+              <p className="ui-field-help aq-pw-rule" id="suPwHelp">{PASSWORD_MIN}자 이상</p>
+            ))}
           </div>
           <div className="ui-field">
             <label htmlFor="suConfirm">비밀번호 확인</label>

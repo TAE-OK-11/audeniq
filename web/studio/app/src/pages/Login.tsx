@@ -11,6 +11,7 @@ import { ApiError, messageForCode } from '../api/errors';
 import { SocialSignIn } from '../components/SocialSignIn';
 import { takeOAuthResult } from '../api/oauth';
 import { clearPasskeyHandoff, hasPasskeyHandoff, preparePasskeyHandoff } from '../lib/passkeyHandoff';
+import { lastLoginEmail, rememberLoginEmail } from '../lib/lastEmail';
 
 export function Login() {
   const { login, loginPasskey } = useAuth();
@@ -19,7 +20,7 @@ export function Login() {
   const from = loginRedirect(loc.state);
   // 가입 화면에서 '이미 가입된 이메일 → 이 이메일로 로그인'으로 오면 주소를 채워 둔다
   const presetEmail = (loc.state as { email?: unknown } | null)?.email;
-  const [email, setEmail] = useState(typeof presetEmail === 'string' ? presetEmail : '');
+  const [email, setEmail] = useState(() => (typeof presetEmail === 'string' ? presetEmail : lastLoginEmail()));
   const [emailDone, setEmailDone] = useState(false);
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
@@ -48,6 +49,7 @@ export function Login() {
     preparePasskeyHandoff(password, from ?? '/');
     try {
       await login(email.trim(), password);
+      rememberLoginEmail(email.trim());
       nav(hasPasskeyHandoff() ? '/passkey-setup' : from ?? '/', { replace: true });
     } catch (err) {
       clearPasskeyHandoff();
