@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useToast } from './Toast';
 import { useConfirm } from './Confirm';
 import { errorMessage } from '../api/errors';
+import { AppleLogo, GoogleLogo } from './SocialSignIn';
 import { OAUTH_LABEL, oauthIdentities, startOAuth, unlinkOAuth, type OAuthIdentities, type OAuthProvider } from '../api/oauth';
 
 export function ConnectedAccounts() {
@@ -42,22 +43,24 @@ export function ConnectedAccounts() {
   const rows = (['google', 'apple'] as const).filter(p => data.providers[p] || data.items.some(i => i.provider === p));
   if (rows.length === 0) return <p>지금은 연결할 수 있는 계정이 없어요.</p>;
 
+  // 패스키·AI 앱 창과 같은 줄 — 회사 로고 칸 · 이름 · 연결 상태 · 오른쪽 버튼(연결은 옅은 버튼, 해제는 빨간 글자)
   return (
     <div className="aq-passkeys">
-      <p className="aq-muted">연결하면 이메일·비밀번호 대신 그 계정으로 로그인할 수 있어요. 연결 정보의 이메일은 암호화해 보관해요.</p>
-      <ul className="aq-passkey-list">
+      <p className="aq-muted">연결하면 비밀번호 대신 그 계정으로 로그인할 수 있어요. 연결 정보의 이메일은 암호화해 보관해요.</p>
+      <ul className="aq-acct-list">
         {rows.map(p => {
           const linked = data.items.find(i => i.provider === p);
           return (
             <li key={p}>
-              <span className="min-0">
+              <span className={`aq-acct-ico is-${p}`} aria-hidden="true">{p === 'google' ? <GoogleLogo /> : <AppleLogo />}</span>
+              <span className="min-0 aq-acct-copy">
                 <strong>{OAUTH_LABEL[p]}</strong>
-                <small>{linked ? `연결됨${linked.email ? ` · ${linked.email}` : ''}` : '연결 안 됨'}</small>
+                <small className={linked ? 'is-on' : undefined}>{linked ? `연결됨${linked.email ? ` · ${linked.email}` : ''}` : '연결 안 됨'}</small>
               </span>
               {linked
-                ? <button type="button" className="ui-btn is-soft is-sm" onClick={() => void disconnect(p, linked.id)}>해제</button>
+                ? <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => void disconnect(p, linked.id)}>해제</button>
                 : data.providers[p] && (
-                  <button type="button" className="ui-btn is-primary is-sm" onClick={() => void connect(p)} disabled={busy !== null}>
+                  <button type="button" className="ui-btn is-soft is-sm" onClick={() => void connect(p)} disabled={busy !== null}>
                     {busy === p ? '이동하는 중' : '연결'}
                   </button>
                 )}
@@ -66,7 +69,7 @@ export function ConnectedAccounts() {
         })}
       </ul>
       {!data.has_password && (
-        <p className="aq-muted">비밀번호 없이 {data.items.map(i => OAUTH_LABEL[i.provider]).join('·')}로 가입한 계정이에요. 비밀번호가 필요하면 로그인 화면의 &lsquo;아이디 · 비밀번호 찾기&rsquo;에서 정할 수 있어요.</p>
+        <p className="aq-muted">비밀번호 없이 {data.items.map(i => OAUTH_LABEL[i.provider]).join('·')}로 가입한 계정이에요. 비밀번호가 필요하면 로그인 화면의 &lsquo;이메일 · 비밀번호 찾기&rsquo;에서 정할 수 있어요.</p>
       )}
     </div>
   );
