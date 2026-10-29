@@ -198,7 +198,6 @@ export function Notifications() {
       {cards.length ? (
         <div id="noticeList" className="aq-notice-sections">
           {/* 새 알림이 없으면 빈 칸 대신 한 줄로 알려 준다 */}
-          {current === 1 && !freshAll.length && <p className="aq-notice-caughtup"><Glyph name="check" size={16} />새 알림을 모두 확인했어요</p>}
           {sections.map(sec => (
             <section key={sec.key} aria-labelledby={`notice-${sec.key}`}>
               <div className="aq-notice-head">
