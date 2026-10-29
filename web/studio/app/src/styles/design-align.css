@@ -1839,25 +1839,15 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
   #portalNav .aq-nav-foot .aq-nav-legal{justify-content:center;column-gap:14px}
 }
 
-/* 알림 목록 — 날짜로 묶은 촘촘한 줄 (카드로 감싸지 않는다). 분류는 아이콘, 시각은 오른쪽 위, 설명은 한 줄.
-   안 읽은 알림: 아이콘 모서리 파란 점 + 굵은 제목 / 읽은 알림: 회색 아이콘 + 보통 굵기 */
-.aq-notice-feed{display:grid;gap:22px;margin-top:10px}
-.aq-notice-day{margin:0 0 4px;font-size:var(--aq-fs-sm);font-weight:700;color:var(--aq-text-4)}
-.aq-notice-rows{margin:0;padding:0;list-style:none}
-.aq-notice-rows>li+li .aq-notice-row{border-top:1px solid var(--aq-line)}
-.aq-notice-row{display:grid;grid-template-columns:40px minmax(0,1fr) auto;column-gap:14px;align-items:start;width:100%;padding:14px 0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
-.aq-notice-row .aq-notice-symbol{position:relative;width:40px;height:40px;flex:none;border-radius:var(--aq-r-md);background:var(--aq-blue-100);color:var(--aq-blue-500)}
-.aq-notice-row .aq-unread{position:absolute;top:-2px;right:-2px;width:10px;height:10px;border:2px solid #fff;border-radius:50%;background:var(--aq-blue-500)}
-.aq-notice-row .aq-notice-copy{display:grid;gap:2px;min-width:0;padding-top:1px}
-.aq-notice-row strong{overflow:hidden;color:var(--aq-text);font-size:15px;font-weight:700;line-height:1.4;text-overflow:ellipsis;white-space:nowrap}
-.aq-notice-row .aq-notice-detail{overflow:hidden;color:var(--aq-text-3);font-size:13px;line-height:1.5;text-overflow:ellipsis;white-space:nowrap}
-.aq-notice-time{padding-top:3px;color:var(--aq-text-4);font-size:12px;font-weight:500;white-space:nowrap;font-variant-numeric:tabular-nums}
-.aq-notice-row.is-read .aq-notice-symbol{background:var(--aq-gray-50);color:var(--aq-text-4)}
-.aq-notice-row.is-read strong{font-weight:500;color:var(--aq-text-2)}
-.aq-notice-row.is-read .aq-notice-detail{color:var(--aq-text-4)}
-@media(hover:hover){.aq-notice-row:hover strong{color:var(--aq-blue-500)}}
-.aq-notice-row:focus-visible{outline:var(--aq-focus);outline-offset:2px;border-radius:var(--aq-r-md)}
-.aq-notice-more span{margin-left:4px;color:var(--aq-text-4);font-weight:600}
+/* 쪽 번호 (알림) — 지금 쪽은 파란 면, 나머지는 글자만. 끝없이 이어지는 목록 대신 */
+.aq-pager{display:flex;justify-content:center;align-items:center;gap:4px;margin:20px 0 4px}
+.aq-pager button{display:inline-grid;place-items:center;min-width:36px;height:36px;padding:0 6px;border:0;border-radius:var(--aq-r-ctl-sm);background:none;color:var(--aq-text-3);font:inherit;font-size:14px;font-weight:600;font-variant-numeric:tabular-nums;cursor:pointer;transition:background-color var(--aq-dur) var(--aq-ease),color var(--aq-dur) var(--aq-ease)}
+@media(hover:hover){.aq-pager button:not(:disabled):not(.is-on):hover{background:var(--aq-surface)}}
+.aq-pager .aq-pager-num.is-on{background:var(--aq-primary);color:#fff}
+.aq-pager .aq-pager-step{color:var(--aq-text-2)}
+.aq-pager .aq-pager-step:disabled{color:var(--aq-text-disabled);cursor:default}
+.aq-pager-gap{min-width:20px;color:var(--aq-text-4);text-align:center}
+.aq-pager button:focus-visible{outline:var(--aq-focus);outline-offset:2px}
 
 /* 서명 전·검토 중 안내 카드 — 파란 바탕에 초록 글자가 섞여 있었다. 설명은 회색으로 */
 .aq-doc-done.is-pending .min-0 span{color:var(--aq-text-3)}

@@ -3,7 +3,7 @@ import { useNavigate } from '../lib/router';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { localStamp } from '../lib/format';
-import { parseStamp, relativeTime } from '../lib/date';
+import { relativeTime } from '../lib/date';
 import { markAllNoticesRead, markNoticeRead, useNotices, useUnreadCount, type Notice } from '../store/support';
 import { Glyph } from '../components/Glyph';
 import { alertsBlocked, alertsEnabled, alertsSupported, disableAlerts, enableAlerts } from '../lib/alerts';
@@ -77,30 +77,31 @@ function EmailAlerts() {
   );
 }
 
-/** 날짜 묶음 — 오늘 · 어제 · 지난 7일, 그 전은 달마다 ('9월', 해가 다르면 '2025년 12월') */
-function noticeGroup(time: string, now: Date): string {
-  const d = parseStamp(time);
-  if (!d) return '이전';
-  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const days = Math.round((day(now) - day(d)) / 86_400_000);
-  if (days <= 0) return '오늘';
-  if (days === 1) return '어제';
-  if (days < 7) return '지난 7일';
-  return d.getFullYear() === now.getFullYear() ? `${d.getMonth() + 1}월` : `${d.getFullYear()}년 ${d.getMonth() + 1}월`;
+/** 한 쪽에 보여 줄 알림 수 — 끝없이 이어지지 않게 쪽 번호로 나눈다 */
+const PAGE = 15;
+
+/** 쪽 번호 — 지금 쪽 앞뒤 둘씩, 처음·끝 쪽은 늘 보이고 사이는 '…' */
+function pageList(page: number, pages: number): (number | '…')[] {
+  const out: (number | '…')[] = [];
+  for (let p = 1; p <= pages; p++) {
+    if (p === 1 || p === pages || Math.abs(p - page) <= 2) out.push(p);
+    else if (out[out.length - 1] !== '…') out.push('…');
+  }
+  return out;
 }
 
-/** 줄 오른쪽 시각 — 묶음과 맞춘다: 오늘은 '12분 전', 어제는 '오후 4:50', 그 전은 '10월 26일'
- * ('어제' 묶음에 '12시간 전', '지난 7일'에 '1일 전'이 섞이면 묶음과 시각이 서로 다른 말을 했다) */
-function noticeTime(time: string, group: string, now: Date): string {
-  const d = parseStamp(time);
-  if (!d) return time;
-  if (group === '오늘') return relativeTime(time, now);
-  if (group === '어제') return d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' });
-  return `${d.getMonth() + 1}월 ${d.getDate()}일`;
+function Pager({ page, pages, onPage }: { page: number; pages: number; onPage: (p: number) => void }) {
+  if (pages <= 1) return null;
+  return (
+    <nav className="aq-pager" aria-label="알림 쪽">
+      <button type="button" className="aq-pager-step" onClick={() => onPage(page - 1)} disabled={page <= 1} aria-label="이전 쪽"><Glyph name="chevron-left" size={16} /></button>
+      {pageList(page, pages).map((p, i) => p === '…'
+        ? <span key={`gap${i}`} className="aq-pager-gap" aria-hidden="true">…</span>
+        : <button key={p} type="button" className={`aq-pager-num${p === page ? ' is-on' : ''}`} aria-current={p === page ? 'page' : undefined} onClick={() => onPage(p)}>{p}</button>)}
+      <button type="button" className="aq-pager-step" onClick={() => onPage(page + 1)} disabled={page >= pages} aria-label="다음 쪽"><Glyph name="chevron-right" size={16} /></button>
+    </nav>
+  );
 }
-
-/** 처음엔 이만큼만 — 알림이 수십 개 쌓이면 화면이 끝없이 길어졌다 */
-const PAGE = 20;
 
 function noticeSymbol(kind: string) {
   return <Glyph size={17} name={kind === '지급' ? 'won' : kind === '발매' ? 'music' : kind === '서류' ? 'doc' : kind === '문의' ? 'mail' : kind === '계정' ? 'user' : 'bell'} />;
@@ -113,18 +114,18 @@ export function Notifications() {
   const notices = useNotices();
   const unread = useUnreadCount();
   const [openNotice, setOpenNotice] = useState<Notice | null>(null);
-  const [limit, setLimit] = useState(PAGE);
+  const [page, setPage] = useState(1);
 
   const shown = (filter === 'all' ? notices : notices.filter(n => !n.read))
     .slice().sort((a, b) => b.time.localeCompare(a.time));
-  const now = new Date();
-  const groups: { label: string; items: Notice[] }[] = [];
-  for (const n of shown.slice(0, limit)) {
-    const label = noticeGroup(n.time, now);
-    const last = groups[groups.length - 1];
-    if (last?.label === label) last.items.push(n); else groups.push({ label, items: [n] });
-  }
-  const more = shown.length - limit;
+  const pages = Math.max(1, Math.ceil(shown.length / PAGE));
+  const current = Math.min(page, pages);
+  const pageItems = shown.slice((current - 1) * PAGE, current * PAGE);
+  // 쪽을 바꾸면 목록 맨 위로 — 아래 쪽 번호를 눌렀는데 화면이 그대로 아래에 있으면 바뀐 줄 몰랐다
+  const goPage = (p: number) => {
+    setPage(p);
+    document.getElementById('notificationTools')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  };
 
   const readAll = () => {
     if (!unread) { toast('읽지 않은 알림이 없어요.', 'info'); return; }
@@ -155,47 +156,42 @@ export function Notifications() {
           type="button"
           className={`ui-chip${filter === 'all' ? ' is-on' : ''}`}
           aria-pressed={filter === 'all'}
-          onClick={() => { setFilter('all'); setLimit(PAGE); }}
+          onClick={() => { setFilter('all'); setPage(1); }}
         >전체 알림</button>
         <button
           type="button"
           className={`ui-chip${filter === 'unread' ? ' is-on' : ''}`}
           aria-pressed={filter === 'unread'}
-          onClick={() => { setFilter('unread'); setLimit(PAGE); }}
+          onClick={() => { setFilter('unread'); setPage(1); }}
         >읽지 않음 <span id="unreadCount">{unread}</span></button>
         <button type="button" className="ui-btn is-text" id="readAllNotices" onClick={readAll} disabled={!unread}><Glyph name="check" size={14} />모두 읽음</button>
       </div>
 
       {shown.length ? (
-        // 날짜로 묶은 촘촘한 목록 — 알림 하나가 세 줄(분류·시각 / 제목 / 설명)씩 차지해 수십 개면 화면이 끝없이 길었다.
-        // 분류는 아이콘으로, 시각은 오른쪽 위 작은 글자로, 설명은 한 줄. 안 읽은 알림은 아이콘의 파란 점과 굵은 제목
-        <div className="aq-notice-feed" key={filter}>
-          {groups.map(g => (
-            <section key={g.label} className="aq-notice-group" aria-label={g.label}>
-              <h2 className="aq-notice-day">{g.label}</h2>
-              <ul className="aq-notice-rows">
-                {g.items.map(n => (
-                  <li key={n.id}>
-                    <button type="button" className={`aq-notice-row${n.read ? ' is-read' : ''}`} onClick={() => openNoticeDetail(n)}>
-                      <span className="aq-notice-symbol" aria-hidden="true">{noticeSymbol(n.kind)}{!n.read && <i className="aq-unread" />}</span>
-                      <span className="aq-notice-copy">
-                        <strong>{n.title}</strong>
-                        {n.detail && <span className="aq-notice-detail">{n.detail}</span>}
-                      </span>
-                      <time className="aq-notice-time" dateTime={n.time}>{noticeTime(n.time, g.label, now)}</time>
-                      {!n.read && <span className="sr-only">읽지 않음</span>}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
-          {more > 0 && (
-            <button type="button" className="ui-btn is-soft is-block aq-notice-more" onClick={() => setLimit(l => l + PAGE)}>
-              알림 더 보기 <span>{more}개</span>
+        <>
+        <div className="aq-catalog-cards aq-stagger" key={`${filter}-${current}`}>
+          {pageItems.map(n => (
+            <button
+              key={n.id} type="button"
+              className={`ui-row aq-notice-card${n.read ? ' is-read' : ''}`}
+              onClick={() => openNoticeDetail(n)}
+            >
+              <span className="aq-notice-symbol" aria-hidden="true">{noticeSymbol(n.kind)}</span>
+              <span className="min-0 aq-notice-copy">
+                <span className="aq-notice-meta">{n.kind || '안내'} · {relativeTime(n.time) || n.time}</span>
+                <strong>{n.title}</strong>
+                <span className="aq-notice-detail">{n.detail}</span>
+              </span>
+              {/* 읽음·안 읽음 모두 눌러 열 수 있다는 화살표를 같게 두고, 안 읽은 알림만 파란 점을 더한다 */}
+              <span className="aq-notice-end">
+                {!n.read && <i className="aq-unread" aria-label="읽지 않음" />}
+                <Glyph name="chevron-right" size={18} className="aq-notice-reopen" />
+              </span>
             </button>
-          )}
+          ))}
         </div>
+        <Pager page={current} pages={pages} onPage={goPage} />
+        </>
       ) : (
         <div className="ui-empty">
           <h2>{filter === 'unread' ? '읽지 않은 알림이 없어요.' : '새 알림이 없어요.'}</h2>
