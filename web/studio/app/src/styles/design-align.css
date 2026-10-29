@@ -1946,3 +1946,24 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-passkeys>.ui-btn.is-block,.aq-passkeys .aq-reveal>.ui-btn.is-block{gap:6px}
 .aq-acct-form{display:grid;gap:4px;padding:16px;border-radius:var(--aq-r-xl);background:var(--aq-surface)}
 .aq-acct-list .ui-btn.is-text{flex:none;white-space:nowrap}
+
+/* ---------- 기다림을 덜 느끼게 ----------
+   목록 자리표시(SkeletonList)도 다른 자리표시처럼 150ms 뒤에 살며시 — 금방 오는 응답에는 아예 보이지 않아 깜빡이지 않는다 */
+.ui-skel-rows,.aq-acct-skel{animation:aq-fade-in .2s ease .15s both}
+.aq-acct-skel .aq-skel-lines{padding:0}
+.aq-acct-skel .aq-skel-lines>.aq-skel{height:13px}
+.aq-acct-skel .aq-skel-lines>.aq-skel+.aq-skel{height:11px}
+.aq-acct-skel .aq-skel{background:linear-gradient(90deg,#fff 25%,#F5F8FD 45%,#fff 65%);background-size:300% 100%}
+/* 다음 화면을 준비하는 동안 머리 맨 위 얇은 파란 막대 — 지금 화면은 그대로, 눌렀다는 것만 바로 알린다.
+   150ms 안에 끝나면 보이지 않고, 오래 걸릴수록 천천히 차오르다가 준비되면 끝까지 채우고 사라진다 */
+.aq-route-bar{position:absolute;left:0;right:0;top:0;z-index:2;height:3px;border-radius:0 2px 2px 0;background:var(--aq-blue-500);transform:scaleX(0);transform-origin:0 50%;opacity:0;pointer-events:none}
+.aq-route-bar.is-run{opacity:1;transform:scaleX(.85);transition:opacity .2s ease .15s,transform 4s cubic-bezier(.08,.7,.2,1) .15s}
+.aq-route-bar.is-done{opacity:0;transform:scaleX(1);transition:transform .22s ease-out,opacity .25s ease .18s}
+@media (prefers-reduced-motion:reduce){
+  .ui-skel-rows,.aq-acct-skel{animation:none}
+  .aq-route-bar.is-run{transform:scaleX(1);transition:opacity .2s ease .15s}
+}
+/* 문의 대화 — 보낸 메시지는 바로 말풍선으로 뜨고, 서버에 닿기 전까지만 살짝 옅게.
+   내 메시지가 서버 목록으로 바뀌어 들어올 때는 다시 떠오르지 않게(같은 말풍선이 깜빡이지 않게) — 떠오르는 건 처음 보낼 때와 담당자 답변만 */
+.aq-thread li:not(.is-staff):not(.is-sending){animation:none}
+.aq-thread li.is-sending{opacity:.6;transition:opacity .2s}

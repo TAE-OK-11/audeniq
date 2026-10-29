@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Link, savedScroll, useLocation, useNavigate } from '../lib/router';
+import { Link, savedScroll, useLocation, useNavigate, useNavigationPending } from '../lib/router';
 import { useAuth } from '../api/auth';
 import { useProfile } from '../store/profile';
 import { useUnreadCount } from '../store/support';
@@ -29,6 +29,23 @@ function ViewEnter({ pathname, children }: { pathname: string; children: ReactNo
     el.classList.add('view-enter');
   }, [pathname]);
   return <div ref={ref} className="view-enter">{children}</div>;
+}
+
+/** 다음 화면을 준비하는 동안 머리 맨 위에 얇은 막대 — 지금 화면은 그대로 두고 '가고 있어요'만 알린다.
+ *  금방 끝나는 이동(150ms 안)에는 보이지 않고, 끝나면 끝까지 채운 뒤 사라진다 */
+function RouteBar() {
+  const pending = useNavigationPending();
+  const [phase, setPhase] = useState<'idle' | 'run' | 'done'>('idle');
+  useEffect(() => {
+    if (pending) setPhase('run');
+    else setPhase(p => (p === 'run' ? 'done' : p));
+  }, [pending]);
+  useEffect(() => {
+    if (phase !== 'done') return;
+    const t = window.setTimeout(() => setPhase('idle'), 450);
+    return () => window.clearTimeout(t);
+  }, [phase]);
+  return <span className={`aq-route-bar is-${phase}`} aria-hidden="true" />;
 }
 
 type NavItem = { to: string; label: string; icon: GlyphName };
@@ -244,6 +261,7 @@ export function Layout({ children }: { children: ReactNode }) {
         본문으로 건너뛰기
       </a>
       <header className={`portal-header${scrolled ? ' is-scrolled' : ''}`}>
+        <RouteBar />
         <div className="nav-shell">
           <Link to="/" className="brand" aria-label="AUDENIQ STUDIO 홈">
             <img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" />

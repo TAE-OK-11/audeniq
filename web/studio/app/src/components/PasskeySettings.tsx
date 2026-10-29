@@ -8,6 +8,7 @@ import { PasswordInput } from './AuthLayout';
 import { Reveal } from '../ui';
 import { Glyph } from './Glyph';
 import { relativeTime } from '../lib/date';
+import { SkeletonAcctRows } from './Skeleton';
 
 const day = (iso: string) => new Date(iso).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
 
@@ -67,7 +68,7 @@ export function PasskeySettings() {
         지문·얼굴·화면 잠금(PIN)으로 비밀번호 없이 로그인해요. 피싱 사이트에서는 동작하지 않아 비밀번호보다 안전해요.
       </p>
       {error && <div className="ui-callout is-danger" role="alert">{error}</div>}
-      {items === null && !error && <p role="status" className="aq-muted">불러오는 중이에요.</p>}
+      {items === null && !error && <SkeletonAcctRows count={1} />}
       {items && items.length > 0 && (
         <ul className="aq-acct-list">
           {items.map(p => (

@@ -66,21 +66,35 @@ function TicketThread({ ticket, onClosed }: { ticket: Ticket; onClosed: () => vo
     return () => window.removeEventListener(INQUIRY_CHANGED_EVENT, on);
   }, [ticket.id, reload]);
   const count = data?.messages.length ?? 0;
-  useEffect(() => { const el = listRef.current; if (el) el.scrollTop = el.scrollHeight; }, [count]);
+  // 보낸 메시지는 서버 답을 기다리지 않고 바로 말풍선으로 — 받은 대화에 들어오면(개수가 늘면) 이 자리표시는 빠진다
+  const [outbox, setOutbox] = useState<{ id: number; body: string; after: number; sent: boolean }[]>([]);
+  const pendingOut = outbox.filter(o => !o.sent || count <= o.after);
+  // 새 말풍선이 보이게 맨 아래로 — 스크롤되는 건 대화 목록이 아니라 창(시트)이다. 처음 열 때는 바로, 그다음부터는 부드럽게
+  const scrolled = useRef(false);
+  useEffect(() => {
+    const box = listRef.current?.closest<HTMLElement>('.modal-inner');
+    if (!box || !count) return;
+    box.scrollTo({ top: box.scrollHeight, behavior: scrolled.current ? 'smooth' : 'auto' });
+    scrolled.current = true;
+  }, [count, pendingOut.length]);
 
   const send = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!reply.trim() || busy) return;
-    setBusy(true);
+    const body = reply.trim();
+    if (!body || busy) return;
+    const id = Date.now();
+    setOutbox(o => [...o, { id, body, after: count, sent: false }]);
+    setReply('');
     try {
-      await portal.replyInquiry(ticket.id, reply.trim());
-      setReply('');
+      await portal.replyInquiry(ticket.id, body);
+      setOutbox(o => o.map(x => (x.id === id ? { ...x, sent: true } : x)));
       reload();
       void refreshTickets();
     } catch (err) {
+      // 못 보냈으면 말풍선을 거두고 쓴 글을 입력칸에 돌려놓는다 — 다시 쓰지 않아도 되게
+      setOutbox(o => o.filter(x => x.id !== id));
+      setReply(r => r || body);
       toast(errorMessage(err, '메시지를 보내지 못했어요.'), 'error');
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -115,13 +129,19 @@ function TicketThread({ ticket, onClosed }: { ticket: Ticket; onClosed: () => vo
             <p>{m.body}</p>
           </li>
         ))}
+        {pendingOut.map(o => (
+          <li key={`out-${o.id}`} className="is-sending">
+            <span className="aq-thread-who">나 · 보내는 중</span>
+            <p>{o.body}</p>
+          </li>
+        ))}
       </ol>
       {status !== '종료' ? (
         <form onSubmit={send} className="aq-thread-reply aq-sticky-foot">
           <label htmlFor="tReply" className="sr-only">추가 메시지</label>
           <div className="aq-thread-compose">
             <textarea id="tReply" rows={1} maxLength={4000} value={reply} onChange={e => setReply(e.target.value)} placeholder="담당자에게 더 전할 내용" />
-            <button type="submit" className={`ui-btn is-primary is-icon${busy ? ' is-busy' : ''}`} aria-label="보내기" disabled={busy || !reply.trim()}>
+            <button type="submit" className="ui-btn is-primary is-icon" aria-label="보내기" disabled={busy || !reply.trim()}>
               <Glyph name="arrow-up" size={18} />
             </button>
           </div>

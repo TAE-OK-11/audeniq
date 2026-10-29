@@ -3,7 +3,7 @@
 // react-router 전체(약 48KB min / 15KB gzip) 대신 2KB 남짓으로 같은 동작을 제공한다.
 // 필요해지면 import 경로를 'react-router'로 바꾸는 것만으로 되돌릴 수 있다.
 import {
-  Children, createContext, isValidElement, startTransition, useCallback, useContext, useEffect, useMemo, useRef, useState,
+  Children, createContext, isValidElement, useCallback, useContext, useEffect, useMemo, useRef, useState, useTransition,
   type AnchorHTMLAttributes, type MouseEvent, type ReactElement, type ReactNode,
 } from 'react';
 
@@ -36,6 +36,8 @@ interface RouterCtx {
 }
 
 const RouterContext = createContext<RouterCtx | null>(null);
+/** 다음 화면을 준비하는 중인지 — 위쪽 얇은 진행 막대용. 이동마다 모든 화면이 다시 그려지지 않게 따로 둔다 */
+const PendingContext = createContext(false);
 const ParamsContext = createContext<Record<string, string>>({});
 
 let keySeq = 0;
@@ -88,6 +90,7 @@ function readLocation(action?: Location['action']): Location {
 }
 
 export function BrowserRouter({ children }: { children: ReactNode }) {
+  const [pending, startTransition] = useTransition();
   const [location, setLocation] = useState<Location>(() => {
     migrateHashUrl();
     // 첫 기록에도 고유 키를 — 키 없는 기록이 모두 'default'를 같이 써서 스크롤 위치가 서로 섞였다
@@ -108,7 +111,7 @@ export function BrowserRouter({ children }: { children: ReactNode }) {
     };
     window.addEventListener('popstate', sync);
     return () => window.removeEventListener('popstate', sync);
-  }, []);
+  }, [startTransition]);
 
   const navigate = useCallback<NavigateFunction>((to, opts = {}) => {
     if (typeof to === 'number') { window.history.go(to); return; }
@@ -123,7 +126,7 @@ export function BrowserRouter({ children }: { children: ReactNode }) {
     // 전환으로 처리해 다음 화면 청크를 받는 동안 현재 화면을 유지한다 (스켈레톤 깜빡임 방지)
     const next = readLocation(replace ? 'REPLACE' : 'PUSH');
     startTransition(() => setLocation(next));
-  }, []);
+  }, [startTransition]);
 
   // 라우터 밖(운영체제 알림 클릭 등)에서의 이동도 같은 navigate로 — 새 기록·스크롤 맨 위
   useEffect(() => {
@@ -133,7 +136,7 @@ export function BrowserRouter({ children }: { children: ReactNode }) {
   }, [navigate]);
 
   const value = useMemo(() => ({ location, navigate }), [location, navigate]);
-  return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>;
+  return <RouterContext.Provider value={value}><PendingContext.Provider value={pending}>{children}</PendingContext.Provider></RouterContext.Provider>;
 }
 
 function useRouter(): RouterCtx {
@@ -144,6 +147,8 @@ function useRouter(): RouterCtx {
 
 export const useLocation = () => useRouter().location;
 export const useNavigate = () => useRouter().navigate;
+/** 이동했지만 다음 화면(코드·데이터)을 아직 준비하는 중 — 그동안 지금 화면이 그대로 남는다 */
+export const useNavigationPending = () => useContext(PendingContext);
 export const useParams = <T extends Record<string, string> = Record<string, string>>() =>
   useContext(ParamsContext) as Partial<T>;
 
