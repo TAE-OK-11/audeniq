@@ -50,8 +50,6 @@
 .adm-w-switch-row{display:flex;align-items:center;justify-content:space-between;gap:14px}
 .adm-w-switch-row b{display:block;font-size:14px;font-weight:700}
 .adm-w-switch-row small{display:block;margin-top:2px;font-size:12px;color:var(--adm-muted);line-height:1.5}
-.aq-switch input:disabled+span{opacity:.5}
-.aq-switch input:focus-visible+span{outline:3px solid var(--aq-blue-450);outline-offset:2px}
 
 /* ---------- 업무 상세 ---------- */
 .adm-w-task-head{margin:0 0 18px}

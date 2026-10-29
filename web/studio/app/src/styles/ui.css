@@ -506,7 +506,7 @@ button.ui-avatar:hover{transform:scale(1.06);background:var(--aq-blue-200)}
 
 /* ---------- 불러오는 중 (Skeleton) ---------- */
 .ui-skel-rows{display:grid;gap:8px}
-.ui-skel-rows>span{height:78px;border-radius:var(--aq-r-xl);background:linear-gradient(90deg,#F3F6FB 25%,#EAF0F8 37%,#F3F6FB 63%);background-size:400% 100%;animation:aq-shimmer 1.4s ease-in-out infinite}
+.ui-skel-rows>span{height:78px;border-radius:var(--aq-r-xl);--aq-skel-bg:linear-gradient(90deg,#F3F6FB 25%,#EAF0F8 37%,#F3F6FB 63%)}
 
 /* ---------- 반응형 ---------- */
 /* 인라인 --cols 보다 우선하도록 grid-template-columns 를 직접 지정 */

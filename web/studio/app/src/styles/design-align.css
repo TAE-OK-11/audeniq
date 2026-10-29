@@ -704,7 +704,7 @@ details.auth-privacy>p{margin:2px 0 0}
 
 /* 음악 리포트 — 처음 불러오는 동안의 자리 표시(Reports.tsx ReportSkeleton). 실제 카드와 같은 칸·대략 같은 높이,
    옅은 파랑 카드 위에서 보이도록 흰 빛으로 반짝인다 */
-.aq-report.is-pending .aq-skel{background:linear-gradient(90deg,#fff 25%,rgba(255,255,255,.5) 45%,#fff 65%);background-size:300% 100%}
+.aq-report.is-pending .aq-skel{--aq-skel-bg:linear-gradient(90deg,#fff 25%,rgba(255,255,255,.5) 45%,#fff 65%);--aq-skel-w:900%;--aq-skel-anim:aq-shimmer-3}
 .aq-report.is-pending .aq-report-rows .min-0{gap:8px}
 .aq-report-skel-amount{width:min(220px,60%);height:50px;margin:2px 0 0;border-radius:var(--aq-r-md)}
 .aq-report-skel-pill{width:118px;height:28px;margin-top:12px;border-radius:var(--aq-r-pill)}
@@ -1334,16 +1334,26 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
 .aq-cheer-empty{display:grid;justify-items:center;gap:6px}
 .aq-cheer-empty>.aq-glyph{color:var(--aq-primary);opacity:.7}
 /* 불러오는 동안 — 실제 줄 모양 그대로 */
-.aq-skel{display:block;border-radius:8px;background:linear-gradient(90deg,#F3F6FB 25%,#EAF0F8 37%,#F3F6FB 63%);background-size:400% 100%;animation:aq-shimmer 1.4s ease-in-out infinite}
+/* 반짝이는 띠는 ::after가 transform으로 옮긴다 — background-position을 움직이면 자리표시마다 매 프레임 다시 칠했다.
+   모양·속도·주기는 예전(background-size 400%, 150%→-50%)과 같다: 무늬를 3장 이어 붙인 띠(1200%)를 한 주기만큼 민다.
+   300% 무늬(--aq-skel-w:900%)도 같은 식. 바탕은 비워 두고 띠가 칸 전체를 늘 덮는다(반투명 무늬도 예전처럼 비친다) */
+.aq-skel{display:block;border-radius:8px;--aq-skel-bg:linear-gradient(90deg,#F3F6FB 25%,#EAF0F8 37%,#F3F6FB 63%)}
+.aq-skel,.ui-skel-rows>span{position:relative;overflow:hidden;background:none!important;animation:none}
+.aq-skel::after,.ui-skel-rows>span::after{content:"";position:absolute;top:0;bottom:0;left:0;width:var(--aq-skel-w,1200%);background:var(--aq-skel-bg) 0 0/33.3333% 100% repeat-x;animation:var(--aq-skel-anim,aq-shimmer-4) 1.4s ease-in-out infinite;pointer-events:none}
+@keyframes aq-shimmer-4{from{transform:translateX(-70.8333%)}to{transform:translateX(-20.8333%)}}
+@keyframes aq-shimmer-3{from{transform:translateX(-66.6667%)}to{transform:translateX(-22.2222%)}}
+/* 칸 자체에 다른 animation이 걸려 예전에 반짝임이 없던 자리는 띠도 멈춘다 (큰 덩어리는 살며시 나타나기만, 목록 들어오기·출력 종이) */
+.aq-skel-block::after,#main .view:not(#view-new) .aq-stagger>.aq-skel::after,.aq-paper .aq-skel::after{animation:none}
 .aq-cheer-list.is-skeleton .aq-cheer-avatar{background:none}
 .aq-cheer-list.is-skeleton .aq-cheer-avatar.aq-skel{border-radius:50%}
+.aq-cheer-list.is-skeleton .aq-cheer-avatar.aq-skel::after{content:none}
 .aq-skel-lines{display:grid;gap:8px;padding-top:4px}
 .aq-skel-lines>.aq-skel{height:12px;width:40%}
 .aq-skel-lines>.aq-skel+.aq-skel{width:85%}
 .aq-pub-skel{display:grid;gap:10px}
 .aq-pub-skel>.aq-skel{height:112px;border-radius:var(--aq-r-xl)}
 .aq-pub-skel.is-tall>.aq-skel{height:168px}
-@media (prefers-reduced-motion:reduce){.aq-skel,.aq-cheer.is-fresh,.aq-cheer-send-heart.is-pop,.aq-cheer.is-leaving,.aq-soft-in,.aq-cheer-done,.aq-cheer-heart{animation:none}}
+@media (prefers-reduced-motion:reduce){.aq-skel::after,.ui-skel-rows>span::after{animation:none}.aq-skel,.aq-cheer.is-fresh,.aq-cheer-send-heart.is-pop,.aq-cheer.is-leaving,.aq-soft-in,.aq-cheer-done,.aq-cheer-heart{animation:none}}
 
 /* 디스코그래피 — 나머지 곡은 높이가 부드럽게 열린다 */
 .aq-disco-item{transition:background-color var(--aq-dur) var(--aq-ease)}
@@ -2010,7 +2020,7 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-acct-skel .aq-skel-lines{padding:0}
 .aq-acct-skel .aq-skel-lines>.aq-skel{height:13px}
 .aq-acct-skel .aq-skel-lines>.aq-skel+.aq-skel{height:11px}
-.aq-acct-skel .aq-skel{background:linear-gradient(90deg,#fff 25%,#F5F8FD 45%,#fff 65%);background-size:300% 100%}
+.aq-acct-skel .aq-skel{--aq-skel-bg:linear-gradient(90deg,#fff 25%,#F5F8FD 45%,#fff 65%);--aq-skel-w:900%;--aq-skel-anim:aq-shimmer-3}
 /* 다음 화면을 준비하는 동안 머리 맨 위 얇은 파란 막대 — 지금 화면은 그대로, 눌렀다는 것만 바로 알린다.
    150ms 안에 끝나면 보이지 않고, 오래 걸릴수록 천천히 차오르다가 준비되면 끝까지 채우고 사라진다 */
 .aq-route-bar{position:absolute;left:0;right:0;top:0;z-index:2;height:3px;border-radius:0 2px 2px 0;background:var(--aq-blue-500);transform:scaleX(0);transform-origin:0 50%;opacity:0;pointer-events:none}

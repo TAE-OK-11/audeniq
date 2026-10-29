@@ -382,6 +382,9 @@ body.wizard-mode .portal-header{display:none!important}
 .aq-switch span{display:block;height:29px;border-radius:var(--aq-r-3xl);background:var(--aq-gray-200);transition:background .16s;position:relative}
 .aq-switch span:after{content:'';position:absolute;top:3px;left:3px;width:23px;height:23px;background:#fff;border-radius:50%;transition:transform .18s}
 .aq-switch input:checked+span{background:var(--aq-blue-500)}.aq-switch input:checked+span:after{transform:translateX(18px)}
+/* 키보드로 옮겨 오면 보이게, 끌 수 없으면 흐리게 — 예전엔 관리 화면 CSS(work.css)에만 있어 관리 화면을 다녀온 뒤에만 보였다 */
+.aq-switch input:disabled+span{opacity:.5}
+.aq-switch input:focus-visible+span{outline:3px solid var(--aq-blue-450);outline-offset:2px}
 .track-duration-label{display:flex;align-items:center;justify-content:flex-start;color:var(--aq-text-3);font-size:12px;padding:12px 0;min-height:53px}
 
 #view-new .form-grid{gap:17px!important}

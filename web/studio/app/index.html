@@ -14,11 +14,19 @@
   <link rel="preload" href="https://cdn.jsdelivr.net/gh/TAE-OK-11/audeniq-font@308d641281443c6172d94b50785d43890f5aafde/fonts/web/AudeniqSansVariable-Subset.woff2" as="font" type="font/woff2" crossorigin>
   <style>
     @font-face{font-family:"Audeniq Sans";font-style:normal;font-weight:45 930;font-display:swap;src:url("https://cdn.jsdelivr.net/gh/TAE-OK-11/audeniq-font@308d641281443c6172d94b50785d43890f5aafde/fonts/web/AudeniqSansVariable-Subset.woff2") format("woff2")}
+    /* 첫 화면 — 앱 코드·CSS를 받는 동안 흰 화면 대신 BootScreen(App.tsx)과 같은 로고·막대를 바로 그린다. 값은 enhance.css .aq-boot와 같다 */
+    body{margin:0;background:#fff}
+    .aq-boot{min-height:100vh;min-height:100dvh;display:grid;place-content:center;gap:22px;justify-items:center}
+    .aq-boot img{width:150px;opacity:.9}
+    .aq-boot-bar{display:block;width:120px;height:3px;border-radius:3px;background:#EEF1F6;overflow:hidden;position:relative}
+    .aq-boot-bar::after{content:"";position:absolute;inset:0;width:40%;border-radius:3px;background:#3B63F3;animation:aq-boot-bar 1s cubic-bezier(.32,.72,0,1) infinite}
+    @keyframes aq-boot-bar{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}
+    @media (prefers-reduced-motion:reduce){.aq-boot-bar::after{animation:none}}
     @font-face{font-family:"Audeniq Sans Full";font-style:normal;font-weight:45 930;font-display:swap;src:url("https://cdn.jsdelivr.net/gh/TAE-OK-11/audeniq-font@308d641281443c6172d94b50785d43890f5aafde/fonts/web/AudeniqSansVariable.woff2") format("woff2");unicode-range:U+1100-11FF,U+3130-318F,U+A960-A97F,U+AC00-D7A3,U+D7B0-D7FF}
   </style>
 </head>
 <body>
-  <div id="root"></div>
+  <div id="root"><div class="aq-boot" role="status" aria-label="AUDENIQ STUDIO를 불러오는 중"><img src="/static/AUDENIQ_Logo_Light.svg" alt=""><span class="aq-boot-bar"></span></div></div>
   <!-- 아이폰 사파리(iOS 26 이후) 아래 막대 색 — 화면 아래 끝에 붙은 고정 요소의 바탕색으로 막대를 칠한다. 보이지 않는 흰 띠를 둔다 (styles: .aq-tint-bottom) -->
   <!-- 위쪽도 같다 — 상태 표시줄 칸이 아래 내용을 흐리게 비추지 않고 흰색이 되게 (styles: .aq-tint-top) -->
   <div class="aq-tint-top" aria-hidden="true"></div>

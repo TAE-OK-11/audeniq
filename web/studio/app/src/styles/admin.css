@@ -746,8 +746,9 @@
 .adm-alert-toggle.is-on{color:var(--adm-blue);background:var(--adm-blue-soft)}
 
 /* 섹션 안 빈 안내 문장 — 옅은 면 칸 */
-.ui-section>p.small.muted{margin:0;padding:18px 20px;border-radius:var(--aq-r-xl);background:var(--aq-surface);font-size:var(--aq-fs-md)}
-.ui-row-end small.is-late{color:var(--aq-amber-600);font-weight:800}
+/* :where(.adm-body) — 관리 화면 CSS는 한 번 열면 계속 남는다. 범위를 두지 않으면 관리 화면을 다녀온 뒤 스튜디오의 같은 문장까지 회색 칸이 됐다 */
+:where(.adm-body) .ui-section>p.small.muted{margin:0;padding:18px 20px;border-radius:var(--aq-r-xl);background:var(--aq-surface);font-size:var(--aq-fs-md)}
+:where(.adm-body) .ui-row-end small.is-late{color:var(--aq-amber-600);font-weight:800}
 .adm-release-hero .ui-cover{--cv:88px}
 .adm-reply .ui-textarea{min-height:120px}
 @media (max-width:640px){.adm-release-hero .ui-cover{--cv:64px}}

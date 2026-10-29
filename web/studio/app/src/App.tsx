@@ -70,9 +70,14 @@ const AiAction = lazyPage(pageLoaders.AiAction, m => m.AiAction);
 const AiConnect = lazyPage(pageLoaders.AiConnect, m => m.AiConnect);
 const AdminApp = lazyPage(pageLoaders.Admin, m => m.AdminApp);
 
+/** index.html이 그려 둔 첫 화면이 있었는지 — 있었으면 첫 BootScreen은 다시 흐려졌다 나타나지 않고 그대로 이어진다 */
+let htmlBoot = !!document.querySelector('#root > .aq-boot');
+
 function BootScreen() {
+  const [still] = useState(() => htmlBoot);
+  useEffect(() => { htmlBoot = false; }, []);
   return (
-    <div className="aq-boot" role="status" aria-label="AUDENIQ STUDIO를 불러오는 중">
+    <div className="aq-boot" role="status" aria-label="AUDENIQ STUDIO를 불러오는 중" style={still ? { animation: 'none' } : undefined}>
       <img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="" />
       <span className="aq-boot-bar" />
     </div>
