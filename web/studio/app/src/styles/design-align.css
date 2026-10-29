@@ -1838,3 +1838,12 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
   .aq-stats-dsp-top b{flex:1 0 100%}
   .aq-stats-dsp-rev{min-width:0}
 }
+
+/* 휴대폰 페이지 머리 만들기 버튼(새 발매·새 문의·권리 서류…) — 홈 '새 발매'와 같은 옅은 파랑 작은 버튼 (자리는 설명 아래 그대로) */
+@media(max-width:760px){
+  :is(.ui-page-head>.ui-btn,.ui-page-head>.ui-page-actions>.ui-btn).is-primary{
+    --btn-bg:var(--aq-btn-soft,var(--aq-primary-soft));--btn-fg:var(--aq-btn-soft-fg,var(--aq-primary-text));
+    --btn-bg-hover:var(--aq-btn-soft-hover,var(--aq-primary-soft-hover));--btn-fg-hover:var(--btn-fg);
+    --btn-h:var(--aq-h-sm);--btn-r:var(--aq-r-ctl-sm);--btn-px:14px;--btn-fs:13px;gap:6px;width:auto
+  }
+}
