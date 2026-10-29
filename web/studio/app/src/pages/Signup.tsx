@@ -27,6 +27,10 @@ export function strength(pw: string): { score: number; label: string } {
 export function Signup() {
   const { signup } = useAuth();
   const nav = useNavigate();
+  // 한 번에 다 받지 않고 단계로 — ① 로그인할 이메일·비밀번호 ② 활동명·약관 동의(여기서 계정을 만든다) ③ 패스키(PasskeySetup)
+  const [step, setStep] = useState<1 | 2>(1);
+  const [back, setBack] = useState(false);
+  const steps = !MOCK && passkeySupported() ? 3 : 2;
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -37,6 +41,8 @@ export function Signup() {
   const [taken, setTaken] = useState(false);
   const [showPw, setShowPw] = useState(false);
   const [agreeTerms, setAgreeTerms] = useState(false);
+  // 1단계에서 Google·Apple을 눌렀는데 약관에 아직 동의하지 않았으면 그 자리에 동의 칸을 보여 준다
+  const [socialTerms, setSocialTerms] = useState(false);
   const [error, setError] = useState('');
   type Fe = { name?: string; email?: string; password?: string; confirm?: string; terms?: string };
   const [fe, setFe] = useState<Fe>({});
@@ -51,132 +57,172 @@ export function Signup() {
   const matched = confirmReady && !!password && password === confirm;
   const longEnough = password.length >= PASSWORD_MIN;
 
+  const go = (to: 1 | 2) => {
+    setBack(to < step);
+    setStep(to);
+    setError('');
+    // 다음 단계 첫 칸으로 — 휴대폰 키보드가 내려갔다 올라오지 않게 바로 옮긴다
+    requestAnimationFrame(() => document.getElementById(to === 1 ? 'suEmail' : 'suName')?.focus({ preventScroll: true }));
+  };
+
+  // 1단계 — 이메일·비밀번호만 확인하고 다음으로 (이미 가입된 이메일인지는 계정을 만들 때 서버가 알려 준다)
+  function next(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    setTaken(false);
+    const n: Fe = {
+      email: !email.trim() ? '이메일을 입력해 주세요.' : !isEmail(email) ? '이메일 주소를 확인해 주세요.' : undefined,
+      password: password.length < PASSWORD_MIN ? `비밀번호는 ${PASSWORD_MIN}자 이상이어야 해요.` : undefined,
+      confirm: !confirm ? '비밀번호를 한 번 더 입력해 주세요.' : password !== confirm ? '비밀번호가 일치하지 않아요.' : undefined,
+    };
+    setFe(n);
+    if (n.email || n.password || n.confirm) { focusFirst([n.email && 'suEmail', n.password && 'suPassword', n.confirm && 'suConfirm']); return; }
+    go(2);
+  }
+
+  // 2단계 — 활동명·약관을 받고 계정을 만든다. 그다음 패스키 단계(PasskeySetup)로
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (busy) return;
     setError('');
     setTaken(false);
-    // 브라우저 기본 경고(영어 말풍선) 대신 칸마다 한국어 안내를 한 번에 보여 주고 첫 칸으로 옮긴다
-    const next: Fe = {
+    const n: Fe = {
       name: !name.trim() ? '활동명을 입력해 주세요.' : undefined,
-      email: !email.trim() ? '이메일을 입력해 주세요.' : !isEmail(email) ? '이메일 주소를 확인해 주세요.' : undefined,
-      password: password.length < PASSWORD_MIN ? `비밀번호는 ${PASSWORD_MIN}자 이상이어야 해요.` : undefined,
-      confirm: !confirm ? '비밀번호를 한 번 더 입력해 주세요.' : password !== confirm ? '비밀번호가 일치하지 않아요.' : undefined,
       terms: !agreeTerms ? '이용약관에 동의해 주세요.' : undefined,
     };
-    setFe(next);
-    if (Object.values(next).some(Boolean)) {
-      focusFirst([next.name && 'suName', next.email && 'suEmail', next.password && 'suPassword', next.confirm && 'suConfirm', next.terms && 'suTerms']);
-      return;
-    }
+    setFe(n);
+    if (n.name || n.terms) { focusFirst([n.name && 'suName', n.terms && 'suTerms']); return; }
     setBusy(true);
     // 가입 직후 이 기기에 패스키를 만들지 묻는다 — 다음 로그인부터 비밀번호 없이 (pages/PasskeySetup)
-    preparePasskeyHandoff(password, '/');
+    preparePasskeyHandoff(password, '/', true);
     try {
       await signup(email.trim(), password);
       patchProfile({ name: name.trim(), email: email.trim() });
       nav(hasPasskeyHandoff() ? '/passkey-setup' : '/', { replace: true });
     } catch (err) {
       clearPasskeyHandoff();
-      setError(authErrorMessage(err, 'signup'));
-      setTaken(err instanceof ApiError && err.code === 'CONFLICT');
       setBusy(false);
+      // 이미 가입된 이메일이면 이메일 단계로 돌아가 그 칸에서 알려 준다
+      if (err instanceof ApiError && err.code === 'CONFLICT') {
+        go(1);
+        setTaken(true);
+        setError(authErrorMessage(err, 'signup'));
+        return;
+      }
+      setError(authErrorMessage(err, 'signup'));
     }
   }
 
+  const terms = (
+    <div className="auth-agree">
+      <label className="ui-check auth-terms">
+        <input id="suTerms" type="checkbox" checked={agreeTerms} aria-invalid={!!fe.terms} aria-describedby={fe.terms ? 'suTermsErr' : undefined}
+          onChange={e => { setAgreeTerms(e.target.checked); clear('terms'); }} />
+        <span><a href="/terms" target="_blank" rel="noopener" className="aq-inline-link">AUDENIQ 음원 배급 서비스 이용약관</a>에 동의합니다. <em className="auth-req">필수</em></span>
+      </label>
+      <FieldError id="suTermsErr">{fe.terms}</FieldError>
+    </div>
+  );
+
   return (
-    <AuthLayout icon="user" title="AUDENIQ과 함께 시작해요." sub={!MOCK && passkeySupported() ? '계정을 만든 뒤 패스키를 등록하면 다음부터 비밀번호 없이 로그인해요.' : '아티스트 계정을 만들고 발매를 준비해 보세요.'}>
+    <AuthLayout
+      icon={step === 1 ? 'user' : 'music'} step={{ at: step, of: steps }}
+      title={step === 1 ? 'AUDENIQ과 함께 시작해요.' : '어떤 이름으로 활동하나요?'}
+      sub={step === 1 ? '먼저 로그인에 쓸 이메일과 비밀번호를 정해 주세요.' : '음원 플랫폼에 보일 아티스트 이름이에요. 나중에 바꿀 수 있어요.'}
+    >
       {error && (
         <div className="ui-callout is-danger aq-shake" role="alert" key={error}>
           {error}
           {taken && <> <Link to="/login" state={{ email: email.trim() }} className="aq-inline-link">이 이메일로 로그인</Link></>}
         </div>
       )}
-      <form onSubmit={submit} noValidate>
-        <div className="ui-field">
-          {/* 활동명은 실명이 아니라 플랫폼에 보일 이름 — 자동 완성이 실명을 채우지 않게 nickname */}
-          <label htmlFor="suName">활동명</label>
-          <input
-            id="suName" type="text" required autoComplete="nickname" autoFocus={AUTO_FOCUS} maxLength={120} enterKeyHint="next"
-            placeholder="플랫폼에 보일 아티스트 이름" aria-invalid={!!fe.name} aria-describedby={fe.name ? 'suNameErr' : undefined}
-            value={name} onChange={e => { setName(e.target.value); clear('name'); }} onKeyDown={nextOnEnter('suEmail')}
+      {step === 1 ? (
+        <form key="s1" onSubmit={next} noValidate className={`aq-step-pane${back ? ' is-back' : ''}`}>
+          <div className="ui-field">
+            <label htmlFor="suEmail">이메일</label>
+            <input
+              id="suEmail" {...EMAIL_INPUT} required autoComplete="email" autoFocus={AUTO_FOCUS}
+              placeholder="name@example.com" aria-invalid={!!fe.email} aria-describedby={fe.email ? 'suEmailErr' : undefined}
+              value={email} onChange={e => { setEmail(e.target.value); setEmailDone(false); setTaken(false); clear('email'); }}
+              onBlur={() => setEmailDone(true)} onKeyDown={nextOnEnter('suPassword')}
+            />
+            <FieldError id="suEmailErr">{fe.email}</FieldError>
+            {emailDone && !fe.email && <EmailSuggest value={email} onApply={setEmail} />}
+          </div>
+          <div className="ui-field">
+            <label htmlFor="suPassword">비밀번호</label>
+            <PasswordInput
+              id="suPassword" required autoComplete="new-password" minLength={PASSWORD_MIN}
+              aria-describedby={fe.password ? 'suPasswordErr' : 'suPwRule suPwHelp'}
+              aria-invalid={!!fe.password} enterKeyHint="next"
+              value={password} onChange={e => { setPassword(e.target.value); clear('password'); }} onKeyDown={nextOnEnter('suConfirm')}
+              show={showPw} onToggle={() => setShowPw(v => !v)}
+            />
+            <FieldError id="suPasswordErr">{fe.password}</FieldError>
+            {/* 조건은 입력 전부터 보이게 — 칸 안 안내 글자는 치기 시작하면 사라졌다. 채우면 초록 체크 */}
+            {!fe.password && (
+              <p className={`ui-field-help aq-pw-rule${longEnough ? ' is-ok' : ''}`} id="suPwRule">
+                {longEnough && <CheckIcon size={12} />}{PASSWORD_MIN}자 이상
+              </p>
+            )}
+            {password && !fe.password && (
+              <div className="aq-pw-meter" data-score={pw.score} id="suPwHelp">
+                <span><i /></span>
+                <small>{pw.label}</small>
+              </div>
+            )}
+          </div>
+          <div className="ui-field">
+            <label htmlFor="suConfirm">비밀번호 확인</label>
+            <input
+              id="suConfirm" type={showPw ? 'text' : 'password'} required autoComplete="new-password"
+              placeholder="한 번 더 입력해 주세요" aria-invalid={mismatch || !!fe.confirm} enterKeyHint="next"
+              aria-describedby={fe.confirm || mismatch ? 'suConfirmErr' : matched ? 'suConfirmOk' : undefined}
+              value={confirm} onChange={e => { setConfirm(e.target.value); setConfirmDone(false); clear('confirm'); }}
+              onBlur={() => setConfirmDone(true)}
+            />
+            <FieldError id="suConfirmErr">{fe.confirm ?? (mismatch ? '비밀번호가 일치하지 않아요.' : undefined)}</FieldError>
+            {matched && !fe.confirm && <p className="ui-field-help aq-pw-rule is-ok" id="suConfirmOk"><CheckIcon size={12} />비밀번호가 일치해요</p>}
+          </div>
+          <button className="ui-btn is-primary auth-submit" type="submit">다음</button>
+          {socialTerms && terms}
+          <SocialSignIn
+            signup onError={setError}
+            canSignup={() => {
+              if (agreeTerms) return true;
+              // Google·Apple로 바로 가입할 때는 이 자리에서 약관 동의를 받는다
+              setSocialTerms(true);
+              setFe(f => ({ ...f, terms: '이용약관에 동의한 뒤 Google·Apple로 계속할 수 있어요.' }));
+              requestAnimationFrame(() => focusFirst(['suTerms']));
+              return false;
+            }}
           />
-          <FieldError id="suNameErr">{fe.name}</FieldError>
-        </div>
-        <div className="ui-field">
-          <label htmlFor="suEmail">이메일</label>
-          <input
-            id="suEmail" {...EMAIL_INPUT} required autoComplete="email"
-            placeholder="name@example.com" aria-invalid={!!fe.email} aria-describedby={fe.email ? 'suEmailErr' : undefined}
-            value={email} onChange={e => { setEmail(e.target.value); setEmailDone(false); clear('email'); }}
-            onBlur={() => setEmailDone(true)} onKeyDown={nextOnEnter('suPassword')}
-          />
-          <FieldError id="suEmailErr">{fe.email}</FieldError>
-          {emailDone && !fe.email && <EmailSuggest value={email} onApply={setEmail} />}
-        </div>
-        <div className="ui-field">
-          <label htmlFor="suPassword">비밀번호</label>
-          <PasswordInput
-            id="suPassword" required autoComplete="new-password" minLength={PASSWORD_MIN}
-            aria-describedby={fe.password ? 'suPasswordErr' : 'suPwRule suPwHelp'}
-            aria-invalid={!!fe.password} enterKeyHint="next"
-            value={password} onChange={e => { setPassword(e.target.value); clear('password'); }} onKeyDown={nextOnEnter('suConfirm')}
-            show={showPw} onToggle={() => setShowPw(v => !v)}
-          />
-          <FieldError id="suPasswordErr">{fe.password}</FieldError>
-          {/* 조건은 입력 전부터 보이게 — 칸 안 안내 글자는 치기 시작하면 사라졌다. 채우면 초록 체크 */}
-          {!fe.password && (
-            <p className={`ui-field-help aq-pw-rule${longEnough ? ' is-ok' : ''}`} id="suPwRule">
-              {longEnough && <CheckIcon size={12} />}{PASSWORD_MIN}자 이상
-            </p>
-          )}
-          {password && !fe.password && (
-            <div className="aq-pw-meter" data-score={pw.score} id="suPwHelp">
-              <span><i /></span>
-              <small>{pw.label}</small>
-            </div>
-          )}
-        </div>
-        <div className="ui-field">
-          <label htmlFor="suConfirm">비밀번호 확인</label>
-          <input
-            id="suConfirm" type={showPw ? 'text' : 'password'} required autoComplete="new-password"
-            placeholder="한 번 더 입력해 주세요" aria-invalid={mismatch || !!fe.confirm} enterKeyHint="done"
-            aria-describedby={fe.confirm || mismatch ? 'suConfirmErr' : matched ? 'suConfirmOk' : undefined}
-            value={confirm} onChange={e => { setConfirm(e.target.value); setConfirmDone(false); clear('confirm'); }}
-            onBlur={() => setConfirmDone(true)}
-          />
-          <FieldError id="suConfirmErr">{fe.confirm ?? (mismatch ? '비밀번호가 일치하지 않아요.' : undefined)}</FieldError>
-          {matched && !fe.confirm && <p className="ui-field-help aq-pw-rule is-ok" id="suConfirmOk"><CheckIcon size={12} />비밀번호가 일치해요</p>}
-        </div>
-        <div className="auth-agree">
-          <label className="ui-check auth-terms">
-            <input id="suTerms" type="checkbox" checked={agreeTerms} aria-invalid={!!fe.terms} aria-describedby={fe.terms ? 'suTermsErr' : undefined}
-              onChange={e => { setAgreeTerms(e.target.checked); clear('terms'); }} />
-            <span><a href="/terms" target="_blank" rel="noopener" className="aq-inline-link">AUDENIQ 음원 배급 서비스 이용약관</a>에 동의합니다. <em className="auth-req">필수</em></span>
-          </label>
-          <FieldError id="suTermsErr">{fe.terms}</FieldError>
+        </form>
+      ) : (
+        <form key="s2" onSubmit={submit} noValidate className={`aq-step-pane${back ? ' is-back' : ''}`}>
+          <div className="ui-field">
+            {/* 활동명은 실명이 아니라 플랫폼에 보일 이름 — 자동 완성이 실명을 채우지 않게 nickname */}
+            <label htmlFor="suName">활동명</label>
+            <input
+              id="suName" type="text" required autoComplete="nickname" maxLength={120} enterKeyHint="done"
+              placeholder="플랫폼에 보일 아티스트 이름" aria-invalid={!!fe.name} aria-describedby={fe.name ? 'suNameErr' : undefined}
+              value={name} onChange={e => { setName(e.target.value); clear('name'); }}
+            />
+            <FieldError id="suNameErr">{fe.name}</FieldError>
+          </div>
+          {terms}
           <p className="auth-privacy">
             회원가입 정보(이메일·비밀번호·활동명)는 요청한 계정 생성과 서비스 제공을 위해 처리해요.
             계정정보는 원칙적으로 탈퇴 또는 처리 목적 종료 시까지 보관하며, 법정 보존자료는 별도로 관리해요.
             자세한 항목·보유기간과 권리 행사방법은 <a href="/privacy" target="_blank" rel="noopener" className="aq-inline-link">개인정보 처리방침</a>에서 확인해 주세요.
             선택 기능에 필요한 별도 동의는 해당 기능을 이용할 때 안내해요.
           </p>
-        </div>
-        <button className={`ui-btn is-primary auth-submit${busy ? ' is-busy' : ''}`} type="submit" disabled={busy} aria-busy={busy}>
-          {busy ? '가입하는 중' : '회원가입'}
-        </button>
-      </form>
-      <SocialSignIn
-        signup onError={setError}
-        canSignup={() => {
-          if (agreeTerms) return true;
-          // 맨 위 빨간 상자 대신 동의할 칸으로 옮겨 그 아래에 알려 준다
-          setFe(f => ({ ...f, terms: '이용약관에 동의한 뒤 Google·Apple로 계속할 수 있어요.' }));
-          focusFirst(['suTerms']);
-          return false;
-        }}
-      />
+          <button className={`ui-btn is-primary auth-submit${busy ? ' is-busy' : ''}`} type="submit" disabled={busy} aria-busy={busy}>
+            {busy ? '계정을 만드는 중' : steps === 3 ? '계정 만들고 다음' : '가입 완료'}
+          </button>
+          <button type="button" className="ui-btn is-text auth-later" onClick={() => go(1)} disabled={busy}>이전으로</button>
+        </form>
+      )}
       <div className="auth-links">
         <span>이미 계정이 있으신가요?</span>
         <Link to="/login">로그인</Link>
@@ -184,4 +230,3 @@ export function Signup() {
     </AuthLayout>
   );
 }
-

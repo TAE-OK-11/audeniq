@@ -39,7 +39,11 @@ export function PasskeySetup() {
   };
 
   return (
-    <AuthLayout icon="key" title="다음부터는 비밀번호 없이 로그인하세요" sub="이 기기에 패스키를 만들어 두면 로그인이 한 번에 끝나요.">
+    <AuthLayout
+      icon="key" step={handoff.signup ? { at: 3, of: 3 } : undefined}
+      title={handoff.signup ? '마지막으로, 패스키를 만들어요' : '다음부터는 비밀번호 없이 로그인하세요'}
+      sub="이 기기에 패스키를 만들어 두면 로그인이 한 번에 끝나요."
+    >
       <PasskeyOffer password={handoff.password} onDone={done} />
     </AuthLayout>
   );
