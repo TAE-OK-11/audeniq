@@ -295,6 +295,7 @@
 .ui-section-head small{font-size:12px;font-weight:600;letter-spacing:0;color:var(--aq-text-3)}
 .ui-section-head :is(h2,h3)>.small{flex-basis:100%;font-size:12px;font-weight:600;letter-spacing:0;color:var(--aq-text-3)}
 .ui-section-head>:is(.ui-btn,a,button){flex:none;white-space:nowrap}
+.aq-nowrap{white-space:nowrap}
 :not(.ui-section)>*+.ui-section-head{margin-top:32px}
 
 /* ---------- 면 (Card · Box · Hero) ----------
