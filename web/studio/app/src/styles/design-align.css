@@ -1883,7 +1883,7 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
    아이콘은 둘 다 파랑 그대로(흰 칸)라 읽은 알림도 죽어 보이지 않는다 */
 #view-notifications .aq-notice-card.is-read{background:#F3F5F9}
 @media(hover:hover){#view-notifications .aq-notice-card.is-read:hover{background:#ECEFF5}}
-#view-notifications .aq-notice-card.is-read .aq-notice-copy strong{font-weight:500;color:var(--aq-text)}
+#view-notifications .aq-notice-card.is-read .aq-notice-copy strong{font-weight:700;color:var(--aq-text)}
 #view-notifications .aq-notice-card.is-read .aq-notice-symbol{background:#fff;color:var(--aq-blue-500)}
 #view-notifications .aq-notice-card.is-read .aq-notice-detail{color:var(--aq-text-3)}
 @media(max-width:560px){#view-notifications .aq-notice-card{gap:12px;padding:16px}}
