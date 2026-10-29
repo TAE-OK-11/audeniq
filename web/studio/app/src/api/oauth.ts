@@ -3,6 +3,7 @@
 // 서버가 로그인시켜 원래 화면(실패면 /login?oauth_error=코드)으로 보낸다.
 import { req } from './http';
 import { LEGAL_META, TERMS_VERSION } from '../lib/legal';
+import { webUrl } from '../lib/safeUrl';
 
 export type OAuthProvider = 'google' | 'apple';
 export const OAUTH_LABEL: Record<OAuthProvider, string> = { google: 'Google', apple: 'Apple' };
@@ -25,7 +26,9 @@ export async function startOAuth(provider: OAuthProvider, opts: { mode?: 'login'
       terms_version: opts.signup ? TERMS_VERSION : null, privacy_notice_version: opts.signup ? LEGAL_META.privacy.version : null,
     },
   });
-  window.location.assign(r.url);
+  const to = webUrl(r.url);
+  if (!to) throw new Error('로그인 주소를 받지 못했어요. 잠시 후 다시 시도해 주세요.');
+  window.location.assign(to);
 }
 
 export interface OAuthIdentity { id: string; provider: OAuthProvider; email: string | null; created_at: string; last_used_at: string | null }

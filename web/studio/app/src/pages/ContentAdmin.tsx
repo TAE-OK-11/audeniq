@@ -447,7 +447,7 @@ export function ContentAdmin() {
                       {mt ? <span>점검 {kstLabel(mt.starts_at)} ~ {kstLabel(mt.ends_at).slice(-5)}</span> : <span>게시 {kstLabel(r.published_at)}</span>}
                     </span>
                   </button>
-                  {st === 'live' && !mt && <Link to={viewHref(r)} className="aq-cadmin-view" target="_blank">보기</Link>}
+                  {st === 'live' && !mt && <Link to={viewHref(r)} className="aq-cadmin-view" target="_blank" rel="noopener noreferrer">보기</Link>}
                 </li>
               );
             })}

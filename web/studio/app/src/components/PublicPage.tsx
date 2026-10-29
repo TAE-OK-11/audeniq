@@ -9,6 +9,7 @@ import { usePublicReveal } from '../hooks/usePublicReveal';
 import { Glyph } from './Glyph';
 import { API_BASE } from '../api/http';
 import { MOCK } from '../lib/mode';
+import { cssUrl } from '../lib/safeUrl';
 
 /** 스크롤로 떠오르는 덩어리 — 소식 카드, 발매 칸, 응원 폼·줄, 디스코그래피, 플랫폼 줄, 가사 */
 export const PUBLIC_UNITS = [
@@ -25,8 +26,8 @@ export function PublicShell({ bg, className, cardClass, ready = true, children }
   usePublicReveal(card, PUBLIC_UNITS, ready);
   return (
     <main className={`aq-smartlink aq-pub${className ? ` ${className}` : ''}`}
-      style={bg ? ({ '--aq-pub-bg': `url("${bg}")` } as CSSProperties) : undefined}>
-      {bg && <div className="aq-smartlink-bg" style={{ backgroundImage: `url("${bg}")` }} aria-hidden="true" />}
+      style={bg ? ({ '--aq-pub-bg': cssUrl(bg) } as CSSProperties) : undefined}>
+      {bg && <div className="aq-smartlink-bg" style={{ backgroundImage: cssUrl(bg) }} aria-hidden="true" />}
       <div ref={card} className={`aq-smartlink-card aq-pub-card${cardClass ? ` ${cardClass}` : ''}`}>{children}</div>
     </main>
   );

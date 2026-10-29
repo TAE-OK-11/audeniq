@@ -1,11 +1,15 @@
 // 블로그·홈페이지에 붙여 넣는 스마트링크 카드 — iframe 없이 HTML 하나(스타일은 줄 안에).
 // 스튜디오는 보안상 다른 사이트 안에 열리지 않으므로, 커버·제목·버튼만 그리고 누르면 스마트링크로 간다.
+import { webUrl } from './safeUrl';
 
 const esc = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 
 export interface EmbedInput { url: string; title: string; artist: string; cover?: string; released: boolean }
 
-export function embedHtml({ url, title, artist, cover, released }: EmbedInput): string {
+export function embedHtml({ url: rawUrl, title, artist, cover: rawCover, released }: EmbedInput): string {
+  // 원본 HTML로 그리고 복사되는 코드라 React의 주소 검사를 거치지 않는다 — http(s)만 넣는다
+  const url = webUrl(rawUrl) ?? '#';
+  const cover = webUrl(rawCover);
   const img = cover
     ? `<img src="${esc(cover)}" alt="" width="64" height="64" style="width:64px;height:64px;border-radius:12px;object-fit:cover;flex:none">`
     : `<span style="width:64px;height:64px;border-radius:12px;flex:none;background:linear-gradient(135deg,#9DB4FF,#3B63F3)"></span>`;
