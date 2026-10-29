@@ -1,3 +1,4 @@
+import type { LoginCeremonyOptions } from './passkey';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ApiError, MOCK, api, setCurrentOrg, type User, type Org } from './client';
 import { readJSON, writeJSON } from '../lib/storage';
@@ -11,7 +12,7 @@ interface AuthState {
   orgs: Org[];
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  loginPasskey: (email: string) => Promise<void>;
+  loginPasskey: (email: string, options?: LoginCeremonyOptions) => Promise<void>;
   signup: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   selectOrg: (org: Org) => void;
@@ -103,8 +104,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(u);
   }, [loadOrgs]);
 
-  const loginPasskey = useCallback(async (email: string) => {
-    const u = await api.loginPasskey(email);
+  const loginPasskey = useCallback(async (email: string, options?: LoginCeremonyOptions) => {
+    const u = await api.loginPasskey(email, options);
     await loadOrgs();
     setUser(u);
   }, [loadOrgs]);

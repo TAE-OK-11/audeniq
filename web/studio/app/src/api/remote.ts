@@ -1,3 +1,4 @@
+import type { LoginCeremonyOptions } from './passkey';
 // 실제 백엔드 어댑터 — 메인 서버(Rust API) 계약을 화면 모델로 변환한다.
 // 경로: 브라우저 → CloudFront + audeniq-studio-edge Function → 메인 서버
 //
@@ -557,9 +558,9 @@ export const remoteApi = {
     partyId = me.party_id;
     return { id: r.user_id, email: me.email };
   },
-  async loginPasskey(email: string): Promise<User> {
+  async loginPasskey(email: string, options?: LoginCeremonyOptions): Promise<User> {
     const { passkeyLogin } = await import('./passkey');
-    const r = await passkeyLogin(email);
+    const r = await passkeyLogin(email, options);
     setCsrf(r.csrf_token);
     setSessionUser(r.user_id);
     const me = await req<{ user_id: string; party_id: string; email: string }>('/api/me', { quiet401: true });
