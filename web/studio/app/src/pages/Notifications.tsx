@@ -77,6 +77,32 @@ function EmailAlerts() {
   );
 }
 
+/** 한 쪽에 보여 줄 알림 수 — 끝없이 이어지지 않게 쪽 번호로 나눈다 */
+const PAGE = 15;
+
+/** 쪽 번호 — 지금 쪽 앞뒤 둘씩, 처음·끝 쪽은 늘 보이고 사이는 '…' */
+function pageList(page: number, pages: number): (number | '…')[] {
+  const out: (number | '…')[] = [];
+  for (let p = 1; p <= pages; p++) {
+    if (p === 1 || p === pages || Math.abs(p - page) <= 2) out.push(p);
+    else if (out[out.length - 1] !== '…') out.push('…');
+  }
+  return out;
+}
+
+function Pager({ page, pages, onPage }: { page: number; pages: number; onPage: (p: number) => void }) {
+  if (pages <= 1) return null;
+  return (
+    <nav className="aq-pager" aria-label="알림 쪽">
+      <button type="button" className="aq-pager-step" onClick={() => onPage(page - 1)} disabled={page <= 1} aria-label="이전 쪽"><Glyph name="chevron-left" size={16} /></button>
+      {pageList(page, pages).map((p, i) => p === '…'
+        ? <span key={`gap${i}`} className="aq-pager-gap" aria-hidden="true">…</span>
+        : <button key={p} type="button" className={`aq-pager-num${p === page ? ' is-on' : ''}`} aria-current={p === page ? 'page' : undefined} onClick={() => onPage(p)}>{p}</button>)}
+      <button type="button" className="aq-pager-step" onClick={() => onPage(page + 1)} disabled={page >= pages} aria-label="다음 쪽"><Glyph name="chevron-right" size={16} /></button>
+    </nav>
+  );
+}
+
 function noticeSymbol(kind: string) {
   return <Glyph size={17} name={kind === '지급' ? 'won' : kind === '발매' ? 'music' : kind === '서류' ? 'doc' : kind === '문의' ? 'mail' : kind === '계정' ? 'user' : 'bell'} />;
 }
@@ -88,9 +114,18 @@ export function Notifications() {
   const notices = useNotices();
   const unread = useUnreadCount();
   const [openNotice, setOpenNotice] = useState<Notice | null>(null);
+  const [page, setPage] = useState(1);
 
   const shown = (filter === 'all' ? notices : notices.filter(n => !n.read))
     .slice().sort((a, b) => b.time.localeCompare(a.time));
+  const pages = Math.max(1, Math.ceil(shown.length / PAGE));
+  const current = Math.min(page, pages);
+  const pageItems = shown.slice((current - 1) * PAGE, current * PAGE);
+  // 쪽을 바꾸면 목록 맨 위로 — 아래 쪽 번호를 눌렀는데 화면이 그대로 아래에 있으면 바뀐 줄 몰랐다
+  const goPage = (p: number) => {
+    setPage(p);
+    document.getElementById('notificationTools')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  };
 
   const readAll = () => {
     if (!unread) { toast('읽지 않은 알림이 없어요.', 'info'); return; }
@@ -121,22 +156,21 @@ export function Notifications() {
           type="button"
           className={`ui-chip${filter === 'all' ? ' is-on' : ''}`}
           aria-pressed={filter === 'all'}
-          onClick={() => setFilter('all')}
+          onClick={() => { setFilter('all'); setPage(1); }}
         >전체 알림</button>
         <button
           type="button"
           className={`ui-chip${filter === 'unread' ? ' is-on' : ''}`}
           aria-pressed={filter === 'unread'}
-          onClick={() => setFilter('unread')}
+          onClick={() => { setFilter('unread'); setPage(1); }}
         >읽지 않음 <span id="unreadCount">{unread}</span></button>
         <button type="button" className="ui-btn is-text" id="readAllNotices" onClick={readAll} disabled={!unread}><Glyph name="check" size={14} />모두 읽음</button>
       </div>
 
       {shown.length ? (
-        // 옅은 파랑 카드 하나에 구분선으로 — 알림마다 따로 카드가 쌓이면 화면이 덩어리져 보였다 (줄마다 흰 카드를 또 두르지 않는다)
-        <div className="ui-card aq-notice-list">
-        <div className="ui-list is-inset aq-stagger" key={filter}>
-          {shown.map(n => (
+        <>
+        <div className="aq-catalog-cards aq-stagger" key={`${filter}-${current}`}>
+          {pageItems.map(n => (
             <button
               key={n.id} type="button"
               className={`ui-row aq-notice-card${n.read ? ' is-read' : ''}`}
@@ -156,7 +190,8 @@ export function Notifications() {
             </button>
           ))}
         </div>
-        </div>
+        <Pager page={current} pages={pages} onPage={goPage} />
+        </>
       ) : (
         <div className="ui-empty">
           <h2>{filter === 'unread' ? '읽지 않은 알림이 없어요.' : '새 알림이 없어요.'}</h2>
