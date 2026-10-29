@@ -475,10 +475,10 @@ struct ScratchDir(PathBuf);
 
 impl Drop for ScratchDir {
     fn drop(&mut self) {
-        if let Err(error) = std::fs::remove_dir_all(&self.0) {
-            if error.kind() != std::io::ErrorKind::NotFound {
-                tracing::warn!("SFTP scratch cleanup failed; deferred to temp sweep");
-            }
+        if let Err(error) = std::fs::remove_dir_all(&self.0)
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!("SFTP scratch cleanup failed; deferred to temp sweep");
         }
     }
 }
