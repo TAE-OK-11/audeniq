@@ -493,6 +493,9 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
   #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode)>.modal-inner{box-shadow:0 calc(100vh + 30px) 0 100vh rgba(255,255,255,.99)!important}
   /* 전체 화면 창(수익 정산 정보 등록·계약서 서명)도 흰색을 99%로 — 불투명하면 아래 주소창 위에서 잘려 그 아래로 뒤 화면이 비친다 */
   #modal:is(.aq-payout-setup-mode,.aq-signature-mode)>.modal-inner{background:rgba(255,255,255,.99)!important}
+  /* 그 99% 흰색 너머로 뒤 화면 글자가 흐리게 비쳤다(문의 대화 창 등) — 시트 안의 머리·본문에 불투명한 흰 면을 깔아 가린다.
+     시트(고정 레이어) 자체는 99% 그대로라 위의 아이폰 Safari 잘림 대응은 그대로. 그림자 펼침으로 시트 안쪽 여백까지 덮는다 */
+  #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode)>.modal-inner>:is(.modal-top,#modalBody){background:#fff;box-shadow:0 0 0 24px #fff}
 }
 
 /* 줄에서 고른 탭·칩으로 밀어 줄 때 부드럽게 (lib/rowNav.ts) */
@@ -1610,9 +1613,6 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-request-cancel{margin-top:-4px}
 /* 문의 대화 — 꼬리표 · 보낼 칸(입력 + 동그란 보내기) · 종료는 작은 글자 버튼 */
 .aq-ticket-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0;color:var(--aq-text-3);font-size:13px}
-.aq-thread-compose{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:8px;padding:6px 6px 6px 0;border-radius:var(--aq-r-xl);background:var(--aq-blue-50)}
-.aq-thread-reply .aq-thread-compose textarea{min-height:48px;max-height:180px;margin:0;background:transparent;resize:none}
-.aq-thread-compose .ui-btn.is-icon{width:44px;height:44px;border-radius:50%}
 .aq-thread-end{justify-self:center;color:var(--aq-text-3)}
 /* 부가서비스 — 신청서의 부가서비스 칸·최종 확인 합계·결제(신청 완료 화면, 발매 상세)·발매 상세의 부가서비스 칸 */
 .aq-addon-summary{display:grid;gap:14px;margin:16px 0 24px;padding:20px;border-radius:var(--aq-r-xl);background:var(--aq-blue-50)}
@@ -1909,3 +1909,12 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-passkey-offer .auth-submit{gap:8px;margin-top:4px}
 .auth-later{justify-self:center;min-height:44px;color:var(--aq-text-3)}
 .aq-passkey-offer .auth-fine{margin-top:2px}
+/* 문의 대화 입력줄 — 둥근 입력칸 하나 + 오른쪽 동그란 보내기 버튼 (메신저처럼).
+   예전엔 옅은 파랑 상자 안에 입력칸을 또 넣어 상자가 두 겹으로 보였고, 버튼은 상자 오른쪽 끝에 붙고
+   높이가 늘어나 길쭉해졌다. 이제 입력칸이 곧 상자이고, 버튼은 48px 원으로 고정해 입력칸 아래쪽에 맞춘다 */
+.aq-thread-compose{display:flex;align-items:flex-end;gap:10px;padding:0;background:none}
+/* 전역 입력칸 규칙(:is(#root,#modal) … textarea, 우선순위 1-4-1)보다 강하게 id 두 번 */
+#tReply#tReply{flex:1 1 auto;width:auto!important;min-width:0;min-height:48px;max-height:160px;margin:0;padding:13px 18px;border:0;border-radius:24px;
+  background:var(--aq-blue-50)!important;box-shadow:none!important;font-size:15px;line-height:1.45;resize:none;field-sizing:content}
+#tReply#tReply:is(:focus,:focus-visible){background:var(--aq-blue-100)!important;outline:0}
+.aq-thread-compose .ui-btn.is-icon{flex:none;align-self:flex-end;width:48px!important;min-width:48px;height:48px!important;min-height:48px;padding:0;border-radius:50%}

@@ -7,7 +7,7 @@ import { Modal, useModalClose } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { niceDate } from '../lib/format';
-import { todayStr } from '../lib/date';
+import { todayStr, parseStamp } from '../lib/date';
 import { uid } from '../lib/store';
 import { api } from '../api/client';
 import type { Release } from '../api/types';
@@ -36,6 +36,17 @@ const GROUP_CATEGORY: Record<RequestGroup, string> = { profile: '아티스트 �
 const PROFILE_PLATFORMS = ['melon', 'genie', 'flo', 'bugs', 'vibe', 'spotify', 'apple', 'youtube', 'amazon', 'deezer', 'tidal'];
 
 const inquiryTone = (status: string): Tone => (status === '답변 완료' ? 'green' : status === '종료' ? 'gray' : 'violet');
+
+/** 대화 시각 — 오늘이면 '오후 5:45', 아니면 '10월 29일 오후 5:45' ('2026-10-29 17:45'는 읽기 어려웠다) */
+function chatTime(v: string): string {
+  const d = parseStamp(v);
+  if (!d) return v;
+  const t = d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' });
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return t;
+  const md = `${d.getMonth() + 1}월 ${d.getDate()}일`;
+  return `${d.getFullYear() === now.getFullYear() ? md : `${d.getFullYear()}년 ${md}`} ${t}`;
+}
 
 /** 실서버 문의 대화 — 담당자 답변을 보고 이어서 묻거나 문의를 닫는다 */
 function TicketThread({ ticket, onClosed }: { ticket: Ticket; onClosed: () => void }) {
@@ -100,7 +111,7 @@ function TicketThread({ ticket, onClosed }: { ticket: Ticket; onClosed: () => vo
       <ol className="aq-thread" ref={listRef} aria-live="polite">
         {(data?.messages ?? []).map(m => (
           <li key={m.id} className={m.from === 'staff' ? 'is-staff' : ''}>
-            <span className="aq-thread-who">{m.from === 'staff' ? 'AUDENIQ 담당자' : '나'} · {m.time}</span>
+            <span className="aq-thread-who">{m.from === 'staff' ? 'AUDENIQ 담당자' : '나'} · {chatTime(m.time)}</span>
             <p>{m.body}</p>
           </li>
         ))}
@@ -109,7 +120,7 @@ function TicketThread({ ticket, onClosed }: { ticket: Ticket; onClosed: () => vo
         <form onSubmit={send} className="aq-thread-reply aq-sticky-foot">
           <label htmlFor="tReply" className="sr-only">추가 메시지</label>
           <div className="aq-thread-compose">
-            <textarea id="tReply" rows={2} maxLength={4000} value={reply} onChange={e => setReply(e.target.value)} placeholder="담당자에게 더 전할 내용" />
+            <textarea id="tReply" rows={1} maxLength={4000} value={reply} onChange={e => setReply(e.target.value)} placeholder="담당자에게 더 전할 내용" />
             <button type="submit" className={`ui-btn is-primary is-icon${busy ? ' is-busy' : ''}`} aria-label="보내기" disabled={busy || !reply.trim()}>
               <Glyph name="arrow-up" size={18} />
             </button>
