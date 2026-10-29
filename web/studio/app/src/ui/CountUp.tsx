@@ -1,4 +1,6 @@
-// 숫자가 부드럽게 올라가는 카운터 (요약 금액·재생 수 강조용). 모션 줄이기 설정을 존중한다.
+// 숫자가 바뀔 때 부드럽게 넘어가는 카운터 (요약 금액·재생 수). 모션 줄이기 설정을 존중한다.
+// 처음 보일 때는 최종값을 바로 보여 준다 — 화면을 열 때마다 0부터 굴러 올라가면 꾸민 티가 나고 숫자를 바로 읽을 수 없었다.
+// 기간·필터를 바꿔 값이 달라질 때만 이전 값에서 새 값으로 넘어간다.
 // 프레임마다 React 상태를 바꾸면 매 프레임 리렌더가 일어나므로 DOM 텍스트를 직접 갱신한다.
 import { useLayoutEffect, useRef } from 'react';
 
@@ -8,7 +10,7 @@ export function CountUp({ value, format = String, duration = 600 }: {
   duration?: number;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
-  const shown = useRef(0);
+  const shown = useRef(value);
   const formatRef = useRef(format);
   formatRef.current = format;
 

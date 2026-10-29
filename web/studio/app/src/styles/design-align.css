@@ -353,14 +353,12 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 @media(hover:hover){#view-new .aq-option-detail .aq-dropzone:hover{background:var(--aq-blue-100)}}
 #view-new .aq-option-detail .aq-filecard.has-file{background:var(--aq-blue-100)}
 
-/* ---------- 전체 메뉴 모션 — 판 하나가 오른쪽 위에서 부드럽게 내려오고, 묶음이 차례로 살짝 따라온다 ----------
+/* ---------- 전체 메뉴 모션 — 판 하나가 오른쪽 위에서 부드럽게 내려오고, 내용은 한꺼번에 나타난다 ----------
    버튼마다 따로 튀어나오던 애니메이션은 없앴다. 닫을 때는 짧게 거꾸로. */
 @keyframes aq-menu-in{from{opacity:0;transform:translate3d(0,-8px,0) scale(.98)}to{opacity:1;transform:none}}
 @keyframes aq-menu-out{to{opacity:0;transform:translate3d(0,-6px,0) scale(.98)}}
-@keyframes aq-menu-group{from{opacity:0;transform:translate3d(0,6px,0)}to{opacity:1;transform:none}}
 .portal-header #portalNav{transform-origin:calc(100% - 28px) 0;animation:aq-menu-in var(--aq-motion-base) var(--aq-enter) both!important}
 .portal-header #portalNav.is-closing{animation:aq-menu-out .15s cubic-bezier(.4,0,1,1) forwards!important;pointer-events:none}
-#portalNav>.aq-nav-me,#portalNav>.aq-nav-card,#portalNav>.aq-nav-foot{animation:aq-menu-group .26s cubic-bezier(.2,.8,.2,1) both}
 #portalNav.is-closing>*{animation:none}
 #portalNav .aq-nav-card button,#portalNav .aq-nav-me button{animation:none!important}
 @media (max-width:760px){
@@ -368,27 +366,25 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
      판(흰 바탕)이 먼저 짧게 차오르고 내용은 조금 뒤에 — 함께 서서히 나타나면 메뉴 글자가 뒤 화면 글자 위에 반투명하게 겹쳐 보였다 */
   .portal-header #portalNav{transform-origin:50% 0;animation-name:aq-menu-in-full!important;animation-duration:var(--aq-motion-short)!important}
   .portal-header #portalNav.is-closing{animation-name:aq-menu-out-full!important}
-  #portalNav>.aq-nav-me,#portalNav>.aq-nav-card,#portalNav>.aq-nav-foot{animation-delay:.14s}
 }
 @keyframes aq-menu-in-full{from{opacity:0;transform:translate3d(0,-12px,0)}to{opacity:1;transform:none}}
 @keyframes aq-menu-out-full{to{opacity:0;transform:translate3d(0,-8px,0)}}
 @media (prefers-reduced-motion:reduce){.portal-header #portalNav,#portalNav>*{animation:none!important}}
 
-/* ---------- 화면 들어올 때 — audeniq.com 랜딩과 같은 등장 연출 ----------
-   홈은 hooks/useLandingReveal.ts, 다른 화면은 hooks/useScrollReveal.ts가 덩어리(머리·카드·목록 줄)마다 16px 아래에서 떠오르게 한다.
-   예전의 화면 전체 4px 움직임·목록(.aq-stagger) 줄 움직임과 겹치지 않게 끈다. 발매 신청 위자드는 자체 단계 모션을 그대로 쓴다.
-   화면 전체의 짧은 페이드(.view-enter)는 남긴다 — 덩어리가 맡기기 전 한순간도 깔끔하게. */
+/* ---------- 화면 들어올 때 — 화면 전체가 한 번 짧게 나타난다 ----------
+   예전엔 머리·카드·목록 줄이 덩어리마다 16px 아래에서 차례로 떠오르고, 스크롤하면 화면 밖 카드가 흐린 채로 다시 떠올랐다
+   (꾸민 티가 나고, 내리는 동안 덜 불러온 것처럼 보였다). 이제 내용은 늘 제자리에 있고 화면을 옮길 때 투명도만 짧게 바뀐다.
+   움직임(transform)을 주지 않는 것은 화면 아래 고정 버튼 줄이 그동안 흔들리지 않게. 발매 신청 위자드는 자체 단계 모션을 쓴다. */
 @keyframes aq-view-fade{from{opacity:0}}
-.view-enter{animation:aq-view-fade var(--aq-motion-short) ease-out backwards}
-/* 발매 신청 위자드는 머리·단계가 자체 등장(wizard-motion.css)을 하므로 틀 전체를 또 움직이지 않는다 — 겹쳐 두 번 떠올랐다 */
+.view-enter{animation:aq-view-fade .2s ease-out backwards}
 @media (prefers-reduced-motion:reduce){.view-enter,.view-enter>.view>*{animation:none!important}}
 #main .view:not(#view-new) .aq-stagger>*{animation:none}
+/* 불러오자마자 저절로 떠오르거나 톡 튀던 장식 — 카드·커버·배지·점·기록 줄. 누른 뒤의 반응(복사됨·하트·저장됨·오류)과 막대 차오름은 그대로 */
+#main .view:not(#view-new) :is(.aq-detail-hero,.aq-detail-cover,.aq-detail-cover-large,.settle-hero,.aq-payment-card,.aq-doc-done,.aq-sign-card,
+  .ui-timeline>li,.aq-unread,.aq-prep-count b,.aq-prep-list li.is-done .ui-icon svg,.aq-detail-when .aq-dday,.aq-thread li,
+  .aq-guardian-steps>li.is-done .aq-guardian-no,.ui-empty,.aq-errscreen,.aq-paper-sig img,.aq-sysbar){animation:none}
 /* 탭을 바꾼 뒤 잠깐(0.3초 안) 기다리는 자리 — 스켈레톤 대신 빈 높이만 */
 .aq-tab-wait{min-height:240px}
-/* aq-motion-waiting: 아직 나타나지 않은 덩어리 (화면에 닿으면 16px 아래에서 떠오른다) */
-#main .aq-motion-waiting{opacity:0;transform:translateY(16px)}
-@media (prefers-reduced-motion:reduce){#main .aq-motion-waiting{opacity:1;transform:none}}
-@media print{#main .aq-motion-waiting{opacity:1!important;transform:none!important}}
 
 /* 휴대폰 전체 메뉴가 열려 있는 동안 뒤 화면이 같이 스크롤되지 않게.
    html에만 건다: body까지 막으면 body가 따로 스크롤 상자가 돼 고정 머리글(과 그 안의 메뉴)이
@@ -909,7 +905,7 @@ button.settle-hero-account.is-button .min-0{display:grid}
 /* ==========================================================================
    메뉴도 audeniq.com 랜딩과 같은 움직임
    - 머리글: 평소엔 선 없이 화면과 이어지고, 내려가면 그림자가 부드럽게(0.28초)
-   - 휴대폰 전체 메뉴: 판이 내려온 뒤 묶음이 30ms씩 차례로 8px 아래에서 떠오른다(0.7초, 처음 투명도 .3)
+   - 휴대폰 전체 메뉴: 판이 내려온 뒤 내용이 한꺼번에 나타난다
    - 넓은 화면 왼쪽 메뉴: 처음 열 때 한 번 같은 움직임
    - 자주 묻는 질문: 펼치면 답이 6px 아래에서 나타난다
    ========================================================================== */
@@ -917,17 +913,11 @@ button.settle-hero-account.is-button .min-0{display:grid}
 .portal-header.is-scrolled{box-shadow:0 5px 24px -14px #171B2930!important}
 body.wizard-mode .portal-header,.portal-header:has(#portalNav:not([hidden])){box-shadow:none!important}
 
-/* 전체 메뉴 묶음 — 판이 열리는 동안(0.16~0.24초) 바로 뒤따라 6px 아래에서 25ms씩 떠올라 0.32초 안에 끝난다.
-   예전엔 0.7초에 옅은 30%부터 시작해 판이 다 열린 뒤에도 1초 가까이 꼬리를 끌었다 */
-@keyframes aq-land-fade{from{opacity:0;transform:translate3d(0,6px,0)}}
-#portalNav>.aq-nav-me,#portalNav>.aq-nav-card,#portalNav>.aq-nav-foot{animation:aq-land-fade var(--aq-motion-long) var(--aq-enter) backwards}
-#portalNav>:nth-child(2){animation-delay:25ms}#portalNav>:nth-child(3){animation-delay:50ms}#portalNav>:nth-child(4){animation-delay:75ms}
-#portalNav>:nth-child(n+5){animation-delay:100ms}
-@media (max-width:760px){
-  /* 판(흰 바탕)이 먼저 짧게 차오른 뒤 — 함께 나타나면 메뉴 글자가 뒤 화면 글자 위에 반투명하게 겹쳐 보였다 */
-  #portalNav>:first-child{animation-delay:.08s}#portalNav>:nth-child(2){animation-delay:.105s}#portalNav>:nth-child(3){animation-delay:.13s}
-  #portalNav>:nth-child(4){animation-delay:.155s}#portalNav>:nth-child(n+5){animation-delay:.18s}
-}
+/* 전체 메뉴 내용 — 묶음이 하나씩 차례로 떠오르지 않고 한꺼번에 짧게 나타난다 (차례 등장은 꾸민 티가 났다).
+   휴대폰은 판(흰 바탕)이 먼저 차오른 뒤 — 함께 나타나면 메뉴 글자가 뒤 화면 글자 위에 반투명하게 겹쳐 보였다 */
+@keyframes aq-land-fade{from{opacity:0}}
+#portalNav>.aq-nav-me,#portalNav>.aq-nav-card,#portalNav>.aq-nav-foot{animation:aq-land-fade var(--aq-motion-base) ease-out backwards}
+@media (max-width:760px){#portalNav>.aq-nav-me,#portalNav>.aq-nav-card,#portalNav>.aq-nav-foot{animation-delay:.08s}}
 #portalNav.is-closing>*{animation:none}
 /* 왼쪽 메뉴는 화면의 틀 — 새로고침·로그인 때마다 떠오르면 틀이 흔들려 보여 움직이지 않는다 (내용만 들어온다) */
 
