@@ -1849,8 +1849,10 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
   #portalNav .aq-nav-foot .aq-nav-legal{justify-content:center;column-gap:14px}
 }
 
-/* 알림 목록 — 옅은 파랑 카드 안에 흰 줄 (안 읽은 알림은 파란 점, 읽은 알림은 글자만 옅게) */
-.aq-notice-list{padding:8px}
-.aq-notice-list .aq-notice-card{background:#fff}
-@media(hover:hover){.aq-notice-list .aq-notice-card:hover{background:var(--aq-blue-50)}}
-.aq-notice-list .aq-notice-card.is-read .aq-notice-symbol{background:var(--aq-gray-50)}
+/* 알림 목록 — 옅은 파랑 카드 하나 안에 구분선으로 나눈 줄 (줄마다 카드를 또 두르지 않는다). 안 읽은 알림은 파란 점, 읽은 알림은 글자만 옅게 */
+.aq-notice-list{padding:4px 20px}
+.aq-notice-list .ui-list.is-inset>.aq-notice-card{padding:18px 0;border-radius:0;box-shadow:none;border-bottom:1px solid var(--aq-blue-150)}
+.aq-notice-list .ui-list.is-inset>.aq-notice-card:last-child{border-bottom:0}
+@media(hover:hover){.aq-notice-list .aq-notice-card:hover{background:transparent}.aq-notice-list .aq-notice-card:hover strong{color:var(--aq-blue-500)}}
+.aq-notice-list .aq-notice-card .aq-notice-symbol{background:#fff}
+@media(max-width:560px){.aq-notice-list{padding:2px 16px}}
