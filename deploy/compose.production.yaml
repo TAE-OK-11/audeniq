@@ -269,11 +269,6 @@ services:
       EMAIL_OCI_REGION: ${EMAIL_OCI_REGION:-}
       EMAIL_OCI_USERNAME: ${EMAIL_OCI_USERNAME:-}
       EMAIL_OCI_PASSWORD: ${EMAIL_OCI_PASSWORD:-}
-      # 문자 인증 (crates/core/src/sms.rs): 비우면 인증번호를 보내지 않는다 (비밀번호 찾기·이메일 찾기·휴대폰 등록 거절).
-      SMS_PROVIDER: ${SMS_PROVIDER:-}
-      SMS_FROM: ${SMS_FROM:-}
-      SOLAPI_API_KEY: ${SOLAPI_API_KEY:-}
-      SOLAPI_API_SECRET: ${SOLAPI_API_SECRET:-}
       # AI 어시스턴트 연결 (MCP, docs/MCP.md): 기본 꺼짐. 켜기 전에 문서의 점검 항목을 확인한다.
       AUDENIQ_MCP_ENABLED: ${AUDENIQ_MCP_ENABLED:-false}
       AUDENIQ_MCP_CIMD_HOSTS: ${AUDENIQ_MCP_CIMD_HOSTS:-chatgpt.com,claude.ai}
