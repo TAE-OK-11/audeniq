@@ -1884,3 +1884,19 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-notice-settings{display:grid;gap:10px;margin-top:40px}
 .aq-notice-settings:empty{display:none}
 .aq-notice-settings>.aq-alert-pref{margin:0}
+
+/* ---------- 로그인·가입·계정 찾기 — 패스키를 첫 번째 길로 ----------
+   패스키를 쓸 수 있는 기기면 '패스키로 로그인' 큰 파란 버튼이 맨 위, 이메일·비밀번호는 '또는' 아래 옅은 버튼.
+   비밀번호로 로그인·가입한 직후에는 '다음부터는 비밀번호 없이' 화면(pages/PasskeySetup)으로 패스키 만들기를 권한다 */
+.aq-passkey-first{display:grid;gap:10px;margin:0 0 22px}
+.aq-passkey-first .auth-submit{margin-top:0}
+.aq-passkey-main{gap:10px}
+.aq-passkey-first .aq-social-divider{margin-top:14px}
+.auth-fine{margin:0;color:var(--aq-text-4);font-size:13px;line-height:1.55;text-align:center}
+.aq-passkey-offer{display:grid;gap:12px}
+.aq-passkey-points{display:grid;gap:12px;margin:0 0 8px;padding:16px;border-radius:var(--aq-r-xl);background:#fff;list-style:none}
+.aq-passkey-points li{display:flex;align-items:center;gap:12px;color:var(--aq-text-2);font-size:14px;line-height:1.5}
+.aq-passkey-points .ui-icon{flex:none}
+.aq-passkey-offer .auth-submit{gap:8px;margin-top:4px}
+.auth-later{justify-self:center;min-height:44px;color:var(--aq-text-3)}
+.aq-passkey-offer .auth-fine{margin-top:2px}
