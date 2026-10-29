@@ -43,6 +43,7 @@ pub fn redirect(path: &str, sha256: &str) -> Response {
 /// Stable alias -> 307, revision -> original bytes. Older revision mappings
 /// are never overwritten when an artist selects a new image. Public content
 /// is still private in browser caches: /api never enters a shared CDN cache.
+#[allow(clippy::too_many_arguments)]
 pub async fn respond(
     s: &AppState,
     org: Uuid,

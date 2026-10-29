@@ -32,6 +32,18 @@ pub struct Credentials {
     #[serde(default)]
     pub privacy_notice_version: Option<String>,
 }
+/// Optional profile fields preserve the existing ID/password signup contract.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SignupInput {
+    pub email: String,
+    pub password: String,
+    pub terms_version: Option<String>,
+    pub privacy_notice_version: Option<String>,
+    pub name: Option<String>,
+    pub phone: Option<String>,
+    pub account_type: Option<String>,
+}
 fn legal_version(v: Option<&str>) -> Result<Option<String>> {
     match v.map(str::trim) {
         None | Some("") => Ok(None),
@@ -480,8 +492,32 @@ pub(crate) async fn create_account(
     .await?;
     Ok((user, org, party))
 }
-pub async fn register(s: &AppState, h: &HeaderMap, input: Credentials) -> Result<Json<Value>> {
+pub async fn register(s: &AppState, h: &HeaderMap, input: SignupInput) -> Result<Json<Value>> {
     origin(h, &s.config)?;
+    let name = input.name.as_deref().map(str::trim);
+    if let Some(name) = name {
+        if name.is_empty() || name.chars().count() > 200 {
+            return Err(Error::Invalid);
+        }
+        crate::text_policy::check(name)?;
+    }
+    let label = match input.account_type.as_deref() {
+        None | Some("personal") => false,
+        Some("label") => true,
+        _ => return Err(Error::Invalid),
+    };
+    let phone = input
+        .phone
+        .as_deref()
+        .map(crate::sms::normalize_phone)
+        .transpose()?;
+    let profile_name = name.map(str::to_owned);
+    let input = Credentials {
+        email: input.email,
+        password: input.password,
+        terms_version: input.terms_version,
+        privacy_notice_version: input.privacy_notice_version,
+    };
     let email = new_credentials(&input)?;
     // No account without the terms agreed (recorded and sealed below).
     let terms_version = legal_version(input.terms_version.as_deref())?
@@ -509,6 +545,29 @@ pub async fn register(s: &AppState, h: &HeaderMap, input: Credentials) -> Result
     let hash = hash?;
     let mut tx = s.pool.begin().await?;
     let (user, org, party) = create_account(s, &mut tx, &email, &hash, "SELF_REGISTER", h).await?;
+    if label || profile_name.is_some() {
+        let name = profile_name.as_deref().unwrap_or("Account holder");
+        if label {
+            crate::protected_names::enforce(&mut tx, org, &[name]).await?;
+        }
+        sqlx::query("UPDATE identity.orgs SET name=$2,kind=$3 WHERE id=$1")
+            .bind(org)
+            .bind(name)
+            .bind(if label { "LABEL" } else { "PERSONAL" })
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("UPDATE identity.parties SET display_name=$2,kind=$3 WHERE id=$1")
+            .bind(party)
+            .bind(name)
+            .bind(if label { "LEGAL_ENTITY" } else { "PERSON" })
+            .execute(&mut *tx)
+            .await?;
+    }
+    if let Some(phone) = phone {
+        sqlx::query("INSERT INTO portal.account_phones(user_id,phone_hash,phone_last4,verified_at) VALUES($1,$2,$3,NULL) ON CONFLICT(user_id) DO NOTHING")
+            .bind(user).bind(crate::sms::phone_hash(&s.config.service_secret, &phone))
+            .bind(&phone[phone.len()-4..]).execute(&mut *tx).await?;
+    }
     record_acceptance(
         s,
         &mut tx,
@@ -532,6 +591,16 @@ pub async fn login(
     let (user, hash) = check_password(s, h, input, PasswordVia::Browser).await?;
     let mut tx = s.pool.begin().await?;
     current_password(&mut tx, user, &hash).await?;
+    operations::audit(
+        &mut tx,
+        Some(user),
+        None,
+        Some(user),
+        "auth.emergency_password_login",
+        "PASSWORD",
+        request_id(h),
+    )
+    .await?;
     issue_session(s, tx, h, user, "PASSWORD", false).await
 }
 /// Verifies an e-mail and password under the login rate limits (`action`
@@ -750,7 +819,7 @@ pub struct PasswordChange {
     pub current_password: String,
     pub new_password: String,
 }
-async fn lock_current_session(c: &mut PgConnection, a: &Actor) -> Result<()> {
+pub(crate) async fn lock_current_session(c: &mut PgConnection, a: &Actor) -> Result<()> {
     let id: Option<Uuid> = sqlx::query_scalar("SELECT user_id FROM identity.sessions WHERE user_id=$1 AND token_hash=$2 AND revoked_at IS NULL AND expires_at>clock_timestamp() FOR SHARE")
         .bind(a.user).bind(&a.session_hash).fetch_optional(c).await?;
     id.ok_or(Error::Unauthorized)?;
