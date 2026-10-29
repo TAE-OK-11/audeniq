@@ -25,6 +25,11 @@ if (isIOS) {
   if (vp && !/maximum-scale/.test(vp.content)) vp.content += ',maximum-scale=1';
 }
 
+// 키보드로 옮겨 다닐 때만 입력칸에 포커스 테두리 (html.aq-kbd) — 누르거나 탭해 입력할 때 모습은 그대로
+const root_ = document.documentElement;
+addEventListener('keydown', e => { if (e.key === 'Tab') root_.classList.add('aq-kbd'); }, { capture: true, passive: true });
+addEventListener('pointerdown', () => root_.classList.remove('aq-kbd'), { capture: true, passive: true });
+
 // iOS Safari는 터치 리스너가 없으면 :active를 적용하지 않는다 — 누르는 순간의 피드백을 켠다
 document.addEventListener('touchstart', () => {}, { passive: true });
 // 누름 피드백·펼침·탭 줄·키보드 보조는 첫 화면을 그린 뒤 한가할 때 받는다 (lib/interactions).

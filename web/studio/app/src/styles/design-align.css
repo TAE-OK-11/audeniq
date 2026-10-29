@@ -2038,3 +2038,12 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
    내 메시지가 서버 목록으로 바뀌어 들어올 때는 다시 떠오르지 않게(같은 말풍선이 깜빡이지 않게) — 떠오르는 건 처음 보낼 때와 담당자 답변만 */
 .aq-thread li:not(.is-staff):not(.is-sending){animation:none}
 .aq-thread li.is-sending{opacity:.6;transition:opacity .2s}
+
+/* ---------- 접근성: 작은 글자 대비 4.5:1 ----------
+   11~12px 숫자 배지·제품 표시·개수가 기준에 조금 못 미쳤다(흰 글자/빨강 3.9, 파랑/옅은 파랑 4.4).
+   빨강은 한 단계 짙게(4.7), 옅은 파랑 위 파란 글자는 누름 색(blue-600, 5.1)으로 — 눈으로는 거의 같은 색 */
+.aq-badge,.aq-side-badge,.aq-nav-count{background:#D93036}
+.ui-product,.ui-count,.ui-count.is-soft,.ui-avatar.header-profile,.auth-page>.aq-auth-brand .ui-product,.ui-tab[aria-selected=true] .ui-count{color:var(--aq-blue-600)}
+/* 키보드로 옮겨 온 입력칸 — 면 색만 아주 옅게 바뀌어(대비 1.05) 어디에 있는지 보이지 않았다. 마우스·터치로 누를 때는 그대로 */
+/* 입력칸 테두리를 지우는 :is(#root,#modal) … !important 규칙(enhance.css)보다 앞서도록 같은 범위·!important로 */
+html.aq-kbd :is(#root,#modal) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea):is(:focus,:focus-visible){outline:var(--aq-focus)!important;outline-offset:2px!important}

@@ -131,7 +131,7 @@ function NoticeCard({ g, onOpen }: { g: NoticeGroup; onOpen: (g: NoticeGroup) =>
   const n = g.head;
   const more = g.all.length - 1;
   return (
-    <button type="button" className={`aq-notice-card${n.read ? ' is-read' : ''}`} onClick={() => onOpen(g)} aria-label={`${n.kind || '안내'} 알림${n.read ? '' : ', 읽지 않음'}: ${n.title}${more ? `, 같은 알림 ${more}건 더` : ''}`}>
+    <button type="button" className={`aq-notice-card${n.read ? ' is-read' : ''}`} onClick={() => onOpen(g)} aria-label={`${n.title} — ${n.kind || '안내'} 알림${n.read ? '' : ', 읽지 않음'}${more ? `, 같은 알림 ${more}건 더` : ''}`}>
       <span className="aq-notice-symbol" aria-hidden="true">{noticeSymbol(n.kind)}{!n.read && <i className="aq-unread" />}</span>
       <span className="aq-notice-copy">
         <strong>{n.title}</strong>
