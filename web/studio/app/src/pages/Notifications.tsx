@@ -124,8 +124,8 @@ function bundle(list: Notice[]): NoticeGroup[] {
 const WEEK = 7 * 86_400_000;
 const isThisWeek = (n: Notice, now: number) => { const d = parseStamp(n.time); return !!d && now - d.getTime() < WEEK; };
 
-/** 알림 카드 하나 — 누르면 관련 화면으로 바로 간다(관련 화면이 없을 때만 내용 창).
- * 아이콘(분류) · 제목과 시각 한 줄 · 설명 두 줄까지. 안 읽음은 파란 점과 굵은 제목 하나로만 */
+/** 알림 카드 하나 — 누르면 내용 창(관련 화면이 있으면 창 아래 버튼으로 이동).
+ * 아이콘(분류) · 제목 · 시각 한 줄 · 꺾쇠. 안 읽음은 파란 점과 굵은 제목 하나로만 */
 function NoticeCard({ g, onOpen }: { g: NoticeGroup; onOpen: (g: NoticeGroup) => void }) {
   const n = g.head;
   const more = g.all.length - 1;
@@ -134,10 +134,10 @@ function NoticeCard({ g, onOpen }: { g: NoticeGroup; onOpen: (g: NoticeGroup) =>
       <span className="aq-notice-symbol" aria-hidden="true">{noticeSymbol(n.kind)}{!n.read && <i className="aq-unread" />}</span>
       <span className="aq-notice-copy">
         <strong>{n.title}</strong>
-        {/* 문의 카드의 '분류 · 날짜' 줄처럼 시각을 회색 줄 앞에 — 오른쪽 칸이 제목 자리를 좁혀 두 줄로 꺾였다 */}
-        <span className="aq-notice-detail"><time dateTime={n.time}>{relativeTime(n.time) || n.time}</time>{n.detail && <> · {n.detail}</>}</span>
+        {/* 목록에는 제목과 시각만 — 설명은 한 줄에서 '…'로 잘려 읽을 수 없었다. 전체 내용은 눌러서 여는 창에서 */}
+        <span className="aq-notice-detail"><time dateTime={n.time}>{relativeTime(n.time) || n.time}</time>{more > 0 && <> · 같은 알림 {more}건 더</>}</span>
       </span>
-      {more > 0 && <span className="aq-notice-more">외 {more}건</span>}
+      <Glyph name="chevron-right" size={18} className="aq-notice-chev" />
     </button>
   );
 }
@@ -179,12 +179,10 @@ export function Notifications() {
     toast('모든 알림을 읽음으로 표시했어요.');
   };
 
-  // 관련 화면이 있으면 바로 그 화면으로 — 예전엔 내용 창을 열고 '관련 화면으로 이동'을 한 번 더 눌러야 했다. 묶인 알림은 함께 읽음
+  // 누르면 내용 창 — 전체 설명을 읽고, 관련 화면이 있으면 창 아래 버튼으로 이동. 묶인 알림은 함께 읽음
   const openNoticeDetail = (g: NoticeGroup) => {
     g.all.forEach(n => markNoticeRead(n.id));
-    const n = g.head;
-    if (n.link) nav(n.link);
-    else setOpenNotice(n);
+    setOpenNotice(g.head);
   };
 
   return (

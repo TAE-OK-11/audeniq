@@ -1877,13 +1877,22 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 #view-notifications .aq-notice-detail{overflow:hidden;color:var(--aq-text-3);font-size:14px;line-height:1.5;text-overflow:ellipsis;white-space:nowrap}
 #view-notifications .aq-notice-detail time{color:var(--aq-text-4)}
 .aq-notice-more{padding:3px 9px;border-radius:var(--aq-r-pill);background:#fff;color:var(--aq-text-3);font-size:12px;font-weight:700;white-space:nowrap}
-#view-notifications .aq-notice-card.is-read .aq-notice-copy strong{font-weight:500;color:var(--aq-text-2)}
-#view-notifications .aq-notice-card.is-read .aq-notice-symbol{background:var(--aq-gray-100);color:var(--aq-text-4)}
+/* 읽음/안 읽음 — 카드 모양은 같고 바탕색만: 안 읽은 알림은 옅은 파랑 + 파란 점 + 굵은 제목, 읽은 알림은 살짝 푸른 기가 도는 옅은 회색(완전 회색은 죽어 보였다).
+   아이콘은 둘 다 파랑 그대로(흰 칸)라 읽은 알림도 죽어 보이지 않는다 */
+#view-notifications .aq-notice-card.is-read{background:#F3F5F9}
+@media(hover:hover){#view-notifications .aq-notice-card.is-read:hover{background:#ECEFF5}}
+#view-notifications .aq-notice-card.is-read .aq-notice-copy strong{font-weight:500;color:var(--aq-text)}
+#view-notifications .aq-notice-card.is-read .aq-notice-symbol{background:#fff;color:var(--aq-blue-500)}
+#view-notifications .aq-notice-card.is-read .aq-notice-detail{color:var(--aq-text-3)}
 @media(max-width:560px){#view-notifications .aq-notice-card{gap:12px;padding:16px}}
 .aq-notice-sections .aq-pager{margin-top:-8px}
 .aq-notice-settings{display:grid;gap:10px;margin-top:40px}
 .aq-notice-settings:empty{display:none}
 .aq-notice-settings>.aq-alert-pref{margin:0}
+/* 목록은 제목·시각 두 줄 + 오른쪽 꺾쇠(누르면 내용 창) */
+#view-notifications .aq-notice-chev{color:var(--aq-text-disabled)}
+#view-notifications .aq-notice-detail{font-size:13px}
+
 
 /* ---------- 로그인·가입·계정 찾기 — 패스키를 첫 번째 길로 ----------
    패스키를 쓸 수 있는 기기면 '패스키로 로그인' 큰 파란 버튼이 맨 위, 이메일·비밀번호는 '또는' 아래 옅은 버튼.
