@@ -8,7 +8,6 @@ import { initRowNav } from './lib/rowNav';
 import { initExpand } from './lib/expand';
 import { initTopCover } from './lib/topCover';
 import { initEnterNext } from './lib/enterNext';
-import { MOCK } from './api/client';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('#root 요소를 찾을 수 없어요.');
@@ -47,7 +46,8 @@ initEnterNext();
 prefetchInitialRoute();
 
 // 체험 모드: 접수된 계약서 검토를 자동 완료 (별도 청크로 분리해 실제 모드 번들에는 포함되지 않음)
-if (MOCK) void import('./store/mockReviewer').then(m => m.startMockReviewer());
+// MOCK(lib/mode)과 같은 식을 그대로 쓴다 — 가져온 상수로는 실서버 빌드에도 청크가 만들어졌다
+if (import.meta.env.MODE !== 'edge' && import.meta.env.VITE_MOCK !== 'false') void import('./store/mockReviewer').then(m => m.startMockReviewer());
 
 createRoot(root).render(
   <StrictMode>

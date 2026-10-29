@@ -72,7 +72,8 @@ export function purgeCss(opts: { content: string[]; safelist?: RegExp[] }): Plug
       });
       // 사용되지 않는 @keyframes 제거
       const animUsed = new Set<string>();
-      root.walkDecls(/^(-webkit-)?animation(-name)?$/, d => {
+      // 사용자 속성(--x: 이름)으로 넘겨 animation: var(--x)로 쓰는 키프레임도 쓰는 것으로 본다
+      root.walkDecls(/^((-webkit-)?animation(-name)?|--.+)$/, d => {
         for (const m of d.value.matchAll(/[A-Za-z_][\w-]*/g)) animUsed.add(m[0]);
       });
       root.walkAtRules(/keyframes$/i, at => {

@@ -2,9 +2,10 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
-import { retainAssets } from './build/retain-assets';
-import { compactCss, purgeCss } from './build/purge-css';
-import { hoverGuard } from './build/hover-guard';
+import { retainAssets } from './build/retain-assets.ts';
+import { compactCss, purgeCss } from './build/purge-css.ts';
+import { hoverGuard } from './build/hover-guard.ts';
+import { dedupeCss } from './build/dedupe-css.ts';
 
 const src = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -20,7 +21,8 @@ export default defineConfig(({ command, mode }) => {
   }
   return ({
   base: '/',
-  plugins: [react(), retainAssets()],
+  // 묶인 CSS에서 뒤 파일에 늘 덮이는 선언을 지운다 (build/dedupe-css)
+  plugins: [react(), retainAssets(), dedupeCss()],
   css: {
     postcss: {
       // :hover는 마우스 환경에서만 (휴대폰 sticky hover 방지) — 개발·빌드 모두 적용해 화면이 같게 한다

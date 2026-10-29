@@ -142,9 +142,9 @@ const remote = {
 
 export type WorkApi = typeof remote;
 
-function lazyMock(): WorkApi {
+function lazyMock(loader: () => Promise<WorkApi>): WorkApi {
   let mod: Promise<WorkApi> | null = null;
-  const load = () => (mod ??= import('./mock').then(m => m.mockWork as WorkApi));
+  const load = () => (mod ??= loader());
   return new Proxy({} as WorkApi, {
     get: (_, key) => {
       // 첨부 주소는 동기 함수 — 체험 모드에서는 내려받기 대신 이름만 보여 준다
@@ -154,4 +154,6 @@ function lazyMock(): WorkApi {
   });
 }
 
-export const workApi: WorkApi = MOCK ? lazyMock() : remote;
+// 실서버 빌드에서 바로 거짓이 되는 식을 앞에 둔다 — 다른 모듈의 상수(MOCK)만으로는 실서버 빌드에도 예시 데이터 청크가 만들어졌다
+export const workApi: WorkApi = import.meta.env.MODE !== 'edge' && import.meta.env.VITE_MOCK !== 'false' && MOCK
+  ? lazyMock(() => import('./mock').then(m => m.mockWork as WorkApi)) : remote;

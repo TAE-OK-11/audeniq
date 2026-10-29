@@ -22,6 +22,12 @@ describe('purgeCss', () => {
     expect(out).toContain('k1');
     expect(out).not.toContain('k2');
   });
+  it('사용자 속성으로 넘긴 keyframes 이름도 보존', () => {
+    const out = run('.a{--anim:k3}.a::after{animation:var(--anim,k4) 1s}@keyframes k3{to{c:3}}@keyframes k4{to{d:4}}@keyframes k5{to{e:5}}', '"a"');
+    expect(out).toContain('@keyframes k3');
+    expect(out).toContain('@keyframes k4');
+    expect(out).not.toContain('k5');
+  });
   it('선택자 목록 중 사용되는 것만 남긴다', () => {
     expect(run('.a,.zzz{x:1}', "cls('a')")).toBe('.a{x:1}');
   });
