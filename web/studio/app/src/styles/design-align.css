@@ -161,32 +161,29 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .aq-bundle:not(.is-compact) .aq-bundle-docs li:not(.is-done) .aq-bundle-no{background:var(--aq-blue-150);color:var(--aq-blue-500)}
 
 /* 권리·보완 서류 — 숫자 칸 3개·주황 카드 대신: 보완 요청은 위 알림 줄 하나, 서류는 계정 정보 화면 같은 옅은 파랑 카드 안의 줄 */
-.aq-doc-alert{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;width:100%;margin:0 0 12px;padding:14px 16px;border:0;border-radius:var(--aq-r-lg);background:var(--aq-amber-50);color:var(--aq-amber-700);font:inherit;text-align:left;cursor:pointer;transition:background-color .2s ease}
+.aq-doc-alert{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:14px;width:100%;margin:0 0 14px;padding:18px 18px 18px 20px;border:0;border-radius:var(--aq-r-2xl);background:var(--aq-amber-50);color:var(--aq-text);font:inherit;text-align:left;cursor:pointer;transition:background-color .2s ease}
 @media(hover:hover){.aq-doc-alert:hover{background:var(--aq-amber-100)}}
-.aq-doc-alert .min-0{display:grid;gap:2px}
-.aq-doc-alert strong{font-size:var(--aq-fs-lg);font-weight:700}
-.aq-doc-alert small{font-size:var(--aq-fs-sm);color:var(--aq-text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.aq-doc-list{padding:6px;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
-.aq-doc-list>h2{display:flex;align-items:baseline;gap:6px;margin:0;padding:14px 14px 6px;font-size:var(--aq-fs-md);font-weight:700;letter-spacing:0;color:var(--aq-text-3)}
-.aq-doc-list>h2 small{margin-left:auto;font-size:var(--aq-fs-xs);font-weight:600;color:var(--aq-text-4)}
-.aq-doc-count{font-size:var(--aq-fs-xs);color:var(--aq-blue-500)}
-.aq-doc-list>.ui-empty{margin:4px 8px 8px}
-.aq-doc-rows{display:grid}
-.aq-doc-row{display:grid;grid-template-columns:40px minmax(0,1fr) auto auto;align-items:center;gap:12px;width:100%;min-height:64px;padding:10px 10px 10px 12px;border:0;border-radius:var(--aq-r-lg);background:none;color:var(--portal-ink);font:inherit;text-align:left;cursor:pointer;transition:background-color .2s ease}
-@media(hover:hover){.aq-doc-row:hover{background:var(--aq-surface-hover)}}
-.aq-doc-ico{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:var(--aq-blue-150);color:var(--aq-blue-500)}
-.aq-doc-row.is-needs .aq-doc-ico{background:var(--aq-amber-100);color:var(--aq-amber-700)}
+/* 보완 알림 — 홈 '먼저 할 일'처럼 옅은 주황 면 + 흰 아이콘 칸, 제목은 진한 글자, 사유는 두 줄까지 */
+.aq-doc-alert .ui-icon{--ic:44px;--tone-bg:#fff;--tone-fg:var(--aq-amber-700)}
+.aq-doc-alert .min-0{display:grid;gap:3px}
+.aq-doc-alert strong{color:var(--aq-text);font-size:var(--aq-fs-lg);font-weight:var(--aq-fw-bold);line-height:1.4}
+.aq-doc-alert small{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;color:var(--aq-text-3);font-size:var(--aq-fs-sm);line-height:1.5}
+.aq-doc-alert>.aq-glyph:last-child{color:var(--aq-amber-700)}
+/* 권리 서류 목록 — 홈 '내 발매'와 같은 옅은 파랑 카드 + 흰 줄 (아이콘 칸 · 제목/한 줄 정보 · 오른쪽 상태 배지) */
+.aq-doc-list .ui-section-head{align-items:baseline}
+.aq-doc-count{margin-left:2px;color:var(--aq-blue-500)}
+.aq-doc-sum{font-size:var(--aq-fs-xs);font-weight:600;color:var(--aq-text-4);white-space:nowrap}
+.aq-doc-list>.ui-empty{margin:4px 0 0}
+.aq-doc-row{background:#fff}
+@media(hover:hover){.aq-doc-row:hover{background:var(--aq-blue-50)}}
+.aq-doc-row.is-needs>.ui-icon{--tone-bg:var(--aq-amber-100);--tone-fg:var(--aq-amber-700)}
 .aq-doc-copy{display:grid;gap:3px}
-.aq-doc-copy strong{font-size:15px;font-weight:600;line-height:1.4}
-.aq-doc-copy small{font-size:12px;color:var(--aq-text-4)}
-.aq-doc-copy em{font-style:normal;font-size:12px;line-height:1.5;color:var(--aq-amber-700)}
+.aq-doc-copy .ui-row-title{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.aq-doc-meta,.aq-doc-note{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-doc-meta{font-size:12px;line-height:1.5;color:var(--aq-text-4)}
+.aq-doc-note{font-size:12px;line-height:1.5;color:var(--aq-amber-700)}
 .aq-doc-state{flex:none}
-.aq-doc-chev{color:var(--aq-text-disabled)}
-/* 휴대폰도 '내 발매' 목록처럼 상태 배지는 오른쪽에 — 아래 줄로 내리면 줄마다 높이가 들쭉날쭉했다. 꺾쇠는 줄 전체가 눌리니 뺀다 */
-@media(max-width:560px){
-  .aq-doc-row{grid-template-columns:40px minmax(0,1fr) auto;gap:10px}
-  .aq-doc-row .aq-doc-chev{display:none}
-}
+@media(max-width:560px){.aq-doc-row{gap:12px;padding:14px}}
 
 /* 내 음악 — 휴대폰에서도 검색과 정렬을 한 줄로 (정렬은 좁게) */
 @media(max-width:759px){#view-catalog .toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto}#view-catalog .toolbar select{min-width:0}}
@@ -200,6 +197,13 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .ui-btn.aq-danger-text{--btn-fg:var(--aq-red-600);--btn-bg-hover:var(--aq-red-50);--btn-fg-hover:var(--aq-red-600)}
 .aq-detail-actions .ui-btn.aq-danger-text{flex:none!important}
 @media(min-width:761px){.aq-detail-actions.is-wide .ui-btn.aq-danger-text{width:auto;align-self:center;--btn-h:var(--aq-h-xs)}}
+/* 휴대폰 발매 카드 — 주 버튼은 카드 안 맨 아래 한 줄(카드 밖에 떠 있지 않게), 삭제·신청 취소는 화면 맨 아래 가운데 */
+#view-release .aq-detail-hero>.aq-detail-actions.is-narrow{grid-column:1/-1;margin:4px 0 0;gap:8px}
+#view-release .aq-detail-actions.is-narrow .ui-btn{flex:1 1 0;--btn-h:var(--aq-h-md);--btn-r:var(--aq-r-ctl-md);--btn-fs:var(--aq-fs-md)}
+#view-release .aq-detail-actions.is-narrow .ui-btn.is-soft{--btn-bg:#fff;--btn-bg-hover:var(--aq-blue-100)}
+.aq-detail-danger{display:flex;justify-content:center;gap:4px;margin:28px 0 8px}
+.aq-detail-danger .ui-btn{--btn-h:var(--aq-h-sm);--btn-fs:var(--aq-fs-sm)}
+@media(min-width:761px){.aq-detail-danger{display:none}}
 
 /* 발매 상세 — 보완 요청·커버아트: 옅은 파랑 카드 안에 흰 칸을 겹치지 않고 줄로, 단계 표시는 주황 알약 대신 글자 */
 #view-release .aq-fix-top .ui-badge{padding:0;background:none!important;font-size:13px}
@@ -547,7 +551,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 @media (prefers-reduced-motion:reduce){.aq-smartlink-list a:is(:active,.is-pressed){transform:none}}
 
 /* 발매 신청 > 배급 플랫폼 칸 — 'YouTube M…'·'Anghami (…'처럼 이름이 잘려 무슨 플랫폼인지 모르던 것: 세 줄까지 보여 준다 */
-.aq-dsp-name{white-space:normal;word-break:keep-all;overflow-wrap:anywhere;line-height:1.3;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+.aq-dsp-name{white-space:normal;word-break:keep-all;overflow-wrap:break-word;line-height:1.3;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
 @media (max-width:600px){.aq-dsp-name{font-size:13px;letter-spacing:-.01em}}
 
 /* 발매 신청 > 트랙: 곡이 여럿이면 고치는 곡만 펼치고 나머지는 한 줄 요약 (번호 · 제목 · 작곡·음원 · 입력 상태) */
@@ -761,25 +765,9 @@ button.settle-hero-account.is-button .min-0{display:grid}
 .aq-faq-item p a{color:var(--aq-blue-500);font-weight:600}
 .aq-faq-foot{margin:10px 2px 0;font-size:13px;color:var(--aq-text-4)}
 
-/* ---------- 메뉴 구조 — 휴대폰 아래 탭 바, 데스크톱 왼쪽 고정 메뉴 (Layout.tsx) ----------
-   숨긴 햄버거 메뉴는 덜 발견되고 이동이 느리다(NN/g). 자주 가는 곳은 늘 보이게 한다. 발매 신청 중에는 둘 다 숨긴다 */
-.aq-tabbar,.aq-sidebar{display:none}
-@media (max-width:760px){
-  .aq-tabbar{display:grid;grid-template-columns:repeat(5,1fr);position:fixed;left:0;right:0;bottom:0;z-index:90;
-    padding:6px 4px calc(6px + env(safe-area-inset-bottom));background:rgba(255,255,255,.99);box-shadow:0 -1px 0 var(--aq-gray-100)}
-  .aq-tab-item{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:48px;padding:0;border:0;background:none;
-    font:inherit;font-size:11px;font-weight:600;color:var(--aq-text-4);text-decoration:none;-webkit-tap-highlight-color:transparent;transition:color var(--aq-dur-fast) var(--aq-ease)}
-  .aq-tab-item.is-active{color:var(--aq-blue-500)}
-  .aq-tab-item:active{transform:scale(.94)}
-  .aq-tab-dot{position:absolute;top:6px;left:calc(50% + 8px);width:7px;height:7px;border-radius:50%;background:var(--aq-red-500)}
-  .aq-tab-dot.is-warn{background:var(--aq-amber-500)}
-  body:not(.wizard-mode) #main{padding-bottom:calc(72px + env(safe-area-inset-bottom))}
-  body:not(.wizard-mode) .portal-header .menu-toggle{display:none!important}
-  body.wizard-mode .aq-tabbar{display:none}
-  body:has(.aq-tabbar) .aq-toast-stack{bottom:calc(84px + env(safe-area-inset-bottom))}
-  /* 화면 아래에 붙는 저장 버튼 줄은 탭 바 바로 위에 붙는다 */
-  body:not(.wizard-mode) .aq-form-actions.is-pinned{bottom:calc(60px + env(safe-area-inset-bottom))}
-}
+/* ---------- 메뉴 구조 — 휴대폰은 머리의 메뉴 버튼(전체 메뉴), 데스크톱 왼쪽 고정 메뉴 (Layout.tsx) ----------
+   휴대폰 아래 탭 바는 실제로 거의 쓰지 않아 뺐다. 발매 신청 중에는 왼쪽 메뉴도 숨긴다 */
+.aq-sidebar{display:none}
 @media (min-width:1024px){
   .aq-sidebar{display:block;position:fixed;top:var(--aq-header-h,69px);left:0;bottom:0;width:232px;z-index:40;overflow-y:auto;padding:20px 12px 32px;background:#fff;box-shadow:1px 0 0 var(--aq-gray-100)}
   .aq-side-cta{display:flex;width:100%;justify-content:flex-start;gap:8px;margin:0 0 20px;padding:0 12px}
@@ -839,18 +827,11 @@ button.settle-hero-account.is-button .min-0{display:grid}
 .settle-steps li.is-done+li.is-done::before{background:var(--aq-blue-500)}
 .settle-fail{display:block;margin-top:6px;font-size:12px;font-weight:600;color:var(--aq-amber-700)}
 
-/* 아이폰 사파리(앱처럼 홈 화면에서 연 경우 제외) — 사파리 자체 막대가 화면 아래에 떠 있어 탭 바와 두 줄로 겹치고,
-   막대 뒤 흐림 효과에 탭 바까지 비쳐 복잡해 보였다. 사파리에서는 탭 바 대신 머리의 메뉴 버튼을 쓴다 */
+/* 아이폰 사파리(앱처럼 홈 화면에서 연 경우 제외) — 주소 막대가 화면 아래에 떠 있어(iOS 26) 맨 끝 내용이 그 뒤에 가려졌다 — 막대 높이만큼 비워 둔다 */
 @media (max-width:760px){
   @supports (-webkit-touch-callout:none){
     @media not all and (display-mode:standalone){
-      .aq-tabbar{display:none!important}
-      /* 탭 바는 없지만 사파리 주소 막대가 화면 아래에 떠 있어(iOS 26) 맨 끝 내용이 그 뒤에 가려졌다 — 막대 높이만큼 비워 둔다 */
       body:not(.wizard-mode) #main{padding-bottom:calc(72px + env(safe-area-inset-bottom))}
-      body:not(.wizard-mode) .portal-header .menu-toggle{display:flex!important}
-      /* 알림도 떠 있는 주소 막대 위에 */
-      body:has(.aq-tabbar) .aq-toast-stack{bottom:calc(76px + env(safe-area-inset-bottom))}
-      body:not(.wizard-mode) .aq-form-actions.is-pinned{bottom:0}
     }
   }
 }
@@ -893,14 +874,14 @@ button.settle-hero-account.is-button .min-0{display:grid}
    모두 --aq-press-* 토큰과 .is-pressed(lib/press.ts)로 맞춰 누르면 바로 줄고, 떼면 살짝 튀며 돌아온다 */
 .aq-option,.aq-sign-provider{transition:background-color var(--aq-motion-short) var(--aq-ease),color var(--aq-motion-short) var(--aq-ease),border-color var(--aq-motion-short) var(--aq-ease),transform var(--aq-press-out) var(--aq-press-spring)!important}
 :is(.aq-dsp,.aq-pick,.aq-cert-method,.aq-pay-flow .aq-pay-type span){transition:background-color var(--aq-dur) var(--aq-ease),color var(--aq-dur) var(--aq-ease),box-shadow var(--aq-dur) var(--aq-ease),transform var(--aq-press-out) var(--aq-press-spring)}
-:is(.aq-chip,.aq-file-btn,.aq-tab-item){transition:background-color var(--aq-dur) var(--aq-ease),color var(--aq-dur) var(--aq-ease),transform var(--aq-press-out) var(--aq-press-spring)}
+:is(.aq-chip,.aq-file-btn){transition:background-color var(--aq-dur) var(--aq-ease),color var(--aq-dur) var(--aq-ease),transform var(--aq-press-out) var(--aq-press-spring)}
 :is(.aq-option,.aq-sign-provider,.aq-dsp,.aq-pick,.aq-cert-method):not(:disabled):is(:active,.is-pressed){transform:scale(var(--aq-press-row));transition-duration:var(--aq-press-in)!important}
 .aq-pay-flow .aq-pay-type:is(:active,.is-pressed) span{transform:scale(var(--aq-press-row));transition-duration:var(--aq-press-in)}
-:is(.aq-chip,.aq-file-btn:not([aria-disabled=true]),.aq-tab-item):not(:disabled):is(:active,.is-pressed){transform:scale(var(--aq-press-btn));transition-duration:var(--aq-press-in)}
+:is(.aq-chip,.aq-file-btn:not([aria-disabled=true])):not(:disabled):is(:active,.is-pressed){transform:scale(var(--aq-press-btn));transition-duration:var(--aq-press-in)}
 /* 고를 수 없는 건 눌리지도 않는다 — 예전 :active 규칙이 비활성 칸까지 줄였다 */
 :is(.aq-dsp,.aq-chip,.aq-cert-method,.aq-sign-provider):disabled,.aq-file-btn[aria-disabled=true]{transform:none!important}
 @media (prefers-reduced-motion:reduce){
-  :is(.aq-option,.aq-sign-provider,.aq-dsp,.aq-pick,.aq-cert-method,.aq-chip,.aq-file-btn,.aq-tab-item):is(:active,.is-pressed),.aq-pay-type:is(:active,.is-pressed) span{transform:none!important}
+  :is(.aq-option,.aq-sign-provider,.aq-dsp,.aq-pick,.aq-cert-method,.aq-chip,.aq-file-btn):is(:active,.is-pressed),.aq-pay-type:is(:active,.is-pressed) span{transform:none!important}
 }
 
 /* ---------- 디자인 통일 ----------
@@ -929,7 +910,7 @@ button.settle-hero-account.is-button .min-0{display:grid}
    메뉴도 audeniq.com 랜딩과 같은 움직임
    - 머리글: 평소엔 선 없이 화면과 이어지고, 내려가면 그림자가 부드럽게(0.28초)
    - 휴대폰 전체 메뉴: 판이 내려온 뒤 묶음이 30ms씩 차례로 8px 아래에서 떠오른다(0.7초, 처음 투명도 .3)
-   - 넓은 화면 왼쪽 메뉴·휴대폰 아래 탭 바: 처음 열 때 한 번 같은 움직임
+   - 넓은 화면 왼쪽 메뉴: 처음 열 때 한 번 같은 움직임
    - 자주 묻는 질문: 펼치면 답이 6px 아래에서 나타난다
    ========================================================================== */
 .portal-header{border-bottom-color:transparent!important;transition:box-shadow .28s var(--aq-enter)}
@@ -948,13 +929,13 @@ body.wizard-mode .portal-header,.portal-header:has(#portalNav:not([hidden])){box
   #portalNav>:nth-child(4){animation-delay:.155s}#portalNav>:nth-child(n+5){animation-delay:.18s}
 }
 #portalNav.is-closing>*{animation:none}
-/* 왼쪽 메뉴·아래 탭 바는 화면의 틀 — 새로고침·로그인 때마다 떠오르면 틀이 흔들려 보여 움직이지 않는다 (내용만 들어온다) */
+/* 왼쪽 메뉴는 화면의 틀 — 새로고침·로그인 때마다 떠오르면 틀이 흔들려 보여 움직이지 않는다 (내용만 들어온다) */
 
 @keyframes aq-faq-open{from{opacity:0;transform:translate3d(0,6px,0)}}
 .aq-faq-item[open]>:not(summary){animation:aq-faq-open var(--aq-motion-long) var(--aq-enter) backwards}
 
 @media (prefers-reduced-motion:reduce){
-  #portalNav>*,.aq-sidebar>*,.aq-tabbar,.aq-faq-item[open]>:not(summary){animation:none!important}
+  #portalNav>*,.aq-sidebar>*,.aq-faq-item[open]>:not(summary){animation:none!important}
   .portal-header{transition:none}
 }
 
@@ -1492,7 +1473,9 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-studio-releases{margin:0;padding:0;list-style:none}
 .aq-studio-release{display:flex;align-items:center;gap:12px}
 .aq-studio-release-main{flex:1}
-.aq-studio-release-main strong{display:block;font-size:15px;font-weight:var(--aq-fw-bold)}
+.aq-studio-release-title{display:flex;align-items:center;gap:8px;min-width:0}
+.aq-studio-release-main strong{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px;font-weight:var(--aq-fw-bold)}
+.aq-nowrap{white-space:nowrap}
 .aq-studio-release-main small{display:block;margin-top:2px;color:var(--aq-text-3);font-size:13px}
 .aq-studio-fans{margin:0}
 /* 팬 반응은 휴대폰에서도 세 칸 한 줄 (두 칸 + 한 줄 가득으로 흩어지지 않게) */
@@ -1827,5 +1810,56 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
   .aq-stats-dsps li{grid-template-columns:32px minmax(0,1fr) auto;gap:10px;padding:10px 6px}
   .aq-stats-dsp-top{flex-wrap:wrap;row-gap:0}
   .aq-stats-dsp-top b{flex:1 0 100%}
-  .aq-stats-dsp-rev{min-width:0}
+  .aq-stats-dsp-rev{min-width:84px}
+}
+
+/* 휴대폰 페이지 머리 만들기 버튼(새 발매·새 문의·권리 서류…) — 홈 '새 발매'와 같은 옅은 파랑 작은 버튼 (자리는 설명 아래 그대로) */
+@media(max-width:760px){
+  :is(.ui-page-head>.ui-btn,.ui-page-head>.ui-page-actions>.ui-btn).is-primary{
+    --btn-bg:var(--aq-btn-soft,var(--aq-primary-soft));--btn-fg:var(--aq-btn-soft-fg,var(--aq-primary-text));
+    --btn-bg-hover:var(--aq-btn-soft-hover,var(--aq-primary-soft-hover));--btn-fg-hover:var(--btn-fg);
+    --btn-h:var(--aq-h-sm);--btn-r:var(--aq-r-ctl-sm);--btn-px:14px;--btn-fs:13px;gap:6px;width:auto
+  }
+  /* 권리·보완 서류·발매·곡 관리 — 홈 '새 발매'와 같은 옅은 파랑 작은 버튼을 제목 줄 오른쪽에 (분류 줄은 그 위) */
+  .ui-page-head.aq-head-inline{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:12px;row-gap:0;align-items:center}
+  .ui-page-head.aq-head-inline>div:first-child{display:contents}
+  .ui-page-head.aq-head-inline>div:first-child>*{grid-column:1/-1}
+  .ui-page-head.aq-head-inline>div:first-child>:first-child:not(h1){grid-row:1}
+  .ui-page-head.aq-head-inline>div:first-child>h1{grid-column:1;grid-row:2}
+  .ui-page-head.aq-head-inline>:is(.ui-btn,.ui-page-actions){grid-column:2;grid-row:2;width:auto}
+}
+
+/* 계정 정보 맨 위 프로필 — 아래 설정 카드들과 같은 옅은 파랑 카드로 (흰 바탕에 혼자 떠 있지 않게) */
+@media(max-width:1023px){
+  .aq-settings>.ui-page-head{margin-bottom:18px}
+  .aq-settings>.aq-set-profile{padding:18px 16px;background:var(--aq-surface);border-radius:var(--aq-r-2xl)}
+  @media(hover:hover){.aq-settings>.aq-set-profile:hover{background:var(--aq-blue-100)}}
+  .aq-settings>.aq-set-profile .aq-profile-avatar{width:60px!important;height:60px!important;flex-basis:60px;font-size:26px!important}
+}
+
+/* 휴대폰 전체 메뉴 — 맨 위 내 계정 줄도 아래 묶음과 같은 옅은 파랑 카드로,
+   로그아웃은 회색 알약 하나로 떠 있지 않게 카드 한 줄(빨간 글자, 계정 정보 화면과 같은 모양)로, 약관 링크는 그 아래 가운데 작은 글자로 */
+@media(max-width:760px){
+  #portalNav .aq-nav-me-row{padding:14px!important;border-radius:var(--aq-r-2xl)!important;background:var(--aq-surface)!important}
+  #portalNav .aq-nav-me-row:hover,#portalNav .aq-nav-me.is-active .aq-nav-me-row{background:var(--aq-blue-100)!important}
+  #portalNav .aq-nav-foot{flex-direction:column;align-items:stretch!important;gap:14px;padding:0!important}
+  #portalNav .aq-nav-foot .aq-logout{order:-1;display:flex;align-items:center;width:100%!important;min-height:56px!important;padding:0 20px!important;
+    border-radius:var(--aq-r-2xl)!important;background:var(--aq-surface)!important;color:var(--aq-red-600)!important;font-size:var(--aq-fs-lg)!important;font-weight:600!important;text-align:left}
+  #portalNav .aq-nav-foot .aq-logout:hover{background:var(--aq-red-50)!important}
+  #portalNav .aq-nav-foot .aq-nav-legal{justify-content:center;column-gap:14px}
+}
+
+/* 알림 목록 — 옅은 파랑 카드 하나 안에 구분선으로 나눈 줄 (줄마다 카드를 또 두르지 않는다). 안 읽은 알림은 파란 점, 읽은 알림은 글자만 옅게 */
+.aq-notice-list{padding:4px 20px}
+.aq-notice-list .ui-list.is-inset>.aq-notice-card{padding:18px 0;border-radius:0;box-shadow:none;border-bottom:1px solid var(--aq-blue-150)}
+.aq-notice-list .ui-list.is-inset>.aq-notice-card:last-child{border-bottom:0}
+@media(hover:hover){.aq-notice-list .aq-notice-card:hover{background:transparent}.aq-notice-list .aq-notice-card:hover strong{color:var(--aq-blue-500)}}
+.aq-notice-list .aq-notice-card .aq-notice-symbol{background:#fff}
+@media(max-width:560px){.aq-notice-list{padding:2px 16px}}
+
+/* 서명 전·검토 중 안내 카드 — 파란 바탕에 초록 글자가 섞여 있었다. 설명은 회색으로 */
+.aq-doc-done.is-pending .min-0 span{color:var(--aq-text-3)}
+/* 문서 화면 맨 위 줄(뒤로 · 신청서 보기 · 인쇄) — 휴대폰에서 뒤로 링크와 같은 작은 버튼 크기로 */
+@media(max-width:760px){
+  .aq-doc-toolbar .row-actions .ui-btn{--btn-h:var(--aq-h-sm);--btn-r:var(--aq-r-ctl-sm);--btn-px:14px;--btn-fs:13px}
 }

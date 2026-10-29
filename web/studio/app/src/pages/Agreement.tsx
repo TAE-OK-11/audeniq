@@ -85,6 +85,15 @@ export function Agreement() {
 
   return (
     <div id="view-agreement" className="view aq-doc-view">
+      {/* 뒤로 가기·인쇄 줄이 맨 위(발매 상세·신청서와 같은 자리), 그 아래 서명 안내 — 파란 버튼은 '확인하고 서명' 하나 */}
+      <div className="aq-doc-toolbar">
+        <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={() => nav('/contracts')}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />계약서</button>
+        <div className="row-actions">
+          {doc.releaseId && <button type="button" className="ui-btn is-soft" onClick={() => nav(`/releases/${doc.releaseId}/application`)}>신청서 보기</button>}
+          <button type="button" className="ui-btn is-soft" onClick={() => void printWithStamp({ kind: 'DOCUMENT', ref: id, root: document.querySelector('.aq-paper') })}>인쇄 · PDF 저장</button>
+        </div>
+      </div>
+
       {!signed && (
         <div className="aq-doc-done is-pending" role="status">
           <span className="aq-doc-done-mark" aria-hidden="true"><Glyph name="pencil" size={18} /></span>
@@ -96,13 +105,6 @@ export function Agreement() {
         </div>
       )}
 
-      <div className="aq-doc-toolbar">
-        <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={() => nav('/contracts')}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />계약서</button>
-        <div className="row-actions">
-          {doc.releaseId && <button type="button" className="ui-btn is-soft" onClick={() => nav(`/releases/${doc.releaseId}/application`)}>신청서 보기</button>}
-          <button type="button" className="ui-btn is-primary" onClick={() => void printWithStamp({ kind: 'DOCUMENT', ref: id, root: document.querySelector('.aq-paper') })}>인쇄 · PDF 저장</button>
-        </div>
-      </div>
 
       <article className="aq-paper" aria-label="음원 배급 계약서">
         <header className="aq-paper-head">

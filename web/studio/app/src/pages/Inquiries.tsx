@@ -462,7 +462,7 @@ export function Inquiries() {
 
   return (
     <div id="view-inquiries" className="view">
-      <PageHeader
+      <PageHeader className="aq-head-inline"
         eyebrow="계정·지원"
         title="문의"
         sub="발매·정산·계약 문의와 플랫폼 요청을 남기고 답변을 받아요."

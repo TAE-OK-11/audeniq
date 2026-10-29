@@ -71,6 +71,10 @@ function shiftDate(d: string, days: number): string {
   return t.toISOString().slice(0, 10);
 }
 
+/** 플랫폼 이름은 ‘·’ 뒤에서만 줄을 바꾼다 — 좁은 칸에서 ‘Instagram·Fa / cebook’처럼 단어 중간이 끊기던 것 */
+const breakAtDots = (label: string) =>
+  label.split('·').flatMap((part, i): React.ReactNode[] => (i ? [<span key={i}>·<wbr />{part}</span>] : [part]));
+
 const STEPS = [
   { short: '발매 정보', kicker: '01 / 06 · 발매 정보', title: '어떤 음악을\n발매할까요?', sub: '별표(*) 칸만 채우면 다음 단계로 넘어갈 수 있어요.' },
   { short: '트랙 등록', kicker: '02 / 06 · 트랙 등록', title: '발매할 곡을\n등록해 주세요.', sub: '곡마다 음원 파일과 크레딧을 넣어요.' },
@@ -1086,7 +1090,8 @@ const TrackEditor = memo(function TrackEditor({
         <span className="ui-actions">
           {onCollapse && <button type="button" className="ui-btn is-text is-sm is-muted" onClick={onCollapse}>접기</button>}
           {canDelete && (
-            <button type="button" className="ui-btn is-white is-sm" onClick={() => onDeleteTrack(t.id)}>삭제</button>
+            // 접기와 같은 글자 버튼 — 지우는 일은 빨간 글자로만 (흰 알약에 파란 글자는 주 동작처럼 보였다)
+            <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => onDeleteTrack(t.id)}>삭제</button>
           )}
         </span>
       </div>
@@ -2677,7 +2682,7 @@ export function Upload() {
                           onClick={() => set('platforms', on ? form.platforms.filter(p => p !== key) : [...form.platforms, key])}
                         >
                           <BrandMark id={key} label={label} color={DSP_COLOR[key] ?? '#3B63F3'} size={28} className="aq-dsp-mark" />
-                          <span className="aq-dsp-name">{label}{!available && <small>지금은 배급할 수 없어요</small>}</span>
+                          <span className="aq-dsp-name">{breakAtDots(label)}{!available && <small>지금은 배급할 수 없어요</small>}</span>
                           <span className="aq-dsp-check" aria-hidden="true"><CheckIcon size={16} /></span>
                         </button>
                       );
