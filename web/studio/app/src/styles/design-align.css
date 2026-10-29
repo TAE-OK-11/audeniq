@@ -494,6 +494,8 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
   /* 그 99% 흰색 너머로 뒤 화면 글자가 흐리게 비쳤다(문의 대화 창 등) — 시트 안의 머리·본문에 불투명한 흰 면을 깔아 가린다.
      시트(고정 레이어) 자체는 99% 그대로라 위의 아이폰 Safari 잘림 대응은 그대로. 그림자 펼침으로 시트 안쪽 여백까지 덮는다 */
   #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode)>.modal-inner>:is(.modal-top,#modalBody){background:#fff;box-shadow:0 0 0 24px #fff}
+  /* 시스템 창(새 버전·기기 확인)은 닫기 줄을 본문 아이콘 위로 겹쳐 올린다 — 흰 면을 깔면 아이콘이 가려졌다 */
+  #modal.aq-sysdialog-mode>.modal-inner>.modal-top:not(#modalBody){background:none;box-shadow:none}
 }
 
 /* 줄에서 고른 탭·칩으로 밀어 줄 때 부드럽게 (lib/rowNav.ts) */
