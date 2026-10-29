@@ -164,7 +164,8 @@ function UpcomingCard({ release: r }: { release: Release }) {
         <ReleaseCover id={r.id} src={r.coverData} />
         <div className="min-0">
           <span className="ui-row-title">{r.title || '제목 없는 발매'}</span>
-          <span className="ui-row-meta">{r.artist || '아티스트 없음'} · {r.track_count}곡 · {r.release_date || '발매일 아직 없음'}</span>
+          {/* 좁은 칸(태블릿 가로)에서 날짜가 '2026-' / '11-15'로 쪼개지지 않게 항목 단위로만 줄을 바꾼다 */}
+          <span className="ui-row-meta">{r.artist || '아티스트 없음'} · {r.track_count}곡 · <span className="aq-nowrap">{r.release_date || '발매일 아직 없음'}</span></span>
         </div>
         {r.release_date && <Badge tone={r.status === 'live' ? 'green' : r.status === 'needs' ? 'amber' : 'blue'}>{dDayLabel(r.release_date)}</Badge>}
       </Link>
@@ -519,7 +520,8 @@ export function Dashboard() {
                       <ReleaseCover id={r.id} src={r.coverData} />
                       <div className="min-0">
                         <span className="ui-row-title">{r.title || '제목 없는 발매'}</span>
-                        <span className="ui-row-meta">{r.artist || '아티스트 없음'} · {r.track_count}곡 · {r.release_date || '발매일 아직 없음'}</span>
+                        {/* 좁은 칸(태블릿 가로)에서 날짜가 '2026-' / '11-15'로 쪼개지지 않게 항목 단위로만 줄을 바꾼다 */}
+          <span className="ui-row-meta">{r.artist || '아티스트 없음'} · {r.track_count}곡 · <span className="aq-nowrap">{r.release_date || '발매일 아직 없음'}</span></span>
                       </div>
                       <div className="ui-row-end">
                         <Badge tone={statusTone(r.status)} className={`aq-status is-${r.status}`}>{STATUS_LABEL[r.status] || r.status}</Badge>

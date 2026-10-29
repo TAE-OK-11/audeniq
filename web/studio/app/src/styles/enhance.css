@@ -940,7 +940,7 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
   .aq-br-wide{display:inline}
   .aq-br-narrow{display:none}
   .aq-nhero-pins{margin-top:44px}
-  .aq-nhero-pin{align-items:center!important;grid-template-columns:auto minmax(0,1fr) auto auto;grid-template-areas:"tag title date arrow";column-gap:16px;padding:22px 28px;border-radius:var(--aq-r-xl)}
+  .aq-nhero-pin{align-items:center!important;grid-template-columns:auto minmax(0,1fr) auto auto;grid-template-areas:"tag title date arrow";column-gap:16px;padding:22px 28px;border-radius:var(--aq-r-xl);background:var(--aq-bg,#fff);box-shadow:none}
   .aq-nhero-pin-title{font-size:18px}
   .aq-nhero-pin-date{font-size:14px}
   .aq-nboard h2{font-size:var(--aq-fs-title-lg);margin-bottom:28px}

@@ -64,25 +64,6 @@
   /* 알림은 시간순으로 읽는 목록 — 2칸이면 눈이 지그재그로 움직여 순서가 흐려진다. 한 줄로, 읽기 좋은 폭까지만 */
   #view-notifications > :not(.ui-page-head) { max-width: 760px; }
 
-  /* ── 공지사항: 왼쪽 소개·고정 공지(고정), 오른쪽 전체 목록 ─────────────── */
-  #view-notices.aq-npage {
-    display: grid; grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
-    column-gap: clamp(32px, 4vw, 64px); align-items: start;
-  }
-  #view-notices.aq-npage > .aq-nhero { position: sticky; top: var(--pc-sticky-top); margin: 0; }
-  #view-notices.aq-npage > :not(.aq-nhero) { grid-column: 2; }
-  #view-notices .aq-nboard { margin-top: 4px; }
-  /* 좁은 왼쪽 칸에 맞춘 소개 카드: 여백·제목을 줄이고, 고정 공지는 제목 아래에 날짜 */
-  #view-notices > .aq-nhero { padding: 44px 36px 36px; }
-  #view-notices > .aq-nhero h1 { font-size: 34px; }
-  #view-notices > .aq-nhero .aq-nhero-desc { font-size: 16px; }
-  #view-notices > .aq-nhero .aq-nhero-pins { margin-top: 32px; }
-  #view-notices > .aq-nhero .aq-nhero-pin {
-    align-items: start !important; grid-template-columns: auto minmax(0, 1fr) auto;
-    grid-template-areas: 'tag title arrow' '. date arrow'; column-gap: 10px; padding: 16px 2px;
-  }
-  #view-notices > .aq-nhero .aq-nhero-pin-title { font-size: 16px; }
-
   /* ── 정산·지급: 왼쪽 잔액·계좌 카드(고정), 오른쪽 내역 ──────────────── */
   #view-settlement {
     display: grid; grid-template-columns: minmax(340px, 420px) minmax(0, 1fr);
@@ -197,4 +178,26 @@
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: stretch;
   }
   #view-new .aq-review-card { margin: 0 !important; }
+}
+
+@media (min-width: 1280px) {
+  /* ── 공지사항: 왼쪽 소개·고정 공지(고정), 오른쪽 전체 목록 ───────────────
+     1280px부터 — 1024px에서는 오른쪽 목록이 좁아 제목이 두 줄로 잘렸다. 그 아래는 위아래로 쌓는다 */
+  #view-notices.aq-npage {
+    display: grid; grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+    column-gap: clamp(32px, 4vw, 64px); align-items: start;
+  }
+  #view-notices.aq-npage > .aq-nhero { position: sticky; top: var(--pc-sticky-top); margin: 0; }
+  #view-notices.aq-npage > :not(.aq-nhero) { grid-column: 2; }
+  #view-notices .aq-nboard { margin-top: 4px; }
+  /* 좁은 왼쪽 칸에 맞춘 소개 카드: 여백·제목을 줄이고, 고정 공지는 제목 아래에 날짜 */
+  #view-notices > .aq-nhero { padding: 44px 36px 36px; }
+  #view-notices > .aq-nhero h1 { font-size: 34px; }
+  #view-notices > .aq-nhero .aq-nhero-desc { font-size: 16px; }
+  #view-notices > .aq-nhero .aq-nhero-pins { margin-top: 32px; }
+  #view-notices > .aq-nhero .aq-nhero-pin {
+    align-items: start !important; grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: 'tag title arrow' '. date arrow'; column-gap: 10px; padding: 16px; border-radius: var(--aq-r-lg);
+  }
+  #view-notices > .aq-nhero .aq-nhero-pin-title { font-size: 16px; }
 }

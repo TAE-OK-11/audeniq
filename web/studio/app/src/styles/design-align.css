@@ -150,7 +150,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 /* 계약서 진행 순서 — 한 장의 카드 안에 구분선 목록 (번호 아이콘 · 단계 · 언제) */
 #view-contracts .aq-doc-path-wrap{margin:32px 0 0}
 #view-contracts .aq-doc-path-wrap h2{margin:0 0 10px;font-size:var(--aq-fs-md,16px);font-weight:700;color:var(--aq-text-2)}
-#view-contracts .aq-doc-path{padding-block:4px}
+#view-contracts .aq-doc-path{padding:4px 20px}
 
 /* 계약서 발매 묶음 — 계정 정보 화면 같은 옅은 파랑 카드 + 줄(흰 칸 없음), 상태는 색 글자 */
 .aq-bundle:not(.is-compact){padding:6px 6px 8px;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
@@ -828,6 +828,15 @@ button.settle-hero-account.is-button .min-0{display:grid}
   /* 머리의 로고를 왼쪽 메뉴 줄에 맞춘다 (가운데 1240px 틀에 있으면 메뉴와 어긋났다) */
   body:not(.wizard-mode) .portal-header .nav-shell{max-width:none;width:auto;margin:0;padding:0 32px 0 24px}
   .aq-side-status{margin-left:auto;font-size:11px}
+  /* 키가 낮은 화면(태블릿 가로 1024×768, 13인치 노트북 1280×800)에서는 줄 간격을 좁혀 마지막 메뉴(공지사항)까지
+     한 화면에 — 스크롤 막대를 숨겨 두어서 아래에 메뉴가 더 있는지 보이지 않았다 */
+  @media (max-height:900px){
+    .aq-sidebar{padding-top:14px;padding-bottom:16px}
+    .aq-side-cta{margin-bottom:14px}
+    .aq-side-group{margin-bottom:10px}
+    .aq-side-title{margin-bottom:2px}
+    .aq-side-item{min-height:36px}
+  }
   .aq-side-item .aq-side-badge+.aq-side-status{margin-left:6px}
 }
 

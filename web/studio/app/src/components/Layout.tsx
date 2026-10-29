@@ -179,9 +179,14 @@ export function Layout({ children }: { children: ReactNode }) {
         document.getElementById('menuToggle')?.focus();
       }
     };
+    // 태블릿을 가로로 돌려 왼쪽 고정 메뉴가 나오는 폭(1024px)이 되면 닫는다 — 닫기 버튼이 사라져 열린 채로 남았다
+    const wide = window.matchMedia?.('(min-width: 1024px)');
+    const onWide = (e: MediaQueryListEvent) => { if (e.matches) closeMenuRef.current(); };
+    wide?.addEventListener('change', onWide);
     document.addEventListener('click', onClick);
     document.addEventListener('keydown', onKey);
     return () => {
+      wide?.removeEventListener('change', onWide);
       document.removeEventListener('click', onClick);
       document.removeEventListener('keydown', onKey);
     };
