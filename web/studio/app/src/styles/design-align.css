@@ -601,6 +601,22 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
   .auth-page>.aq-auth-brand{margin-bottom:18px}
   .auth-page>.aq-auth-brand img{width:118px}
 }
+/* ---------- 휴대폰 로그인·가입·계정 찾기: 첫 화면 안에 카드가 다 들어오게 ----------
+   아이폰 Safari는 아래 주소창 위에서 화면을 끊어, 카드가 화면보다 길면 아래가 잘린 것처럼 보였다(로그인 카드는 약 140pt 넘쳤다).
+   위에서부터 쌓고, 아이콘 칸을 제목 왼쪽으로 옮기고, 칸·여백을 조금씩 줄였다 */
+@media (max-width:760px){
+  .auth-page{justify-content:flex-start;padding:18px 16px 24px}
+  .auth-page>.aq-auth-brand{margin-bottom:14px}
+  .auth-card.ui-card{--aq-field-h:52px;padding:22px 20px 16px}
+  .aq-auth-head{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;column-gap:14px;margin-bottom:16px}
+  .aq-auth-head .ui-icon{--ic:44px;margin:0}
+  .auth-card .aq-auth-head h1{font-size:22px;line-height:1.3}
+  .auth-card .aq-auth-head .auth-sub{grid-column:1/-1;margin-top:12px}
+  .auth-page .aq-passkey-first{gap:6px;margin-bottom:12px}
+  .auth-page .aq-passkey-first .aq-social-divider{margin-top:8px}
+  .auth-page .auth-card .ui-field{margin-bottom:12px}
+  .auth-page .auth-card .auth-links{margin-top:10px}
+}
 /* 회원가입 약관 동의 — 누르기 쉬운 체크 줄(면), '필수'는 회색 글자, 개인정보 안내는 작게 */
 .auth-agree{gap:8px}
 .auth-terms{font-size:13px;line-height:1.55;color:var(--aq-text)}
