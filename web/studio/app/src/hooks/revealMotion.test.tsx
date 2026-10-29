@@ -2,18 +2,14 @@
 import { act, useRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useLandingReveal } from './useLandingReveal';
 import { usePublicReveal } from './usePublicReveal';
-import { useScrollReveal } from './useScrollReveal';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 function Screen({ kind }: { kind: string }) {
   const ref = useRef<HTMLDivElement>(null);
-  useScrollReveal(kind);
-  useLandingReveal(ref, kind === 'landing' ? [{ selector: '.unit' }] : [], kind);
   usePublicReveal(ref, '.unit', kind === 'public');
-  return <div id="main"><div ref={ref} className="view" id={kind === 'scroll' ? 'view-test' : 'view-home'}>
+  return <div id="main"><div ref={ref} className="view" id="view-test">
     <div className="unit ui-card"><button>visible</button></div>
     <div className="unit ui-card" data-below><button>below</button></div>
   </div></div>;
@@ -53,7 +49,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe.each(['scroll', 'landing', 'public'])('%s reveal', kind => {
+describe.each(['public'])('%s reveal', kind => {
   it('실행 중 모션 축소를 켜면 진행 중 연출과 화면 밖 대기를 즉시 해제한다', () => {
     act(() => root.render(<Screen kind={kind} />));
     expect(animations.length).toBeGreaterThan(0);

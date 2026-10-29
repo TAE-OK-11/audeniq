@@ -34,7 +34,6 @@ import { dspLabel } from '../lib/catalog';
 import { CopyButton } from '../components/CopyButton';
 import { BrandMark } from '../components/BrandMark';
 import type { NewsItem } from '../lib/home';
-import { useLandingReveal, type RevealGroup } from '../hooks/useLandingReveal';
 import { MOCK } from '../lib/mode';
 import type { Release } from '../api/types';
 
@@ -302,20 +301,6 @@ function NewsCard({ items }: { items: NewsItem[] }) {
   );
 }
 
-// 홈 등장 순서 — audeniq.com 랜딩처럼 머리(날짜 → 이름 → 인사) 다음 큰 카드, 바로가기, 카드 순으로 몇십 ms씩.
-// 넓은 화면에서 오른쪽 줄기 카드는 왼쪽보다 조금 늦게(랜딩의 두 칸 카드와 같이). 처음부터 화면 밖이던 카드는 스크롤해서 보일 때
-const wide = () => matchMedia('(min-width: 901px)').matches;
-const HOME_REVEAL: RevealGroup[] = [
-  { selector: '.aq-home-date' },
-  { selector: '.aq-home-title h1', delay: () => 50 },
-  { selector: '.aq-home-title h1 + p', delay: () => 100 },
-  { selector: '.aq-home-new', delay: () => 140 },
-  { selector: '.aq-home-hero', delay: (_i, _el, first) => (first ? 140 : 0) },
-  // 바로가기 네 칸은 함께 — 한 칸씩 늦추면 마지막 칸이 1초 넘게 흐린 채로 남았다
-  { selector: '.aq-home-shortcuts > *', delay: (_i, _el, first) => (first ? 200 : 0) },
-  { selector: '.aq-home-board .ui-card', delay: (_i, el, first) => (first ? 260 : 0) + (wide() && el.closest('.aq-home-side') ? 60 : 0) },
-];
-
 export function Dashboard() {
   const navigate = useNavigate();
   const profile = useProfile();
@@ -328,7 +313,6 @@ export function Dashboard() {
   const { data: releases = [], loading, error, reload } = useAsync(() => api.listReleases(), [], { key: 'releases' });
   const topRef = useRef<HTMLDivElement>(null);
   useSmoothHeight(topRef, loading);
-  const viewRef = useRef<HTMLDivElement>(null);
 
   const { rows: reportRows } = useReportRows();
   const report = listeningSummary(reportRows);
@@ -336,7 +320,6 @@ export function Dashboard() {
   const upcoming = loading ? undefined : upcomingRelease(releases);
   const extra = useHomeCards(releases, loading, upcoming);
   // 나중에 불러온 카드도 같은 등장 연출로 — 카드가 생기면 다시 맡긴다
-  useLandingReveal(viewRef, HOME_REVEAL, `${loading}|${!!upcoming}|${!!extra.delivery}|${!!signals.pitchActive}|${!!extra.promo}|${extra.news.length}`);
 
   const needs = releases.filter(r => r.status === 'needs').length;
   const reviewing = releases.filter(r => r.status === 'review').length;
@@ -405,7 +388,7 @@ export function Dashboard() {
   else if (toSign) gridStatus.contracts = { text: `서명할 계약서 ${toSign}건` };
 
   return (
-    <div id="view-home" className="view" ref={viewRef}>
+    <div id="view-home" className="view">
       {/* 머리와 큰 카드는 불러오기가 끝나면 높이가 바뀐다(급한 일이 있을 때만 '새 발매' 버튼, 자리표시보다 큰 카드) —
           한 번에 아래 내용을 밀지 않고 부드럽게 자란다 */}
       <div ref={topRef} className="aq-home-top">
