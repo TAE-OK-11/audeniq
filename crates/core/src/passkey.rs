@@ -41,6 +41,39 @@ const FLAG_AT: u8 = 0x40;
 /// COSE algorithm ids, preferred first.
 const ALGS: [i32; 3] = [-8, -7, -257];
 
+/// Display hints only: attestation="none" does not authenticate the provider.
+/// Curated from passkeydeveloper/passkey-authenticator-aaguids/aaguid.json,
+/// checked 2026-10-29. No network requests or credential-specific identifiers.
+/// Unknown and privacy-redacted (zero) AAGUIDs retain the supplied nickname.
+const AUTHENTICATORS: &[(Uuid, &str)] = &[
+    (
+        Uuid::from_u128(0xbada_5566_a7aa_401f_bd96_4561_9a55_120d),
+        "1Password",
+    ),
+    (
+        Uuid::from_u128(0xd548_826e_79b4_db40_a3d8_1111_6f7e_8349),
+        "Bitwarden",
+    ),
+    (
+        Uuid::from_u128(0x5072_6f74_6f6e_5061_7373_5072_6f74_6f6e),
+        "Proton Pass",
+    ),
+    (
+        Uuid::from_u128(0x5311_26d6_e717_415c_9320_3d9a_a698_1239),
+        "Dashlane",
+    ),
+    (
+        Uuid::from_u128(0xea9b_8d66_4d01_1d21_3ce4_b6b4_8cb5_75d4),
+        "Google Password Manager",
+    ),
+];
+
+fn authenticator_name(aaguid: Uuid) -> Option<&'static str> {
+    AUTHENTICATORS
+        .iter()
+        .find_map(|(id, name)| (*id == aaguid).then_some(*name))
+}
+
 fn host(origin: &str) -> Option<String> {
     url::Url::parse(origin)
         .ok()
@@ -107,13 +140,17 @@ async fn new_challenge(
     let challenge = B64.encode(raw);
     let id = Uuid::new_v4();
     sqlx::query(
-        "DELETE FROM identity.webauthn_challenges WHERE expires_at < now() - interval '1 hour'",
-    )
-    .execute(&s.pool)
-    .await?;
-    sqlx::query(
-        "INSERT INTO identity.webauthn_challenges(id,challenge_hash,purpose,user_id,expires_at,session_hash)
-         VALUES($1,$2,$3,$4,now()+make_interval(secs=>$5),$6)",
+        // Bound cleanup work and skip rows in active ceremonies. Cleanup and insertion
+        // share one round trip, without waiting on another cleanup worker.
+        "WITH expired AS (
+           SELECT id FROM identity.webauthn_challenges
+            WHERE expires_at < statement_timestamp() - interval '1 hour'
+            ORDER BY expires_at LIMIT 256 FOR UPDATE SKIP LOCKED
+         ), removed AS (
+           DELETE FROM identity.webauthn_challenges WHERE id IN (SELECT id FROM expired)
+         )
+         INSERT INTO identity.webauthn_challenges(id,challenge_hash,purpose,user_id,expires_at,session_hash)
+         VALUES($1,$2,$3,$4,clock_timestamp()+make_interval(secs=>$5),$6)",
     )
     .bind(id)
     .bind(Sha256::digest(challenge.as_bytes()).to_vec())
@@ -135,9 +172,12 @@ async fn consume(
     session: Option<&[u8]>,
 ) -> Result<Option<Vec<u8>>> {
     Ok(sqlx::query_scalar(
-        "UPDATE identity.webauthn_challenges SET consumed_at=now()
-          WHERE id=$1 AND purpose=$2 AND user_id IS NOT DISTINCT FROM $3 AND session_hash IS NOT DISTINCT FROM $4
-            AND consumed_at IS NULL AND expires_at>now() RETURNING challenge_hash",
+        "WITH candidate AS MATERIALIZED (
+           SELECT id FROM identity.webauthn_challenges WHERE id=$1 FOR UPDATE SKIP LOCKED
+         )
+         UPDATE identity.webauthn_challenges SET consumed_at=clock_timestamp()
+          WHERE id IN (SELECT id FROM candidate) AND id=$1 AND purpose=$2 AND user_id IS NOT DISTINCT FROM $3 AND session_hash IS NOT DISTINCT FROM $4
+            AND consumed_at IS NULL AND expires_at>clock_timestamp() RETURNING challenge_hash",
     )
     .bind(id)
     .bind(purpose)
@@ -176,6 +216,7 @@ pub struct AuthData<'a> {
     pub flags: u8,
     pub sign_count: u32,
     pub credential_id: Option<&'a [u8]>,
+    pub aaguid: Option<Uuid>,
 }
 
 /// authenticatorData: RP ID hash, flags, counter, attested credential id.
@@ -196,6 +237,11 @@ pub fn auth_data<'a>(d: &'a [u8], rp_id: &str) -> Option<AuthData<'a>> {
         flags,
         sign_count,
         credential_id,
+        aaguid: if flags & FLAG_AT != 0 {
+            Some(Uuid::from_slice(d.get(37..53)?).ok()?)
+        } else {
+            None
+        },
     })
 }
 
@@ -385,7 +431,8 @@ async fn authenticate(
         let user: Uuid = r.get("user_id");
         let stored: i64 = r.get("sign_count");
         let data = auth_data(&ad, &rp)?;
-        let ok = actor.as_ref().is_none_or(|a| a.user == user)
+        let ok = owner == Some(user)
+            && actor.as_ref().is_none_or(|a| a.user == user)
             && email_user.is_none_or(|e| e == Some(user))
             && i.user_handle
                 .as_deref()
@@ -463,7 +510,7 @@ pub async fn list(s: &AppState, h: &HeaderMap) -> Result<Value> {
 
 async fn list_for(s: &AppState, user: Uuid) -> Result<Value> {
     let rows = sqlx::query(
-        "SELECT id,name,backed_up,created_at,last_used_at FROM identity.passkeys
+        "SELECT id,name,authenticator_name,backed_up,created_at,last_used_at FROM identity.passkeys
           WHERE user_id=$1 ORDER BY created_at",
     )
     .bind(user)
@@ -475,6 +522,7 @@ async fn list_for(s: &AppState, user: Uuid) -> Result<Value> {
             json!({
                 "id": r.get::<Uuid, _>("id"),
                 "name": r.get::<String, _>("name"),
+                "authenticator_name": r.get::<Option<String>, _>("authenticator_name"),
                 "synced": r.get::<bool, _>("backed_up"),
                 "created_at": r.get::<chrono::DateTime<chrono::Utc>, _>("created_at"),
                 "last_used_at": r.get::<Option<chrono::DateTime<chrono::Utc>>, _>("last_used_at"),
@@ -542,10 +590,11 @@ pub struct RegisterInput {
 }
 
 pub async fn register(s: &AppState, h: &HeaderMap, i: RegisterInput) -> Result<Value> {
+    let current_password = zeroize::Zeroizing::new(i.current_password);
     let a = auth::actor(&s.pool, h, &s.config, true).await?;
     auth::rate(&s.pool, &format!("passkey-register:{}", a.user), 20).await?;
     let name = i.name.trim().to_owned();
-    if name.is_empty() || name.chars().count() > 60 || i.current_password.len() > 128 {
+    if name.is_empty() || name.chars().count() > 60 || current_password.len() > 128 {
         return Err(Error::Invalid);
     }
     crate::text_policy::check(&name)?;
@@ -572,7 +621,7 @@ pub async fn register(s: &AppState, h: &HeaderMap, i: RegisterInput) -> Result<V
             .acquire_owned()
             .await
             .map_err(|_| Error::Internal)?;
-        let password = i.current_password;
+        let password = current_password;
         let verified_hash = hash.clone();
         let valid =
             crate::password_work::run(permit, move || auth::verify_password(&password, &hash))
@@ -630,9 +679,11 @@ pub async fn register(s: &AppState, h: &HeaderMap, i: RegisterInput) -> Result<V
     if count >= MAX_PER_USER {
         return Err(Error::PolicyGate("PASSKEY_LIMIT"));
     }
+    let authenticator_name = data.aaguid.and_then(authenticator_name);
+    let name = authenticator_name.unwrap_or(&name);
     let inserted = sqlx::query(
-        "INSERT INTO identity.passkeys(id,user_id,credential_id,public_key,alg,sign_count,backed_up,name)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(credential_id) DO NOTHING",
+        "INSERT INTO identity.passkeys(id,user_id,credential_id,public_key,alg,sign_count,backed_up,name,aaguid,authenticator_name)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(credential_id) DO NOTHING",
     )
     .bind(Uuid::new_v4())
     .bind(a.user)
@@ -641,7 +692,9 @@ pub async fn register(s: &AppState, h: &HeaderMap, i: RegisterInput) -> Result<V
     .bind(i.alg)
     .bind(i64::from(data.sign_count))
     .bind(data.flags & FLAG_BS != 0)
-    .bind(&name)
+    .bind(name)
+    .bind(data.aaguid.filter(|id| !id.is_nil()))
+    .bind(authenticator_name)
     .execute(&mut *tx)
     .await?
     .rows_affected();
@@ -757,7 +810,95 @@ pub async fn remove(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<Value> {
 
 #[cfg(test)]
 mod tests {
-    use super::pick_rp_id;
+    use super::*;
+
+    #[test]
+    fn aaguid_registry_and_truncated_attested_data() {
+        for (id, name) in AUTHENTICATORS {
+            assert_eq!(authenticator_name(*id), Some(*name));
+            let mut raw = Sha256::digest(b"localhost").to_vec();
+            raw.push(FLAG_AT | FLAG_UP | FLAG_UV);
+            raw.extend_from_slice(&0u32.to_be_bytes());
+            raw.extend_from_slice(id.as_bytes());
+            raw.extend_from_slice(&1u16.to_be_bytes());
+            raw.push(42);
+            assert_eq!(auth_data(&raw, "localhost").unwrap().aaguid, Some(*id));
+            for end in 37..raw.len() {
+                assert!(auth_data(&raw[..end], "localhost").is_none());
+            }
+        }
+        assert_eq!(authenticator_name(Uuid::nil()), None);
+        assert_eq!(authenticator_name(Uuid::from_u128(1)), None);
+        let mut assertion = Sha256::digest(b"localhost").to_vec();
+        assertion.push(FLAG_UP | FLAG_UV);
+        assertion.extend_from_slice(&0u32.to_be_bytes());
+        assert_eq!(auth_data(&assertion, "localhost").unwrap().aaguid, None);
+    }
+
+    #[sqlx::test]
+    async fn challenge_expiry_uses_wall_clock_and_locked_challenges_do_not_wait(
+        pool: sqlx::PgPool,
+    ) {
+        crate::database::MIGRATOR.run(&pool).await.unwrap();
+        let id = Uuid::new_v4();
+        let mut old_tx = pool.begin().await.unwrap();
+        sqlx::query("SELECT now()")
+            .execute(&mut *old_tx)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO identity.webauthn_challenges(id,challenge_hash,purpose,expires_at) VALUES($1,$2,'LOGIN',clock_timestamp()+interval '150 milliseconds')")
+            .bind(id).bind(vec![1u8;32]).execute(&pool).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        let (transaction_would_accept, wall_clock_would_accept): (bool, bool) = sqlx::query_as(
+            "SELECT expires_at>now(),expires_at>clock_timestamp() FROM identity.webauthn_challenges WHERE id=$1")
+            .bind(id).fetch_one(&mut *old_tx).await.unwrap();
+        assert!(
+            transaction_would_accept,
+            "reproduces the stale transaction clock"
+        );
+        assert!(!wall_clock_would_accept);
+        assert!(
+            consume(&mut old_tx, id, "LOGIN", None, None)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        old_tx.rollback().await.unwrap();
+        sqlx::query("UPDATE identity.webauthn_challenges SET expires_at=clock_timestamp()+interval '300 seconds' WHERE id=$1")
+            .bind(id).execute(&pool).await.unwrap();
+        let mut holder = pool.begin().await.unwrap();
+        sqlx::query("SELECT id FROM identity.webauthn_challenges WHERE id=$1 FOR UPDATE")
+            .bind(id)
+            .execute(&mut *holder)
+            .await
+            .unwrap();
+        let mut contender = pool.begin().await.unwrap();
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            consume(&mut contender, id, "LOGIN", None, None),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(result.is_none());
+        contender.rollback().await.unwrap();
+        holder.rollback().await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        assert!(
+            consume(&mut tx, id, "LOGIN", None, None)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        tx.commit().await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        assert!(
+            consume(&mut tx, id, "LOGIN", None, None)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
 
     #[test]
     fn rp_id_is_the_site_host_or_a_parent_of_every_site() {

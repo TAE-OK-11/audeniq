@@ -36,6 +36,7 @@ struct Authenticator {
     key: Key,
     id: Vec<u8>,
     counter: u32,
+    aaguid: Uuid,
 }
 
 impl Authenticator {
@@ -46,6 +47,7 @@ impl Authenticator {
             ),
             id: Uuid::new_v4().as_bytes().to_vec(),
             counter: 0,
+            aaguid: Uuid::nil(),
         }
     }
     /// Synced passkeys report a counter of 0 throughout.
@@ -54,6 +56,7 @@ impl Authenticator {
             key: Key::Ed(Ed25519KeyPair::generate().unwrap()),
             id: Uuid::new_v4().as_bytes().to_vec(),
             counter: 0,
+            aaguid: Uuid::nil(),
         }
     }
     fn alg(&self) -> i32 {
@@ -79,7 +82,7 @@ impl Authenticator {
         d.push(flags);
         d.extend_from_slice(&self.counter.to_be_bytes());
         if attested {
-            d.extend_from_slice(&[0u8; 16]);
+            d.extend_from_slice(self.aaguid.as_bytes());
             d.extend_from_slice(&(self.id.len() as u16).to_be_bytes());
             d.extend_from_slice(&self.id);
             d.extend_from_slice(b"\xa5cose-key-not-parsed");
@@ -360,6 +363,16 @@ async fn sign_in_with_email_and_passkey_instead_of_password(pool: PgPool) {
     )
     .await;
     assert_eq!(s, StatusCode::UNAUTHORIZED, "user verification required");
+    let (s, _, _) = login(
+        &app,
+        &a,
+        Assertion {
+            flags: 0x04,
+            ..Default::default()
+        },
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED, "user presence required");
     let (s, _, _) = login(
         &app,
         &a,
@@ -825,4 +838,209 @@ fn authenticator_data_checks_rp_and_reads_the_credential_id() {
     let mut short = d[..60].to_vec();
     short[53] = 0xff;
     assert!(passkey::auth_data(&short, RP).is_none());
+}
+
+#[sqlx::test]
+async fn provider_names_are_stored_and_listed_without_exposing_credentials(pool: PgPool) {
+    unsafe {
+        std::env::set_var("PAYOUT_ACCOUNT_KEY", "3a".repeat(32));
+        std::env::set_var("PASSKEY_RP_ID", RP);
+        std::env::set_var("ADMIN_ORIGIN", ADMIN);
+    }
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    for (aaguid, expected) in [
+        ("bada5566-a7aa-401f-bd96-45619a55120d", Some("1Password")),
+        ("d548826e-79b4-db40-a3d8-11116f7e8349", Some("Bitwarden")),
+        ("50726f74-6f6e-5061-7373-50726f746f6e", Some("Proton Pass")),
+        ("00000000-0000-0000-0000-000000000001", None),
+        ("00000000-0000-0000-0000-000000000000", None),
+    ] {
+        let mut a = Authenticator::ed_synced();
+        a.aaguid = aaguid.parse().unwrap();
+        let (status, v) = register(&app, &u, &a, PASSWORD).await;
+        assert_eq!(status, StatusCode::OK, "{v}");
+        let stored: (Uuid, String, Option<Uuid>, Option<String>) = sqlx::query_as(
+            "SELECT id,name,aaguid,authenticator_name FROM identity.passkeys WHERE credential_id=$1")
+            .bind(&a.id).fetch_one(&pool).await.unwrap();
+        assert_eq!(stored.1, expected.unwrap_or("테스트 기기"));
+        assert_eq!(stored.2, (!a.aaguid.is_nil()).then_some(a.aaguid));
+        assert_eq!(stored.3.as_deref(), expected);
+        let (status, list) = send(&app, "GET", "/api/auth/passkeys", Value::Null, Some(&u)).await;
+        assert_eq!(status, StatusCode::OK);
+        let item = list["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|i| i["id"] == stored.0.to_string())
+            .unwrap();
+        assert_eq!(item["authenticator_name"], json!(expected));
+        assert_eq!(item["name"], stored.1);
+        for field in ["aaguid", "credential_id", "public_key"] {
+            assert!(item.get(field).is_none());
+        }
+        // A custom rename remains compatible while the independent provider hint survives.
+        let (status, renamed) = send(
+            &app,
+            "PATCH",
+            &format!("/api/auth/passkeys/{}", stored.0),
+            json!({"name":"Custom nickname"}),
+            Some(&u),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{renamed}");
+        let item = renamed["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|i| i["id"] == stored.0.to_string())
+            .unwrap();
+        assert_eq!(item["name"], "Custom nickname");
+        assert_eq!(item["authenticator_name"], json!(expected));
+    }
+    // Historic rows remain readable, without inferring a provider from their name.
+    sqlx::query(
+        "UPDATE identity.passkeys SET aaguid=NULL,authenticator_name=NULL WHERE user_id=$1",
+    )
+    .bind(u.user)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (_, list) = send(&app, "GET", "/api/auth/passkeys", Value::Null, Some(&u)).await;
+    assert!(
+        list["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|i| i["authenticator_name"].is_null())
+    );
+}
+
+#[sqlx::test]
+async fn challenge_cleanup_is_bounded_skips_locks_and_preserves_live_hashes(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    sqlx::query("INSERT INTO identity.webauthn_challenges(id,challenge_hash,purpose,expires_at) SELECT gen_random_uuid(),decode(repeat('ab',32),'hex'),'LOGIN',now()-interval '2 hours' FROM generate_series(1,600)")
+        .execute(&pool).await.unwrap();
+    let mut holder = pool.begin().await.unwrap();
+    let held: Uuid =
+        sqlx::query_scalar("SELECT id FROM identity.webauthn_challenges LIMIT 1 FOR UPDATE")
+            .fetch_one(&mut *holder)
+            .await
+            .unwrap();
+    let (status, o) = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        send(&app, "POST", "/api/auth/passkey/options", json!({}), None),
+    )
+    .await
+    .unwrap();
+    assert_eq!(status, StatusCode::OK, "{o}");
+    let remaining: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM identity.webauthn_challenges WHERE expires_at<now()",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(remaining, 600 - 256);
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM identity.webauthn_challenges WHERE id=$1)")
+            .bind(held)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(exists);
+    let (hash, seconds): (Vec<u8>, f64) = sqlx::query_as("SELECT challenge_hash,extract(epoch FROM expires_at-clock_timestamp())::float8 FROM identity.webauthn_challenges WHERE id=$1")
+        .bind(o["challenge_id"].as_str().unwrap().parse::<Uuid>().unwrap()).fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        hash,
+        Sha256::digest(o["public_key"]["challenge"].as_str().unwrap().as_bytes()).to_vec()
+    );
+    assert!(seconds > 295.0 && seconds <= 300.0);
+    holder.rollback().await.unwrap();
+}
+
+#[sqlx::test]
+async fn registration_rejects_a_challenge_expiring_while_waiting_for_account_lock(pool: PgPool) {
+    unsafe {
+        std::env::set_var("PAYOUT_ACCOUNT_KEY", "3a".repeat(32));
+        std::env::set_var("PASSKEY_RP_ID", RP);
+        std::env::set_var("ADMIN_ORIGIN", ADMIN);
+    }
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let first = Authenticator::ed_synced();
+    assert_eq!(register(&app, &u, &first, PASSWORD).await.0, StatusCode::OK);
+    let assertion = step_up(&app, &u, &first).await;
+    let (status, proof) = send(
+        &app,
+        "POST",
+        "/api/auth/passkey/reauth",
+        assertion,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{proof}");
+    let (status, o) = send(
+        &app,
+        "POST",
+        "/api/auth/passkeys/options",
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{o}");
+    let next = Authenticator::ed_synced();
+    let cdj = client_data(
+        "webauthn.create",
+        o["public_key"]["challenge"].as_str().unwrap(),
+        ORIGIN,
+    );
+    let body = json!({"challenge_id":o["challenge_id"],"reauth_token":proof["reauth_token"],
+        "name":"Test device","credential_id":B64.encode(&next.id),"client_data_json":B64.encode(cdj),
+        "authenticator_data":B64.encode(next.auth_data(0x45,true)),"public_key":B64.encode(next.spki()),"alg":next.alg()});
+    let mut holder = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM identity.users WHERE id=$1 FOR UPDATE")
+        .bind(u.user)
+        .execute(&mut *holder)
+        .await
+        .unwrap();
+    let pending_app = app.clone();
+    let pending_user = u.clone();
+    let pending = tokio::spawn(async move {
+        send(
+            &pending_app,
+            "POST",
+            "/api/auth/passkeys/register",
+            body,
+            Some(&pending_user),
+        )
+        .await
+    });
+    // Observe the actual database lock wait, rather than guessing when the request began.
+    let transaction_start: chrono::DateTime<chrono::Utc> = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let started: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
+                "SELECT xact_start FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query='SELECT id FROM identity.users WHERE id=$1 FOR UPDATE' LIMIT 1")
+                .fetch_optional(&pool).await.unwrap();
+            if let Some(started) = started { break started; }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }).await.unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    let expired_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
+        "UPDATE identity.webauthn_challenges SET expires_at=clock_timestamp()-interval '1 millisecond' WHERE id=$1 RETURNING expires_at")
+        .bind(o["challenge_id"].as_str().unwrap().parse::<Uuid>().unwrap()).fetch_one(&pool).await.unwrap();
+    assert!(
+        expired_at > transaction_start,
+        "the original transaction clock would accept it"
+    );
+    holder.commit().await.unwrap();
+    let (status, denied) = pending.await.unwrap();
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{denied}");
+    assert_eq!(denied["error"]["code"], "PASSKEY_CHALLENGE_INVALID");
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM identity.passkeys WHERE user_id=$1")
+        .bind(u.user)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
 }
