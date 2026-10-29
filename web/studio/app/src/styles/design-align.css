@@ -765,25 +765,9 @@ button.settle-hero-account.is-button .min-0{display:grid}
 .aq-faq-item p a{color:var(--aq-blue-500);font-weight:600}
 .aq-faq-foot{margin:10px 2px 0;font-size:13px;color:var(--aq-text-4)}
 
-/* ---------- 메뉴 구조 — 휴대폰 아래 탭 바, 데스크톱 왼쪽 고정 메뉴 (Layout.tsx) ----------
-   숨긴 햄버거 메뉴는 덜 발견되고 이동이 느리다(NN/g). 자주 가는 곳은 늘 보이게 한다. 발매 신청 중에는 둘 다 숨긴다 */
-.aq-tabbar,.aq-sidebar{display:none}
-@media (max-width:760px){
-  .aq-tabbar{display:grid;grid-template-columns:repeat(5,1fr);position:fixed;left:0;right:0;bottom:0;z-index:90;
-    padding:6px 4px calc(6px + env(safe-area-inset-bottom));background:rgba(255,255,255,.99);box-shadow:0 -1px 0 var(--aq-gray-100)}
-  .aq-tab-item{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:48px;padding:0;border:0;background:none;
-    font:inherit;font-size:11px;font-weight:600;color:var(--aq-text-4);text-decoration:none;-webkit-tap-highlight-color:transparent;transition:color var(--aq-dur-fast) var(--aq-ease)}
-  .aq-tab-item.is-active{color:var(--aq-blue-500)}
-  .aq-tab-item:active{transform:scale(.94)}
-  .aq-tab-dot{position:absolute;top:6px;left:calc(50% + 8px);width:7px;height:7px;border-radius:50%;background:var(--aq-red-500)}
-  .aq-tab-dot.is-warn{background:var(--aq-amber-500)}
-  body:not(.wizard-mode) #main{padding-bottom:calc(72px + env(safe-area-inset-bottom))}
-  body:not(.wizard-mode) .portal-header .menu-toggle{display:none!important}
-  body.wizard-mode .aq-tabbar{display:none}
-  body:has(.aq-tabbar) .aq-toast-stack{bottom:calc(84px + env(safe-area-inset-bottom))}
-  /* 화면 아래에 붙는 저장 버튼 줄은 탭 바 바로 위에 붙는다 */
-  body:not(.wizard-mode) .aq-form-actions.is-pinned{bottom:calc(60px + env(safe-area-inset-bottom))}
-}
+/* ---------- 메뉴 구조 — 휴대폰은 머리의 메뉴 버튼(전체 메뉴), 데스크톱 왼쪽 고정 메뉴 (Layout.tsx) ----------
+   휴대폰 아래 탭 바는 실제로 거의 쓰지 않아 뺐다. 발매 신청 중에는 왼쪽 메뉴도 숨긴다 */
+.aq-sidebar{display:none}
 @media (min-width:1024px){
   .aq-sidebar{display:block;position:fixed;top:var(--aq-header-h,69px);left:0;bottom:0;width:232px;z-index:40;overflow-y:auto;padding:20px 12px 32px;background:#fff;box-shadow:1px 0 0 var(--aq-gray-100)}
   .aq-side-cta{display:flex;width:100%;justify-content:flex-start;gap:8px;margin:0 0 20px;padding:0 12px}
@@ -843,18 +827,11 @@ button.settle-hero-account.is-button .min-0{display:grid}
 .settle-steps li.is-done+li.is-done::before{background:var(--aq-blue-500)}
 .settle-fail{display:block;margin-top:6px;font-size:12px;font-weight:600;color:var(--aq-amber-700)}
 
-/* 아이폰 사파리(앱처럼 홈 화면에서 연 경우 제외) — 사파리 자체 막대가 화면 아래에 떠 있어 탭 바와 두 줄로 겹치고,
-   막대 뒤 흐림 효과에 탭 바까지 비쳐 복잡해 보였다. 사파리에서는 탭 바 대신 머리의 메뉴 버튼을 쓴다 */
+/* 아이폰 사파리(앱처럼 홈 화면에서 연 경우 제외) — 주소 막대가 화면 아래에 떠 있어(iOS 26) 맨 끝 내용이 그 뒤에 가려졌다 — 막대 높이만큼 비워 둔다 */
 @media (max-width:760px){
   @supports (-webkit-touch-callout:none){
     @media not all and (display-mode:standalone){
-      .aq-tabbar{display:none!important}
-      /* 탭 바는 없지만 사파리 주소 막대가 화면 아래에 떠 있어(iOS 26) 맨 끝 내용이 그 뒤에 가려졌다 — 막대 높이만큼 비워 둔다 */
       body:not(.wizard-mode) #main{padding-bottom:calc(72px + env(safe-area-inset-bottom))}
-      body:not(.wizard-mode) .portal-header .menu-toggle{display:flex!important}
-      /* 알림도 떠 있는 주소 막대 위에 */
-      body:has(.aq-tabbar) .aq-toast-stack{bottom:calc(76px + env(safe-area-inset-bottom))}
-      body:not(.wizard-mode) .aq-form-actions.is-pinned{bottom:0}
     }
   }
 }
@@ -897,14 +874,14 @@ button.settle-hero-account.is-button .min-0{display:grid}
    모두 --aq-press-* 토큰과 .is-pressed(lib/press.ts)로 맞춰 누르면 바로 줄고, 떼면 살짝 튀며 돌아온다 */
 .aq-option,.aq-sign-provider{transition:background-color var(--aq-motion-short) var(--aq-ease),color var(--aq-motion-short) var(--aq-ease),border-color var(--aq-motion-short) var(--aq-ease),transform var(--aq-press-out) var(--aq-press-spring)!important}
 :is(.aq-dsp,.aq-pick,.aq-cert-method,.aq-pay-flow .aq-pay-type span){transition:background-color var(--aq-dur) var(--aq-ease),color var(--aq-dur) var(--aq-ease),box-shadow var(--aq-dur) var(--aq-ease),transform var(--aq-press-out) var(--aq-press-spring)}
-:is(.aq-chip,.aq-file-btn,.aq-tab-item){transition:background-color var(--aq-dur) var(--aq-ease),color var(--aq-dur) var(--aq-ease),transform var(--aq-press-out) var(--aq-press-spring)}
+:is(.aq-chip,.aq-file-btn){transition:background-color var(--aq-dur) var(--aq-ease),color var(--aq-dur) var(--aq-ease),transform var(--aq-press-out) var(--aq-press-spring)}
 :is(.aq-option,.aq-sign-provider,.aq-dsp,.aq-pick,.aq-cert-method):not(:disabled):is(:active,.is-pressed){transform:scale(var(--aq-press-row));transition-duration:var(--aq-press-in)!important}
 .aq-pay-flow .aq-pay-type:is(:active,.is-pressed) span{transform:scale(var(--aq-press-row));transition-duration:var(--aq-press-in)}
-:is(.aq-chip,.aq-file-btn:not([aria-disabled=true]),.aq-tab-item):not(:disabled):is(:active,.is-pressed){transform:scale(var(--aq-press-btn));transition-duration:var(--aq-press-in)}
+:is(.aq-chip,.aq-file-btn:not([aria-disabled=true])):not(:disabled):is(:active,.is-pressed){transform:scale(var(--aq-press-btn));transition-duration:var(--aq-press-in)}
 /* 고를 수 없는 건 눌리지도 않는다 — 예전 :active 규칙이 비활성 칸까지 줄였다 */
 :is(.aq-dsp,.aq-chip,.aq-cert-method,.aq-sign-provider):disabled,.aq-file-btn[aria-disabled=true]{transform:none!important}
 @media (prefers-reduced-motion:reduce){
-  :is(.aq-option,.aq-sign-provider,.aq-dsp,.aq-pick,.aq-cert-method,.aq-chip,.aq-file-btn,.aq-tab-item):is(:active,.is-pressed),.aq-pay-type:is(:active,.is-pressed) span{transform:none!important}
+  :is(.aq-option,.aq-sign-provider,.aq-dsp,.aq-pick,.aq-cert-method,.aq-chip,.aq-file-btn):is(:active,.is-pressed),.aq-pay-type:is(:active,.is-pressed) span{transform:none!important}
 }
 
 /* ---------- 디자인 통일 ----------
@@ -933,7 +910,7 @@ button.settle-hero-account.is-button .min-0{display:grid}
    메뉴도 audeniq.com 랜딩과 같은 움직임
    - 머리글: 평소엔 선 없이 화면과 이어지고, 내려가면 그림자가 부드럽게(0.28초)
    - 휴대폰 전체 메뉴: 판이 내려온 뒤 묶음이 30ms씩 차례로 8px 아래에서 떠오른다(0.7초, 처음 투명도 .3)
-   - 넓은 화면 왼쪽 메뉴·휴대폰 아래 탭 바: 처음 열 때 한 번 같은 움직임
+   - 넓은 화면 왼쪽 메뉴: 처음 열 때 한 번 같은 움직임
    - 자주 묻는 질문: 펼치면 답이 6px 아래에서 나타난다
    ========================================================================== */
 .portal-header{border-bottom-color:transparent!important;transition:box-shadow .28s var(--aq-enter)}
@@ -952,13 +929,13 @@ body.wizard-mode .portal-header,.portal-header:has(#portalNav:not([hidden])){box
   #portalNav>:nth-child(4){animation-delay:.155s}#portalNav>:nth-child(n+5){animation-delay:.18s}
 }
 #portalNav.is-closing>*{animation:none}
-/* 왼쪽 메뉴·아래 탭 바는 화면의 틀 — 새로고침·로그인 때마다 떠오르면 틀이 흔들려 보여 움직이지 않는다 (내용만 들어온다) */
+/* 왼쪽 메뉴는 화면의 틀 — 새로고침·로그인 때마다 떠오르면 틀이 흔들려 보여 움직이지 않는다 (내용만 들어온다) */
 
 @keyframes aq-faq-open{from{opacity:0;transform:translate3d(0,6px,0)}}
 .aq-faq-item[open]>:not(summary){animation:aq-faq-open var(--aq-motion-long) var(--aq-enter) backwards}
 
 @media (prefers-reduced-motion:reduce){
-  #portalNav>*,.aq-sidebar>*,.aq-tabbar,.aq-faq-item[open]>:not(summary){animation:none!important}
+  #portalNav>*,.aq-sidebar>*,.aq-faq-item[open]>:not(summary){animation:none!important}
   .portal-header{transition:none}
 }
 
