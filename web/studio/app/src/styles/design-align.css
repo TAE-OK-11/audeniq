@@ -1877,8 +1877,10 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 #view-notifications .aq-notice-detail{overflow:hidden;color:var(--aq-text-3);font-size:14px;line-height:1.5;text-overflow:ellipsis;white-space:nowrap}
 #view-notifications .aq-notice-detail time{color:var(--aq-text-4)}
 .aq-notice-more{padding:3px 9px;border-radius:var(--aq-r-pill);background:#fff;color:var(--aq-text-3);font-size:12px;font-weight:700;white-space:nowrap}
-#view-notifications .aq-notice-card.is-read .aq-notice-copy strong{font-weight:500;color:var(--aq-text-2)}
-#view-notifications .aq-notice-card.is-read .aq-notice-symbol{background:var(--aq-gray-100);color:var(--aq-text-4)}
+/* 읽은 알림도 색은 그대로(분류 아이콘 파랑) — 회색으로 바꾸면 화면이 죽어 보였다. 안 읽음은 파란 점과 굵은 제목으로만 구분 */
+#view-notifications .aq-notice-card.is-read .aq-notice-copy strong{font-weight:600;color:var(--aq-text)}
+#view-notifications .aq-notice-card.is-read .aq-notice-symbol{background:var(--aq-blue-150);color:var(--aq-blue-500)}
+#view-notifications .aq-notice-card.is-read .aq-notice-detail{color:var(--aq-text-3)}
 @media(max-width:560px){#view-notifications .aq-notice-card{gap:12px;padding:16px}}
 .aq-notice-sections .aq-pager{margin-top:-8px}
 .aq-notice-settings{display:grid;gap:10px;margin-top:40px}
