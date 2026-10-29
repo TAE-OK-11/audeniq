@@ -35,7 +35,7 @@
 #modal.adm-w-modal .modal-inner{max-width:720px}
 .adm-w-grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 14px}
 .adm-w-form .ui-seg{flex-wrap:wrap}
-.adm-w-picker{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
+.adm-w-picker{flex-wrap:wrap;align-items:center}
 .adm-w-picker .ui-select{flex:0 0 auto;min-width:110px}
 .adm-w-picker .ui-select+.ui-select{flex:1 1 160px;min-width:0;width:auto}
 .adm-w-picker .ui-input{flex:1 1 160px;min-width:0;width:auto}
@@ -133,7 +133,7 @@
 .adm-w-filter-row .ui-select{--ui-input-h:var(--aq-h-sm);--ui-input-r:var(--aq-r-ctl-sm)}
 .adm-w-thread-tools{margin-top:10px}
 @media (max-width:640px){
-  .adm-w-filter-row .ui-select{flex:1 1 calc(50% - 10px);min-width:0}
+  .adm-w-filter-row .ui-select{min-width:0}
   .adm-w-note-top{flex-wrap:wrap}
 }
 /* 거르기 줄: 검색칸이 넓게, 고르기 칸은 남은 폭을 나눠 한 줄에 — 좁으면 두 칸씩 */
