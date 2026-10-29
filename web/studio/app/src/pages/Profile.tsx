@@ -1,5 +1,5 @@
 // 계정 정보 — 본인 확인·아티스트·수익 받기 설정. 토스 설정 화면처럼 '줄 + ›' 목록. 줄을 누르면 그 항목 하나만 고치는 창이 열린다.
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState, type ReactNode } from 'react';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { Modal, useModalClose } from '../components/Modal';
@@ -9,12 +9,8 @@ import { setProfile, useProfile, type ProfileInfo } from '../store/profile';
 import { isPaymentRegistered, usePayment } from '../store/payment';
 import { patchAccount, taxCountryLabel, useAccount, verifyLabel, TAX_COUNTRIES, type TaxResidency } from '../store/account';
 import { refreshAccount } from '../store/portalSync';
-import { IdentityVerify } from '../components/IdentityVerify';
-import { PasskeySettings } from '../components/PasskeySettings';
-import { PhoneSettings } from '../components/PhoneSettings';
-import { ConnectedAccounts } from '../components/ConnectedAccounts';
-import { AiConnections } from '../components/AiConnections';
-import { DeveloperApps } from '../developer/DeveloperApps';
+import { lazyComponent } from '../lib/lazyComponent';
+import { SkeletonRows } from '../components/Skeleton';
 import { TeamSettings } from '../components/TeamSettings';
 import { OAUTH_LABEL, takeOAuthResult } from '../api/oauth';
 import { messageForCode } from '../api/errors';
@@ -24,6 +20,15 @@ import * as portal from '../api/portal';
 import { errorMessage } from '../api/errors';
 import { clearAll } from '../lib/storage';
 import { useNavigate, useSearchParams } from '../lib/router';
+
+// 줄을 눌러 여는 창의 내용은 열 때 받는다 — 계정 정보 화면을 처음 열 때 받는 양을 줄인다 (AI 앱·개발자 앱·본인인증 등)
+const IdentityVerify = lazyComponent(() => import('../components/IdentityVerify'), m => m.IdentityVerify);
+const PasskeySettings = lazyComponent(() => import('../components/PasskeySettings'), m => m.PasskeySettings);
+const PhoneSettings = lazyComponent(() => import('../components/PhoneSettings'), m => m.PhoneSettings);
+const ConnectedAccounts = lazyComponent(() => import('../components/ConnectedAccounts'), m => m.ConnectedAccounts);
+const AiConnections = lazyComponent(() => import('../components/AiConnections'), m => m.AiConnections);
+const DeveloperApps = lazyComponent(() => import('../developer/DeveloperApps'), m => m.DeveloperApps);
+const ModalBody = ({ children }: { children: ReactNode }) => <Suspense fallback={<SkeletonRows count={3} avatar={false} />}>{children}</Suspense>;
 
 const COUNTRY_LABEL: Record<string, string> = {
   KR: '대한민국', US: '미국', JP: '일본', OTHER: '기타',
@@ -359,32 +364,32 @@ export function Profile() {
       {showPayment && <PaymentSetupModal onClose={() => setShowPayment(false)} />}
       {showPasskeys && (
         <Modal title="패스키" onClose={() => setShowPasskeys(false)} modalClass="aq-set-modal">
-          <PasskeySettings />
+          <ModalBody><PasskeySettings /></ModalBody>
         </Modal>
       )}
       {showPhone && (
         <Modal title="휴대폰 번호" onClose={() => setShowPhone(false)} modalClass="aq-set-modal">
-          <PhoneSettings />
+          <ModalBody><PhoneSettings /></ModalBody>
         </Modal>
       )}
       {showConnected && (
         <Modal title="연결된 계정" onClose={() => setShowConnected(false)} modalClass="aq-set-modal">
-          <ConnectedAccounts />
+          <ModalBody><ConnectedAccounts /></ModalBody>
         </Modal>
       )}
       {showAi && (
         <Modal title="연결된 AI 앱" onClose={() => setShowAi(false)} modalClass="aq-set-modal">
-          <AiConnections />
+          <ModalBody><AiConnections /></ModalBody>
         </Modal>
       )}
       {showDev && (
         <Modal title="개발자 앱" onClose={() => setShowDev(false)} modalClass="aq-set-modal">
-          <DeveloperApps />
+          <ModalBody><DeveloperApps /></ModalBody>
         </Modal>
       )}
       {accountEdit === 'verify' && (
         <Modal title={account.verified ? '본인인증 다시 하기' : '본인인증'} onClose={() => setAccountEdit(null)} modalClass="aq-set-modal">
-          <IdentityVerify onDone={() => toast('본인인증을 마쳤어요.')} />
+          <ModalBody><IdentityVerify onDone={() => toast('본인인증을 마쳤어요.')} /></ModalBody>
         </Modal>
       )}
       {accountEdit === 'tax' && (

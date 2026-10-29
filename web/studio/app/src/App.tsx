@@ -1,7 +1,6 @@
-import { claimChunkReload } from './lib/chunkRecovery';
 import { loginRedirect } from './lib/loginRedirect';
 import { rememberAiConnectReturn, takeAiConnectReturn } from './lib/aiConnectReturn';
-import { Suspense, lazy, useEffect, useState, type ComponentType, type ReactNode } from 'react';
+import { Suspense, useEffect, useState, type ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from './lib/router';
 import { artistPath, artistPressPath, releasePath } from './lib/publicLinks';
 import { AuthProvider, useAuth } from './api/auth';
@@ -25,22 +24,10 @@ import './styles/wizard-motion.css';
 import './styles/design-align.css';
 import { SelectHost } from './components/PickerSurface';
 import { PrintStampHost } from './lib/printStamp';
+import { lazyComponent } from './lib/lazyComponent';
 
-// 배포 직후 옛 청크가 사라져 동적 import가 실패하면 한 번만 새로고침해 새 버전을 받는다
-function lazyPage<M>(load: () => Promise<M>, pick: (m: M) => ComponentType) {
-  return lazy(async () => {
-    try {
-      const mod = await load();
-      return { default: pick(mod) };
-    } catch (e) {
-      if (claimChunkReload()) {
-        window.location.reload();
-        await new Promise(() => {}); // 새로고침될 때까지 대기 (오류 화면 깜빡임 방지)
-      }
-      throw e;
-    }
-  });
-}
+// 배포 직후 옛 청크가 사라지면 한 번 새로고침해 새 버전을 받는다 (lib/lazyComponent)
+const lazyPage = lazyComponent;
 
 const Login = lazyPage(pageLoaders.Login, m => m.Login);
 const PasskeySetup = lazyPage(pageLoaders.PasskeySetup, m => m.PasskeySetup);

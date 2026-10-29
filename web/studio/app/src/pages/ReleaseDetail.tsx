@@ -1,19 +1,10 @@
 import { releaseDetailVisibility } from '../lib/releaseDetailVisibility';
 import { ReadFailure } from '../components/ReadFailure';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from '../lib/router';
 import { api, type DeliveryItem } from '../api/client';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
-import { TakedownCard } from '../components/TakedownCard';
-import { CorrectionCard } from '../components/CorrectionCard';
-import { PitchCard } from '../components/PitchCard';
-import { SmartLinkCard } from '../components/SmartLinkCard';
-import { PreReleaseCard } from '../components/PreReleaseCard';
-import { SplitsCard } from '../components/SplitsCard';
-import { ContentIdCard } from '../components/ContentIdCard';
-import { TermCard } from '../components/TermCard';
-import { InfringementCard } from '../components/InfringementCard';
 import { SkeletonBlock, SkeletonRows } from '../components/Skeleton';
 import { ReleaseCover, useImageOk, useSharpImage } from '../components/ReleaseCover';
 import { coverImageUrl } from '../api/remote';
@@ -31,7 +22,6 @@ import { StageCard } from '../components/StageCard';
 import { Glyph } from '../components/Glyph';
 import { ContractBundle } from '../components/ContractBundle';
 import { AlbumPrep } from '../components/AlbumPrep';
-import { ReleaseStats } from '../components/ReleaseStats';
 import { TrackSheet } from '../components/TrackSheet';
 import { CopyButton } from '../components/CopyButton';
 import { albumPrep, draftTrackOf, releaseDay, type PrepItem } from '../lib/albumPrep';
@@ -39,10 +29,14 @@ import { albumPrep, draftTrackOf, releaseDay, type PrepItem } from '../lib/album
 /** 아직 없는 값 — 실제 값처럼 진하게 보이지 않도록 흐리게 */
 const Empty = ({ children }: { children: string }) => <span className="aq-empty-val">{children}</span>;
 import { Badge, Tabs } from '../ui';
-import { PendingAddons, ReleaseAddons } from '../components/ReleaseAddons';
+import { PendingAddons } from '../components/ReleaseAddons';
+import { lazyComponent } from '../lib/lazyComponent';
 import { territorySummary } from '../lib/territories';
 import { DELIVERY_STAGE, DELIVERY_TONE } from '../lib/delivery';
 
+// '관리'·'통계' 탭은 열 때 받는다 — 처음 여는 '정보' 탭에는 필요 없는 카드들이다
+const ReleaseManageTab = lazyComponent(() => import('../components/ReleaseManageTab'), m => m.ReleaseManageTab);
+const ReleaseStats = lazyComponent(() => import('../components/ReleaseStats'), m => m.ReleaseStats);
 
 // 플랫폼 기준으로 고쳐야 하는 항목 안내
 const DELIVERY_ISSUE: Record<string, string> = {
@@ -574,7 +568,9 @@ export function ReleaseDetail() {
           </div>
         )}
 
-        {activeTab === 'stats' && released && <ReleaseStats releaseId={rel.id} title={rel.title} />}
+        {activeTab === 'stats' && released && (
+          <Suspense fallback={<SkeletonBlock height={240} />}><ReleaseStats releaseId={rel.id} title={rel.title} /></Suspense>
+        )}
 
         {activeTab === 'delivery' && (
           <div className="aq-detail-stack">
@@ -653,36 +649,9 @@ export function ReleaseDetail() {
         )}
 
         {activeTab === 'manage' && (
-          // 발매 뒤에 하는 일을 성격별로 묶는다 — 카드 8장이 한 줄로 쌓이면 무엇이 어디 있는지 안 보인다
-          <div className="aq-detail-stack">
-            {isDraft ? <SplitsCard releaseId={rel.id} /> : (
-              <>
-                <section className="aq-manage-group" aria-label="수익·홍보">
-                  <h3 className="aq-manage-group-title">수익·홍보</h3>
-                  <SplitsCard releaseId={rel.id} />
-                  <PreReleaseCard releaseId={rel.id} preorderStart={d?.preorder_start} releaseDate={rel.release_date} releaseTime={d?.release_time} />
-                  <SmartLinkCard releaseId={rel.id} promo={{
-                    title: rel.title, artist: rel.artist ?? '', releaseDate: rel.release_date ?? null, cover: coverOk ? coverSrc : undefined,
-                    releaseTime: d?.release_time || null, kind: kindLabel(d?.type) || undefined,
-                    lyrics: (d?.draftTracks ?? []).filter(t => t.lyrics?.trim()).map(t => ({ title: t.title, lyrics: t.lyrics })),
-                  }} />
-                  <PitchCard releaseId={rel.id} />
-                </section>
-                <section className="aq-manage-group" aria-label="권리 보호">
-                  <h3 className="aq-manage-group-title">권리 보호</h3>
-                  <ContentIdCard releaseId={rel.id} />
-                  <InfringementCard releaseId={rel.id} />
-                </section>
-                <ReleaseAddons releaseId={rel.id} editable={!rejected && rel.status !== 'cancelled'} />
-                <section className="aq-manage-group" aria-label="서비스·계약">
-                  <h3 className="aq-manage-group-title">서비스·계약</h3>
-                  <CorrectionCard releaseId={rel.id} />
-                  <TakedownCard releaseId={rel.id} />
-                  {!rejected && rel.status !== 'cancelled' && rel.status !== 'closed' && <TermCard releaseId={rel.id} />}
-                </section>
-              </>
-            )}
-          </div>
+          <Suspense fallback={<SkeletonBlock height={240} />}>
+            <ReleaseManageTab rel={rel} cover={coverOk ? coverSrc : undefined} />
+          </Suspense>
         )}
 
         {activeTab === 'history' && (
