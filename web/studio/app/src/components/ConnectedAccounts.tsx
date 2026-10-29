@@ -5,6 +5,7 @@ import { useConfirm } from './Confirm';
 import { errorMessage } from '../api/errors';
 import { AppleLogo, GoogleLogo } from './SocialSignIn';
 import { OAUTH_LABEL, oauthIdentities, startOAuth, unlinkOAuth, type OAuthIdentities, type OAuthProvider } from '../api/oauth';
+import { SkeletonAcctRows } from './Skeleton';
 
 export function ConnectedAccounts() {
   const toast = useToast();
@@ -39,7 +40,7 @@ export function ConnectedAccounts() {
   }
 
   if (error) return <div className="ui-callout is-danger" role="alert">{error}</div>;
-  if (!data) return <p role="status">불러오는 중이에요.</p>;
+  if (!data) return <SkeletonAcctRows />;
   const rows = (['google', 'apple'] as const).filter(p => data.providers[p] || data.items.some(i => i.provider === p));
   if (rows.length === 0) return <p>지금은 연결할 수 있는 계정이 없어요.</p>;
 

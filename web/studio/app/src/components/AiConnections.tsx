@@ -17,6 +17,7 @@ import {
 } from '../api/aiConnections';
 import { Link } from '../lib/router';
 import { relativeTime } from '../lib/date';
+import { SkeletonAcctRows } from './Skeleton';
 
 const workspaceName = (name: string) => (name === 'Personal workspace' ? '내 작업 공간' : name);
 const day = (iso: string) => new Date(iso).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -346,7 +347,7 @@ export function AiConnections() {
   }
 
   if (error) return <div className="ui-callout is-danger" role="alert">{error}</div>;
-  if (!items) return <p role="status">불러오는 중이에요.</p>;
+  if (!items) return <SkeletonAcctRows count={1} />;
 
   return (
     <div className="aq-passkeys">
