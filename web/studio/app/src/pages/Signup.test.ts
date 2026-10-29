@@ -27,5 +27,10 @@ describe('formatPhone', () => {
     expect(isPhone('010-1234-5678')).toBe(true);
     expect(isPhone('02-123-4567')).toBe(false);
     expect(isPhone('010-123')).toBe(false);
+    // 서버 규칙과 같이: 010은 11자리만, 011·016~019는 10자리도
+    expect(isPhone('010-123-4567')).toBe(false);
+    expect(isPhone('011-234-5678')).toBe(true);
+    expect(isPhone('016-1234-5678')).toBe(true);
+    expect(isPhone('015-1234-5678')).toBe(false);
   });
 });

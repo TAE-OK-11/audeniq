@@ -239,6 +239,68 @@ async fn phone_registration_and_password_reset(pool: PgPool) {
         "phone number is not stored in clear"
     );
 
+    // Find the email by the verified phone: masked, and only after the SMS code.
+    let (s, decoy) = call(
+        &app,
+        "POST",
+        "/api/auth/find-email/start",
+        json!({"phone": "010-9999-7777"}),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{decoy}");
+    assert!(
+        decoy["find_id"].is_string(),
+        "same shape for an unknown phone"
+    );
+    assert!(sms::test_last_code("010-9999-7777").is_none());
+    let (s, f) = call(
+        &app,
+        "POST",
+        "/api/auth/find-email/start",
+        json!({"phone": phone}),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{f}");
+    let code = sms::test_last_code(phone).unwrap();
+    let wrong = if code == "000000" { "111111" } else { "000000" };
+    let (s, e) = call(
+        &app,
+        "POST",
+        "/api/auth/find-email/verify",
+        json!({"find_id": f["find_id"], "code": wrong}),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    assert_eq!(e["error"]["code"], "SMS_CODE_INVALID");
+    let (s, found) = call(
+        &app,
+        "POST",
+        "/api/auth/find-email/verify",
+        json!({"find_id": f["find_id"], "code": code}),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{found}");
+    let masked = audeniq_core::password_reset::mask_email(&u.email);
+    assert_eq!(found["emails"], json!([masked]));
+    assert!(
+        !found.to_string().contains(&u.email),
+        "full email never returned"
+    );
+    // One use only.
+    let (s, _) = call(
+        &app,
+        "POST",
+        "/api/auth/find-email/verify",
+        json!({"find_id": f["find_id"], "code": code}),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+
     // Unknown email or another phone: same answer shape, no SMS.
     let sent_before = sms::test_last_code("010-9999-8888");
     let (s, r) = call(

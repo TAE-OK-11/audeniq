@@ -12,6 +12,12 @@
 //! 3. `POST /api/auth/password-reset/complete {reset_token, new_password}` → 비밀번호를 바꾸고
 //!    모든 세션을 끊는다. 다시 로그인해야 한다.
 //!
+//! 이메일 찾기 (로그인 없이):
+//! 1. `POST /api/auth/find-email/start {phone}` → 그 번호를 인증해 둔 계정이 있을 때만 인증번호를 보낸다.
+//!    없어도 같은 모양으로 답한다(가입 여부 비노출).
+//! 2. `POST /api/auth/find-email/verify {find_id, code}` → 그 번호를 쓰는 활성 계정들의 이메일을
+//!    일부 가려서 `{emails: ["ta***@gmail.com"]}`. 틀린 번호·만료·5회 초과·없는 요청은 `SMS_CODE_INVALID`.
+//!
 //! 인증번호는 3분, 5회까지. 인증번호·토큰은 해시만 보관한다. 문자 발송 대행사 계약 전에는
 //! `SMS_PROVIDER_NOT_CONFIGURED`로 거절한다 (`crate::sms`).
 use crate::{
@@ -410,6 +416,119 @@ pub async fn complete_reset(s: &AppState, h: &HeaderMap, i: ResetComplete) -> Re
     Ok(json!({"changed": true, "reauthentication_required": true}))
 }
 
+// ---------------------------------------------------------------------------
+// 이메일 찾기
+// ---------------------------------------------------------------------------
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FindStart {
+    pub phone: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FindVerify {
+    pub find_id: Uuid,
+    pub code: String,
+}
+
+/// 이메일 앞부분을 가린다: `taeok@gmail.com` → `ta***@gmail.com` (짧으면 첫 글자만).
+pub fn mask_email(email: &str) -> String {
+    let Some((local, domain)) = email.rsplit_once('@') else {
+        return "***".into();
+    };
+    let keep = if local.chars().count() > 3 { 2 } else { 1 };
+    let head: String = local.chars().take(keep).collect();
+    format!("{head}***@{domain}")
+}
+
+pub async fn start_find_email(s: &AppState, h: &HeaderMap, i: FindStart) -> Result<Value> {
+    auth::origin(h, &s.config)?;
+    let sender = SmsSender::from_env();
+    if !sender.ready() {
+        return Err(Error::PolicyGate("SMS_PROVIDER_NOT_CONFIGURED"));
+    }
+    let phone = sms::normalize_phone(&i.phone)?;
+    let (src, factor) = source(h);
+    auth::rate(&s.pool, &format!("find-start:src:{src}"), 10 * factor).await?;
+    auth::rate(&s.pool, &format!("find-start:phone:{phone}"), 5).await?;
+    let hash = sms::phone_hash(&s.config.service_secret, &phone);
+    // 인증번호는 그 번호를 쓰는 계정 하나에 걸어 둔다 (확인하면 같은 번호의 계정을 모두 알려 준다).
+    let user: Option<Uuid> = sqlx::query_scalar(
+        "SELECT u.id FROM identity.users u JOIN portal.account_phones p ON p.user_id=u.id
+         WHERE p.phone_hash=$1 AND u.status='ACTIVE' AND p.verified_at IS NOT NULL
+         ORDER BY u.created_at, u.id LIMIT 1",
+    )
+    .bind(&hash)
+    .fetch_optional(&s.pool)
+    .await?;
+    let Some(user) = user else {
+        return Ok(json!({
+            "find_id": Uuid::new_v4(),
+            "expires_at": Utc::now() + Duration::seconds(CODE_SECONDS),
+            "phone_last4": &phone[phone.len() - 4..],
+        }));
+    };
+    let code = sms::new_code();
+    let mut tx = s.pool.begin().await?;
+    let (id, expires) = new_challenge(&mut tx, s, "FIND_EMAIL", user, &phone, &code).await?;
+    operations::audit(
+        &mut tx,
+        Some(user),
+        None,
+        Some(user),
+        "auth.find_email_requested",
+        "SMS_SENT",
+        auth::request_id(h),
+    )
+    .await?;
+    tx.commit().await?;
+    sender.send(&phone, &message(&code)).await?;
+    Ok(json!({"find_id": id, "expires_at": expires, "phone_last4": &phone[phone.len() - 4..]}))
+}
+
+pub async fn verify_find_email(s: &AppState, h: &HeaderMap, i: FindVerify) -> Result<Value> {
+    auth::origin(h, &s.config)?;
+    let (src, factor) = source(h);
+    auth::rate(&s.pool, &format!("find-verify:src:{src}"), 30 * factor).await?;
+    let mut tx = s.pool.begin().await?;
+    let checked = check_code(&mut tx, s, "FIND_EMAIL", i.find_id, &i.code, None).await?;
+    let Some((user, hash, _)) = checked else {
+        tx.commit().await?;
+        return Err(Error::InvalidCode("SMS_CODE_INVALID"));
+    };
+    sqlx::query("UPDATE identity.sms_challenges SET consumed_at=now() WHERE id=$1")
+        .bind(i.find_id)
+        .execute(&mut *tx)
+        .await?;
+    let users: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT u.id FROM identity.users u JOIN portal.account_phones p ON p.user_id=u.id
+         WHERE p.phone_hash=$1 AND u.status='ACTIVE' AND p.verified_at IS NOT NULL
+         ORDER BY u.created_at, u.id LIMIT 10",
+    )
+    .bind(&hash)
+    .fetch_all(&mut *tx)
+    .await?;
+    let mut emails = Vec::with_capacity(users.len());
+    for u in &users {
+        emails.push(mask_email(
+            &crate::pii::user_email(&s.payout_keys, &mut *tx, *u).await?,
+        ));
+    }
+    operations::audit(
+        &mut tx,
+        Some(user),
+        None,
+        Some(user),
+        "auth.find_email_verified",
+        "SMS_CODE_OK",
+        auth::request_id(h),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"emails": emails}))
+}
+
 /// 계정 정보 응답에 싣는 등록 휴대폰 (뒷자리·인증 시각).
 pub async fn registered_phone(s: &AppState, user: Uuid) -> Result<Value> {
     let row =
@@ -463,6 +582,21 @@ async fn h_reset_complete(
     Ok(Json(complete_reset(&s, &h, i).await?))
 }
 
+async fn h_find_start(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Json(i): Json<FindStart>,
+) -> Result<Json<Value>> {
+    Ok(Json(start_find_email(&s, &h, i).await?))
+}
+async fn h_find_verify(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Json(i): Json<FindVerify>,
+) -> Result<Json<Value>> {
+    Ok(Json(verify_find_email(&s, &h, i).await?))
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/me/phone/start", post(h_phone_start))
@@ -470,4 +604,20 @@ pub fn routes() -> Router<AppState> {
         .route("/api/auth/password-reset/start", post(h_reset_start))
         .route("/api/auth/password-reset/verify", post(h_reset_verify))
         .route("/api/auth/password-reset/complete", post(h_reset_complete))
+        .route("/api/auth/find-email/start", post(h_find_start))
+        .route("/api/auth/find-email/verify", post(h_find_verify))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mask_email;
+
+    #[test]
+    fn masks_emails() {
+        assert_eq!(mask_email("taeok@gmail.com"), "ta***@gmail.com");
+        assert_eq!(mask_email("abc@naver.com"), "a***@naver.com");
+        assert_eq!(mask_email("a@x.kr"), "a***@x.kr");
+        assert_eq!(mask_email("한글이름@x.kr"), "한글***@x.kr");
+        assert_eq!(mask_email("broken"), "***");
+    }
 }

@@ -319,7 +319,7 @@ export function Profile() {
           <h2 id="setSignIn">로그인</h2>
           <SetRow id="accountRowPasskey" label="패스키" empty="비밀번호 대신 지문·얼굴로 로그인" onClick={() => setShowPasskeys(true)} />
           <SetRow
-            id="accountRowPhone" label="휴대폰 번호" value={account.phone ? `···${account.phone.last4}` : undefined}
+            id="accountRowPhone" label="휴대폰 번호" value={account.phone ? `···${account.phone.last4}${account.phone.verifiedAt ? '' : ' · 확인 전'}` : undefined}
             empty="비밀번호 찾기에 쓸 번호 등록" onClick={() => setShowPhone(true)}
           />
           <SetRow id="accountRowConnected" label="연결된 계정" empty="Google · Apple" onClick={() => setShowConnected(true)} />

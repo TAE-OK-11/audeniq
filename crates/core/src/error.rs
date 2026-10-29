@@ -186,6 +186,7 @@ pub fn message(code: &str) -> Option<&'static str> {
         "SMS_PROVIDER_NOT_CONFIGURED" => {
             "Text message verification is not available yet. Contact support for account help."
         }
+        "SMS_SEND_FAILED" => "The verification text could not be sent. Try again in a moment.",
         "PHONE_INVALID" => "Enter a Korean mobile number (010-0000-0000).",
         "SMS_CODE_INVALID" => {
             "The verification code is wrong or expired. Request a new code and try again."
