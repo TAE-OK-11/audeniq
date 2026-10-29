@@ -418,7 +418,7 @@ export function AiConnections() {
                   <span className="aq-ai-scopes" aria-label="허용한 일">{c.scopes.map(s => <Tag key={s}>{SCOPE_LABEL[s] ?? s}</Tag>)}</span>
                 </span>
                 <span className="ui-row-end">
-                  <button type="button" className="ui-btn is-white is-sm" onClick={() => void disconnect(c)} disabled={busy !== null}>
+                  <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => void disconnect(c)} disabled={busy !== null}>
                     {busy === c.id ? '끊는 중' : '연결 끊기'}
                   </button>
                 </span>

@@ -6,8 +6,10 @@ import { addPasskey, defaultPasskeyName, listPasskeys, passkeySupported, removeP
 import { errorMessage } from '../api/errors';
 import { PasswordInput } from './AuthLayout';
 import { Reveal } from '../ui';
+import { Glyph } from './Glyph';
+import { relativeTime } from '../lib/date';
 
-const day = (iso: string) => new Date(iso).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
+const day = (iso: string) => new Date(iso).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
 
 export function PasskeySettings() {
   const toast = useToast();
@@ -38,7 +40,7 @@ export function PasskeySettings() {
       setItems(r.items);
       setAdding(false);
       setPassword('');
-      toast('패스키를 등록했어요. 다음부터 이메일을 입력하고 패스키로 로그인할 수 있어요.');
+      toast('패스키를 등록했어요. 다음부터 비밀번호 없이 로그인할 수 있어요.');
     } catch (err) {
       setError(errorMessage(err, '패스키를 등록하지 못했어요.'));
     } finally {
@@ -58,38 +60,44 @@ export function PasskeySettings() {
     }
   }
 
+  // 계정 정보의 다른 설정 창(연결된 계정·AI 앱)과 같은 줄 — 아이콘 칸 · 이름 · 한 줄 정보 · 오른쪽 조용한 글자 버튼(지우는 일은 빨강)
   return (
     <div className="aq-passkeys">
       <p className="aq-muted">
-        패스키를 등록하면 로그인할 때 이메일을 입력하고 비밀번호 대신 이 기기의 지문·얼굴·화면 잠금으로 들어올 수 있어요.
-        비밀번호보다 안전하고 피싱 사이트에서는 동작하지 않아요.
+        지문·얼굴·화면 잠금(PIN)으로 비밀번호 없이 로그인해요. 피싱 사이트에서는 동작하지 않아 비밀번호보다 안전해요.
       </p>
       {error && <div className="ui-callout is-danger" role="alert">{error}</div>}
-      {items === null && !error && <p role="status">불러오는 중이에요.</p>}
+      {items === null && !error && <p role="status" className="aq-muted">불러오는 중이에요.</p>}
       {items && items.length > 0 && (
-        <ul className="aq-passkey-list">
+        <ul className="aq-acct-list">
           {items.map(p => (
             <li key={p.id}>
-              <span className="min-0">
-                <strong>{p.name}</strong>
-                <small>
-                  {day(p.created_at)} 등록{p.last_used_at ? ` · ${day(p.last_used_at)} 사용` : ''}{p.synced ? ' · 다른 기기와 동기화됨' : ''}
-                </small>
+              <span className="aq-acct-ico" aria-hidden="true"><Glyph name="key" size={18} /></span>
+              <span className="min-0 aq-acct-copy">
+                <strong>{p.name}{p.synced && <em className="aq-acct-tag">동기화</em>}</strong>
+                <small>{p.last_used_at ? `마지막 사용 ${relativeTime(p.last_used_at)}` : '아직 사용 안 함'} · {day(p.created_at)} 등록</small>
               </span>
-              <button type="button" className="ui-btn is-soft is-sm" onClick={() => void remove(p)}>삭제</button>
+              <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => void remove(p)}>삭제</button>
             </li>
           ))}
         </ul>
       )}
-      {items && items.length === 0 && <p>아직 등록한 패스키가 없어요.</p>}
+      {items && items.length === 0 && (
+        <div className="aq-acct-empty">
+          <span className="aq-acct-ico" aria-hidden="true"><Glyph name="key" size={18} /></span>
+          <span><strong>아직 등록한 패스키가 없어요</strong><small>이 기기에 만들어 두면 다음부터 바로 로그인해요.</small></span>
+        </div>
+      )}
       {!supported && <div className="ui-callout">이 브라우저에서는 패스키를 등록할 수 없어요. 최신 Chrome·Safari·Edge·Firefox에서 열어 주세요.</div>}
       {supported && items && items.length < limit && (
         <Reveal open={!adding} focus="first">
-          <button type="button" className="ui-btn is-primary" aria-expanded={adding} onClick={() => { setAdding(true); setError(''); }}>패스키 추가</button>
+          <button type="button" className="ui-btn is-soft is-block" aria-expanded={adding} onClick={() => { setAdding(true); setError(''); }}>
+            <Glyph name="plus" size={16} />이 기기에 패스키 추가
+          </button>
         </Reveal>
       )}
       <Reveal open={adding}>
-        <form onSubmit={add}>
+        <form onSubmit={add} className="aq-acct-form">
           <div className="ui-field">
             <label htmlFor="passkeyName">이름</label>
             <input id="passkeyName" required maxLength={60} value={name} onChange={e => setName(e.target.value)} autoComplete="off" />
