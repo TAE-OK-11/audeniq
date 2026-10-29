@@ -28,7 +28,11 @@ export default defineConfig(({ command, mode }) => {
       // :hover는 마우스 환경에서만 (휴대폰 sticky hover 방지) — 개발·빌드 모두 적용해 화면이 같게 한다
       // 빌드에서만 미사용 CSS 제거 (개발 중에는 새 클래스를 바로 쓸 수 있도록 전체 유지)
       plugins: command === 'build'
-        ? [hoverGuard(), purgeCss({ content: [src('./src'), src('./index.html')] }), compactCss()]
+        ? [hoverGuard(), purgeCss({
+          content: [src('./src'), src('./index.html')],
+          // 공개 페이지 스타일은 공개 앱(과 모든 화면이 함께 쓰는 main·상호작용 보조)에 나오는 클래스만
+          scoped: { file: /styles[\\/]public\.css$/, roots: [src('./src/main.tsx'), src('./src/public/PublicApp.tsx')], exclude: [src('./src/App.tsx'), src('./src/routes.ts')], extra: [src('./index.html')] },
+        }), compactCss()]
         : [hoverGuard()],
     },
   },

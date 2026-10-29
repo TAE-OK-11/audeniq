@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import postcss from 'postcss';
 import { describe, expect, it } from 'vitest';
-import { purgeCss } from './purge-css';
+import { importClosure, purgeCss } from './purge-css';
 
 function run(css: string, source: string) {
   const dir = mkdtempSync(join(tmpdir(), 'purge-'));
@@ -27,6 +27,19 @@ describe('purgeCss', () => {
     expect(out).toContain('@keyframes k3');
     expect(out).toContain('@keyframes k4');
     expect(out).not.toContain('k5');
+  });
+  it('scoped CSS는 시작 파일에서 import로 닿는 코드의 클래스만 남긴다', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'scope-'));
+    writeFileSync(join(dir, 'pub.tsx'), "import { A } from './a';\nconst x = 'pub-card';");
+    writeFileSync(join(dir, 'a.tsx'), "export const A = 'shared-btn';");
+    writeFileSync(join(dir, 'studio.tsx'), "const y = 'studio-only';");
+    expect(importClosure([join(dir, 'pub.tsx')]).sort()).toEqual([join(dir, 'a.tsx'), join(dir, 'pub.tsx')].sort());
+    const css = '.pub-card{a:1}.shared-btn{b:2}.studio-only{c:3}';
+    const plugin = purgeCss({ content: [dir], scoped: { file: /public\.css$/, roots: [join(dir, 'pub.tsx')] } });
+    const scoped = postcss([plugin]).process(css, { from: join(dir, 'public.css') }).css;
+    expect(scoped).toBe('.pub-card{a:1}.shared-btn{b:2}');
+    const full = postcss([plugin]).process(css, { from: join(dir, 'app.css') }).css;
+    expect(full).toContain('.studio-only');
   });
   it('선택자 목록 중 사용되는 것만 남긴다', () => {
     expect(run('.a,.zzz{x:1}', "cls('a')")).toBe('.a{x:1}');

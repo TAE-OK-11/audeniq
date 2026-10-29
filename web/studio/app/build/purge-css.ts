@@ -70,21 +70,54 @@ function selectorUsed(sel: string, used: (name: string) => boolean): boolean {
   return true;
 }
 
-export function purgeCss(opts: { content: string[]; safelist?: RegExp[] }): Plugin {
+/** 시작 파일들에서 import로 닿는 소스 파일 (상대 경로만, exclude는 따라가지 않는다) */
+export function importClosure(roots: string[], exclude: string[] = []): string[] {
+  const seen = new Set<string>();
+  const skip = new Set(exclude);
+  const resolve = (from: string, spec: string): string | null => {
+    const base = join(from, '..', spec);
+    for (const c of [base, `${base}.ts`, `${base}.tsx`, join(base, 'index.ts'), join(base, 'index.tsx')]) {
+      try { if (statSync(c).isFile()) return c; } catch { /* 없음 */ }
+    }
+    return null;
+  };
+  const visit = (file: string) => {
+    if (seen.has(file) || skip.has(file)) return;
+    seen.add(file);
+    const text = readFileSync(file, 'utf8');
+    for (const m of text.matchAll(/(?:from\s*|import\s*\(\s*|import\s+)['"](\.{1,2}\/[^'"]+)['"]/g)) {
+      const r = resolve(file, m[1]);
+      if (r && /\.tsx?$/.test(r)) visit(r);
+    }
+  };
+  roots.forEach(visit);
+  return [...seen];
+}
+
+export function purgeCss(opts: {
+  content: string[]; safelist?: RegExp[];
+  /** 이 이름의 CSS(예: public.css)는 아래 파일들에서 import로 닿는 코드에 나오는 클래스만 남긴다 */
+  scoped?: { file: RegExp; roots: string[]; exclude?: string[]; extra?: string[] };
+}): Plugin {
   let tokens: ReturnType<typeof collectTokens> | null = null;
-  const used = (name: string) => {
-    tokens ??= collectTokens(opts.content);
-    if (tokens.exact.has(name)) return true;
-    if (opts.safelist?.some(r => r.test(name))) return true;
-    return tokens.prefixes.some(p => name.startsWith(p));
+  let scopedTokens: ReturnType<typeof collectTokens> | null = null;
+  const usedIn = (t: ReturnType<typeof collectTokens>, name: string) =>
+    t.exact.has(name) || !!opts.safelist?.some(r => r.test(name)) || t.prefixes.some(p => name.startsWith(p));
+  const used = (name: string) => usedIn(tokens ??= collectTokens(opts.content), name);
+  const usedScoped = (name: string) => {
+    const sc = opts.scoped!;
+    scopedTokens ??= collectTokens([...importClosure(sc.roots, sc.exclude), ...(sc.extra ?? [])]);
+    return usedIn(scopedTokens, name);
   };
   return {
     postcssPlugin: 'aq-purge-css',
     OnceExit(root: Root) {
+      const file = root.source?.input.file ?? '';
+      const test = opts.scoped && opts.scoped.file.test(file) ? usedScoped : used;
       root.walkRules((rule: Rule) => {
         const parent = rule.parent as AtRule | undefined;
         if (parent?.type === 'atrule' && /keyframes$/i.test(parent.name)) return;
-        const keep = rule.selectors.filter(s => selectorUsed(s, used));
+        const keep = rule.selectors.filter(s => selectorUsed(s, test));
         if (!keep.length) rule.remove();
         else if (keep.length !== rule.selectors.length) rule.selectors = keep;
       });

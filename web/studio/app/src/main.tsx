@@ -1,8 +1,10 @@
 import { claimChunkReload, clearChunkReload } from './lib/chunkRecovery';
-import { StrictMode } from 'react';
+import { StrictMode, type ComponentType } from 'react';
 import { createRoot } from 'react-dom/client';
-import { App } from './App';
 import { prefetchInitialRoute } from './routes';
+import { currentPath } from './lib/router';
+import { isPublicPath } from './lib/publicRoute';
+import { isChunkError } from './lib/chunkRecovery';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('#root 요소를 찾을 수 없어요.');
@@ -41,14 +43,43 @@ addEventListener('keydown', early, { capture: true, passive: true });
 if ('requestIdleCallback' in window) window.requestIdleCallback(early, { timeout: 2000 });
 else setTimeout(early, 1200);
 
-prefetchInitialRoute();
+// 공개 페이지(스마트링크·아티스트)는 공개 앱만, 그 밖은 스튜디오 앱을 받는다 — 팬은 스튜디오 화면 코드·전체 스타일을 받지 않는다.
+// 스튜디오 주소면 화면 조각도 함께 받기 시작한다(인증 확인과 나란히)
+const publicPage = isPublicPath(currentPath());
+if (!publicPage) prefetchInitialRoute();
+const loadApp = (): Promise<ComponentType> => (publicPage
+  ? import('./public/PublicApp').then(m => m.PublicApp)
+  : import('./App').then(m => m.App));
 
 // 체험 모드: 접수된 계약서 검토를 자동 완료 (별도 청크로 분리해 실제 모드 번들에는 포함되지 않음)
 // MOCK(lib/mode)과 같은 식을 그대로 쓴다 — 가져온 상수로는 실서버 빌드에도 청크가 만들어졌다
 if (import.meta.env.MODE !== 'edge' && import.meta.env.VITE_MOCK !== 'false') void import('./store/mockReviewer').then(m => m.startMockReviewer());
 
-createRoot(root).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+// 잠깐 끊긴 회선이면 한 번 더, 배포로 옛 파일이 사라졌으면 한 번 새로고침 (lib/lazyComponent와 같은 규칙)
+loadApp()
+  .catch(e => (navigator.onLine ? new Promise(r => setTimeout(r, 700)).then(loadApp) : Promise.reject(e)))
+  .then(Root => {
+    createRoot(root).render(
+      <StrictMode>
+        <Root />
+      </StrictMode>,
+    );
+  })
+  .catch(e => {
+    if (navigator.onLine && isChunkError(e) && claimChunkReload()) { window.location.reload(); return; }
+    console.error('[studio] 앱을 불러오지 못했어요', e);
+    // 로고 아래 막대 대신 안내 한 줄과 새로고침 버튼 (스타일은 index.html의 첫 화면)
+    const boot = root.querySelector('.aq-boot');
+    if (!boot) return;
+    boot.setAttribute('aria-label', '화면을 불러오지 못했어요');
+    boot.querySelector('.aq-boot-bar')?.remove();
+    const msg = document.createElement('p');
+    msg.textContent = '화면을 불러오지 못했어요. 인터넷 연결을 확인하고 새로고침해 주세요.';
+    msg.style.cssText = 'margin:0;font-size:14px;color:#5D687E;text-align:center';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = '새로고침';
+    btn.style.cssText = 'height:40px;padding:0 18px;border:0;border-radius:12px;background:#3B63F3;color:#fff;font:inherit;font-weight:700';
+    btn.onclick = () => window.location.reload();
+    boot.append(msg, btn);
+  });
