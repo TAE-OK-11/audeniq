@@ -103,6 +103,13 @@ function rightsOk(checks: Record<string, boolean> | undefined, options?: { sampl
   return true;
 }
 
+/** 날짜·시각 — 좁은 칸에서 줄이 바뀌어도 ‘오전 / 9:10’처럼 시각이 갈라지지 않게 시각을 한 덩어리로 */
+function Stamp({ v }: { v: unknown }) {
+  const text = localStamp(v);
+  const m = text.match(/^(.*\S)\s+((?:오전|오후)\s\d{1,2}:\d{2})$/);
+  return m ? <>{m[1]} <span className="aq-nowrap">{m[2]}</span></> : <>{text}</>;
+}
+
 export function ReleaseDetail() {
   const { id = '' } = useParams();
   const nav = useNavigate();
@@ -484,7 +491,7 @@ export function ReleaseDetail() {
                   <div className={d?.upc ? 'aq-kv-code' : undefined}><dt>UPC / EAN</dt><dd className="aq-code-line">{d?.upc ? <><span className="is-mono">{d.upc}</span><CopyButton text={d.upc} className="ui-btn is-xs is-white" /></> : <Empty>등록 전</Empty>}</dd></div>
                   <div><dt>장르</dt><dd>{genre || <Empty>입력 전</Empty>}</dd></div>
                   <div><dt>레이블</dt><dd>{d?.label || <Empty>입력 전</Empty>}</dd></div>
-                  {!coverOk && <div><dt>최근 수정</dt><dd>{localStamp(rel.updated_at || rel.created_at)}</dd></div>}
+                  {!coverOk && <div><dt>최근 수정</dt><dd><Stamp v={rel.updated_at || rel.created_at} /></dd></div>}
                 </dl>
                 <h2 className="subhead">앨범 소개</h2>
                 <p className="muted small break">{d?.notes || '등록된 소개가 없어요.'}</p>
@@ -509,7 +516,7 @@ export function ReleaseDetail() {
                   </div>
                   <dl className="aq-cover-meta">
                     {d?.coverName && <div><dt>파일</dt><dd className="break">{d.coverName}</dd></div>}
-                    <div><dt>최근 수정</dt><dd>{rel.updated_at ? localStamp(rel.updated_at) : localStamp(rel.created_at)}</dd></div>
+                    <div><dt>최근 수정</dt><dd><Stamp v={rel.updated_at || rel.created_at} /></dd></div>
                   </dl>
                 </div>
               )}
