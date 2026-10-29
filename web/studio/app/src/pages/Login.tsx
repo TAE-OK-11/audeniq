@@ -1,11 +1,11 @@
 import { Glyph } from '../components/Glyph';
 import { loginRedirect } from '../lib/loginRedirect';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from '../lib/router';
 import { useAuth } from '../api/auth';
 import { authErrorMessage } from '../api/errors';
 import { AUTO_FOCUS, AuthLayout, EMAIL_INPUT, EmailSuggest, FieldError, PasswordInput, focusFirst, isEmail, nextOnEnter } from '../components/AuthLayout';
-import { passkeySupported } from '../api/passkey';
+import { abortPasskeyCeremony, conditionalPasskeySupported, passkeySupported } from '../api/passkey';
 import { MOCK } from '../api/client';
 import { ApiError, messageForCode } from '../api/errors';
 import { SocialSignIn } from '../components/SocialSignIn';
@@ -29,8 +29,22 @@ export function Login() {
   const [wrongPw, setWrongPw] = useState(false);
   const [fieldErr, setFieldErr] = useState<{ email?: string; password?: string }>({});
   const [busy, setBusy] = useState(false);
+  const conditionalController = useRef<AbortController | null>(null);
   // Google·Apple에서 돌아왔는데 로그인하지 못한 경우
   useEffect(() => { const r = takeOAuthResult(); if (r.error) setError(messageForCode(r.error)); }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    conditionalController.current = controller;
+    if (!MOCK) void (async () => {
+      if (!await conditionalPasskeySupported() || controller.signal.aborted) return;
+      try {
+        await loginPasskey('', { conditional: true, signal: controller.signal });
+        if (!controller.signal.aborted) nav(from ?? '/', { replace: true });
+      } catch { /* Optional autofill; keep the existing modal button available. */ }
+    })();
+    return () => { controller.abort(); abortPasskeyCeremony(); };
+  }, [loginPasskey, nav, from]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -44,6 +58,8 @@ export function Login() {
     };
     setFieldErr(fe);
     if (fe.email || fe.password) { focusFirst([fe.email && 'loginEmail', fe.password && 'loginPassword']); return; }
+    conditionalController.current?.abort();
+    abortPasskeyCeremony();
     setBusy(true);
     // 비밀번호로 들어오면 바로 다음 화면에서 이 기기에 패스키를 만들지 묻는다 (pages/PasskeySetup)
     preparePasskeyHandoff(password, from ?? '/');
@@ -65,6 +81,8 @@ export function Login() {
     setError('');
     setFieldErr({});
     if (email.trim() && !isEmail(email)) { setFieldErr({ email: '이메일 주소를 확인해 주세요.' }); focusFirst(['loginEmail']); return; }
+    conditionalController.current?.abort();
+    abortPasskeyCeremony();
     setBusy(true);
     try {
       await loginPasskey(email.trim());

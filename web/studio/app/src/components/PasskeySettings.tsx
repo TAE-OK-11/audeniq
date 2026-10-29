@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useToast } from './Toast';
 import { useConfirm } from './Confirm';
-import { addPasskey, defaultPasskeyName, listPasskeys, passkeySupported, removePasskey, type Passkey } from '../api/passkey';
+import { abortPasskeyCeremony, addPasskey, defaultPasskeyName, listPasskeys, passkeySupported, removePasskey, type Passkey } from '../api/passkey';
 import { errorMessage } from '../api/errors';
 import { PasswordInput } from './AuthLayout';
 import { Reveal } from '../ui';
@@ -23,6 +23,7 @@ export function PasskeySettings() {
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  useEffect(() => () => abortPasskeyCeremony(), []);
   const supported = passkeySupported();
 
   useEffect(() => {

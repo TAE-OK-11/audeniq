@@ -1,3 +1,4 @@
+import type { LoginCeremonyOptions } from './passkey';
 // API 진입점 — 화면은 이 파일의 `api`만 쓴다.
 // `bun run build:edge`(또는 VITE_MOCK=false)로 빌드하면 실제 서버
 // (CloudFront + audeniq-studio-edge Function → 메인 서버)를 호출하고,
@@ -31,9 +32,9 @@ const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 export const api = {
   login: (email: string, password: string): Promise<User> => (MOCK ? mockApi.login(email, password) : remoteApi.login(email, password)),
-  loginPasskey: (email: string): Promise<User> => (MOCK
+  loginPasskey: (email: string, options?: LoginCeremonyOptions): Promise<User> => (MOCK
     ? Promise.reject(new ApiError('체험 모드에서는 패스키를 쓸 수 없어요.', 400, 'PASSKEY_UNSUPPORTED'))
-    : remoteApi.loginPasskey(email)),
+    : remoteApi.loginPasskey(email, options)),
   signup: (email: string, password: string): Promise<User> => (MOCK ? mockApi.signup(email, password) : remoteApi.signup(email, password)),
   logout: (): Promise<void> => (MOCK ? mockApi.logout() : remoteApi.logout()),
   me: (): Promise<User> => (MOCK ? mockApi.me() : remoteApi.me()),

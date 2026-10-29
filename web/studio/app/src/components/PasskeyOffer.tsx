@@ -2,9 +2,9 @@
 // Google·FIDO 패스키 안내: 방금 본인을 확인한 순간(비밀번호 로그인·가입·복구 직후)이 만들기를 권하기 가장 좋은 때이고,
 // 기기 창이 뜨기 전에 무엇을 하는지(지문·얼굴·화면 잠금) 먼저 말하고, 함께 쓰는 기기에서는 만들지 말라고 알려 준다.
 // 이미 패스키가 있거나, 기기가 지원하지 않거나, 최근에 '나중에'를 눌렀으면 묻지 않는다.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Glyph } from './Glyph';
-import { addPasskey, defaultPasskeyName, listPasskeys, passkeySupported } from '../api/passkey';
+import { abortPasskeyCeremony, addPasskey, defaultPasskeyName, listPasskeys, passkeySupported } from '../api/passkey';
 import { ApiError, errorMessage } from '../api/errors';
 import { readJSON, writeJSON } from '../lib/storage';
 
@@ -27,6 +27,7 @@ export async function shouldOfferPasskey(): Promise<boolean> {
 /** 로그인·가입 카드 안에 들어가는 '패스키 만들기' 단계. 만들었거나 건너뛰면 onDone */
 export function PasskeyOffer({ password, onDone }: { password: string; onDone: (created: boolean) => void }) {
   const [busy, setBusy] = useState(false);
+  useEffect(() => () => abortPasskeyCeremony(), []);
   const [error, setError] = useState('');
 
   const create = async () => {
