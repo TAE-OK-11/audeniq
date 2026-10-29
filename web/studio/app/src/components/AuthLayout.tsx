@@ -6,7 +6,11 @@ import { revealField } from '../lib/motion';
 
 /** 로그인·회원가입·계정 찾기 틀 — 스튜디오 머리와 같은 로고 줄 + 스튜디오 카드(ui-card)와 같은 면.
  *  카드 머리는 발매 상세 '관리' 카드처럼 아이콘 칸 + 제목 + 설명. */
-export function AuthLayout({ title, sub, icon = 'user', children }: { title: string; sub: string; icon?: GlyphName; children: ReactNode }) {
+export function AuthLayout({ title, sub, icon = 'user', step, children }: {
+  title: string; sub: string; icon?: GlyphName; children: ReactNode;
+  /** 여러 단계로 나눈 흐름(회원가입)이면 카드 맨 위에 몇 번째 단계인지 */
+  step?: { at: number; of: number; onBack?: () => void };
+}) {
   return (
     // 로그인·가입 화면에도 본문 영역(main)을 — 화면 읽기 프로그램이 바로 건너갈 곳이 없었다
     <main className="auth-page">
@@ -17,10 +21,19 @@ export function AuthLayout({ title, sub, icon = 'user', children }: { title: str
       </Link>
       <div className="auth-split">
         <div className="auth-card ui-card">
+          {step && (
+            <div className="aq-auth-steps" role="progressbar" aria-label="가입 단계" aria-valuemin={1} aria-valuemax={step.of} aria-valuenow={step.at}>
+              {step.onBack && (
+                <button type="button" className="aq-auth-back" onClick={step.onBack} aria-label="이전 단계로"><Glyph name="arrow-left" size={18} /></button>
+              )}
+              {Array.from({ length: step.of }, (_, i) => <span key={i} className={i < step.at ? 'is-on' : undefined} />)}
+              <small>{step.at} / {step.of}</small>
+            </div>
+          )}
           <header className="aq-auth-head">
             <IconTile size="lg"><Glyph name={icon} size={22} /></IconTile>
             <h1>{title}</h1>
-            <p className="auth-sub">{sub}</p>
+            {sub && <p className="auth-sub">{sub}</p>}
           </header>
           {children}
         </div>

@@ -4,11 +4,11 @@
 import { passkeySupported } from '../api/passkey';
 import { MOCK } from '../api/client';
 
-let pending: { password: string; next: string } | null = null;
+let pending: { password: string; next: string; signup?: boolean } | null = null;
 
-/** 로그인·가입을 보내기 직전에 — 패스키를 쓸 수 있는 기기에서만 */
-export function preparePasskeyHandoff(password: string, next: string) {
-  pending = !MOCK && passkeySupported() ? { password, next } : null;
+/** 로그인·가입을 보내기 직전에 — 패스키를 쓸 수 있는 기기에서만. signup이면 패스키 화면이 가입의 마지막 단계로 보인다 */
+export function preparePasskeyHandoff(password: string, next: string, signup = false) {
+  pending = !MOCK && passkeySupported() ? { password, next, signup } : null;
 }
 export const hasPasskeyHandoff = () => pending !== null;
 export const peekPasskeyHandoff = () => pending;
