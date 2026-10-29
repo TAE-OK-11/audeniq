@@ -61,6 +61,20 @@ describe('useAsync 캐시', () => {
     expect(out).not.toContain('ready:org1-data');
   });
 
+  it('같은 key를 쓰는 다른 곳이 새로 받으면 그 데이터로 바뀐다', async () => {
+    setOrgId('org-1');
+    const menu: string[] = [];
+    const unmountMenu = await mount(<Probe fn={() => Promise.resolve('old')} k="list" out={menu} />);
+    expect(menu.at(-1)).toBe('ready:old');
+    // 다른 화면이 시간이 지난 뒤 같은 목록을 새로 받는다
+    const now = Date.now();
+    vi.spyOn(Date, 'now').mockReturnValue(now + FRESH_MS + 1);
+    (await mount(<Probe fn={() => Promise.resolve('new')} k="list" out={[]} />))();
+    vi.restoreAllMocks();
+    expect(menu.at(-1)).toBe('ready:new');
+    unmountMenu();
+  });
+
   it('key가 없으면 예전처럼 매번 새로 받는다', async () => {
     const fn = () => Promise.resolve('x');
     (await mount(<Probe fn={fn} out={[]} />))();
@@ -95,6 +109,17 @@ describe('req', () => {
     const out: string[] = [];
     (await mount(<Probe fn={() => Promise.resolve('fresh')} k="list" out={out} />))();
     expect(out[0]).toBe('loading:-');
+    setOrgId('');
+  });
+
+  it('CSRF 토큰 받기는 화면 데이터 캐시를 비우지 않는다', async () => {
+    setOrgId('org-1');
+    (await mount(<Probe fn={() => Promise.resolve('kept')} k="list" out={[]} />))();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ csrf_token: 't' }))));
+    await req('/api/auth/csrf', { method: 'POST' });
+    const out: string[] = [];
+    (await mount(<Probe fn={() => Promise.resolve('other')} k="list" out={out} />))();
+    expect(out[0]).toBe('ready:kept');
     setOrgId('');
   });
 });

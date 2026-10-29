@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { Link, savedScroll, useLocation, useNavigate, useNavigationPending } from '../lib/router';
 import { useAuth } from '../api/auth';
 import { useProfile } from '../store/profile';
-import { useUnreadCount } from '../store/support';
+import { useNotices, useUnreadCount } from '../store/support';
 import { isPaymentRegistered, usePayment } from '../store/payment';
 import { useDocs } from '../store/docs';
 import { api } from '../api/client';
@@ -12,7 +12,7 @@ import { useConfirm } from './Confirm';
 import { useToast } from './Toast';
 import { LIVE_NOTICE_EVENT } from '../lib/liveEvents';
 import { prefetchCommonRoutes, prefetchRoute } from '../routes';
-import { useAsync } from '../hooks/useAsync';
+import { useAsync, useCacheClears } from '../hooks/useAsync';
 import { Glyph, type GlyphName } from './Glyph';
 
 // 라우트 변경 시 view 진입 애니메이션만 재시작 (children remount 없음 → useEffect/API 재실행 방지)
@@ -109,10 +109,25 @@ export function Layout({ children }: { children: ReactNode }) {
   const unread = useUnreadCount();
   const payment = usePayment();
   const docs = useDocs();
-  // 메뉴·왼쪽 메뉴의 '보완·작성 중' 개수 — 화면을 옮길 때마다(메뉴를 열 때도) 새로 받는다.
-  // 화면들과 같은 발매 목록 캐시('releases')를 쓴다 — 받아 둔 목록으로 바로 세고, 화면이 같은 목록을 동시에 받으면 요청이 하나로 합쳐진다
+  // 메뉴·왼쪽 메뉴의 '보완·작성 중' 개수 — 화면을 옮길 때마다 받지 않고, 바뀌었을 수 있을 때만 새로 받는다:
+  // 무언가 바꾼 뒤(캐시를 비움), 새 알림이 왔을 때(담당자 처리), 다른 탭·앱에서 돌아왔을 때(15초에 한 번), 메뉴를 열 때.
+  // 화면들과 같은 발매 목록 캐시('releases')를 쓴다 — 발매 목록·홈 화면이 받은 목록이 그대로 개수에 반영된다
   const [menuOpen, setMenuOpen] = useState(false);
-  const { data: rels } = useAsync(() => api.listReleases(), [menuOpen, loc.pathname], { key: 'releases' });
+  const cacheClears = useCacheClears();
+  const notices = useNotices();
+  const latestNotice = `${notices.length}:${notices[0]?.id ?? ''}:${notices.at(-1)?.id ?? ''}`;
+  const [returned, setReturned] = useState(0);
+  useEffect(() => {
+    let last = Date.now();
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible' || Date.now() - last < 15_000) return;
+      last = Date.now();
+      setReturned(n => n + 1);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
+  const { data: rels } = useAsync(() => api.listReleases(), [menuOpen, cacheClears, latestNotice, returned], { key: 'releases' });
   const relCounts = useMemo(() => (rels ? {
     needs: rels.filter(r => r.status === 'needs').length,
     drafts: rels.filter(r => r.status === 'draft').length,

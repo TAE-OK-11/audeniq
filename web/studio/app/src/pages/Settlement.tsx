@@ -1,14 +1,15 @@
 // 정산·지급 — hero + 탭 구조의 단순화된 레이아웃
 import { Link } from '../lib/router';
 import { SplitsReceived } from '../components/SplitsReceived';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal, useModalClose } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { BankLogo } from '../components/BankLogo';
 import { PaymentSetupModal } from '../components/PaymentSetupModal';
 import { isPaymentRegistered, usePayment } from '../store/payment';
-import { balance, payoutFee, payoutsStore, statementsNextStore, statementsStore, useBalance, type Payout, type Statement } from '../store/settlement';
+import { balance, financeListsLoaded, payoutFee, payoutsStore, statementsNextStore, statementsStore, useBalance, type Payout, type Statement } from '../store/settlement';
+import { SkeletonRows } from '../components/Skeleton';
 import { MOCK } from '../lib/mode';
 import * as portal from '../api/portal';
 import { errorMessage } from '../api/errors';
@@ -109,6 +110,10 @@ export function Settlement() {
   const statements = statementsStore.use();
   const payouts = payoutsStore.use();
   const statementsNext = statementsNextStore.use();
+  // 내역 목록은 이 화면을 열 때 받는다 (로그인할 때는 잔액 요약만) — 받기 전에는 '없어요' 대신 자리표시
+  const listsLoaded = financeListsLoaded.use();
+  const listsPending = !MOCK && !listsLoaded;
+  useEffect(() => { if (!MOCK) void refreshFinance(); }, []);
   const [loadingMore, setLoadingMore] = useState(false);
   const [exporting, setExporting] = useState(false);
   const loadMoreStatements = async () => {
@@ -326,7 +331,7 @@ export function Settlement() {
               </button>
             </div>
           )}
-          {orderedStatements.length ? (
+          {listsPending ? <SkeletonRows count={3} /> : orderedStatements.length ? (
             <div className="aq-catalog-cards aq-stagger">
               {/* 통장처럼 날짜별로 — 들어온 정산금은 +, 운영팀이 거둬 간 금액은 − */}
               {statementDays.map(([d, rows]) => (
@@ -363,7 +368,7 @@ export function Settlement() {
         </div>
       ) : (
         <div id="payoutList" className="ui-tab-panel" key="po">
-          {payouts.length ? (
+          {listsPending ? <SkeletonRows count={3} /> : payouts.length ? (
             <div className="aq-catalog-cards aq-stagger">
               {(MOCK ? [...payouts].reverse() : payouts).map(p => (
                 <button type="button" key={p.id} className="ui-row aq-statement-card" onClick={() => setDetail({ kind: 'payout', id: p.id })}>

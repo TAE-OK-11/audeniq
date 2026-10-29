@@ -63,7 +63,8 @@ const inflight = new Map<string, Promise<unknown>>();
  */
 export function req<T>(path: string, opts: ReqOptions = {}): Promise<T> {
   const method = opts.method ?? 'GET';
-  if (method !== 'GET') return send<T>(path, opts).finally(clearAsyncCache);
+  // 바꾸는 요청이 끝나면 화면 데이터 캐시를 비운다 — CSRF 토큰 받기는 아무것도 바꾸지 않으니 빼고
+  if (method !== 'GET') return path === CSRF_PATH ? send<T>(path, opts) : send<T>(path, opts).finally(clearAsyncCache);
   if (opts.signal) return send<T>(path, opts);
   // 401·서버 오류를 어떻게 알릴지가 다른 요청은 따로 보낸다
   const k = `${path}|${opts.quiet401 ? 1 : 0}${opts.quietServer ? 1 : 0}${opts.timeoutMs ?? ''}`;

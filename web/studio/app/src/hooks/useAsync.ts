@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { errorMessage } from '../api/errors';
 import { orgId } from '../api/http';
-import { cacheFresh, cacheGet, cacheHas, cacheSet } from '../lib/asyncCache';
+import { cacheClears, cacheFresh, cacheGet, cacheHas, cacheSet, cacheSubscribe, onCacheClear } from '../lib/asyncCache';
 
 export interface AsyncState<T> {
   data: T | undefined;
@@ -48,6 +48,21 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[], opts: { key?:
     return () => { alive = false; };
   }, [...deps, key, tick]);
 
+  // 같은 key를 쓰는 다른 곳이 새로 받으면 이곳도 그 데이터로 (예: 발매 목록 화면이 받은 목록 → 왼쪽 메뉴 개수)
+  useEffect(() => {
+    if (!key) return;
+    return cacheSubscribe(key, () => {
+      setData(cacheGet<T>(key));
+      setLoading(false);
+      setError('');
+    });
+  }, [key]);
+
   const reload = useCallback(() => setTick(t => t + 1), []);
   return { data, error, loading, reload };
+}
+
+/** 화면 데이터 캐시를 비운 횟수 — 무언가 바뀐 뒤(GET이 아닌 요청 성공·작업 공간 전환) 다시 받을 곳의 deps에 넣는다 */
+export function useCacheClears(): number {
+  return useSyncExternalStore(onCacheClear, cacheClears, cacheClears);
 }

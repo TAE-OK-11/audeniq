@@ -306,17 +306,23 @@ export async function fetchStatementsPage(before?: string): Promise<{ items: Sta
 /** 정산 내역 전체를 CSV로 받는다 */
 export const downloadStatementsCsv = () => downloadFile(orgPath('/finance/statements.csv'), 'statements.csv');
 
+/** 잔액 요약만 — 홈 화면의 '받을 수 있는 금액'에 쓴다 */
+export async function fetchFinanceSummary(): Promise<FinanceSummary> {
+  const s = await req<{ payable: string; pending: string; available: string; held?: string; minimum_payout: string; account_registered: boolean }>(orgPath('/finance/summary'));
+  return {
+    payable: Number(s.payable), pending: Number(s.pending), available: Number(s.available), held: Number(s.held ?? 0),
+    minimum: Number(s.minimum_payout), accountRegistered: s.account_registered,
+  };
+}
+
 export async function fetchFinance(): Promise<{ summary: FinanceSummary; statements: Statement[]; statementsNext: string | null; payouts: Payout[] }> {
-  const [s, st, po] = await Promise.all([
-    req<{ payable: string; pending: string; available: string; held?: string; minimum_payout: string; account_registered: boolean }>(orgPath('/finance/summary')),
+  const [summary, st, po] = await Promise.all([
+    fetchFinanceSummary(),
     fetchStatementsPage(),
     req<{ items: { id: string; amount: string; note: string; status: string; order_status: string | null; created_at: string; fee: string | null; net: string | null; cancellable: boolean }[] }>(orgPath('/finance/payouts')),
   ]);
   return {
-    summary: {
-      payable: Number(s.payable), pending: Number(s.pending), available: Number(s.available), held: Number(s.held ?? 0),
-      minimum: Number(s.minimum_payout), accountRegistered: s.account_registered,
-    },
+    summary,
     statements: st.items,
     statementsNext: st.next,
     payouts: po.items.map(p => ({
