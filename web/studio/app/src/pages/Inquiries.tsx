@@ -524,7 +524,7 @@ export function Inquiries() {
       )}
 
       {openTicket && (
-        <Modal title={splitSubject(openTicket.subject).title} onClose={() => setOpenId(null)}>
+        <Modal title={splitSubject(openTicket.subject).title} onClose={() => setOpenId(null)} modalClass={MOCK ? undefined : 'aq-chat-mode'}>
           <p className="aq-ticket-meta">
             {splitSubject(openTicket.subject).tag && <Badge tone="blue">{splitSubject(openTicket.subject).tag}</Badge>}
             <span>{[openTicket.category, niceDate(openTicket.created), openTicket.releaseTitle].filter(Boolean).join(' · ')}</span>
