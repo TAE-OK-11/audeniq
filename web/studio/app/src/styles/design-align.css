@@ -1836,3 +1836,21 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
   @media(hover:hover){.aq-settings>.aq-set-profile:hover{background:var(--aq-blue-100)}}
   .aq-settings>.aq-set-profile .aq-profile-avatar{width:60px!important;height:60px!important;flex-basis:60px;font-size:26px!important}
 }
+
+/* 휴대폰 전체 메뉴 — 맨 위 내 계정 줄도 아래 묶음과 같은 옅은 파랑 카드로,
+   로그아웃은 회색 알약 하나로 떠 있지 않게 카드 한 줄(빨간 글자, 계정 정보 화면과 같은 모양)로, 약관 링크는 그 아래 가운데 작은 글자로 */
+@media(max-width:760px){
+  #portalNav .aq-nav-me-row{padding:14px!important;border-radius:var(--aq-r-2xl)!important;background:var(--aq-surface)!important}
+  #portalNav .aq-nav-me-row:hover,#portalNav .aq-nav-me.is-active .aq-nav-me-row{background:var(--aq-blue-100)!important}
+  #portalNav .aq-nav-foot{flex-direction:column;align-items:stretch!important;gap:14px;padding:0!important}
+  #portalNav .aq-nav-foot .aq-logout{order:-1;display:flex;align-items:center;width:100%!important;min-height:56px!important;padding:0 20px!important;
+    border-radius:var(--aq-r-2xl)!important;background:var(--aq-surface)!important;color:var(--aq-red-600)!important;font-size:var(--aq-fs-lg)!important;font-weight:600!important;text-align:left}
+  #portalNav .aq-nav-foot .aq-logout:hover{background:var(--aq-red-50)!important}
+  #portalNav .aq-nav-foot .aq-nav-legal{justify-content:center;column-gap:14px}
+}
+
+/* 알림 목록 — 옅은 파랑 카드 안에 흰 줄 (안 읽은 알림은 파란 점, 읽은 알림은 글자만 옅게) */
+.aq-notice-list{padding:8px}
+.aq-notice-list .aq-notice-card{background:#fff}
+@media(hover:hover){.aq-notice-list .aq-notice-card:hover{background:var(--aq-blue-50)}}
+.aq-notice-list .aq-notice-card.is-read .aq-notice-symbol{background:var(--aq-gray-50)}

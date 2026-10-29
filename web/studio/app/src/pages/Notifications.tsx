@@ -133,7 +133,9 @@ export function Notifications() {
       </div>
 
       {shown.length ? (
-        <div className="aq-catalog-cards aq-stagger" key={filter}>
+        // 홈 '내 발매'처럼 옅은 파랑 카드 하나에 흰 줄로 — 알림마다 따로 카드가 쌓이면 화면이 덩어리져 보였다
+        <div className="ui-card aq-notice-list">
+        <div className="ui-list aq-stagger" key={filter}>
           {shown.map(n => (
             <button
               key={n.id} type="button"
@@ -153,6 +155,7 @@ export function Notifications() {
               </span>
             </button>
           ))}
+        </div>
         </div>
       ) : (
         <div className="ui-empty">
