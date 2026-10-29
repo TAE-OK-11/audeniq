@@ -24,6 +24,16 @@ export function strength(pw: string): { score: number; label: string } {
   return { score, label };
 }
 
+/** 휴대폰 번호를 입력하는 대로 010-1234-5678 꼴로 — 숫자만 남겨 11자리까지 */
+export function formatPhone(v: string): string {
+  const d = v.replace(/\D/g, '').slice(0, 11);
+  if (d.length < 4) return d;
+  if (d.length < 8) return `${d.slice(0, 3)}-${d.slice(3)}`;
+  return `${d.slice(0, 3)}-${d.slice(3, d.length - 4)}-${d.slice(-4)}`;
+}
+/** 010·011·016~019로 시작하는 10~11자리 휴대폰 번호 */
+export const isPhone = (v: string) => /^01[016789]\d{7,8}$/.test(v.replace(/\D/g, ''));
+
 export function Signup() {
   const { signup } = useAuth();
   const nav = useNavigate();
@@ -32,6 +42,8 @@ export function Signup() {
   const [back, setBack] = useState(false);
   const steps = !MOCK && passkeySupported() ? 3 : 2;
   const [name, setName] = useState('');
+  // 전화번호 — 지금은 입력 칸만 있고 서버로 보내지 않는다(저장할 곳이 아직 없다). 저장을 붙일 때 개인정보 안내 항목도 함께 바꾼다
+  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -44,7 +56,7 @@ export function Signup() {
   // 1단계에서 Google·Apple을 눌렀는데 약관에 아직 동의하지 않았으면 그 자리에 동의 칸을 보여 준다
   const [socialTerms, setSocialTerms] = useState(false);
   const [error, setError] = useState('');
-  type Fe = { name?: string; email?: string; password?: string; confirm?: string; terms?: string };
+  type Fe = { name?: string; phone?: string; email?: string; password?: string; confirm?: string; terms?: string };
   const [fe, setFe] = useState<Fe>({});
   const clear = (k: keyof Fe) => { if (fe[k]) setFe(f => ({ ...f, [k]: undefined })); };
   const [busy, setBusy] = useState(false);
@@ -88,10 +100,11 @@ export function Signup() {
     setTaken(false);
     const n: Fe = {
       name: !name.trim() ? '활동명을 입력해 주세요.' : undefined,
+      phone: !phone ? '전화번호를 입력해 주세요.' : !isPhone(phone) ? '휴대폰 번호를 확인해 주세요.' : undefined,
       terms: !agreeTerms ? '이용약관에 동의해 주세요.' : undefined,
     };
     setFe(n);
-    if (n.name || n.terms) { focusFirst([n.name && 'suName', n.terms && 'suTerms']); return; }
+    if (n.name || n.phone || n.terms) { focusFirst([n.name && 'suName', n.phone && 'suPhone', n.terms && 'suTerms']); return; }
     setBusy(true);
     // 가입 직후 이 기기에 패스키를 만들지 묻는다 — 다음 로그인부터 비밀번호 없이 (pages/PasskeySetup)
     preparePasskeyHandoff(password, '/', true);
@@ -118,7 +131,7 @@ export function Signup() {
       <label className="ui-check auth-terms">
         <input id="suTerms" type="checkbox" checked={agreeTerms} aria-invalid={!!fe.terms} aria-describedby={fe.terms ? 'suTermsErr' : undefined}
           onChange={e => { setAgreeTerms(e.target.checked); clear('terms'); }} />
-        <span><a href="/terms" target="_blank" rel="noopener" className="aq-inline-link">AUDENIQ 음원 배급 서비스 이용약관</a>에 동의합니다. <em className="auth-req">필수</em></span>
+        <span><a href="/terms" target="_blank" rel="noopener" className="aq-inline-link">AUDENIQ 이용약관</a>에 동의해요. <em className="auth-req">필수</em></span>
       </label>
       <FieldError id="suTermsErr">{fe.terms}</FieldError>
     </div>
@@ -128,7 +141,7 @@ export function Signup() {
     <AuthLayout
       icon={step === 1 ? 'user' : 'music'} step={{ at: step, of: steps }}
       title={step === 1 ? 'AUDENIQ과 함께 시작해요.' : '어떤 이름으로 활동하나요?'}
-      sub={step === 1 ? '먼저 로그인에 쓸 이메일과 비밀번호를 정해 주세요.' : '음원 플랫폼에 보일 아티스트 이름이에요. 나중에 바꿀 수 있어요.'}
+      sub={step === 1 ? '먼저 로그인에 쓸 이메일과 비밀번호를 정해 주세요.' : ''}
     >
       {error && (
         <div className="ui-callout is-danger aq-shake" role="alert" key={error}>
@@ -202,17 +215,27 @@ export function Signup() {
             {/* 활동명은 실명이 아니라 플랫폼에 보일 이름 — 자동 완성이 실명을 채우지 않게 nickname */}
             <label htmlFor="suName">활동명</label>
             <input
-              id="suName" type="text" required autoComplete="nickname" maxLength={120} enterKeyHint="done"
-              placeholder="플랫폼에 보일 아티스트 이름" aria-invalid={!!fe.name} aria-describedby={fe.name ? 'suNameErr' : undefined}
-              value={name} onChange={e => { setName(e.target.value); clear('name'); }}
+              id="suName" type="text" required autoComplete="nickname" maxLength={120} enterKeyHint="next"
+              placeholder="음원 플랫폼에 보일 이름 · 나중에 바꿀 수 있어요" aria-invalid={!!fe.name} aria-describedby={fe.name ? 'suNameErr' : undefined}
+              value={name} onChange={e => { setName(e.target.value); clear('name'); }} onKeyDown={nextOnEnter('suPhone')}
             />
             <FieldError id="suNameErr">{fe.name}</FieldError>
+          </div>
+          <div className="ui-field">
+            <label htmlFor="suPhone">휴대폰 번호</label>
+            <input
+              id="suPhone" type="tel" inputMode="numeric" required autoComplete="tel-national" enterKeyHint="done" maxLength={13}
+              placeholder="010-1234-5678" aria-invalid={!!fe.phone} aria-describedby={fe.phone ? 'suPhoneErr' : undefined}
+              value={phone} onChange={e => { setPhone(formatPhone(e.target.value)); clear('phone'); }}
+            />
+            <FieldError id="suPhoneErr">{fe.phone}</FieldError>
           </div>
           {terms}
           {/* 개인정보 안내는 첫 줄만 보이고 눌러서 펼친다 — 다섯 줄이 카드를 길게 늘였다. 내용은 그대로 */}
           <details className="auth-privacy">
-            <summary>회원가입 정보(이메일·비밀번호·활동명)는 계정 생성과 서비스 제공을 위해 처리해요. <span>자세히</span></summary>
+            <summary>가입 정보는 계정 생성과 서비스 제공에 써요. <span>자세히</span></summary>
             <p>
+              회원가입 정보(이메일·비밀번호·활동명)는 요청한 계정 생성과 서비스 제공을 위해 처리해요.
               계정정보는 원칙적으로 탈퇴 또는 처리 목적 종료 시까지 보관하며, 법정 보존자료는 별도로 관리해요.
               자세한 항목·보유기간과 권리 행사방법은 <a href="/privacy" target="_blank" rel="noopener" className="aq-inline-link">개인정보 처리방침</a>에서 확인해 주세요.
               선택 기능에 필요한 별도 동의는 해당 기능을 이용할 때 안내해요.

@@ -30,7 +30,7 @@ export function AuthLayout({ title, sub, icon = 'user', step, children }: {
           <header className="aq-auth-head">
             <IconTile size="lg"><Glyph name={icon} size={22} /></IconTile>
             <h1>{title}</h1>
-            <p className="auth-sub">{sub}</p>
+            {sub && <p className="auth-sub">{sub}</p>}
           </header>
           {children}
         </div>
