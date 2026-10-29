@@ -9,7 +9,7 @@ import { revealField } from '../lib/motion';
 export function AuthLayout({ title, sub, icon = 'user', step, children }: {
   title: string; sub: string; icon?: GlyphName; children: ReactNode;
   /** 여러 단계로 나눈 흐름(회원가입)이면 카드 맨 위에 몇 번째 단계인지 */
-  step?: { at: number; of: number };
+  step?: { at: number; of: number; onBack?: () => void };
 }) {
   return (
     // 로그인·가입 화면에도 본문 영역(main)을 — 화면 읽기 프로그램이 바로 건너갈 곳이 없었다
@@ -23,6 +23,9 @@ export function AuthLayout({ title, sub, icon = 'user', step, children }: {
         <div className="auth-card ui-card">
           {step && (
             <div className="aq-auth-steps" role="progressbar" aria-label="가입 단계" aria-valuemin={1} aria-valuemax={step.of} aria-valuenow={step.at}>
+              {step.onBack && (
+                <button type="button" className="aq-auth-back" onClick={step.onBack} aria-label="이전 단계로"><Glyph name="arrow-left" size={18} /></button>
+              )}
               {Array.from({ length: step.of }, (_, i) => <span key={i} className={i < step.at ? 'is-on' : undefined} />)}
               <small>{step.at} / {step.of}</small>
             </div>

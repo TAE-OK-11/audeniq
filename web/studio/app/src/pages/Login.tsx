@@ -73,7 +73,7 @@ export function Login() {
     }
   }
 
-  const passkeyFirst = !MOCK && passkeySupported();
+  const canPasskey = !MOCK && passkeySupported();
   const errorBox = error && (
     <div className="ui-callout is-danger aq-shake" role="alert" key={error}>
       {error}
@@ -81,25 +81,15 @@ export function Login() {
     </div>
   );
 
-  // 패스키를 쓸 수 있는 기기면 패스키가 첫 번째 길 — 큰 버튼 하나로 바로, 이메일·비밀번호는 그 아래 '또는'
+  // 이메일·비밀번호가 기본 길 — 패스키는 그 아래 '또는' 다음 옅은 버튼 하나로 조용히 (화면 전체를 패스키로 밀면 낯설고 무거웠다)
   return (
-    <AuthLayout icon={passkeyFirst ? 'key' : 'lock'} title="다시 만나서 반가워요." sub={passkeyFirst ? '패스키가 있으면 비밀번호 없이 바로 들어가요.' : '아티스트 포털에 로그인해 주세요.'}>
+    <AuthLayout icon="lock" title="다시 만나서 반가워요." sub="아티스트 포털에 로그인해 주세요.">
       {errorBox}
-      {passkeyFirst && (
-        <div className="aq-passkey-first">
-          <button type="button" className={`ui-btn is-primary auth-submit aq-passkey-main${busy ? ' is-busy' : ''}`} onClick={() => void withPasskey()} disabled={busy}>
-            <Glyph name="key" size={20} />
-            <span>패스키로 로그인</span>
-          </button>
-          <p className="auth-fine">지문·얼굴·화면 잠금(PIN)으로 확인해요.</p>
-          <div className="aq-social-divider" role="separator"><span>또는 이메일로 로그인</span></div>
-        </div>
-      )}
       <form onSubmit={submit} noValidate>
         <div className="ui-field">
           <label htmlFor="loginEmail">이메일</label>
           <input
-            id="loginEmail" {...EMAIL_INPUT} required autoComplete="username webauthn" autoFocus={AUTO_FOCUS && !email && !passkeyFirst}
+            id="loginEmail" {...EMAIL_INPUT} required autoComplete="username webauthn" autoFocus={AUTO_FOCUS && !email}
             placeholder="name@example.com" aria-invalid={!!fieldErr.email} aria-describedby={fieldErr.email ? 'loginEmailErr' : undefined}
             value={email} onChange={e => { setEmail(e.target.value); setEmailDone(false); if (fieldErr.email) setFieldErr(f => ({ ...f, email: undefined })); }}
             onBlur={() => setEmailDone(true)} onKeyDown={nextOnEnter('loginPassword')}
@@ -118,11 +108,19 @@ export function Login() {
           />
           <FieldError id="loginPasswordErr">{fieldErr.password}</FieldError>
         </div>
-        {/* 패스키가 첫 길이면 비밀번호 로그인은 옅은 버튼 — 파란 버튼은 한 화면에 하나 */}
-        <button className={`ui-btn ${passkeyFirst ? 'is-soft' : 'is-primary'} auth-submit${busy ? ' is-busy' : ''}`} type="submit" disabled={busy} aria-busy={busy}>
-          {busy ? '들어가는 중' : passkeyFirst ? '비밀번호로 로그인' : '로그인'}
+        <button className={`ui-btn is-primary auth-submit${busy ? ' is-busy' : ''}`} type="submit" disabled={busy} aria-busy={busy}>
+          {busy ? '들어가는 중' : '로그인'}
         </button>
       </form>
+      {canPasskey && (
+        <div className="aq-passkey-alt">
+          <div className="aq-social-divider" role="separator"><span>또는</span></div>
+          <button type="button" className="ui-btn is-soft auth-submit" onClick={() => void withPasskey()} disabled={busy}>
+            <Glyph name="key" size={18} />
+            <span>패스키로 로그인</span>
+          </button>
+        </div>
+      )}
       <SocialSignIn onError={setError} returnTo={from ?? undefined} />
       <div className="auth-links">
         <Link to="/find-account">이메일 · 비밀번호 찾기</Link>

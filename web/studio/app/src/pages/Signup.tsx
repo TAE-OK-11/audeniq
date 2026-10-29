@@ -139,9 +139,9 @@ export function Signup() {
 
   return (
     <AuthLayout
-      icon={step === 1 ? 'user' : 'music'} step={{ at: step, of: steps }}
+      icon={step === 1 ? 'user' : 'music'} step={{ at: step, of: steps, onBack: step === 2 && !busy ? () => go(1) : undefined }}
       title={step === 1 ? 'AUDENIQ과 함께 시작해요.' : '어떤 이름으로 활동하나요?'}
-      sub={step === 1 ? '먼저 로그인에 쓸 이메일과 비밀번호를 정해 주세요.' : ''}
+      sub=''
     >
       {error && (
         <div className="ui-callout is-danger aq-shake" role="alert" key={error}>
@@ -213,7 +213,7 @@ export function Signup() {
             <label htmlFor="suName">활동명</label>
             <input
               id="suName" type="text" required autoComplete="nickname" maxLength={120} enterKeyHint="next"
-              placeholder="음원 플랫폼에 보일 이름 · 나중에 바꿀 수 있어요" aria-invalid={!!fe.name} aria-describedby={fe.name ? 'suNameErr' : undefined}
+              placeholder="음원 플랫폼에 보일 이름" aria-invalid={!!fe.name} aria-describedby={fe.name ? 'suNameErr' : undefined}
               value={name} onChange={e => { setName(e.target.value); clear('name'); }} onKeyDown={nextOnEnter('suPhone')}
             />
             <FieldError id="suNameErr">{fe.name}</FieldError>
@@ -241,10 +241,9 @@ export function Signup() {
           <button className={`ui-btn is-primary auth-submit${busy ? ' is-busy' : ''}`} type="submit" disabled={busy} aria-busy={busy}>
             {busy ? '계정을 만드는 중' : steps === 3 ? '계정 만들고 다음' : '가입 완료'}
           </button>
-          <button type="button" className="ui-btn is-text auth-later" onClick={() => go(1)} disabled={busy}>이전으로</button>
         </form>
       )}
-      {/* 로그인으로 가는 길은 첫 단계에만 — 2단계에는 '이전으로'가 있다 */}
+      {/* 로그인으로 가는 길은 첫 단계에만 — 2단계에는 위 단계 막대 옆 '이전' 화살표가 있다 */}
       {step === 1 && (
         <div className="auth-links">
           <span>이미 계정이 있으신가요?</span>

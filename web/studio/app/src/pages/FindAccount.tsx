@@ -41,27 +41,27 @@ export function FindAccount() {
   };
 
   return (
-    <AuthLayout icon="info" title="계정을 찾고 있나요?" sub={canPasskey ? '패스키가 있으면 이메일·비밀번호 없이 바로 들어갈 수 있어요.' : '계정 찾기와 비밀번호 재설정은 고객지원에서 안내해 드려요.'}>
+    <AuthLayout icon="info" title="계정을 찾고 있나요?" sub="계정 찾기와 비밀번호 재설정은 고객지원에서 안내해 드려요.">
       {error && <div className="ui-callout is-danger aq-shake" role="alert" key={error}>{error}</div>}
-      {canPasskey && (
-        <div className="aq-passkey-first">
-          <button type="button" className={`ui-btn is-primary auth-submit aq-passkey-main${busy ? ' is-busy' : ''}`} onClick={() => void withPasskey()} disabled={busy}>
-            <Glyph name="key" size={20} />
-            <span>패스키로 로그인</span>
-          </button>
-          <p className="auth-fine">이 기기나 휴대폰에 저장한 패스키를 고르면 돼요.</p>
-          <div className="aq-social-divider" role="separator"><span>패스키가 없다면</span></div>
-        </div>
-      )}
       <Segmented
         tabs className="aq-seg-tabs" label="계정 찾기 구분" value={tab} onChange={setTab}
         options={[{ value: 'id', label: '이메일 찾기' }, { value: 'password', label: '비밀번호 찾기' }] as const}
       />
       <div className="aq-find-panel" role="tabpanel">
         <p className="aq-muted">{tab === 'id' ? '가입한 이메일이 기억나지 않으면' : '비밀번호를 재설정해야 한다면'} 고객지원에 문의해 주세요. 아직은 자동으로 찾아 드리지 못해요.</p>
-        {/* 메일 제목·본문을 미리 채워 두어 무엇을 적어야 할지 고민하지 않게. 패스키가 먼저면 옅은 버튼 */}
-        <a href={supportMail(tab)} className={`ui-btn ${canPasskey ? 'is-soft' : 'is-primary'} auth-submit`}>고객지원에 이메일 보내기</a>
+        {/* 메일 제목·본문을 미리 채워 두어 무엇을 적어야 할지 고민하지 않게 */}
+        <a href={supportMail(tab)} className="ui-btn is-primary auth-submit">고객지원에 이메일 보내기</a>
       </div>
+      {/* 이 기기에 패스키가 있으면 이메일·비밀번호 없이 바로 — 고객지원 아래 '또는'으로 조용히 */}
+      {canPasskey && (
+        <div className="aq-passkey-alt">
+          <div className="aq-social-divider" role="separator"><span>또는</span></div>
+          <button type="button" className={`ui-btn is-soft auth-submit${busy ? ' is-busy' : ''}`} onClick={() => void withPasskey()} disabled={busy}>
+            <Glyph name="key" size={18} />
+            <span>패스키로 바로 로그인</span>
+          </button>
+        </div>
+      )}
 
       <div className="auth-links">
         <Link to="/login">로그인</Link>
