@@ -166,22 +166,19 @@ export function Signup() {
             {/* 조건은 이름표 옆에 늘 보이게 — 칸 안 안내 글자는 치기 시작하면 사라졌다. 채우면 초록 체크 */}
             <label htmlFor="suPassword">
               비밀번호
-              <span className={`aq-pw-rule${longEnough ? ' is-ok' : ''}`} id="suPwRule">{longEnough && <CheckIcon size={12} />}{PASSWORD_MIN}자 이상</span>
+              {/* 길이를 채우면 같은 자리에 강도를 — 칸 아래 강도 막대가 생기며 카드가 늘어나지 않게 */}
+              <span className={`aq-pw-rule${longEnough ? ' is-ok' : ''}`} id="suPwRule" data-score={longEnough ? pw.score : undefined} aria-live="polite">
+                {longEnough ? <><CheckIcon size={12} />{pw.label}</> : `${PASSWORD_MIN}자 이상`}
+              </span>
             </label>
             <PasswordInput
               id="suPassword" required autoComplete="new-password" minLength={PASSWORD_MIN}
-              aria-describedby={fe.password ? 'suPasswordErr' : 'suPwRule suPwHelp'}
+              aria-describedby={fe.password ? 'suPasswordErr' : 'suPwRule'}
               aria-invalid={!!fe.password} enterKeyHint="next"
               value={password} onChange={e => { setPassword(e.target.value); clear('password'); }} onKeyDown={nextOnEnter('suConfirm')}
               show={showPw} onToggle={() => setShowPw(v => !v)}
             />
             <FieldError id="suPasswordErr">{fe.password}</FieldError>
-            {password && !fe.password && (
-              <div className="aq-pw-meter" data-score={pw.score} id="suPwHelp">
-                <span><i /></span>
-                <small>{pw.label}</small>
-              </div>
-            )}
           </div>
           <div className="ui-field">
             <label htmlFor="suConfirm">비밀번호 확인</label>

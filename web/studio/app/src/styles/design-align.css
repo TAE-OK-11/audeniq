@@ -642,6 +642,16 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .aq-pw-rule.is-ok{color:var(--aq-green-600)}
 /* 비밀번호 조건을 이름표 오른쪽에 — 칸 아래 한 줄을 줄였다 */
 label>.aq-pw-rule{float:right;margin-top:2px;font-size:12px;font-weight:600}
+label>.aq-pw-rule[data-score="1"]{color:var(--aq-amber-600,#B7791F)}
+/* 로그인·회원가입(단계마다)·계정 찾기·패스키 — 카드 높이를 모두 같게. 내용이 짧으면 아래 링크 줄이 카드 바닥에 붙는다.
+   휴대폰은 가장 긴 화면(가입 1단계)에 맞춰 Safari 주소창 위 한 화면 안, PC는 로그인 카드 높이 */
+.auth-card.ui-card{display:flex;flex-direction:column;min-height:676px}
+.auth-card.ui-card>*{flex:none}
+.auth-card.ui-card>.auth-links{margin-top:auto;padding-top:24px}
+@media (max-width:760px){
+  .auth-card.ui-card{min-height:522px}
+  .auth-page .auth-card.ui-card>.auth-links{margin-top:auto;padding-top:10px}
+}
 /* 개인정보 안내 — 첫 줄 + '자세히'(누르면 펼침) */
 details.auth-privacy>summary{display:block;cursor:pointer;list-style:none}
 details.auth-privacy>summary::-webkit-details-marker{display:none}
