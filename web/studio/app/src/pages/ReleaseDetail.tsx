@@ -326,8 +326,8 @@ export function ReleaseDetail() {
     }
   };
 
-  // 발매 카드 버튼 — 넓은 화면은 카드 오른쪽 안, 휴대폰은 카드 아래 한 줄 (같은 버튼을 두 자리에)
-  const actionButtons = (
+  // 발매 카드 버튼 — 넓은 화면은 카드 오른쪽 안, 휴대폰은 카드 안 맨 아래 (같은 버튼을 두 자리에)
+  const mainButtons = (
     <>
       {(d?.application || !isDraft) && (
         <button type="button" className="ui-btn is-soft" onClick={() => nav(`/releases/${encodeURIComponent(rel.id)}/application`)}>
@@ -343,7 +343,12 @@ export function ReleaseDetail() {
           {editLabel}
         </button>
       )}
-      {/* 되돌릴 수 없는 일은 주 버튼과 같은 무게로 두지 않는다 — 조용한 빨간 글자 버튼 (누르면 확인 창) */}
+    </>
+  );
+  // 되돌릴 수 없는 일은 주 버튼과 같은 무게로 두지 않는다 — 조용한 빨간 글자 버튼 (누르면 확인 창).
+  // 휴대폰에서는 꽉 찬 주 버튼 옆에 붙이지 않고 화면 맨 아래로 뺀다
+  const dangerButtons = (canWithdraw || isDraft) && (
+    <>
       {canWithdraw && (
         <button type="button" className="ui-btn is-text aq-danger-text aq-withdraw-btn" onClick={handleWithdraw} disabled={withdrawing}>
           {withdrawing ? '취소하는 중' : '신청 취소'}
@@ -351,7 +356,7 @@ export function ReleaseDetail() {
       )}
       {isDraft && (
         <button type="button" className="ui-btn is-text aq-danger-text" onClick={handleDelete} disabled={deleting}>
-          {deleting ? '삭제 중' : '삭제'}
+          {deleting ? '삭제하는 중' : '발매 삭제'}
         </button>
       )}
     </>
@@ -386,7 +391,7 @@ export function ReleaseDetail() {
             </p>
           )}
         </div>
-        <div className="aq-detail-actions is-wide">{actionButtons}</div>
+        <div className="aq-detail-actions is-wide">{mainButtons}{dangerButtons}</div>
         {/* 진행 단계는 머리 카드 안 아래쪽 흰 판으로 — 따로 카드 하나를 더 쌓지 않는다 */}
         {!settledLive && (
           <StageCard
@@ -396,9 +401,8 @@ export function ReleaseDetail() {
             label="발매 진행 단계"
           />
         )}
+        <div className="aq-detail-actions is-narrow">{mainButtons}</div>
       </div>
-
-      <div className="row-actions aq-detail-actions is-narrow">{actionButtons}</div>
 
 
       {!isDraft && <PendingAddons releaseId={rel.id} />}
@@ -692,6 +696,8 @@ export function ReleaseDetail() {
           </div>
         )}
       </div>
+
+      {dangerButtons && <div className="aq-detail-danger">{dangerButtons}</div>}
     </div>
   );
 }
