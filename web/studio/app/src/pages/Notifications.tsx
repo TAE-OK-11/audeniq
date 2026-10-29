@@ -192,7 +192,7 @@ export function Notifications() {
       {/* 설명 줄 없이 짧게 — 머리가 길어 알림이 늦게 보였다 */}
       <div className="ui-page-head aq-notice-pagehead">
         <div>
-          <p className="eyebrow">계정·지원</p>
+          <p className="eyebrow">소식</p>
           <h1>알림</h1>
         </div>
       </div>

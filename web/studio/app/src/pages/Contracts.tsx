@@ -54,7 +54,7 @@ export function Contracts() {
     <div id="view-contracts" className="view">
       <div className="ui-page-head">
         <div>
-          <p className="eyebrow">계약·권리</p>
+          <p className="eyebrow">작업실</p>
           <h1>계약서</h1>
           <p>발매마다 배급 신청서와 계약서를 확인하고 서명해요.</p>
         </div>

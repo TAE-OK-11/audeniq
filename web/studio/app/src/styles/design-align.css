@@ -819,6 +819,9 @@ button.settle-hero-account.is-button .min-0{display:grid}
   .aq-side-title{margin:0 0 6px;padding:0 12px;font-size:12px;font-weight:700;color:var(--aq-text-4)}
   .aq-side-item{display:flex;align-items:center;gap:10px;min-height:42px;padding:0 12px;border-radius:var(--aq-r-md);font-size:15px;font-weight:600;color:var(--aq-text-2);text-decoration:none;transition:background-color var(--aq-dur-fast) var(--aq-ease)}
   .aq-side-item svg{color:var(--aq-text-4)}
+  /* 이름은 한 줄 — 상태 배지('보완 1')가 붙으면 '권리·보완 서류'가 두 줄로 꺾였다. 여백을 조금 줄여 자리를 만든다 */
+  .aq-side-item{gap:8px;padding:0 10px}
+  .aq-side-item>span:not([class]){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .aq-side-item:hover{background:var(--aq-gray-50,#f7f9fc)}
   .aq-side-item.is-active{background:var(--aq-surface);color:var(--aq-blue-500)}
   .aq-side-item.is-active svg{color:var(--aq-blue-500)}

@@ -51,38 +51,45 @@ function RouteBar() {
 
 type NavItem = { to: string; label: string; icon: GlyphName };
 
-/** 전체 메뉴 — 계정 정보 화면처럼 옅은 파랑 묶음 카드에 아이콘 · 이름 · 꺾쇠 */
+/** 전체 메뉴 — 계정 정보 화면처럼 옅은 파랑 묶음 카드에 아이콘 · 이름 · 꺾쇠.
+ *  하는 일 기준으로 묶고 자주 쓰는 것부터: 발매와 그 뒤에 이어지는 서명·보완을 한 묶음에 두어 할 일 배지가 한곳에 보이고,
+ *  아티스트가 가장 자주 확인하는 돈과 성과를 바로 다음에 둔다. 알림·공지·이벤트는 '소식', 계정과 문의는 맨 아래 */
 const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
   {
-    group: '내 작업실',
+    group: '작업실',
     items: [
       { to: '/', label: '홈', icon: 'home' },
       { to: '/releases', label: '발매·곡 관리', icon: 'disc' },
-      { to: '/reports', label: '음악 리포트', icon: 'chart' },
-      { to: '/settlement', label: '정산·지급', icon: 'won' },
+      { to: '/contracts', label: '계약서', icon: 'sign' },
+      { to: '/rights', label: '권리·보완 서류', icon: 'doc' },
     ],
   },
   {
-    group: '아티스트',
+    group: '수익·성과',
+    items: [
+      { to: '/settlement', label: '정산·지급', icon: 'won' },
+      { to: '/reports', label: '음악 리포트', icon: 'chart' },
+    ],
+  },
+  {
+    group: '홍보',
     items: [
       { to: '/artist', label: '아티스트 페이지', icon: 'globe' },
     ],
   },
   {
-    group: '계약·권리',
+    group: '소식',
     items: [
-      { to: '/contracts', label: '계약서', icon: 'sign' },
-      { to: '/rights', label: '권리·보완 서류', icon: 'doc' },
+      { to: '/notifications', label: '알림', icon: 'bell' },
+      { to: '/notices', label: '공지사항', icon: 'antenna' },
+      { to: '/events', label: '이벤트', icon: 'star' },
     ],
   },
   {
     group: '계정·지원',
     items: [
       { to: '/profile', label: '계정 정보', icon: 'user' },
-      { to: '/notifications', label: '알림', icon: 'bell' },
       { to: '/inquiries', label: '문의', icon: 'inquiry' },
-      { to: '/events', label: '이벤트', icon: 'star' },
-      { to: '/notices', label: '공지사항', icon: 'antenna' },
     ],
   },
 ];

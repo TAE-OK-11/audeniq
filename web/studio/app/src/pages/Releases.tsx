@@ -147,7 +147,7 @@ export function Releases() {
     <div id="view-catalog" className="view">
       <div className="ui-page-head aq-head-inline">
         <div>
-          <p className="eyebrow">내 작업실</p>
+          <p className="eyebrow">작업실</p>
           <h1 id="catalogTitle">발매·곡 관리</h1>
           <p>발매마다 심사가 어디까지 왔는지 보여 드려요.</p>
         </div>
