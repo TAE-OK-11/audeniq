@@ -320,19 +320,21 @@ function ReleaseRow({ r }: { r: ReleaseInsight }) {
     : !r.link.enabled ? { tone: 'gray' as const, text: '꺼짐' }
       : !r.link.visible ? { tone: 'amber' as const, text: '지금은 안 보여요' }
         : !r.released ? { tone: 'blue' as const, text: '발매 전' } : null;
-  const extra = [
+  // 숫자 묶음마다 끊어지지 않게 (‘발매 / 알림 64명’처럼 중간에서 줄이 바뀌던 것)
+  const meta = r.link ? [
+    `방문 ${num(r.views)}`, `이동 ${num(r.clicks)}`,
     r.alerts ? `발매 알림 ${num(r.alerts)}명` : '',
     r.presaves ? `프리세이브 ${num(r.presaves)}명` : '',
-  ].filter(Boolean).join(' · ');
+  ].filter(Boolean) : ['스마트링크를 만들면 반응이 쌓여요'];
   return (
     <li>
       <Link to={`/releases/${encodeURIComponent(r.release_id)}?tab=manage`} className="ui-row aq-studio-release">
         <Cover id={r.release_id} text={r.title} src={cover} />
         <span className="min-0 aq-studio-release-main">
-          <strong>{r.title}</strong>
-          <small>{r.link ? `방문 ${num(r.views)} · 이동 ${num(r.clicks)}` : '스마트링크를 만들면 반응이 쌓여요'}{extra && ` · ${extra}`}</small>
+          {/* 상태 배지는 제목 옆 — 오른쪽에 두면 휴대폰에서 아래 숫자 줄이 세 줄로 접혔다 */}
+          <span className="aq-studio-release-title"><strong>{r.title}</strong>{status && <Badge tone={status.tone}>{status.text}</Badge>}</span>
+          <small>{meta.map((m, i) => <span key={m}>{i > 0 && ' · '}<span className="aq-nowrap">{m}</span></span>)}</small>
         </span>
-        {status && <Badge tone={status.tone}>{status.text}</Badge>}
         <Glyph name="chevron-right" size={16} className="aq-set-chev" />
       </Link>
     </li>
