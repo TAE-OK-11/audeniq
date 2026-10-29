@@ -169,27 +169,21 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .aq-doc-alert strong{color:var(--aq-text);font-size:var(--aq-fs-lg);font-weight:var(--aq-fw-bold);line-height:1.4}
 .aq-doc-alert small{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;color:var(--aq-text-3);font-size:var(--aq-fs-sm);line-height:1.5}
 .aq-doc-alert>.aq-glyph:last-child{color:var(--aq-amber-700)}
-.aq-doc-list{padding:6px;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
-.aq-doc-list>h2{display:flex;align-items:baseline;gap:6px;margin:0;padding:14px 14px 6px;font-size:var(--aq-fs-md);font-weight:700;letter-spacing:0;color:var(--aq-text-3)}
-.aq-doc-list>h2 small{margin-left:auto;font-size:var(--aq-fs-xs);font-weight:600;color:var(--aq-text-4)}
-.aq-doc-count{font-size:var(--aq-fs-xs);color:var(--aq-blue-500)}
-.aq-doc-list>.ui-empty{margin:4px 8px 8px}
-.aq-doc-rows{display:grid}
-.aq-doc-row{display:grid;grid-template-columns:40px minmax(0,1fr) auto auto;align-items:center;gap:12px;width:100%;min-height:64px;padding:10px 10px 10px 12px;border:0;border-radius:var(--aq-r-lg);background:none;color:var(--portal-ink);font:inherit;text-align:left;cursor:pointer;transition:background-color .2s ease}
-@media(hover:hover){.aq-doc-row:hover{background:var(--aq-surface-hover)}}
-.aq-doc-ico{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:var(--aq-blue-150);color:var(--aq-blue-500)}
-.aq-doc-row.is-needs .aq-doc-ico{background:var(--aq-amber-100);color:var(--aq-amber-700)}
+/* 권리 서류 목록 — 홈 '내 발매'와 같은 옅은 파랑 카드 + 흰 줄 (아이콘 칸 · 제목/한 줄 정보 · 오른쪽 상태 배지) */
+.aq-doc-list .ui-section-head{align-items:baseline}
+.aq-doc-count{margin-left:2px;color:var(--aq-blue-500)}
+.aq-doc-sum{font-size:var(--aq-fs-xs);font-weight:600;color:var(--aq-text-4);white-space:nowrap}
+.aq-doc-list>.ui-empty{margin:4px 0 0}
+.aq-doc-row{background:#fff}
+@media(hover:hover){.aq-doc-row:hover{background:var(--aq-blue-50)}}
+.aq-doc-row.is-needs>.ui-icon{--tone-bg:var(--aq-amber-100);--tone-fg:var(--aq-amber-700)}
 .aq-doc-copy{display:grid;gap:3px}
-.aq-doc-copy strong{font-size:15px;font-weight:600;line-height:1.4}
-.aq-doc-copy small{font-size:12px;color:var(--aq-text-4)}
-.aq-doc-copy em{font-style:normal;font-size:12px;line-height:1.5;color:var(--aq-amber-700)}
+.aq-doc-copy .ui-row-title{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.aq-doc-meta,.aq-doc-note{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-doc-meta{font-size:12px;line-height:1.5;color:var(--aq-text-4)}
+.aq-doc-note{font-size:12px;line-height:1.5;color:var(--aq-amber-700)}
 .aq-doc-state{flex:none}
-.aq-doc-chev{color:var(--aq-text-disabled)}
-/* 휴대폰도 '내 발매' 목록처럼 상태 배지는 오른쪽에 — 아래 줄로 내리면 줄마다 높이가 들쭉날쭉했다. 꺾쇠는 줄 전체가 눌리니 뺀다 */
-@media(max-width:560px){
-  .aq-doc-row{grid-template-columns:40px minmax(0,1fr) auto;gap:10px}
-  .aq-doc-row .aq-doc-chev{display:none}
-}
+@media(max-width:560px){.aq-doc-row{gap:12px;padding:14px}}
 
 /* 내 음악 — 휴대폰에서도 검색과 정렬을 한 줄로 (정렬은 좁게) */
 @media(max-width:759px){#view-catalog .toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto}#view-catalog .toolbar select{min-width:0}}
