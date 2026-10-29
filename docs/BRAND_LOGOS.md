@@ -16,7 +16,7 @@ Studio의 계좌 선택은 은행 24개(목록 마지막에 통합 저축은행 
 
 ## DSP·앱 아이콘
 
-DSP는 기존 `public/static/brands/`, `src/lib/brands.ts`, `components/BrandMark.tsx`를 그대로 사용한다. 새 DSP 파일은 `public/static/brands/<키>.png` 또는 `.svg`로 넣고, `brands.ts`에 `kind: 'app'`, `'image'`, 또는 `'glyph'`(+ `color`)를 등록한다.
+DSP는 기존 `public/static/brands/`, `src/lib/brands.ts`, `components/BrandMark.tsx`를 그대로 사용한다. 새 DSP 파일은 `public/static/brands/<키>.webp`(무손실, 128px) 또는 `.svg`(SVGO로 줄여서)로 넣고, `brands.ts`에 `kind: 'app'`, `'image'`, 또는 `'glyph'`(+ `color`)를 등록한다.
 
 ### DSP 로고와 출처
 
