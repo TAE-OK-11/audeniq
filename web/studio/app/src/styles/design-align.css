@@ -1856,33 +1856,38 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
   .aq-doc-toolbar .row-actions .ui-btn{--btn-h:var(--aq-h-sm);--btn-r:var(--aq-r-ctl-sm);--btn-px:14px;--btn-fs:13px}
 }
 
-/* 알림 — 새 알림(안 읽음)과 지난 알림으로 나눠 할 일이 먼저 보이게. 알림 받는 방법은 목록 아래로.
-   카드: 아이콘(분류) · 분류·시각 작은 줄 · 큰 제목 · 설명 · 누르면 할 일(파란 한 줄). 글자를 키워 읽기 쉽게 */
+/* 알림 — 새 알림 · 이번 주 · 이전 알림으로 나누고, 이어서 온 같은 알림은 카드 하나에 '외 N건'.
+   카드: 아이콘(분류) · 제목과 시각 한 줄 · 설명 두 줄까지. 안 읽음 표시는 파란 점과 굵은 제목 하나로만
+   (바탕색·굵기·점·회색 아이콘을 겹쳐 쓰면 화면이 어수선했다). 알림 받는 방법은 목록 아래로 */
 #view-notifications .aq-notice-pagehead{margin-bottom:20px}
-.aq-notice-sections{display:grid;gap:32px}
-.aq-notice-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:32px;margin:0 4px 12px}
-.aq-notice-head h2{margin:0;font-size:18px;font-weight:var(--aq-fw-bold);color:var(--aq-text)}
-.aq-notice-head h2 span{margin-left:4px;color:var(--aq-blue-500)}
-.aq-notice-sections .aq-catalog-cards{display:grid;gap:12px}
-#view-notifications .aq-notice-card{display:grid;grid-template-columns:44px minmax(0,1fr);gap:14px;align-items:start;width:100%;padding:20px;border:0;border-radius:var(--aq-r-2xl);background:var(--aq-surface);color:var(--aq-text);font:inherit;text-align:left;cursor:pointer;transition:background-color var(--aq-dur) var(--aq-ease)}
+.aq-notice-sections{display:grid;gap:28px}
+.aq-notice-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:32px;margin:0 4px 10px}
+.aq-notice-head h2{margin:0;font-size:var(--aq-fs-lg);font-weight:var(--aq-fw-bold);color:var(--aq-text)}
+.aq-notice-head h2 span{margin-left:5px;color:var(--aq-blue-500)}
+.aq-notice-caughtup{display:flex;align-items:center;gap:8px;margin:0 4px -8px;color:var(--aq-text-3);font-size:14px;font-weight:600}
+.aq-notice-caughtup .aq-glyph{color:var(--aq-blue-500)}
+.aq-notice-sections .aq-catalog-cards{display:grid;gap:10px}
+#view-notifications .aq-notice-card{display:grid;grid-template-columns:40px minmax(0,1fr);gap:14px;align-items:start;width:100%;padding:18px 20px;border:0;border-radius:var(--aq-r-2xl);background:var(--aq-surface);color:var(--aq-text);font:inherit;text-align:left;cursor:pointer;transition:background-color var(--aq-dur) var(--aq-ease)}
 @media(hover:hover){#view-notifications .aq-notice-card:hover{background:var(--aq-blue-100)}}
 #view-notifications .aq-notice-card:focus-visible{outline:var(--aq-focus);outline-offset:2px}
-#view-notifications .aq-notice-symbol{position:relative;width:44px;height:44px;flex-basis:44px;border-radius:var(--aq-r-md);background:#fff;color:var(--aq-blue-500)}
-#view-notifications .aq-notice-symbol .aq-unread{position:absolute;top:-3px;right:-3px;width:12px;height:12px;border:2px solid var(--aq-surface);border-radius:50%;background:var(--aq-blue-500)}
-#view-notifications .aq-notice-copy{display:grid;gap:4px;min-width:0}
-#view-notifications .aq-notice-meta{color:var(--aq-text-4);font-size:13px;font-weight:600;line-height:1.4}
-#view-notifications .aq-notice-copy strong{overflow:visible;color:var(--aq-text);font-size:17px;font-weight:700;line-height:1.45;letter-spacing:-.01em;white-space:normal}
-#view-notifications .aq-notice-detail{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;color:var(--aq-text-2);font-size:15px;line-height:1.6;white-space:normal}
-#view-notifications .aq-notice-go{display:inline-flex;align-items:center;gap:2px;margin-top:6px;color:var(--aq-blue-500);font-size:14px;font-weight:700}
-/* 지난 알림 — 한 단계 옅게 */
-#view-notifications .aq-notice-card.is-read{background:var(--aq-gray-25)}
-@media(hover:hover){#view-notifications .aq-notice-card.is-read:hover{background:var(--aq-gray-50)}}
-#view-notifications .aq-notice-card.is-read .aq-notice-symbol{background:var(--aq-gray-50);color:var(--aq-text-4)}
-#view-notifications .aq-notice-card.is-read .aq-notice-copy strong{font-weight:600;color:var(--aq-text-2)}
-#view-notifications .aq-notice-card.is-read .aq-notice-detail{color:var(--aq-text-3)}
-#view-notifications .aq-notice-card.is-read .aq-notice-go{color:var(--aq-text-3)}
-@media(max-width:560px){#view-notifications .aq-notice-card{padding:18px 16px}}
-.aq-notice-sections .aq-pager{margin-top:-12px}
+#view-notifications .aq-notice-symbol{position:relative;width:40px;height:40px;flex-basis:40px;border-radius:var(--aq-r-md);background:#fff;color:var(--aq-blue-500)}
+#view-notifications .aq-notice-symbol .aq-unread{position:absolute;top:-3px;right:-3px;width:11px;height:11px;border:2px solid var(--aq-surface);border-radius:50%;background:var(--aq-blue-500)}
+#view-notifications .aq-notice-copy{display:grid;gap:3px;min-width:0;padding-top:1px}
+.aq-notice-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;min-width:0}
+.aq-notice-top strong{min-width:0;overflow:visible;color:var(--aq-text);font-size:16px;font-weight:700;line-height:1.45;white-space:normal}
+.aq-notice-side{display:grid;justify-items:end;gap:4px;flex:none;padding-top:2px}
+.aq-notice-top time{color:var(--aq-text-4);font-size:12px;font-weight:500;white-space:nowrap;font-variant-numeric:tabular-nums}
+#view-notifications .aq-notice-detail{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;color:var(--aq-text-3);font-size:14px;line-height:1.55;white-space:normal}
+.aq-notice-more{padding:1px 7px;border-radius:var(--aq-r-pill);background:#fff;color:var(--aq-text-3);font-size:11px;font-weight:700;line-height:1.6;white-space:nowrap}
+#view-notifications .aq-notice-card.is-read .aq-notice-top strong{font-weight:500;color:var(--aq-text-2)}
+@media(max-width:560px){#view-notifications .aq-notice-card{padding:16px}}
+.aq-notice-sections .aq-pager{margin-top:-8px}
 .aq-notice-settings{display:grid;gap:10px;margin-top:40px}
 .aq-notice-settings:empty{display:none}
 .aq-notice-settings>.aq-alert-pref{margin:0}
+/* 오른쪽 칸(시각·외 N건)은 제목·설명 두 줄 옆에 세로로 — 설명이 '외 N건' 아래로 밀려 카드가 길어지지 않게 */
+#view-notifications .aq-notice-copy{grid-template-columns:minmax(0,1fr) auto;column-gap:10px}
+#view-notifications .aq-notice-top{display:contents}
+#view-notifications .aq-notice-top strong{grid-column:1;grid-row:1}
+#view-notifications .aq-notice-side{grid-column:2;grid-row:1/span 2;align-self:start}
+#view-notifications .aq-notice-detail{grid-column:1}

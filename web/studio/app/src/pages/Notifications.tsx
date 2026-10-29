@@ -3,7 +3,7 @@ import { useNavigate } from '../lib/router';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { localStamp } from '../lib/format';
-import { relativeTime } from '../lib/date';
+import { parseStamp, relativeTime } from '../lib/date';
 import { markAllNoticesRead, markNoticeRead, useNotices, useUnreadCount, type Notice } from '../store/support';
 import { Glyph } from '../components/Glyph';
 import { alertsBlocked, alertsEnabled, alertsSupported, disableAlerts, enableAlerts } from '../lib/alerts';
@@ -107,35 +107,40 @@ function noticeSymbol(kind: string) {
   return <Glyph size={17} name={kind === '지급' ? 'won' : kind === '발매' ? 'music' : kind === '서류' ? 'doc' : kind === '문의' ? 'mail' : kind === '계정' ? 'user' : 'bell'} />;
 }
 
-/** 누르면 무엇을 하게 되는지 — 카드 아래 파란 한 줄로 (어디로 가는지 몰라 내용을 다시 읽어야 했다) */
-function noticeAction(n: Notice): string {
-  const to = n.link ?? '';
-  if (!to) return '내용 보기';
-  if (to.startsWith('/releases')) return /보완/.test(n.title) ? '보완하러 가기' : '발매 보기';
-  if (to.startsWith('/contracts')) return '계약서 보기';
-  if (to.startsWith('/rights')) return '서류 보기';
-  if (to.startsWith('/settlement')) return '정산 보기';
-  if (to.startsWith('/inquiries')) return '답변 보기';
-  if (to.startsWith('/reports')) return '리포트 보기';
-  if (to.startsWith('/upload')) return '이어서 작성하기';
-  if (to.startsWith('/artist')) return '아티스트 페이지 보기';
-  if (to.startsWith('/profile')) return '계정 정보 보기';
-  if (to.startsWith('/notices')) return '공지 보기';
-  if (to.startsWith('/events')) return '이벤트 보기';
-  return '자세히 보기';
+/** 같은 알림 묶음 — 바로 이어서 온 같은 제목의 알림(같은 발매의 보완 요청 등)은 카드 하나에 '외 N건'으로.
+ * 같은 줄이 여러 번 쌓이면 무엇이 새로운지 가려졌다 (알림 센터 설계 글들이 꼽는 가장 효과 큰 정리) */
+interface NoticeGroup { head: Notice; all: Notice[] }
+function bundle(list: Notice[]): NoticeGroup[] {
+  const out: NoticeGroup[] = [];
+  for (const n of list) {
+    const last = out[out.length - 1];
+    if (last && last.head.title === n.title && last.head.read === n.read) last.all.push(n);
+    else out.push({ head: n, all: [n] });
+  }
+  return out;
 }
 
+/** 지난 알림의 시간 묶음 — 이번 주(7일 안) · 이전 */
+const WEEK = 7 * 86_400_000;
+const isThisWeek = (n: Notice, now: number) => { const d = parseStamp(n.time); return !!d && now - d.getTime() < WEEK; };
+
 /** 알림 카드 하나 — 누르면 관련 화면으로 바로 간다(관련 화면이 없을 때만 내용 창).
- * 큰 제목 · 설명 · 할 일 한 줄. 분류는 아이콘, 시각은 제목 위 작은 글자 */
-function NoticeCard({ n, onOpen }: { n: Notice; onOpen: (n: Notice) => void }) {
+ * 아이콘(분류) · 제목과 시각 한 줄 · 설명 두 줄까지. 안 읽음은 파란 점과 굵은 제목 하나로만 */
+function NoticeCard({ g, onOpen }: { g: NoticeGroup; onOpen: (g: NoticeGroup) => void }) {
+  const n = g.head;
+  const more = g.all.length - 1;
   return (
-    <button type="button" className={`aq-notice-card${n.read ? ' is-read' : ''}`} onClick={() => onOpen(n)} aria-label={`${n.kind || '안내'} 알림${n.read ? '' : ', 읽지 않음'}: ${n.title}`}>
+    <button type="button" className={`aq-notice-card${n.read ? ' is-read' : ''}`} onClick={() => onOpen(g)} aria-label={`${n.kind || '안내'} 알림${n.read ? '' : ', 읽지 않음'}: ${n.title}${more ? `, 같은 알림 ${more}건 더` : ''}`}>
       <span className="aq-notice-symbol" aria-hidden="true">{noticeSymbol(n.kind)}{!n.read && <i className="aq-unread" />}</span>
       <span className="aq-notice-copy">
-        <span className="aq-notice-meta">{n.kind || '안내'} · <time dateTime={n.time}>{relativeTime(n.time) || n.time}</time></span>
-        <strong>{n.title}</strong>
+        <span className="aq-notice-top">
+          <strong>{n.title}</strong>
+          <span className="aq-notice-side">
+            <time dateTime={n.time}>{relativeTime(n.time) || n.time}</time>
+            {more > 0 && <span className="aq-notice-more">외 {more}건</span>}
+          </span>
+        </span>
         {n.detail && <span className="aq-notice-detail">{n.detail}</span>}
-        <span className="aq-notice-go">{noticeAction(n)}<Glyph name="chevron-right" size={14} /></span>
       </span>
     </button>
   );
@@ -149,14 +154,24 @@ export function Notifications() {
   const [openNotice, setOpenNotice] = useState<Notice | null>(null);
   const [page, setPage] = useState(1);
 
-  // 새 알림(안 읽음)을 위에 모으고, 그 아래 지난 알림 — 각각 최신순. '전체/읽지 않음' 버튼을 오가지 않아도 할 일이 먼저 보인다
+  // 새 알림(안 읽음)을 위에, 그 아래 지난 알림(이번 주 · 이전) — 각각 최신순, 이어진 같은 알림은 한 카드로.
+  // 쪽 번호는 카드 수로 센다
   const byTime = (a: Notice, b: Notice) => b.time.localeCompare(a.time);
-  const ordered = [...notices.filter(n => !n.read).sort(byTime), ...notices.filter(n => n.read).sort(byTime)];
-  const pages = Math.max(1, Math.ceil(ordered.length / PAGE));
+  const now = Date.now();
+  const freshAll = bundle(notices.filter(n => !n.read).sort(byTime));
+  const pastAll = bundle(notices.filter(n => n.read).sort(byTime));
+  const cards: { group: NoticeGroup; section: 'fresh' | 'week' | 'older' }[] = [
+    ...freshAll.map(group => ({ group, section: 'fresh' as const })),
+    ...pastAll.map(group => ({ group, section: isThisWeek(group.head, now) ? 'week' as const : 'older' as const })),
+  ];
+  const pages = Math.max(1, Math.ceil(cards.length / PAGE));
   const current = Math.min(page, pages);
-  const pageItems = ordered.slice((current - 1) * PAGE, current * PAGE);
-  const fresh = pageItems.filter(n => !n.read);
-  const past = pageItems.filter(n => n.read);
+  const pageCards = cards.slice((current - 1) * PAGE, current * PAGE);
+  const sections = [
+    { key: 'fresh', title: '새 알림' },
+    { key: 'week', title: '이번 주' },
+    { key: 'older', title: '이전 알림' },
+  ].map(s => ({ ...s, items: pageCards.filter(c => c.section === s.key).map(c => c.group) })).filter(s => s.items.length);
   // 쪽을 바꾸면 목록 맨 위로 — 아래 쪽 번호를 눌렀는데 화면이 그대로 아래에 있으면 바뀐 줄 몰랐다
   const goPage = (p: number) => {
     setPage(p);
@@ -168,9 +183,10 @@ export function Notifications() {
     toast('모든 알림을 읽음으로 표시했어요.');
   };
 
-  // 관련 화면이 있으면 바로 그 화면으로 — 예전엔 내용 창을 열고 '관련 화면으로 이동'을 한 번 더 눌러야 했다
-  const openNoticeDetail = (n: Notice) => {
-    markNoticeRead(n.id);
+  // 관련 화면이 있으면 바로 그 화면으로 — 예전엔 내용 창을 열고 '관련 화면으로 이동'을 한 번 더 눌러야 했다. 묶인 알림은 함께 읽음
+  const openNoticeDetail = (g: NoticeGroup) => {
+    g.all.forEach(n => markNoticeRead(n.id));
+    const n = g.head;
     if (n.link) nav(n.link);
     else setOpenNotice(n);
   };
@@ -185,28 +201,24 @@ export function Notifications() {
         </div>
       </div>
 
-      {ordered.length ? (
+      {cards.length ? (
         <div id="noticeList" className="aq-notice-sections">
-          {fresh.length > 0 && (
-            <section aria-labelledby="noticeFreshHead">
+          {/* 새 알림이 없으면 빈 칸 대신 한 줄로 알려 준다 */}
+          {current === 1 && !freshAll.length && <p className="aq-notice-caughtup"><Glyph name="check" size={16} />새 알림을 모두 확인했어요</p>}
+          {sections.map(sec => (
+            <section key={sec.key} aria-labelledby={`notice-${sec.key}`}>
               <div className="aq-notice-head">
-                <h2 id="noticeFreshHead">새 알림 <span>{unread}</span></h2>
-                <button type="button" className="ui-btn is-text is-sm" onClick={readAll}><Glyph name="check" size={14} />모두 읽음</button>
+                <h2 id={`notice-${sec.key}`}>{sec.title}{sec.key === 'fresh' && <span>{unread}</span>}</h2>
+                {sec.key === 'fresh' && <button type="button" className="ui-btn is-text is-sm" onClick={readAll}><Glyph name="check" size={14} />모두 읽음</button>}
               </div>
-              <div className="aq-catalog-cards">{fresh.map(n => <NoticeCard key={n.id} n={n} onOpen={openNoticeDetail} />)}</div>
+              <div className="aq-catalog-cards">{sec.items.map(g => <NoticeCard key={g.head.id} g={g} onOpen={openNoticeDetail} />)}</div>
             </section>
-          )}
-          {past.length > 0 && (
-            <section aria-labelledby="noticePastHead">
-              <div className="aq-notice-head"><h2 id="noticePastHead">지난 알림</h2></div>
-              <div className="aq-catalog-cards">{past.map(n => <NoticeCard key={n.id} n={n} onOpen={openNoticeDetail} />)}</div>
-            </section>
-          )}
+          ))}
           <Pager page={current} pages={pages} onPage={goPage} />
         </div>
       ) : (
         <div className="ui-empty">
-          <h2>새 알림이 없어요.</h2>
+          <h2>아직 알림이 없어요</h2>
           <p>발매·정산·서류에 변화가 생기면 여기에 알려 드려요.</p>
         </div>
       )}
