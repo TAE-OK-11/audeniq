@@ -206,6 +206,9 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
   closeDisabledRef.current = closeDisabled;
   const [leaving, setLeaving] = useState(false);
   const leavingRef = useRef(false);
+  // 닫힘 애니메이션을 기다리는 예비 타이머 — 창이 먼저 사라지면(화면 이동 등) 지운다
+  const exitTimer = useRef(0);
+  useEffect(() => () => window.clearTimeout(exitTimer.current), []);
   // 작성 중인 창 — 안의 칸에 무엇이든 입력하면 켜진다. 이때는 바깥 누름·Esc·끌어내리기로 닫지 않고 창이 튀어
   // '닫기 버튼으로 닫아 주세요'를 알린다(실수로 스치거나 끌어 입력이 날아가지 않게). 닫기·취소 버튼은 그대로 닫힌다.
   const dirtyRef = useRef(false);
@@ -232,7 +235,7 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
     };
     const onEnd = (e: AnimationEvent) => { if (e.target === inner && /out|down/.test(e.animationName)) finish(); };
     inner?.addEventListener('animationend', onEnd);
-    window.setTimeout(finish, EXIT_MAX_MS);
+    exitTimer.current = window.setTimeout(finish, EXIT_MAX_MS);
   }, []);
 
   useEffect(() => {
