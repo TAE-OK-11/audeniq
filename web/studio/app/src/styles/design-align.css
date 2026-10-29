@@ -1855,3 +1855,32 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 @media(max-width:760px){
   .aq-doc-toolbar .row-actions .ui-btn{--btn-h:var(--aq-h-sm);--btn-r:var(--aq-r-ctl-sm);--btn-px:14px;--btn-fs:13px}
 }
+
+/* 알림 — 새 알림 · 이번 주 · 이전 알림으로 나누고, 이어서 온 같은 알림은 카드 하나에 '외 N건'.
+   카드는 문의·권리 서류 카드와 같은 모양: 48px 옅은 파랑 아이콘 칸 · 제목 · 회색 한 줄(시각 · 설명) · 오른쪽 '외 N건'.
+   안 읽음 표시는 아이콘 모서리 파란 점과 굵은 제목 하나로만. 알림 받는 방법은 목록 아래로 */
+#view-notifications .aq-notice-pagehead{margin-bottom:20px}
+.aq-notice-sections{display:grid;gap:32px}
+.aq-notice-sections .aq-catalog-cards{display:grid;gap:8px}
+.aq-notice-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:32px;margin:0 2px 10px}
+.aq-notice-head h2{margin:0;font-size:var(--aq-fs-md,16px);font-weight:700;color:var(--aq-text-2)}
+.aq-notice-head h2 span{margin-left:5px;color:var(--aq-blue-500)}
+.aq-notice-caughtup{display:flex;align-items:center;gap:8px;margin:0 2px -8px;color:var(--aq-text-3);font-size:14px;font-weight:600}
+.aq-notice-caughtup .aq-glyph{color:var(--aq-blue-500)}
+#view-notifications .aq-notice-card{display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:14px;align-items:center;width:100%;padding:16px 18px;border:0;border-radius:var(--aq-r-2xl);background:var(--aq-surface);color:var(--aq-text);font:inherit;text-align:left;cursor:pointer;transition:background-color var(--aq-dur) var(--aq-ease)}
+@media(hover:hover){#view-notifications .aq-notice-card:hover{background:var(--aq-blue-100)}}
+#view-notifications .aq-notice-card:focus-visible{outline:var(--aq-focus);outline-offset:2px}
+#view-notifications .aq-notice-symbol{position:relative;width:48px;height:48px;flex-basis:48px;border-radius:var(--aq-r-md);background:var(--aq-blue-150);color:var(--aq-blue-500)}
+#view-notifications .aq-notice-symbol .aq-unread{position:absolute;top:-3px;right:-3px;width:12px;height:12px;border:2px solid var(--aq-surface);border-radius:50%;background:var(--aq-blue-500)}
+#view-notifications .aq-notice-copy{display:grid;gap:4px;min-width:0}
+#view-notifications .aq-notice-copy strong{overflow:visible;color:var(--aq-text);font-size:16px;font-weight:700;line-height:1.45;white-space:normal}
+#view-notifications .aq-notice-detail{overflow:hidden;color:var(--aq-text-3);font-size:14px;line-height:1.5;text-overflow:ellipsis;white-space:nowrap}
+#view-notifications .aq-notice-detail time{color:var(--aq-text-4)}
+.aq-notice-more{padding:3px 9px;border-radius:var(--aq-r-pill);background:#fff;color:var(--aq-text-3);font-size:12px;font-weight:700;white-space:nowrap}
+#view-notifications .aq-notice-card.is-read .aq-notice-copy strong{font-weight:500;color:var(--aq-text-2)}
+#view-notifications .aq-notice-card.is-read .aq-notice-symbol{background:var(--aq-gray-100);color:var(--aq-text-4)}
+@media(max-width:560px){#view-notifications .aq-notice-card{gap:12px;padding:16px}}
+.aq-notice-sections .aq-pager{margin-top:-8px}
+.aq-notice-settings{display:grid;gap:10px;margin-top:40px}
+.aq-notice-settings:empty{display:none}
+.aq-notice-settings>.aq-alert-pref{margin:0}

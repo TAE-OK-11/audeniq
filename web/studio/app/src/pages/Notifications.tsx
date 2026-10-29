@@ -3,7 +3,7 @@ import { useNavigate } from '../lib/router';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { localStamp } from '../lib/format';
-import { relativeTime } from '../lib/date';
+import { parseStamp, relativeTime } from '../lib/date';
 import { markAllNoticesRead, markNoticeRead, useNotices, useUnreadCount, type Notice } from '../store/support';
 import { Glyph } from '../components/Glyph';
 import { alertsBlocked, alertsEnabled, alertsSupported, disableAlerts, enableAlerts } from '../lib/alerts';
@@ -107,98 +107,123 @@ function noticeSymbol(kind: string) {
   return <Glyph size={17} name={kind === '지급' ? 'won' : kind === '발매' ? 'music' : kind === '서류' ? 'doc' : kind === '문의' ? 'mail' : kind === '계정' ? 'user' : 'bell'} />;
 }
 
+/** 같은 알림 묶음 — 바로 이어서 온 같은 제목의 알림(같은 발매의 보완 요청 등)은 카드 하나에 '외 N건'으로.
+ * 같은 줄이 여러 번 쌓이면 무엇이 새로운지 가려졌다 (알림 센터 설계 글들이 꼽는 가장 효과 큰 정리) */
+interface NoticeGroup { head: Notice; all: Notice[] }
+function bundle(list: Notice[]): NoticeGroup[] {
+  const out: NoticeGroup[] = [];
+  for (const n of list) {
+    const last = out[out.length - 1];
+    if (last && last.head.title === n.title && last.head.read === n.read) last.all.push(n);
+    else out.push({ head: n, all: [n] });
+  }
+  return out;
+}
+
+/** 지난 알림의 시간 묶음 — 이번 주(7일 안) · 이전 */
+const WEEK = 7 * 86_400_000;
+const isThisWeek = (n: Notice, now: number) => { const d = parseStamp(n.time); return !!d && now - d.getTime() < WEEK; };
+
+/** 알림 카드 하나 — 누르면 관련 화면으로 바로 간다(관련 화면이 없을 때만 내용 창).
+ * 아이콘(분류) · 제목과 시각 한 줄 · 설명 두 줄까지. 안 읽음은 파란 점과 굵은 제목 하나로만 */
+function NoticeCard({ g, onOpen }: { g: NoticeGroup; onOpen: (g: NoticeGroup) => void }) {
+  const n = g.head;
+  const more = g.all.length - 1;
+  return (
+    <button type="button" className={`aq-notice-card${n.read ? ' is-read' : ''}`} onClick={() => onOpen(g)} aria-label={`${n.kind || '안내'} 알림${n.read ? '' : ', 읽지 않음'}: ${n.title}${more ? `, 같은 알림 ${more}건 더` : ''}`}>
+      <span className="aq-notice-symbol" aria-hidden="true">{noticeSymbol(n.kind)}{!n.read && <i className="aq-unread" />}</span>
+      <span className="aq-notice-copy">
+        <strong>{n.title}</strong>
+        {/* 문의 카드의 '분류 · 날짜' 줄처럼 시각을 회색 줄 앞에 — 오른쪽 칸이 제목 자리를 좁혀 두 줄로 꺾였다 */}
+        <span className="aq-notice-detail"><time dateTime={n.time}>{relativeTime(n.time) || n.time}</time>{n.detail && <> · {n.detail}</>}</span>
+      </span>
+      {more > 0 && <span className="aq-notice-more">외 {more}건</span>}
+    </button>
+  );
+}
+
 export function Notifications() {
   const toast = useToast();
   const nav = useNavigate();
-  const [filter, setFilter] = useState<'all' | 'unread'>('all');
   const notices = useNotices();
   const unread = useUnreadCount();
   const [openNotice, setOpenNotice] = useState<Notice | null>(null);
   const [page, setPage] = useState(1);
 
-  const shown = (filter === 'all' ? notices : notices.filter(n => !n.read))
-    .slice().sort((a, b) => b.time.localeCompare(a.time));
-  const pages = Math.max(1, Math.ceil(shown.length / PAGE));
+  // 새 알림(안 읽음)을 위에, 그 아래 지난 알림(이번 주 · 이전) — 각각 최신순, 이어진 같은 알림은 한 카드로.
+  // 쪽 번호는 카드 수로 센다
+  const byTime = (a: Notice, b: Notice) => b.time.localeCompare(a.time);
+  const now = Date.now();
+  const freshAll = bundle(notices.filter(n => !n.read).sort(byTime));
+  const pastAll = bundle(notices.filter(n => n.read).sort(byTime));
+  const cards: { group: NoticeGroup; section: 'fresh' | 'week' | 'older' }[] = [
+    ...freshAll.map(group => ({ group, section: 'fresh' as const })),
+    ...pastAll.map(group => ({ group, section: isThisWeek(group.head, now) ? 'week' as const : 'older' as const })),
+  ];
+  const pages = Math.max(1, Math.ceil(cards.length / PAGE));
   const current = Math.min(page, pages);
-  const pageItems = shown.slice((current - 1) * PAGE, current * PAGE);
+  const pageCards = cards.slice((current - 1) * PAGE, current * PAGE);
+  const sections = [
+    { key: 'fresh', title: '새 알림' },
+    { key: 'week', title: '이번 주' },
+    { key: 'older', title: '이전 알림' },
+  ].map(s => ({ ...s, items: pageCards.filter(c => c.section === s.key).map(c => c.group) })).filter(s => s.items.length);
   // 쪽을 바꾸면 목록 맨 위로 — 아래 쪽 번호를 눌렀는데 화면이 그대로 아래에 있으면 바뀐 줄 몰랐다
   const goPage = (p: number) => {
     setPage(p);
-    document.getElementById('notificationTools')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    document.getElementById('noticeList')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   };
 
   const readAll = () => {
-    if (!unread) { toast('읽지 않은 알림이 없어요.', 'info'); return; }
     markAllNoticesRead();
     toast('모든 알림을 읽음으로 표시했어요.');
   };
 
-  const openNoticeDetail = (n: Notice) => {
-    markNoticeRead(n.id);
-    setOpenNotice(n);
+  // 관련 화면이 있으면 바로 그 화면으로 — 예전엔 내용 창을 열고 '관련 화면으로 이동'을 한 번 더 눌러야 했다. 묶인 알림은 함께 읽음
+  const openNoticeDetail = (g: NoticeGroup) => {
+    g.all.forEach(n => markNoticeRead(n.id));
+    const n = g.head;
+    if (n.link) nav(n.link);
+    else setOpenNotice(n);
   };
 
   return (
     <div id="view-notifications" className="view">
-      <div className="ui-page-head">
+      {/* 설명 줄 없이 짧게 — 머리가 길어 알림이 늦게 보였다 */}
+      <div className="ui-page-head aq-notice-pagehead">
         <div>
           <p className="eyebrow">계정·지원</p>
           <h1>알림</h1>
-          <p>발매·정산·서류에 생긴 변화를 알려 드려요.</p>
         </div>
       </div>
 
-      <BrowserAlerts />
-      <EmailAlerts />
-
-      <div className="ui-chips is-wrap" id="notificationTools">
-        <button
-          type="button"
-          className={`ui-chip${filter === 'all' ? ' is-on' : ''}`}
-          aria-pressed={filter === 'all'}
-          onClick={() => { setFilter('all'); setPage(1); }}
-        >전체 알림</button>
-        <button
-          type="button"
-          className={`ui-chip${filter === 'unread' ? ' is-on' : ''}`}
-          aria-pressed={filter === 'unread'}
-          onClick={() => { setFilter('unread'); setPage(1); }}
-        >읽지 않음 <span id="unreadCount">{unread}</span></button>
-        <button type="button" className="ui-btn is-text" id="readAllNotices" onClick={readAll} disabled={!unread}><Glyph name="check" size={14} />모두 읽음</button>
-      </div>
-
-      {shown.length ? (
-        <>
-        <div className="aq-catalog-cards aq-stagger" key={`${filter}-${current}`}>
-          {pageItems.map(n => (
-            <button
-              key={n.id} type="button"
-              className={`ui-row aq-notice-card${n.read ? ' is-read' : ''}`}
-              onClick={() => openNoticeDetail(n)}
-            >
-              <span className="aq-notice-symbol" aria-hidden="true">{noticeSymbol(n.kind)}</span>
-              <span className="min-0 aq-notice-copy">
-                <span className="aq-notice-meta">{n.kind || '안내'} · {relativeTime(n.time) || n.time}</span>
-                <strong>{n.title}</strong>
-                <span className="aq-notice-detail">{n.detail}</span>
-              </span>
-              {/* 읽음·안 읽음 모두 눌러 열 수 있다는 화살표를 같게 두고, 안 읽은 알림만 파란 점을 더한다 */}
-              <span className="aq-notice-end">
-                {!n.read && <i className="aq-unread" aria-label="읽지 않음" />}
-                <Glyph name="chevron-right" size={18} className="aq-notice-reopen" />
-              </span>
-            </button>
+      {cards.length ? (
+        <div id="noticeList" className="aq-notice-sections">
+          {/* 새 알림이 없으면 빈 칸 대신 한 줄로 알려 준다 */}
+          {current === 1 && !freshAll.length && <p className="aq-notice-caughtup"><Glyph name="check" size={16} />새 알림을 모두 확인했어요</p>}
+          {sections.map(sec => (
+            <section key={sec.key} aria-labelledby={`notice-${sec.key}`}>
+              <div className="aq-notice-head">
+                <h2 id={`notice-${sec.key}`}>{sec.title}{sec.key === 'fresh' && <span>{unread}</span>}</h2>
+                {sec.key === 'fresh' && <button type="button" className="ui-btn is-text is-sm" onClick={readAll}><Glyph name="check" size={14} />모두 읽음</button>}
+              </div>
+              <div className="aq-catalog-cards">{sec.items.map(g => <NoticeCard key={g.head.id} g={g} onOpen={openNoticeDetail} />)}</div>
+            </section>
           ))}
+          <Pager page={current} pages={pages} onPage={goPage} />
         </div>
-        <Pager page={current} pages={pages} onPage={goPage} />
-        </>
       ) : (
         <div className="ui-empty">
-          <h2>{filter === 'unread' ? '읽지 않은 알림이 없어요.' : '새 알림이 없어요.'}</h2>
-          <p>{filter === 'unread' ? '새 알림이 오면 여기에 먼저 보여요.' : '발매·정산·서류에 변화가 생기면 여기에 알려 드려요.'}</p>
-          {filter === 'unread' && <button type="button" className="ui-btn is-soft" onClick={() => setFilter('all')}>전체 알림 보기</button>}
+          <h2>아직 알림이 없어요</h2>
+          <p>발매·정산·서류에 변화가 생기면 여기에 알려 드려요.</p>
         </div>
       )}
+
+      {/* 알림 받는 방법 — 목록을 밀어내지 않게 아래에 */}
+      <section className="aq-notice-settings" aria-label="알림 받는 방법">
+        <BrowserAlerts />
+        <EmailAlerts />
+      </section>
 
       {openNotice && (
         <Modal title={openNotice.title} onClose={() => setOpenNotice(null)}>
