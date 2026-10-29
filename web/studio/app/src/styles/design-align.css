@@ -1475,7 +1475,7 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-studio-release-main{flex:1}
 .aq-studio-release-title{display:flex;align-items:center;gap:8px;min-width:0}
 .aq-studio-release-main strong{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px;font-weight:var(--aq-fw-bold)}
-.aq-studio-release-main small .aq-nowrap{white-space:nowrap}
+.aq-nowrap{white-space:nowrap}
 .aq-studio-release-main small{display:block;margin-top:2px;color:var(--aq-text-3);font-size:13px}
 .aq-studio-fans{margin:0}
 /* 팬 반응은 휴대폰에서도 세 칸 한 줄 (두 칸 + 한 줄 가득으로 흩어지지 않게) */
@@ -1824,7 +1824,7 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
   .ui-page-head.aq-head-inline{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:12px;row-gap:0;align-items:center}
   .ui-page-head.aq-head-inline>div:first-child{display:contents}
   .ui-page-head.aq-head-inline>div:first-child>*{grid-column:1/-1}
-  .ui-page-head.aq-head-inline>div:first-child>.eyebrow{grid-row:1}
+  .ui-page-head.aq-head-inline>div:first-child>:first-child:not(h1){grid-row:1}
   .ui-page-head.aq-head-inline>div:first-child>h1{grid-column:1;grid-row:2}
-  .ui-page-head.aq-head-inline>.ui-btn{grid-column:2;grid-row:2}
+  .ui-page-head.aq-head-inline>:is(.ui-btn,.ui-page-actions){grid-column:2;grid-row:2;width:auto}
 }
