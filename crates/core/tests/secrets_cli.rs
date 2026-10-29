@@ -179,6 +179,7 @@ fn manifest_and_bundle_inputs_are_checked_before_cloud_calls() {
 struct Deploy {
     _task: tempdir::Dir,
     status: std::process::ExitStatus,
+    stderr: String,
     compose_calls: Vec<Vec<String>>,
 }
 
@@ -193,6 +194,10 @@ mod tempdir {
 
 /// Run deploy.sh --status with a docker stub that logs its arguments.
 fn deploy_status(secrets_line: &str) -> Deploy {
+    deploy_status_with_env_mode(secrets_line, 0o600)
+}
+
+fn deploy_status_with_env_mode(secrets_line: &str, mode: u32) -> Deploy {
     let deploy = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../deploy");
     let task = std::env::temp_dir().join(format!("audeniq-deploy-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(task.join("pgbouncer")).unwrap();
@@ -204,11 +209,11 @@ fn deploy_status(secrets_line: &str) -> Deploy {
     ] {
         std::fs::write(task.join(f), "").unwrap();
     }
-    std::fs::write(
-        task.join("production.env"),
-        format!("AUDENIQ_IMAGE=ghcr.io/test/a@sha256:x\n{secrets_line}"),
-    )
-    .unwrap();
+    write(
+        &task.join("production.env"),
+        &format!("AUDENIQ_IMAGE=ghcr.io/test/a@sha256:x\n{secrets_line}"),
+        mode,
+    );
     let log = task.join("log");
     write(
         &task.join("docker"),
@@ -218,7 +223,7 @@ fn deploy_status(secrets_line: &str) -> Deploy {
         ),
         0o755,
     );
-    let status = Command::new("bash")
+    let output = Command::new("bash")
         .arg(task.join("deploy.sh"))
         .arg("--status")
         .env(
@@ -226,8 +231,7 @@ fn deploy_status(secrets_line: &str) -> Deploy {
             format!("{}:{}", task.display(), std::env::var("PATH").unwrap()),
         )
         .output()
-        .unwrap()
-        .status;
+        .unwrap();
     let compose_calls = std::fs::read_to_string(&log)
         .unwrap_or_default()
         .lines()
@@ -236,7 +240,8 @@ fn deploy_status(secrets_line: &str) -> Deploy {
         .collect();
     Deploy {
         _task: tempdir::Dir(task),
-        status,
+        status: output.status,
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
         compose_calls,
     }
 }
@@ -251,7 +256,7 @@ fn env_files(call: &[String]) -> Vec<String> {
 #[test]
 fn deploy_reads_materialized_secrets_after_production_env() {
     let plain = deploy_status("");
-    assert!(plain.status.success());
+    assert!(plain.status.success(), "{}", plain.stderr);
     assert_eq!(env_files(&plain.compose_calls[0]), vec!["production.env"]);
 
     let dir = shm_dir();
@@ -259,7 +264,7 @@ fn deploy_reads_materialized_secrets_after_production_env() {
     write(&secrets, "POSTGRES_PASSWORD='x'\n", 0o600);
     let line = format!("SECRETS_ENV_FILE={}\n", secrets.display());
     let with = deploy_status(&line);
-    assert!(with.status.success());
+    assert!(with.status.success(), "{}", with.stderr);
     assert_eq!(
         env_files(&with.compose_calls[0]),
         vec!["production.env".to_string(), secrets.display().to_string()]
@@ -276,4 +281,18 @@ fn deploy_reads_materialized_secrets_after_production_env() {
     let missing = deploy_status(&line);
     assert!(!missing.status.success() && missing.compose_calls.is_empty());
     std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn deploy_refuses_public_production_env_before_compose() {
+    let loose = deploy_status_with_env_mode("", 0o644);
+    assert!(!loose.status.success());
+    assert!(loose.compose_calls.is_empty());
+    assert!(
+        loose
+            .stderr
+            .contains("production.env must be owned by the deploy user with mode 0600"),
+        "{}",
+        loose.stderr
+    );
 }
