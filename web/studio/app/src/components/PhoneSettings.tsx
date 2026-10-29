@@ -82,7 +82,9 @@ export function PhoneSettings() {
     <form className="aq-verify" onSubmit={submitPhone} noValidate>
       {errorBox}
       <p className="aq-verify-lead">
-        {current
+        {current && !current.verifiedAt
+          ? `가입할 때 적은 ···${current.last4}는 아직 확인 전이에요. 문자 인증번호로 확인해야 비밀번호 찾기에 쓸 수 있어요.`
+          : current
           ? `지금 등록된 번호는 ···${current.last4}예요. 바꾸려면 새 번호로 인증해 주세요.`
           : '비밀번호를 잊었을 때 이 번호로 받은 문자 인증번호로 다시 정할 수 있어요.'}
       </p>

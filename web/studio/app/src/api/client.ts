@@ -35,7 +35,8 @@ export const api = {
   loginPasskey: (email: string, options?: LoginCeremonyOptions): Promise<User> => (MOCK
     ? Promise.reject(new ApiError('체험 모드에서는 패스키를 쓸 수 없어요.', 400, 'PASSKEY_UNSUPPORTED'))
     : remoteApi.loginPasskey(email, options)),
-  signup: (email: string, password: string): Promise<User> => (MOCK ? mockApi.signup(email, password) : remoteApi.signup(email, password)),
+  /** phone: 가입할 때 적은 휴대폰 번호 — 서버는 '확인 전'으로 저장하고, 문자 인증을 마치면 확인된 번호가 된다 */
+  signup: (email: string, password: string, phone?: string): Promise<User> => (MOCK ? mockApi.signup(email, password) : remoteApi.signup(email, password, phone)),
   logout: (): Promise<void> => (MOCK ? mockApi.logout() : remoteApi.logout()),
   me: (): Promise<User> => (MOCK ? mockApi.me() : remoteApi.me()),
   listOrgs: (): Promise<Org[]> => (MOCK ? mockApi.listOrgs() : remoteApi.listOrgs()),

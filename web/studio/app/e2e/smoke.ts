@@ -29,13 +29,20 @@ async function main() {
 
   try {
     await step('signup creates a session', page, async () => {
+      // 1단계 이메일·비밀번호 → 2단계 활동명·휴대폰·약관 (가입 직후 문자 인증 화면은 문자 서비스가 없으면 건너뛴다)
       await page.goto(`${BASE}/signup`);
-      await page.fill('#suName', '스모크 아티스트');
       await page.fill('#suEmail', email);
       await page.fill('#suPassword', password);
       await page.fill('#suConfirm', password);
-      for (const box of await page.locator('input[type=checkbox]').all()) await box.check().catch(() => {});
-      await page.click('button[type=submit]');
+      await page.click('form button[type=submit]');
+      await page.fill('#suName', '스모크 아티스트');
+      await page.fill('#suPhone', '010-1234-5678');
+      await page.check('#suTerms');
+      await page.click('form button[type=submit]');
+      // 패스키를 쓸 수 있는 브라우저면 마지막 단계(패스키 만들기)가 나온다 — 나중에 하기
+      const later = page.getByRole('button', { name: '나중에 할게요' });
+      await Promise.race([page.waitForSelector('#view-home', { timeout: 20_000 }), later.waitFor({ timeout: 20_000 })]);
+      if (await later.isVisible()) await later.click();
       await page.waitForSelector('#view-home', { timeout: 20_000 });
     });
 

@@ -567,9 +567,9 @@ export const remoteApi = {
     partyId = me.party_id;
     return { id: r.user_id, email: me.email };
   },
-  async signup(email: string, password: string): Promise<User> {
+  async signup(email: string, password: string, phone?: string): Promise<User> {
     // 동의한 약관·고지한 개인정보 처리방침의 판을 서버가 기록·봉인한다
-    await req('/api/auth/register', { method: 'POST', body: { email: email.trim(), password, terms_version: TERMS_VERSION, privacy_notice_version: LEGAL_META.privacy.version }, quiet401: true });
+    await req('/api/auth/register', { method: 'POST', body: { email: email.trim(), password, terms_version: TERMS_VERSION, privacy_notice_version: LEGAL_META.privacy.version, ...(phone ? { phone } : {}) }, quiet401: true });
     return remoteApi.login(email, password);
   },
   async logout(): Promise<void> {

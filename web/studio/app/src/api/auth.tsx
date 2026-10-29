@@ -13,7 +13,7 @@ interface AuthState {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   loginPasskey: (email: string, options?: LoginCeremonyOptions) => Promise<void>;
-  signup: (email: string, password: string) => Promise<void>;
+  signup: (email: string, password: string, phone?: string) => Promise<void>;
   logout: () => Promise<void>;
   selectOrg: (org: Org) => void;
 }
@@ -110,8 +110,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(u);
   }, [loadOrgs]);
 
-  const signup = useCallback(async (email: string, password: string) => {
-    const u = await api.signup(email, password);
+  const signup = useCallback(async (email: string, password: string, phone?: string) => {
+    const u = await api.signup(email, password, phone);
     await loadOrgs();
     setUser(u);
   }, [loadOrgs]);

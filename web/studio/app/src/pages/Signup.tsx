@@ -37,8 +37,8 @@ export function Signup() {
   const [params, setParams] = useSearchParams();
   const steps = !MOCK && passkeySupported() ? 3 : 2;
   const [name, setName] = useState('');
-  // 전화번호 — 서버는 문자 인증을 마친 번호만 저장하고 인증은 로그인한 뒤에만 된다. 계정을 만든 직후
-  // 휴대폰 번호 확인 화면(pages/PhoneSetup)에서 인증번호로 확인한다 (비밀번호 찾기에 쓴다)
+  // 전화번호 — 가입 요청에 실으면 서버가 '확인 전' 번호로 저장한다. 계정을 만든 직후 휴대폰 번호 확인 화면
+  // (pages/PhoneSetup)에서 문자 인증번호로 확인해야 비밀번호·이메일 찾기에 쓸 수 있다
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -123,7 +123,7 @@ export function Signup() {
     preparePasskeyHandoff(password, '/', true);
     preparePhoneHandoff(phone);
     try {
-      await signup(email.trim(), password);
+      await signup(email.trim(), password, phone);
       patchProfile({ name: name.trim(), email: email.trim() });
       rememberLoginEmail(email.trim());
       nav(hasPhoneHandoff() ? '/phone-setup' : hasPasskeyHandoff() ? '/passkey-setup' : '/', { replace: true });
