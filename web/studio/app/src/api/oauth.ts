@@ -2,7 +2,7 @@
 // 시작하면 서버가 제공자 주소를 주고, 제공자는 /api/auth/oauth/{provider}/callback으로 돌아온 뒤
 // 서버가 로그인시켜 원래 화면(실패면 /login?oauth_error=코드)으로 보낸다.
 import { req } from './http';
-import { LEGAL_DOCS, TERMS_VERSION } from '../lib/terms';
+import { LEGAL_META, TERMS_VERSION } from '../lib/legal';
 
 export type OAuthProvider = 'google' | 'apple';
 export const OAUTH_LABEL: Record<OAuthProvider, string> = { google: 'Google', apple: 'Apple' };
@@ -22,7 +22,7 @@ export async function startOAuth(provider: OAuthProvider, opts: { mode?: 'login'
     body: {
       mode: opts.mode ?? 'login', return_to: opts.returnTo ?? null, signup: opts.signup ?? false,
       // 가입이면 동의한 약관·고지한 개인정보 처리방침의 판 (서버가 기록·봉인)
-      terms_version: opts.signup ? TERMS_VERSION : null, privacy_notice_version: opts.signup ? LEGAL_DOCS.privacy.version : null,
+      terms_version: opts.signup ? TERMS_VERSION : null, privacy_notice_version: opts.signup ? LEGAL_META.privacy.version : null,
     },
   });
   window.location.assign(r.url);

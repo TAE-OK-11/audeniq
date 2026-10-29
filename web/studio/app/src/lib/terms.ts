@@ -1,11 +1,11 @@
 // AUDENIQ 음원 배급 서비스 이용약관 — 원문(content/terms-ko.txt)을 화면용 블록으로 나눈다.
-// 원문을 고치면 TERMS_VERSION도 올린다 (배급 계약서·동의 기록이 어느 판에 동의했는지 남긴다).
+// 이름·판(version)은 lib/legal (원문을 고치면 그곳의 version도 올린다).
 import raw from '../content/terms-ko.txt?raw';
 import settlementRaw from '../content/settlement-terms-ko.txt?raw';
 import privacyRaw from '../content/privacy-ko.txt?raw';
+import { LEGAL_META, type LegalKey } from './legal';
 
-export const TERMS_TITLE = 'AUDENIQ 음원 배급 서비스 이용약관';
-export const TERMS_VERSION = 'AUD-TERMS 2026.10.1';
+export { TERMS_TITLE, TERMS_VERSION, type LegalKey } from './legal';
 export const TERMS_TEXT = raw;
 
 export type TermsBlock =
@@ -43,17 +43,8 @@ export function parseTerms(text: string = raw): ParsedTerms {
   return { meta, blocks };
 }
 
-/** 앱에서 볼 수 있는 약관 — /terms/<키>. 원문을 고치면 version을 올린다. */
-export type LegalKey = 'service' | 'settlement' | 'privacy';
-export const LEGAL_DOCS: Record<LegalKey, { title: string; short: string; version: string; text: string; path: string }> = {
-  service: { title: TERMS_TITLE, short: '이용약관', version: TERMS_VERSION, text: raw, path: '/terms' },
-  settlement: {
-    title: 'AUDENIQ 정산금 지급 및 계좌 확인 약관', short: '정산 약관', version: 'AUD-SETTLE 2.1',
-    text: settlementRaw, path: '/terms/settlement',
-  },
-  privacy: {
-    title: 'AUDENIQ 개인정보 처리방침', short: '개인정보 처리방침', version: 'AUD-PRIVACY 1.0-draft',
-    text: privacyRaw, path: '/privacy',
-  },
-};
-
+/** 앱에서 볼 수 있는 약관 — /terms/<키> (이름·판·주소 + 원문) */
+const TEXT: Record<LegalKey, string> = { service: raw, settlement: settlementRaw, privacy: privacyRaw };
+export const LEGAL_DOCS = Object.fromEntries(
+  (Object.keys(LEGAL_META) as LegalKey[]).map(k => [k, { ...LEGAL_META[k], text: TEXT[k] }]),
+) as Record<LegalKey, (typeof LEGAL_META)[LegalKey] & { text: string }>;
