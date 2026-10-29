@@ -5,6 +5,7 @@ export const pageLoaders = {
   Login: () => import('./pages/Login'),
   Signup: () => import('./pages/Signup'),
   FindAccount: () => import('./pages/FindAccount'),
+  PasskeySetup: () => import('./pages/PasskeySetup'),
   Dashboard: () => import('./pages/Dashboard'),
   Releases: () => import('./pages/Releases'),
   ReleaseDetail: () => import('./pages/ReleaseDetail'),
