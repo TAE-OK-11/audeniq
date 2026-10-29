@@ -136,11 +136,15 @@ function holdPlace(from: Node, y: number) {
   if (!view.hasAttribute('data-aq-hold')) {
     view.setAttribute('data-aq-hold', '');
     // 위로 올라갈수록 필요한 높이가 줄어든다 — 필요한 만큼만 남기다가 더 필요 없으면 놓는다
-    const release = () => {
+    // 스크롤 이벤트마다 재면 스크롤하는 동안 배치를 계속 다시 계산했다 — 한 프레임에 한 번만
+    let raf = 0;
+    const check = () => {
+      raf = 0;
       if (view.isConnected && apply(window.scrollY)) return;
       view.removeAttribute('data-aq-hold');
       window.removeEventListener('scroll', release);
     };
+    const release = () => { if (!raf) raf = requestAnimationFrame(check); };
     window.addEventListener('scroll', release, { passive: true });
   }
   // 접히는 복사본이 아직 높이를 갖고 있어도, 다 접힌 뒤를 기준으로 붙잡아 둔다
