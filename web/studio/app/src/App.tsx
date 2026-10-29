@@ -22,6 +22,7 @@ import './styles/desktop.css';
 import './styles/wizard-motion.css';
 import './styles/design-align.css';
 import { lazyComponent } from './lib/lazyComponent';
+import { preloadMoreFont } from './lib/fonts';
 
 // 배포 직후 옛 청크가 사라지면 한 번 새로고침해 새 버전을 받는다 (lib/lazyComponent)
 const lazyPage = lazyComponent;
@@ -100,6 +101,13 @@ function BootScreen() {
 /** 로그인 필요 — 원래 가려던 주소를 기억해 로그인 후 되돌아간다 */
 function Protected({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
+  // 로그인한 화면에는 이름·제목이 나온다 — 글꼴 두 번째 조각을 한가할 때 받아 둔다 (lib/fonts)
+  useEffect(() => {
+    if (!user) return;
+    if ('requestIdleCallback' in window) { const id = window.requestIdleCallback(preloadMoreFont, { timeout: 1500 }); return () => window.cancelIdleCallback(id); }
+    const t = setTimeout(preloadMoreFont, 800);
+    return () => clearTimeout(t);
+  }, [user]);
   const loc = useLocation();
   // AI 앱 연결 화면에서 로그인하러 왔으면 (Google·Apple 로그인 포함) 로그인 뒤 그 화면으로
   const [leaving, setLeaving] = useState(false);

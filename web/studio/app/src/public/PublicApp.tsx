@@ -8,6 +8,7 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 import { lazyComponent } from '../lib/lazyComponent';
 import { artistPath, artistPressPath, releasePath } from '../lib/publicLinks';
 import { toHref } from '../lib/router';
+import { preloadMoreFont } from '../lib/fonts';
 import '../styles/public.css';
 
 const SmartLink = lazyComponent(() => import('../pages/SmartLink'), m => m.SmartLink);
@@ -41,6 +42,8 @@ function ToStudio() {
 }
 
 export function PublicApp() {
+  // 공개 페이지에는 거의 늘 아티스트·발매 이름이 나온다 — 글꼴 두 번째 조각을 바로 받는다 (lib/fonts)
+  useEffect(preloadMoreFont, []);
   return (
     <BrowserRouter>
       <ToastProvider>
