@@ -322,10 +322,11 @@ export function Upload() {
     return () => document.body.classList.remove('wizard-mode');
   }, []);
 
-  // 저장되지 않은 입력이 있으면 창 닫기 전에 경고
+  // 저장되지 않은 입력이 있거나 파일을 올리는 중이면 창 닫기 전에 경고 — 자동 저장이 끝나면 입력 표시는 꺼지지만
+  // 그때 음원·커버가 아직 올라가는 중일 수 있다(제목을 고친 뒤 자동 저장 → 업로드 도중 탭을 닫으면 경고 없이 끊겼다)
   useEffect(() => {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (!dirtyRef.current || submittingRef.current) return;
+      if (submittingRef.current || (!dirtyRef.current && !uploadPending.current.size)) return;
       e.preventDefault();
     };
     window.addEventListener('beforeunload', onBeforeUnload);
@@ -758,6 +759,11 @@ export function Upload() {
   };
 
   const leave = async () => {
+    // 나가면 진행 중인 업로드는 취소된다(아래 정리 effect) — 임시 저장만 하고 조용히 나가면 파일이 빠진 줄 몰랐다
+    if (uploadPending.current.size) {
+      const ok = await confirm({ title: '파일을 올리는 중이에요', message: '지금 나가면 올리던 파일은 취소돼요. 다시 들어와서 파일을 다시 골라야 해요.', confirmLabel: '나가기', cancelLabel: '기다리기', danger: true });
+      if (!ok) return;
+    }
     if (dirtyRef.current && !canAutoSave) {
       const ok = await confirm({ title: '수정을 그만둘까요?', message: '저장하지 않은 변경 내용은 사라져요.', confirmLabel: '나가기', danger: true });
       if (!ok) return;

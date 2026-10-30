@@ -123,3 +123,50 @@ describe('req', () => {
     setOrgId('');
   });
 });
+
+describe('useAsync 늦게 온 응답', () => {
+  afterEach(() => { clearAsyncCache(); setOrgId(''); });
+
+  it('먼저 보낸 요청이 나중에 끝나도 새 응답을 덮어쓰지 않는다 (reload 연달아)', async () => {
+    setOrgId('org-1');
+    const resolvers: ((v: string) => void)[] = [];
+    const fn = () => new Promise<string>(r => { resolvers.push(r); });
+    let reload = () => {};
+    const seen: string[] = [];
+    function R() {
+      const s = useAsync(fn, [], { key: 'race' });
+      reload = s.reload;
+      seen.push(s.data ?? '-');
+      return null;
+    }
+    const unmount = await mount(<R />);
+    await act(async () => { reload(); });
+    expect(resolvers.length).toBe(2);
+    // 두 번째(새) 요청이 먼저 끝나고, 첫 번째(옛) 요청이 늦게 끝난다
+    await act(async () => { resolvers[1]('new'); await Promise.resolve(); });
+    await act(async () => { resolvers[0]('old'); await Promise.resolve(); });
+    expect(seen.at(-1)).toBe('new');
+    unmount();
+  });
+});
+
+describe('useAsync 같은 key를 함께 부를 때', () => {
+  afterEach(() => { clearAsyncCache(); setOrgId(''); });
+
+  it('먼저 부른 화면도 자기 응답을 받아 빈 화면으로 남지 않는다', async () => {
+    setOrgId('org-1');
+    const resolvers: ((v: string) => void)[] = [];
+    const fn = () => new Promise<string>(r => { resolvers.push(r); });
+    const a: string[] = [];
+    const b: string[] = [];
+    function Two() { return <><Probe fn={fn} k="both" out={a} /><Probe fn={fn} k="both" out={b} /></>; }
+    const unmount = await mount(<Two />);
+    expect(resolvers.length).toBe(2);
+    await act(async () => { resolvers[0]('a'); await Promise.resolve(); });
+    expect(a.at(-1)).toBe('ready:a');
+    await act(async () => { resolvers[1]('b'); await Promise.resolve(); });
+    expect(a.at(-1)).toBe('ready:b');
+    expect(b.at(-1)).toBe('ready:b');
+    unmount();
+  });
+});
