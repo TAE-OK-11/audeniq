@@ -71,6 +71,7 @@ pub mod presave;
 pub mod protected_admin;
 pub mod protected_names;
 pub mod provenance;
+pub mod publishing;
 pub mod qc;
 pub mod qc_engine;
 pub mod release_alerts;

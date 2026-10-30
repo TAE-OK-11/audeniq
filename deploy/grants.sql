@@ -133,6 +133,12 @@ GRANT EXECUTE ON FUNCTION finance.cancel_unsent_payout(uuid, uuid) TO audeniq_ap
 GRANT SELECT,INSERT,UPDATE ON portal.split_shares TO audeniq_api;
 GRANT SELECT ON finance.split_allocations, finance.royalty_postings TO audeniq_api;
 GRANT EXECUTE ON FUNCTION finance.settle_split_share(uuid) TO audeniq_api;
+-- 퍼블리싱 1단계 (0167): 곡·지분·녹음 연결·자료·저작권 관리 신청. 곡은 지우지 않고 보관(archived_at)하며,
+-- 지분 행은 저장할 때 통째로 바꾼다(DELETE). 신청 처리 이력은 추가만 한다.
+GRANT SELECT,INSERT,UPDATE ON portal.pub_works, portal.pub_applications, portal.pub_creator_profiles TO audeniq_api;
+GRANT SELECT,INSERT,UPDATE,DELETE ON portal.pub_work_contributors, portal.pub_work_recordings TO audeniq_api;
+GRANT SELECT,INSERT ON portal.pub_work_attachments, portal.pub_work_status_log, portal.pub_application_works, portal.pub_application_events TO audeniq_api;
+GRANT USAGE ON SEQUENCE portal.pub_work_code_seq, portal.pub_application_seq TO audeniq_api;
 GRANT USAGE ON SCHEMA finance TO audeniq_api;
 GRANT SELECT ON finance.ledger_transactions,finance.ledger_entries,finance.payout_orders,finance.royalty_reports,finance.report_lines,finance.finance_holds TO audeniq_api;
 -- Held (disputed) royalties are not withdrawable (0124).
