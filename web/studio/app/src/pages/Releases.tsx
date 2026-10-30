@@ -16,6 +16,7 @@ import { useToast } from '../components/Toast';
 import { MOCK } from '../lib/mode';
 import { openFixes, pendingProofs, proofPath, useDocs, type DocRecord } from '../store/docs';
 import { WorkLibrary } from '../components/publishing/WorkLibrary';
+import { RegBadge } from '../components/publishing/parts';
 import { pubApi } from '../api/publishing';
 
 const FILTERS = [
@@ -77,6 +78,7 @@ export function Releases() {
   const { data: listData, loading: listLoading, error: listError, reload } = useAsync(() => api.listReleases(), [], { key: 'releases' });
   // 저작물 탭 개수 — 작품 목록은 라이브러리 탭과 같은 캐시를 쓴다 (퍼블리싱 API가 없는 서버면 빈 목록)
   const { data: works } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
+  const trackWork = useMemo(() => new Map((works ?? []).flatMap(w => w.recordings.map(r => [r.trackId, w] as const))), [works]);
   const list = useMemo(() => listData ?? [], [listData]);
   // 트랙은 '전체 트랙' 탭을 처음 열 때만 발매별 상세를 불러온다 (목록만 볼 때 N건 추가 요청 방지).
   // 탭에 손가락이 닿는 순간(누르기 직전) 미리 받기 시작해, 바꿨을 때 빈 화면이 거의 보이지 않게 한다
@@ -307,7 +309,8 @@ export function Releases() {
                     <span className="ui-row-title">{t.title || '제목 없는 곡'}{t.explicit && <em className="aq-explicit" title="Explicit">E</em>}</span>
                     <span className="ui-row-meta">{t.releaseTitle} · {t.artist || '아티스트 없음'}</span>
                   </div>
-                  <span className="chevron" aria-hidden="true"><Glyph name="chevron-right" size={18} /></span>
+                  {/* 녹음과 같은 곡의 작사·작곡 저작권 상태 — 배급과 퍼블리싱을 한 줄에서 */}
+                  {trackWork.get(t.id) ? <RegBadge status={trackWork.get(t.id)!.registration} /> : <span className="chevron" aria-hidden="true"><Glyph name="chevron-right" size={18} /></span>}
                 </div>
               ))}
             </div>

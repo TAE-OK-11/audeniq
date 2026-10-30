@@ -23,6 +23,7 @@ import { Glyph } from '../components/Glyph';
 import { ContractBundle } from '../components/ContractBundle';
 import { AlbumPrep } from '../components/AlbumPrep';
 import { TrackSheet } from '../components/TrackSheet';
+import { ReleaseWorksCard } from '../components/publishing/ReleasePublishing';
 import { CopyButton } from '../components/CopyButton';
 import { albumPrep, draftTrackOf, releaseDay, type PrepItem } from '../lib/albumPrep';
 import '../styles/split/ReleaseDetail.css';
@@ -566,6 +567,8 @@ export function ReleaseDetail() {
                 </div>
               )}
             </div>
+            {/* 같은 곡의 작사·작곡 저작권 — 배급과 퍼블리싱을 한 발매 화면에서 */}
+            {!isDraft && <ReleaseWorksCard rel={rel} />}
           </div>
         )}
 

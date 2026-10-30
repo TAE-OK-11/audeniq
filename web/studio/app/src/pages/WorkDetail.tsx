@@ -22,7 +22,9 @@ import { Glyph } from '../components/Glyph';
 import { RegBadge, RegProgress, roleText } from '../components/publishing/parts';
 import { SplitEditor } from '../components/publishing/SplitEditor';
 import { RoyaltyTable } from '../components/publishing/Royalties';
-import { Badge, Callout, EmptyState, IconTile, Tabs } from '../ui';
+import { Badge, Callout, EmptyState, IconTile, StatGrid, StatTile, Tabs } from '../ui';
+import { Money } from '../components/Money';
+import { useReportRows } from '../hooks/useReportRows';
 import '../styles/split/ReleaseDetail.css';
 
 type Tab = 'overview' | 'rights' | 'register' | 'recordings' | 'revenue' | 'files';
@@ -169,6 +171,8 @@ export function WorkDetail() {
   const { data: contracts } = useAsync(() => (tab === 'register' ? pubApi.listContracts() : Promise.resolve(null)), [tab === 'register'], { key: 'pub-contracts' });
   const { data: apps } = useAsync(() => (tab === 'register' ? pubApi.listApplications() : Promise.resolve(null)), [tab === 'register'], { key: 'pub-applications' });
 
+  // 연결된 녹음의 배급 수익 — 음악 리포트와 같은 행(곡 이름이 맞는 행만)
+  const { rows: reportRows } = useReportRows();
   const [splitDraft, setSplitDraft] = useState<WorkContributor[] | null>(null);
   const [savingSplit, setSavingSplit] = useState(false);
   const [linking, setLinking] = useState(false);
@@ -189,6 +193,8 @@ export function WorkDetail() {
 
   const canEdit = w.myRole === 'owner' || w.myRole === 'editor';
   const next = nextAction(w);
+  const distRows = reportRows.filter(r => w.recordings.some(rec => (r.releaseId ? r.releaseId === rec.releaseId : r.release === rec.releaseTitle) && r.track === rec.title));
+  const distRevenue = distRows.reduce((n, r) => n + r.revenue, 0);
   const app = w.application;
   const contract = contracts?.find(c => c.id === w.contractId) ?? null;
   const application = apps?.find(a => a.id === app?.id) ?? null;
@@ -435,13 +441,29 @@ export function WorkDetail() {
 
         {tab === 'revenue' && (
           <div className="aq-detail-stack">
+            {/* 한 곡이 번 돈을 한 화면에 — 녹음 배급 수익과 저작권료는 다른 돈이라 나란히 두되 더하지 않는다 */}
+            <StatGrid cols={2}>
+              <StatTile label="녹음 배급 수익" value={<Money value={distRevenue} />} hint={`연결된 녹음 ${w.recordings.length}개 · 스트리밍·다운로드 (리포트 기준)`} to={w.recordings[0] ? `/releases/${w.recordings[0].releaseId}?tab=stats` : '/reports'} />
+              <StatTile label="저작권료 (확정·지급)" value={<Money value={(royalties ?? []).filter(r => r.status !== 'estimated').reduce((n, r) => n + r.net, 0)} />} hint="작사·작곡 몫 · 관리 단체 정산" />
+            </StatGrid>
             <div className="aq-relinfo-card">
-              <h2 className="subhead">저작권료 (퍼블리싱)</h2>
+              <h2 className="subhead">저작권료 내역</h2>
               {royalties ? <RoyaltyTable rows={royalties} showWork={false} emptyText={w.registration === 'registered' ? undefined : '저작권 등록이 끝나면 관리 단체가 나눠 주는 사용료가 여기에 들어와요.'} /> : <SkeletonBlock height={160} />}
             </div>
-            <Callout tone="neutral" action={<Link to="/settlement?type=distribution" className="ui-btn is-white is-sm">배급 수익 보기</Link>}>
-              <b>녹음물 배급 수익은 따로예요.</b> 연결된 녹음 {w.recordings.length}개의 스트리밍·다운로드 수익은 배급 정산으로 들어와요. 저작권료와 더하지 않아요.
-            </Callout>
+            {distRows.length > 0 && (
+              <div className="aq-relinfo-card">
+                <h2 className="subhead">녹음 배급 수익</h2>
+                <div className="ui-list is-inset">
+                  {distRows.map((r, i) => (
+                    <div key={i} className="ui-row is-flat">
+                      <span className="min-0"><span className="ui-row-title">{r.platform}</span><span className="ui-row-meta"><span>{r.release}</span><span>{r.period}</span><span>{r.plays.toLocaleString('ko-KR')}회</span></span></span>
+                      <Money value={r.revenue} />
+                    </div>
+                  ))}
+                </div>
+                <p className="ui-field-help">두 수익 모두 같은 정산 잔액에 쌓여 한 번에 받아요. <Link to="/settlement" className="aq-inline-link">정산·지급 보기</Link></p>
+              </div>
+            )}
           </div>
         )}
 

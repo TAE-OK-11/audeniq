@@ -101,13 +101,16 @@ export function PublishingContracts() {
   const focus = params.get('pub');
   const { data: contracts, reload } = useAsync(() => pubApi.listContracts(), [], { key: 'pub-contracts' });
   const { data: apps } = useAsync(() => pubApi.listApplications(), [], { key: 'pub-applications' });
+  const { data: works } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
+  // 발매 곡의 신청은 위 발매 계약 묶음에 이미 보인다 — 여기서는 발매 전 작품의 신청만
+  const releasedWork = new Set((works ?? []).filter(w => w.recordings.length).map(w => w.id));
   const [local, setLocal] = useState<Record<string, PublishingContract>>({});
   const [renewing, setRenewing] = useState<PublishingContract | null>(null);
   const focused = useRef<HTMLElement | null>(null);
   useEffect(() => { if (focus && contracts) focused.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, [focus, contracts]);
 
   const list = (contracts ?? []).map(c => local[c.id] ?? c);
-  const pending = (apps ?? []).filter(a => ['submitted', 'in_review', 'needs_fix'].includes(a.status));
+  const pending = (apps ?? []).filter(a => ['submitted', 'in_review', 'needs_fix'].includes(a.status) && !a.workIds.every(id => releasedWork.has(id)));
   if (!list.length && !pending.length) return null;
 
   const terminate = async (c: PublishingContract) => {
@@ -124,7 +127,7 @@ export function PublishingContracts() {
   return (
     <section className="aq-doc-path-wrap" aria-labelledby="pubConTitle">
       <div className="ui-section-head">
-        <h2 id="pubConTitle">퍼블리싱 계약</h2>
+        <h2 id="pubConTitle">퍼블리싱 계약 관리</h2>
         <Link to="/publishing/apply" className="aq-head-link">작품 추가 신청<Glyph name="chevron-right" size={14} /></Link>
       </div>
       <div className="aq-bundle-list aq-stagger">

@@ -28,6 +28,8 @@ import { artistIssue, COVER_MAX, COVER_MIN, coverIssue, expectedReleaseType, isr
 import { uid } from '../lib/store';
 import { CheckIcon } from '../components/Check';
 import { AddonSummary, addonProblem } from '../components/AddonOptions';
+import { ReleasePublishingChoice, takePublishingIntent } from '../components/publishing/ReleasePublishing';
+import { pubApi } from '../api/publishing';
 import { mockOrdersFromApplication } from '../lib/addons';
 import { Glyph } from '../components/Glyph';
 import { Badge, IconTile } from '../ui';
@@ -719,8 +721,15 @@ export function Upload() {
         payload, signature: await compactSignature(signRef.current?.toDataURL() ?? ''), signerName, signerRole: signer.role,
         agreements: AGREEMENTS.map(a => a.id),
       });
+      const intentDraft = draftIdRef.current;
       const r = await api.submitRelease(draftIdRef.current, { ...payload, application });
       draftIdRef.current = r.id;
+      // 신청서에서 고른 대로 곡 크레딧으로 저작물을 만들고(퍼블리싱을 고르면 신청 준비까지) — 실패해도 발매 접수는 그대로
+      const intent = takePublishingIntent(intentDraft);
+      if (intent !== 'none') {
+        const coverTitles = f.options.cover ? f.tracks.filter(t => f.options.coverTracks.some(c => c.trackId === t.id || c.trackId === t.serverId)).map(t => t.title) : [];
+        void pubApi.prepareWorksFromRelease(r.id, intent === 'enroll', coverTitles).catch(() => {});
+      }
       dirtyRef.current = false;
       // 실서버는 계약서를 서버가 만든다 (알림·서류는 pushNotice가 새로 받게 한다)
       if (MOCK) { ensureReleaseDocuments(f, r.id); mockOrdersFromApplication(r.id, r.title, { ...f.options }, f.tracks.map(t => t.title)); }
@@ -1561,6 +1570,11 @@ export function Upload() {
               </button>
             )}
             <div id="aqSpecialOptions" className="aq-fix-zone"><Later h={160}><OptionsSection form={form} set={set} group="rights" onDocument={attachOptionDocument} uploads={uploads} onElectronic={kind => void openElectronic(kind)} onOpenDoc={setOpenDocId} releaseId={draftIdRef.current ?? undefined} onGuardian={() => void openGuardian()} /></Later></div>
+            {/* 같은 신청서에서 곡의 작사·작곡 저작권까지 — 저작물로 정리하거나 퍼블리싱도 함께 맡긴다 */}
+            <ReleasePublishingChoice
+              tracks={form.tracks.map(t => ({ id: t.serverId || t.id, title: t.title, composers: t.composers, lyricists: t.lyricists, instrumental: t.instrumental }))}
+              coverIds={form.options.cover ? form.options.coverTracks.map(c => c.trackId) : []} draftId={draftIdRef.current}
+            />
             <h2 className="subhead">필수 확인 항목</h2>
             <div className="field-group">
               {RIGHTS_CHECKS.map(([k, label]) => (

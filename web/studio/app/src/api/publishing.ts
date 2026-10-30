@@ -21,6 +21,8 @@ import { createStore, uid } from '../lib/store';
 import { stampNow } from '../lib/date';
 import { clearAsyncCache } from '../lib/asyncCache';
 import { statementsStore } from '../store/settlement';
+import { api } from './client';
+import { draftTrackOf } from '../lib/albumPrep';
 import { getProfileSnapshot } from '../store/profile';
 import { getAccountSnapshot } from '../store/account';
 
@@ -104,6 +106,9 @@ export interface Work {
   createdAt: string;
   updatedAt: string;
 }
+
+/** 발매 신청에서 곡 크레딧으로 작품을 만들 때 — enroll이면 퍼블리싱 신청 준비까지 (기획안 4.2, 15) */
+export interface PrepareResult { created: number; linked: number; skipped: number }
 
 export type WorkInput = Pick<Work, 'title' | 'altTitles' | 'workType' | 'language' | 'genre' | 'description' | 'visibility' | 'iswc' | 'hasPriorPublisher' | 'priorPublisher' | 'contributors' | 'attachments'> & {
   /** 발매 곡에서 만들 때 바로 연결할 녹음물 */
@@ -413,6 +418,15 @@ function mockSummary(d: PubDb): PublishingSummary {
   const managed = d.works.filter(w => ['ready', 'submitted', 'external_review', 'registered'].includes(w.registration)).length;
   const inProgress = d.works.filter(w => ['preparing', 'internal_review', 'needs_fix'].includes(w.registration)).length;
   const tasks: PublishingTask[] = [];
+  const preparing = d.works.filter(w => w.registration === 'preparing' && !w.application);
+  if (preparing.length) {
+    const rel = preparing[0].recordings[0];
+    tasks.push({
+      id: 'prepare', kind: 'split', title: `발매 곡 ${preparing.length}곡 지분 확인하고 퍼블리싱 신청`,
+      sub: '발매 신청에서 고른 곡이에요. 크레딧으로 나눈 지분이 맞는지 확인하면 바로 신청돼요.',
+      to: rel ? `/publishing/apply?release=${rel.releaseId}` : '/publishing/apply',
+    });
+  }
   for (const w of d.works) {
     if (w.fix) tasks.push({ id: `fix-${w.id}`, kind: 'fix', title: `‘${w.title}’ 권리 정보 보완 요청`, sub: w.fix.reason, to: `/works/${w.id}?tab=register` });
     const pending = w.contributors.filter(c => c.confirm === 'pending' && !c.isMe);
@@ -574,6 +588,53 @@ const mockApi = {
     return mutate(d => { d.me = { ...d.me, roles: c.roles, society: c.society, ipi: c.ipi, org: c.org }; return withAccount(d.me); });
   },
 
+  /** 발매의 곡마다 작품을 만들어 녹음을 연결한다 — 이미 연결된 곡·커버곡은 건너뛴다.
+   *  크레딧의 작사·작곡·편곡을 참여자로 넣고 지분은 균등하게 미리 나눠 두되, 신청 전에 사용자가 확인한다 */
+  async prepareWorksFromRelease(releaseId: string, enroll: boolean, skipTitles: string[] = []): Promise<PrepareResult> {
+    const rel = await api.getRelease(releaseId);
+    const me = withAccount(db.get().me);
+    return mutate(d => {
+      const out: PrepareResult = { created: 0, linked: 0, skipped: 0 };
+      const now = stampNow();
+      for (const t of rel.tracks) {
+        const has = d.works.find(w => w.recordings.some(r => r.trackId === t.id));
+        if (has) {
+          if (enroll && has.registration === 'none' && !has.application && has.myRole !== 'contributor') { has.registration = 'preparing'; out.linked++; }
+          continue;
+        }
+        if (!t.title.trim() || skipTitles.includes(t.title)) { out.skipped++; continue; }
+        const dt = draftTrackOf(t, rel.draft);
+        const people = new Map<string, WorkContributor>();
+        const add = (names: string[], role: ContributorRole) => {
+          for (const n of names) {
+            const cur = people.get(n);
+            if (cur) { if (!cur.roles.includes(role)) cur.roles.push(role); continue; }
+            const isMe = n === me.name || n === rel.artist;
+            people.set(n, { id: uid(), creatorId: isMe ? ME : null, name: isMe ? me.name : n, roles: [role], society: isMe ? me.society : null, ipi: isMe ? me.ipi : null, share: 0, publisherShare: 0, confirm: isMe ? 'confirmed' : 'pending', external: !isMe, isMe });
+          }
+        };
+        const names = (v: string | null | undefined) => String(v ?? '').split(/[,/·&]/).map(x => x.trim()).filter(Boolean);
+        add(names(t.composers ?? dt?.composers), 'composer');
+        if (!dt?.instrumental) add(names(t.lyricists ?? dt?.lyricists), 'lyricist');
+        add(names(dt?.arrangers), 'arranger');
+        if (!people.size) people.set(me.name, { id: uid(), creatorId: ME, name: me.name, roles: ['composer'], society: me.society, ipi: me.ipi, share: 0, publisherShare: 0, confirm: 'confirmed', external: false, isMe: true });
+        const list = [...people.values()];
+        const each = Math.floor((100 / list.length) * 100) / 100;
+        list.forEach((c, i) => { c.share = i === list.length - 1 ? Math.round((100 - each * (list.length - 1)) * 100) / 100 : each; c.publisherShare = enroll && c.isMe ? c.share : 0; });
+        d.works.unshift({
+          id: `w_${uid()}`, title: t.title, altTitles: [], workType: dt?.instrumental ? 'instrumental' : 'original', language: rel.draft?.language ?? 'ko',
+          genre: rel.draft?.genre ?? '', description: '', visibility: 'private', iswc: null, internalCode: nextCode(d), hasPriorPublisher: false, priorPublisher: null,
+          contributors: list, attachments: [], recordings: [{ id: uid(), releaseId: rel.id, trackId: t.id, title: t.title, releaseTitle: rel.title, version: t.version, isrc: t.isrc, status: rel.status }],
+          registration: enroll ? 'preparing' : 'none', registrationLog: enroll ? [{ status: 'preparing', at: now, note: '발매 신청에서 함께 신청' }] : [],
+          application: null, contractId: null, fix: null, myRole: 'owner', rowVersion: 1,
+          activity: [{ at: now, text: `‘${rel.title}’ 발매 신청에서 크레딧으로 만들었어요. 지분이 맞는지 확인해 주세요.`, kind: 'link', who: d.me.name }],
+          createdAt: now, updatedAt: now,
+        });
+        out.created++;
+      }
+      return out;
+    });
+  },
   async listApplications() { await wait(); return structuredClone(db.get().applications); },
   async submitApplication(input: ApplicationInput) {
     await wait(700);
@@ -732,6 +793,8 @@ const remoteApi = {
   getWork: (id: string) => req<Work>(orgPath(`/works/${enc(id)}`)),
   workByTrack: (trackId: string) => orEmpty(req<{ items: Work[] }>(orgPath(`/works?track_id=${enc(trackId)}`), { quietServer: true }).then(r => r.items[0] ?? null), null),
   createWork: (input: WorkInput) => req<Work>(orgPath('/works'), { method: 'POST', body: input }),
+  prepareWorksFromRelease: (releaseId: string, enroll: boolean, skipTitles: string[] = []) =>
+    req<PrepareResult>(orgPath(`/releases/${enc(releaseId)}/works`), { method: 'POST', body: { enroll, skip_titles: skipTitles } }),
   updateWork: async (id: string, patch: Partial<WorkInput>, rowVersion: number) => {
     // 지분은 권리 전용 경로로 — 서버가 변경 이력과 확인 요청을 따로 남긴다
     const { contributors, ...rest } = patch;

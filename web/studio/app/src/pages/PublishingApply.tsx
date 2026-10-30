@@ -39,14 +39,24 @@ export function PublishingApply() {
   const nav = useNavigate();
   const { user } = useAuth();
   const preset = params.get('work');
+  // 발매 상세·계약 묶음·발매 신청에서 왔으면 그 발매 곡들의 작품을 미리 고른다
+  const fromRelease = params.get('release');
 
   const { data: policy, error: policyError, reload: reloadPolicy } = useAsync(() => pubApi.policy(), [], { key: 'pub-policy' });
-  const { data: works, loading } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
+  const { data: works, loading, reload: reloadWorks } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
+  const [preparing, setPreparing] = useState(false);
 
   const saved = useRef(readJSON<Saved | null>(SAVE_KEY, null));
   const resume = saved.current && (!preset || saved.current.workIds.includes(preset)) ? saved.current : null;
   const [step, setStep] = useState(resume?.step && resume.step < 4 ? resume.step : 0);
   const [picked, setPicked] = useState<string[]>(resume?.workIds ?? (preset ? [preset] : []));
+  // 발매에서 왔으면 그 발매에 연결된(아직 신청 전인) 작품을 모두 고른다
+  useEffect(() => {
+    if (!fromRelease || !works) return;
+    const ids = works.filter(w => w.recordings.some(r => r.releaseId === fromRelease) && (w.myRole === 'owner' || w.myRole === 'editor') && !activeApp(w)).map(w => w.id);
+    if (ids.length) setPicked(p => Array.from(new Set([...p, ...ids])));
+  }, [fromRelease, works]);
+  const releaseTitle = fromRelease ? works?.flatMap(w => w.recordings).find(r => r.releaseId === fromRelease)?.releaseTitle : undefined;
   const [territories, setTerritories] = useState<string[]>(resume?.territories ?? []);
   const [rights, setRights] = useState<string[]>(resume?.rights ?? []);
   const [key] = useState(resume?.key ?? uid('pub'));
@@ -137,7 +147,17 @@ export function PublishingApply() {
       {step === 0 && (
         <section className="ui-tab-panel ui-card" key="s0" aria-labelledby="s0t">
           <h2 id="s0t">어떤 작품을 맡길까요?</h2>
-          <p className="ui-field-help">여러 작품을 한 번에 신청할 수 있어요. 지분이 맞지 않는 작품은 먼저 고쳐 주세요.</p>
+          <p className="ui-field-help">{releaseTitle ? `‘${releaseTitle}’ 발매 곡을 골라 두었어요. ` : ''}여러 작품을 한 번에 신청할 수 있어요. 지분이 맞지 않는 작품은 먼저 고쳐 주세요.</p>
+          {fromRelease && (
+            <Callout tone="neutral" action={
+              <button type="button" className={`ui-btn is-white is-sm${preparing ? ' is-busy' : ''}`} disabled={preparing}
+                onClick={async () => { setPreparing(true); try { await pubApi.prepareWorksFromRelease(fromRelease, true); reloadWorks(); } finally { setPreparing(false); } }}>
+                {preparing ? '만드는 중' : '크레딧으로 작품 만들기'}
+              </button>
+            }>
+              작품이 없는 곡은 발매 신청서의 작사·작곡 크레딧으로 바로 만들 수 있어요.
+            </Callout>
+          )}
           {mine.length ? (
             <div className="aq-agree-box">
               {mine.map(w => {
@@ -250,6 +270,7 @@ export function PublishingApply() {
             <p className="muted">— 계약서 끝 —</p>
           </div>
           {!readAll && <p className="ui-field-help">계약서를 끝까지 읽으면 동의할 수 있어요.</p>}
+          <p className="ui-field-help">본인인증·정산 계좌는 배급에서 등록한 것을 그대로 써요. 저작권료도 같은 잔액에 쌓여 한 번에 받아요.</p>
           <div className="ui-field">
             <label htmlFor="pubSignPad">서명 <span className="required">*</span></label>
             <SignaturePad ref={pad} id="pubSignPad" label="신청인 서명 입력" height={170} onChange={setDrawn} />
