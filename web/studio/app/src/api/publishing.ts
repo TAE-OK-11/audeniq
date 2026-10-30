@@ -436,7 +436,8 @@ function mockSummary(d: PubDb): PublishingSummary {
   }
   for (const c of d.contracts) {
     if (c.status === 'pending_sign') tasks.push({ id: `sign-${c.id}`, kind: 'sign', title: '퍼블리싱 계약 서명 요청', sub: c.works.map(w => w.title).join(', '), to: `/contracts?pub=${c.id}` });
-    if (c.status === 'expiring' && !c.renewal) tasks.push({ id: `renew-${c.id}`, kind: 'renew', title: '퍼블리싱 계약 갱신 요청', sub: `${c.endDate}에 끝나요. 연장하면 관리가 끊기지 않아요.`, to: `/contracts?pub=${c.id}` });
+    // 연장은 계약서(서류) 화면이 아니라 곡 권리 화면의 계약 관리에서
+    if (c.status === 'expiring' && !c.renewal && c.works[0]) tasks.push({ id: `renew-${c.id}`, kind: 'renew', title: '퍼블리싱 계약 갱신 요청', sub: `${c.endDate}에 끝나요. 연장하면 관리가 끊기지 않아요.`, to: `/works/${c.works[0].id}?tab=register` });
   }
   for (const a of d.ar) if (a.status === 'needs_fix') tasks.push({ id: `ar-${a.id}`, kind: 'ar', title: `A&R ‘${a.workTitle}’ 보완 요청`, sub: a.fixReason ?? '', to: '/ar' });
   const pub = d.royalties.reduce((acc, r) => {

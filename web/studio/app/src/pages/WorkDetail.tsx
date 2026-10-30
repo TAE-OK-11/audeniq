@@ -22,7 +22,8 @@ import { Glyph } from '../components/Glyph';
 import { RegBadge, RegProgress, roleText } from '../components/publishing/parts';
 import { SplitEditor } from '../components/publishing/SplitEditor';
 import { RoyaltyTable } from '../components/publishing/Royalties';
-import { Badge, Callout, EmptyState, IconTile, StatGrid, StatTile, Tabs } from '../ui';
+import { ContractManage } from '../components/publishing/PublishingContracts';
+import { Badge, Callout, EmptyState, StatGrid, StatTile, Tabs } from '../ui';
 import { Money } from '../components/Money';
 import { useReportRows } from '../hooks/useReportRows';
 import '../styles/split/ReleaseDetail.css';
@@ -395,12 +396,10 @@ export function WorkDetail() {
               <div className="aq-relinfo-card">
                 <div className="ui-section-head"><h2 className="subhead">계약</h2>{contract && <Badge tone={CONTRACT_TONE[contract.status]}>{CONTRACT_LABEL[contract.status]}</Badge>}</div>
                 {contract ? (
-                  <Link to={`/contracts?pub=${contract.id}`} className="ui-row">
-                    <IconTile size="sm"><Glyph name="sign" size={16} /></IconTile>
-                    <span className="min-0"><span className="ui-row-title">퍼블리싱 관리 계약 {contract.number}</span>
-                      <span className="ui-row-meta"><span>{contract.startDate} ~ {contract.endDate}</span><span>수수료 {contract.commissionRate}%</span></span></span>
-                    <Glyph name="chevron-right" size={16} />
-                  </Link>
+                  <>
+                    <ContractManage contract={contract} canEdit={canEdit} />
+                    <div className="row-actions"><Link to={`/contracts?pub=${contract.id}`} className="ui-btn is-text is-sm">계약서 보기</Link></div>
+                  </>
                 ) : w.myRole === 'contributor' ? <p className="muted small">작품 소유자의 계약으로 관리되고 있어요.</p> : <SkeletonBlock height={64} />}
               </div>
             )}

@@ -6,7 +6,7 @@ import { useNavigate, useSearchParams } from '../../lib/router';
 import { pubApi, type PublishingApplication, type PublishingContract } from '../../api/publishing';
 import { errorMessage } from '../../api/errors';
 import { useAsync } from '../../hooks/useAsync';
-import { APP_LABEL, APP_TONE, CONTRACT_LABEL, CONTRACT_TONE, daysLeft, termLabel } from '../../lib/publishing';
+import { APP_LABEL, APP_TONE, daysLeft, termLabel } from '../../lib/publishing';
 import { localStamp, niceDate } from '../../lib/format';
 import { useToast } from '../Toast';
 import { useConfirm } from '../Confirm';
@@ -93,85 +93,95 @@ function ApplicationBundle({ a }: { a: PublishingApplication }) {
   );
 }
 
-/** 계약서 목록 안의 퍼블리싱 계약 카드 — 배급 계약 묶음과 같은 목록(aq-bundle-list)에 섞여 들어간다 */
-export function PublishingContracts() {
+/** 곡 권리 화면 '등록·계약' 탭의 계약 관리 — 기간·남은 날·연장·종료 요청 (계약서 화면은 서류만 본다) */
+export function ContractManage({ contract, canEdit }: { contract: PublishingContract; canEdit: boolean }) {
   const toast = useToast();
   const confirm = useConfirm();
-  const [params] = useSearchParams();
-  const focus = params.get('pub');
-  const { data: contracts, reload } = useAsync(() => pubApi.listContracts(), [], { key: 'pub-contracts' });
-  const { data: apps } = useAsync(() => pubApi.listApplications(), [], { key: 'pub-applications' });
-  const { data: works } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
-  // 발매 곡의 신청은 위 발매 계약 묶음에 이미 보인다 — 여기서는 발매 전 작품의 신청만
-  const releasedWork = new Set((works ?? []).filter(w => w.recordings.length).map(w => w.id));
-  const [local, setLocal] = useState<Record<string, PublishingContract>>({});
-  const [renewing, setRenewing] = useState<PublishingContract | null>(null);
-  const focused = useRef<HTMLElement | null>(null);
-  useEffect(() => { if (focus && contracts) focused.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, [focus, contracts]);
-
-  const list = (contracts ?? []).map(c => local[c.id] ?? c);
-  const pending = (apps ?? []).filter(a => ['submitted', 'in_review', 'needs_fix'].includes(a.status) && !a.workIds.every(id => releasedWork.has(id)));
-  if (!list.length && !pending.length) return null;
-
-  const terminate = async (c: PublishingContract) => {
+  const [c, setC] = useState(contract);
+  const [renewing, setRenewing] = useState(false);
+  useEffect(() => setC(contract), [contract]);
+  const left = daysLeft(c.endDate);
+  const ended = c.status === 'ended';
+  const total = Math.max(1, daysLeft(c.endDate, new Date(`${c.startDate}T00:00:00+09:00`)));
+  const terminate = async () => {
     const ok = await confirm({
       title: '퍼블리싱 계약 종료를 요청할까요?',
       message: '담당자가 관리 단체 절차를 확인한 뒤 종료해요. 종료 후에는 새 작품을 관리에 넣을 수 없고, 그동안의 등록·정산 기록은 남아요.',
       confirmLabel: '종료 요청', danger: true,
     });
     if (!ok) return;
-    try { const n = await pubApi.requestTermination(c.id); setLocal(x => ({ ...x, [c.id]: n })); toast('종료를 요청했어요.', 'success'); }
+    try { setC(await pubApi.requestTermination(c.id)); toast('종료를 요청했어요.', 'success'); }
     catch (e) { toast(errorMessage(e), 'error'); }
   };
+  return (
+    <>
+      <dl className="ui-kv is-2">
+        <div><dt>계약 기간</dt><dd>{c.startDate} ~ {c.endDate}</dd></div>
+        <div><dt>남은 기간</dt><dd>{ended ? '종료' : `${Math.max(0, left)}일`}</dd></div>
+        <div><dt>수수료</dt><dd>{c.commissionRate}%</dd></div>
+        <div><dt>관리 범위</dt><dd>{c.territories.map(t => TERR_NAME[t] ?? t).join(', ')} · {c.rights.map(r => RIGHT_NAME[r] ?? r).join(', ')}</dd></div>
+      </dl>
+      {!ended && <Meter total={total} parts={[{ value: total - Math.max(0, left), tone: left <= 45 ? 'amber' : 'primary' }]} label={`계약 기간 ${Math.max(0, left)}일 남음`} />}
+      {c.renewal && <p className="ui-field-help">{termLabel(c.renewal.months)} 연장을 요청했어요 · {localStamp(c.renewal.requestedAt)}</p>}
+      {c.terminationRequestedAt && <p className="ui-field-help is-warn">종료를 요청했어요 · {localStamp(c.terminationRequestedAt)}</p>}
+      {canEdit && !ended && !c.terminationRequestedAt && (
+        <div className="row-actions">
+          {!c.renewal && <button type="button" className={`ui-btn ${c.status === 'expiring' ? 'is-primary' : 'is-soft'} is-sm`} onClick={() => setRenewing(true)}>연장하기</button>}
+          <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => void terminate()}>계약 종료 요청</button>
+        </div>
+      )}
+      {renewing && <RenewModal c={c} onClose={() => setRenewing(false)} onDone={setC} />}
+    </>
+  );
+}
+
+/** 계약서 목록 안의 퍼블리싱 계약 카드 — 배급 계약 묶음과 같은 목록에 섞여 들어간다. 서류만 본다 */
+export function PublishingContracts() {
+  const [params] = useSearchParams();
+  const focus = params.get('pub');
+  const { data: contracts } = useAsync(() => pubApi.listContracts(), [], { key: 'pub-contracts' });
+  const { data: apps } = useAsync(() => pubApi.listApplications(), [], { key: 'pub-applications' });
+  const { data: works } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
+  // 발매 곡의 신청은 위 발매 계약 묶음에 이미 보인다 — 여기서는 발매 전 작품의 신청만
+  const releasedWork = new Set((works ?? []).filter(w => w.recordings.length).map(w => w.id));
+  const focused = useRef<HTMLElement | null>(null);
+  useEffect(() => { if (focus && contracts) focused.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, [focus, contracts]);
+
+  const list = contracts ?? [];
+  const pending = (apps ?? []).filter(a => ['submitted', 'in_review', 'needs_fix'].includes(a.status) && !a.workIds.every(id => releasedWork.has(id)));
+  if (!list.length && !pending.length) return null;
+  const app = (c: PublishingContract) => (apps ?? []).find(a => a.contractId === c.id);
 
   return (
     <>
-        {pending.map(a => <ApplicationBundle key={a.id} a={a} />)}
-        {list.map(c => {
-          const left = daysLeft(c.endDate);
-          const ended = c.status === 'ended';
-          const total = Math.max(1, daysLeft(c.endDate, new Date(`${c.startDate}T00:00:00+09:00`)));
-          return (
-            <article key={c.id} ref={c.id === focus ? el => { focused.current = el; } : undefined}
-              className={`aq-bundle is-${c.status === 'pending_sign' ? 'to-sign' : ended ? 'signed' : 'signed'}`} aria-label={`퍼블리싱 관리 계약 ${c.number}`}>
-              <header className="aq-bundle-head">
-                <div className="min-0">
-                  <strong>{c.works.map(w => w.title).join(', ')}</strong>
-                  <span>퍼블리싱 관리 계약 · {c.number}</span>
-                </div>
-                <Badge tone={CONTRACT_TONE[c.status]} className="aq-bundle-state">{CONTRACT_LABEL[c.status]}</Badge>
-              </header>
-              <ol className="aq-bundle-docs">
-                <li className="is-done">
-                  <span className="aq-bundle-no" aria-hidden="true"><CheckIcon size={14} /></span>
-                  <div className="min-0">
-                    <strong>계약서 · 수수료 {c.commissionRate}%</strong>
-                    <span>{c.territories.map(t => TERR_NAME[t] ?? t).join(', ')} · {c.rights.map(r => RIGHT_NAME[r] ?? r).join(', ')}</span>
-                  </div>
-                  <button type="button" className="ui-btn is-soft is-sm" onClick={() => download(c)}>계약서 받기</button>
-                </li>
-                <li className={c.status === 'expiring' && !c.renewal ? 'is-current' : c.renewal ? 'is-done' : ''}>
-                  <span className="aq-bundle-no" aria-hidden="true">{c.renewal ? <CheckIcon size={14} /> : 2}</span>
-                  <div className="min-0">
-                    <strong>{c.startDate} ~ {c.endDate}</strong>
-                    <span>{ended ? '계약이 끝났어요' : c.terminationRequestedAt ? `종료 요청 · ${localStamp(c.terminationRequestedAt)}`
-                      : c.renewal ? `${termLabel(c.renewal.months)} 연장 요청함 · ${localStamp(c.renewal.requestedAt)}` : `${Math.max(0, left)}일 남았어요`}</span>
-                    {!ended && <Meter total={total} parts={[{ value: total - Math.max(0, left), tone: left <= 45 ? 'amber' : 'primary' }]} label={`계약 기간 ${Math.max(0, left)}일 남음`} />}
-                  </div>
-                  {!ended && !c.terminationRequestedAt && !c.renewal && (
-                    <button type="button" className={c.status === 'expiring' ? 'ui-btn is-primary aq-bundle-sign' : 'ui-btn is-soft is-sm'} onClick={() => setRenewing(c)}>연장하기</button>
-                  )}
-                </li>
-              </ol>
-              {!ended && !c.terminationRequestedAt && (
-                <div className="row-actions" style={{ padding: "4px 14px 6px" }}>
-                  <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => void terminate(c)}>계약 종료 요청</button>
-                </div>
-              )}
-            </article>
-          );
-        })}
-      {renewing && <RenewModal c={renewing} onClose={() => setRenewing(null)} onDone={n => { setLocal(x => ({ ...x, [n.id]: n })); reload(); }} />}
+      {pending.map(a => <ApplicationBundle key={a.id} a={a} />)}
+      {list.map(c => {
+        const signed = c.status !== 'pending_sign';
+        const a = app(c);
+        return (
+          <article key={c.id} ref={c.id === focus ? el => { focused.current = el; } : undefined}
+            className={`aq-bundle is-${signed ? 'signed' : 'to-sign'}`} aria-label={`퍼블리싱 관리 계약 ${c.number}`}>
+            <header className="aq-bundle-head">
+              <div className="min-0">
+                <strong>{c.works.map(w => w.title).join(', ')}</strong>
+                <span>{c.signedAt ? `${niceDate(c.signedAt)} 서명` : '서명 전'} · {c.number}</span>
+              </div>
+              <Badge tone={signed ? 'green' : 'amber'} className="aq-bundle-state">{signed ? '체결 완료' : '서명 필요'}</Badge>
+            </header>
+            <ol className="aq-bundle-docs">
+              <li className="is-done">
+                <span className="aq-bundle-no" aria-hidden="true"><CheckIcon size={14} /></span>
+                <div className="min-0"><strong>퍼블리싱 신청서</strong><span>{a?.submittedAt ? `${niceDate(a.submittedAt)} 신청할 때 서명했어요` : '신청할 때 서명했어요'}</span></div>
+              </li>
+              <li className={signed ? 'is-done' : 'is-current'}>
+                <span className="aq-bundle-no" aria-hidden="true">{signed ? <CheckIcon size={14} /> : 2}</span>
+                <div className="min-0"><strong>퍼블리싱 관리 계약서</strong><span>{signed ? '서명 완료' : '서명 필요'}</span></div>
+                <button type="button" className="ui-btn is-soft is-sm" onClick={() => download(c)}>계약서 받기</button>
+              </li>
+            </ol>
+          </article>
+        );
+      })}
     </>
   );
 }
