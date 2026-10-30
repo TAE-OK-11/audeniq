@@ -3,6 +3,7 @@ import { initPressFeedback } from './press';
 import { initRowNav } from './rowNav';
 import { initExpand } from './expand';
 import { initTopCover } from './topCover';
+import { initKeyboardSettle } from './keyboardSettle';
 import { initEnterNext } from './enterNext';
 import { startVitals } from './vitals';
 
@@ -18,6 +19,8 @@ export function initInteractions() {
   initExpand();
   // 키보드가 떠 있는 동안 상태 표시줄 칸으로 뒤 내용이 비치지 않게 (iOS 26)
   initTopCover();
+  // 키보드가 내려간 뒤 화면이 페이지 끝 너머로 밀려 남지 않게 (iOS 26)
+  initKeyboardSettle();
   // 폼 밖 입력 화면(발매 신청 등): 키보드의 '다음'으로 다음 칸, 마지막 칸은 '완료'로 키보드 내리기
   initEnterNext();
   // 실사용 성능 지표 — 수집 주소가 설정됐거나 점검 표시(aq.perf)가 켜졌을 때만 (lib/vitals)
