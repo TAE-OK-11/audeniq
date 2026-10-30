@@ -1,107 +1,122 @@
-// 계정 정보의 '작가' — 한 계정이 아티스트·작곡가·작사가·레이블 담당 역할을 함께 가진다 (기획안 5.1).
-// 법적 이름은 본인 화면에서만 보인다. 관리 단체·IPI는 작품을 만들 때 참여자 칸에 자동으로 들어간다
+// 계정 정보의 '작가·저작권' — 한 계정이 아티스트·작곡가·작사가·레이블 담당 역할을 함께 가진다 (기획안 5.1).
+// 따로 만든 모양 없이 계정 정보와 같은 줄(SetRow)·같은 창(한 항목만 고치는 창, 고를 것이 적으면 목록을 바로)을 쓴다.
+// 활동명·활동 국가는 위 '아티스트', 법적 이름은 '본인 확인'의 실명을 그대로 쓴다 — 같은 정보를 두 번 받지 않는다.
+// 관리 단체·IPI는 작품을 만들 때 참여자 칸에 자동으로 들어간다
 import { useState } from 'react';
 import { pubApi, type Creator, type CreatorRole } from '../../api/publishing';
 import { errorMessage } from '../../api/errors';
 import { useAsync } from '../../hooks/useAsync';
 import { SOCIETIES } from '../../lib/publishing';
-import { Link } from '../../lib/router';
+import { useNavigate } from '../../lib/router';
 import { useToast } from '../Toast';
-import { Modal } from '../Modal';
+import { Modal, useModalClose } from '../Modal';
 import { Glyph } from '../Glyph';
-import { Button, Field, inputClass, selectClass } from '../../ui';
+import { SetRow } from '../SetRow';
 
 const ROLES: [CreatorRole, string][] = [['artist', '아티스트'], ['composer', '작곡가'], ['lyricist', '작사가'], ['arranger', '편곡가'], ['producer', '프로듀서'], ['label', '레이블 담당자']];
-const COUNTRIES: [string, string][] = [['KR', '대한민국'], ['US', '미국'], ['JP', '일본'], ['OTHER', '기타']];
+type Field = 'roles' | 'society' | 'ipi' | 'org';
+const TITLE: Record<Field, string> = { roles: '역할', society: '저작권 관리 단체', ipi: 'IPI/CAE 번호', org: '소속 조직' };
 
-function Editor({ c, onClose, onSaved }: { c: Creator; onClose: () => void; onSaved: (c: Creator) => void }) {
-  const toast = useToast();
-  const [f, setF] = useState<Creator>(c);
-  const [busy, setBusy] = useState(false);
-  const ipiBad = !!f.ipi && !/^\d{9,11}$/.test(f.ipi);
-  const save = async () => {
-    if (!f.name.trim() || ipiBad) return;
-    setBusy(true);
-    try { onSaved(await pubApi.saveMyCreator({ ...f, name: f.name.trim() })); toast('작가 정보를 저장했어요.', 'success'); onClose(); }
-    catch (e) { toast(errorMessage(e), 'error'); } finally { setBusy(false); }
+/** 한 항목만 고치는 창 — 계정 정보의 FieldEditor와 같은 틀(aq-set-editor) */
+function CreatorFieldEditor({ field, c, onSave }: { field: Field; c: Creator; onSave: (next: Creator) => Promise<boolean> }) {
+  const close = useModalClose();
+  const [roles, setRoles] = useState<CreatorRole[]>(c.roles);
+  const [text, setText] = useState(String((field === 'ipi' ? c.ipi : c.org) ?? ''));
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const save = async (next: Creator) => { setSaving(true); const ok = await onSave(next); setSaving(false); if (ok) close(); };
+
+  // 관리 단체는 고를 것이 정해져 있다 — 활동 국가처럼 목록을 바로 보여 누르면 저장
+  if (field === 'society') {
+    const current = c.society ?? '';
+    return (
+      <div className="aq-set-editor aq-country-list" role="radiogroup" aria-label={TITLE.society}>
+        {[['', '가입하지 않았어요'] as const, ...SOCIETIES.filter(s => s !== '없음').map(s => [s, s] as const)].map(([v, label]) => (
+          <button key={v || 'none'} type="button" role="radio" aria-checked={v === current} disabled={saving}
+            className={`aq-picker-opt${v === current ? ' is-on' : ''}`}
+            onClick={() => (v === current ? close() : void save({ ...c, society: v || null }))}>
+            <span>{label}</span>
+            {v === current && <Glyph name="check" size={18} />}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  if (field === 'roles') {
+    return (
+      <div className="aq-set-editor">
+        <div className="aq-country-list" role="group" aria-label="역할 (여러 개)">
+          {ROLES.map(([r, label]) => {
+            const on = roles.includes(r);
+            return (
+              <button key={r} type="button" role="checkbox" aria-checked={on} className={`aq-picker-opt${on ? ' is-on' : ''}`}
+                onClick={() => setRoles(x => (on ? x.filter(y => y !== r) : [...x, r]))}>
+                <span>{label}</span>
+                {on && <Glyph name="check" size={18} />}
+              </button>
+            );
+          })}
+        </div>
+        <p className="ui-field-help">여러 개를 고를 수 있어요. 역할마다 계정을 따로 만들지 않아요.</p>
+        <button type="button" className={`ui-btn is-primary is-block${saving ? ' is-busy' : ''}`} disabled={saving || !roles.length}
+          onClick={() => void save({ ...c, roles })}>{saving ? '저장하는 중' : '저장'}</button>
+      </div>
+    );
+  }
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const v = text.trim();
+    if (field === 'ipi' && v && !/^\d{9,11}$/.test(v)) { setError('IPI 번호는 숫자 9~11자리예요.'); return; }
+    await save({ ...c, [field]: v || null });
   };
   return (
-    <Modal title="작가 정보" onClose={onClose} dismissible={false}>
-      <div>
-        <Field label="작가 활동명" htmlFor="crName" required error={!f.name.trim() ? '활동명을 입력해 주세요.' : undefined}>
-          <input id="crName" className={inputClass()} value={f.name} onChange={e => setF({ ...f, name: e.target.value })} />
-        </Field>
-        <Field label="법적 이름" htmlFor="crLegal" help="관리 단체 등록·계약에만 쓰고 다른 사람에게는 보이지 않아요.">
-          <input id="crLegal" className={inputClass()} value={f.legalName ?? ''} onChange={e => setF({ ...f, legalName: e.target.value || null })} autoComplete="name" />
-        </Field>
-        <Field label="역할" help="여러 개를 고를 수 있어요. 역할마다 계정을 따로 만들지 않아요.">
-          <div className="ui-chips is-wrap" role="group" aria-label="역할">
-            {ROLES.map(([r, l]) => (
-              <button key={r} type="button" className="ui-chip is-sm" aria-pressed={f.roles.includes(r)}
-                onClick={() => setF({ ...f, roles: f.roles.includes(r) ? f.roles.filter(x => x !== r) : [...f.roles, r] })}>{l}</button>
-            ))}
-          </div>
-        </Field>
-        <div className="form-grid">
-          <Field label="저작권 관리 단체" htmlFor="crSoc">
-            <select id="crSoc" className={selectClass()} value={f.society ?? ''} onChange={e => setF({ ...f, society: e.target.value || null })}>
-              <option value="">가입하지 않았어요</option>
-              {SOCIETIES.filter(s => s !== '없음').map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </Field>
-          <Field label="IPI/CAE" htmlFor="crIpi" error={ipiBad ? '숫자 9~11자리예요.' : undefined}>
-            <input id="crIpi" className={inputClass()} inputMode="numeric" value={f.ipi ?? ''} onChange={e => setF({ ...f, ipi: e.target.value.replace(/\D/g, '') || null })} placeholder="00712345678" />
-          </Field>
-          <Field label="소속 조직" htmlFor="crOrg">
-            <input id="crOrg" className={inputClass()} value={f.org ?? ''} onChange={e => setF({ ...f, org: e.target.value || null })} placeholder="예: 소속 퍼블리셔·레이블" />
-          </Field>
-          <Field label="국가" htmlFor="crCountry">
-            <select id="crCountry" className={selectClass()} value={f.country ?? 'KR'} onChange={e => setF({ ...f, country: e.target.value })}>
-              {COUNTRIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-          </Field>
-        </div>
-        <div className="aq-confirm-actions">
-          <Button variant="soft" onClick={onClose}>닫기</Button>
-          <Button variant="primary" busy={busy} disabled={!f.name.trim() || ipiBad} onClick={() => void save()}>{busy ? '저장 중…' : '저장'}</Button>
-        </div>
+    <form className="aq-set-editor" onSubmit={submit} noValidate>
+      <div className="ui-field">
+        <label htmlFor={`creator-${field}`} className="sr-only">{TITLE[field]}</label>
+        <input id={`creator-${field}`} autoFocus inputMode={field === 'ipi' ? 'numeric' : undefined} maxLength={field === 'ipi' ? 11 : 120}
+          placeholder={field === 'ipi' ? '00712345678' : '소속 퍼블리셔·레이블'} aria-invalid={!!error}
+          value={text} onChange={e => { setText(field === 'ipi' ? e.target.value.replace(/\D/g, '') : e.target.value); setError(''); }} />
+        {error ? <p className="ui-field-help aq-help-error">{error}</p>
+          : field === 'ipi' && <p className="ui-field-help">관리 단체에 가입하면 받는 작가 번호예요. 모르면 비워 두세요.</p>}
       </div>
-    </Modal>
+      <button type="submit" className={`ui-btn is-primary is-block${saving ? ' is-busy' : ''}`} disabled={saving || text.trim() === String((field === 'ipi' ? c.ipi : c.org) ?? '')}>
+        {saving ? '저장하는 중' : '저장'}
+      </button>
+    </form>
   );
 }
 
 export function CreatorProfile() {
+  const toast = useToast();
+  const nav = useNavigate();
   const { data, error } = useAsync(() => pubApi.myCreator(), [], { key: 'my-creator' });
   const { data: works } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
   const [local, setLocal] = useState<Creator | null>(null);
-  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<Field | null>(null);
   const c = local ?? data;
   // 퍼블리싱 API가 없는 서버는 이 묶음을 그리지 않는다
   if (error || !c) return null;
   const roleText = c.roles.map(r => ROLES.find(x => x[0] === r)?.[1]).filter(Boolean).join(' · ');
   const mineCount = (works ?? []).filter(w => w.contributors.some(x => x.isMe)).length;
-  const row = (label: string, value: string | null | undefined, empty = '입력하기') => (
-    <button type="button" className="aq-set-row" onClick={() => setOpen(true)}>
-      <span className="aq-set-label">{label}</span>
-      {value ? <span className="aq-set-value">{value}</span> : <span className="aq-set-value is-empty">{empty}</span>}
-      <Glyph name="chevron-right" size={16} className="aq-set-chev" />
-    </button>
-  );
+  const save = async (next: Creator) => {
+    try { setLocal(await pubApi.saveMyCreator(next)); toast('저장했어요.'); return true; }
+    catch (e) { toast(errorMessage(e, '저장하지 못했어요. 잠시 후 다시 시도해 주세요.'), 'error'); return false; }
+  };
   return (
     <section className="aq-set-card" aria-labelledby="setCreator">
-      <h2 id="setCreator">작가·저작권자</h2>
-      {row('작가 활동명', c.name)}
-      {row('법적 이름', c.legalName)}
-      {row('역할', roleText)}
-      {row('저작권 관리 단체', c.society, '가입하지 않음')}
-      {row('IPI/CAE', c.ipi)}
-      {row('소속 조직', c.org, '없음')}
-      <Link to="/releases?tab=works&wf=mine" className="aq-set-row">
-        <span className="aq-set-label">참여한 작품</span>
-        <span className="aq-set-value">{works ? `${mineCount}개` : '…'}</span>
-        <Glyph name="chevron-right" size={16} className="aq-set-chev" />
-      </Link>
-      {open && <Editor c={c} onClose={() => setOpen(false)} onSaved={setLocal} />}
+      <h2 id="setCreator">작가·저작권</h2>
+      <SetRow label="역할" value={roleText} empty="고르기" onClick={() => setEditing('roles')} />
+      <SetRow label="저작권 관리 단체" value={c.society ?? undefined} empty="가입하지 않음" onClick={() => setEditing('society')} />
+      <SetRow label="IPI/CAE 번호" value={c.ipi ?? undefined} empty="입력하기" onClick={() => setEditing('ipi')} />
+      <SetRow label="소속 조직" value={c.org ?? undefined} empty="없음" onClick={() => setEditing('org')} />
+      <SetRow label="참여한 작품" value={works ? `${mineCount}개` : undefined} onClick={() => nav('/releases?tab=works&wf=mine')} />
+      {editing && (
+        <Modal title={TITLE[editing]} onClose={() => setEditing(null)} modalClass="aq-set-modal">
+          <CreatorFieldEditor field={editing} c={c} onSave={save} />
+        </Modal>
+      )}
     </section>
   );
 }

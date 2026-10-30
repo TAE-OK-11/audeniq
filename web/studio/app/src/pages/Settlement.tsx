@@ -2,7 +2,7 @@
 import { Link, useSearchParams } from '../lib/router';
 import { pubApi } from '../api/publishing';
 import { useAsync } from '../hooks/useAsync';
-import { RoyaltyTable } from '../components/publishing/Royalties';
+import { ROYALTY_KIND_LABEL, pct } from '../lib/publishing';
 import { SplitsReceived } from '../components/SplitsReceived';
 import { useEffect, useState } from 'react';
 import { Modal, useModalClose } from '../components/Modal';
@@ -11,7 +11,7 @@ import { useConfirm } from '../components/Confirm';
 import { BankLogo } from '../components/BankLogo';
 import { PaymentSetupModal } from '../components/PaymentSetupModal';
 import { isPaymentRegistered, usePayment } from '../store/payment';
-import { balance, financeListsLoaded, payoutFee, payoutsStore, statementsNextStore, statementsStore, useBalance, type Payout, type Statement } from '../store/settlement';
+import { balance, financeListsLoaded, revenueTypeOf, payoutFee, payoutsStore, statementsNextStore, statementsStore, useBalance, type Payout, type Statement } from '../store/settlement';
 import { SkeletonRows } from '../components/Skeleton';
 import { MOCK } from '../lib/mode';
 import * as portal from '../api/portal';
@@ -43,7 +43,7 @@ import { Badge, ChipGroup, type Tone } from '../ui';
 /** 정산은 플랫폼별·월별로 나뉘어 들어오지 않는다 — 운영팀이 정산금(크레딧)을 넣으면 잔액에 쌓이고, 아티스트가 원할 때 지급을 요청한다.
  *  그래서 내역은 통장처럼 날짜별 적립·차감 줄로 보여 준다 */
 const entryTitle = (s: Statement) => s.note || (s.amount < 0 ? '정산금 차감' : '정산금 적립');
-const entryKind = (s: Statement) => (s.amount < 0 ? '차감' : '적립');
+const entryKind = (s: Statement) => (s.amount < 0 ? '차감' : revenueTypeOf(s) === 'publishing' ? '퍼블리싱 적립' : '적립');
 /** 'YYYY-MM-DD' → '9월 29일' (올해가 아니면 연도까지) */
 function dayLabel(d: string, now = new Date()): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d);
@@ -137,8 +137,8 @@ export function Settlement() {
   };
   const exportStatements = async () => {
     if (MOCK) {
-      if (!statements.length) { toast('내보낼 정산 내역이 없어요.'); return; }
-      saveStatementsCsv(statements);
+      if (!orderedStatements.length) { toast('내보낼 정산 내역이 없어요.'); return; }
+      saveStatementsCsv(orderedStatements);
       return;
     }
     setExporting(true);
@@ -156,7 +156,8 @@ export function Settlement() {
   const revType = (['distribution', 'publishing'] as const).find(t => t === params.get('type')) ?? 'all';
   const setRevType = (v: 'all' | 'distribution' | 'publishing') => { const p = new URLSearchParams(params); if (v === 'all') p.delete('type'); else p.set('type', v); setParams(p, { replace: true }); };
   const { data: royalties } = useAsync(() => pubApi.listRoyalties(), [], { key: 'royalties:all' });
-  const hasPub = !!royalties?.length || revType === 'publishing';
+  const hasPub = statements.some(st => revenueTypeOf(st) === 'publishing') || !!royalties?.length;
+  const estimated = (royalties ?? []).filter(r => r.status === 'estimated').reduce((n, r) => n + r.net, 0);
   const [showPayout, setShowPayout] = useState(false);
   const [showStatement, setShowStatement] = useState(false);
   const [showPaymentSetup, setShowPaymentSetup] = useState(false);
@@ -184,6 +185,7 @@ export function Settlement() {
   // 줄을 누르면 상세를 열고, 삭제는 상세 안에서만 — 금액 옆 ×를 잘못 누르는 일을 막는다
   const [detail, setDetail] = useState<{ kind: 'statement' | 'payout'; id: string } | null>(null);
   const detailStatement = detail?.kind === 'statement' ? statements.find(x => x.id === detail.id) : undefined;
+  const detailRoyalty = detailStatement?.royaltyId ? royalties?.find(r => r.id === detailStatement.royaltyId) : undefined;
   const detailPayout = detail?.kind === 'payout' ? payouts.find(x => x.id === detail.id) : undefined;
 
   const deleteStatement = async (id: string) => {
@@ -257,7 +259,7 @@ export function Settlement() {
 
   // 최근 것부터 — 같은 날은 들어온 순서 그대로(서버는 이미 최신순)
   const day = (s: Statement) => s.created.slice(0, 10);
-  const orderedStatements = statements.slice().sort((a, b) => day(b).localeCompare(day(a)));
+  const orderedStatements = statements.filter(st => revType === 'all' || revenueTypeOf(st) === revType).sort((a, b) => day(b).localeCompare(day(a)));
   const statementDays = [...orderedStatements.reduce((m, s) => m.set(day(s), [...(m.get(day(s)) ?? []), s]), new Map<string, Statement[]>())];
 
   return (
@@ -327,26 +329,6 @@ export function Settlement() {
       </section>
       <SplitsReceived />
 
-      {hasPub && (
-        <ChipGroup label="수익 유형" value={revType} onChange={setRevType} hideZero={false}
-          options={[{ value: 'all', label: '전체' }, { value: 'distribution', label: '배급' }, { value: 'publishing', label: '퍼블리싱', count: royalties?.length ?? 0 }]} />
-      )}
-
-      {revType === 'publishing' ? (
-        <section className="ui-tab-panel" key="pub" aria-labelledby="pubSettleTitle">
-          <div className="ui-section-head"><h2 id="pubSettleTitle">퍼블리싱 저작권료</h2></div>
-          <p className="ui-field-help">관리 단체가 나눠 준 저작권료예요. 확정된 금액은 위 ‘받을 수 있는 금액’에 <b>퍼블리싱</b> 적립으로 들어와 같은 계좌로 받아요. 예상 금액은 아직 받을 수 없어요.</p>
-          {royalties ? <RoyaltyTable rows={royalties} /> : <SkeletonRows count={3} />}
-        </section>
-      ) : (<>
-      {revType === 'all' && hasPub && royalties && (
-        <Link to="/settlement?type=publishing" className="ui-row aq-statement-card settle-entry">
-          <span className="aq-statement-icon" aria-hidden="true"><Glyph name="scale" size={17} /></span>
-          <div className="min-0"><span className="ui-row-title">퍼블리싱 저작권료</span><span className="ui-row-meta"><span>예상 <Money value={royalties.filter(r => r.status === 'estimated').reduce((n, r) => n + r.net, 0)} /> 별도</span></span></div>
-          <div className="aq-statement-end"><span className="settle-entry-amount is-plus">+<Money value={royalties.filter(r => r.status !== 'estimated').reduce((n, r) => n + r.net, 0)} /></span><Glyph name="chevron-right" size={16} /></div>
-        </Link>
-      )}
-
       <Segmented
         tabs className="aq-seg-tabs" label="정산 내역 구분" value={tab} onChange={setTab}
         options={[{ value: 'statements', label: '적립 내역' }, { value: 'payouts', label: '지급 요청 기록' }] as const}
@@ -354,12 +336,21 @@ export function Settlement() {
 
       {tab === 'statements' ? (
         <div id="statementList" className="ui-tab-panel" key="st">
-          {orderedStatements.length > 0 && (
+          {(orderedStatements.length > 0 || hasPub) && (
             <div className="aq-list-tools">
-              <span>{statementsNext ? `최근 ${orderedStatements.length}건` : `전체 ${orderedStatements.length}건`}</span>
+              {hasPub ? (
+                <ChipGroup size="sm" label="수익 유형" value={revType} onChange={setRevType} hideZero={false}
+                  options={[{ value: 'all', label: '전체' }, { value: 'distribution', label: '배급' }, { value: 'publishing', label: '퍼블리싱' }]} />
+              ) : <span>{statementsNext ? `최근 ${orderedStatements.length}건` : `전체 ${orderedStatements.length}건`}</span>}
               <button type="button" className="ui-btn is-soft is-sm" onClick={exportStatements} disabled={exporting}>
                 <Glyph name="download" size={14} className="aq-glyph-lead" />{exporting ? '내려받는 중…' : '전체 기간 CSV'}
               </button>
+            </div>
+          )}
+          {revType !== 'distribution' && estimated > 0 && (
+            <div className="ui-callout is-neutral is-row">
+              <span>확정 전인 퍼블리싱 예상 저작권료 <b>{money(estimated)}</b> — 관리 단체가 확정하면 여기에 적립돼요.</span>
+              <Link to="/releases?tab=works&wf=managed" className="ui-btn is-white is-sm">작품별 보기</Link>
             </div>
           )}
           {listsPending ? <SkeletonRows count={3} pattern="amount" /> : orderedStatements.length ? (
@@ -429,7 +420,6 @@ export function Settlement() {
           )}
         </div>
       )}
-      </>)}
 
       {detailStatement && (
         <Modal title={entryTitle(detailStatement)} onClose={() => setDetail(null)}>
@@ -439,6 +429,13 @@ export function Settlement() {
             <div><dt>날짜</dt><dd>{niceDate(detailStatement.created)}</dd></div>
             {detailStatement.platform && <div><dt>플랫폼</dt><dd>{detailStatement.platform}</dd></div>}
             {detailStatement.period && <div><dt>정산 기간</dt><dd>{detailStatement.period}</dd></div>}
+            {detailRoyalty && <>
+              <div><dt>작품</dt><dd><Link to={`/works/${detailRoyalty.workId}?tab=revenue`} className="aq-inline-link">{detailRoyalty.workTitle}</Link></dd></div>
+              <div><dt>수익 유형</dt><dd>퍼블리싱 · {ROYALTY_KIND_LABEL[detailRoyalty.kind]}</dd></div>
+              <div><dt>수금액</dt><dd><Money value={detailRoyalty.collected} currency={detailRoyalty.currency} /></dd></div>
+              <div><dt>관리 지분 · 수수료</dt><dd>{pct(detailRoyalty.share)} · <Money value={detailRoyalty.fee} currency={detailRoyalty.currency} /></dd></div>
+              <div><dt>국가</dt><dd>{detailRoyalty.country}</dd></div>
+            </>}
           </dl>
           {MOCK && (
             <div className="row-actions aq-statement-detail-actions">

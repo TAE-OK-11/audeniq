@@ -21,6 +21,8 @@ import { createStore, uid } from '../lib/store';
 import { stampNow } from '../lib/date';
 import { clearAsyncCache } from '../lib/asyncCache';
 import { statementsStore } from '../store/settlement';
+import { getProfileSnapshot } from '../store/profile';
+import { getAccountSnapshot } from '../store/account';
 
 // ---------- 모양 ----------
 
@@ -173,6 +175,8 @@ export interface Royalty {
   fee: number;
   net: number;
   status: RoyaltyStatus;
+  /** 확정돼 정산 잔액에 적립된 날 (예상은 null) */
+  postedAt?: string | null;
 }
 
 export interface PublishingTask { id: string; kind: 'fix' | 'split' | 'sign' | 'renew' | 'ar'; title: string; sub: string; to: string }
@@ -339,7 +343,10 @@ function seedRoyalties(): Royalty[] {
   const row = (id: string, workId: string, workTitle: string, kind: RoyaltyKind, source: string, period: string, country: string, collected: number, share: number, status: RoyaltyStatus): Royalty => {
     const managed = Math.round(collected * share / 100);
     const fee = Math.round(managed * 0.1);
-    return { id, workId, workTitle, kind, source, period, country, currency: 'KRW', collected, share, fee, net: managed - fee, status };
+    // 사용된 달로부터 석 달쯤 뒤 관리 단체가 확정해 적립된다
+    const [y, m] = period.split('-').map(Number);
+    const postedAt = status === 'estimated' ? null : `${m + 3 > 12 ? y + 1 : y}-${String(((m + 2) % 12) + 1).padStart(2, '0')}-20`;
+    return { id, workId, workTitle, kind, source, period, country, currency: 'KRW', collected, share, fee, net: managed - fee, status, postedAt };
   };
   return [
     row('y1', 'w1', '첫 번째 싱글', 'digital', 'KOMCA', '2026-06', 'KR', 182_400, 100, 'paid'),
@@ -363,9 +370,28 @@ function seedAr(): ArSubmission[] {
 interface PubDb { works: Work[]; contracts: PublishingContract[]; applications: PublishingApplication[]; royalties: Royalty[]; ar: ArSubmission[]; me: Creator; sentKeys: string[] }
 const seed = (): PubDb => ({ works: seedWorks(), contracts: seedContracts(), applications: seedApplications(), royalties: seedRoyalties(), ar: seedAr(), me: CREATORS[0], sentKeys: [] });
 const db = /* @__PURE__ */ createStore<PubDb>(seed, {
-  persist: MOCK ? 'publishing.v1' : undefined,
+  persist: MOCK ? 'publishing.v2' : undefined,
   revive: (raw, fb) => (raw && typeof raw === 'object' && Array.isArray((raw as PubDb).works) ? { ...fb, ...(raw as PubDb) } : fb),
 });
+
+/** 체험 모드: 확정된 저작권료를 정산 원장(적립 내역)에 '퍼블리싱' 적립으로 한 번씩 올린다 — 실서버는 서버 원장이 같은 일을 한다.
+ *  같은 저작권료는 royaltyId로 한 번만 올라가 배급과 퍼블리싱에 겹쳐 세지 않는다 (기획안 8.4) */
+function postRoyalties() {
+  const posted = new Set(statementsStore.get().map(s => s.royaltyId).filter(Boolean));
+  const add = db.get().royalties.filter(r => r.status !== 'estimated' && r.postedAt && !posted.has(r.id)).map(r => ({
+    id: `roy-${r.id}`, period: r.period, platform: r.source, amount: r.net, note: `${r.workTitle} 저작권료`, created: r.postedAt!,
+    revenueType: 'publishing' as const, royaltyId: r.id,
+  }));
+  if (add.length) statementsStore.set(ss => [...ss, ...add]);
+}
+if (MOCK && typeof window !== 'undefined') postRoyalties();
+
+/** 작가의 활동명·국가·법적 이름은 계정 정보(아티스트 활동명·활동 국가·본인 확인 실명)와 같은 값 */
+function withAccount(me: Creator): Creator {
+  const p = getProfileSnapshot();
+  const a = getAccountSnapshot();
+  return { ...structuredClone(me), name: p.name.trim() || me.name, country: p.country || me.country, legalName: a.realName || me.legalName };
+}
 
 const wait = (ms = 120) => new Promise(r => setTimeout(r, ms));
 const notFound = () => new ApiError('작품을 찾을 수 없어요. 삭제됐거나 볼 수 있는 권한이 없어요.', 404, 'NOT_FOUND');
@@ -403,7 +429,7 @@ function mockSummary(d: PubDb): PublishingSummary {
     if (r.status === 'estimated') acc.estimated += r.net; else acc.confirmed += r.net;
     return acc;
   }, { confirmed: 0, estimated: 0 });
-  const dist = statementsStore.get().reduce((n, s) => n + s.amount, 0);
+  const dist = statementsStore.get().filter(s => s.revenueType !== 'publishing').reduce((n, s) => n + s.amount, 0);
   const linked = new Set(d.works.flatMap(w => w.recordings.map(r => r.trackId)));
   // 데모 발매 곡 중 아직 작품이 없는 곡 (api/mock.ts SEED와 같은 id)
   const candidates = [{ releaseId: 'r2', trackId: 't4', title: '한낮', releaseTitle: '여름 EP' }, { releaseId: 'r2', trackId: 't6', title: '밤바다', releaseTitle: '여름 EP' }];
@@ -538,10 +564,15 @@ const mockApi = {
     await wait(140);
     const k = q.trim().toLowerCase();
     if (!k) return [];
-    return CREATORS.filter(c => c.name.toLowerCase().includes(k) || (c.ipi ?? '').includes(k)).map(c => ({ ...c, legalName: c.isMe ? c.legalName : null }));
+    const me = withAccount(db.get().me);
+    return [me, ...CREATORS.filter(c => !c.isMe)].filter(c => c.name.toLowerCase().includes(k) || (c.ipi ?? '').includes(k)).map(c => ({ ...c, legalName: c.isMe ? c.legalName : null }));
   },
-  async myCreator() { await wait(80); return structuredClone(db.get().me); },
-  async saveMyCreator(c: Creator) { await wait(220); return mutate(d => { d.me = { ...c, id: ME, isMe: true, linked: true }; return structuredClone(d.me); }); },
+  async myCreator() { await wait(80); return withAccount(db.get().me); },
+  /** 작가 정보 중 역할·관리 단체·IPI·소속만 저장한다 — 활동명·국가·실명은 계정 정보의 값을 쓴다 */
+  async saveMyCreator(c: Creator) {
+    await wait(220);
+    return mutate(d => { d.me = { ...d.me, roles: c.roles, society: c.society, ipi: c.ipi, org: c.org }; return withAccount(d.me); });
+  },
 
   async listApplications() { await wait(); return structuredClone(db.get().applications); },
   async submitApplication(input: ApplicationInput) {

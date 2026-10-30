@@ -3,7 +3,14 @@ import { createStore } from '../lib/store';
 import { MOCK } from '../lib/mode';
 
 /** 정산금 한 줄 — 운영팀이 넣은 적립(+)·차감(−). period·platform은 원천이 밝혀진 줄에만 있고 대부분 빈 값 */
-export interface Statement { id: string; period: string; platform: string; amount: number; note: string; created: string }
+export interface Statement {
+  id: string; period: string; platform: string; amount: number; note: string; created: string;
+  /** 수익 유형 — 배급과 퍼블리싱(저작권료)은 같은 잔액·지급으로 받되, 어디서 온 돈인지는 줄마다 남긴다. 없으면 배급 */
+  revenueType?: 'distribution' | 'publishing';
+  /** 퍼블리싱 적립이면 그 저작권료 내역 (수금액·관리 지분·수수료는 거기에) */
+  royaltyId?: string;
+}
+export const revenueTypeOf = (s: Statement) => s.revenueType ?? 'distribution';
 /** recorded = 체험 모드 기록, requested·processing·sent·failed·cancelled = 실서버 지급 요청 상태.
  *  fee·net: 신청 때 고정된 수수료·실수령액, cancellable: 송금 실행 전이라 취소할 수 있음 (실서버) */
 export interface Payout {
