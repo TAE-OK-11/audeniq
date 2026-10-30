@@ -84,7 +84,7 @@ button{font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;touch
 
 .cover{box-shadow:none!important;transform:none!important}
 
-.cover{width:50px!important;height:50px!important;flex:0 0 52px;border-radius:var(--aq-r-md)!important;object-fit:cover;background:linear-gradient(135deg,#9ed9ff 1%,#8575d9 57%,#526eb8);display:grid;place-items:center;color:transparent;overflow:hidden;position:relative;aspect-ratio:1;font-size:44px;box-shadow:none!important}
+.cover{width:50px!important;height:50px!important;flex:0 0 52px;border-radius:var(--aq-r-md)!important;object-fit:cover;background:linear-gradient(135deg,#D6E1FF,#3B63F3 50%,#1F3BB0);display:grid;place-items:center;color:transparent;overflow:hidden;position:relative;aspect-ratio:1;font-size:44px;box-shadow:none!important}
 
 /* .button.secondary — used by live HTML */
 

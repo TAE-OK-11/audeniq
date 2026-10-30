@@ -166,7 +166,7 @@ body.wizard-mode #view-new{margin:0 auto;width:100%}
 /* Rows, indicators and release art share one compact visual grammar. */
 .release-row,.track-row,.doc-row{gap:12px;min-width:0}
 .release-row>*,.track-row>*,.doc-row>*{min-width:0}
-.cover{width:52px;height:52px;flex:0 0 52px;border-radius:var(--aq-r-md);object-fit:cover;background:linear-gradient(135deg,#9ed9ff 1%,#8575d9 57%,#526eb8);display:grid;place-items:center;color:transparent;overflow:hidden;position:relative}
+.cover{width:52px;height:52px;flex:0 0 52px;border-radius:var(--aq-r-md);object-fit:cover;background:linear-gradient(135deg,#D6E1FF,#3B63F3 50%,#1F3BB0);display:grid;place-items:center;color:transparent;overflow:hidden;position:relative}
 .cover:after{content:'';position:absolute;inset:auto -10% -40% -10%;height:80%;border-radius:50% 50% 0 0;background:#e6e8ff63;pointer-events:none}
 img.cover:after{display:none}
 

@@ -424,7 +424,7 @@ export function Dashboard() {
       ) : (
       <Link className="ui-hero aq-home-hero" to="/upload" onPointerEnter={() => prefetchRoute('/upload')}>
         <div>
-          <p className="eyebrow">새 발매</p>
+          {/* 머리말('새 발매')은 두지 않는다 — 제목이 같은 말을 한다. 급한 일 카드의 '먼저 할 일'은 우선순위를 알려 주므로 둔다 */}
           <h2>새로운 발매를 <span className="aq-accent">시작해 보세요.</span></h2>
           <p>음원과 커버아트, 크레딧을 등록하고 발매를 준비해요.</p>
         </div>

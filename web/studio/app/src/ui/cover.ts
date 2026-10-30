@@ -1,13 +1,14 @@
 // 발매 커버 그라데이션 — 같은 발매는 항상 같은 색 (스튜디오·관리자 공통)
-// AUDENIQ 파랑·보라 계열만 — 초록·주황 같은 다른 색이 섞이면 화면이 산만해 보인다
+// 브랜드 파랑(#3B63F3) 한 색의 밝기 변주만 — 보라·하늘색이 섞이면 흔한 보라→파랑 그라데이션처럼 보였다.
+// 가운데 흰 음표 3:1 이상, 짙은 끝(이니셜 아바타가 쓰는 쪽) 흰 글자 4.5:1 이상
 const COVER_GRADIENTS = [
-  'linear-gradient(135deg,#C9DAFF,#5B7CF5 62%,#2C3F9E)',
-  'linear-gradient(135deg,#DCD3FF,#8B6CF0 62%,#4A3497)',
-  'linear-gradient(135deg,#BFE3FF,#4C93EE 62%,#23508F)',
-  'linear-gradient(135deg,#D6DEFF,#6E79E8 62%,#33378C)',
-  'linear-gradient(135deg,#E6D8FF,#A57BEA 62%,#5A3B8E)',
-  'linear-gradient(135deg,#C4ECFA,#3FA2D9 62%,#1F5680)',
-  'linear-gradient(135deg,#D0D8EE,#6F7FA8 62%,#36415F)',
+  'linear-gradient(135deg,#D6E1FF,#3B63F3 50%,#1F3BB0)',
+  'linear-gradient(135deg,#C9D8FF,#2C56E0 55%,#172E8C)',
+  'linear-gradient(135deg,#E0E8FF,#4A6FF4 48%,#2442BE)',
+  'linear-gradient(135deg,#BFD0FF,#3459E6 55%,#142A7A)',
+  'linear-gradient(135deg,#D3DEFF,#4468EE 50%,#23408F)',
+  'linear-gradient(135deg,#DDE6FF,#4F72F1 45%,#2A4CC8)',
+  'linear-gradient(135deg,#CAD6F5,#3D5BB8 55%,#1E2C66)',
 ];
 
 /** ID 해시로 커버 그라디언트를 고정 선택 (같은 발매는 항상 같은 색) */
