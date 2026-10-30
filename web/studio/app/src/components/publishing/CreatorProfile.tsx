@@ -1,4 +1,4 @@
-// 계정 정보의 '작가·저작권' — 한 계정이 아티스트·작곡가·작사가·레이블 담당 역할을 함께 가진다 (기획안 5.1).
+// 계정 정보 '아티스트' 묶음 안의 작가 줄 — 한 계정이 아티스트·작곡가·작사가·레이블 담당 역할을 함께 가진다 (기획안 5.1).
 // 따로 만든 모양 없이 계정 정보와 같은 줄(SetRow)·같은 창(한 항목만 고치는 창, 고를 것이 적으면 목록을 바로)을 쓴다.
 // 활동명·활동 국가는 위 '아티스트', 법적 이름은 '본인 확인'의 실명을 그대로 쓴다 — 같은 정보를 두 번 받지 않는다.
 // 관리 단체·IPI는 작품을 만들 때 참여자 칸에 자동으로 들어간다
@@ -7,7 +7,6 @@ import { pubApi, type Creator, type CreatorRole } from '../../api/publishing';
 import { errorMessage } from '../../api/errors';
 import { useAsync } from '../../hooks/useAsync';
 import { SOCIETIES } from '../../lib/publishing';
-import { useNavigate } from '../../lib/router';
 import { useToast } from '../Toast';
 import { Modal, useModalClose } from '../Modal';
 import { Glyph } from '../Glyph';
@@ -88,35 +87,31 @@ function CreatorFieldEditor({ field, c, onSave }: { field: Field; c: Creator; on
   );
 }
 
+/** 아티스트 묶음 안에 이어지는 줄들 — 따로 묶음을 만들지 않는다 */
 export function CreatorProfile() {
   const toast = useToast();
-  const nav = useNavigate();
   const { data, error } = useAsync(() => pubApi.myCreator(), [], { key: 'my-creator' });
-  const { data: works } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
   const [local, setLocal] = useState<Creator | null>(null);
   const [editing, setEditing] = useState<Field | null>(null);
   const c = local ?? data;
   // 퍼블리싱 API가 없는 서버는 이 묶음을 그리지 않는다
   if (error || !c) return null;
   const roleText = c.roles.map(r => ROLES.find(x => x[0] === r)?.[1]).filter(Boolean).join(' · ');
-  const mineCount = (works ?? []).filter(w => w.contributors.some(x => x.isMe)).length;
   const save = async (next: Creator) => {
     try { setLocal(await pubApi.saveMyCreator(next)); toast('저장했어요.'); return true; }
     catch (e) { toast(errorMessage(e, '저장하지 못했어요. 잠시 후 다시 시도해 주세요.'), 'error'); return false; }
   };
   return (
-    <section className="aq-set-card" aria-labelledby="setCreator">
-      <h2 id="setCreator">작가·저작권</h2>
-      <SetRow label="역할" value={roleText} empty="고르기" onClick={() => setEditing('roles')} />
+    <>
+      <SetRow label="역할 (작곡·작사 등)" value={roleText} empty="고르기" onClick={() => setEditing('roles')} />
       <SetRow label="저작권 관리 단체" value={c.society ?? undefined} empty="가입하지 않음" onClick={() => setEditing('society')} />
       <SetRow label="IPI/CAE 번호" value={c.ipi ?? undefined} empty="입력하기" onClick={() => setEditing('ipi')} />
       <SetRow label="소속 조직" value={c.org ?? undefined} empty="없음" onClick={() => setEditing('org')} />
-      <SetRow label="참여한 작품" value={works ? `${mineCount}개` : undefined} onClick={() => nav('/releases?tab=works&wf=mine')} />
       {editing && (
         <Modal title={TITLE[editing]} onClose={() => setEditing(null)} modalClass="aq-set-modal">
           <CreatorFieldEditor field={editing} c={c} onSave={save} />
         </Modal>
       )}
-    </section>
+    </>
   );
 }

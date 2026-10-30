@@ -198,7 +198,7 @@ function PortalRoutes() {
             <Route path="/releases/:id/application" element={<Application />} />
             <Route path="/upload" element={<UploadRoute />} />
             {/* 저작물 — 음악 라이브러리의 '저작물' 탭에서 들어온다 (퍼블리싱) */}
-            <Route path="/works" element={<Navigate to="/releases?tab=works" replace />} />
+            <Route path="/works" element={<Navigate to="/releases?tab=tracks" replace />} />
             <Route path="/works/new" element={<WorkEditorRoute />} />
             <Route path="/works/:id" element={<WorkDetailRoute />} />
             <Route path="/works/:id/edit" element={<WorkEditorRoute />} />

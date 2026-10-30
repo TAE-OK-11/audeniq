@@ -122,7 +122,7 @@ export function OpenAr() {
     <div className="view">
       <div className="ui-page-head">
         <div>
-          <p className="eyebrow">홍보·기회</p>
+          <p className="eyebrow">발매·곡 관리</p>
           <h1>Open A&R</h1>
           <p>작품 데모를 AUDENIQ A&R에 보내면 심사 후 레이블·아티스트에게 피칭해 드려요.</p>
         </div>

@@ -250,7 +250,7 @@ export function WorkDetail() {
   const remove = async () => {
     const ok = await confirm({ title: '이 작품을 지울까요?', message: '작품 정보·지분·첨부 자료가 모두 지워져요. 발매와 녹음은 그대로예요.', confirmLabel: '지우기', danger: true });
     if (!ok) return;
-    try { await pubApi.deleteWork(w.id); toast('작품을 지웠어요.', 'success'); nav('/releases?tab=works', { replace: true }); } catch (err) { toast(errorMessage(err), 'error'); }
+    try { await pubApi.deleteWork(w.id); toast('작품을 지웠어요.', 'success'); nav('/releases?tab=tracks', { replace: true }); } catch (err) { toast(errorMessage(err), 'error'); }
   };
 
   const buttons = canEdit && (
@@ -264,14 +264,14 @@ export function WorkDetail() {
   return (
     <div id="view-release" className="view">
       <div className="spaced-actions">
-        <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={() => nav('/releases?tab=works')}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />작품 목록</button>
+        <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={() => nav('/releases?tab=tracks')}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />곡 목록</button>
       </div>
 
       <div className="aq-detail-hero" aria-label="작품 정보">
         <ReleaseCover id={w.id} className="cover aq-detail-cover" />
         <div className="aq-detail-info">
           <div className="aq-detail-top">
-            <span className="eyebrow">저작물{w.recordings.length === 0 && ' · 미공개'}</span>
+            <span className="eyebrow">곡 권리{w.recordings.length === 0 && ' · 미발매'}</span>
             <RegBadge status={w.registration} />
           </div>
           <h1>{w.title}</h1>

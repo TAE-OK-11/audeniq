@@ -289,9 +289,9 @@ export function Profile() {
         <SetRow id="profileRowEmail" label="연락 이메일" value={profile.email} empty="입력하기" onClick={() => setEditing('email')} />
         <SetRow id="profileRowBio" label="아티스트 소개" value={bioLine} empty="입력하기" onClick={() => setEditing('bio')} />
         <SetRow id="profileRowCountry" label="활동 국가" value={country} onClick={() => setEditing('country')} />
+        {/* 작곡·작사도 하는 아티스트 — 같은 계정·같은 묶음에서 저작권 정보까지 */}
+        <CreatorProfile />
       </section>
-
-      <CreatorProfile />
 
       <section className="aq-set-card" aria-labelledby="setPayout">
         <h2 id="setPayout">수익 받기</h2>

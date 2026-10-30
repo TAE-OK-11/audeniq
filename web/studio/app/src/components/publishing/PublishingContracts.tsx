@@ -2,7 +2,7 @@
 // 배급 계약과 같은 '계약 묶음'(ContractBundle의 aq-bundle) 모양: 머리(이름·상태) + 번호 붙은 줄(신청 → 계약 → 연장).
 // 연장 기간과 수수료는 서버 계약 정책에서 받는다. 신청 중인 건(심사 중·보완 요청)도 같은 묶음으로 보여 준다
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from '../../lib/router';
+import { useNavigate, useSearchParams } from '../../lib/router';
 import { pubApi, type PublishingApplication, type PublishingContract } from '../../api/publishing';
 import { errorMessage } from '../../api/errors';
 import { useAsync } from '../../hooks/useAsync';
@@ -12,7 +12,6 @@ import { useToast } from '../Toast';
 import { useConfirm } from '../Confirm';
 import { Modal } from '../Modal';
 import { CheckIcon } from '../Check';
-import { Glyph } from '../Glyph';
 import { Badge, Meter, Segmented } from '../../ui';
 
 const RIGHT_NAME: Record<string, string> = { performance: '공연권', mechanical: '복제권', digital: '전송권', sync: '싱크' };
@@ -94,6 +93,7 @@ function ApplicationBundle({ a }: { a: PublishingApplication }) {
   );
 }
 
+/** 계약서 목록 안의 퍼블리싱 계약 카드 — 배급 계약 묶음과 같은 목록(aq-bundle-list)에 섞여 들어간다 */
 export function PublishingContracts() {
   const toast = useToast();
   const confirm = useConfirm();
@@ -125,12 +125,7 @@ export function PublishingContracts() {
   };
 
   return (
-    <section className="aq-doc-path-wrap" aria-labelledby="pubConTitle">
-      <div className="ui-section-head">
-        <h2 id="pubConTitle">퍼블리싱 계약 관리</h2>
-        <Link to="/publishing/apply" className="aq-head-link">작품 추가 신청<Glyph name="chevron-right" size={14} /></Link>
-      </div>
-      <div className="aq-bundle-list aq-stagger">
+    <>
         {pending.map(a => <ApplicationBundle key={a.id} a={a} />)}
         {list.map(c => {
           const left = daysLeft(c.endDate);
@@ -176,8 +171,7 @@ export function PublishingContracts() {
             </article>
           );
         })}
-      </div>
       {renewing && <RenewModal c={renewing} onClose={() => setRenewing(null)} onDone={n => { setLocal(x => ({ ...x, [n.id]: n })); reload(); }} />}
-    </section>
+    </>
   );
 }

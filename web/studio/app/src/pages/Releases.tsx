@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { releaseDay } from '../lib/albumPrep';
 import { useNavigate, useSearchParams } from '../lib/router';
 import { api, type Release, type Track } from '../api/client';
@@ -15,9 +15,9 @@ import { errorMessage } from '../api/errors';
 import { useToast } from '../components/Toast';
 import { MOCK } from '../lib/mode';
 import { openFixes, pendingProofs, proofPath, useDocs, type DocRecord } from '../store/docs';
-import { WorkLibrary } from '../components/publishing/WorkLibrary';
-import { RegBadge } from '../components/publishing/parts';
-import { pubApi } from '../api/publishing';
+import { RegBadge, WorkRow } from '../components/publishing/parts';
+import { isManaged } from '../lib/publishing';
+import { pubApi, type Work } from '../api/publishing';
 
 const FILTERS = [
   { value: 'all', label: '전체' },
@@ -60,7 +60,9 @@ export function Releases() {
   const docs = useDocs();
   const [params, setParams] = useSearchParams();
   const tabParam = params.get('tab');
-  const tab = tabParam === 'tracks' || tabParam === 'works' ? tabParam : 'releases';
+  // 예전 '저작물' 탭 주소는 곡 목록으로 — 녹음과 작사·작곡 저작권을 같은 곡 줄에서 본다
+  const tab = tabParam === 'tracks' || tabParam === 'works' ? 'tracks' : 'releases';
+  const songFilter = (['managed', 'none', 'fix', 'unreleased'] as const).find(v => v === params.get('wf')) ?? 'all';
   const filter = params.get('status') || 'all';
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('updated');
@@ -132,12 +134,23 @@ export function Releases() {
     return out;
   }, [list, filter, dq, sort]);
 
+  // 저작권 상태로 거르기 — 곡의 녹음에 연결된 작품 기준
+  const songMatch = useCallback((w: Work | undefined) => songFilter === 'all' ? true
+    : songFilter === 'managed' ? !!w && isManaged(w) && w.registration !== 'needs_fix'
+    : songFilter === 'fix' ? !!w && (w.registration === 'needs_fix' || w.application?.status === 'needs_fix')
+    : songFilter === 'none' ? !w || w.registration === 'none' || w.registration === 'preparing' : false, [songFilter]);
   const filteredTracks = useMemo(() => {
     const q = norm(dtq);
-    if (!q) return tracks;
-    return tracks.filter(t =>
-      norm(t.title).includes(q) || norm(t.isrc).includes(q) || norm(t.artist).includes(q) || norm(t.releaseTitle).includes(q));
-  }, [tracks, dtq]);
+    return tracks.filter(t => songMatch(trackWork.get(t.id)) && (!q
+      || norm(t.title).includes(q) || norm(t.isrc).includes(q) || norm(t.artist).includes(q) || norm(t.releaseTitle).includes(q)));
+  }, [tracks, dtq, songMatch, trackWork]);
+  // 아직 발매하지 않은 곡(녹음이 없는 작품)도 같은 곡 목록에
+  const unreleased = useMemo(() => (works ?? []).filter(w => !w.recordings.length), [works]);
+  const shownUnreleased = useMemo(() => {
+    const q = norm(dtq);
+    return unreleased.filter(w => (songFilter === 'all' || songFilter === 'unreleased' || songMatch(w)) && (!q || norm(w.title).includes(q) || w.contributors.some(c => norm(c.name).includes(q))));
+  }, [unreleased, dtq, songFilter, songMatch]);
+  const songCount = (songFilter === 'unreleased' ? 0 : filteredTracks.length) + shownUnreleased.length;
 
   const openRelease = (id: string) => nav(`/releases/${id}`);
   // 곡을 누르면 그 발매 상세로 가서 곡 상세 창(ISRC·크레딧·가사)을 바로 연다
@@ -155,7 +168,7 @@ export function Releases() {
         <div>
           <p className="eyebrow">작업실</p>
           <h1 id="catalogTitle">발매·곡 관리</h1>
-          <p>{tab === 'works' ? '작사·작곡한 작품의 지분과 저작권 관리 상태를 보여 드려요.' : '발매마다 심사가 어디까지 왔는지 보여 드려요.'}</p>
+          <p>{tab === 'tracks' ? '곡마다 녹음(발매)과 작사·작곡 저작권 상태를 함께 보여 드려요.' : '발매마다 심사가 어디까지 왔는지 보여 드려요.'}</p>
         </div>
         <button type="button" className="ui-btn is-primary" onClick={() => nav('/upload')}><Glyph name="plus" size={14} />새 발매</button>
       </div>
@@ -164,17 +177,14 @@ export function Releases() {
         label="카탈로그 메뉴" value={tab}
         items={[
           { value: 'releases', label: '발매 목록', count: listLoading ? null : list.length },
-          { value: 'tracks', label: '전체 트랙', count: listLoading ? null : trackCount },
-          { value: 'works', label: '저작물', count: works?.length ?? null },
+          { value: 'tracks', label: '전체 곡', count: listLoading ? null : trackCount + unreleased.length },
         ]}
         onChange={v => setParam('tab', v, 'releases')}
-        onIntent={v => { if (v === 'tracks') setTracksWanted(true); if (v === 'works') void pubApi.listWorks(); }}
+        onIntent={v => { if (v === 'tracks') setTracksWanted(true); }}
         className="is-fill"
       />
 
-      {tab === 'works' ? (
-        <WorkLibrary />
-      ) : loading ? (
+      {loading ? (
         listLoading || slowTracks ? <SkeletonRows count={4} /> : <div className="aq-tab-wait" aria-busy="true" />
       ) : error ? (
         <div className="ui-empty">
@@ -284,9 +294,11 @@ export function Releases() {
         <div className="ui-tab-panel" key="tracks">
           <div className="toolbar">
             <input
-              id="trackSearch" className="ui-input" type="search" aria-label="트랙 검색" placeholder="곡명·아티스트·ISRC 검색"
+              id="trackSearch" className="ui-input" type="search" aria-label="곡 검색" placeholder="곡명·아티스트·ISRC·작가 검색"
               value={trackQuery} onChange={e => setTrackQuery(e.target.value)}
             />
+            {/* 발매 전 곡도 작사·작곡 정보와 지분을 먼저 정리해 둘 수 있다 */}
+            <button type="button" className="ui-btn is-soft" onClick={() => nav('/works/new')}><Glyph name="plus" size={14} />미발매 곡</button>
             {/* 발매·곡·UPC·ISRC 전체를 스프레드시트로 (GET /codes.csv) */}
             {!MOCK && (
               <button type="button" className="ui-btn is-soft aq-codes-csv" onClick={() => void codesCsv()} disabled={csvBusy}>
@@ -294,10 +306,19 @@ export function Releases() {
               </button>
             )}
           </div>
-          <div className="studio-result-count" aria-live="polite">{filteredTracks.length}개의 트랙</div>
-          {filteredTracks.length ? (
+          {(works?.length ?? 0) > 0 && (
+            <div className="ui-chips" role="group" aria-label="저작권 상태">
+              {([['all', '전체'], ['managed', '저작권 관리 중'], ['none', '저작권 미신청'], ['fix', '보완 필요'], ['unreleased', '미발매 곡']] as const).map(([v, label]) => (
+                <button key={v} type="button" className={`ui-chip${songFilter === v ? ' is-on' : ''}`} aria-pressed={songFilter === v} onClick={() => setParam('wf', v, 'all')}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="studio-result-count" aria-live="polite">{songCount}개의 곡</div>
+          {songCount ? (
             <div className="aq-catalog-cards aq-stagger">
-              {filteredTracks.map(t => (
+              {songFilter !== 'unreleased' && filteredTracks.map(t => (
                 <div
                   key={t.releaseId + t.id} className="track-row ui-row aq-track-row"
                   onPointerDown={() => prefetchRelease(t.releaseId)}
@@ -313,10 +334,11 @@ export function Releases() {
                   {trackWork.get(t.id) ? <RegBadge status={trackWork.get(t.id)!.registration} /> : <span className="chevron" aria-hidden="true"><Glyph name="chevron-right" size={18} /></span>}
                 </div>
               ))}
+              {shownUnreleased.map(w => <WorkRow key={w.id} work={w} to={`/works/${w.id}`} />)}
             </div>
           ) : (
             <div className="ui-empty">
-              <h2>{trackQuery ? '검색 결과가 없어요.' : '표시할 트랙이 없어요.'}</h2>
+              <h2>{trackQuery || songFilter !== 'all' ? '조건에 맞는 곡이 없어요.' : '표시할 곡이 없어요.'}</h2>
               <p>{trackQuery ? '다른 검색어로 찾아보세요.' : '새로운 발매를 등록하면 곡별 정보를 볼 수 있어요.'}</p>
               {trackQuery && <button type="button" className="ui-btn is-soft" onClick={() => setTrackQuery('')}>검색어 지우기</button>}
             </div>
