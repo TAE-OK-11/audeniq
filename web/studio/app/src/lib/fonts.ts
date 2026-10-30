@@ -4,6 +4,14 @@
 let started = false;
 export function preloadMoreFont(): void {
   if (started || typeof document === 'undefined') return;
+  // @font-face로 선언된 more 조각을 바로 받게 한다 — <link rel=preload>는 우선순위가 높아 화면 조각과 다투고,
+  // 몇 초 안에 그 글자가 안 나오면 브라우저가 '받고 쓰지 않음' 경고를 남겼다. FontFace.load()는 보통 순위로 받고 사파리도 지원한다
+  const face = [...(document.fonts ?? [])].find(f => f.family.replace(/["']/g, '') === 'Audeniq Sans' && /U\+0-10FFFF/i.test(f.unicodeRange));
+  if (face) {
+    started = true;
+    void face.load().catch(() => { /* 오프라인 등 — 글자가 나올 때 다시 받는다 */ });
+    return;
+  }
   const css = document.getElementById('aq-fonts')?.textContent ?? '';
   const url = /url\("([^"]*audeniq-sans-more[^"]*)"\)/.exec(css)?.[1];
   if (!url) return;

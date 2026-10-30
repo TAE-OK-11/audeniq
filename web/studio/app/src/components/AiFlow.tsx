@@ -144,7 +144,7 @@ export function AiSetItem({ title, tag, children }: { title: React.ReactNode; ta
 /** 결과 표시 — 마침(✓)·거절(✕)·멈춤(!) */
 export function AiFlowStatusIcon({ kind }: { kind: 'ok' | 'off' | 'warn' }) {
   return (
-    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+    <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
       {kind === 'ok' && <path d="M5 12.5 9.5 17 19 7.5" />}
       {kind === 'off' && <path d="M7 7l10 10M17 7 7 17" />}
       {kind === 'warn' && <path d="M12 7v6M12 17h.01" />}

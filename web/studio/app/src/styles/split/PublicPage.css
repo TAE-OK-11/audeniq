@@ -1,0 +1,18 @@
+/*  공개 페이지(PublicPage) 화면 조각에서만 쓰는 규칙 — 전역 스타일(App.tsx가 불러오는 9개 파일)에서 원래 순서대로 옮겼다.
+   이 조각을 받을 때 전역 스타일 뒤에 붙고, 원래 자리보다 뒤에 있던 같은 우선순위 규칙과 겹치지 않는 것만 옮겼다.
+   아래 클래스를 쓰는 파일은 이 파일을 import해야 한다 (splitCss.test.ts가 확인).
+   anchors: aq-artist-avatar aq-pub aq-pub-brand aq-pub-card aq-pub-foot aq-pub-loading-row aq-pub-loading-sub aq-pub-missing-icon aq-pub-waiting aq-smartlink has-photo  *//* ── design-align.css */
+.aq-pub-waiting{opacity:0;transform:translateY(16px)}
+@media (prefers-reduced-motion:reduce){.aq-pub-waiting{opacity:1;transform:none}}
+@media print{.aq-pub-waiting{opacity:1!important;transform:none!important}}
+.aq-pub-foot nav{display:flex;flex-wrap:wrap;justify-content:center;gap:6px}
+.aq-pub-foot nav a:is(:active,.is-pressed){transform:scale(var(--aq-press-btn));transition-duration:var(--aq-press-in)}
+.aq-pub-foot nav a:focus-visible{outline:var(--aq-focus);outline-offset:2px}
+.aq-pub-loading-sub{width:90px;height:14px;margin-bottom:12px}
+.aq-pub-loading-row{width:100%;height:64px;border-radius:var(--aq-r-xl)}
+.aq-pub-missing-icon{display:grid;place-items:center;width:52px;height:52px;border-radius:16px;background:var(--aq-blue-50);color:var(--aq-primary)}
+.aq-smartlink.aq-pub[style*="--aq-pub-bg"]::after{content:"";position:fixed;left:-60px;right:-60px;top:45vh;bottom:-160px;z-index:-1;background:var(--aq-pub-bg) center/cover no-repeat;filter:blur(40px) saturate(1.2);opacity:.45;transform:scale(1.1);pointer-events:none}
+.aq-pub-brand{display:inline-flex;align-items:center;gap:7px;padding:4px 6px;border-radius:8px;color:var(--aq-text-4);text-decoration:none;transition:opacity var(--aq-dur) var(--aq-ease)}
+.aq-pub-card .aq-artist-avatar{box-shadow:none}
+.aq-pub-brand{opacity:1}
+.aq-artist-avatar.has-photo img{display:block;width:100%;height:100%;object-fit:cover}

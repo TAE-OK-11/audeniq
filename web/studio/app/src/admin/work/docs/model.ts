@@ -93,4 +93,3 @@ export function embedKeys(node: DocNode): string[] {
 
 export const embedKey = (kind: string, id: string, view = 'summary') => (view && view !== 'summary' ? `${kind}:${id}:${view}` : `${kind}:${id}`);
 
-export const EMPTY_DOC: DocNode = { type: 'doc', content: [{ type: 'paragraph' }] };

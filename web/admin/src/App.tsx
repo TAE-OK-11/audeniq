@@ -1,6 +1,6 @@
 import { loginRedirect } from './lib/loginRedirect';
 import { PrintStampHost } from './lib/printStamp';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from './lib/router';
 import { AuthProvider, useAuth } from './auth';
 import { ToastProvider } from './components/Toast';
@@ -15,6 +15,7 @@ import './styles/enhance.css';
 import './styles/controls.css';
 import './styles/ui.css';
 import { SelectHost } from './components/Picker';
+import { preloadMoreFont } from './lib/fonts';
 
 function BootScreen() {
   return (
@@ -28,6 +29,13 @@ function BootScreen() {
 function Protected({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   const loc = useLocation();
+  // 로그인한 뒤에만 글꼴 두 번째 조각을 한가할 때 받는다 (이름·제목 글자)
+  useEffect(() => {
+    if (!user) return;
+    if ('requestIdleCallback' in window) { const id = window.requestIdleCallback(preloadMoreFont, { timeout: 1500 }); return () => window.cancelIdleCallback(id); }
+    const t = setTimeout(preloadMoreFont, 800);
+    return () => clearTimeout(t);
+  }, [user]);
   if (loading) return <BootScreen />;
   if (!user) return <Navigate to="/login" replace state={{ from: loc.pathname + loc.search }} />;
   return <>{children}</>;

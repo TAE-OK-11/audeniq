@@ -1,0 +1,72 @@
+/*  ReleaseDetail 화면 조각에서만 쓰는 규칙 — 전역 스타일(App.tsx가 불러오는 9개 파일)에서 원래 순서대로 옮겼다.
+   이 조각을 받을 때 전역 스타일 뒤에 붙고, 원래 자리보다 뒤에 있던 같은 우선순위 규칙과 겹치지 않는 것만 옮겼다.
+   아래 클래스를 쓰는 파일은 이 파일을 import해야 한다 (splitCss.test.ts가 확인).
+   anchors: aq-cover-card aq-cover-meta aq-dday aq-detail-actions aq-detail-cover aq-detail-hero aq-detail-info aq-detail-skel aq-detail-top aq-detail-when aq-fix-cta aq-fix-tasks aq-kv-code aq-prep aq-prep-bar aq-prep-head aq-prep-list aq-track-sheet aq-track-sheet-lyrics aq-track-sheet-tags aq-tracklist aq-trackrow aq-trackrow-isrc aq-trackrow-no aq-when-label is-narrow studio-album-aside tag-row view-release  */
+/* ── live.css */
+#view-release .studio-album-aside{background:var(--aq-final-soft-2)!important}
+/* ── enhance.css */
+.aq-cover-card .subhead{margin:0 0 14px!important}
+.aq-fix-cta{justify-self:start}
+/* ── ui.css */
+@media (max-width:760px){#view-release .aq-detail-skel{height:170px!important;border-radius:var(--aq-r-2xl)}}
+@media (min-width:761px){
+  .aq-detail-actions.is-narrow{display:none!important}
+  #view-release .aq-detail-top{justify-content:flex-start;gap:10px}
+}
+/* ── design-align.css */
+.aq-cover-meta>div{border-top:0!important}
+#view-release .aq-relinfo-card{padding:24px;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
+@media(max-width:560px){#view-release .aq-relinfo-card{padding:20px}}
+#view-release .aq-track-card{grid-template-columns:44px minmax(0,1fr);align-items:start;background:var(--aq-surface)}
+#view-release .aq-track-card .aq-track-credit{display:flex;white-space:normal;overflow:visible}
+.aq-detail-actions .ui-btn.aq-danger-text{flex:none!important}
+#view-release .aq-cover-meta{padding:0 2px;background:none}
+#view-release .aq-detail-stack{display:grid;gap:14px}
+#view-release .aq-relinfo-card .tag-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+#view-release .aq-manage-card{--reveal-gap:14px}
+#view-release .aq-manage-card>.ui-btn,#view-release .aq-manage-card>.ui-actions{justify-self:start}
+#view-release .aq-manage-card .aq-confirm-actions{margin-top:2px}
+#view-release .aq-manage-group{display:grid;gap:12px}
+#view-release .aq-manage-group+.aq-manage-group{margin-top:14px}
+#view-release .aq-manage-group:not(:has(>:not(.aq-manage-group-title))){display:none}
+#view-release .aq-fix-panel.ui-tone-warn{background:var(--aq-amber-50)}
+#view-release .aq-fix-panel.ui-tone-warn .aq-fix-title{margin-top:8px;font-size:22px}
+.aq-fix-tasks{gap:6px}
+.aq-prep{display:grid;gap:14px}
+.aq-prep-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+.aq-prep-bar{height:6px;border-radius:var(--aq-r-pill);background:#fff;overflow:hidden}
+.aq-prep-list{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+.aq-prep-list .aq-task.is-static{cursor:default}
+.aq-prep-list .aq-task.is-static:active{transform:none}
+.aq-prep-list li.is-done .aq-task-text strong{color:var(--aq-text-2)}
+.aq-prep-list li.is-wait .aq-task-text strong{color:var(--aq-text-3)}
+.aq-track-sheet{display:grid;gap:16px}
+.aq-track-sheet-tags{display:flex;flex-wrap:wrap;gap:6px}
+@media(max-width:560px){.aq-prep-list{grid-template-columns:minmax(0,1fr)}}
+@media (min-width:761px){
+  #view-release .aq-detail-hero{align-items:start}
+}
+.aq-tracklist li+li{box-shadow:inset 0 1px 0 var(--aq-line)}
+.aq-trackrow-isrc{min-width:92px;text-align:right}
+#view-release .aq-detail-hero{gap:24px;padding:28px;background:var(--aq-blue-50)}
+#view-release .aq-detail-cover{width:168px!important;height:168px!important;flex-basis:168px;border-radius:var(--aq-r-2xl)!important;box-shadow:0 24px 44px -18px rgba(28,40,110,.45)}
+@media (min-width:761px){#view-release .aq-detail-hero{grid-template-columns:168px minmax(0,1fr) auto}}
+#view-release .aq-detail-info h1{margin:6px 0 2px;font-size:clamp(24px,3.2vw,34px);font-weight:800;letter-spacing:-.02em;line-height:1.2}
+.aq-detail-when .aq-dday.is-soon{background:var(--aq-blue-500);color:#fff}
+@media(max-width:760px){
+  #view-release .aq-detail-hero{grid-template-columns:104px minmax(0,1fr);gap:16px;padding:20px}
+  #view-release .aq-detail-cover{width:104px!important;height:104px!important;flex-basis:104px;border-radius:var(--aq-r-xl)!important}
+  .aq-detail-when{font-size:13px}.aq-when-label{display:none}
+}
+.aq-trackrow{transition:background-color var(--aq-motion-short) var(--aq-enter),transform var(--aq-press-out) var(--aq-press-spring)}
+.aq-trackrow:is(:active,.is-pressed){transform:scale(var(--aq-press-row));transition-duration:var(--aq-press-in)}
+.aq-trackrow-no{transition:color var(--aq-motion-short) var(--aq-enter)}
+@media(hover:hover){.aq-trackrow:hover .aq-trackrow-no{color:var(--aq-primary)}}
+.aq-prep-list button.aq-task:is(:active,.is-pressed){transform:scale(var(--aq-press-row));transition-duration:var(--aq-press-in)}
+.aq-track-sheet-lyrics{-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 28px),transparent);padding-bottom:28px}
+@media(prefers-reduced-motion:reduce){
+  .aq-trackrow:is(:active,.is-pressed),.aq-prep-list button.aq-task:is(:active,.is-pressed){transform:none}
+}
+@media(max-width:760px){
+  .ui-kv>.aq-kv-code{grid-column:1/-1}
+}

@@ -7,6 +7,7 @@
 // 늦게 그려지는 목록(응원·소식)도 잠시 지켜보고, 화면을 누르거나 키를 치면 그만 지켜본다(거르기·더 보기로 바뀐 내용은 바로 보인다).
 // 초점이 들어가면 바로 제자리, 탭을 숨기면 진행 중인 연출을 끝낸다. 동작 줄이기면 아무것도 하지 않는다.
 import { useLayoutEffect, type RefObject } from 'react';
+import '../styles/split/PublicPage.css';
 
 const KEYFRAMES: Keyframe[] = [{ opacity: 0, transform: 'translateY(16px)' }, { opacity: 1, transform: 'none' }];
 const EASING = 'cubic-bezier(.22,.61,.36,1)';

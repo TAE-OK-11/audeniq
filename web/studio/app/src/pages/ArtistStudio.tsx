@@ -17,6 +17,7 @@ import {
   PERIODS, SELF_SERVE, SENDABLE, change, clickRate, fetchInsights, mockPhoto, photoUrl, removePhoto, sendPhoto, setPhoto,
   type Insights, type Period, type ReleaseInsight,
 } from '../lib/artistStudio';
+import '../styles/split/ArtistStudio.css';
 import { Badge, Callout, Cover, EmptyState, PageHeader, Segmented, SkeletonList, StatGrid, StatTile, Tabs } from '../ui';
 import { Glyph } from '../components/Glyph';
 import { Modal } from '../components/Modal';

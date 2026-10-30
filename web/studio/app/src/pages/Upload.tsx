@@ -44,6 +44,7 @@ import { BackIcon, KoreanDateField, breakAtDots } from './upload/fields';
 import { lazyComponent } from '../lib/lazyComponent';
 import { TrackEditor, UploadStatus } from './upload/tracks';
 import { SkeletonBlock } from '../components/Skeleton';
+import '../styles/split/Upload.css';
 
 // 배급 설정 단계부터 쓰는 조각 — 신청서를 처음 열 때는 받지 않고, 한가할 때 미리 받아 둔다 (아래 Upload의 useEffect)
 const loadOptions = () => import('./upload/options');

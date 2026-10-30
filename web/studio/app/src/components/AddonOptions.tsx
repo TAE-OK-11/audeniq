@@ -13,6 +13,7 @@ import { Glyph } from './Glyph';
 import { Segmented } from './Segmented';
 import { useToast } from './Toast';
 import { IconTile } from '../ui';
+import '../styles/split/Upload.css';
 
 export interface AddonFields {
   mv: boolean; mvTier: MvTier; mvTrack: number;
@@ -146,7 +147,7 @@ export function MvDetail({ o, set, tracks }: { o: AddonFields; set: (patch: Part
             />
             {up !== null ? (
               <div className="aq-upload-progress" role="progressbar" aria-valuenow={up} aria-valuemin={0} aria-valuemax={100} aria-label="영상 업로드 진행률">
-                <span><i style={{ width: `${Math.max(4, up)}%` }} /></span>
+                <span><i style={{ ['--p' as string]: `${Math.max(4, up)}%` }} /></span>
                 <small>{up < 100 ? `업로드 중 ${up}%` : '서버에서 확인하는 중…'} · <button type="button" className="ui-btn is-text is-xs" onClick={() => abort.current?.abort()}>멈추기</button></small>
               </div>
             ) : o.mvVideoFile && o.mvChecks?.issues.some(i => i.severity !== 'info')

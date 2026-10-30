@@ -44,6 +44,7 @@ EDGE_SERVICE_SECRET=... bun run dev:api  # 로컬 API(127.0.0.1:8080)와 연결�
 - `store/` — 공유 상태(프로필, 수령 정보, 알림, 서류, 정산, 문의)
 - `components/` — 모달(퇴장 애니메이션·포커스 트랩), 확인 대화상자, 토스트 스택, 스켈레톤, 오류 경계
 - `styles/` — `tokens.css`(디자인 토큰) · `ui.css`(공통 컴포넌트 `ui-*`) · 화면별 배치(`design.css`·`live.css`·`enhance.css`·`admin.css`·`work.css`)
+  · `split/`(한 화면 조각에서만 쓰는 규칙을 전역 파일에서 떼어 낸 것 — 그 조각을 받을 때만 붙는다. 머리 주석의 anchors 클래스를 쓰는 파일은 그 CSS를 import해야 하고 `splitCss.test.ts`가 확인한다)
 - `ui/` — 디자인 시스템 React 컴포넌트(Button, Badge, ChipGroup, Segmented, Tabs, PageHeader, StatTile …). 규칙과 목록은 `docs/DESIGN_SYSTEM.md`, 견본은 `/admin/design`
 
 ## 성능·경량화

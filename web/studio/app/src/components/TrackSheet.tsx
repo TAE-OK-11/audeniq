@@ -5,6 +5,7 @@ import { durationLabel } from '../lib/catalog';
 import { Badge } from '../ui';
 import { CopyButton } from './CopyButton';
 import { Modal } from './Modal';
+import '../styles/split/ReleaseDetail.css';
 
 const Empty = ({ children }: { children: string }) => <span className="aq-empty-val">{children}</span>;
 

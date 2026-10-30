@@ -21,7 +21,7 @@
 .adm-side-label{font-size:12px;font-weight:700;letter-spacing:.02em;color:var(--aq-text-4);padding:0 12px 6px}
 .adm-side a{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;padding:10px 12px;border-radius:var(--aq-r-md);color:var(--aq-text-2);font-size:14px;font-weight:700;letter-spacing:0;transition:background-color .18s var(--adm-ease),color .18s var(--adm-ease)}
 .adm-side a:hover{background:var(--adm-soft-2);color:var(--adm-ink)}
-.adm-side a[aria-current=page]{background:var(--adm-blue-soft);color:var(--adm-blue)}
+.adm-side a[aria-current=page]{background:var(--adm-blue-soft);color:var(--aq-primary-text)}
 .adm-side a span{display:flex;align-items:center;gap:10px;min-width:0}
 .adm-side a svg{width:18px;height:18px;flex:0 0 auto;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;opacity:.9}
 .adm-side-foot{border-top:1px solid var(--adm-line);padding-top:16px;font-size:12px;color:var(--adm-muted);line-height:1.6}

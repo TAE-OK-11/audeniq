@@ -107,7 +107,7 @@ button{-webkit-tap-highlight-color:transparent}
 .wizard-progress,#view-new .wizard-header,#view-new #wizardBody,#view-new #wizardError{flex-shrink:0}
 
 .wizard-progress{margin-bottom:19px!important}
-.wizard-progress span{transition:background-color .28s var(--aq-motion-ease)!important;transform-origin:left center}
+.wizard-progress span{transition:background-color var(--aq-motion-base) var(--aq-motion-ease)!important;transform-origin:left center}
 
 /* .wizard-header */
 

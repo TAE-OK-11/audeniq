@@ -1,0 +1,83 @@
+/*  Upload 화면 조각에서만 쓰는 규칙 — 전역 스타일(App.tsx가 불러오는 9개 파일)에서 원래 순서대로 옮겼다.
+   이 조각을 받을 때 전역 스타일 뒤에 붙고, 원래 자리보다 뒤에 있던 같은 우선순위 규칙과 겹치지 않는 것만 옮겼다.
+   아래 클래스를 쓰는 파일은 이 파일을 import해야 한다 (splitCss.test.ts가 확인).
+   anchors: aq-addon-lines aq-addon-summary aq-agree-box aq-autofill-text aq-dsp aq-dsp-name aq-fix-list aq-invalid aq-review-body aq-review-card aq-review-cover aq-review-tracks aq-review-value aq-submit-error aq-vt-fix aq-wiz-layout aq-wiz-rail aq-wiz-rail-progress aq-wiz-step-no aq-wiz-steps is-collapsed is-unavailable minor-actions step-section track-detail-toggle track-editor track-title-field trackEditors wizard-progress wizard-progress-seg wizardBody wizardError wizardSaveNow  */
+/* ── live.css */
+#view-new .step-section details>summary{transition:color var(--aq-motion-fast) var(--aq-motion-ease)}
+#view-new .track-editor{background:var(--aq-final-soft)!important;border:0!important;box-shadow:none!important;border-radius:var(--aq-r-2xl)!important;padding:18px!important}
+@media(max-width:760px){
+ #view-new .track-editor .form-grid{grid-template-columns:minmax(0,1fr)!important;gap:12px!important}
+}
+.track-title-field input{font-size:16px!important;font-weight:700!important}
+#trackEditors{display:flex!important;flex-direction:column!important;gap:16px!important}
+/* ── enhance.css */
+.track-detail-toggle:hover{background:var(--aq-blue-100)!important}
+.aq-wiz-steps li:not(.is-done):not(.is-current) button{color:var(--aq-text-4);font-weight:500;opacity:1}
+.aq-wiz-steps li.is-done button{color:var(--aq-text-2)}
+.aq-wiz-steps li.is-done button:hover{background:var(--aq-gray-50)}
+.aq-wiz-steps li.is-current button{background:var(--aq-e-blue-soft);color:var(--aq-e-blue);font-weight:700}
+.track-editor .ui-field input:disabled{opacity:.55}
+.aq-agree-box .ui-check.is-plain+.check-line{border-top:1px solid var(--aq-gray-150)}
+.aq-dsp.is-unavailable:not(.is-on){cursor:not-allowed}
+#view-new .step-actions #wizardSaveNow{background:var(--aq-blue-100)!important;color:var(--aq-blue-600)!important}
+@media(max-width:759.98px){
+  #view-new .wizard-progress-seg em{display:none!important}
+  #view-new .wizard-progress{padding-top:14px!important}
+}
+/* ── desktop.css */
+
+@media (min-width: 1024px) {
+  .aq-wiz-layout { grid-template-columns: 280px minmax(0, 1fr) !important; gap: 48px !important; }
+  .aq-wiz-rail-progress i::after {
+    content: ''; position: absolute; inset: 0 auto 0 0; width: 100%; translate: calc(var(--p, 0%) - 100%) 0; border-radius: inherit;
+    background: var(--aq-blue-500); transition: translate .5s var(--aq-e-ease);
+  }
+  .aq-wiz-rail .aq-wiz-steps li.is-done button:hover { background: rgba(255, 255, 255, .8); }
+  .aq-wiz-rail .aq-wiz-steps li.is-current button { background: var(--aq-blue-100); color: var(--aq-blue-700); }
+  #view-new .step-section > .aq-catalog-cards:has(.aq-review-card) {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: stretch;
+  }
+  #view-new .aq-review-card { margin: 0 !important; }
+}
+
+/* ── wizard-motion.css */
+@media(prefers-reduced-motion:no-preference){
+  #view-new #wizardError.aq-shake{animation:aq-wiz-step-in var(--aq-motion-base) var(--aq-enter) backwards}
+  #view-new .aq-invalid:is(input,select,textarea){animation:aq-wiz-invalid 1.2s ease 1}
+  #view-new .aq-invalid:not(input,select,textarea){animation:none}
+}
+#view-new .wizard-progress-seg{transition:background-color var(--aq-motion-long) ease!important}
+@media(min-width:1024px){
+  .aq-wiz-rail-progress i::after{transition:translate var(--aq-motion-long) var(--aq-e-ease)}
+}
+html.aq-vt-fix #view-new .aq-fix-panel{view-transition-name:aq-fix}
+html.aq-vt-fix #view-new .aq-fix-title{view-transition-name:aq-fix-title}
+html.aq-vt-fix #view-new #wizardBody{view-transition-name:aq-wiz-body}
+html.aq-vt-fix #view-new .wizard-topbar{view-transition-name:aq-wiz-top}
+html.aq-vt-fix #view-new .step-actions{view-transition-name:aq-wiz-actions}
+html.aq-vt-fix #view-new .aq-fix-note,html.aq-vt-fix #view-new .aq-fix-list li{animation:none}
+
+@media(prefers-reduced-motion:reduce){
+  #view-new .wizard-progress-seg,.aq-wiz-rail .aq-wiz-steps button,.aq-wiz-rail .aq-wiz-step-no,.aq-wiz-rail-progress i::after{transition:none!important}
+}
+
+/* ── design-align.css */
+.aq-fix-list .ui-btn.is-soft{background:var(--aq-blue-100)!important;color:var(--aq-blue-700)!important}
+#view-new .aq-autofill-text{min-width:0;overflow-wrap:anywhere}
+#view-new .aq-review-body{flex:1;min-width:0}
+#view-new .aq-review-card strong{margin-bottom:6px}
+#view-new .aq-review-card p{padding-right:0}
+@media(min-width:760px){.aq-submit-error{grid-template-columns:auto minmax(0,1fr) auto;align-items:center}}
+@media (max-width:600px){.aq-dsp-name{font-size:13px;letter-spacing:-.01em}}
+#view-new .track-editor.is-collapsed{padding:0!important;overflow:hidden}
+#view-new .track-editor .minor-actions .ui-actions{gap:4px}
+#view-new .aq-wiz-top>.wizard-progress{margin:0!important;padding-bottom:12px}
+#view-new .aq-review-card.is-missing .aq-review-value{color:var(--aq-amber-600);font-weight:600}
+#view-new .aq-review-card.is-missing .aq-review-tracks{color:var(--aq-text-2);font-weight:400}
+#view-new .aq-review-tracks{margin:0;padding-left:1.3em}
+#view-new .aq-review-cover{display:flex;align-items:center;gap:12px}
+#view-new .aq-review-cover img{flex:none;width:56px;height:56px;border-radius:var(--aq-r-md);object-fit:cover;background:#fff}
+.aq-addon-lines li strong{display:block;color:var(--aq-text);font-size:14px;font-weight:var(--aq-fw-semibold,600)}
+@media (max-width:760px){
+  .aq-addon-summary{padding:16px}
+}

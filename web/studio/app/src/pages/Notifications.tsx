@@ -11,6 +11,7 @@ import { alertsBlocked, alertsEnabled, alertsSupported, disableAlerts, enableAle
 import { MOCK } from '../lib/mode';
 import * as portal from '../api/portal';
 import { errorMessage } from '../api/errors';
+import '../styles/split/Notifications.css';
 
 /** 브라우저 알림 켜기 — 다른 탭·창에 있어도 답변·검토 결과를 바로 알려 준다 */
 function BrowserAlerts() {

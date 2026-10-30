@@ -17,6 +17,7 @@ import { Badge } from '../ui';
 import { gradientFor } from '../lib/catalog';
 import { LINK_PRESETS, OWN_LABEL_MAX, OWN_LINKS_MAX, checkLinks, linkBrand, type OwnLink } from '../lib/ownLinks';
 import { HANDLE_MAX, artistPath, artistPressUrl, artistUrl, handleProblem, normalizeHandle } from '../lib/publicLinks';
+import '../styles/split/ArtistStudio.css';
 
 export interface ArtistLinkRow {
   artist_id: string; name: string; releases: number;

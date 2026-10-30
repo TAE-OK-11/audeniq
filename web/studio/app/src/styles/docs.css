@@ -138,7 +138,7 @@
 .adm-doc-prose details,.adm-doc-prose [data-type="details"]{margin:.4em 0;padding:6px 10px;border-radius:var(--aq-r-sm);background:var(--adm-soft)}
 .adm-doc-prose [data-type="details"]{display:flex;gap:6px}
 .adm-doc-prose [data-type="details"]>button{border:0;background:none;cursor:pointer;color:var(--aq-text-3);width:22px;flex:0 0 auto}
-.adm-doc-prose [data-type="details"]>button::before{content:'';display:inline-block;width:12px;height:12px;background:currentColor;-webkit-mask:var(--aq-icon-chevron) center/contain no-repeat;mask:var(--aq-icon-chevron) center/contain no-repeat;transition:transform .15s}
+.adm-doc-prose [data-type="details"]>button::before{content:'';display:inline-block;width:12px;height:12px;background:currentColor;-webkit-mask:var(--aq-icon-chevron) center/contain no-repeat;mask:var(--aq-icon-chevron) center/contain no-repeat;transition:transform var(--aq-motion-short)}
 .adm-doc-prose [data-type="details"].is-open>button::before{transform:rotate(90deg)}
 .adm-doc-prose [data-type="details"]>div{flex:1;min-width:0}
 .adm-doc-prose [data-type="details"]:not(.is-open) [data-type="detailsContent"]{display:none}

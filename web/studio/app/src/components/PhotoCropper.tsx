@@ -2,6 +2,7 @@
 // 잘린 부분의 짧은 변이 1000px보다 작으면 플랫폼이 흐리게 보여 쓰지 않는다 (확대할수록 작아진다). 결과는 최대 3000px JPEG.
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
 import { useModalClose } from './Modal';
+import '../styles/split/ArtistStudio.css';
 
 export const PHOTO_MIN = 1000;
 const PHOTO_MAX = 3000;

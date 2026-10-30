@@ -3,19 +3,20 @@
 
 - 다른 도메인(jsDelivr) 폰트는 Safari가 CORS 없이 받아, crossorigin으로 미리 받은(preload) 것을 다시 쓰지 못하고 한 번 더 받았다
   (참고: https://blog.banksalad.com/tech/font-preload-on-safari/). 같은 출처에서 주면 그런 차이가 없고, 연결도 하나 준다.
-- core: 스튜디오 화면 문구에 쓰인 한글 + 라틴·숫자·문장부호·통화·화살표 등 — 첫 화면에 미리 받는다 (preload)
+- core: 앱 화면 문구에 쓰인 한글 + 라틴·숫자·문장부호·통화·화살표 등 — 첫 화면에 미리 받는다 (preload)
 - more: 원래 서브셋의 나머지(사용자가 입력한 이름·제목의 한글, 다른 문자) — 그 글자가 화면에 나올 때만 받는다
   두 조각은 같은 family의 @font-face 두 개라 글자 모양·굵기·간격은 그대로다 (같은 폰트에서 잘라 낸다).
 - 서브셋에 없는 한글은 지금처럼 'Audeniq Sans Full'(jsDelivr, 2 MB)이 필요할 때만 받는다.
 
-사용: pip install fonttools brotli && python3 build/fonts.py
-화면 문구에 새 한글이 생기면 다시 돌린다 (src/lib/fontCoverage.test.ts가 알려 준다).
+사용: pip install fonttools brotli && python3 build/fonts.py [앱 폴더]
+  앱 폴더를 빼면 스튜디오(web/studio/app). 관리자 콘솔은 python3 build/fonts.py ../../admin
+화면 문구에 새 한글이 생기면 다시 돌린다 (각 앱의 글꼴 범위 테스트가 알려 준다).
 """
 import glob, os, re, sys, urllib.request
 from fontTools.ttLib import TTFont
 from fontTools import subset
 
-APP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+APP = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 COMMIT = '308d641281443c6172d94b50785d43890f5aafde'
 SOURCE = f'https://cdn.jsdelivr.net/gh/TAE-OK-11/audeniq-font@{COMMIT}/fonts/web/AudeniqSansVariable-Subset.woff2'
 OUT = os.path.join(APP, 'src', 'assets', 'fonts')

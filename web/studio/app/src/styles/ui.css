@@ -225,7 +225,9 @@
 .ui-chip:focus-visible{outline:var(--aq-focus);outline-offset:2px}
 .ui-chip:is([aria-pressed=true],.is-on){background:var(--aq-primary);color:#fff}
 .ui-chip.is-danger:is([aria-pressed=true],.is-on){background:var(--aq-red-100);color:var(--aq-red-600)}
-.ui-chip-count,.ui-chip>small{margin:0;color:inherit;font-size:12px;font-weight:700;opacity:.75;font-variant-numeric:tabular-nums}
+.ui-chip-count,.ui-chip>small{margin:0;color:var(--aq-text-4);font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
+/* 고른 칩(파랑 바탕)은 흰 글자 그대로 — 예전 투명도 .75는 숫자를 3.2~3.5:1로 흐렸다 */
+.ui-chip.is-on>small,.ui-chip.is-on .ui-chip-count{color:inherit}
 .ui-chip.is-sm{min-height:var(--aq-h-xs);padding:0 11px;border-radius:var(--aq-r-ctl-xs);font-size:12px}
 :is(.ui-card,.ui-box,.ui-on-soft) .ui-chip:not([aria-pressed=true]):not(.is-on){background:#fff}
 
@@ -383,7 +385,7 @@ button.ui-row-title:hover{color:var(--aq-primary)}
 /* ---------- 아바타 · 커버 · 아이콘 칸 ---------- */
 .ui-avatar{
   --av:36px;display:inline-grid;place-items:center;flex:none;width:var(--av);height:var(--av);border-radius:calc(var(--av) * .34);
-  background:var(--aq-blue-150);color:var(--aq-primary);font-size:calc(var(--av) * .4);font-weight:800;line-height:1;overflow:hidden;border:0;padding:0
+  background:var(--aq-blue-150);color:var(--aq-primary-text);font-size:calc(var(--av) * .4);font-weight:800;line-height:1;overflow:hidden;border:0;padding:0
 }
 .ui-avatar img{width:100%;height:100%;object-fit:cover}
 .ui-avatar.is-xs{--av:24px}
@@ -396,7 +398,7 @@ button.ui-avatar:hover{transform:scale(1.06);background:var(--aq-blue-200)}
 /* 앨범 커버 — 이미지가 없으면 그라데이션 위 첫 글자 */
 .ui-cover{
   --cv:46px;display:inline-grid;place-items:center;flex:none;width:var(--cv);height:var(--cv);border-radius:calc(var(--cv) * .3);overflow:hidden;
-  background:linear-gradient(135deg,#9ED9FF 1%,#8575D9 57%,#526EB8);color:#fff;font-size:calc(var(--cv) * .37);font-weight:800
+  background:linear-gradient(135deg,#D6E1FF,#3B63F3 50%,#1F3BB0);color:#fff;font-size:calc(var(--cv) * .37);font-weight:800
 }
 .ui-cover img{width:100%;height:100%;object-fit:cover;display:block}
 .ui-cover-glyph{width:44%;height:44%;color:#fff;opacity:.95}
@@ -567,7 +569,6 @@ summary::-webkit-details-marker{display:none}
 .ui-avatar.is-empty{background:var(--aq-gray-100);color:var(--aq-text-4)}
 
 /* 리포트 기간·발매 고르기 — 짧은 내용이라 넓은 화면에서 끝까지 늘이지 않는다 */
-@media (min-width:761px){.report-tools>select{flex:0 1 260px!important;max-width:260px!important}}
 /* 한글 라벨은 영문 대문자처럼 글자 사이를 벌리지 않는다 */
 :is(.eyebrow,.ui-eyebrow,.adm-side-label,.aq-nhero-eyebrow,.aq-nboard-eyebrow){letter-spacing:0}
 :is(.eyebrow,.ui-eyebrow){font-size:var(--aq-fs-xs)}
@@ -585,7 +586,6 @@ summary::-webkit-details-marker{display:none}
 /* 홈 리포트 — 제목을 카드 안에, 막대는 값과 함께 좁게 모은다 */
 .aq-report-card .aq-report-head{grid-column:1/-1;margin:0 0 6px}
 .aq-report-card .aq-mini-trend{gap:18px;height:132px}
-.aq-mini-bar{max-width:44px}
 .aq-mini-val{font-size:var(--aq-fs-xs);font-weight:var(--aq-fw-bold);color:var(--aq-text-3);font-variant-numeric:tabular-nums;white-space:nowrap}
 .aq-mini-col:last-child .aq-mini-val{color:var(--aq-primary)}
 @media (max-width:600px){.aq-report-card .aq-mini-trend{justify-content:space-around;height:120px}}
@@ -606,7 +606,6 @@ summary::-webkit-details-marker{display:none}
 #view-release .aq-detail-tabs>.ui-tabs{margin-bottom:22px}
 /* 불러오는 동안의 큰 카드 자리 — 실제 카드와 같은 위치·높이(휴대폰 170px, 넓은 화면 194px)라 다 불러와도 화면이 움직이지 않는다 */
 #view-release .aq-detail-skel{height:194px!important;margin:4px 0 12px;border-radius:var(--aq-r-3xl)}
-@media (max-width:760px){#view-release .aq-detail-skel{height:170px!important;border-radius:var(--aq-r-2xl)}}
 #view-release .spaced-actions{margin:-18px 0 8px!important}
 /* 발매 상태 알약 — 처음 쓰던 상태 칩 모양 그대로 (옅은 바탕 + 상태 색 글자, 11px) */
 /* 발매 상태도 다른 배지와 같은 크기 — 혼자 11px·더 큰 여백이라 홈·목록에서 다른 배지와 키가 달랐다 */
@@ -629,34 +628,27 @@ summary::-webkit-details-marker{display:none}
 .portal-nav .aq-nav-card button{display:grid;grid-template-columns:38px minmax(0,1fr) auto;align-items:center;gap:14px;min-height:56px;padding:8px 10px;border-radius:var(--aq-r-lg);font-size:var(--aq-fs-title-sm);font-weight:var(--aq-fw-medium);letter-spacing:0}
 .portal-nav .aq-nav-card button:not(.active):hover{background:var(--aq-gray-50)}
 .portal-nav .aq-nav-card button.active{background:none;color:var(--aq-primary)}
-.portal-nav .aq-nav-card button.active .aq-nav-label{font-weight:var(--aq-fw-bold)}
 .portal-nav .aq-nav-card button.active .aq-nav-ico{background:var(--aq-blue-50)}
 .aq-nav-ico{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;font-style:normal;background:var(--aq-gray-50)}
 /* 맨 아래: 카드 없이 계정 이메일 · 로그아웃 글자 버튼 한 줄 */
 #portalNav .aq-nav-foot{border:0;border-radius:0;background:none;font-size:var(--aq-fs-sm);letter-spacing:0;color:var(--aq-text-4)}
 #portalNav .aq-logout{min-height:0!important;font-size:var(--aq-fs-sm)!important;font-weight:var(--aq-fw-bold)!important;color:var(--aq-text-3)!important;text-underline-offset:3px;text-decoration-color:var(--aq-gray-300)}
-#portalNav .aq-logout:hover{color:var(--aq-red-600)!important;text-decoration-color:currentColor}
 /* 디테일 — AUDENIQ 화면과 같은 말투: 그룹 이름은 페이지 위 파란 분류 글자(eyebrow)와 같은 모양,
    선택은 테두리 대신 진한 면, 아이콘 칸은 메뉴마다 고유 색의 옅은 면 */
 #portalNav .aq-nav-me{position:relative;overflow:hidden}
 #portalNav .aq-nav-me>*{position:relative}
 #portalNav .aq-nav-me button{width:100%;border:0;font:inherit;cursor:pointer;text-align:left}
-#portalNav .aq-nav-me-row{display:grid!important;align-items:center;min-height:0!important;border-radius:var(--aq-r-lg)!important;background:none!important;color:var(--aq-text);transition:background-color .15s ease}
+#portalNav .aq-nav-me-row{display:grid!important;align-items:center;min-height:0!important;border-radius:var(--aq-r-lg)!important;background:none!important;color:var(--aq-text);transition:background-color var(--aq-motion-short) ease}
 #portalNav .aq-nav-me-avatar{display:grid;place-items:center;flex:none;font-style:normal;font-weight:var(--aq-fw-bold);transform:none!important}
 #portalNav .aq-nav-me-text{display:grid;min-width:0;font-style:normal}
 #portalNav .aq-nav-me-text strong{font-weight:var(--aq-fw-bold);letter-spacing:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#portalNav .aq-nav-me-text small{font-weight:400;color:var(--aq-text-4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #portalNav .aq-nav-me-chev{color:var(--aq-text-disabled)}
-#portalNav .aq-nav-me-alert{display:grid!important;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;min-height:0!important;margin:6px 0 0;border-radius:var(--aq-r-md)!important;background:var(--aq-amber-50)!important;color:var(--aq-amber-700)!important;font-weight:var(--aq-fw-bold)!important;transition:background-color .15s ease}
+#portalNav .aq-nav-me-alert{display:grid!important;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;min-height:0!important;margin:6px 0 0;border-radius:var(--aq-r-md)!important;background:var(--aq-amber-50)!important;color:var(--aq-amber-700)!important;font-weight:var(--aq-fw-bold)!important;transition:background-color var(--aq-motion-short) ease}
 #portalNav .aq-nav-me-alert:hover{background:var(--aq-amber-100)!important}
-#portalNav .aq-nav-me-alert i{font-style:normal;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#portalNav .aq-nav-cta{display:flex!important;align-items:center;justify-content:center;gap:6px;margin:8px 0 0;padding:0 16px!important;background:var(--aq-primary)!important;color:#fff!important;font-weight:var(--aq-fw-bold)!important;transition:background-color .15s ease,transform .12s ease}
+#portalNav .aq-nav-cta{display:flex!important;align-items:center;justify-content:center;gap:6px;margin:8px 0 0;padding:0 16px!important;background:var(--aq-primary)!important;color:#fff!important;font-weight:var(--aq-fw-bold)!important;transition:background-color var(--aq-motion-short) ease,transform .12s ease}
 #portalNav .aq-nav-cta:hover{background:var(--aq-blue-600)!important}
-#portalNav .aq-nav-cta:active{transform:scale(.98)}
-#portalNav .aq-nav-cta>span,#portalNav .aq-nav-me-alert>span,#portalNav .aq-nav-me-row>span{display:none}
-#portalNav .aq-nav-card button{transition:background-color .15s ease,transform .12s ease}
-#portalNav .aq-nav-card button:active{transform:scale(.985)}
-.aq-nav-ico{transition:background-color .2s ease,color .2s ease}
+#portalNav .aq-nav-card button{transition:background-color var(--aq-motion-short) ease,transform .12s ease}
+.aq-nav-ico{transition:background-color var(--aq-motion-base) ease,color var(--aq-motion-base) ease}
 #portalNav .aq-nav-card button.active .aq-nav-ico{background:#fff;color:var(--aq-blue-500)}
 #portalNav .aq-nav-count{border-radius:999px}
 /* 메뉴마다 지금 처리할 일 — 설명 자리에 상태 배지 */
@@ -675,7 +667,6 @@ summary::-webkit-details-marker{display:none}
 #portalNav .aq-nav-me-avatar{width:48px!important;height:48px!important;border-radius:16px!important;font-size:19px!important}
 #portalNav .aq-nav-me-text{gap:2px}
 #portalNav .aq-nav-me-text strong{font-size:var(--aq-fs-title-sm)}
-#portalNav .aq-nav-me-text small{font-size:var(--aq-fs-sm)}
 #portalNav .aq-nav-me-alert{margin-top:10px;padding:11px 14px!important;font-size:var(--aq-fs-sm)!important}
 #portalNav .aq-nav-cta{min-height:48px!important;margin-top:10px;border-radius:var(--aq-r-md)!important;font-size:var(--aq-fs-lg)!important}
 #portalNav .aq-nav-card{padding:6px 8px 8px;background:var(--aq-surface);border-radius:var(--aq-r-2xl)}
@@ -684,25 +675,16 @@ summary::-webkit-details-marker{display:none}
 #portalNav .aq-nav-card button{grid-template-columns:36px minmax(0,1fr) auto;gap:12px;min-height:52px;padding:8px 10px 8px 8px;border-radius:var(--aq-r-lg);font-size:var(--aq-fs-lg);font-weight:600;color:var(--portal-ink)}
 #portalNav .aq-nav-card button:not(.active):hover{background:var(--aq-surface-hover)}
 #portalNav .aq-nav-ico,#portalNav .aq-nav-card button.active .aq-nav-ico{width:36px;height:36px;border-radius:12px;background:var(--aq-blue-150);color:var(--aq-blue-500)}
-#portalNav .aq-nav-card button.active{background:#fff;color:var(--aq-blue-500)}
 #portalNav .aq-nav-end{display:inline-flex;align-items:center;gap:6px;width:auto;height:auto;font-size:inherit;color:var(--aq-text-disabled)}
-#portalNav .aq-nav-end::after{content:none}
 #portalNav .aq-nav-card button.active .aq-nav-end{color:var(--aq-blue-500)}
 #portalNav .aq-nav-count{min-width:18px;height:18px;font-size:10px}
 #portalNav .aq-nav-foot{margin-top:14px!important}
-#portalNav .aq-logout{background:var(--aq-surface)!important}
 /* PC 드롭다운: 약관·로그아웃 줄을 패널 아래에 붙여 목록 끝에 처져 보이지 않게, 좌우는 카드 안쪽 글자선에 맞춤 */
 @media (min-width:761px){
-  #portalNav{padding-bottom:0!important}
   #portalNav .aq-nav-foot{position:sticky;bottom:0;z-index:1;margin:8px -12px 0!important;padding:12px 20px 14px!important;background:#fff;border-top:1px solid var(--aq-gray-100)}
   #portalNav .aq-nav-foot .aq-nav-legal{gap:12px}
-  #portalNav .aq-nav-foot .aq-nav-legal button{padding:4px 0!important;font-size:var(--aq-fs-sm)!important}
-  #portalNav .aq-logout{padding:7px 14px!important}
 }
 /* 휴대폰: 헤더 아래 화면 전체를 덮는 '전체' 화면 */
-@media (max-width:760px){
-  #portalNav{left:0!important;right:0!important;bottom:auto!important;width:100%!important;max-width:none!important;height:calc(100dvh - var(--aq-menu-top,68px))!important;max-height:none!important;border-radius:0;box-shadow:none;padding:20px 16px max(28px,env(safe-area-inset-bottom))}
-}
 
 /* ---------- 계정 정보 — 설정 목록형 (프로필 줄 + '줄 + ›' 카드) ---------- */
 .aq-settings{max-width:680px}
@@ -732,7 +714,7 @@ summary::-webkit-details-marker{display:none}
 .aq-verify-help{margin:4px 0 0;text-align:center;color:var(--aq-text-3);font-size:var(--aq-fs-sm);line-height:1.6}
 .aq-verify-help a{font-weight:600}
 .aq-verify-methods{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-.aq-verify-method{position:relative;display:grid;gap:4px;align-content:start;padding:16px;border-radius:var(--aq-r-lg);background:var(--aq-gray-50);cursor:pointer;transition:background-color .2s ease,box-shadow .2s ease,transform .12s ease}
+.aq-verify-method{position:relative;display:grid;gap:4px;align-content:start;padding:16px;border-radius:var(--aq-r-lg);background:var(--aq-gray-50);cursor:pointer;transition:background-color var(--aq-motion-base) ease,box-shadow var(--aq-motion-base) ease,transform .12s ease}
 .aq-verify-method input{position:absolute;opacity:0;pointer-events:none}
 .aq-verify-method:hover{background:var(--aq-gray-100)}
 .aq-verify-method:active{transform:scale(.98)}
@@ -751,7 +733,7 @@ summary::-webkit-details-marker{display:none}
 /* 인증번호 6칸 — 숫자 하나씩 칸에 보이고, 다음에 입력될 칸이 파랗게 표시된다 */
 .aq-otp{position:relative;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
 .aq-otp-input{position:absolute;inset:0;z-index:1;width:100%;height:100%;margin:0;padding:0;border:0;background:transparent;color:transparent;caret-color:transparent;font-size:16px;opacity:0;cursor:text}
-.aq-otp-cell{position:relative;display:grid;place-items:center;height:56px;border-radius:14px;background:var(--aq-field);color:var(--aq-text);font-size:24px;font-weight:var(--aq-fw-bold);font-variant-numeric:tabular-nums;transition:background-color .15s ease,box-shadow .15s ease}
+.aq-otp-cell{position:relative;display:grid;place-items:center;height:56px;border-radius:14px;background:var(--aq-field);color:var(--aq-text);font-size:24px;font-weight:var(--aq-fw-bold);font-variant-numeric:tabular-nums;transition:background-color var(--aq-motion-short) ease,box-shadow var(--aq-motion-short) ease}
 .aq-otp-cell.is-active{background:#fff;box-shadow:inset 0 0 0 2px var(--aq-blue-500)}
 .aq-otp-cell.is-active:not(.is-filled)::after{content:"";width:2px;height:24px;border-radius:1px;background:var(--aq-blue-500);animation:aq-otp-caret 1s steps(1) infinite}
 .aq-otp-cell.is-filled{animation:aq-check-pop var(--aq-motion-base) var(--aq-enter)}
@@ -896,10 +878,8 @@ summary::-webkit-details-marker{display:none}
 /* 발매 상세 버튼 — 넓은 화면(태블릿·PC)은 발매 카드 오른쪽 안에 세로 가운데로, 휴대폰은 카드 아래 한 줄 */
 .aq-detail-actions.is-wide{display:none}
 @media (min-width:761px){
-  .aq-detail-actions.is-narrow{display:none!important}
   .aq-detail-actions.is-wide{display:flex;margin:0}
   .aq-detail-actions.is-wide:empty{display:none}
-  #view-release .aq-detail-top{justify-content:flex-start;gap:10px}
   .aq-detail-actions.is-wide .ui-btn{--btn-h:var(--aq-h-md);--btn-r:var(--aq-r-ctl-md);--btn-px:22px;--btn-fs:var(--aq-fs-md)}
   .aq-detail-actions.is-wide .ui-btn.is-soft{--btn-bg:#fff;--btn-bg-hover:var(--aq-blue-100)}
   .aq-detail-actions.is-wide .ui-btn.is-danger{--btn-bg:transparent;--btn-bg-hover:var(--aq-red-50)}
@@ -948,7 +928,6 @@ summary::-webkit-details-marker{display:none}
 /* ---------- 약관 ---------- */
 #portalNav .aq-nav-legal{display:flex;gap:4px;padding:0 6px 4px}
 #portalNav .aq-nav-legal button{display:inline-flex;width:auto!important;min-height:0!important;padding:4px 6px!important;border:0;border-radius:var(--aq-r-xs)!important;background:none!important;color:var(--aq-text-4)!important;font-size:var(--aq-fs-xs)!important;font-weight:var(--aq-fw-medium)!important;animation:none!important}
-#portalNav .aq-nav-legal button:hover{color:var(--aq-text-2)!important}
 .aq-terms-tabs{display:flex;gap:6px;margin:0 0 18px}
 .aq-terms-tabs a{display:inline-flex;align-items:center;height:var(--aq-h-sm);padding:0 14px;border-radius:999px;background:#fff;color:var(--aq-text-3);font-size:var(--aq-fs-md);font-weight:var(--aq-fw-bold);text-decoration:none}
 .aq-terms-tabs a.is-on{background:var(--aq-primary);color:#fff}

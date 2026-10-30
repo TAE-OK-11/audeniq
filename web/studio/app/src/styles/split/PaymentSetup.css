@@ -1,0 +1,51 @@
+/*  결제 정보(PaymentSetupModal) 화면 조각에서만 쓰는 규칙 — 전역 스타일(App.tsx가 불러오는 9개 파일)에서 원래 순서대로 옮겼다.
+   이 조각을 받을 때 전역 스타일 뒤에 붙고, 원래 자리보다 뒤에 있던 같은 우선순위 규칙과 겹치지 않는 것만 옮겼다.
+   아래 클래스를 쓰는 파일은 이 파일을 import해야 한다 (splitCss.test.ts가 확인).
+   anchors: aq-bank aq-bank-group aq-bank-logo aq-bank-sticky aq-pay-actions aq-pay-body aq-pay-field aq-pay-flow aq-pay-head aq-pay-main aq-pay-receipt aq-pay-receipt-head aq-pay-success aq-pay-success-note aq-pay-success-sub is-symbol  *//* ── live.css */.aq-pay-field label{font-size:13px!important;color:var(--aq-text-3)!important}.aq-bank:active{transform:scale(.97)}.aq-bank[hidden],.aq-bank-group[hidden]{display:none!important}/* ── enhance.css */
+.aq-pay-receipt dl>div:last-child{border-bottom:0}
+.aq-pay-success{padding-bottom:8px!important}
+@media(max-height:820px){
+  .aq-pay-receipt dl>div{padding:8px 0}
+}
+.aq-pay-flow .aq-pay-receipt-head>.aq-bank-logo.is-symbol>img{width:30px;height:30px}
+.aq-pay-flow .aq-pay-receipt dl{padding:clamp(6px,1.2vh,12px) 20px clamp(8px,1.4vh,14px)}
+.aq-pay-flow .aq-pay-receipt dl>div{padding:clamp(4px,.9vh,9px) 0;border-bottom:0}
+.aq-pay-flow .aq-pay-actions .ui-btn:not(:disabled):active{transform:scale(.98)}
+.aq-pay-flow .aq-bank .aq-bank-logo{transition:transform var(--aq-motion-base) var(--aq-e-ease)}
+@media(prefers-reduced-motion:no-preference){
+  .aq-pay-success>h1{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) var(--aq-motion-short) both}
+  .aq-pay-success>.aq-pay-success-sub{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) var(--aq-motion-base) both}
+  .aq-pay-flow .aq-pay-receipt{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) var(--aq-motion-long) both}
+  .aq-pay-success>.aq-pay-success-note{animation:aq-fade-in var(--aq-motion-long) ease .42s both}
+}
+#modal .aq-pay-field input::placeholder{color:var(--aq-text-disabled);font-weight:600}
+#modal .aq-pay-field label{display:block;margin-bottom:9px}
+.ui-field.aq-pay-field+.ui-field.aq-pay-field{margin-top:22px}
+.aq-pay-flow .aq-pay-main:has(.aq-bank-sticky) .aq-pay-head>.eyebrow:first-child{margin-top:clamp(14px,5vh,48px)}#modal .aq-pay-flow .aq-pay-field label{margin-bottom:clamp(6px,2vh,17px)}
+.aq-pay-flow{--agree-x:20px;--agree-box:21px;--agree-gap:13px}
+@media(min-width:1024px){
+  .aq-pay-flow{--pay-w:min(1180px,calc(100% - 96px));--pay-cols:minmax(280px,400px) minmax(0,1fr);--pay-gap:clamp(48px,6vw,104px)}
+  .aq-pay-flow .aq-pay-main:has(.aq-bank-sticky) .aq-pay-body{padding-top:clamp(14px,5vh,48px)}
+  .aq-pay-flow .aq-pay-main:has(.aq-bank-sticky) .aq-bank-sticky{margin-top:0}
+}
+/* ── design-align.css */
+.aq-pay-flow .aq-pay-type:is(:active,.is-pressed) span{transform:scale(var(--aq-press-row));transition-duration:var(--aq-press-in)}
+
+/* 휴대폰: 한 단계가 한 화면에 들어오게 (수령인 정보·약관 동의가 스크롤로 넘쳤다 — 아이폰 사파리 보이는 높이 약 740px에서 77~110px).
+   높이 기준은 svh(주소창이 보일 때의 작은 화면) — vh는 주소창이 접힌 큰 화면이라 위 clamp들이 실제로는 덜 줄었다.
+   각 값은 원래 식 그대로이고, 보이는 높이가 860px보다 낮을 때만 그만큼 비례해 줄인다(min(0px, …)) — 키 큰 폰·PC는 그대로. 누르는 줄은 44px 이상 */
+@media (max-width:760px){
+  .aq-pay-flow .aq-pay-main{padding:clamp(12px,min(5vh,48px) + min(0px,(100svh - 860px) * .3),48px) 0 clamp(4px,min(5vh,42px) + min(0px,(100svh - 860px) * .3),42px)}
+  .aq-pay-flow .aq-pay-head>.eyebrow{margin-bottom:clamp(4px,min(2vh,17px) + min(0px,(100svh - 860px) * .11),17px)}
+  .aq-pay-flow .aq-pay-head>h1{font-size:clamp(24px,min(8.7vw,6.5vh) + min(0px,(100svh - 860px) * .06),48px)}
+  .aq-pay-flow .aq-pay-lead{margin-top:clamp(4px,min(2vh,17px) + min(0px,(100svh - 860px) * .11),17px)}
+  .aq-pay-flow .ui-field.aq-pay-field{margin-top:clamp(14px,min(3.6vh,30px) + min(0px,(100svh - 860px) * .1),30px)}
+  #modal .aq-pay-flow .aq-pay-field label{margin-bottom:clamp(6px,min(2vh,17px) + min(0px,(100svh - 860px) * .11),17px)}
+  .aq-pay-flow .aq-pay-type-list{margin-top:clamp(14px,28px + min(0px,(100svh - 860px) * .12),28px);gap:clamp(6px,10px + min(0px,(100svh - 860px) * .04),10px)}
+  .aq-pay-flow .aq-pay-type span{padding-top:clamp(10px,18px + min(0px,(100svh - 860px) * .07),18px);padding-bottom:clamp(10px,18px + min(0px,(100svh - 860px) * .07),18px)}
+  .aq-pay-flow .aq-agree-all{margin-top:clamp(14px,32px + min(0px,(100svh - 860px) * .15),32px);padding-top:clamp(10px,18px + min(0px,(100svh - 860px) * .08),18px);padding-bottom:clamp(10px,18px + min(0px,(100svh - 860px) * .08),18px)}
+  .aq-pay-flow .aq-agree-list label{min-height:clamp(44px,58px + min(0px,(100svh - 860px) * .12),58px)}
+  .aq-pay-flow .aq-pay-review{margin-top:clamp(8px,min(3.5vh,28px) + min(0px,(100svh - 860px) * .14),28px)}
+  .aq-pay-flow .aq-selected-bank{margin-top:clamp(14px,min(3.5vh,28px) + min(0px,(100svh - 860px) * .1),28px)}
+}
+
