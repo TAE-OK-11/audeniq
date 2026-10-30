@@ -1916,3 +1916,8 @@ html.aq-kbd :is(#root,#modal) :is(input:not([type=checkbox]):not([type=radio]):n
   #modal.aq-signature-mode .aq-sign-sheet{margin-top:clamp(4px,10px + min(0px,(100svh - 860px) * .04),10px)}
   #modal.aq-signature-mode .aq-sign-foot{margin-top:clamp(10px,20px + min(0px,(100svh - 860px) * .06),20px)!important;padding-top:clamp(8px,14px + min(0px,(100svh - 860px) * .04),14px)!important;padding-bottom:calc(clamp(8px,16px + min(0px,(100svh - 860px) * .05),16px) + env(safe-area-inset-bottom,0px))!important}
 }
+
+/* 키보드가 떠 있는 동안 아래 고정 버튼 줄을 숨긴다 (lib/keyboardSettle이 html에 is-kb-open을 붙인다).
+   iOS 사파리가 키보드를 내린 직후 이 줄을 화면 중간에 잠깐 그리던 문제 — 화면을 다시 맞춘 뒤 부드럽게 나타난다 */
+.step-actions{transition:opacity var(--aq-motion-base) ease}
+html.is-kb-open .step-actions{opacity:0!important;pointer-events:none!important;transition:none}

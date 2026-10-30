@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { settleViewport } from './keyboardSettle';
+import { initKeyboardSettle, KB_OPEN, settleViewport } from './keyboardSettle';
 
 // 문서 높이 2000, 화면 800 — 스크롤 끝은 1200
 const fakeWindow = (scrollY: number, offsetTop: number) => {
@@ -28,5 +28,28 @@ describe('키보드가 내려간 뒤 화면 맞추기', () => {
     const { win, scrollTo } = fakeWindow(600, 0);
     expect(settleViewport(win)).toBe(false);
     expect(scrollTo).not.toHaveBeenCalled();
+  });
+});
+
+describe('키보드가 떠 있는 동안 아래 버튼 줄 숨기기', () => {
+  it('칸에 입력 중 키보드가 올라오면 표시를 붙이고, 내려간 뒤 화면을 맞추고 나서 뗀다', () => {
+    vi.useFakeTimers();
+    const vv = Object.assign(new EventTarget(), { height: 800, offsetTop: 0 });
+    vi.stubGlobal('visualViewport', vv);
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
+    initKeyboardSettle();
+    const input = document.createElement('input');
+    document.body.append(input);
+    input.focus();
+    vv.height = 460; vv.dispatchEvent(new Event('resize'));
+    expect(document.documentElement.classList.contains(KB_OPEN)).toBe(true);
+    input.blur();
+    vv.height = 800; vv.dispatchEvent(new Event('resize'));
+    vi.advanceTimersByTime(100);
+    expect(document.documentElement.classList.contains(KB_OPEN)).toBe(true);
+    vi.advanceTimersByTime(100);
+    expect(document.documentElement.classList.contains(KB_OPEN)).toBe(false);
+    input.remove(); vi.unstubAllGlobals(); vi.useRealTimers();
   });
 });
