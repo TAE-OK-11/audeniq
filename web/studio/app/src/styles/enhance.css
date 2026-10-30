@@ -1927,21 +1927,6 @@ a.aq-inline-link{display:inline-block;max-width:100%}
 .settle-entry-amount.is-estimated{color:var(--aq-text-4)}
 
 /* 퍼블리싱 입력 화면(곡 정보·저작권 관리 신청) — 발매 신청서처럼 카드 없이 흰 화면에 회색 칸, 구역은 굵은 제목으로 */
-.aq-form-block{margin:28px 0 0}
-.aq-form-block h2.aq-form-sub{margin-top:32px}
 .aq-work-from-head{display:flex;align-items:center;gap:14px;margin-bottom:16px}
 .aq-work-from-head>:first-child{flex:none;width:56px;height:56px;border-radius:14px}
 .aq-work-from-head .ui-row-title{display:block}
-.aq-work-review .ui-row{display:flex;align-items:center;gap:12px;width:100%;text-align:left}
-.aq-work-review .ui-row>.min-0{flex:1}
-.aq-work-review .ui-row>.ui-btn{flex:none;width:auto}
-.aq-work-review .ui-row-title{display:block;margin:2px 0}
-.aq-form-block>h2{margin:0 0 6px;font-size:18px;font-weight:800;letter-spacing:-.01em}
-.aq-form-block>h2+.ui-field-help{margin:0 0 16px}
-/* 아래 고정 버튼 줄 — 발매 신청서의 '다음으로' 줄과 같은 자리·모양 (휴대폰) */
-@media(max-width:760px){
-  .aq-pub-actions{position:sticky;bottom:0;z-index:5;display:flex;gap:10px;margin:24px -20px 0;padding:12px 20px max(12px,env(safe-area-inset-bottom));background:#fff}
-  .aq-pub-actions::before{content:"";position:absolute;left:0;right:0;bottom:100%;height:24px;background:linear-gradient(to top,#fff,rgba(255,255,255,0));pointer-events:none}
-  .aq-pub-actions .ui-btn{flex:1;--btn-h:var(--aq-h-lg)}
-  .aq-pub-actions .ui-btn.is-primary{flex:1.45}
-}

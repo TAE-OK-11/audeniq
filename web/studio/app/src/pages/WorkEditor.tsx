@@ -21,7 +21,8 @@ import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { FilePicker } from '../components/FilePicker';
 import { SkeletonBlock } from '../components/Skeleton';
-import { StepBar } from '../components/StepBar';
+import { ReviewCard, WizardShell, type WizardStep } from '../components/WizardShell';
+import '../styles/split/Upload.css';
 import { Glyph } from '../components/Glyph';
 import { SplitEditor } from '../components/publishing/SplitEditor';
 import { WorkRow } from '../components/publishing/parts';
@@ -40,9 +41,15 @@ const ATTACH_KINDS: [WorkAttachment['kind'], string, string][] = [
 ];
 const ISWC_RE = /^T-?\d{3}\.?\d{3}\.?\d{3}-?\d$/i;
 
-const STEPS = ['기본 정보', '참여자·지분', '권리·자료', '확인'];
+// 단계 제목은 배급 신청서와 같은 말투 — 두 줄 큰 제목 + 한 줄 안내
+const REST: WizardStep[] = [
+  { short: '참여자·지분', title: '누가 얼마씩\n가지나요?', sub: '작사·작곡·편곡 참여자와 저작권 지분을 나눠요.' },
+  { short: '권리·자료', title: '권리 정보와\n자료를 확인해 주세요.', sub: '모르는 칸은 비워 둬도 저장돼요.' },
+  { short: '최종 확인', title: '곡 정보를\n마지막으로 확인해 주세요.', sub: '수정을 누르면 그 단계로 돌아가요.' },
+];
+const STEPS: WizardStep[] = [{ short: '기본 정보', title: '어떤 곡을\n등록할까요?', sub: '별표(*) 칸만 채우면 다음 단계로 넘어갈 수 있어요.' }, ...REST];
 // 발매 곡에서 오면 첫 단계는 입력이 아니라 '배급 신청서에서 가져온 곡 확인'
-const TRACK_STEPS = ['곡 확인', '참여자·지분', '권리·자료', '확인'];
+const TRACK_STEPS: WizardStep[] = [{ short: '곡 확인', title: '배급 신청서에서\n가져왔어요.', sub: '발매 정보는 다시 적지 않아요. 퍼블리싱에 필요한 것만 더해 주세요.' }, ...REST];
 const LAST = STEPS.length - 1;
 
 interface Saved { form: Form; at: string; splitChecked: boolean; step?: number }
@@ -72,8 +79,8 @@ export function WorkEditor() {
   const [tried, setTried] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [step, setStep] = useState(0);
+  const [reached, setReached] = useState(0);
   const base = useRef<string>('');
-  const topRef = useRef<HTMLDivElement>(null);
 
   // 처음 채우기: 고치기 → 서버 곡, 발매 곡 → 곡 정보, 그 밖 → 빈 칸. 이 브라우저에 쓰다 만 내용이 있으면 이어 쓰기를 묻는다
   useEffect(() => {
@@ -137,8 +144,9 @@ export function WorkEditor() {
   // 단계를 옮기면 화면 맨 위(단계 막대)부터 — 긴 단계 끝에서 다음 단계 중간으로 떨어지지 않게
   const first = useRef(true);
   useEffect(() => {
+    setReached(r => Math.max(r, step));
     if (first.current) { first.current = false; return; }
-    topRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [step]);
 
   const dupes = useMemo(() => (form && works ? similarWorks(form.title, works, id) : []), [form?.title, works, id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -232,36 +240,46 @@ export function WorkEditor() {
     nav(-1);
   };
 
+  const steps = fromTrack ? TRACK_STEPS : STEPS;
   return (
-    <div className="view" ref={topRef}>
-      <div className="spaced-actions">
-        <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={back}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />{step ? '이전 단계' : editing ? '곡으로' : '돌아가기'}</button>
-      </div>
-      <div className="ui-page-head">
-        <div>
-          <p className="eyebrow">퍼블리싱</p>
-          <h1>{editing ? '곡 정보 고치기' : fromTrack ? '발매 곡으로 곡 정보 만들기' : '새 곡 등록'}</h1>
-          <p>{fromTrack ? <>‘{release?.title}’ 배급 신청서 내용으로 채웠어요. 퍼블리싱에 필요한 것만 더해 주세요.</> : '저작권 관리 계약 없이도 곡 정보와 지분을 정리해 둘 수 있어요.'}</p>
-          <p className="muted small" aria-live="polite">{savedAt ? `이 브라우저에 자동 저장했어요 · ${localStamp(savedAt)}` : dirty ? '입력 중이에요' : ''}</p>
-        </div>
-      </div>
+    <WizardShell
+      label="곡 정보 등록" title={editing ? '곡 정보 수정' : '새 곡 정보'}
+      steps={editing ? steps.map((x, i) => (i ? x : { ...x, title: '곡 정보를\n고쳐 주세요.' })) : steps}
+      step={step} reached={editing ? LAST : reached} onStep={setStep} onBack={back}
+      saveLabel={savedAt ? `저장됨 ${localStamp(savedAt).slice(-5)}` : undefined}
+      summary={{
+        cover: release ? <ReleaseCover id={release.id} src={release.coverData} /> : undefined,
+        title: form.title.trim() || '제목 없는 곡',
+        lines: [fromTrack ? `${release?.title} · ${release?.artist}` : '발매 전 곡', `참여자 ${form.contributors.length}명`],
+      }}
+      railNote="입력 내용은 이 브라우저에 자동으로 임시 저장돼요."
+      notice={<>
+        {restored && (
+          <Callout tone="info" action={
+            <span className="row-actions">
+              <Button size="sm" variant="white" onClick={() => { removeKey(draftKey); setRestored(null); }}>새로 쓰기</Button>
+              <Button size="sm" variant="primary" onClick={() => { setForm(restored.form); setSplitChecked(restored.splitChecked); setSavedAt(restored.at); setStep(Math.min(LAST, restored.step ?? 0)); setRestored(null); }}>이어서 쓰기</Button>
+            </span>
+          }>
+            <b>{localStamp(restored.at)}에 쓰던 내용이 있어요.</b> 저장하기 전에 화면을 떠났어요.
+          </Callout>
+        )}
+        {locked && <Callout tone="warn">저작권 관리 심사 중이거나 관리 중인 곡이에요. 지금 고친 내용은 담당자가 확인한 뒤 반영돼요.</Callout>}
 
-      {restored && (
-        <Callout tone="info" action={
-          <span className="row-actions">
-            <Button size="sm" variant="white" onClick={() => { removeKey(draftKey); setRestored(null); }}>새로 쓰기</Button>
-            <Button size="sm" variant="primary" onClick={() => { setForm(restored.form); setSplitChecked(restored.splitChecked); setSavedAt(restored.at); setStep(Math.min(LAST, restored.step ?? 0)); setRestored(null); }}>이어서 쓰기</Button>
-          </span>
-        }>
-          <b>{localStamp(restored.at)}에 쓰던 내용이 있어요.</b> 저장하기 전에 화면을 떠났어요.
-        </Callout>
-      )}
-      {locked && <Callout tone="warn">저작권 관리 심사 중이거나 관리 중인 곡이에요. 지금 고친 내용은 담당자가 확인한 뒤 반영돼요.</Callout>}
-
-      <StepBar steps={fromTrack ? TRACK_STEPS : STEPS} current={step} />
-
-      {step === 0 && <section className="ui-tab-panel aq-form-block" key="s0" aria-labelledby="secBasic">
-        <h2 id="secBasic">{fromTrack ? '배급 신청서에서 가져왔어요' : '기본 정보'}</h2>
+      </>}
+      actions={<>
+        <button type="button" id="wizardBack" className="ui-btn is-soft" onClick={back} disabled={busy}>{step ? '이전' : '나가기'}</button>
+        {step < LAST ? (
+          <button type="button" id="wizardNext" className="ui-btn is-primary" onClick={next}>다음으로</button>
+        ) : !editing && splitReady(form.contributors) ? (<>
+          <button type="button" id="wizardSaveNow" className="ui-btn is-soft" onClick={() => void save()} disabled={busy}>곡만 저장</button>
+          <button type="button" id="wizardNext" className={`ui-btn is-primary${busy ? ' is-busy' : ''}`} onClick={() => void save('apply')} disabled={busy}>{busy ? '저장하는 중' : '저장하고 신청'}</button>
+        </>) : (
+          <button type="button" id="wizardNext" className={`ui-btn is-primary${busy ? ' is-busy' : ''}`} onClick={() => void save()} disabled={busy}>{busy ? '저장하는 중' : editing ? '저장' : '곡 저장'}</button>
+        )}
+      </>}
+    >
+      {step === 0 && <>
         {fromTrack && release && track ? (
           <>
             <p className="ui-field-help">발매 정보는 다시 적지 않아요. 바꿀 게 있으면 <Link to={`/releases/${encodeURIComponent(release.id)}`} className="aq-inline-link">발매 상세</Link>에서 고쳐 주세요.</p>
@@ -285,7 +303,7 @@ export function WorkEditor() {
                 ['가사', fromDraft?.instrumental ? '없음 (연주곡)' : fromDraft?.lyrics?.trim() ? '있음' : '없음'],
               ]} />
             </div>
-            <h2 className="aq-form-sub">퍼블리싱 정보</h2>
+            <h2 className="subhead">퍼블리싱 정보</h2>
           </>
         ) : (
           <Field label="곡 제목" htmlFor="workTitle" required error={titleErr}>
@@ -341,10 +359,9 @@ export function WorkEditor() {
             <input id="workAlt" className={inputClass()} value={form.altTitles.join(',')} onChange={e => set('altTitles', e.target.value ? e.target.value.split(',') : [])} placeholder="예: 4 AM" />
           </Field>
         </Reveal>
-      </section>}
+      </>}
 
-      {step === 1 && <section className="ui-tab-panel aq-form-block" key="s1" aria-labelledby="secPeople">
-        <h2 id="secPeople">참여자·지분</h2>
+      {step === 1 && <>
         <p className="ui-field-help">{fromTrack
           ? '배급 신청서의 작사·작곡·편곡 크레딧으로 참여자를 채워 두었어요. 저작권 지분은 자동으로 정하지 않으니 각자의 몫만 나눠 주세요.'
           : '작사·작곡·편곡에 참여한 사람과 각자의 몫을 적어요. AUDENIQ 작가는 찾아서 추가하고, 없으면 이름만으로 외부 참여자를 추가해요.'}</p>
@@ -360,10 +377,10 @@ export function WorkEditor() {
             ? '지분을 맞추지 않아도 저장돼요. 저작권 관리 신청은 맞춘 뒤에 할 수 있어요.'
             : form.contributors.length ? '지분이 맞아요. 저장하고 바로 신청할 수 있어요.' : '참여자를 추가해 주세요.'}
         </p>
-      </section>}
+      </>}
 
-      {step === 2 && <section className="ui-tab-panel aq-form-block" key="s2" aria-labelledby="secRights">
-        <h2 id="secRights">권리 정보</h2>
+      {step === 2 && <>
+        <h2 className="subhead">권리 정보</h2>
         <div className="form-grid">
           <Field label="ISWC" htmlFor="workIswc" warn={iswcErr} help={!iswcErr ? (existing ? `없으면 내부 번호 ${existing.internalCode}로 관리해요.` : '발급받은 경우에만. 없으면 내부 번호로 관리해요.') : undefined}>
             <input id="workIswc" className={inputClass()} value={form.iswc ?? ''} placeholder="T-123.456.789-0" onChange={e => set('iswc', e.target.value.trim() || null)} />
@@ -382,7 +399,7 @@ export function WorkEditor() {
         </Reveal>
         <p className="ui-field-help">관리 단체 가입 여부와 IPI/CAE 번호는 ‘참여자·지분’ 단계에서 사람마다 적어요. 모르는 칸은 비워 둬도 저장돼요. 아는 관리 단체: {SOCIETIES.slice(0, 5).join(' · ')} 등</p>
 
-        <h2 id="secFiles" className="aq-form-sub">첨부 자료</h2>
+        <h2 className="subhead">첨부 자료</h2>
         <p className="ui-field-help">{fromTrack && form.attachments.length
           ? '배급 신청서의 음원·가사를 미리 붙여 두었어요. 악보나 권리 증빙이 있으면 더해 주세요.'
           : '없어도 저장돼요. 데모 음원은 Open A&R 제출 때, 증빙 자료는 심사 때 써요.'}</p>
@@ -403,48 +420,27 @@ export function WorkEditor() {
             );
           })}
         </div>
-      </section>}
+      </>}
 
-      {/* 확인 — 적은 내용을 한눈에. 줄을 누르면 그 단계로 돌아가 고친다 */}
-      {step === LAST && (
-        <section className="ui-tab-panel aq-form-block" key="s3" aria-labelledby="secReview">
-          <h2 id="secReview">이대로 저장할까요?</h2>
-          <div className="ui-list is-inset ui-card aq-work-review">
-            {([
-              [0, '기본 정보', form.title.trim() || '제목 없음', [WORK_TYPES.find(x => x[0] === form.workType)?.[1], LANGUAGES.find(x => x[0] === form.language)?.[1], form.genre].filter(Boolean).join(' · ')],
-              [1, '참여자·지분', form.contributors.length ? `${form.contributors.length}명` : '참여자 없음',
-                form.contributors.map(c => `${c.name} ${roleText(c)} ${pct(c.share)}`).join(' · ') || '참여자를 추가하면 저작권 관리를 신청할 수 있어요'],
-              [2, '권리·자료', form.iswc || 'ISWC 없음', [form.hasPriorPublisher ? `기존 퍼블리셔 ${form.priorPublisher || '있음'}` : '기존 계약 없음', `첨부 ${form.attachments.length}개`].join(' · ')],
-            ] as const).map(([to, label, title, meta]) => (
-              <button key={label} type="button" className="ui-row" onClick={() => setStep(to)}>
-                <span className="min-0">
-                  <span className="ui-row-meta"><span>{label}</span></span>
-                  <span className="ui-row-title">{title}</span>
-                  <span className="ui-row-meta"><span>{meta}</span></span>
-                </span>
-                <span className="ui-btn is-xs is-white">고치기</span>
-              </button>
-            ))}
-          </div>
+      {/* 최종 확인 — 배급 신청서 '최종 확인'과 같은 카드. 수정을 누르면 그 단계로 */}
+      {step === LAST && (<>
+        <div className="aq-catalog-cards aq-stagger">
+          <ReviewCard head={fromTrack ? '곡 확인' : '기본 정보'} missing={!form.title.trim()} onEdit={() => setStep(0)}>
+            {form.title.trim() || '제목 없음'} · {[WORK_TYPES.find(x => x[0] === form.workType)?.[1], LANGUAGES.find(x => x[0] === form.language)?.[1], form.genre].filter(Boolean).join(' · ')}
+          </ReviewCard>
+          <ReviewCard head="참여자·지분" missing={!form.contributors.length} onEdit={() => setStep(1)}>
+            {form.contributors.map(c => `${c.name} ${roleText(c)} ${pct(c.share)}`).join(' · ') || '참여자를 추가하면 저작권 관리를 신청할 수 있어요'}
+          </ReviewCard>
+          <ReviewCard head="권리·자료" onEdit={() => setStep(2)}>
+            {[form.iswc || 'ISWC 없음', form.hasPriorPublisher ? `기존 퍼블리셔 ${form.priorPublisher || '있음'}` : '기존 계약 없음', `첨부 ${form.attachments.length}개`].join(' · ')}
+          </ReviewCard>
+        </div>
+        <div className="ui-callout" style={{ marginTop: 24 }}>
           {issues.some(i => i.level === 'error')
-            ? <Callout tone="warn">지분이 아직 맞지 않아요. 저장은 되고, 저작권 관리 신청은 맞춘 뒤에 할 수 있어요.</Callout>
-            : form.contributors.length > 0 && !editing && <Callout tone="info">지분이 맞아요. 저장하고 바로 저작권 관리를 신청할 수 있어요.</Callout>}
-        </section>
-      )}
-
-      <div className="ui-actions aq-pub-actions">
-        <button type="button" className="ui-btn is-soft" onClick={back} disabled={busy}>{step ? '이전' : '나가기'}</button>
-        {step < LAST ? (
-          <button type="button" className="ui-btn is-primary" onClick={next}>다음으로</button>
-        ) : (<>
-          <button type="button" className={`ui-btn ${!editing && splitReady(form.contributors) ? 'is-soft' : 'is-primary'}${busy ? ' is-busy' : ''}`} onClick={() => void save()} disabled={busy}>
-            {busy ? '저장하는 중' : editing ? '저장' : '곡 저장'}
-          </button>
-          {!editing && splitReady(form.contributors) && (
-            <button type="button" className="ui-btn is-primary" onClick={() => void save('apply')} disabled={busy}>저장하고 신청</button>
-          )}
-        </>)}
-      </div>
-    </div>
+            ? '지분이 아직 맞지 않아요. 저장은 되고, 저작권 관리 신청은 지분을 맞춘 뒤에 할 수 있어요.'
+            : form.contributors.length && !editing ? '지분이 맞아요. ‘저장하고 신청’을 누르면 바로 저작권 관리 신청으로 이어져요.' : '저장하면 곡 화면에서 언제든 다시 고칠 수 있어요.'}
+        </div>
+      </>)}
+    </WizardShell>
   );
 }
