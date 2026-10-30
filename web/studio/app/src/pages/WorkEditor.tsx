@@ -156,7 +156,7 @@ export function WorkEditor() {
   if (loadError) {
     return (
       <div className="view">
-        <div className="ui-empty"><h2>곡을 불러오지 못했어요.</h2><p>{loadError}</p><Link to="/publishing?tab=songs" className="ui-btn is-soft">곡 목록으로</Link></div>
+        <div className="ui-empty"><h2>곡을 불러오지 못했어요.</h2><p>{loadError}</p><Link to="/releases?tab=works" className="ui-btn is-soft">곡 목록으로</Link></div>
       </div>
     );
   }

@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from '../lib/router';
+import { useAsync } from '../hooks/useAsync';
+import { pubApi } from '../api/publishing';
+import { SkeletonRows } from '../components/Skeleton';
+import { lazyComponent } from '../lib/lazyComponent';
+
+// 저작권료 리포트는 고를 때 받는다 — 배급 수익만 보는 사람은 받지 않는다
+const PublishingReport = lazyComponent(() => import('./Publishing'), m => m.PublishingReport);
 import { useToast } from '../components/Toast';
 import { CountUp } from '../ui';
 import { Segmented } from '../components/Segmented';
@@ -98,7 +106,7 @@ function PlatformMark({ name }: { name: string }) {
   return k ? <BrandMark id={k} label={platformLabel(name)} size={22} /> : null;
 }
 
-export function Reports() {
+function DistributionReport() {
   const toast = useToast();
   const [rangeKey, setRangeKey] = useState<RangeKey>('last12');
   const [customFrom, setCustomFrom] = useState(() => kstMonth(-11));
@@ -232,14 +240,7 @@ export function Reports() {
   };
 
   return (
-    <div id="view-reports" className="view">
-      <div className="ui-page-head">
-        <div>
-          <p className="eyebrow">수익·성과</p>
-          <h1 id="reportsTitle">음악 리포트</h1>
-          <p>플랫폼별 재생과 수익을 기간·곡마다 나눠 봐요.</p>
-        </div>
-      </div>
+    <>
 
       <div className="report-tools">
         <select id="reportRange" className="ui-select" aria-label="불러올 기간" title="불러올 기간" value={rangeKey} onChange={e => { setRangeKey(e.target.value as RangeKey); setPeriod('all'); }}>
@@ -375,7 +376,7 @@ export function Reports() {
         </section>
       </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -433,6 +434,39 @@ function ReportSkeleton({ title }: { title: string }) {
         <h3>상세 내역</h3>
         {rows(5)}
       </section>
+    </div>
+  );
+}
+
+/** 음악 리포트 — 배급 수익(플랫폼 재생·수익)과 저작권료(작사·작곡)를 같은 화면에서 바꿔 본다.
+ *  정산·지급의 '배급 · 저작권료' 구분과 같은 주소(?type=publishing) */
+export function Reports() {
+  const [params, setParams] = useSearchParams();
+  const type = params.get('type') === 'publishing' ? 'publishing' : 'distribution';
+  // 저작권료를 한 번도 다루지 않은 계정에는 전환을 보이지 않는다 — 배급만 쓰는 사람에게 낯선 칸이 늘지 않게
+  const { data: pub } = useAsync(() => pubApi.summary(), [], { key: 'pub-summary' });
+  const showSwitch = type === 'publishing' || !!pub && (pub.enrolled || pub.works.total > 0);
+  const setType = (v: 'distribution' | 'publishing') => {
+    const p = new URLSearchParams();
+    if (v === 'publishing') p.set('type', 'publishing');
+    setParams(p, { replace: true });
+  };
+  return (
+    <div id="view-reports" className="view">
+      <div className="ui-page-head">
+        <div>
+          <p className="eyebrow">수익·성과</p>
+          <h1 id="reportsTitle">음악 리포트</h1>
+          <p>{type === 'publishing' ? '작사·작곡 저작권료를 기간·곡·징수 단체마다 나눠 봐요.' : '플랫폼별 재생과 수익을 기간·곡마다 나눠 봐요.'}</p>
+        </div>
+      </div>
+      {showSwitch && (
+        <Segmented tabs className="aq-seg-tabs aq-report-type" label="리포트 종류" value={type} onChange={setType}
+          options={[{ value: 'distribution', label: '배급 수익' }, { value: 'publishing', label: '저작권료' }] as const} />
+      )}
+      {type === 'publishing'
+        ? <Suspense fallback={<SkeletonRows count={3} pattern="amount" />}><PublishingReport /></Suspense>
+        : <DistributionReport />}
     </div>
   );
 }

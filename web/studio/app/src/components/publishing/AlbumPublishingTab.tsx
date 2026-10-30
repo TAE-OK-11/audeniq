@@ -34,6 +34,11 @@ import '../../styles/split/Publishing.css';
 const PREP_ICON: Record<PrepGroup['key'], GlyphName> = { tracks: 'music', fix: 'warning', split: 'scale', confirm: 'users', ipi: 'user' };
 const STAGE_TONE: Record<WorkStage, 'green' | 'amber' | 'violet' | 'blue' | 'gray'> = { ready: 'green', blocked: 'amber', applied: 'violet', managed: 'blue', readonly: 'gray' };
 type PeopleFilter = 'open' | ConfirmState;
+const START_STEPS = [
+  ['곡 정리', '발매할 때 적은 크레딧으로 작사·작곡가를 채워 둬요'],
+  ['지분 확인', '참여자마다 몫(%)을 맞추고 함께 확인해요'],
+  ['신청·서명', '맡길 곡을 골라 신청하면 담당자가 등록까지 맡아요'],
+] as const;
 
 interface Sheet { work: Work; no?: number; focus?: { field: PrepField; contributorId?: string } | null }
 
@@ -167,7 +172,9 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
     : a.applying.length ? `${a.applying.length}곡을 심사하고 있어요. 끝나면 알림으로 알려 드려요.`
     : '이 앨범 곡의 작사·작곡 저작권도 맡기면 방송·스트리밍 저작권료까지 받아 드려요. (선택)';
   const editable = a.mine.filter(w => w.myRole === 'owner' || w.myRole === 'editor');
-  const openPrep = prep.groups.some(g => g.state !== 'done') || prep.ready.length > 0;
+  // 이 앨범에서 아직 아무 곡도 정리하지 않았으면 처음 시작하는 화면
+  const fresh = a.mine.length === 0 && missing > 0;
+  const openPrep = !fresh && (prep.groups.some(g => g.state !== 'done') || prep.ready.length > 0);
 
   const prepare = async () => {
     setBusy(true);
@@ -203,12 +210,30 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
     <div className="aq-detail-stack aq-album-pub">
       <section className="ui-card aq-manage-card" aria-labelledby="albumPubHead">
         <ManageHead id="albumPubHead" icon="scale" title="작사·작곡 저작권 관리" status={a.status} />
-        <p className="ui-field-help">{text}</p>
-        <StatGrid cols={3} className="aq-pbl-album-stats">
-          <StatTile compact label="관리 중" value={a.managed.length} unit="곡" />
-          <StatTile compact label="심사 중" value={a.applying.length} unit="곡" />
-          <StatTile compact label="정보 등록 전" value={missing} unit="곡" />
-        </StatGrid>
+        {fresh ? (
+          <>
+            {/* 처음 여는 사람에게는 숫자 0 세 개 대신 무엇을 하면 되는지 — 세 단계와 버튼 하나 */}
+            <p className="aq-pbl-start-lead">이 앨범 곡의 <b>작사·작곡 저작권료</b>도 받아 보세요. 방송·스트리밍에서 생기는 저작권료를 AUDENIQ이 받아 배급 정산금과 같은 잔액에 쌓아 드려요.</p>
+            <ol className="aq-pbl-start-steps">
+              {START_STEPS.map(([t, d], i) => (
+                <li key={t}><span className="aq-bundle-no" aria-hidden="true">{i + 1}</span><span className="min-0"><strong>{t}</strong><small>{d}</small></span></li>
+              ))}
+            </ol>
+            <button type="button" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={busy} onClick={() => void prepare()}>
+              {busy ? '정리하는 중' : `크레딧으로 ${missing}곡 정리하고 시작하기`}
+            </button>
+            <p className="ui-field-help aq-pbl-start-note">정리만 해 두면 아무것도 신청되지 않아요. 지분을 확인한 뒤 원할 때 신청하면 돼요.</p>
+          </>
+        ) : (
+          <>
+            <p className="ui-field-help">{text}</p>
+            <StatGrid cols={3} className="aq-pbl-album-stats">
+              <StatTile compact label="관리 중" value={a.managed.length} unit="곡" />
+              <StatTile compact label="심사 중" value={a.applying.length} unit="곡" />
+              <StatTile compact label="정보 등록 전" value={missing} unit="곡" />
+            </StatGrid>
+          </>
+        )}
       </section>
 
       {a.fix && (
@@ -283,7 +308,7 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
             );
           })}
         </ol>
-        {missing > 0 && (
+        {missing > 0 && !fresh && (
           <div className="row-actions">
             <button type="button" className={`ui-btn is-soft is-sm${busy ? ' is-busy' : ''}`} disabled={busy} onClick={() => void prepare()}>
               {busy ? '정리하는 중' : `크레딧으로 ${missing}곡 한 번에 정리`}
@@ -316,7 +341,7 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
         <section className="aq-relinfo-card aq-album-earn" aria-labelledby="albumEarn">
           <div className="ui-section-head">
             <h2 id="albumEarn" className="subhead">이 앨범 저작권료</h2>
-            {albumRoyalties.length > 0 && <Link to={`/publishing?release=${encodeURIComponent(rel.id)}`} className="aq-head-link">자세히 보기<Glyph name="chevron-right" size={14} /></Link>}
+            {albumRoyalties.length > 0 && <Link to={`/reports?type=publishing&release=${encodeURIComponent(rel.id)}`} className="aq-head-link">리포트에서 보기<Glyph name="chevron-right" size={14} /></Link>}
           </div>
           {albumRoyalties.length ? (
             <KeyValue cols={2} items={[

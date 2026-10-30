@@ -1,4 +1,5 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { Suspense, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { lazyComponent } from '../lib/lazyComponent';
 import { releaseDay } from '../lib/albumPrep';
 import { useNavigate, useSearchParams } from '../lib/router';
 import { api, type Release, type Track } from '../api/client';
@@ -18,6 +19,9 @@ import { errorMessage } from '../api/errors';
 import { useToast } from '../components/Toast';
 import { MOCK } from '../lib/mode';
 import { openFixes, pendingProofs, proofPath, useDocs, type DocRecord } from '../store/docs';
+
+// 곡 저작권 탭은 열 때 받는다
+const PublishingSongs = lazyComponent(() => import('./Publishing'), m => m.PublishingSongs);
 
 const FILTERS = [
   { value: 'all', label: '전체' },
@@ -60,7 +64,7 @@ export function Releases() {
   const docs = useDocs();
   const [params, setParams] = useSearchParams();
   const tabParam = params.get('tab');
-  const tab = tabParam === 'tracks' ? tabParam : 'releases';
+  const tab = tabParam === 'tracks' || tabParam === 'works' ? tabParam : 'releases';
   const filter = params.get('status') || 'all';
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('updated');
@@ -95,7 +99,8 @@ export function Releases() {
   }, [tracksWanted, listData], { key: tracksWanted && listData ? 'release-tracks' : undefined });
   const tracks = useMemo(() => trackData ?? [], [trackData]);
   // 곡마다 작사·작곡 저작권(퍼블리싱) 상태 — 맡겼거나 진행 중인 곡에만 배지를 단다
-  const { data: works } = useAsync(() => (tracksWanted ? pubApi.listWorks() : Promise.resolve(null)), [tracksWanted], { key: tracksWanted ? 'works' : undefined });
+  const { data: works } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
+  const worksCount = works ? works.length : null;
   const workByTrack = useMemo(() => new Map<string, Work>((works ?? []).flatMap(w => w.recordings.map(r => [`${r.releaseId}:${r.trackId}`, w] as const))), [works]);
   const toast = useToast();
   const [csvBusy, setCsvBusy] = useState(false);
@@ -165,13 +170,19 @@ export function Releases() {
         items={[
           { value: 'releases', label: '발매 목록', count: listLoading ? null : list.length },
           { value: 'tracks', label: '전체 트랙', count: listLoading ? null : trackCount },
+          // 작사·작곡 저작권(퍼블리싱) — 발매한 곡과 아직 발매하지 않은 곡을 같은 목록에서
+          { value: 'works', label: '곡 저작권', count: worksCount },
         ]}
-        onChange={v => setParam('tab', v, 'releases')}
+        onChange={v => { const next = new URLSearchParams(); if (v !== 'releases') next.set('tab', v); setParams(next, { replace: true }); }}
         onIntent={v => { if (v === 'tracks') setTracksWanted(true); }}
         className="is-fill"
       />
 
-      {loading ? (
+      {tab === 'works' ? (
+        <div className="ui-tab-panel" key="works">
+          <Suspense fallback={<SkeletonRows count={4} />}><PublishingSongs /></Suspense>
+        </div>
+      ) : loading ? (
         listLoading || slowTracks ? <SkeletonRows count={4} /> : <div className="aq-tab-wait" aria-busy="true" />
       ) : error ? (
         <div className="ui-empty">

@@ -350,7 +350,7 @@ export function Settlement() {
           {revType !== 'distribution' && estimated > 0 && (
             <div className="ui-callout is-neutral is-row">
               <span>확정 전인 예상 저작권료 <b>{money(estimated)}</b> — 관리 단체가 확정하면 여기에 적립돼요.</span>
-              <Link to="/publishing?tab=royalties" className="ui-btn is-white is-sm">곡별 보기</Link>
+              <Link to="/reports?type=publishing" className="ui-btn is-white is-sm">곡별 보기</Link>
             </div>
           )}
           {listsPending ? <SkeletonRows count={3} pattern="amount" /> : orderedStatements.length ? (

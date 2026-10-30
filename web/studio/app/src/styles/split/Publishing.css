@@ -166,3 +166,16 @@
 .aq-pbl-filter{margin:16px 0 20px}
 @media (min-width:761px){.aq-pbl-filter>select{flex:0 1 200px;max-width:220px}}
 @media(max-width:760px){.aq-pbl-filter{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}.aq-pbl-filter>*{width:100%}}
+/* 처음 시작 — 세 단계와 버튼 하나 (계약 묶음의 번호 동그라미 aq-bundle-no를 그대로) */
+.aq-pbl-start-lead{margin:14px 0 0;color:var(--aq-text-2);font-size:var(--aq-fs-md);line-height:1.6}
+.aq-pbl-start-lead b{color:var(--aq-text)}
+.aq-pbl-start-steps{display:grid;gap:4px;margin:16px 0;padding:6px 14px;border-radius:var(--aq-r-xl);background:var(--aq-bg);list-style:none}
+.aq-pbl-start-steps li{display:flex;align-items:center;gap:12px;padding:10px 0}
+.aq-pbl-start-steps li+li{box-shadow:inset 0 1px 0 var(--aq-line)}
+.aq-pbl-start-steps strong{display:block;font-size:var(--aq-fs-md)}
+.aq-pbl-start-steps small{display:block;margin-top:2px;color:var(--aq-text-3);font-size:var(--aq-fs-sm)}
+.aq-pbl-start-note{margin:10px 0 0;text-align:center}
+.aq-pbl-report{display:grid;gap:0;min-width:0}
+.aq-pbl-royalty-section{margin-top:28px}
+.aq-pbl-royalty-section>.subhead{margin:0 0 8px}
+.aq-pub-count-actions{display:flex;flex-wrap:wrap;gap:6px}

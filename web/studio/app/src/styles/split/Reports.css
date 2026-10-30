@@ -1,7 +1,7 @@
 /*  Reports 화면 조각에서만 쓰는 규칙 — 전역 스타일(App.tsx가 불러오는 9개 파일)에서 원래 순서대로 옮겼다.
    이 조각을 받을 때 전역 스타일 뒤에 붙고, 원래 자리보다 뒤에 있던 같은 우선순위 규칙과 겹치지 않는 것만 옮겼다.
    아래 클래스를 쓰는 파일은 이 파일을 import해야 한다 (splitCss.test.ts가 확인).
-   anchors: aq-platform-bars aq-platform-track aq-report aq-report-details aq-report-hero aq-rp-card has-values report-axis report-chart report-col report-tools report-val view-reports  *//* ── live.css */.report-tools select,.report-tools input{max-width:100%}/* ── enhance.css */
+   anchors: aq-platform-bars aq-platform-track aq-report aq-report-details aq-report-hero aq-rp-card has-values report-axis report-chart report-col report-tools report-val view-reports aq-report-type  *//* ── live.css */.report-tools select,.report-tools input{max-width:100%}/* ── enhance.css */
 .aq-platform-bars li:nth-child(n+4) .aq-platform-track span{animation-delay:.24s}
 /* ── ui.css */
 @media (min-width:761px){.report-tools>select{flex:0 1 260px!important;max-width:260px!important}}
@@ -35,3 +35,5 @@
   #view-reports .report-chart.has-values .report-bar{flex:none!important;max-width:none}
   #view-reports .report-axis.is-all{justify-content:space-between;gap:24px}
 }
+/* 배급 수익 | 저작권료 전환 */
+.aq-report-type{margin-bottom:16px}

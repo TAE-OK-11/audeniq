@@ -60,7 +60,7 @@ const ROUTE_PAGES: [RegExp, PageName[]][] = [
   [/^\/works\/(new|[^/]+\/edit)/, ['WorkEditor']],
   [/^\/works\/[^/]+/, ['WorkDetail']],
   [/^\/publishing\/apply/, ['PublishingApply']],
-  [/^\/publishing\/?$/, ['Publishing']],
+  [/^\/publishing\/?$/, ['Reports']],
   [/^\/ar\/?$/, ['OpenAr']],
   [/^\/reports/, ['Reports']],
   [/^\/settlement/, ['Settlement']],

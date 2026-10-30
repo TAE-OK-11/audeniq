@@ -259,12 +259,12 @@ export function WorkDetail() {
   const remove = async () => {
     const ok = await confirm({ title: '이 곡을 지울까요?', message: '곡 정보·지분·첨부 자료가 모두 지워져요. 발매와 녹음은 그대로예요.', confirmLabel: '지우기', danger: true });
     if (!ok) return;
-    try { await pubApi.deleteWork(w.id); toast('곡을 지웠어요.', 'success'); nav('/publishing?tab=songs', { replace: true }); } catch (err) { toast(errorMessage(err), 'error'); }
+    try { await pubApi.deleteWork(w.id); toast('곡을 지웠어요.', 'success'); nav('/releases?tab=works', { replace: true }); } catch (err) { toast(errorMessage(err), 'error'); }
   };
 
   const fromRelease = params.get('release');
   const backToAlbum = !!fromRelease && w.recordings.some(r => r.releaseId === fromRelease);
-  const backTo = backToAlbum ? `/releases/${encodeURIComponent(fromRelease!)}?tab=publishing` : '/publishing?tab=songs';
+  const backTo = backToAlbum ? `/releases/${encodeURIComponent(fromRelease!)}?tab=publishing` : '/releases?tab=works';
 
   const buttons = canEdit && (
     <>

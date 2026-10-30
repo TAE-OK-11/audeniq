@@ -8,9 +8,9 @@ import { createServer, preview } from 'vite';
 
 const out = 'test-results/publishing-ui';
 const routes = [
-  ['analysis', '/publishing', '.aq-pbl-dashboard'],
-  ['songs', '/publishing?tab=songs', '.aq-track-row'],
-  ['royalties', '/publishing?tab=royalties', '.settle-entry'],
+  ['analysis', '/reports?type=publishing', '.aq-pbl-dashboard'],
+  ['songs', '/releases?tab=works', '.aq-track-row'],
+  ['legacy-redirect', '/publishing?tab=royalties', '.settle-entry'],
   ['album', '/releases/r2?tab=publishing', '.aq-album-pub'],
   ['work', '/works/w1', '.aq-pbl-person-read'],
   ['registration', '/works/w2?tab=register', '.aq-bundle.is-needs'],
@@ -119,20 +119,24 @@ try {
   await page.screenshot({ path: `${out}/split-390.png`, fullPage: true });
   // Analysis separates estimates; the album filter survives tab navigation and application entry.
   await page.goto(base + '/publishing');
+  await page.waitForURL('**/reports?type=publishing');
   await page.locator('.aq-pbl-dashboard').waitFor();
   assert.match(await page.locator('.aq-report-total').innerText(), /337,860/);
   // Period/condition filter narrows the report and is carried into the royalty list (and its CSV).
   await page.getByLabel('징수 단체').selectOption('JASRAC');
   await page.getByRole('button', { name: /내역 보기/ }).click();
+  await page.locator('#pubRoyaltyList').waitFor();
   assert.equal(new URL(page.url()).searchParams.get('src'), 'JASRAC');
-  await page.locator('.settle-entry').first().waitFor();
-  assert.equal(await page.locator('.settle-entry').count(), 1);
+  await page.locator('#pubRoyaltyList .settle-entry').first().waitFor();
+  assert.equal(await page.locator('#pubRoyaltyList .settle-entry').count(), 1);
   await page.screenshot({ path: `${out}/royalties-filtered-1440.png`, fullPage: true });
-  await page.goto(base + '/publishing');
+  await page.goto(base + '/reports?type=publishing');
   await page.locator('.aq-pbl-dashboard').waitFor();
   await page.getByLabel('볼 앨범').selectOption('r2');
-  await page.getByRole('tab', { name: /^곡/ }).click();
   assert.equal(new URL(page.url()).searchParams.get('release'), 'r2');
+  // Songs live in 발매·곡 관리; the menu no longer has a separate 퍼블리싱 entry.
+  await page.goto(base + '/releases?tab=works&release=r2');
+  assert.equal(await page.locator('a[href="/publishing"]').count(), 0);
   await page.getByRole('button', { name: '저작권 관리 신청', exact: true }).click();
   await page.waitForURL('**/publishing/apply?release=r2');
   assert.deepEqual(errors, []);
