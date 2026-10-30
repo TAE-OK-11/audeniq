@@ -32,3 +32,14 @@ describe('watchBusyButtons', () => {
     expect(document.querySelector('button')!.hasAttribute('data-busy')).toBe(true);
   });
 });
+
+describe('watchBusyButtons 너비', () => {
+  it('누를 때 버튼 너비를 --busy-w로 적어 둔다', async () => {
+    document.body.innerHTML = '<button class="ui-btn">저장</button>';
+    stop = watchBusyButtons();
+    const b = document.querySelector('button')!;
+    Object.defineProperty(b, 'offsetWidth', { value: 88 });
+    b.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(b.style.getPropertyValue('--busy-w')).toBe('88px');
+  });
+});
