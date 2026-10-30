@@ -1,5 +1,5 @@
 // 배급 신청서 — 신청인이 서명해 접수한 내용을 정식 서류 형태로 보여 주고 인쇄·PDF로 저장한다.
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { printWithStamp } from '../lib/printStamp';
 import { useNavigate, useParams, useSearchParams } from '../lib/router';
 import { api } from '../api/client';
@@ -28,6 +28,11 @@ const dash = (v?: string | null) => (v && v.trim() ? v : '—');
 function longDate(stamp: string): string {
   const d = parseStamp(stamp);
   return d ? `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일` : stamp;
+}
+
+/** 긴 파일 이름이 글자 중간이 아니라 _ . - 뒤에서 줄바꿈되게 (<wbr>은 복사·본문 해시에 글자를 더하지 않는다) */
+function breakable(name: string) {
+  return name.split(/(?<=[_.\-])/).map((part, i) => <Fragment key={i}>{i > 0 && <wbr />}{part}</Fragment>);
 }
 
 export function Application() {
@@ -194,7 +199,7 @@ export function Application() {
                     <td data-label="작사">{t.instrumental ? '연주곡' : dash(t.lyricists)}</td>
                     <td className="num" data-label="길이">{dash(t.duration)}</td>
                     <td data-label="음원">
-                      <small>{t.audioSpec || t.audioName || '—'}</small>
+                      <small>{breakable(t.audioSpec || t.audioName || '—')}</small>
                       <small>{t.isrc ? `ISRC ${t.isrc}` : 'ISRC 발급 예정'}</small>
                     </td>
                   </tr>
