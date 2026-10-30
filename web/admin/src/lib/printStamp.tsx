@@ -7,7 +7,7 @@
 // - WebKit(Safari, 그리고 iPhone·iPad의 모든 브라우저): fixed 요소를 화면(뷰포트) 기준으로 한 번만 찍는다.
 //   그대로 두면 꼬리말이 첫 쪽 중간(휴대폰 화면 높이)에 본문과 겹쳐 찍힌다. 그래서 WebKit에서는
 //   머리말을 문서 맨 앞, 꼬리말을 문서 맨 끝에 흐름대로 두고 쪽 여백은 @page로 준다.
-// 워터마크(출력자·원본 검증코드)는 두 경우 모두 문서 전체를 덮는 반복 배경이라 모든 쪽에 찍힌다.
+// 출력자·원본 검증코드는 꼬리말에만 찍는다. 본문 위에 비스듬히 반복하던 워터마크는 서류를 가려 뺐다.
 import { useLayoutEffect, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { req } from '../api/http';
@@ -95,7 +95,7 @@ export function printsFixedOnce(): boolean {
   return /AppleWebKit\//.test(ua);
 }
 
-/** 인쇄 표식을 놓을 자리: 머리말은 body 맨 앞, 꼬리말·워터마크는 body 맨 끝 (앱 레이아웃의 영향 밖) */
+/** 인쇄 표식을 놓을 자리: 머리말은 body 맨 앞, 꼬리말은 body 맨 끝 (앱 레이아웃의 영향 밖) */
 function slot(id: string, first: boolean): HTMLElement {
   let el = document.getElementById(id);
   if (!el) {
@@ -108,16 +108,9 @@ function slot(id: string, first: boolean): HTMLElement {
   return el;
 }
 
-const esc = (t: string) => t.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
-/** 워터마크 타일(SVG): 한 칸에 사선 글자 하나, 문서 전체에 반복 */
-function watermarkTile(text: string): string {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="190"><text x="150" y="105" text-anchor="middle" transform="rotate(-30 150 95)" font-family="ui-monospace,Menlo,Consolas,monospace" font-size="11" font-weight="600" letter-spacing=".5" fill="rgb(30,40,70)" fill-opacity=".09">${esc(text)}</text></svg>`;
-  return `url("data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}")`;
-}
-
 const when = (iso: string) => new Date(iso).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) + ' KST';
 
-/** 인쇄할 때만 보이는 머리말·꼬리말과 워터마크. 앱 루트에 한 번 둔다 (실제로는 body 바로 아래에 찍힌다). */
+/** 인쇄할 때만 보이는 머리말·꼬리말. 앱 루트에 한 번 둔다 (실제로는 body 바로 아래에 찍힌다). */
 export function PrintStampHost() {
   const s = usePrintStamp();
   const flow = printsFixedOnce();
@@ -143,8 +136,6 @@ export function PrintStampHost() {
       slot('aq-print-foot', false),
     );
   }
-  // 유출 추적용 워터마크: 출력자와 원본 검증코드를 문서 전체에 옅게 반복한다
-  const mark = s.unverified ? '검증되지 않은 출력물' : `${s.printed_by} · ${s.verification_code}`;
   return (
     <>
       {createPortal(
@@ -154,13 +145,7 @@ export function PrintStampHost() {
         </div>,
         slot('aq-print-head', true),
       )}
-      {createPortal(
-        <>
-          <div className="aq-print-watermark" aria-hidden="true" style={{ backgroundImage: watermarkTile(mark) }} />
-          <PrintFoot s={s} mode={mode} />
-        </>,
-        slot('aq-print-foot', false),
-      )}
+      {createPortal(<PrintFoot s={s} mode={mode} />, slot('aq-print-foot', false))}
     </>
   );
 }
