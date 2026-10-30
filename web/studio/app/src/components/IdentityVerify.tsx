@@ -49,13 +49,17 @@ export function IdentityVerify({ onDone }: { onDone: (name: string, method: Veri
   const timer = useRef(0);
   const set = (k: keyof typeof f, v: string) => { setF(p => ({ ...p, [k]: v })); setError(''); };
 
-  // 인증번호 유효 시간(3분) 표시
+  // 인증번호 유효 시간(3분) 표시 — 만료 시각에서 매번 다시 센다(1초씩 빼면 다른 앱에 다녀온 사이 멈춘 타이머만큼 남은 시간이 늘어 보였다)
+  const [deadline, setDeadline] = useState(0);
   useEffect(() => {
-    if (step !== 'code') return;
-    setLeft(180);
-    const t = window.setInterval(() => setLeft(s => Math.max(0, s - 1)), 1000);
+    if (step !== 'code') { if (deadline) setDeadline(0); return; } // 다시 들어오면 새 인증번호 — 3분부터
+    const end = deadline || Date.now() + 180_000;
+    if (!deadline) setDeadline(end);
+    const tick = () => setLeft(Math.max(0, Math.ceil((end - Date.now()) / 1000)));
+    tick();
+    const t = window.setInterval(tick, 1000);
     return () => window.clearInterval(t);
-  }, [step]);
+  }, [step, deadline]);
   useEffect(() => () => window.clearTimeout(timer.current), []);
 
   const finish = () => {
@@ -298,7 +302,7 @@ export function IdentityVerify({ onDone }: { onDone: (name: string, method: Veri
         </div>
         <div className="aq-otp-meta">
           <span className={left < 30 ? 'is-low' : ''}>남은 시간 {mm}:{ss}</span>
-          <button type="button" className="aq-verify-resend" onClick={() => { setLeft(180); set('code', ''); }}>인증번호 다시 받기</button>
+          <button type="button" className="aq-verify-resend" onClick={() => { setDeadline(Date.now() + 180_000); set('code', ''); }}>인증번호 다시 받기</button>
         </div>
         {error && <p className="ui-field-help aq-help-error" role="alert">{error}</p>}
         <button type="submit" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={busy}>{busy ? '확인하는 중' : '확인'}</button>
