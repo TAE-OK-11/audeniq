@@ -423,8 +423,6 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 @keyframes aq-modal-nudge{0%,100%{transform:none}40%{transform:scale(1.01)}}
 #modal.is-nudge>.modal-inner{animation:aq-modal-nudge var(--aq-motion-long) var(--aq-enter)!important}
 
-/* 알림(토스트): 옆으로 밀어 닫을 수 있게 가로 끌기는 앱이 받는다 */
-.aq-toast{touch-action:pan-y;transition:transform var(--aq-motion-base) var(--aq-enter),opacity var(--aq-motion-base) ease;-webkit-user-select:none;user-select:none}
 
 /* 길게 누를 때 버튼·칩·탭 글자가 선택되거나 시스템 메뉴가 뜨지 않게 */
 :is(.ui-btn,.ui-chip,.ui-tab,.ui-seg>button,.aq-set-row,.service-item,#portalNav button){-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}

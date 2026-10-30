@@ -64,6 +64,24 @@ export function SplitsCard({ releaseId, embedded = false, registerSave }: {
   if (!sheet.editable && !anyShare) return null;
 
   const edit = (track: string, fn: (r: Row[]) => Row[]) => { setRows(m => ({ ...m, [track]: fn(m[track] ?? []) })); setDirty(true); };
+  // 지운 분은 토스트의 '되돌리기'로 같은 자리에 되살린다 (빈 줄은 묻지 않고 지운다)
+  const removeRow = (track: string, i: number) => {
+    const row = rows[track]?.[i];
+    if (!row) return;
+    edit(track, l => l.filter((_, j) => j !== i));
+    if (!row.name.trim() && !row.id) return;
+    toast(`${row.name.trim() || '공동작업자'}님을 분배에서 뺐어요`, {
+      tone: 'success',
+      sub: '분배 저장을 눌러야 반영돼요',
+      action: {
+        label: '되돌리기',
+        onClick: h => {
+          edit(track, l => [...l.slice(0, i), row, ...l.slice(i)]);
+          h.update('되돌렸어요', { tone: 'success', duration: 2000 });
+        },
+      },
+    });
+  };
   // 저장 검사는 서버와 같게 거절한 분 비율도 합에 넣는다 (지우면 그 비율을 다른 분에게 줄 수 있다)
   const ownerBps = (track: string) => 10000 - (rows[track] ?? []).reduce((a, r) => a + (toBps(r.pct) || 0), 0);
 
@@ -136,7 +154,7 @@ export function SplitsCard({ releaseId, embedded = false, registerSave }: {
                         <input className="ui-input" inputMode="decimal" aria-label="비율(%)" value={r.pct}
                           onChange={e => edit(t.track_id, l => l.map((x, j) => (j === i ? { ...x, pct: e.target.value.replace(/[^0-9.]/g, '') } : x)))} />%
                       </span>
-                      <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => edit(t.track_id, l => l.filter((_, j) => j !== i))}>삭제</button>
+                      <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => removeRow(t.track_id, i)}>삭제</button>
                     </>
                   ) : (
                     <>
