@@ -2,7 +2,9 @@
 // 저작권 관리 계약 없이도 곡만 등록해 둘 수 있고, 지분이 틀려도 임시 저장은 된다(신청할 때만 막는다).
 // 발매 곡에서 들어오면(?release=&track=) 곡 정보·크레딧을 미리 채우되 지분은 사용자가 직접 확인해야 저장된다.
 // 입력은 이 브라우저에 자동 저장돼 연결이 끊기거나 화면을 떠나도 이어서 쓸 수 있다 (기획안 10.3)
-// 배급 신청서처럼 단계별로 한 화면에 한 가지만: 기본 정보 → 참여자·지분 → 권리·자료 → 확인
+// 배급 신청서처럼 단계별로 한 화면에 한 가지만: 기본 정보 → 참여자·지분 → 권리·자료 → 확인.
+// 발매 곡에서 왔으면 배급 신청서를 이미 다 쓴 것으로 본다: 제목·언어·장르·ISRC·크레딧·음원·가사는 다시 묻지 않고 가져와 보여 주기만 하고,
+// 퍼블리싱에만 필요한 것(곡 유형·지분·관리 단체·ISWC·기존 계약)만 받는다. 배급 정보를 고치는 건 발매 상세에서
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from '../lib/router';
 import { api } from '../api/client';
@@ -23,7 +25,8 @@ import { StepBar } from '../components/StepBar';
 import { Glyph } from '../components/Glyph';
 import { SplitEditor } from '../components/publishing/SplitEditor';
 import { WorkRow } from '../components/publishing/parts';
-import { Badge, Button, Callout, Field, inputClass, selectClass } from '../ui';
+import { Badge, Button, Callout, Field, KeyValue, inputClass, selectClass } from '../ui';
+import { ReleaseCover } from '../components/ReleaseCover';
 import { roleText } from '../components/publishing/parts';
 import { Reveal } from '../ui/Reveal';
 
@@ -38,6 +41,8 @@ const ATTACH_KINDS: [WorkAttachment['kind'], string, string][] = [
 const ISWC_RE = /^T-?\d{3}\.?\d{3}\.?\d{3}-?\d$/i;
 
 const STEPS = ['기본 정보', '참여자·지분', '권리·자료', '확인'];
+// 발매 곡에서 오면 첫 단계는 입력이 아니라 '배급 신청서에서 가져온 곡 확인'
+const TRACK_STEPS = ['곡 확인', '참여자·지분', '권리·자료', '확인'];
 const LAST = STEPS.length - 1;
 
 interface Saved { form: Form; at: string; splitChecked: boolean; step?: number }
@@ -93,8 +98,13 @@ export function WorkEditor() {
       add(splitNames(track.composers ?? d?.composers), 'composer');
       if (!d?.instrumental) add(splitNames(track.lyricists ?? d?.lyricists), 'lyricist');
       add(splitNames(d?.arrangers), 'arranger');
+      // 배급 신청서에 올린 음원·가사는 첨부 자료로 미리 붙인다 — 같은 파일을 다시 올리지 않게
+      const fromRelease: WorkAttachment[] = [
+        ...(d?.audioName ? [{ id: uid(), kind: 'demo' as const, name: d.audioName, size: d.audioSize || undefined, at: stampNow() }] : []),
+        ...(d?.lyrics?.trim() && !d.instrumental ? [{ id: uid(), kind: 'lyrics' as const, name: `${track.title} 가사 (배급 신청서)`, at: stampNow() }] : []),
+      ];
       start = {
-        ...EMPTY, title: track.title, genre: release.draft?.genre ?? '', language: release.draft?.language ?? 'ko',
+        ...EMPTY, title: track.title, genre: release.draft?.genre ?? '', language: release.draft?.language ?? 'ko', attachments: fromRelease,
         workType: d?.instrumental ? 'instrumental' : 'original', contributors: [...people.values()].map(c => (c.isMe ? { ...c, confirm: 'confirmed', external: false } : c)),
       };
     }
@@ -154,6 +164,7 @@ export function WorkEditor() {
   const iswcErr = form.iswc && !ISWC_RE.test(form.iswc) ? 'T-123.456.789-0 모양이에요. 모르면 비워 두세요 — 내부 번호로 관리해요.' : '';
   const issues = splitIssues(form.contributors);
   const fromTrack = !editing && !!track;
+  const fromDraft = track && release ? draftTrackOf(track, release.draft) : undefined;
   const needsSplitCheck = fromTrack && !splitChecked && form.contributors.length > 0;
   const locked = existing && existing.application && ['submitted', 'in_review', 'approved'].includes(existing.application.status);
   // 다음 단계로 — 이 단계에서 꼭 필요한 것만 막는다 (지분이 덜 맞아도 저장은 된다)
@@ -230,7 +241,7 @@ export function WorkEditor() {
         <div>
           <p className="eyebrow">퍼블리싱</p>
           <h1>{editing ? '곡 정보 고치기' : fromTrack ? '발매 곡으로 곡 정보 만들기' : '새 곡 등록'}</h1>
-          <p>{fromTrack ? <>‘{release?.title}’의 곡 정보를 미리 채웠어요. 확인하고 고쳐 주세요.</> : '저작권 관리 계약 없이도 곡 정보와 지분을 정리해 둘 수 있어요.'}</p>
+          <p>{fromTrack ? <>‘{release?.title}’ 배급 신청서 내용으로 채웠어요. 퍼블리싱에 필요한 것만 더해 주세요.</> : '저작권 관리 계약 없이도 곡 정보와 지분을 정리해 둘 수 있어요.'}</p>
           <p className="muted small" aria-live="polite">{savedAt ? `이 브라우저에 자동 저장했어요 · ${localStamp(savedAt)}` : dirty ? '입력 중이에요' : ''}</p>
         </div>
       </div>
@@ -247,13 +258,40 @@ export function WorkEditor() {
       )}
       {locked && <Callout tone="warn">저작권 관리 심사 중이거나 관리 중인 곡이에요. 지금 고친 내용은 담당자가 확인한 뒤 반영돼요.</Callout>}
 
-      <StepBar steps={STEPS} current={step} />
+      <StepBar steps={fromTrack ? TRACK_STEPS : STEPS} current={step} />
 
       {step === 0 && <section className="ui-tab-panel aq-form-block" key="s0" aria-labelledby="secBasic">
-        <h2 id="secBasic">기본 정보</h2>
-        <Field label="곡 제목" htmlFor="workTitle" required error={titleErr}>
-          <input id="workTitle" className={inputClass('lg')} value={form.title} maxLength={200} onChange={e => set('title', e.target.value)} placeholder="예: 새벽 네 시" autoComplete="off" />
-        </Field>
+        <h2 id="secBasic">{fromTrack ? '배급 신청서에서 가져왔어요' : '기본 정보'}</h2>
+        {fromTrack && release && track ? (
+          <>
+            <p className="ui-field-help">발매 정보는 다시 적지 않아요. 바꿀 게 있으면 <Link to={`/releases/${encodeURIComponent(release.id)}`} className="aq-inline-link">발매 상세</Link>에서 고쳐 주세요.</p>
+            {/* 배급 신청서의 곡 정보 — 읽기만. 퍼블리싱에 필요한 건 아래와 다음 단계에서 */}
+            <div className="ui-card aq-work-from">
+              <div className="aq-work-from-head">
+                <ReleaseCover id={release.id} src={release.coverData} />
+                <span className="min-0">
+                  <span className="ui-row-title">{track.title}</span>
+                  <span className="ui-row-meta"><span>{release.title}</span><span>{release.artist}</span></span>
+                </span>
+              </div>
+              <KeyValue cols={2} items={[
+                ['장르', form.genre || '—'],
+                ['언어', LANGUAGES.find(x => x[0] === form.language)?.[1] ?? form.language],
+                ['ISRC', track.isrc || '발매 때 발급'],
+                ['버전', track.version || '원곡'],
+                ['작곡', fromDraft?.composers || track.composers || '—'],
+                ['작사', fromDraft?.instrumental ? '연주곡' : fromDraft?.lyricists || track.lyricists || '—'],
+                ['음원', fromDraft?.audioName || '—'],
+                ['가사', fromDraft?.instrumental ? '없음 (연주곡)' : fromDraft?.lyrics?.trim() ? '있음' : '없음'],
+              ]} />
+            </div>
+            <h2 className="aq-form-sub">퍼블리싱 정보</h2>
+          </>
+        ) : (
+          <Field label="곡 제목" htmlFor="workTitle" required error={titleErr}>
+            <input id="workTitle" className={inputClass('lg')} value={form.title} maxLength={200} onChange={e => set('title', e.target.value)} placeholder="예: 새벽 네 시" autoComplete="off" />
+          </Field>
+        )}
         {dupes.length > 0 && (
           <Reveal open>
             <Callout tone="warn">
@@ -275,14 +313,16 @@ export function WorkEditor() {
               {WORK_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </Field>
-          <Field label="주요 언어" htmlFor="workLang">
-            <select id="workLang" className={selectClass()} value={form.language} onChange={e => set('language', e.target.value)}>
-              {LANGUAGES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-          </Field>
-          <Field label="장르" htmlFor="workGenre">
-            <input id="workGenre" className={inputClass()} value={form.genre} onChange={e => set('genre', e.target.value)} placeholder="예: Indie Pop" />
-          </Field>
+          {!fromTrack && <>
+            <Field label="주요 언어" htmlFor="workLang">
+              <select id="workLang" className={selectClass()} value={form.language} onChange={e => set('language', e.target.value)}>
+                {LANGUAGES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </Field>
+            <Field label="장르" htmlFor="workGenre">
+              <input id="workGenre" className={inputClass()} value={form.genre} onChange={e => set('genre', e.target.value)} placeholder="예: Indie Pop" />
+            </Field>
+          </>}
           <Field label="공개 범위" htmlFor="workVis" help={form.visibility === 'shared' ? '참여자와 담당자가 볼 수 있어요.' : '나와 작업 공간 멤버만 볼 수 있어요.'}>
             <select id="workVis" className={selectClass()} value={form.visibility} onChange={e => set('visibility', e.target.value as Form['visibility'])}>
               <option value="private">비공개</option>
@@ -305,7 +345,9 @@ export function WorkEditor() {
 
       {step === 1 && <section className="ui-tab-panel aq-form-block" key="s1" aria-labelledby="secPeople">
         <h2 id="secPeople">참여자·지분</h2>
-        <p className="ui-field-help">작사·작곡·편곡에 참여한 사람과 각자의 몫을 적어요. AUDENIQ 작가는 찾아서 추가하고, 없으면 이름만으로 외부 참여자를 추가해요.</p>
+        <p className="ui-field-help">{fromTrack
+          ? '배급 신청서의 작사·작곡·편곡 크레딧으로 참여자를 채워 두었어요. 저작권 지분은 자동으로 정하지 않으니 각자의 몫만 나눠 주세요.'
+          : '작사·작곡·편곡에 참여한 사람과 각자의 몫을 적어요. AUDENIQ 작가는 찾아서 추가하고, 없으면 이름만으로 외부 참여자를 추가해요.'}</p>
         <SplitEditor value={form.contributors} onChange={v => set('contributors', v)} />
         {fromTrack && form.contributors.length > 0 && (
           <label className={`ui-check${needsSplitCheck && tried ? ' aq-shake' : ''}`}>
@@ -338,10 +380,12 @@ export function WorkEditor() {
             <input id="workPriorName" className={inputClass()} value={form.priorPublisher ?? ''} onChange={e => set('priorPublisher', e.target.value || null)} placeholder="퍼블리셔 이름" />
           </Field>
         </Reveal>
-        <p className="ui-field-help">관리 단체 가입 여부와 IPI/CAE 번호는 참여자마다 위에서 적어요. 모르는 칸은 비워 둬도 저장돼요. 아는 관리 단체: {SOCIETIES.slice(0, 5).join(' · ')} 등</p>
+        <p className="ui-field-help">관리 단체 가입 여부와 IPI/CAE 번호는 ‘참여자·지분’ 단계에서 사람마다 적어요. 모르는 칸은 비워 둬도 저장돼요. 아는 관리 단체: {SOCIETIES.slice(0, 5).join(' · ')} 등</p>
 
         <h2 id="secFiles" className="aq-form-sub">첨부 자료</h2>
-        <p className="ui-field-help">없어도 저장돼요. 데모 음원은 Open A&R 제출 때, 증빙 자료는 심사 때 써요.</p>
+        <p className="ui-field-help">{fromTrack && form.attachments.length
+          ? '배급 신청서의 음원·가사를 미리 붙여 두었어요. 악보나 권리 증빙이 있으면 더해 주세요.'
+          : '없어도 저장돼요. 데모 음원은 Open A&R 제출 때, 증빙 자료는 심사 때 써요.'}</p>
         <div className="form-grid">
           {ATTACH_KINDS.map(([kind, label, accept]) => {
             const mine = form.attachments.filter(a => a.kind === kind);
