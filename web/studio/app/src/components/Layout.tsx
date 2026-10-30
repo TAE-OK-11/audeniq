@@ -267,7 +267,7 @@ export function Layout({ children }: { children: ReactNode }) {
 
   const doLogout = async () => {
     closeMenu();
-    const ok = await confirm({ title: '로그아웃할까요?', message: '작성 중인 발매는 임시 저장돼 있어요.', confirmLabel: '로그아웃' });
+    const ok = await confirm({ title: '로그아웃할까요?', message: '작성 중인 발매는 임시 저장돼 있어요.', confirmLabel: '로그아웃', danger: true });
     if (!ok) return;
     await logout();
     toast('로그아웃했어요.', 'info');

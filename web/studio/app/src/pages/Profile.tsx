@@ -242,7 +242,7 @@ export function Profile() {
   };
 
   const doLogout = async () => {
-    const ok = await confirm({ title: '로그아웃할까요?', message: '작성 중인 발매는 임시 저장돼 있어요.', confirmLabel: '로그아웃' });
+    const ok = await confirm({ title: '로그아웃할까요?', message: '작성 중인 발매는 임시 저장돼 있어요.', confirmLabel: '로그아웃', danger: true });
     if (!ok) return;
     await logout();
     toast('로그아웃했어요.', 'info');
@@ -352,7 +352,7 @@ export function Profile() {
       {MOCK && (
         <p className="aq-reset-line">
           이 브라우저에만 저장되는 체험 모드예요.{' '}
-          <button type="button" className="ui-btn is-soft is-sm" onClick={resetData}>저장된 데이터 초기화</button>
+          <button type="button" className="ui-btn is-danger is-sm" onClick={resetData}>저장된 데이터 초기화</button>
         </p>
       )}
 

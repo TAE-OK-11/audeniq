@@ -513,7 +513,7 @@ function PhotoPanel({ artist, data, photoSrc, onChanged, onSent }: {
               <Glyph name="image" size={14} className="aq-glyph-lead" />{has ? '사진 바꾸기' : '사진 올리기'}
             </button>
             {has && <button type="button" className="ui-btn is-sm" onClick={download}><Glyph name="download" size={14} className="aq-glyph-lead" />사진 받기</button>}
-            {has && <button type="button" className="ui-btn is-text is-sm" onClick={() => void remove()}>지우기</button>}
+            {has && <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => void remove()}>지우기</button>}
           </div>
           <input ref={input} type="file" accept="image/jpeg,image/png" hidden onChange={e => { void choose(e.target.files?.[0]); e.target.value = ''; }} />
         </div>

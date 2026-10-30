@@ -156,7 +156,7 @@ function AppDetail({ app, onChanged, onDeleted, onSecret }: {
         {!app.public_client && (
           <button type="button" className="ui-btn is-soft is-sm" disabled={!!busy}
             onClick={() => void run('secret', async () => {
-              const ok = await confirm({ title: '비밀 키를 새로 만들까요?', message: '지금 쓰는 비밀 키는 바로 멈춰요. 새 키를 서버에 넣을 때까지 이 앱은 연결을 이어 가지 못해요.', confirmLabel: '새로 만들기' });
+              const ok = await confirm({ title: '비밀 키를 새로 만들까요?', message: '지금 쓰는 비밀 키는 바로 멈춰요. 새 키를 서버에 넣을 때까지 이 앱은 연결을 이어 가지 못해요.', confirmLabel: '새로 만들기', danger: true });
               if (ok) onSecret(await rotateDeveloperAppSecret(app.id));
             })}>
             비밀 키 새로 만들기

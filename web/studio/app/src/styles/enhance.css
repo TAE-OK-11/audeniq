@@ -52,7 +52,7 @@ img{max-width:100%}
 .portal-nav button:not(.active):hover{background:var(--aq-gray-75)}
 .aq-nav-foot{display:flex!important;align-items:center;justify-content:space-between;gap:10px}
 .aq-nav-account{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;letter-spacing:.02em}
-.portal-nav .aq-logout{width:auto!important;min-height:32px!important;padding:6px 11px!important;font-size:12px!important;font-weight:700!important;color:var(--aq-text-3)!important;background:var(--aq-gray-50)!important;border-radius:var(--aq-r-sm)!important;flex-shrink:0}
+.portal-nav .aq-logout{width:auto!important;min-height:32px!important;padding:6px 11px!important;font-size:12px!important;font-weight:700!important;color:var(--aq-red-600)!important;background:var(--aq-gray-50)!important;border-radius:var(--aq-r-sm)!important;flex-shrink:0}
 .portal-nav .aq-logout:hover{background:var(--aq-red-50)!important;color:var(--aq-red-600)!important}
 
 /* ---------- 스태거 진입 ---------- */
