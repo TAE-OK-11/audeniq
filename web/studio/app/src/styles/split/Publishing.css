@@ -1,28 +1,96 @@
-/*  저작물 지분 입력(SplitEditor)에서만 쓰는 배치 규칙 — 모양은 '공동작업자 수익 분배'(live.css aq-splits-*)를 그대로 쓰고,
-   칸이 더 많은 줄(이름 · 창작 % · 관리 % · 관리 단체 · IPI · 삭제)과 작가 찾기 목록의 자리만 잡는다.
-   아래 클래스를 쓰는 파일은 이 파일을 import해야 한다 (splitCss.test.ts가 확인).
-   anchors: aq-pbl-split aq-pbl-split-row aq-pbl-search aq-pbl-search-list  */
-.aq-pbl-split .ui-chips{margin:0}
-.aq-splits-row.aq-pbl-split-row{grid-template-columns:minmax(0,1.2fr) 88px 88px minmax(0,1fr) minmax(0,1fr) auto}
-.aq-pbl-search{position:relative}
+/* Publishing layout only. Cards, controls, colors and typography use Studio's shared components/tokens.
+   anchors: aq-pbl-split aq-pbl-dashboard aq-pbl-album-stats aq-pbl-wizard aq-pbl-work aq-pbl-ar-form aq-pbl-guide */
+.aq-pbl-split{display:grid;gap:16px;margin:0}
+.aq-pbl-split>.ui-meter{margin-top:-8px}
+.aq-pbl-split>.ui-field-help{margin:0}
+.aq-pbl-split-total{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.aq-pbl-split-total>span{display:grid;gap:4px;font-size:var(--aq-fs-sm);color:var(--aq-text-3)}
+.aq-pbl-split-total strong{font-size:var(--aq-fs-title-lg);color:var(--aq-text);font-variant-numeric:tabular-nums}
+.aq-pbl-split-total strong small{font-size:var(--aq-fs-md);font-weight:500;color:var(--aq-text-4)}
+.aq-pbl-people{display:grid;gap:12px;min-width:0}
+.aq-pbl-person{min-width:0;margin:0;padding:20px;border:0;border-radius:var(--aq-r-xl);background:var(--aq-surface);display:grid;gap:16px}
+.aq-pbl-person-head{display:flex;align-items:center;gap:10px}
+.aq-pbl-person-head>.min-0{flex:1}
+.aq-pbl-person-head strong{font-size:var(--aq-fs-lg);overflow-wrap:anywhere}
+.aq-pbl-person-head small{display:block;margin-top:2px;color:var(--aq-text-4);font-size:var(--aq-fs-xs)}
+.aq-pbl-person-fields{display:grid;grid-template-columns:minmax(0,1fr) 128px;align-items:start;gap:16px}
+.aq-pbl-person .ui-field{min-width:0;margin:0}
+.aq-pbl-person .ui-chips{margin:0;gap:6px}
+.aq-pbl-person-more{min-width:0;border-top:1px solid var(--aq-line);padding-top:12px}
+.aq-pbl-person-more>summary{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:32px;list-style:none;cursor:pointer;color:var(--aq-text-3);font-size:var(--aq-fs-sm);font-weight:600}
+.aq-pbl-person-more>summary::-webkit-details-marker,.aq-pbl-guide>summary::-webkit-details-marker{display:none}
+.aq-pbl-person-more[open]>summary svg,.aq-pbl-guide[open]>summary svg{rotate:180deg}
+.aq-pbl-person-more>.ui-field-help{margin:8px 0 14px}
+.aq-pbl-person-more .form-grid{margin:0;gap:12px}
+.aq-pbl-person-read{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 0}
+.aq-pbl-person-read+.aq-pbl-person-read{border-top:1px solid var(--aq-line)}
+.aq-pbl-person-read .ui-row-meta{display:block;margin-top:3px;overflow-wrap:anywhere}
+.aq-pbl-person-end{display:grid;gap:6px;justify-items:end}
+.aq-pbl-person-end>b{font-size:var(--aq-fs-title);font-variant-numeric:tabular-nums}
+.aq-pbl-person-actions{grid-column:2/-1;display:flex;flex-wrap:wrap;gap:8px}
+.aq-pbl-search{position:relative;min-width:0}
 .aq-pbl-search>.ui-input{width:100%}
-.aq-pbl-search-list{margin-top:6px}
+.aq-pbl-search-list{margin-top:8px}
 .aq-pbl-search-list .ui-row:disabled{cursor:default;opacity:.6}
-@media(max-width:760px){
-  .aq-splits-row.aq-pbl-split-row{grid-template-columns:minmax(0,1fr) 88px 88px}
-  .aq-splits-row.aq-pbl-split-row>select,.aq-splits-row.aq-pbl-split-row>input[aria-label="IPI/CAE"]{grid-column:span 1}
-  .aq-splits-row.aq-pbl-split-row>select{grid-column:1 / 2}
-}
-/* 참여자 이름 옆 배지와 이름 사이 */
-.aq-pbl-split legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+/* The shared wizard supplies navigation, heading and action bars. */
+#view-new.aq-pbl-wizard .step-section{display:flex;flex-direction:column;gap:20px}
+#view-new.aq-pbl-wizard .step-section>*{margin-block:0}
+#view-new.aq-pbl-wizard .step-section>.ui-card{display:grid;gap:16px}
+#view-new.aq-pbl-wizard .step-section>.ui-card>*{margin-block:0}
+#view-new.aq-pbl-wizard .aq-pbl-person .ui-input,#view-new.aq-pbl-wizard .aq-pbl-person .ui-select{min-height:48px;height:48px;padding-block:10px;border-radius:var(--aq-r-md);font-size:16px}
+#view-new.aq-pbl-wizard .aq-pbl-person .ui-field>label{font-size:var(--aq-fs-sm);color:var(--aq-text-3);margin-bottom:6px}
+#view-new.aq-pbl-wizard .aq-pbl-person .ui-chips{margin:0}
+#view-new.aq-pbl-wizard .aq-pbl-person .ui-chip{min-height:38px;padding:8px 12px;border-radius:var(--aq-r-sm);font-size:var(--aq-fs-sm)}
+.aq-pbl-import-note{display:flex;align-items:flex-start;gap:8px}
+.aq-pbl-import-note>svg{flex:none;margin-top:3px;color:var(--aq-primary)}
+.aq-pbl-confirm small{display:block;margin-top:4px;color:var(--aq-text-3);font-size:var(--aq-fs-sm);font-weight:400}
+.aq-pbl-song-picker{display:grid;gap:0}
+/* Same report card and StatTile components as Dashboard / Reports. */
+.aq-pbl-dashboard{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:16px;align-items:start}
+.aq-pbl-dashboard>.ui-card{margin:0;min-width:0}
+.aq-pbl-status{display:grid;gap:16px}
+.aq-pbl-status>.ui-section-head,.aq-pbl-status>.ui-field-help{margin:0}
+.aq-pbl-status .ui-stats{margin:0;gap:8px}
+.aq-pbl-status .ui-stat{padding:14px 12px;background:var(--aq-bg)}
+.aq-pbl-status .ui-stat-value{font-size:var(--aq-fs-title-lg)}
+.aq-pbl-album-stats{margin-top:18px;gap:8px}
+.aq-pbl-album-stats .ui-stat{background:var(--aq-bg);padding:14px}
+.aq-pbl-track-list .ui-row>.min-0{flex:1}
+.aq-pbl-track-list .ui-row-meta{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-pbl-work #workRights,.aq-pbl-work #workRecordings{scroll-margin-top:calc(var(--aq-header-h) + 72px)}
+.aq-pbl-work .aq-detail-hero .aq-stage{margin-bottom:0}
+.aq-pbl-ar-form{display:grid;gap:20px}
+.aq-pbl-ar-form>h2,.aq-pbl-ar-form>.ui-field{margin:0}
+.aq-pbl-ar-form .ui-reveal-inner>div{display:grid;gap:20px}
+.aq-pbl-guide>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;list-style:none;cursor:pointer;font-size:var(--aq-fs-md);font-weight:600;color:var(--aq-text-3)}
+.aq-pbl-guide>ol{margin-top:12px}
+@media(max-width:1023px){.aq-pbl-dashboard{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:640px){
-  /* 입력 줄 — 이름은 위 제목에 있으니 고정 이름 칸은 빼고, 창작 % · 관리 % 한 줄, 관리 단체 한 줄, IPI와 삭제 한 줄 */
-  .aq-splits-row.aq-pbl-split-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto}
-  .aq-splits-row.aq-pbl-split-row>.aq-splits-name{display:none}
-  .aq-splits-row.aq-pbl-split-row>input[aria-label="이름"]{grid-column:1/-1}
-  .aq-splits-row.aq-pbl-split-row>select{grid-column:1/-1}
-  .aq-splits-row.aq-pbl-split-row>input[aria-label="IPI/CAE"]{grid-column:1/3}
-  /* 읽기 전용 줄(곡 상세) — 역할·단체·IPI는 한 줄 전체, 지분 숫자는 그 아래 */
-  .aq-pbl-split .aq-splits-row:not(.aq-pbl-split-row){grid-template-columns:auto minmax(0,1fr)}
-  .aq-pbl-split .aq-splits-row:not(.aq-pbl-split-row)>.aq-splits-name{grid-column:1/-1;font-size:14px;line-height:1.5}
+  .aq-pbl-person{padding:16px;gap:14px}
+  .aq-pbl-person-fields{grid-template-columns:minmax(0,1fr)}
+  .aq-pbl-person-more .form-grid{grid-template-columns:minmax(0,1fr)}
+  .aq-pbl-person-read{gap:10px}
+  .aq-pbl-person-end .ui-badge{font-size:var(--aq-fs-2xs)}
+  .aq-pbl-album-stats .ui-stat{padding:12px 10px}
+  .aq-pbl-album-stats .ui-stat-value{font-size:var(--aq-fs-title-lg)}
+  .aq-pbl-album-stats.ui-stats,.aq-pbl-status .ui-stats{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+.aq-pbl-royalty-summary{margin-bottom:20px}
+.aq-pbl-royalty-tools{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:16px 0}
+.aq-pbl-royalty-tools>.ui-btn{margin-left:auto}
+.aq-pbl-contract-summary{padding:0 20px 16px;margin:0}
+@media(max-width:640px){.aq-pbl-contract-summary{padding-inline:16px}}
+/* Override the shared form's outer spacing only inside these grouped publishing forms. */
+#view-new.aq-pbl-wizard .step-section .ui-field{margin:0!important}
+.aq-pbl-album-stats.ui-stats>:last-child:nth-child(odd),.aq-pbl-status .ui-stats>:last-child:nth-child(odd){grid-column:auto}
+.aq-pbl-dashboard .aq-report-card>.aq-report-kv,.aq-pbl-dashboard .aq-report-card>.aq-report-foot{grid-column:1/-1}
+#view-publishing .aq-report-total .aq-home-report-note .aq-money-unit{font-size:inherit}
+.aq-pbl-royalty-list .settle-entry .settle-entry-amount.is-estimated{color:var(--aq-text-3)}
+.aq-pbl-report-pending{font-size:var(--aq-fs-title)!important;line-height:1.5}
+.aq-pbl-work .aq-detail-stack{grid-template-columns:minmax(0,1fr);min-width:0}
+.aq-pbl-work .aq-detail-stack>*{min-width:0}
+@media(max-width:360px){
+  .aq-pbl-work .ui-stats.is-cols-2,.aq-pbl-royalty-summary.ui-stats{grid-template-columns:minmax(0,1fr)}
+  .aq-pbl-royalty-list .settle-entry{grid-template-columns:36px minmax(0,1fr);gap:8px}
+  .aq-pbl-royalty-list .aq-statement-end{grid-column:2;justify-self:start}
 }

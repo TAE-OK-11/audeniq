@@ -28,12 +28,13 @@ import { Badge, Callout, EmptyState, StatGrid, StatTile, Tabs } from '../ui';
 import { Money } from '../components/Money';
 import { useReportRows } from '../hooks/useReportRows';
 import '../styles/split/ReleaseDetail.css';
+import '../styles/split/Publishing.css';
 
 type Tab = 'overview' | 'rights' | 'register' | 'recordings' | 'revenue' | 'files';
 // 탭은 발매 상세와 같은 순서·이름으로 — 정보 · 성과 · (배급·계약 자리에) 저작권·계약 · 기록.
 // 예전 '참여자·권리'·'녹음·발매' 탭은 정보 탭 안의 칸이 됐다 (주소로 오면 그 칸으로 내려간다)
 const TABS: { value: Tab; label: string }[] = [
-  { value: 'overview', label: '정보' }, { value: 'revenue', label: '성과' }, { value: 'register', label: '저작권·계약' }, { value: 'files', label: '기록' },
+  { value: 'overview', label: '정보' }, { value: 'revenue', label: '성과' }, { value: 'register', label: '저작권·계약' }, { value: 'files', label: '자료·기록' },
 ];
 const SECTION: Partial<Record<Tab, string>> = { rights: 'workRights', recordings: 'workRecordings' };
 const KIND_LABEL: Record<WorkAttachment['kind'], string> = { demo: '데모 음원', lyrics: '가사', score: '악보', proof: '권리 증빙' };
@@ -266,18 +267,22 @@ export function WorkDetail() {
     try { await pubApi.deleteWork(w.id); toast('곡을 지웠어요.', 'success'); nav('/publishing?tab=songs', { replace: true }); } catch (err) { toast(errorMessage(err), 'error'); }
   };
 
+  const fromRelease = params.get('release');
+  const backToAlbum = !!fromRelease && w.recordings.some(r => r.releaseId === fromRelease);
+  const backTo = backToAlbum ? `/releases/${encodeURIComponent(fromRelease!)}?tab=publishing` : '/publishing?tab=songs';
+
   const buttons = canEdit && (
     <>
-      <Link to={`/works/${w.id}/edit`} className="ui-btn is-soft">정보 고치기</Link>
+      <Link to={`/works/${w.id}/edit${backToAlbum ? `?release=${encodeURIComponent(fromRelease!)}` : ''}`} className="ui-btn is-soft">정보 고치기</Link>
       {canApply ? <Link to={`/publishing/apply?work=${w.id}`} className="ui-btn is-primary">저작권 관리 신청</Link>
         : <Link to={`/ar?work=${w.id}`} className="ui-btn is-soft">A&R 제출</Link>}
     </>
   );
 
   return (
-    <div id="view-release" className="view">
+    <div id="view-release" className="view aq-pbl-work">
       <div className="spaced-actions">
-        <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={() => nav('/publishing?tab=songs')}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />곡 목록</button>
+        <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={() => nav(backTo)}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />{backToAlbum ? '앨범으로 돌아가기' : '곡 목록'}</button>
       </div>
 
       <div className="aq-detail-hero" aria-label="곡 정보">
@@ -332,8 +337,7 @@ export function WorkDetail() {
                 <div><dt>연결된 녹음</dt><dd>{w.recordings.length ? `${w.recordings.length}개` : <Empty>미공개</Empty>}</dd></div>
                 {w.altTitles.length > 0 && <div className="is-wide"><dt>대체 제목</dt><dd>{w.altTitles.join(' · ')}</dd></div>}
               </dl>
-              <h2 className="subhead">곡 설명</h2>
-              <p className="muted small break">{w.description || '등록된 설명이 없어요.'}</p>
+              {w.description && <><h2 className="subhead">곡 설명</h2><p className="muted small break">{w.description}</p></>}
             </div>
           </div>
         )}
@@ -370,10 +374,7 @@ export function WorkDetail() {
                   onSimulate={MOCK && canEdit ? c => void pubApi.simulateConfirm(w.id, c.id).then(update) : undefined} />
               )}
             </div>
-            <div className="aq-relinfo-card">
-              <h2 className="subhead">지분 변경 기록</h2>
-              <ActivityList items={w.activity.filter(a => a.kind === 'rights')} empty="아직 지분을 바꾼 적이 없어요." />
-            </div>
+
           </div>
         )}
 
@@ -464,7 +465,7 @@ export function WorkDetail() {
             </StatGrid>
             <div className="aq-relinfo-card">
               <h2 className="subhead">저작권료 내역</h2>
-              {royalties ? <RoyaltyTable rows={royalties} showWork={false} emptyText={w.registration === 'registered' ? undefined : '저작권 등록이 끝나면 관리 단체가 나눠 주는 사용료가 여기에 들어와요.'} /> : <SkeletonBlock height={160} />}
+              {royalties ? <RoyaltyTable rows={royalties} showWork={false} summary={false} emptyText={w.registration === 'registered' ? undefined : '저작권 등록이 끝나면 관리 단체가 나눠 주는 사용료가 여기에 들어와요.'} /> : <SkeletonBlock height={160} />}
             </div>
             {distRows.length > 0 && (
               <div className="aq-relinfo-card">

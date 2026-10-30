@@ -1,0 +1,100 @@
+// Run against a demo build (MOCK=true), never a connected account.
+// node --experimental-strip-types e2e/publishing-ui.ts
+// STUDIO_DIST=/path/to/demo-dist uses that build; STUDIO_URL uses an already running demo.
+import assert from 'node:assert/strict';
+import { mkdirSync } from 'node:fs';
+import { chromium, type Page } from 'playwright';
+import { createServer, preview } from 'vite';
+
+const out = 'test-results/publishing-ui';
+const routes = [
+  ['analysis', '/publishing', '.aq-pbl-dashboard'],
+  ['songs', '/publishing?tab=songs', '.aq-track-row'],
+  ['royalties', '/publishing?tab=royalties', '.settle-entry'],
+  ['album', '/releases/r2?tab=publishing', '.aq-album-pub'],
+  ['work', '/works/w1', '.aq-pbl-person-read'],
+  ['registration', '/works/w2?tab=register', '.aq-bundle.is-needs'],
+  ['work-income', '/works/w1?tab=revenue', '.settle-entry'],
+  ['work-files', '/works/w1?tab=files', '#up-demo'],
+  ['ar', '/ar', '.aq-ar-card'],
+  ['ar-submit', '/ar?work=w4', '#arGenre'],
+  ['apply', '/publishing/apply?work=w4', '.aq-pbl-song-picker'],
+  ['contracts', '/contracts?pub=c1', '.aq-pbl-contract'],
+] as const;
+
+async function noOverflow(page: Page, name: string) {
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
+  if (overflow) {
+    await page.screenshot({ path: `${out}/overflow-${name.replace(/[^a-z0-9]+/gi, '-')}.png`, fullPage: true });
+    console.log(await page.evaluate(() => [...document.querySelectorAll('*')].filter(e => e.getBoundingClientRect().right > innerWidth + 1).map(e => ({ tag: e.tagName, cls: e.className, width: e.getBoundingClientRect().width, text: e.textContent?.slice(0, 80) })).slice(-15)));
+  }
+  assert.equal(overflow, false, `${name}: horizontal overflow`);
+}
+
+const server = process.env.STUDIO_URL ? null : process.env.STUDIO_DIST
+  ? await preview({ build: { outDir: process.env.STUDIO_DIST }, preview: { host: '127.0.0.1', port: 5173, strictPort: true } })
+  : await createServer({ server: { host: '127.0.0.1', port: 5173, strictPort: true } });
+if (server && 'listen' in server) await server.listen();
+const base = process.env.STUDIO_URL ?? 'http://127.0.0.1:5173';
+const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined, args: ['--disable-dev-shm-usage'] });
+try {
+  mkdirSync(out, { recursive: true });
+  const context = await browser.newContext({ locale: 'ko-KR', reducedMotion: 'reduce' });
+  await context.addInitScript(() => localStorage.setItem('aq.studio.v2.mock.session', JSON.stringify({ email: 'ui-check@example.test' })));
+  const page = await context.newPage();
+  page.on('dialog', dialog => { void dialog.accept(); });
+  const errors: string[] = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.route('**/api/status', route => route.fulfill({ json: { maintenance: [], current: null, upcoming: [] } }));
+  for (const width of [320, 390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const [name, path, ready] of routes) {
+      await page.goto(base + path);
+      await page.locator(ready).first().waitFor({ state: 'visible' });
+      await page.evaluate(() => document.fonts.ready);
+      await noOverflow(page, `${width} ${name}`);
+      if (width === 390 || width === 1440) await page.screenshot({ path: `${out}/${name}-${width}.png`, fullPage: true });
+    }
+    console.log(`Layout passed: ${width}px`);
+  }
+  // An album's song returns to the same album tab.
+  await page.goto(base + '/releases/r2?tab=publishing');
+  await page.locator('.aq-album-pub a.ui-row[href^="/works/w2"]').click();
+  await page.getByRole('button', { name: '앨범으로 돌아가기' }).click();
+  await page.waitForURL('**/releases/r2?tab=publishing');
+  // Labels stay visible, optional fields retain values when collapsed, and unfinished splits can continue.
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.goto(base + '/works/new?release=r2&track=t4');
+  await page.locator('#wizardNext').click();
+  const person = page.locator('.aq-pbl-person').first();
+  await person.waitFor();
+  await person.getByLabel('창작 지분', { exact: true }).fill('100');
+  await person.locator('summary').click();
+  await person.getByLabel('AUDENIQ 관리 지분').fill('75');
+  await person.locator('summary').click();
+  await person.locator('summary').click();
+  assert.equal(await person.getByLabel('AUDENIQ 관리 지분').inputValue(), '75');
+  await person.locator('summary').click();
+  await page.locator('#splitCheck').check();
+  await page.locator('#wizardNext').click();
+  await page.locator('#workIswc').waitFor({ state: 'visible' });
+  await page.getByRole('button', { name: '이전으로 돌아가기', exact: true }).click();
+  assert.equal(await page.getByLabel('창작 지분', { exact: true }).inputValue(), '100');
+  await noOverflow(page, 'split edit');
+  await page.screenshot({ path: `${out}/split-390.png`, fullPage: true });
+  // Analysis separates estimates; the album filter survives tab navigation and application entry.
+  await page.goto(base + '/publishing');
+  await page.locator('.aq-pbl-dashboard').waitFor();
+  assert.match(await page.locator('.aq-report-total').innerText(), /337,860/);
+  await page.getByLabel('볼 앨범').selectOption('r2');
+  await page.getByRole('tab', { name: /^곡/ }).click();
+  assert.equal(new URL(page.url()).searchParams.get('release'), 'r2');
+  await page.getByRole('button', { name: '저작권 관리 신청', exact: true }).click();
+  await page.waitForURL('**/publishing/apply?release=r2');
+  assert.deepEqual(errors, []);
+  console.log('Publishing UI passed: 12 pages × 4 widths, split editing, return navigation, album scope, and report amounts.');
+} finally {
+  await browser.close();
+  if (server && 'close' in server) await server.close();
+  else if (server) await new Promise<void>((resolve, reject) => server.httpServer.close(e => e ? reject(e) : resolve()));
+}
