@@ -9,7 +9,8 @@ import { pubApi, type Work, type WorkAttachment, type WorkContributor } from '..
 import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { MOCK } from '../lib/mode';
-import { APP_LABEL, APP_TONE, CONTRACT_LABEL, CONTRACT_TONE, LANGUAGES, WORK_TYPES, isManaged, pct, splitIssues, splitReady } from '../lib/publishing';
+import { APP_LABEL, APP_TONE, CONTRACT_LABEL, CONTRACT_TONE, LANGUAGES, REG_SENTENCE, REG_STEPS, WORK_TYPES, isManaged, pct, regStep, splitIssues, splitReady } from '../lib/publishing';
+import { StageCard } from '../components/StageCard';
 import { STATUS_LABEL, fileSize, localStamp, statusTone } from '../lib/format';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
@@ -292,6 +293,12 @@ export function WorkDetail() {
           <p className="aq-detail-meta">{[label(WORK_TYPES, w.workType), w.genre, w.iswc && `ISWC ${w.iswc}`, w.myRole === 'contributor' && '공동 참여 곡'].filter(Boolean).join(' · ')}</p>
         </div>
         <div className="aq-detail-actions is-wide">{buttons}</div>
+        {/* 진행 단계는 발매 상세처럼 머리 카드 안 아래쪽 흰 판으로 — 맡기기 전과 등록이 끝난 뒤에는 배지만 */}
+        {regStep(w.registration) >= 0 && w.registration !== 'registered' && (
+          <StageCard steps={REG_STEPS} current={Math.min(regStep(w.registration), REG_STEPS.length - 1)}
+            tone={w.registration === 'rejected' ? 'error' : w.registration === 'needs_fix' ? 'warn' : undefined}
+            note={REG_SENTENCE[w.registration]} label="저작권 등록 진행 단계" />
+        )}
         <div className="aq-detail-actions is-narrow">{buttons}</div>
       </div>
 
@@ -310,10 +317,6 @@ export function WorkDetail() {
                 {next.text}
               </Callout>
             )}
-            <div className="aq-relinfo-card">
-              <h2 className="subhead">권리 관리 상태</h2>
-              <RegProgress status={w.registration} log={w.registrationLog} />
-            </div>
             <div className="aq-relinfo-card">
               <h2 className="subhead">곡 정보</h2>
               <dl className="ui-kv is-2">

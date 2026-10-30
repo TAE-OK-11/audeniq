@@ -15,7 +15,7 @@ import { albumPublishing } from '../components/publishing/ReleasePublishing';
 import { api } from '../api/client';
 import { RoyaltyTable } from '../components/publishing/Royalties';
 import { OpenAr } from './OpenAr';
-import { Badge, EmptyState, IconTile, Meter, StatGrid, StatTile, Tabs } from '../ui';
+import { Badge, EmptyState, IconTile, Meter, Tabs } from '../ui';
 
 type Tab = 'overview' | 'songs' | 'royalties' | 'ar';
 const TABS: { value: Tab; label: string }[] = [
@@ -61,12 +61,39 @@ function Overview({ go }: { go: (t: Tab) => void }) {
           곡을 쓴 사람에게는 작사·작곡 저작권이 있어요. 맡기면 방송·스트리밍 저작권료를 AUDENIQ이 받아 배급 정산과 같은 잔액으로 드려요.
         </EmptyState>
       ) : (
-        <StatGrid cols={2}>
-          <StatTile label="관리 중인 곡" value={s.works.managed} unit="곡" hint={`전체 ${s.works.total}곡`} onClick={() => go('songs')} />
-          <StatTile label="진행 중" value={s.works.inProgress} unit="곡" hint="심사·등록 준비" onClick={() => go('songs')} />
-          <StatTile label="확정된 저작권료" value={<Money value={pubMoney.confirmed} />} hint={pubMoney.estimated ? <>예상 <Money value={pubMoney.estimated} /> 별도</> : '관리 단체 정산 기준'} onClick={() => go('royalties')} />
-          <StatTile label="맡기지 않은 곡" value={s.works.unregistered} unit="곡" hint="신청하면 저작권료를 받아요" to="/publishing/apply" />
-        </StatGrid>
+        <>
+          {/* 정산·지급의 '받을 수 있는 금액'과 같은 카드 — 큰 숫자 하나 + 한 막대로 나눈 몫 + 범례 */}
+          <section className="ui-card settle-hero" aria-labelledby="pubHeroSongs">
+            <h2 id="pubHeroSongs">저작권 관리 중인 곡</h2>
+            <strong className="settle-hero-amount">{s.works.managed}<span className="aq-money-unit">곡</span></strong>
+            <div className="settle-split">
+              <p className="settle-split-cap" aria-hidden="true">전체 <b>{s.works.total}곡</b> 중</p>
+              <div className="settle-split-bar" aria-hidden="true">
+                <i className="is-left" style={{ flexGrow: s.works.managed }} />
+                <i className="is-used" style={{ flexGrow: s.works.inProgress }} />
+                <i className="is-held" style={{ flexGrow: s.works.unregistered }} />
+              </div>
+              <ul className="settle-split-legend">
+                <li><i className="is-left" />관리 중 <b>{s.works.managed}곡</b></li>
+                <li><i className="is-used" />심사·등록 준비 <b>{s.works.inProgress}곡</b></li>
+                <li><i className="is-held" />맡기지 않음 <b>{s.works.unregistered}곡</b></li>
+              </ul>
+            </div>
+            <div className="ui-actions">
+              <button type="button" className="ui-btn is-white" onClick={() => go('songs')}>곡 보기</button>
+              <Link to="/publishing/apply" className="ui-btn is-primary">저작권 관리 신청</Link>
+            </div>
+          </section>
+          <section className="ui-card settle-hero" aria-labelledby="pubHeroMoney">
+            <h2 id="pubHeroMoney">확정된 저작권료</h2>
+            <strong className="settle-hero-amount"><Money value={pubMoney.confirmed} animate /></strong>
+            <p className="settle-hero-sub">{pubMoney.estimated ? <>확정 전 예상 <Money value={pubMoney.estimated} />은 관리 단체가 확정하면 적립돼요. </> : ''}배급 정산금과 같은 잔액에 쌓여요.</p>
+            <div className="ui-actions">
+              <button type="button" className="ui-btn is-white" onClick={() => go('royalties')}>곡별 저작권료</button>
+              <Link to="/settlement?type=publishing" className="ui-btn is-white">정산·지급</Link>
+            </div>
+          </section>
+        </>
       )}
 
       <AlbumList />

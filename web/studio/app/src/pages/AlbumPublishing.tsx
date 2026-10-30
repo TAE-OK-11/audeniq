@@ -12,7 +12,8 @@ import { SkeletonRows } from '../components/Skeleton';
 import { RegBadge, roleText } from '../components/publishing/parts';
 import { RoyaltyTable } from '../components/publishing/Royalties';
 import { PublishingBundleStep, albumPublishing } from '../components/publishing/ReleasePublishing';
-import { Badge, Callout, IconTile, Steps } from '../ui';
+import { Badge, Callout, IconTile } from '../ui';
+import { StageCard } from '../components/StageCard';
 import '../styles/split/ReleaseDetail.css';
 
 const STEPS = ['곡 정리', '신청', '심사', '계약', '등록'] as const;
@@ -36,6 +37,7 @@ export function AlbumPublishing() {
     : a.managed.length ? 3 : a.applying.length ? 2 : a.mine.length && !missing ? 1 : 0;
   const workIds = new Set(a.mine.map(w => w.id));
   const albumRoyalties = (royalties ?? []).filter(r => workIds.has(r.workId));
+  const applyBtn = canApply && <Link to={`/publishing/apply?release=${encodeURIComponent(rel.id)}`} className="ui-btn is-primary">이 앨범 저작권 관리 신청</Link>;
   const prepare = async () => {
     setBusy(true);
     try { await pubApi.prepareWorksFromRelease(rel.id, false); reload(); } finally { setBusy(false); }
@@ -60,20 +62,14 @@ export function AlbumPublishing() {
           <p className="aq-detail-artist">{rel.artist}</p>
           <p className="aq-detail-meta">{rel.tracks.length}곡 · 작사·작곡 저작권</p>
         </div>
+        {/* 버튼·진행 단계 자리는 발매 상세와 같다 — 넓은 화면은 오른쪽 위, 휴대폰은 진행 단계 아래 */}
+        {applyBtn && <div className="aq-detail-actions is-wide">{applyBtn}</div>}
+        <StageCard steps={STEPS} current={step} complete={step === STEPS.length - 1} tone={a.fix ? 'warn' : undefined} label="퍼블리싱 진행 단계" />
+        {applyBtn && <div className="aq-detail-actions is-narrow">{applyBtn}</div>}
       </div>
 
       <div className="aq-detail-stack">
-        <div className="aq-relinfo-card">
-          <h2 className="subhead">진행 단계</h2>
-          <Steps steps={STEPS} current={step} warn={a.fix} label="퍼블리싱 진행 단계" />
-          {a.fix && <Callout tone="warn">보완 요청이 왔어요. 아래 곡을 눌러 고쳐 주세요.</Callout>}
-          {canApply && (
-            <div className="row-actions">
-              <Link to={`/publishing/apply?release=${encodeURIComponent(rel.id)}`} className="ui-btn is-primary">이 앨범 저작권 관리 신청</Link>
-            </div>
-          )}
-        </div>
-
+        {a.fix && <Callout tone="warn">보완 요청이 왔어요. 아래 곡을 눌러 고쳐 주세요.</Callout>}
         <div className="aq-relinfo-card">
           <div className="ui-section-head"><h2 className="subhead">곡별 저작권</h2></div>
           <div className="ui-list is-inset">

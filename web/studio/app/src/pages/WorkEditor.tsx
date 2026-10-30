@@ -225,7 +225,7 @@ export function WorkEditor() {
       )}
       {locked && <Callout tone="warn">저작권 관리 심사 중이거나 관리 중인 곡이에요. 지금 고친 내용은 담당자가 확인한 뒤 반영돼요.</Callout>}
 
-      <section className="ui-card" aria-labelledby="secBasic">
+      <section className="aq-form-block" aria-labelledby="secBasic">
         <h2 id="secBasic">기본 정보</h2>
         <Field label="곡 제목" htmlFor="workTitle" required error={titleErr}>
           <input id="workTitle" className={inputClass('lg')} value={form.title} maxLength={200} onChange={e => set('title', e.target.value)} placeholder="예: 새벽 네 시" autoComplete="off" />
@@ -279,7 +279,7 @@ export function WorkEditor() {
         </Reveal>
       </section>
 
-      <section className="ui-card" aria-labelledby="secPeople">
+      <section className="aq-form-block" aria-labelledby="secPeople">
         <h2 id="secPeople">참여자·지분</h2>
         <p className="ui-field-help">작사·작곡·편곡에 참여한 사람과 각자의 몫을 적어요. AUDENIQ 작가는 찾아서 추가하고, 없으면 이름만으로 외부 참여자를 추가해요.</p>
         <SplitEditor value={form.contributors} onChange={v => set('contributors', v)} />
@@ -291,7 +291,7 @@ export function WorkEditor() {
         )}
       </section>
 
-      <section className="ui-card" aria-labelledby="secRights">
+      <section className="aq-form-block" aria-labelledby="secRights">
         <h2 id="secRights">권리 정보</h2>
         <div className="form-grid">
           <Field label="ISWC" htmlFor="workIswc" warn={iswcErr} help={!iswcErr ? (existing ? `없으면 내부 번호 ${existing.internalCode}로 관리해요.` : '발급받은 경우에만. 없으면 내부 번호로 관리해요.') : undefined}>
@@ -312,7 +312,7 @@ export function WorkEditor() {
         <p className="ui-field-help">관리 단체 가입 여부와 IPI/CAE 번호는 참여자마다 위에서 적어요. 모르는 칸은 비워 둬도 저장돼요. 아는 관리 단체: {SOCIETIES.slice(0, 5).join(' · ')} 등</p>
       </section>
 
-      <section className="ui-card" aria-labelledby="secFiles">
+      <section className="aq-form-block" aria-labelledby="secFiles">
         <h2 id="secFiles">첨부 자료</h2>
         <div className="form-grid">
           {ATTACH_KINDS.map(([kind, label, accept]) => {
@@ -338,7 +338,7 @@ export function WorkEditor() {
           ? '지분을 맞추지 않아도 저장돼요. 저작권 관리 신청은 맞춘 뒤에 할 수 있어요.'
           : form.contributors.length ? '지분이 맞아요. 저장하고 바로 신청할 수 있어요.' : '참여자를 추가해 주세요.'}
       </p>
-      <div className="ui-actions">
+      <div className="ui-actions aq-pub-actions">
         <button type="button" className="ui-btn is-soft" onClick={() => void cancel()} disabled={busy}>나가기</button>
         <button type="button" className={`ui-btn ${!editing && splitReady(form.contributors) ? 'is-soft' : 'is-primary'}${busy ? ' is-busy' : ''}`} onClick={() => void save()} disabled={busy}>
           {busy ? '저장하는 중' : editing ? '저장' : '곡 저장'}

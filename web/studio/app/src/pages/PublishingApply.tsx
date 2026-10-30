@@ -145,7 +145,7 @@ export function PublishingApply() {
       {step < 4 && <StepBar steps={STEPS.slice(0, 4)} current={step} />}
 
       {step === 0 && (
-        <section className="ui-tab-panel ui-card" key="s0" aria-labelledby="s0t">
+        <section className="ui-tab-panel aq-form-block" key="s0" aria-labelledby="s0t">
           <h2 id="s0t">어떤 곡을 맡길까요?</h2>
           <p className="ui-field-help">{releaseTitle ? `‘${releaseTitle}’ 발매 곡을 골라 두었어요. ` : ''}여러 곡을 한 번에 신청할 수 있어요. 지분이 맞지 않는 곡은 먼저 고쳐 주세요.</p>
           {fromRelease && (
@@ -253,7 +253,7 @@ export function PublishingApply() {
       )}
 
       {step === 3 && (
-        <section className="ui-tab-panel ui-card" key="s3" aria-labelledby="s3t">
+        <section className="ui-tab-panel aq-form-block" key="s3" aria-labelledby="s3t">
           <h2 id="s3t">저작권 관리 계약서</h2>
           <div className="aq-terms-body" tabIndex={0} aria-label="저작권 관리 계약서" style={{ maxHeight: 320, overflowY: 'auto' }} onScroll={e => {
             const el = e.currentTarget;
@@ -306,11 +306,12 @@ export function PublishingApply() {
         </section>
       )}
 
+      {/* 발매 신청서와 같은 아래 고정 버튼 줄 — 옅은 '이전', 진한 '다음으로' */}
       {step < 4 && (
-        <div className="ui-actions">
+        <div className="ui-actions aq-pub-actions">
           <button type="button" className="ui-btn is-soft" onClick={() => (step ? setStep(step - 1) : nav(-1))} disabled={busy}>{step ? '이전' : '나가기'}</button>
           {step < 3
-            ? <button type="button" className="ui-btn is-primary" disabled={!canNext} onClick={() => setStep(step + 1)}>다음</button>
+            ? <button type="button" className="ui-btn is-primary" disabled={!canNext} onClick={() => setStep(step + 1)}>다음으로</button>
             : <button type="button" className={`ui-btn is-primary${busy ? ' is-busy' : ''}`} disabled={!canNext || busy} onClick={() => void submit()}>{busy ? '신청하는 중' : '서명하고 신청'}</button>}
         </div>
       )}
