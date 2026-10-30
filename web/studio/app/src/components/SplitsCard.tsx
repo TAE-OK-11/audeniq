@@ -150,9 +150,9 @@ export function SplitsCard({ releaseId, embedded = false, registerSave }: {
                       <input className="ui-input" type="email" aria-label="이메일" maxLength={254}
                         placeholder={r.id ? (r.masked ?? (needsMail ? '다시 요청하려면 이메일' : '')) : '이메일'}
                         value={r.email} onChange={e => edit(t.track_id, l => l.map((x, j) => (j === i ? { ...x, email: e.target.value } : x)))} />
-                      <span className="aq-splits-pct">
+                      <span className="aq-splits-pct aq-affix" data-unit="%">
                         <input className="ui-input" inputMode="decimal" aria-label="비율(%)" value={r.pct}
-                          onChange={e => edit(t.track_id, l => l.map((x, j) => (j === i ? { ...x, pct: e.target.value.replace(/[^0-9.]/g, '') } : x)))} />%
+                          onChange={e => edit(t.track_id, l => l.map((x, j) => (j === i ? { ...x, pct: e.target.value.replace(/[^0-9.]/g, '') } : x)))} />
                       </span>
                       <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => removeRow(t.track_id, i)}>삭제</button>
                     </>
