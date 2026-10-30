@@ -611,6 +611,25 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
   .auth-page .auth-card.ui-card>.auth-links{padding-top:14px}
   .auth-page>.auth-foot{margin-top:18px}
 }
+/* 휴대폰 사파리·크롬의 실제 보이는 높이(주소창 포함 svh)에 맞춘다 — 위 588px 고정 카드에 로고·아래 줄을 더하면 약 690px라
+   아이폰 15(보이는 높이 664)·갤럭시 S24(650)·아이폰 mini(629)에서 로그인·가입·계정 찾기가 25~60px 넘쳤다.
+   카드 높이는 '화면 안에서 최대 588px'로(단계마다 같은 높이는 자리가 있을 때만), 여백·아이콘·칸 높이는 760px 아래에서 비례해 줄인다.
+   키 큰 폰·PC는 그대로 (모든 clamp의 최대값이 위 값) */
+@media (max-width:760px),(max-height:860px){
+  .auth-page{--auth-card-h:min(588px,calc(100svh - 112px));padding-top:clamp(6px,12px + (100svh - 760px) * .05,12px);padding-bottom:clamp(6px,12px + (100svh - 760px) * .05,12px)}
+  .auth-page>.aq-auth-brand{margin-bottom:clamp(8px,14px + (100svh - 760px) * .06,14px)}
+  .auth-page .auth-card.ui-card{--aq-field-h:clamp(46px,52px + (100svh - 760px) * .06,52px);padding-top:clamp(16px,26px + (100svh - 760px) * .1,26px);padding-bottom:clamp(14px,22px + (100svh - 760px) * .08,22px)}
+  .auth-page .aq-auth-head{margin-bottom:clamp(12px,20px + (100svh - 760px) * .08,20px)}
+  .auth-page .aq-auth-head .ui-icon{--ic:clamp(38px,46px + (100svh - 760px) * .08,46px);margin-bottom:clamp(8px,14px + (100svh - 760px) * .06,14px)}
+  .auth-page .auth-card .ui-field{margin-bottom:clamp(10px,14px + (100svh - 760px) * .04,14px)}
+  .auth-page .auth-card.ui-card>.auth-links{padding-top:clamp(8px,14px + (100svh - 760px) * .06,14px)}
+  .auth-page>.auth-foot{margin-top:clamp(8px,18px + (100svh - 760px) * .09,18px)}
+  /* 계정 찾기 — 패널은 gap으로 띄우는데 칸의 아래 여백이 또 붙어 간격이 두 겹(18+14)이었다 */
+  .auth-page .aq-find-panel{gap:clamp(10px,18px + (100svh - 760px) * .08,18px)}
+  .auth-page .aq-find-panel>.ui-field{margin-bottom:clamp(0px,14px + (100svh - 760px) * .14,14px)}
+  .auth-page .auth-card>.ui-seg{margin-bottom:clamp(10px,22px + (100svh - 760px) * .12,22px)}
+  .auth-page .auth-card>.aq-find-panel{margin-top:clamp(0px,4px + (100svh - 760px) * .04,4px)}
+}
 /* 개인정보 안내 — 첫 줄 + '자세히'(누르면 펼침) */
 details.auth-privacy>summary{display:block;cursor:pointer;list-style:none}
 details.auth-privacy>summary::-webkit-details-marker{display:none}
