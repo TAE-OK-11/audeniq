@@ -1,6 +1,6 @@
-// 곡 상세의 '작품·권리' — 이 녹음이 어떤 저작물인지, 권리 관리가 어디까지 왔는지 (기획안 4.2 흐름 3~5).
-// 곡 상세의 다른 칸과 같은 ui-kv · ui-row. 연결된 작품이 없으면 '저작물 연결 또는 생성'으로 —
-// 발매 정보를 미리 채운 작품 만들기 화면에서 기존 작품 연결도 고를 수 있다
+// 곡 상세의 '곡·권리' — 이 녹음이 어떤 곡인지, 권리 관리가 어디까지 왔는지 (기획안 4.2 흐름 3~5).
+// 곡 상세의 다른 칸과 같은 ui-kv · ui-row. 연결된 곡이 없으면 '곡 연결 또는 생성'으로 —
+// 발매 정보를 미리 채운 곡 정보 만들기 화면에서 기존 곡 연결도 고를 수 있다
 import { Link } from '../../lib/router';
 import { pubApi } from '../../api/publishing';
 import { useAsync } from '../../hooks/useAsync';
@@ -13,7 +13,7 @@ export function TrackWork({ releaseId, trackId }: { releaseId: string; trackId: 
   const { data: work, loading } = useAsync(() => pubApi.workByTrack(trackId), [trackId], { key: `work-by-track:${trackId}` });
   return (
     <>
-      <h3 className="aq-track-sheet-h">작품·권리</h3>
+      <h3 className="aq-track-sheet-h">곡·권리</h3>
       {loading && work === undefined ? (
         <p className="aq-empty-val">불러오는 중…</p>
       ) : work ? (
@@ -27,9 +27,9 @@ export function TrackWork({ releaseId, trackId }: { releaseId: string; trackId: 
         </Link>
       ) : (
         <>
-          <p className="aq-empty-val">아직 저작물과 연결되지 않았어요. 작사·작곡 지분을 정리하고, 원하면 저작권 관리까지 맡길 수 있어요.</p>
+          <p className="aq-empty-val">아직 곡과 연결되지 않았어요. 작사·작곡 지분을 정리하고, 원하면 저작권 관리까지 맡길 수 있어요.</p>
           <Link to={`/works/new?release=${encodeURIComponent(releaseId)}&track=${encodeURIComponent(trackId)}`} className="ui-btn is-soft is-block">
-            저작물 연결 또는 생성
+            곡 연결 또는 생성
           </Link>
         </>
       )}

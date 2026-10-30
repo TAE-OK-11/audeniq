@@ -1,5 +1,5 @@
 // 저작권료 — 정산 화면 '적립 내역'과 같은 모양: 위에 숫자 칸, 아래는 기간별로 묶은 금액 줄, 누르면 상세 창.
-// 상세 창에 작품명 · 유형 · 기간 · 징수 기관 · 국가 · 통화 · 수금액 · 관리 지분 · 수수료 · 정산금 · 지급 상태 (기획안 8.2).
+// 상세 창에 곡 제목 · 유형 · 기간 · 징수 기관 · 국가 · 통화 · 수금액 · 관리 지분 · 수수료 · 정산금 · 지급 상태 (기획안 8.2).
 // 확정과 예상은 따로 더한다 — 예상은 아직 받을 수 있는 돈이 아니다
 import { useMemo, useState } from 'react';
 import type { Royalty, RoyaltyStatus } from '../../api/publishing';
@@ -19,7 +19,7 @@ export function royaltyTotals(rows: readonly Royalty[]) {
 }
 
 function saveCsv(rows: readonly Royalty[]) {
-  const head = ['작품', '수익 유형', '기간', '징수 기관', '국가', '통화', '수금액', '관리 지분(%)', '수수료', '정산금', '상태'];
+  const head = ['곡', '수익 유형', '기간', '징수 기관', '국가', '통화', '수금액', '관리 지분(%)', '수수료', '정산금', '상태'];
   const body = rows.map(r => [r.workTitle, ROYALTY_KIND_LABEL[r.kind], r.period, r.source, r.country, r.currency, r.collected, r.share, r.fee, r.net, ROYALTY_STATUS_LABEL[r.status]]);
   const csv = '﻿' + [head, ...body].map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
   const a = document.createElement('a');
@@ -48,7 +48,7 @@ export function RoyaltyTable({ rows, showWork = true, emptyText }: { rows: reado
   if (!rows.length) {
     return (
       <EmptyState compact icon={<Glyph name="receipt" size={22} />} title="아직 들어온 저작권료가 없어요">
-        {emptyText ?? '관리 단체가 사용료를 나눠 주면 여기서 작품별로 보여 드려요. 보통 사용된 달부터 3~6개월 걸려요.'}
+        {emptyText ?? '관리 단체가 사용료를 나눠 주면 여기서 곡별로 보여 드려요. 보통 사용된 달부터 3~6개월 걸려요.'}
       </EmptyState>
     );
   }
@@ -96,7 +96,7 @@ export function RoyaltyTable({ rows, showWork = true, emptyText }: { rows: reado
             <div><dt>징수 기관</dt><dd>{open.source}</dd></div>
             <div><dt>국가 · 통화</dt><dd>{open.country} · {open.currency}</dd></div>
           </dl>
-          {showWork && <Link to={`/works/${open.workId}?tab=revenue`} className="ui-btn is-soft is-block">작품 보기</Link>}
+          {showWork && <Link to={`/works/${open.workId}?tab=revenue`} className="ui-btn is-soft is-block">곡 보기</Link>}
         </Modal>
       )}
     </>

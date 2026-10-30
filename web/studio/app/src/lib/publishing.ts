@@ -1,11 +1,11 @@
-// 퍼블리싱(저작물·권리) — 화면이 함께 쓰는 이름표·상태 색·지분 검증.
+// 저작권 관리(곡·권리) — 화면이 함께 쓰는 이름표·상태 색·지분 검증.
 // 서버 응답 모양은 api/publishing.ts, 여기는 계산과 글자만 (테스트: publishing.test.ts)
 import type { Tone } from '../ui/tone';
 import type {
   ApplicationStatus, ArStatus, ContractStatus, ContributorRole, RegistrationStatus, RoyaltyKind, RoyaltyStatus, Work, WorkContributor,
 } from '../api/publishing';
 
-/** 작품 등록(권리 관리) 진행 — 기획안 7.1 */
+/** 곡 등록(권리 관리) 진행 — 기획안 7.1 */
 export const REG_LABEL: Record<RegistrationStatus, string> = {
   none: '미신청',
   preparing: '신청 준비 중',
@@ -18,9 +18,9 @@ export const REG_LABEL: Record<RegistrationStatus, string> = {
   rejected: '등록 불가',
 };
 
-/** 상태를 한 문장으로 — 작품 상세 머리에 짧게 (기획안 7.2) */
+/** 상태를 한 문장으로 — 곡 상세 머리에 짧게 (기획안 7.2) */
 export const REG_SENTENCE: Record<RegistrationStatus, string> = {
-  none: '아직 퍼블리싱 관리를 신청하지 않았어요.',
+  none: '아직 저작권 관리를 신청하지 않았어요.',
   preparing: '신청서를 작성하고 있어요.',
   internal_review: '담당자가 권리 정보를 확인하고 있어요.',
   needs_fix: '추가 서류가 필요합니다.',
@@ -28,7 +28,7 @@ export const REG_SENTENCE: Record<RegistrationStatus, string> = {
   submitted: '저작권 등록 진행 중',
   external_review: '저작권 등록 진행 중 · 관리 단체가 확인하고 있어요.',
   registered: '저작권 등록이 끝났어요.',
-  rejected: '이 작품은 등록할 수 없어요. 사유를 확인해 주세요.',
+  rejected: '이 곡은 등록할 수 없어요. 사유를 확인해 주세요.',
 };
 
 export const REG_TONE: Record<RegistrationStatus, Tone> = {
@@ -94,7 +94,7 @@ export const sumShares = (list: readonly WorkContributor[], key: 'share' | 'publ
 export interface SplitIssue { level: 'error' | 'warn'; text: string; contributorId?: string }
 
 /**
- * 지분 확인 — 임시 저장은 늘 되고, 이 결과의 error가 하나라도 있으면 퍼블리싱 신청은 막는다 (기획안 5.3, 12)
+ * 지분 확인 — 임시 저장은 늘 되고, 이 결과의 error가 하나라도 있으면 저작권 관리 신청은 막는다 (기획안 5.3, 12)
  */
 export function splitIssues(list: readonly WorkContributor[]): SplitIssue[] {
   const out: SplitIssue[] = [];
@@ -123,19 +123,19 @@ export function evenSplit(n: number): number[] {
   return Array.from({ length: n }, (_, i) => (i === n - 1 ? round2(100 - each * (n - 1)) : each));
 }
 
-/** 퍼블리싱 관리에 들어가 있는(신청 이후) 작품인지 */
+/** 저작권 관리에 들어가 있는(신청 이후) 곡인지 */
 export const isManaged = (w: Pick<Work, 'registration'>) => !['none', 'preparing', 'rejected'].includes(w.registration);
 
 /** 라이브러리 필터 — 기획안 2.2 */
 export const WORK_FILTERS = [
-  ['all', '전체 작품'],
-  ['mine', '내가 참여한 작품'],
-  ['owned', '내가 관리하는 작품'],
-  ['managed', '퍼블리싱 관리 중'],
-  ['none', '퍼블리싱 미신청'],
+  ['all', '전체 곡'],
+  ['mine', '내가 참여한 곡'],
+  ['owned', '내가 관리하는 곡'],
+  ['managed', '저작권 관리 중'],
+  ['none', '저작권 관리 미신청'],
   ['review', '심사 중'],
   ['fix', '보완 필요'],
-  ['unreleased', '미공개 작품'],
+  ['unreleased', '미공개 곡'],
 ] as const;
 export type WorkFilter = typeof WORK_FILTERS[number][0];
 
@@ -152,12 +152,12 @@ export function matchFilter(w: Work, f: WorkFilter): boolean {
   }
 }
 
-/** 크레딧 글자('서린, 김하늘 / 박') → 이름 목록 — 발매 정보에서 작품을 만들 때 참여자를 미리 채운다 */
+/** 크레딧 글자('서린, 김하늘 / 박') → 이름 목록 — 발매 정보에서 곡을 만들 때 참여자를 미리 채운다 */
 export function splitNames(s: string | null | undefined): string[] {
   return Array.from(new Set(String(s ?? '').split(/[,/·&]|\s+(?:and|feat\.?)\s+/i).map(x => x.trim()).filter(Boolean)));
 }
 
-/** 이름이 같거나 띄어쓰기·대소문자만 다른 작품 — '이미 있는 작품에 연결할까요?' (기획안 12 중복) */
+/** 이름이 같거나 띄어쓰기·대소문자만 다른 곡 — '이미 있는 곡에 연결할까요?' (기획안 12 중복) */
 export function similarWorks(title: string, works: readonly Work[], exceptId?: string): Work[] {
   const k = title.toLowerCase().replace(/[\s()[\]\-_.]/g, '');
   if (k.length < 2) return [];

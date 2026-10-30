@@ -153,7 +153,7 @@ function MovedLink({ to }: { to: (slug: string) => string }) {
   return <Navigate to={`${to(slug)}${loc.search}${loc.hash ?? ''}`} replace />;
 }
 
-/** 다른 작품으로 바로 옮겨 가면 앞 작품의 탭·입력이 남지 않게 새로 그린다 */
+/** 다른 곡으로 바로 옮겨 가면 앞 곡의 탭·입력이 남지 않게 새로 그린다 */
 function WorkDetailRoute() {
   const { id = '' } = useParams();
   return <WorkDetail key={id} />;
@@ -197,7 +197,7 @@ function PortalRoutes() {
             <Route path="/releases/:id" element={<ReleaseDetailRoute />} />
             <Route path="/releases/:id/application" element={<Application />} />
             <Route path="/upload" element={<UploadRoute />} />
-            {/* 저작물 — 음악 라이브러리의 '저작물' 탭에서 들어온다 (퍼블리싱) */}
+            {/* 곡 — 음악 라이브러리의 '곡' 탭에서 들어온다 (저작권 관리) */}
             <Route path="/works" element={<Navigate to="/releases?tab=tracks" replace />} />
             <Route path="/works/new" element={<WorkEditorRoute />} />
             <Route path="/works/:id" element={<WorkDetailRoute />} />

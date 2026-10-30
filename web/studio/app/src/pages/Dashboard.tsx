@@ -123,7 +123,7 @@ function MiniTrend({ data }: { data: { period: string; value: number }[] }) {
 /** 정산 — 받을 수 있는 금액과 다음 할 일(계좌 등록·지급 요청). 아직 돈이 하나도 없으면 숨긴다 */
 function MoneyCard({ payable, pending, held, minimum, registered, publishing = 0 }: {
   payable: number; pending: number; held: number; minimum: number; registered: boolean;
-  /** 받을 수 있는 금액 가운데 저작권료(퍼블리싱)로 들어온 몫 — 배급과 같은 잔액에 쌓인다 */
+  /** 받을 수 있는 금액 가운데 저작권료(저작권 관리)로 들어온 몫 — 배급과 같은 잔액에 쌓인다 */
   publishing?: number;
 }) {
   const navigate = useNavigate();
@@ -326,7 +326,7 @@ export function Dashboard() {
   const signals = useHomeSignals(releases, loading);
   const upcoming = loading ? undefined : upcomingRelease(releases);
   const extra = useHomeCards(releases, loading, upcoming);
-  // 퍼블리싱 — 쓰는 사람에게는 작품 현황·처리할 일, 아직 안 쓰는 사람에게는 곡 하나 제안 (서버에 기능이 없으면 빈 요약)
+  // 저작권 관리 — 쓰는 사람에게는 곡 현황·처리할 일, 아직 안 쓰는 사람에게는 곡 하나 제안 (서버에 기능이 없으면 빈 요약)
   const { data: pub } = useAsync(() => pubApi.summary(), [], { key: 'pub-summary' });
   const pubActive = !!pub && (pub.enrolled || pub.works.total > 0);
   const pubRevenue = pub?.revenue.publishing.confirmed ?? 0;
@@ -375,14 +375,14 @@ export function Dashboard() {
       btn: '확인', to: one ? `/releases/${one.releaseId}` : '/releases', tone: 'info',
     });
   }
-  // 퍼블리싱에서 실제로 처리할 일 — 보완·지분 확인은 기한이 걸린 일, 서명·갱신은 안내
+  // 저작권 관리에서 실제로 처리할 일 — 보완·지분 확인은 기한이 걸린 일, 서명·갱신은 안내
   for (const t of pub?.tasks ?? []) {
     tasks.push({
       icon: t.kind === 'fix' ? 'alert' : t.kind === 'sign' ? 'pen' : t.kind === 'renew' ? 'doc' : 'scale', name: t.title, sub: t.sub,
       btn: t.kind === 'fix' ? '보완' : t.kind === 'sign' ? '서명' : t.kind === 'renew' ? '갱신' : '확인', to: t.to, tone: t.kind === 'fix' ? 'warn' : 'info',
     });
   }
-  // 아직 퍼블리싱을 쓰지 않으면 작품이 없는 발매 곡 하나만 제안 — 할 일 목록의 한 줄로
+  // 아직 저작권 관리를 쓰지 않으면 곡이 없는 발매 곡 하나만 제안 — 할 일 목록의 한 줄로
   if (!pubActive && pub?.suggestion) {
     const sg = pub.suggestion;
     tasks.push({ icon: 'scale', name: `‘${sg.title}’ 저작권도 관리할까요?`, sub: `‘${sg.releaseTitle}’ 곡의 작사·작곡 지분을 정리하면 저작권료까지 받을 수 있어요.`, btn: '시작', to: `/works/new?release=${encodeURIComponent(sg.releaseId)}&track=${encodeURIComponent(sg.trackId)}`, tone: 'info' });

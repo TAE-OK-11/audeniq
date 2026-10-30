@@ -1,5 +1,5 @@
-// 저작물 만들기·고치기 — 기본 정보 · 참여자와 지분 · 권리 정보 · 첨부 자료 (기획안 4.1, 4.2).
-// 퍼블리싱 계약 없이도 작품만 등록해 둘 수 있고, 지분이 틀려도 임시 저장은 된다(신청할 때만 막는다).
+// 곡 만들기·고치기 — 기본 정보 · 참여자와 지분 · 권리 정보 · 첨부 자료 (기획안 4.1, 4.2).
+// 저작권 관리 계약 없이도 곡만 등록해 둘 수 있고, 지분이 틀려도 임시 저장은 된다(신청할 때만 막는다).
 // 발매 곡에서 들어오면(?release=&track=) 곡 정보·크레딧을 미리 채우되 지분은 사용자가 직접 확인해야 저장된다.
 // 입력은 이 브라우저에 자동 저장돼 연결이 끊기거나 화면을 떠나도 이어서 쓸 수 있다 (기획안 10.3)
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
@@ -62,7 +62,7 @@ export function WorkEditor() {
   const [moreOpen, setMoreOpen] = useState(false);
   const base = useRef<string>('');
 
-  // 처음 채우기: 고치기 → 서버 작품, 발매 곡 → 곡 정보, 그 밖 → 빈 칸. 이 브라우저에 쓰다 만 내용이 있으면 이어 쓰기를 묻는다
+  // 처음 채우기: 고치기 → 서버 곡, 발매 곡 → 곡 정보, 그 밖 → 빈 칸. 이 브라우저에 쓰다 만 내용이 있으면 이어 쓰기를 묻는다
   useEffect(() => {
     if (form) return;
     if (editing && !existing) return;
@@ -121,7 +121,7 @@ export function WorkEditor() {
   if (loadError) {
     return (
       <div className="view">
-        <div className="ui-empty"><h2>작품을 불러오지 못했어요.</h2><p>{loadError}</p><Link to="/releases?tab=tracks" className="ui-btn is-soft">작품 목록으로</Link></div>
+        <div className="ui-empty"><h2>곡을 불러오지 못했어요.</h2><p>{loadError}</p><Link to="/releases?tab=tracks" className="ui-btn is-soft">곡 목록으로</Link></div>
       </div>
     );
   }
@@ -129,13 +129,13 @@ export function WorkEditor() {
   if (existing && existing.myRole !== 'owner' && existing.myRole !== 'editor') {
     return (
       <div className="view">
-        <div className="ui-empty"><h2>이 작품을 고칠 권한이 없어요.</h2><p>공동 참여자는 작품 정보를 볼 수만 있어요. 지분이 다르면 작품 화면에서 변경을 요청해 주세요.</p><Link to={`/works/${existing.id}`} className="ui-btn is-soft">작품 보기</Link></div>
+        <div className="ui-empty"><h2>이 곡을 고칠 권한이 없어요.</h2><p>공동 참여자는 곡 정보를 볼 수만 있어요. 지분이 다르면 곡 화면에서 변경을 요청해 주세요.</p><Link to={`/works/${existing.id}`} className="ui-btn is-soft">곡 보기</Link></div>
       </div>
     );
   }
 
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm(f => (f ? { ...f, [k]: v } : f));
-  const titleErr = tried && !form.title.trim() ? '작품명을 입력해 주세요.' : '';
+  const titleErr = tried && !form.title.trim() ? '곡 제목을 입력해 주세요.' : '';
   const iswcErr = form.iswc && !ISWC_RE.test(form.iswc) ? 'T-123.456.789-0 모양이에요. 모르면 비워 두세요 — 내부 번호로 관리해요.' : '';
   const issues = splitIssues(form.contributors);
   const fromTrack = !editing && !!track;
@@ -175,7 +175,7 @@ export function WorkEditor() {
       removeKey(draftKey);
       base.current = JSON.stringify(form);
       const ok = splitReady(form.contributors);
-      toast(editing ? '작품 정보를 저장했어요.' : '작품을 만들었어요.', { tone: 'success', sub: ok ? undefined : '지분을 맞추면 퍼블리싱 관리를 신청할 수 있어요.' });
+      toast(editing ? '곡 정보를 저장했어요.' : '곡을 만들었어요.', { tone: 'success', sub: ok ? undefined : '지분을 맞추면 저작권 관리를 신청할 수 있어요.' });
       nav(then === 'apply' && ok ? `/publishing/apply?work=${encodeURIComponent(w.id)}` : `/works/${w.id}`, { replace: true });
     } catch (err) {
       toast(errorMessage(err, '저장하지 못했어요. 입력한 내용은 이 브라우저에 남아 있어요.'), { tone: 'error', action: { label: '다시 시도', onClick: h => { h.close(); void save(then); } } });
@@ -184,12 +184,12 @@ export function WorkEditor() {
 
   const linkExisting = async (w: Work) => {
     if (!track || !release) return;
-    const ok = await confirm({ title: `‘${w.title}’에 연결할까요?`, message: <>‘{release.title}’의 ‘{track.title}’ 녹음을 이 작품에 연결해요. 새 작품은 만들지 않아요.</>, confirmLabel: '연결하기' });
+    const ok = await confirm({ title: `‘${w.title}’에 연결할까요?`, message: <>‘{release.title}’의 ‘{track.title}’ 녹음을 이 곡에 연결해요. 새 곡은 만들지 않아요.</>, confirmLabel: '연결하기' });
     if (!ok) return;
     try {
       await pubApi.linkRecording(w.id, { releaseId: release.id, trackId: track.id, title: track.title, releaseTitle: release.title, version: track.version, isrc: track.isrc, status: release.status });
       removeKey(draftKey);
-      toast('기존 작품에 녹음을 연결했어요.', 'success');
+      toast('기존 곡에 녹음을 연결했어요.', 'success');
       nav(`/works/${w.id}?tab=recordings`, { replace: true });
     } catch (err) { toast(errorMessage(err), 'error'); }
   };
@@ -202,13 +202,13 @@ export function WorkEditor() {
   return (
     <div className="view">
       <div className="spaced-actions">
-        <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={() => void cancel()}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />{editing ? '작품으로' : '돌아가기'}</button>
+        <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={() => void cancel()}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />{editing ? '곡으로' : '돌아가기'}</button>
       </div>
       <div className="ui-page-head">
         <div>
           <p className="eyebrow">발매·곡 관리</p>
-          <h1>{editing ? '작품 정보 고치기' : fromTrack ? '발매 곡으로 작품 만들기' : '새 작품 등록'}</h1>
-          <p>{fromTrack ? <>‘{release?.title}’의 곡 정보를 미리 채웠어요. 확인하고 고쳐 주세요.</> : '퍼블리싱 계약 없이도 작품 정보와 지분을 정리해 둘 수 있어요.'}</p>
+          <h1>{editing ? '곡 정보 고치기' : fromTrack ? '발매 곡으로 곡 정보 만들기' : '새 곡 등록'}</h1>
+          <p>{fromTrack ? <>‘{release?.title}’의 곡 정보를 미리 채웠어요. 확인하고 고쳐 주세요.</> : '저작권 관리 계약 없이도 곡 정보와 지분을 정리해 둘 수 있어요.'}</p>
           <p className="muted small" aria-live="polite">{savedAt ? `이 브라우저에 자동 저장했어요 · ${localStamp(savedAt)}` : dirty ? '입력 중이에요' : ''}</p>
         </div>
       </div>
@@ -223,30 +223,30 @@ export function WorkEditor() {
           <b>{localStamp(restored.at)}에 쓰던 내용이 있어요.</b> 저장하기 전에 화면을 떠났어요.
         </Callout>
       )}
-      {locked && <Callout tone="warn">퍼블리싱 심사 중이거나 관리 중인 작품이에요. 지금 고친 내용은 담당자가 확인한 뒤 반영돼요.</Callout>}
+      {locked && <Callout tone="warn">저작권 관리 심사 중이거나 관리 중인 곡이에요. 지금 고친 내용은 담당자가 확인한 뒤 반영돼요.</Callout>}
 
       <section className="ui-card" aria-labelledby="secBasic">
         <h2 id="secBasic">기본 정보</h2>
-        <Field label="작품명" htmlFor="workTitle" required error={titleErr}>
+        <Field label="곡 제목" htmlFor="workTitle" required error={titleErr}>
           <input id="workTitle" className={inputClass('lg')} value={form.title} maxLength={200} onChange={e => set('title', e.target.value)} placeholder="예: 새벽 네 시" autoComplete="off" />
         </Field>
         {dupes.length > 0 && (
           <Reveal open>
             <Callout tone="warn">
-              <b>비슷한 이름의 작품이 이미 있어요.</b> {fromTrack ? '같은 곡이면 새로 만들지 말고 연결해 주세요.' : '같은 곡이면 그 작품을 고쳐 주세요.'}
+              <b>비슷한 이름의 곡이 이미 있어요.</b> {fromTrack ? '같은 곡이면 새로 만들지 말고 연결해 주세요.' : '같은 곡이면 그 곡을 고쳐 주세요.'}
             </Callout>
             <div role="note">
               <div className="ui-list">
                 {dupes.slice(0, 3).map(w => (
                   <WorkRow key={w.id} work={w} onClick={() => (fromTrack ? void linkExisting(w) : nav(`/works/${w.id}`))}
-                    end={<span className="ui-btn is-xs is-white">{fromTrack ? '이 작품에 연결' : '열기'}</span>} />
+                    end={<span className="ui-btn is-xs is-white">{fromTrack ? '이 곡에 연결' : '열기'}</span>} />
                 ))}
               </div>
             </div>
           </Reveal>
         )}
         <div className="form-grid">
-          <Field label="작품 유형" htmlFor="workType">
+          <Field label="곡 유형" htmlFor="workType">
             <select id="workType" className={selectClass()} value={form.workType} onChange={e => set('workType', e.target.value)}>
               {WORK_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
@@ -266,7 +266,7 @@ export function WorkEditor() {
             </select>
           </Field>
         </div>
-        <Field label="작품 설명" htmlFor="workDesc" help="곡의 분위기·만든 배경 — A&R 제출 때도 다시 쓸 수 있어요.">
+        <Field label="곡 설명" htmlFor="workDesc" help="곡의 분위기·만든 배경 — A&R 제출 때도 다시 쓸 수 있어요.">
           <textarea id="workDesc" className="ui-textarea" rows={3} value={form.description} maxLength={2000} onChange={e => set('description', e.target.value)} />
         </Field>
         <button type="button" className="ui-btn is-text is-sm" aria-expanded={moreOpen} onClick={() => setMoreOpen(v => !v)}>
@@ -297,7 +297,7 @@ export function WorkEditor() {
           <Field label="ISWC" htmlFor="workIswc" warn={iswcErr} help={!iswcErr ? (existing ? `없으면 내부 번호 ${existing.internalCode}로 관리해요.` : '발급받은 경우에만. 없으면 내부 번호로 관리해요.') : undefined}>
             <input id="workIswc" className={inputClass()} value={form.iswc ?? ''} placeholder="T-123.456.789-0" onChange={e => set('iswc', e.target.value.trim() || null)} />
           </Field>
-          <Field label="기존 퍼블리싱 계약" htmlFor="workPrior">
+          <Field label="기존 저작권 관리 계약" htmlFor="workPrior">
             <select id="workPrior" className={selectClass()} value={form.hasPriorPublisher ? 'yes' : 'no'} onChange={e => set('hasPriorPublisher', e.target.value === 'yes')}>
               <option value="no">없어요</option>
               <option value="yes">다른 퍼블리셔와 계약이 있어요</option>
@@ -335,13 +335,13 @@ export function WorkEditor() {
 
       <p className="ui-field-help" aria-live="polite">
         {issues.some(i => i.level === 'error')
-          ? '지분을 맞추지 않아도 저장돼요. 퍼블리싱 신청은 맞춘 뒤에 할 수 있어요.'
+          ? '지분을 맞추지 않아도 저장돼요. 저작권 관리 신청은 맞춘 뒤에 할 수 있어요.'
           : form.contributors.length ? '지분이 맞아요. 저장하고 바로 신청할 수 있어요.' : '참여자를 추가해 주세요.'}
       </p>
       <div className="ui-actions">
         <button type="button" className="ui-btn is-soft" onClick={() => void cancel()} disabled={busy}>나가기</button>
         <button type="button" className={`ui-btn ${!editing && splitReady(form.contributors) ? 'is-soft' : 'is-primary'}${busy ? ' is-busy' : ''}`} onClick={() => void save()} disabled={busy}>
-          {busy ? '저장하는 중' : editing ? '저장' : '작품 저장'}
+          {busy ? '저장하는 중' : editing ? '저장' : '곡 저장'}
         </button>
         {!editing && splitReady(form.contributors) && (
           <button type="button" className="ui-btn is-primary" onClick={() => void save('apply')} disabled={busy}>저장하고 신청</button>

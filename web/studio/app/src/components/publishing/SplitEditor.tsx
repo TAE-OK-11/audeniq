@@ -35,7 +35,7 @@ function CreatorSearch({ onPick, onExternal, taken }: { onPick: (c: Creator) => 
                 <IconTile size="sm"><Glyph name="user" size={16} /></IconTile>
                 <span className="min-0">
                   <span className="ui-row-title">{c.name}{c.isMe && ' (나)'}</span>
-                  <span className="ui-row-meta">{[c.society, c.ipi && `IPI ${c.ipi}`, c.workCount != null && `작품 ${c.workCount}개`].filter(Boolean).map(t => <span key={String(t)}>{t}</span>)}</span>
+                  <span className="ui-row-meta">{[c.society, c.ipi && `IPI ${c.ipi}`, c.workCount != null && `곡 ${c.workCount}개`].filter(Boolean).map(t => <span key={String(t)}>{t}</span>)}</span>
                 </span>
                 {taken.has(c.id) ? <Badge tone="gray">추가됨</Badge> : <Glyph name="plus" size={16} />}
               </button>
@@ -61,7 +61,7 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
   value: WorkContributor[];
   onChange: (next: WorkContributor[]) => void;
   readOnly?: boolean;
-  /** 저장된 작품에서만 — 참여자에게 확인 요청 */
+  /** 저장된 곡에서만 — 참여자에게 확인 요청 */
   onRequestConfirm?: (c: WorkContributor) => void;
   /** 체험 모드에서 상대 확인 흉내 */
   onSimulate?: (c: WorkContributor) => void;

@@ -1,4 +1,4 @@
-// 퍼블리싱 API — 저작물(Work) · 작가(Creator) · 퍼블리싱 신청 · 계약 · 저작권료 · Open A&R.
+// 저작권 관리 API — 곡(Work) · 작가(Creator) · 저작권 관리 신청 · 계약 · 저작권료 · Open A&R.
 // 화면은 `pubApi`만 쓴다. 실서버는 작업 공간 범위 경로(/api/orgs/:org/…)로 기획안 11.1의 API를 부르고,
 // 체험 모드는 브라우저 저장소에 데모 데이터를 둔다 (api/client.ts와 같은 방식).
 //
@@ -36,7 +36,7 @@ export type CreatorRole = 'artist' | 'composer' | 'lyricist' | 'arranger' | 'pro
 export type RoyaltyKind = 'performance' | 'mechanical' | 'digital' | 'sync' | 'print' | 'other';
 export type RoyaltyStatus = 'estimated' | 'confirmed' | 'paid';
 export type ArStatus = 'submitted' | 'in_review' | 'needs_fix' | 'reviewed' | 'proposing' | 'closed';
-/** 내가 이 작품에서 할 수 있는 일 — 서버가 정한다. 화면은 버튼을 숨길 뿐 보안은 서버 몫 (기획안 11.3) */
+/** 내가 이 곡에서 할 수 있는 일 — 서버가 정한다. 화면은 버튼을 숨길 뿐 보안은 서버 몫 (기획안 11.3) */
 export type WorkRole = 'owner' | 'editor' | 'contributor' | 'viewer';
 
 export interface Creator {
@@ -107,7 +107,7 @@ export interface Work {
   updatedAt: string;
 }
 
-/** 발매 신청에서 곡 크레딧으로 작품을 만들 때 — enroll이면 퍼블리싱 신청 준비까지 (기획안 4.2, 15) */
+/** 발매 신청에서 곡 크레딧으로 곡을 만들 때 — enroll이면 저작권 관리 신청 준비까지 (기획안 4.2, 15) */
 export interface PrepareResult { created: number; linked: number; skipped: number }
 
 export type WorkInput = Pick<Work, 'title' | 'altTitles' | 'workType' | 'language' | 'genre' | 'description' | 'visibility' | 'iswc' | 'hasPriorPublisher' | 'priorPublisher' | 'contributors' | 'attachments'> & {
@@ -195,7 +195,7 @@ export interface PublishingSummary {
     publishing: { confirmed: number; estimated: number };
     payable: number;
   };
-  /** 아직 작품이 없는 발매 곡 — '이 곡의 저작권도 관리할까요?' */
+  /** 아직 곡이 없는 발매 곡 — '이 곡의 저작권도 관리할까요?' */
   suggestion: { releaseId: string; trackId: string; title: string; releaseTitle: string } | null;
 }
 
@@ -252,13 +252,13 @@ function seedWorks(): Work[] {
       registration: 'registered',
       registrationLog: [
         { status: 'internal_review', at: '2026-03-02 10:12' }, { status: 'ready', at: '2026-03-04 15:40', note: '권리 정보 확인 완료' },
-        { status: 'submitted', at: '2026-03-05 09:00', society: 'KOMCA' }, { status: 'registered', at: '2026-03-19 11:20', society: 'KOMCA', note: '작품 코드 발급' },
+        { status: 'submitted', at: '2026-03-05 09:00', society: 'KOMCA' }, { status: 'registered', at: '2026-03-19 11:20', society: 'KOMCA', note: '곡 코드 발급' },
       ],
       application: { id: 'a1', number: 'PUB-2026-0001', status: 'approved' }, contractId: 'c1', myRole: 'owner',
       activity: [
         { at: '2026-03-19 11:20', text: 'KOMCA 등록이 끝났어요.', kind: 'register' },
-        { at: '2026-03-03 09:00', text: '퍼블리싱 계약에 서명했어요.', kind: 'apply', who: '서린' },
-        { at: '2026-03-02 10:00', text: '작품을 만들었어요.', kind: 'edit', who: '서린' },
+        { at: '2026-03-03 09:00', text: '저작권 관리 계약에 서명했어요.', kind: 'apply', who: '서린' },
+        { at: '2026-03-02 10:00', text: '곡을 만들었어요.', kind: 'edit', who: '서린' },
       ],
       createdAt: '2026-03-02 10:00', updatedAt: '2026-03-19 11:20',
     },
@@ -278,7 +278,7 @@ function seedWorks(): Work[] {
       },
       activity: [
         { at: '2026-10-24 17:10', text: '담당자가 보완을 요청했어요.', kind: 'review', who: 'AUDENIQ' },
-        { at: '2026-10-20 13:00', text: '퍼블리싱 관리를 신청했어요.', kind: 'apply', who: '서린' },
+        { at: '2026-10-20 13:00', text: '저작권 관리를 신청했어요.', kind: 'apply', who: '서린' },
         { at: '2026-10-19 21:40', text: '지분을 60 : 40으로 나누었어요.', kind: 'rights', who: '서린' },
       ],
       createdAt: '2026-10-19 21:30', updatedAt: '2026-10-24 17:10',
@@ -290,7 +290,7 @@ function seedWorks(): Work[] {
       registration: 'internal_review',
       registrationLog: [{ status: 'internal_review', at: '2026-10-27 10:00' }],
       application: { id: 'a3', number: 'PUB-2026-0019', status: 'in_review' }, contractId: null, myRole: 'owner',
-      activity: [{ at: '2026-10-27 10:00', text: '퍼블리싱 관리를 신청했어요.', kind: 'apply', who: '서린' }],
+      activity: [{ at: '2026-10-27 10:00', text: '저작권 관리를 신청했어요.', kind: 'apply', who: '서린' }],
       createdAt: '2026-10-26 22:00', updatedAt: '2026-10-27 10:00',
     },
     {
@@ -379,8 +379,8 @@ const db = /* @__PURE__ */ createStore<PubDb>(seed, {
   revive: (raw, fb) => (raw && typeof raw === 'object' && Array.isArray((raw as PubDb).works) ? { ...fb, ...(raw as PubDb) } : fb),
 });
 
-/** 체험 모드: 확정된 저작권료를 정산 원장(적립 내역)에 '퍼블리싱' 적립으로 한 번씩 올린다 — 실서버는 서버 원장이 같은 일을 한다.
- *  같은 저작권료는 royaltyId로 한 번만 올라가 배급과 퍼블리싱에 겹쳐 세지 않는다 (기획안 8.4) */
+/** 체험 모드: 확정된 저작권료를 정산 원장(적립 내역)에 '저작권 관리' 적립으로 한 번씩 올린다 — 실서버는 서버 원장이 같은 일을 한다.
+ *  같은 저작권료는 royaltyId로 한 번만 올라가 배급과 저작권 관리에 겹쳐 세지 않는다 (기획안 8.4) */
 function postRoyalties() {
   const posted = new Set(statementsStore.get().map(s => s.royaltyId).filter(Boolean));
   const add = db.get().royalties.filter(r => r.status !== 'estimated' && r.postedAt && !posted.has(r.id)).map(r => ({
@@ -399,7 +399,7 @@ function withAccount(me: Creator): Creator {
 }
 
 const wait = (ms = 120) => new Promise(r => setTimeout(r, ms));
-const notFound = () => new ApiError('작품을 찾을 수 없어요. 삭제됐거나 볼 수 있는 권한이 없어요.', 404, 'NOT_FOUND');
+const notFound = () => new ApiError('곡을 찾을 수 없어요. 삭제됐거나 볼 수 있는 권한이 없어요.', 404, 'NOT_FOUND');
 
 function mutate<T>(fn: (d: PubDb) => T): T {
   const next = structuredClone(db.get());
@@ -422,7 +422,7 @@ function mockSummary(d: PubDb): PublishingSummary {
   if (preparing.length) {
     const rel = preparing[0].recordings[0];
     tasks.push({
-      id: 'prepare', kind: 'split', title: `발매 곡 ${preparing.length}곡 지분 확인하고 퍼블리싱 신청`,
+      id: 'prepare', kind: 'split', title: `발매 곡 ${preparing.length}곡 지분 확인하고 저작권 관리 신청`,
       sub: '발매 신청에서 고른 곡이에요. 크레딧으로 나눈 지분이 맞는지 확인하면 바로 신청돼요.',
       to: rel ? `/publishing/apply?release=${rel.releaseId}` : '/publishing/apply',
     });
@@ -435,9 +435,9 @@ function mockSummary(d: PubDb): PublishingSummary {
     else if (pending.length && !w.fix) tasks.push({ id: `split-${w.id}`, kind: 'split', title: `‘${w.title}’ 지분 확인을 기다리는 중`, sub: `${pending.map(p => p.name).join(', ')} 님의 확인이 필요해요.`, to: `/works/${w.id}?tab=rights` });
   }
   for (const c of d.contracts) {
-    if (c.status === 'pending_sign') tasks.push({ id: `sign-${c.id}`, kind: 'sign', title: '퍼블리싱 계약 서명 요청', sub: c.works.map(w => w.title).join(', '), to: `/contracts?pub=${c.id}` });
-    // 연장은 계약서(서류) 화면이 아니라 곡 권리 화면의 계약 관리에서
-    if (c.status === 'expiring' && !c.renewal && c.works[0]) tasks.push({ id: `renew-${c.id}`, kind: 'renew', title: '퍼블리싱 계약 갱신 요청', sub: `${c.endDate}에 끝나요. 연장하면 관리가 끊기지 않아요.`, to: `/works/${c.works[0].id}?tab=register` });
+    if (c.status === 'pending_sign') tasks.push({ id: `sign-${c.id}`, kind: 'sign', title: '저작권 관리 계약 서명 요청', sub: c.works.map(w => w.title).join(', '), to: `/contracts?pub=${c.id}` });
+    // 연장은 계약서(서류) 화면이 아니라 곡 화면의 계약 관리에서
+    if (c.status === 'expiring' && !c.renewal && c.works[0]) tasks.push({ id: `renew-${c.id}`, kind: 'renew', title: '저작권 관리 계약 갱신 요청', sub: `${c.endDate}에 끝나요. 연장하면 관리가 끊기지 않아요.`, to: `/works/${c.works[0].id}?tab=register` });
   }
   for (const a of d.ar) if (a.status === 'needs_fix') tasks.push({ id: `ar-${a.id}`, kind: 'ar', title: `A&R ‘${a.workTitle}’ 보완 요청`, sub: a.fixReason ?? '', to: '/ar' });
   const pub = d.royalties.reduce((acc, r) => {
@@ -446,7 +446,7 @@ function mockSummary(d: PubDb): PublishingSummary {
   }, { confirmed: 0, estimated: 0 });
   const dist = statementsStore.get().filter(s => s.revenueType !== 'publishing').reduce((n, s) => n + s.amount, 0);
   const linked = new Set(d.works.flatMap(w => w.recordings.map(r => r.trackId)));
-  // 데모 발매 곡 중 아직 작품이 없는 곡 (api/mock.ts SEED와 같은 id)
+  // 데모 발매 곡 중 아직 곡이 없는 곡 (api/mock.ts SEED와 같은 id)
   const candidates = [{ releaseId: 'r2', trackId: 't4', title: '한낮', releaseTitle: '여름 EP' }, { releaseId: 'r2', trackId: 't6', title: '밤바다', releaseTitle: '여름 EP' }];
   return {
     enrolled: d.contracts.length > 0 || d.applications.length > 0,
@@ -480,7 +480,7 @@ const mockApi = {
       const w: Work = {
         ...rest, id: `w_${uid()}`, internalCode: nextCode(d), recordings: recording ? [{ ...recording, id: uid() }] : [],
         registration: 'none', registrationLog: [], application: null, contractId: null, fix: null, myRole: 'owner', rowVersion: 1,
-        activity: [{ at: now, text: recording ? `‘${recording.releaseTitle}’ 발매 곡에서 작품을 만들었어요.` : '작품을 만들었어요.', kind: 'edit', who: d.me.name }],
+        activity: [{ at: now, text: recording ? `‘${recording.releaseTitle}’ 발매 곡에서 곡을 만들었어요.` : '곡을 만들었어요.', kind: 'edit', who: d.me.name }],
         createdAt: now, updatedAt: now,
       };
       d.works.unshift(w);
@@ -492,14 +492,14 @@ const mockApi = {
     return mutate(d => {
       const w = d.works.find(x => x.id === id);
       if (!w) throw notFound();
-      if (w.myRole !== 'owner' && w.myRole !== 'editor') throw new ApiError('이 작품을 고칠 권한이 없어요.', 403, 'FORBIDDEN');
+      if (w.myRole !== 'owner' && w.myRole !== 'editor') throw new ApiError('이 곡을 고칠 권한이 없어요.', 403, 'FORBIDDEN');
       if (w.rowVersion !== rowVersion) throw new ApiError('다른 곳에서 먼저 고쳤어요. 새로 불러온 뒤 다시 저장해 주세요.', 409, 'CONFLICT');
       const before = JSON.stringify(w.contributors.map(c => [c.name, c.share, c.publisherShare]));
       const { recording: _r, ...rest } = patch;
       Object.assign(w, rest);
       const now = stampNow();
       const rightsChanged = patch.contributors && before !== JSON.stringify(w.contributors.map(c => [c.name, c.share, c.publisherShare]));
-      w.activity.unshift({ at: now, text: rightsChanged ? `지분을 ${w.contributors.map(c => `${c.name} ${c.share}%`).join(' · ')}로 바꿨어요.` : '작품 정보를 고쳤어요.', kind: rightsChanged ? 'rights' : 'edit', who: d.me.name });
+      w.activity.unshift({ at: now, text: rightsChanged ? `지분을 ${w.contributors.map(c => `${c.name} ${c.share}%`).join(' · ')}로 바꿨어요.` : '곡 정보를 고쳤어요.', kind: rightsChanged ? 'rights' : 'edit', who: d.me.name });
       w.rowVersion += 1;
       w.updatedAt = now;
       return structuredClone(w);
@@ -510,7 +510,7 @@ const mockApi = {
     mutate(d => {
       const w = d.works.find(x => x.id === id);
       if (!w) throw notFound();
-      if (w.application && w.application.status !== 'withdrawn') throw new ApiError('퍼블리싱을 신청한 작품은 지울 수 없어요. 문의로 요청해 주세요.', 409, 'WORK_IN_USE');
+      if (w.application && w.application.status !== 'withdrawn') throw new ApiError('저작권 관리를 신청한 곡은 지울 수 없어요. 문의로 요청해 주세요.', 409, 'WORK_IN_USE');
       d.works = d.works.filter(x => x.id !== id);
     });
   },
@@ -589,7 +589,7 @@ const mockApi = {
     return mutate(d => { d.me = { ...d.me, roles: c.roles, society: c.society, ipi: c.ipi, org: c.org }; return withAccount(d.me); });
   },
 
-  /** 발매의 곡마다 작품을 만들어 녹음을 연결한다 — 이미 연결된 곡·커버곡은 건너뛴다.
+  /** 발매의 곡마다 곡을 만들어 녹음을 연결한다 — 이미 연결된 곡·커버곡은 건너뛴다.
    *  크레딧의 작사·작곡·편곡을 참여자로 넣고 지분은 균등하게 미리 나눠 두되, 신청 전에 사용자가 확인한다 */
   async prepareWorksFromRelease(releaseId: string, enroll: boolean, skipTitles: string[] = []): Promise<PrepareResult> {
     const rel = await api.getRelease(releaseId);
@@ -644,9 +644,9 @@ const mockApi = {
       const dup = d.applications.find(a => a.id === `a_${input.idempotencyKey}`);
       if (dup) return structuredClone(dup);
       const works = input.workIds.map(id => d.works.find(w => w.id === id)).filter(Boolean) as Work[];
-      if (!works.length) throw new ApiError('신청할 작품을 골라 주세요.', 400, 'VALIDATION');
+      if (!works.length) throw new ApiError('신청할 곡을 골라 주세요.', 400, 'VALIDATION');
       const busy = works.find(w => w.application && ['submitted', 'in_review', 'needs_fix', 'approved'].includes(w.application.status));
-      if (busy) throw new ApiError(`‘${busy.title}’은(는) 이미 신청했어요. 진행 상황은 작품 화면에서 볼 수 있어요.`, 409, 'DUPLICATE_APPLICATION');
+      if (busy) throw new ApiError(`‘${busy.title}’은(는) 이미 신청했어요. 진행 상황은 곡 화면에서 볼 수 있어요.`, 409, 'DUPLICATE_APPLICATION');
       if (input.policyVersion !== POLICY.version) throw new ApiError('계약 조건이 바뀌었어요. 새 조건을 확인하고 다시 신청해 주세요.', 409, 'POLICY_CHANGED');
       const now = stampNow();
       const n = d.applications.length + 20;
@@ -661,7 +661,7 @@ const mockApi = {
         w.registration = 'internal_review';
         w.registrationLog.push({ status: 'internal_review', at: now });
         w.contributors = w.contributors.map(c => (c.isMe ? { ...c, publisherShare: c.publisherShare || c.share } : c));
-        w.activity.unshift({ at: now, text: `퍼블리싱 관리를 신청했어요 (${app.number}).`, kind: 'apply', who: d.me.name });
+        w.activity.unshift({ at: now, text: `저작권 관리를 신청했어요 (${app.number}).`, kind: 'apply', who: d.me.name });
         w.updatedAt = now;
       }
       return structuredClone(app);
@@ -679,7 +679,7 @@ const mockApi = {
         w.application = { id: a.id, number: a.number, status: 'withdrawn' };
         w.registration = 'none';
         w.fix = null;
-        w.activity.unshift({ at: stampNow(), text: '퍼블리싱 신청을 철회했어요.', kind: 'apply', who: d.me.name });
+        w.activity.unshift({ at: stampNow(), text: '저작권 관리 신청을 철회했어요.', kind: 'apply', who: d.me.name });
       }
       return structuredClone(a);
     });
@@ -751,7 +751,7 @@ const mockApi = {
       const w = d.works.find(x => x.id === input.workId);
       if (!w) throw notFound();
       if (!input.consent) throw new ApiError('피칭 동의가 필요해요.', 400, 'VALIDATION');
-      if (d.ar.some(a => a.workId === w.id && a.status !== 'closed')) throw new ApiError('이 작품은 이미 심사 중이에요.', 409, 'DUPLICATE_SUBMISSION');
+      if (d.ar.some(a => a.workId === w.id && a.status !== 'closed')) throw new ApiError('이 곡은 이미 심사 중이에요.', 409, 'DUPLICATE_SUBMISSION');
       const now = stampNow();
       const s: ArSubmission = {
         id: `ar_${input.idempotencyKey}`, workId: w.id, workTitle: w.title, genre: input.genre, mood: input.mood, description: input.description,
@@ -778,7 +778,7 @@ const mockApi = {
 // ---------- 실서버 ----------
 
 const enc = encodeURIComponent;
-/** 퍼블리싱 API가 아직 열리지 않은 서버(404)면 빈 목록 — 배급 화면이 이 때문에 깨지지 않게 (기획안 원칙 6) */
+/** 저작권 관리 API가 아직 열리지 않은 서버(404)면 빈 목록 — 배급 화면이 이 때문에 깨지지 않게 (기획안 원칙 6) */
 async function orEmpty<T>(p: Promise<T>, empty: T): Promise<T> {
   try { return await p; } catch (e) { if (e instanceof ApiError && (e.status === 404 || e.code === 'NOT_FOUND')) return empty; throw e; }
 }

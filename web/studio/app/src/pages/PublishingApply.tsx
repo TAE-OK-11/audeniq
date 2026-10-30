@@ -1,4 +1,4 @@
-// 퍼블리싱 신청 — 작품 상세·발매 상세·라이브러리·홈·계약 화면 어디서 들어와도 이 한 흐름 (기획안 6.1, 6.2).
+// 저작권 관리 신청 — 곡 상세·발매 상세·라이브러리·홈·계약 화면 어디서 들어와도 이 한 흐름 (기획안 6.1, 6.2).
 // 1 대상 선택 → 2 권리 확인 → 3 계약 조건 → 4 전자계약 → 5 완료.
 // 수수료·기간은 서버 계약 정책(/publishing/policy)에서 받고, 같은 신청은 멱등 키로 한 번만 접수된다.
 // 고르던 내용은 이 브라우저에 남겨 두어 새로고침·연결 끊김 뒤에도 이어서 할 수 있다.
@@ -24,8 +24,8 @@ import '../styles/split/Upload.css';
 
 const STEPS = ['신청 대상 선택', '권리 정보 확인', '계약 조건 확인', '전자계약', '신청 완료'];
 const AGREE = [
-  ['terms', '퍼블리싱 관리 계약서의 내용을 모두 읽고 이해했어요.'],
-  ['rights', '신청한 작품에 대해 적은 지분만큼 권리를 가지고 있어요.'],
+  ['terms', '저작권 관리 계약서의 내용을 모두 읽고 이해했어요.'],
+  ['rights', '신청한 곡에 대해 적은 지분만큼 권리를 가지고 있어요.'],
   ['exclusive', '계약 기간 동안 같은 권리를 다른 퍼블리셔에게 맡기지 않아요.'],
   ['share', '공동 참여자의 지분은 각자의 확인을 거쳐 반영된다는 것을 알아요.'],
 ] as const;
@@ -39,7 +39,7 @@ export function PublishingApply() {
   const nav = useNavigate();
   const { user } = useAuth();
   const preset = params.get('work');
-  // 발매 상세·계약 묶음·발매 신청에서 왔으면 그 발매 곡들의 작품을 미리 고른다
+  // 발매 상세·계약 묶음·발매 신청에서 왔으면 그 발매 곡들의 곡을 미리 고른다
   const fromRelease = params.get('release');
 
   const { data: policy, error: policyError, reload: reloadPolicy } = useAsync(() => pubApi.policy(), [], { key: 'pub-policy' });
@@ -50,7 +50,7 @@ export function PublishingApply() {
   const resume = saved.current && (!preset || saved.current.workIds.includes(preset)) ? saved.current : null;
   const [step, setStep] = useState(resume?.step && resume.step < 4 ? resume.step : 0);
   const [picked, setPicked] = useState<string[]>(resume?.workIds ?? (preset ? [preset] : []));
-  // 발매에서 왔으면 그 발매에 연결된(아직 신청 전인) 작품을 모두 고른다
+  // 발매에서 왔으면 그 발매에 연결된(아직 신청 전인) 곡을 모두 고른다
   useEffect(() => {
     if (!fromRelease || !works) return;
     const ids = works.filter(w => w.recordings.some(r => r.releaseId === fromRelease) && (w.myRole === 'owner' || w.myRole === 'editor') && !activeApp(w)).map(w => w.id);
@@ -137,25 +137,25 @@ export function PublishingApply() {
       )}
       <div className="ui-page-head">
         <div>
-          <p className="eyebrow">퍼블리싱</p>
-          <h1>{step === 4 ? '신청을 받았어요' : '작품 관리 신청'}</h1>
-          <p>{step === 4 ? '심사가 끝나면 알림으로 알려 드려요.' : '작품의 저작권 등록과 사용료 징수를 AUDENIQ이 맡아요.'}</p>
+          <p className="eyebrow">저작권 관리</p>
+          <h1>{step === 4 ? '신청을 받았어요' : '저작권 관리 신청'}</h1>
+          <p>{step === 4 ? '심사가 끝나면 알림으로 알려 드려요.' : '곡의 저작권 등록과 사용료 징수를 AUDENIQ이 맡아요.'}</p>
         </div>
       </div>
       {step < 4 && <StepBar steps={STEPS.slice(0, 4)} current={step} />}
 
       {step === 0 && (
         <section className="ui-tab-panel ui-card" key="s0" aria-labelledby="s0t">
-          <h2 id="s0t">어떤 작품을 맡길까요?</h2>
-          <p className="ui-field-help">{releaseTitle ? `‘${releaseTitle}’ 발매 곡을 골라 두었어요. ` : ''}여러 작품을 한 번에 신청할 수 있어요. 지분이 맞지 않는 작품은 먼저 고쳐 주세요.</p>
+          <h2 id="s0t">어떤 곡을 맡길까요?</h2>
+          <p className="ui-field-help">{releaseTitle ? `‘${releaseTitle}’ 발매 곡을 골라 두었어요. ` : ''}여러 곡을 한 번에 신청할 수 있어요. 지분이 맞지 않는 곡은 먼저 고쳐 주세요.</p>
           {fromRelease && (
             <Callout tone="neutral" action={
               <button type="button" className={`ui-btn is-white is-sm${preparing ? ' is-busy' : ''}`} disabled={preparing}
                 onClick={async () => { setPreparing(true); try { await pubApi.prepareWorksFromRelease(fromRelease, true); reloadWorks(); } finally { setPreparing(false); } }}>
-                {preparing ? '만드는 중' : '크레딧으로 작품 만들기'}
+                {preparing ? '만드는 중' : '크레딧으로 곡 정보 만들기'}
               </button>
             }>
-              작품이 없는 곡은 발매 신청서의 작사·작곡 크레딧으로 바로 만들 수 있어요.
+              곡이 없는 곡은 발매 신청서의 작사·작곡 크레딧으로 바로 만들 수 있어요.
             </Callout>
           )}
           {mine.length ? (
@@ -176,18 +176,18 @@ export function PublishingApply() {
               })}
             </div>
           ) : (
-            <EmptyState compact title="신청할 작품이 없어요" actions={<Link to="/works/new" className="ui-btn is-primary">새 작품 등록</Link>}>
-              먼저 작품을 등록해 주세요. 발매 곡에서 바로 만들 수도 있어요.
+            <EmptyState compact title="신청할 곡이 없어요" actions={<Link to="/works/new" className="ui-btn is-primary">새 곡 등록</Link>}>
+              먼저 곡을 등록해 주세요. 발매 곡에서 바로 만들 수도 있어요.
             </EmptyState>
           )}
-          <div className="row-actions"><Link to="/works/new" className="ui-btn is-text is-sm">목록에 없는 곡 — 새 저작물 만들기</Link></div>
+          <div className="row-actions"><Link to="/works/new" className="ui-btn is-text is-sm">목록에 없는 곡 — 새 곡 만들기</Link></div>
         </section>
       )}
 
       {step === 1 && (
         <section className="ui-tab-panel" key="s1" aria-label="권리 정보 확인">
-          {blocked.length > 0 && <Callout tone="danger"><b>지분이 맞지 않는 작품이 있어 신청할 수 없어요.</b> 지분은 저장돼 있으니 고친 뒤 이어서 신청해요.</Callout>}
-          {conflicts.length > 0 && <Callout tone="warn"><b>기존 퍼블리싱 계약과 겹칠 수 있어요.</b> {conflicts.map(w => `‘${w.title}’(${w.priorPublisher || '기존 퍼블리셔'})`).join(', ')} — 신청은 되고, 담당자가 먼저 검토해요.</Callout>}
+          {blocked.length > 0 && <Callout tone="danger"><b>지분이 맞지 않는 곡이 있어 신청할 수 없어요.</b> 지분은 저장돼 있으니 고친 뒤 이어서 신청해요.</Callout>}
+          {conflicts.length > 0 && <Callout tone="warn"><b>기존 저작권 관리 계약과 겹칠 수 있어요.</b> {conflicts.map(w => `‘${w.title}’(${w.priorPublisher || '기존 퍼블리셔'})`).join(', ')} — 신청은 되고, 담당자가 먼저 검토해요.</Callout>}
           {pendingPeople.length > 0 && <Callout tone="neutral">공동 참여자 {pendingPeople.length}명이 아직 지분을 확인하지 않았어요. 확인 전에는 ‘확인 필요’ 상태로 심사해요.</Callout>}
           {chosen.map(w => {
             const issues = splitIssues(w.contributors).filter(i => i.level === 'error');
@@ -242,25 +242,25 @@ export function PublishingApply() {
           <div className="ui-card">
             <h2>계약 내용</h2>
             <KeyValue cols={2} items={[
-              ['적용 작품', chosen.map(w => w.title).join(', ')],
+              ['적용 곡', chosen.map(w => w.title).join(', ')],
               ['관리 대상 국가', territories.map(terrLabel).join(', ')],
               ['관리할 권리', rights.map(rightLabel).join(', ')],
               ['예시', `${money(100000)} 징수 → 수수료 ${money(fee)} · 받는 금액 ${money(100000 - fee)}`],
             ]} />
           </div>
-          <Callout tone="neutral">계약이 끝나도 그동안의 등록·정산 기록은 그대로 남아요. 종료 후에는 새 작품을 관리에 넣을 수 없어요.</Callout>
+          <Callout tone="neutral">계약이 끝나도 그동안의 등록·정산 기록은 그대로 남아요. 종료 후에는 새 곡을 관리에 넣을 수 없어요.</Callout>
         </section>
       )}
 
       {step === 3 && (
         <section className="ui-tab-panel ui-card" key="s3" aria-labelledby="s3t">
-          <h2 id="s3t">퍼블리싱 관리 계약서</h2>
-          <div className="aq-terms-body" tabIndex={0} aria-label="퍼블리싱 관리 계약서" style={{ maxHeight: 320, overflowY: 'auto' }} onScroll={e => {
+          <h2 id="s3t">저작권 관리 계약서</h2>
+          <div className="aq-terms-body" tabIndex={0} aria-label="저작권 관리 계약서" style={{ maxHeight: 320, overflowY: 'auto' }} onScroll={e => {
             const el = e.currentTarget;
             if (el.scrollTop + el.clientHeight >= el.scrollHeight - 24) setReadAll(true);
           }}>
-            <p><b>제1조 (목적)</b> 이 계약은 권리자(이하 ‘작가’)가 아래 작품의 저작권 관리를 주식회사 AUDENIQ(이하 ‘회사’)에 맡기고, 회사가 이를 관리하는 데 필요한 사항을 정한다.</p>
-            <p><b>제2조 (대상 작품)</b> {chosen.map(w => `‘${w.title}’(${w.iswc ?? w.internalCode})`).join(', ')}. 작가는 각 작품에 신고한 지분만큼의 권리를 가진다.</p>
+            <p><b>제1조 (목적)</b> 이 계약은 권리자(이하 ‘작가’)가 아래 곡의 저작권 관리를 주식회사 AUDENIQ(이하 ‘회사’)에 맡기고, 회사가 이를 관리하는 데 필요한 사항을 정한다.</p>
+            <p><b>제2조 (대상 곡)</b> {chosen.map(w => `‘${w.title}’(${w.iswc ?? w.internalCode})`).join(', ')}. 작가는 각 곡에 신고한 지분만큼의 권리를 가진다.</p>
             <p><b>제3조 (관리 범위)</b> 회사는 {territories.map(terrLabel).join(', ')}에서 {rights.map(rightLabel).join(', ')}을(를) 관리한다. 관리 단체 등록, 사용료 징수, 이용 허락 협의를 포함한다.</p>
             <p><b>제4조 (수수료)</b> 회사는 실제 징수한 사용료의 {policy.commissionRate}%를 관리 수수료로 공제하고 나머지를 작가에게 지급한다. 예상 금액은 지급 대상이 아니다.</p>
             <p><b>제5조 (기간)</b> 계약 기간은 승인일부터 {termLabel(policy.initialTermMonths)}로 하며, 작가가 요청하면 {policy.renewalOptions.map(termLabel).join(', ')} 단위로 연장한다.</p>
@@ -297,11 +297,11 @@ export function PublishingApply() {
         <section className="ui-tab-panel" key="s4" aria-live="polite">
           <EmptyState icon={<CheckIcon size={22} />} tone="green" title={`신청번호 ${result.number}`}
             actions={<><Link to={`/works/${result.workIds[0]}?tab=register`} className="ui-btn is-primary">진행 상황 보기</Link><Link to="/contracts" className="ui-btn is-soft">계약서</Link></>}>
-            {result.workTitles.join(', ')} · {result.workTitles.length}개 작품
+            {result.workTitles.join(', ')} · {result.workTitles.length}개 곡
           </EmptyState>
           <div className="ui-card">
             <Steps steps={['제출 완료', '심사', '승인', '외부 등록']} current={1} label="처리 진행 상황" />
-            <p className="ui-field-help">보통 영업일 3~5일 안에 심사 결과를 알려 드려요. 보완이 필요하면 알림과 작품 화면에 함께 보여요. 서명한 계약서는 계약서 화면에서 받을 수 있어요.</p>
+            <p className="ui-field-help">보통 영업일 3~5일 안에 심사 결과를 알려 드려요. 보완이 필요하면 알림과 곡 화면에 함께 보여요. 서명한 계약서는 계약서 화면에서 받을 수 있어요.</p>
           </div>
         </section>
       )}

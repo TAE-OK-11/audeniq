@@ -1,6 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { releaseDay } from '../lib/albumPrep';
-import { useNavigate, useSearchParams } from '../lib/router';
+import { useNavigate, useSearchParams, Link } from '../lib/router';
 import { api, type Release, type Track } from '../api/client';
 import { prefetchRelease } from '../api/prefetch';
 import { fixPath, isDocumentFix, resolveCorrection, splitCorrections } from '../lib/corrections';
@@ -15,7 +15,8 @@ import { errorMessage } from '../api/errors';
 import { useToast } from '../components/Toast';
 import { MOCK } from '../lib/mode';
 import { openFixes, pendingProofs, proofPath, useDocs, type DocRecord } from '../store/docs';
-import { RegBadge, WorkRow } from '../components/publishing/parts';
+import { RegBadge } from '../components/publishing/parts';
+import { APP_LABEL, APP_TONE } from '../lib/publishing';
 import { isManaged } from '../lib/publishing';
 import { pubApi, type Work } from '../api/publishing';
 
@@ -60,7 +61,7 @@ export function Releases() {
   const docs = useDocs();
   const [params, setParams] = useSearchParams();
   const tabParam = params.get('tab');
-  // 예전 '저작물' 탭 주소는 곡 목록으로 — 녹음과 작사·작곡 저작권을 같은 곡 줄에서 본다
+  // 예전 '곡' 탭 주소는 곡 목록으로 — 녹음과 작사·작곡 저작권을 같은 곡 줄에서 본다
   const tab = tabParam === 'tracks' || tabParam === 'works' ? 'tracks' : 'releases';
   const songFilter = (['managed', 'none', 'fix', 'unreleased'] as const).find(v => v === params.get('wf')) ?? 'all';
   const filter = params.get('status') || 'all';
@@ -78,7 +79,7 @@ export function Releases() {
   };
 
   const { data: listData, loading: listLoading, error: listError, reload } = useAsync(() => api.listReleases(), [], { key: 'releases' });
-  // 저작물 탭 개수 — 작품 목록은 라이브러리 탭과 같은 캐시를 쓴다 (퍼블리싱 API가 없는 서버면 빈 목록)
+  // 곡 탭 개수 — 곡 목록은 라이브러리 탭과 같은 캐시를 쓴다 (저작권 관리 API가 없는 서버면 빈 목록)
   const { data: works } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
   const trackWork = useMemo(() => new Map((works ?? []).flatMap(w => w.recordings.map(r => [r.trackId, w] as const))), [works]);
   const list = useMemo(() => listData ?? [], [listData]);
@@ -134,7 +135,7 @@ export function Releases() {
     return out;
   }, [list, filter, dq, sort]);
 
-  // 저작권 상태로 거르기 — 곡의 녹음에 연결된 작품 기준
+  // 저작권 상태로 거르기 — 곡의 녹음에 연결된 곡 기준
   const songMatch = useCallback((w: Work | undefined) => songFilter === 'all' ? true
     : songFilter === 'managed' ? !!w && isManaged(w) && w.registration !== 'needs_fix'
     : songFilter === 'fix' ? !!w && (w.registration === 'needs_fix' || w.application?.status === 'needs_fix')
@@ -144,7 +145,7 @@ export function Releases() {
     return tracks.filter(t => songMatch(trackWork.get(t.id)) && (!q
       || norm(t.title).includes(q) || norm(t.isrc).includes(q) || norm(t.artist).includes(q) || norm(t.releaseTitle).includes(q)));
   }, [tracks, dtq, songMatch, trackWork]);
-  // 아직 발매하지 않은 곡(녹음이 없는 작품)도 같은 곡 목록에
+  // 아직 발매하지 않은 곡(녹음이 없는 곡)도 같은 곡 목록에
   const unreleased = useMemo(() => (works ?? []).filter(w => !w.recordings.length), [works]);
   const shownUnreleased = useMemo(() => {
     const q = norm(dtq);
@@ -330,11 +331,23 @@ export function Releases() {
                     <span className="ui-row-title">{t.title || '제목 없는 곡'}{t.explicit && <em className="aq-explicit" title="Explicit">E</em>}</span>
                     <span className="ui-row-meta">{t.releaseTitle} · {t.artist || '아티스트 없음'}</span>
                   </div>
-                  {/* 녹음과 같은 곡의 작사·작곡 저작권 상태 — 배급과 퍼블리싱을 한 줄에서 */}
+                  {/* 녹음과 같은 곡의 작사·작곡 저작권 상태 — 배급과 저작권 관리를 한 줄에서 */}
                   {trackWork.get(t.id) ? <RegBadge status={trackWork.get(t.id)!.registration} /> : <span className="chevron" aria-hidden="true"><Glyph name="chevron-right" size={18} /></span>}
                 </div>
               ))}
-              {shownUnreleased.map(w => <WorkRow key={w.id} work={w} to={`/works/${w.id}`} />)}
+              {/* 아직 발매하지 않은 곡도 발매한 곡과 같은 줄 모양 — 커버 자리·제목·'미발매 · 참여자'·저작권 상태 */}
+              {shownUnreleased.map(w => (
+                <Link key={w.id} to={`/works/${w.id}`} className="track-row ui-row aq-track-row" aria-label={`${w.title || '제목 없는 곡'} 상세 보기`}>
+                  <ReleaseCover id={w.id} />
+                  <div className="min-0">
+                    <span className="ui-row-title">{w.title || '제목 없는 곡'}</span>
+                    <span className="ui-row-meta">미발매 · {w.contributors.map(c => c.name).join(' · ') || '참여자 없음'}</span>
+                  </div>
+                  {w.application && !['approved', 'withdrawn'].includes(w.application.status)
+                    ? <Badge tone={APP_TONE[w.application.status]}>{APP_LABEL[w.application.status]}</Badge>
+                    : <RegBadge status={w.registration} />}
+                </Link>
+              ))}
             </div>
           ) : (
             <div className="ui-empty">

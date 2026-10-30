@@ -1,7 +1,7 @@
-// 배급과 퍼블리싱을 한 흐름으로 — 발매 화면 곳곳에 들어가는 '작사·작곡 저작권' 조각.
-//  · ReleasePublishingChoice: 발매 신청서 '권리' 단계. 곡 크레딧으로 저작물을 만들어 둘지, 퍼블리싱도 함께 맡길지 고른다
-//  · ReleaseWorksCard: 발매 상세 '개요'. 곡마다 연결된 작품과 저작권 등록 상태, 한 번에 신청
-//  · PublishingBundleStep: 계약 묶음(배급 신청서 → 배급 계약서) 다음 줄. 같은 발매의 퍼블리싱 계약 상태
+// 배급과 저작권 관리를 한 흐름으로 — 발매 화면 곳곳에 들어가는 '작사·작곡 저작권' 조각.
+//  · ReleasePublishingChoice: 발매 신청서 '권리' 단계. 곡 크레딧으로 곡을 만들어 둘지, 저작권 관리도 함께 맡길지 고른다
+//  · ReleaseWorksCard: 발매 상세 '개요'. 곡마다 연결된 곡과 저작권 등록 상태, 한 번에 신청
+//  · PublishingBundleStep: 계약 묶음(배급 신청서 → 배급 계약서) 다음 줄. 같은 발매의 저작권 관리 계약 상태
 // 모양은 모두 그 화면에 이미 있는 부품(subhead · ui-check · ui-row · aq-bundle 줄)을 쓴다
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from '../../lib/router';
@@ -36,8 +36,8 @@ export function ReleasePublishingChoice({ tracks, coverIds, draftId }: { tracks:
   const { data: works } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
   const linked = new Map((works ?? []).flatMap(w => w.recordings.map(r => [r.trackId, w] as const)));
   const OPTIONS: [PublishingIntent, string, string][] = [
-    ['works', '작사·작곡 정보로 저작물도 정리해 둘게요', '곡마다 작품이 만들어지고 녹음과 연결돼요. 지분은 나중에 확인해요.'],
-    ['enroll', '저작권 관리(퍼블리싱)도 함께 맡길게요', `방송·스트리밍 저작권료까지 AUDENIQ이 받아 드려요${policy ? ` · 수수료 ${policy.commissionRate}%` : ''}. 접수 뒤 지분만 확인하면 바로 신청돼요.`],
+    ['works', '작사·작곡 정보만 정리해 둘게요', '곡마다 작사·작곡 정보가 정리되고 녹음과 연결돼요. 지분은 나중에 확인해요.'],
+    ['enroll', '저작권 관리도 함께 맡길게요', `방송·스트리밍 저작권료까지 AUDENIQ이 받아 드려요${policy ? ` · 수수료 ${policy.commissionRate}%` : ''}. 접수 뒤 지분만 확인하면 바로 신청돼요.`],
     ['none', '지금은 안 할게요', '배급은 그대로 진행돼요. 발매 상세에서 언제든 다시 할 수 있어요.'],
   ];
   return (
@@ -55,7 +55,7 @@ export function ReleasePublishingChoice({ tracks, coverIds, draftId }: { tracks:
                 <span className="ui-row-title">{t.title}</span>
                 <span className="ui-row-meta">{credits.length ? credits.map(c => <span key={String(c)}>{c}</span>) : <span>크레딧 입력 전</span>}</span>
               </span>
-              {w ? <RegBadge status={w.registration} /> : cover ? <Badge tone="gray">커버곡 · 원곡 권리</Badge> : <Badge tone="blue">작품으로 정리</Badge>}
+              {w ? <RegBadge status={w.registration} /> : cover ? <Badge tone="gray">커버곡 · 원곡</Badge> : <Badge tone="blue">곡 정보로 정리</Badge>}
             </div>
           );
         })}
@@ -72,7 +72,7 @@ export function ReleasePublishingChoice({ tracks, coverIds, draftId }: { tracks:
   );
 }
 
-/** 발매 상세 '개요' — 이 발매 곡들의 작품·저작권 (발매 정보 카드와 같은 aq-relinfo-card) */
+/** 발매 상세 '개요' — 이 발매 곡들의 곡·저작권 (발매 정보 카드와 같은 aq-relinfo-card) */
 export function ReleaseWorksCard({ rel }: { rel: ReleaseDetail }) {
   const nav = useNavigate();
   const { data: works, reload } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
@@ -89,7 +89,7 @@ export function ReleaseWorksCard({ rel }: { rel: ReleaseDetail }) {
     <div className="aq-relinfo-card">
       <div className="ui-section-head">
         <h2 className="subhead">작사·작곡 저작권</h2>
-        {canApply && <button type="button" className="ui-btn is-soft is-sm" onClick={() => nav(`/publishing/apply?release=${encodeURIComponent(rel.id)}`)}>퍼블리싱 함께 신청</button>}
+        {canApply && <button type="button" className="ui-btn is-soft is-sm" onClick={() => nav(`/publishing/apply?release=${encodeURIComponent(rel.id)}`)}>저작권도 함께 맡기기</button>}
       </div>
       <div className="ui-list is-inset">
         {rel.tracks.map((t, i) => {
@@ -109,7 +109,7 @@ export function ReleaseWorksCard({ rel }: { rel: ReleaseDetail }) {
               <IconTile size="sm" tone="gray"><span className="aq-preview-no">{i + 1}</span></IconTile>
               <span className="min-0">
                 <span className="ui-row-title">{t.title || '곡명 없음'}</span>
-                <span className="ui-row-meta"><span>작품과 연결 전</span></span>
+                <span className="ui-row-meta"><span>저작권 정보 없음</span></span>
               </span>
               <Glyph name="chevron-right" size={16} />
             </Link>
@@ -119,7 +119,7 @@ export function ReleaseWorksCard({ rel }: { rel: ReleaseDetail }) {
       {missing > 1 && (
         <div className="row-actions">
           <button type="button" className={`ui-btn is-text is-sm${busy ? ' is-busy' : ''}`} disabled={busy} onClick={() => void prepare()}>
-            {busy ? '만드는 중' : `크레딧으로 ${missing}곡 한 번에 작품 만들기`}
+            {busy ? '만드는 중' : `크레딧으로 ${missing}곡 한 번에 곡 정보 만들기`}
           </button>
         </div>
       )}
@@ -127,7 +127,7 @@ export function ReleaseWorksCard({ rel }: { rel: ReleaseDetail }) {
   );
 }
 
-/** 계약 묶음의 세 번째 줄 — 배급 신청서 · 배급 계약서 다음에 같은 발매의 퍼블리싱 계약 */
+/** 계약 묶음의 세 번째 줄 — 배급 신청서 · 배급 계약서 다음에 같은 발매의 저작권 관리 계약 */
 export function PublishingBundleStep({ releaseId }: { releaseId: string }) {
   const nav = useNavigate();
   const { data: works } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
@@ -138,14 +138,14 @@ export function PublishingBundleStep({ releaseId }: { releaseId: string }) {
   const fix = applying.find(w => w.application!.status === 'needs_fix');
   const done = managed.length > 0 && !applying.length;
   const state = done ? `${managed.length}곡 저작권 관리 중`
-    : fix ? '퍼블리싱 신청 보완 요청'
-    : applying.length ? `${applying.length}곡 퍼블리싱 심사 중`
+    : fix ? '저작권 관리 신청 보완 요청'
+    : applying.length ? `${applying.length}곡 저작권 관리 심사 중`
     : '곡 저작권도 함께 맡길 수 있어요 (선택)';
   return (
     <li className={done ? 'is-done' : fix ? 'is-current' : ''}>
       <span className="aq-bundle-no" aria-hidden="true">{done ? <CheckIcon size={14} /> : 3}</span>
       <div className="min-0">
-        <strong>퍼블리싱 계약</strong>
+        <strong>저작권 관리 계약</strong>
         <span>{state}</span>
       </div>
       {done ? <button type="button" className="ui-btn is-soft is-sm" onClick={() => nav(`/contracts?pub=${managed[0].contractId}`)}>계약 보기</button>

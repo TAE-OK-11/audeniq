@@ -12,7 +12,7 @@ const Empty = ({ children }: { children: string }) => <span className="aq-empty-
 
 export function TrackSheet({ track, draft, no, onClose, edit, releaseId }: {
   track: Track; draft?: DraftTrack; no: number; onClose: () => void;
-  /** 있으면 '작품·권리'(저작물 연결)를 함께 보여 준다 */
+  /** 있으면 '곡·권리'(곡 연결)를 함께 보여 준다 */
   releaseId?: string;
   /** 고칠 곳 — 없으면 버튼을 그리지 않는다 */
   edit?: { label: string; go: () => void } | null;
