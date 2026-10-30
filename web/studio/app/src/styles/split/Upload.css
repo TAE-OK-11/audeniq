@@ -29,8 +29,8 @@
 @media (min-width: 1024px) {
   .aq-wiz-layout { grid-template-columns: 280px minmax(0, 1fr) !important; gap: 48px !important; }
   .aq-wiz-rail-progress i::after {
-    content: ''; position: absolute; inset: 0 auto 0 0; width: var(--p, 0%); border-radius: inherit;
-    background: var(--aq-blue-500); transition: width .5s var(--aq-e-ease);
+    content: ''; position: absolute; inset: 0 auto 0 0; width: 100%; translate: calc(var(--p, 0%) - 100%) 0; border-radius: inherit;
+    background: var(--aq-blue-500); transition: translate .5s var(--aq-e-ease);
   }
   .aq-wiz-rail .aq-wiz-steps li.is-done button:hover { background: rgba(255, 255, 255, .8); }
   .aq-wiz-rail .aq-wiz-steps li.is-current button { background: var(--aq-blue-100); color: var(--aq-blue-700); }
@@ -48,7 +48,7 @@
 }
 #view-new .wizard-progress-seg{transition:background-color var(--aq-motion-long) ease!important}
 @media(min-width:1024px){
-  .aq-wiz-rail-progress i::after{transition:width var(--aq-motion-long) var(--aq-e-ease)}
+  .aq-wiz-rail-progress i::after{transition:translate var(--aq-motion-long) var(--aq-e-ease)}
 }
 html.aq-vt-fix #view-new .aq-fix-panel{view-transition-name:aq-fix}
 html.aq-vt-fix #view-new .aq-fix-title{view-transition-name:aq-fix-title}

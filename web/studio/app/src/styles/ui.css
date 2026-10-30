@@ -225,7 +225,9 @@
 .ui-chip:focus-visible{outline:var(--aq-focus);outline-offset:2px}
 .ui-chip:is([aria-pressed=true],.is-on){background:var(--aq-primary);color:#fff}
 .ui-chip.is-danger:is([aria-pressed=true],.is-on){background:var(--aq-red-100);color:var(--aq-red-600)}
-.ui-chip-count,.ui-chip>small{margin:0;color:inherit;font-size:12px;font-weight:700;opacity:.75;font-variant-numeric:tabular-nums}
+.ui-chip-count,.ui-chip>small{margin:0;color:var(--aq-text-4);font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
+/* 고른 칩(파랑 바탕)은 흰 글자 그대로 — 예전 투명도 .75는 숫자를 3.2~3.5:1로 흐렸다 */
+.ui-chip.is-on>small,.ui-chip.is-on .ui-chip-count{color:inherit}
 .ui-chip.is-sm{min-height:var(--aq-h-xs);padding:0 11px;border-radius:var(--aq-r-ctl-xs);font-size:12px}
 :is(.ui-card,.ui-box,.ui-on-soft) .ui-chip:not([aria-pressed=true]):not(.is-on){background:#fff}
 
@@ -383,7 +385,7 @@ button.ui-row-title:hover{color:var(--aq-primary)}
 /* ---------- 아바타 · 커버 · 아이콘 칸 ---------- */
 .ui-avatar{
   --av:36px;display:inline-grid;place-items:center;flex:none;width:var(--av);height:var(--av);border-radius:calc(var(--av) * .34);
-  background:var(--aq-blue-150);color:var(--aq-primary);font-size:calc(var(--av) * .4);font-weight:800;line-height:1;overflow:hidden;border:0;padding:0
+  background:var(--aq-blue-150);color:var(--aq-primary-text);font-size:calc(var(--av) * .4);font-weight:800;line-height:1;overflow:hidden;border:0;padding:0
 }
 .ui-avatar img{width:100%;height:100%;object-fit:cover}
 .ui-avatar.is-xs{--av:24px}

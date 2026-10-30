@@ -205,12 +205,12 @@ img{max-width:100%}
 .aq-password-toggle:hover{color:var(--aq-e-blue)}
 .aq-pw-meter{display:flex;align-items:center;gap:10px;margin-top:8px}
 .aq-pw-meter>span{flex:1;height:4px;border-radius:4px;background:var(--aq-gray-100);overflow:hidden}
-.aq-pw-meter i{display:block;height:100%;width:0;border-radius:4px;background:var(--aq-red-500);transition:width var(--aq-motion-long) var(--aq-e-ease),background-color var(--aq-motion-long)}
-.aq-pw-meter[data-score="1"] i{width:35%;background:var(--aq-amber-500)}
-.aq-pw-meter[data-score="2"] i{width:60%;background:#e7c13a}
-.aq-pw-meter[data-score="3"] i{width:82%;background:var(--aq-green-500)}
-.aq-pw-meter[data-score="4"] i{width:100%;background:var(--aq-green-600)}
-.aq-pw-meter[data-score="0"] i{width:14%}
+.aq-pw-meter i{display:block;height:100%;width:100%;translate:-100% 0;border-radius:4px;background:var(--aq-red-500);transition:translate var(--aq-motion-long) var(--aq-e-ease),background-color var(--aq-motion-long)}
+.aq-pw-meter[data-score="1"] i{translate:-65% 0;background:var(--aq-amber-500)}
+.aq-pw-meter[data-score="2"] i{translate:-40% 0;background:#e7c13a}
+.aq-pw-meter[data-score="3"] i{translate:-18% 0;background:var(--aq-green-500)}
+.aq-pw-meter[data-score="4"] i{translate:0 0;background:var(--aq-green-600)}
+.aq-pw-meter[data-score="0"] i{translate:-86% 0}
 .aq-pw-meter small{font-size:11px;color:var(--aq-text-4);font-weight:700;min-width:70px;text-align:right}
 
 /* ---------- 인증 화면 ---------- */
@@ -371,7 +371,7 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
 /* ── 수익 받기 흐름 움직임: 상태가 바뀌는 곳마다 짧게 반응해 지금 무슨 일이 일어났는지 보이게 ── */
 @keyframes aq-check-pop{from{transform:scale(.85)}to{transform:none}}
 /* 진행 막대는 단계가 바뀔 때 부드럽게 차오른다 */
-.aq-pay-flow .aq-pay-progress span{transition:width .5s var(--aq-e-ease)}
+.aq-pay-flow .aq-pay-progress span{transition:translate .5s var(--aq-e-ease)}
 /* 입력 칸·검색·버튼의 상태 변화(포커스, 사용 가능해짐)도 끊기지 않게 */
 .aq-pay-flow .aq-pay-field input,.aq-pay-flow .aq-bank-search input{transition:background-color var(--aq-motion-base) ease,box-shadow var(--aq-motion-base) ease}
 .aq-pay-flow .aq-pay-actions .ui-btn{transition:background-color var(--aq-motion-base) ease,color var(--aq-motion-base) ease,opacity var(--aq-motion-base) ease,transform .12s ease}
@@ -577,7 +577,7 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 /* 파일 업로드 진행률 — 윤곽선 없는 얇은 바 */
 .aq-upload-progress{display:grid;gap:6px;margin-top:10px;animation:aq-fade-up var(--aq-motion-base) var(--aq-enter) both}
 .aq-upload-progress>span{display:block;height:6px;border-radius:var(--aq-r-3xl);background:var(--aq-e-blue-soft);overflow:hidden}
-.aq-upload-progress>span>i{display:block;height:100%;border-radius:inherit;background:var(--aq-e-blue);transition:width var(--aq-motion-long) var(--aq-e-ease)}
+.aq-upload-progress>span>i{display:block;width:100%;height:100%;border-radius:inherit;background:var(--aq-e-blue);translate:calc(var(--p,0%) - 100%) 0;transition:translate var(--aq-motion-long) var(--aq-e-ease)}
 .aq-upload-progress>small{font-size:12px;font-weight:600;color:var(--aq-e-muted)}
 
 /* ── 신청서(위자드) 단계 목록 · 데스크톱 2단 레이아웃 ───────────────── */

@@ -563,7 +563,7 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .aq-pay-top{display:grid;grid-template-columns:48px minmax(0,1fr) 48px;align-items:center;gap:13px;min-height:72px;padding:max(10px,env(safe-area-inset-top)) max(24px,env(safe-area-inset-left)) 8px;position:sticky;top:0;background:#fff;z-index:3}
 .aq-pay-top>button{width:44px;height:44px;border:0;border-radius:var(--aq-r-md);background:var(--aq-gray-50);color:var(--aq-text);font-size:34px;font-weight:400;line-height:1;display:grid;place-items:center;padding:0 0 5px}
 .aq-pay-top>small{text-align:right;color:var(--aq-text-4);font-size:11px;font-variant-numeric:tabular-nums}
-.aq-pay-progress{height:5px;background:var(--aq-gray-100);border-radius:var(--aq-r-3xl);overflow:hidden}.aq-pay-progress span{display:block;width:var(--pay-progress);height:100%;background:var(--aq-blue-500);border-radius:var(--aq-r-3xl);transition:width var(--aq-motion-base) ease}
+.aq-pay-progress{height:5px;background:var(--aq-gray-100);border-radius:var(--aq-r-3xl);overflow:hidden}.aq-pay-progress span{display:block;width:100%;translate:calc(var(--pay-progress) - 100%) 0;height:100%;background:var(--aq-blue-500);border-radius:var(--aq-r-3xl);transition:translate var(--aq-motion-base) ease}
 .aq-pay-main{flex:1 1 auto;min-height:0;width:min(720px,calc(100% - 48px));margin:0 auto;padding:48px 0 42px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 .aq-pay-head>.eyebrow{margin-bottom:17px}.aq-pay-head>h1{font-size:clamp(34px,5.5vw,52px);line-height:1.22;letter-spacing:-.035em;margin:0}.aq-pay-lead{margin-top:17px;color:var(--aq-text-3);font-size:16px;line-height:1.7}.aq-pay-field input{border:0!important;border-radius:var(--aq-r-ctl-lg)!important;padding:14px 18px!important;background:var(--aq-field)!important;font-size:23px!important;font-weight:700;color:var(--aq-text);box-shadow:none!important}.aq-pay-field input:focus{background:var(--aq-field-focus-bg)!important;outline:0!important}
 .aq-pay-type-list{display:grid;gap:10px;margin-top:28px}.aq-pay-type{display:block;cursor:pointer}.aq-pay-type input{position:absolute;opacity:0;pointer-events:none}.aq-pay-type span{display:block;padding:18px 19px;border-radius:var(--aq-r-lg);background:var(--aq-gray-50);transition:background var(--aq-motion-short),box-shadow var(--aq-motion-short)}.aq-pay-type strong{display:block;font-size:15px}.aq-pay-type small{display:block;margin-top:5px;color:var(--aq-text-4);font-size:12px}
@@ -873,7 +873,7 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .aq-preview-row{cursor:text}
 .aq-preview-row>.ui-input{flex:none;width:88px;text-align:center}
 .aq-preview-row .ui-row-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.aq-preview-no{font-weight:700;font-variant-numeric:tabular-nums}
+.aq-preview-no{font-weight:700;font-variant-numeric:tabular-nums;color:var(--aq-primary-text)}
 .aq-preview-row .ui-input[aria-invalid=true]{border-color:#d92d20}
 /* 문의 > 플랫폼 요청 상세 · 발매 상세 Content ID */
 .aq-cid-card{margin-top:16px}

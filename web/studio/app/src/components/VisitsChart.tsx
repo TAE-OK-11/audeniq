@@ -88,11 +88,14 @@ export function VisitsChart({ series }: { series: DayPoint[] }) {
           <span>플랫폼으로 이동 {num(tip.clicks)}</span>
         </div>
       )}
-      <table className="sr-only">
-        <caption>날마다 방문</caption>
-        <thead><tr><th>날짜</th><th>소개 페이지</th><th>스마트링크</th><th>플랫폼 이동</th></tr></thead>
-        <tbody>{series.map(d => <tr key={d.day}><td>{d.day}</td><td>{d.page_views}</td><td>{d.link_views}</td><td>{d.clicks}</td></tr>)}</tbody>
-      </table>
+      {/* 표는 width:1px·overflow를 따르지 않아 sr-only를 직접 붙이면 글자 폭만큼 화면 밖으로 나가 좁은 폰에서 가로 스크롤이 생겼다 — 감싼 div가 자른다 */}
+      <div className="sr-only">
+        <table>
+          <caption>날마다 방문</caption>
+          <thead><tr><th>날짜</th><th>소개 페이지</th><th>스마트링크</th><th>플랫폼 이동</th></tr></thead>
+          <tbody>{series.map(d => <tr key={d.day}><td>{d.day}</td><td>{d.page_views}</td><td>{d.link_views}</td><td>{d.clicks}</td></tr>)}</tbody>
+        </table>
+      </div>
     </div>
   );
 }

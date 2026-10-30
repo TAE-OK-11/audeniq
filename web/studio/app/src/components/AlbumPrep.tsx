@@ -24,7 +24,7 @@ export function AlbumPrep({ items, go }: { items: PrepItem[]; go: (key: PrepItem
         </div>
         <p className="aq-prep-count" aria-label={`${items.length}개 중 ${done}개 끝남`}><b>{done}</b>/{items.length}</p>
       </div>
-      <div className="aq-prep-bar" aria-hidden="true"><i style={{ width: `${Math.round((done / items.length) * 100)}%` }} /></div>
+      <div className="aq-prep-bar" aria-hidden="true"><i style={{ ['--p' as string]: `${Math.round((done / items.length) * 100)}%` }} /></div>
       <ul className="aq-task-list aq-prep-list">
         {shown.map(i => {
           const action = i.state === 'todo' ? go(i.key) : null;

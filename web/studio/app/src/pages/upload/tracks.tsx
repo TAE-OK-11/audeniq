@@ -18,7 +18,7 @@ export function UploadStatus({ upload, idle }: { upload?: UploadState; idle: str
   const pct = Math.round(upload.pct * 100);
   return (
     <div className="aq-upload-progress" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="업로드 진행률">
-      <span><i style={{ width: `${Math.max(4, pct)}%` }} /></span>
+      <span><i style={{ ['--p' as string]: `${Math.max(4, pct)}%` }} /></span>
       <small>{pct < 100 ? `업로드 중 ${pct}%` : '거의 다 올렸어요…'}</small>
     </div>
   );

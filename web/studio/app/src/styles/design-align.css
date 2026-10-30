@@ -552,7 +552,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
    카드는 ui-card 면(옅은 파랑, 선·그림자 없음, 안쪽 입력칸은 흰색). 머리는 '관리' 카드처럼 아이콘 칸 + 제목 + 설명. */
 .auth-page>.aq-auth-brand{display:inline-flex;align-items:center;gap:10px;margin:0 0 22px}
 .auth-page>.aq-auth-brand img{width:132px;height:auto}
-.auth-page>.aq-auth-brand .ui-product{height:26px;padding:0 10px;border-radius:var(--aq-r-sm);font-size:11px;letter-spacing:var(--aq-tracking-eyebrow);background:var(--aq-primary-soft);color:var(--aq-primary)}
+.auth-page>.aq-auth-brand .ui-product{height:26px;padding:0 10px;border-radius:var(--aq-r-sm);font-size:11px;letter-spacing:var(--aq-tracking-eyebrow);background:var(--aq-primary-soft);color:var(--aq-primary-text)}
 .auth-split{width:min(480px,100%);background:transparent;box-shadow:none;border-radius:0;overflow:visible}
 .auth-card.ui-card{padding:40px 36px 36px;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
 .aq-auth-head{margin:0 0 28px}
@@ -1149,6 +1149,9 @@ body.wizard-mode .portal-header,.portal-header:has(#portalNav:not([hidden])){box
 .aq-cheer{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:start}
 .aq-cheer.is-hidden .aq-cheer-text,.aq-cheer.is-hidden .aq-cheer-avatar{opacity:.45}
 .aq-cheer-avatar{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;color:#fff;font-size:14px;font-weight:800}
+/* 이니셜 아바타(사진 없음) — 커버 그라데이션의 짙은 끝(대각선 75~100%)만 보이게 해 흰 이니셜이 모든 색에서 4.5:1 이상.
+   전체를 그대로 깔면 글자 자리가 옅은 쪽이라 1.9~2.4:1이었다. 색 묶음(ui/cover.ts)은 커버와 같다 */
+.aq-cheer-avatar:not(.aq-skel),.aq-artist-avatar:not(.has-photo),.aq-al-avatar,.aq-studio-avatar>span,.aq-photo-preview>span{background-size:400% 400%!important;background-position:100% 100%!important}
 .aq-cheer-head{display:flex;align-items:baseline;gap:8px;margin:0;font-size:13px}
 .aq-cheer-head strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--aq-text)}
 .aq-cheer-head time{flex:none;font-size:12px;color:var(--aq-text-4)}
@@ -1600,7 +1603,7 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-prep-sub{margin:4px 0 0;color:var(--aq-text-3);font-size:13px;line-height:1.5}
 .aq-prep-count{flex:none;margin:0;color:var(--aq-text-4);font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
 .aq-prep-count b{color:var(--aq-text);font-size:28px;font-weight:800;letter-spacing:-.02em}
-.aq-prep-bar i{display:block;height:100%;border-radius:inherit;background:var(--aq-blue-500);transition:width var(--aq-motion-long) var(--aq-enter)}
+.aq-prep-bar i{display:block;width:100%;height:100%;border-radius:inherit;background:var(--aq-blue-500);translate:calc(var(--p,0%) - 100%) 0;transition:translate var(--aq-motion-long) var(--aq-enter)}
 /* 발매일까지 남은 날 — 머리 카드의 정보 알약 옆 */
 .aq-detail-facts span.aq-dday{background:var(--aq-blue-150);color:var(--aq-blue-700)}
 .aq-detail-facts span.aq-dday.is-soon{background:var(--aq-blue-500);color:#fff}
@@ -1660,7 +1663,9 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 
 /* ---------- 발매 상세 움직임·디테일 (DESIGN_SYSTEM 18·19: 토큰 시간·곡선, 튀지 않게, 동작 줄이기면 멈춤) ---------- */
 /* 발매 준비 막대는 정보를 전하는 움직임이라 조금 길게 차오른다 */
-.aq-prep-bar i{transform-origin:left center;animation:aq-grow-x var(--aq-motion-page) var(--aq-enter) var(--aq-motion-short) both}
+.aq-prep-bar i{animation:aq-bar-in var(--aq-motion-page) var(--aq-enter) var(--aq-motion-short) both}
+/* 막대가 왼쪽에서 밀려 나온다 — 끝의 둥근 모양이 늘어나지 않게 scaleX 대신 이동 */
+@keyframes aq-bar-in{from{translate:-100% 0}}
 .aq-prep-count b{display:inline-block;animation:aq-badge-pop var(--aq-motion-base) var(--aq-pop) both}
 /* 끝난 일 체크는 처음 보일 때 작게 확인 표시 */
 .aq-prep-list li.is-done .ui-icon svg{animation:aq-pop var(--aq-motion-base) var(--aq-pop) var(--aq-motion-short) both}
