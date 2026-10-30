@@ -210,7 +210,8 @@ describe('AiConnections', () => {
     });
     await act(async () => { el.querySelector('form')!.requestSubmit(); });
     expect(el.textContent).toContain('c'.repeat(64));
-    expect(el.querySelector('[role="alert"]')).toBeNull();
+    // 목록을 다시 못 불러온 건 토스트로만 알리고, 화면에는 오류 칸을 띄우지 않는다
+    expect(el.querySelector('[role="alert"]:not(.aq-toast)')).toBeNull();
   });
 
   it('hides connection tokens when MCP is off and the payout permission when the limit is 0', async () => {

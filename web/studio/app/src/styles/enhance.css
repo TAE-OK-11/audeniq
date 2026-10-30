@@ -188,12 +188,72 @@ img{max-width:100%}
 .aq-confirm-actions,.aq-modal-foot{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
 .aq-modal-foot{margin-top:22px;padding-top:18px;border-top:1px solid var(--aq-e-line)}
 
-/* ---------- 토스트 ---------- */
-.aq-toast-stack{position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:400;display:flex;flex-direction:column;align-items:center;gap:8px;width:max-content;max-width:calc(100vw - 32px);pointer-events:none}
-.aq-toast{pointer-events:auto;cursor:pointer;display:flex;align-items:center;gap:10px;background:#1f2b47;color:#fff;padding:12px 16px 12px 12px;border-radius:var(--aq-r-md);font-size:13px;font-weight:600;line-height:1.5;animation:aq-fade-up var(--aq-motion-base) var(--aq-enter) both}
-.aq-toast.is-leaving{animation:aq-modal-out var(--aq-motion-short) var(--aq-exit) forwards}
-.aq-toast-icon{flex-shrink:0;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,.14);font-size:12px;font-weight:800}
-.aq-toast.is-error .aq-toast-icon{background:var(--aq-red-500)}
+/* ---------- 토스트 ----------
+   토스 TDS 뼈대(화면 폭 둥근 사각형 · 24px 아이콘 · 15px 글자 · 글자 버튼 하나 · 고정 버튼 위)에
+   AUDENIQ 네이비 유리·브랜드 색·움직임. 평소엔 네이비, 실패만 빨강 */
+.aq-toast-stack{--toast-bg:rgba(31,43,71,.9);--toast-danger:#D23F45;--toast-action:#9DB4FF;--toast-r:20px;--toast-spring:cubic-bezier(.34,1.56,.64,1);
+  position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:400;display:flex;flex-direction:column;align-items:center;gap:8px;
+  width:min(440px,calc(100vw - 40px));pointer-events:none;transition:bottom var(--aq-motion-long) var(--aq-enter)}
+.aq-toast{pointer-events:auto;position:relative;display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;border-radius:var(--toast-r);
+  background:var(--toast-bg);color:#fff;-webkit-backdrop-filter:blur(20px) saturate(1.8);backdrop-filter:blur(20px) saturate(1.8);
+  font-size:15px;font-weight:600;line-height:1.45;letter-spacing:-.005em;font-variant-numeric:tabular-nums;word-break:keep-all;overflow-wrap:anywhere;
+  cursor:pointer;touch-action:none;-webkit-user-select:none;user-select:none;outline:none;
+  transition:scale .4s var(--aq-enter),background-color .35s ease,opacity .3s ease}
+.aq-toast:focus-visible{box-shadow:0 0 0 3px #fff,0 0 0 5px var(--aq-blue-500)}
+.aq-toast.is-pressed{scale:.985}
+.aq-toast.is-error{background:var(--toast-danger)}
+.aq-toast.is-back{scale:.96}
+.aq-toast.is-back2{scale:.92;opacity:0;pointer-events:none}
+/* 아이콘 — 성공은 체크가 그려지고, 오류는 한 번 고개를 젓고, 진행 중은 호가 돈다 */
+.aq-toast-icon{position:relative;flex-shrink:0;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#6B7690;color:#fff;transition:background-color .3s ease,color .3s ease}
+.aq-toast.is-success .aq-toast-icon{background:var(--aq-blue-500)}
+.aq-toast.is-error .aq-toast-icon{background:#fff;color:var(--toast-danger)}
+.aq-toast.is-loading .aq-toast-icon{background:none}
+.aq-toast-glyph{display:block;animation:aq-toast-pop .45s var(--toast-spring) both}
+.aq-toast-draw{stroke-dasharray:16;stroke-dashoffset:16;animation:aq-toast-draw .36s var(--aq-enter) .18s forwards}
+.aq-toast.is-error.is-fresh .aq-toast-icon{animation:aq-toast-nudge .42s ease .3s both}
+.aq-toast-spin{width:24px;height:24px;animation:aq-toast-spin .8s linear infinite}
+.aq-toast-spin circle{fill:none;stroke-width:2.6;stroke-linecap:round}
+.aq-toast-spin .track{stroke:rgba(255,255,255,.18)}
+.aq-toast-spin .arc{stroke:#fff;stroke-dasharray:18 60}
+/* 버튼이 있으면 아이콘을 두른 고리가 남은 시간만큼 줄어든다 */
+.aq-toast-ring{position:absolute;inset:-4px;width:32px;height:32px;rotate:-90deg;pointer-events:none}
+.aq-toast-ring circle{fill:none;stroke:rgba(255,255,255,.5);stroke-width:2;stroke-linecap:round;stroke-dasharray:88;animation:aq-toast-ring var(--life) linear forwards}
+.aq-toast.is-held .aq-toast-ring circle,.aq-toast-stack.is-paused .aq-toast-ring circle{animation-play-state:paused}
+.aq-toast-body{flex:1;min-width:0}
+.aq-toast-body.is-swap{animation:aq-toast-swap .32s var(--aq-enter) both}
+.aq-toast-sub{display:block;margin-top:2px;font-size:13.5px;font-weight:500;line-height:1.5;color:rgba(255,255,255,.7)}
+.aq-toast.is-error .aq-toast-sub{color:rgba(255,255,255,.9)}
+.aq-toast.has-sub{align-items:flex-start}
+.aq-toast.has-sub .aq-toast-icon{margin-top:1px}
+.aq-toast.has-sub .aq-toast-line{font-weight:700}
+.aq-toast-count{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;margin-left:6px;border-radius:999px;background:rgba(255,255,255,.16);font-size:12px;font-weight:800;vertical-align:1px;animation:aq-toast-pop .4s var(--toast-spring)}
+.aq-toast-act{flex-shrink:0;align-self:center;font:inherit;font-size:15px;font-weight:700;color:var(--toast-action);background:none;border:0;cursor:pointer;
+  padding:8px 10px;margin:-8px -8px -8px 0;border-radius:12px;transition:background-color .16s ease,scale .16s ease}
+.aq-toast-act:hover{background:rgba(255,255,255,.08)}
+.aq-toast-act:active{scale:.94}
+.aq-toast-act:focus-visible{outline:2px solid #fff;outline-offset:1px}
+.aq-toast.is-error .aq-toast-act{color:#fff;text-decoration:underline;text-decoration-thickness:1.5px;text-underline-offset:4px}
+/* 등장: 아이콘이 먼저 톡 → 옆으로 펼쳐짐 → 글자 / 퇴장: 글자 먼저, 아이콘 크기로 접히며 내려감 */
+.aq-toast.is-in{animation:aq-toast-grow .62s var(--aq-enter) both}
+.aq-toast.is-in>:is(.aq-toast-body,.aq-toast-act){animation:aq-toast-fade .26s ease .24s both}
+.aq-toast.is-leaving{animation:aq-toast-shrink .26s var(--aq-exit) forwards;pointer-events:none}
+.aq-toast.is-leaving>:is(.aq-toast-body,.aq-toast-act){animation:aq-toast-fade-out .1s ease forwards}
+.aq-toast.is-fling{opacity:0;pointer-events:none}
+@keyframes aq-toast-grow{0%{opacity:0;translate:0 16px;clip-path:inset(0 calc(100% - 56px) 0 0 round var(--toast-r))}28%{opacity:1;translate:0 0;clip-path:inset(0 calc(100% - 56px) 0 0 round var(--toast-r))}100%{clip-path:inset(0 0 0 0 round var(--toast-r))}}
+@keyframes aq-toast-fade{from{opacity:0;translate:-4px 0}to{opacity:1;translate:0 0}}
+@keyframes aq-toast-shrink{to{opacity:0;translate:0 10px;clip-path:inset(0 calc(100% - 56px) 0 0 round var(--toast-r))}}
+@keyframes aq-toast-fade-out{to{opacity:0}}
+@keyframes aq-toast-pop{from{scale:.3;opacity:0}to{scale:1;opacity:1}}
+@keyframes aq-toast-draw{to{stroke-dashoffset:0}}
+@keyframes aq-toast-nudge{0%,100%{translate:0}20%{translate:-3px}45%{translate:3px}70%{translate:-1.5px}}
+@keyframes aq-toast-spin{to{rotate:360deg}}
+@keyframes aq-toast-ring{to{stroke-dashoffset:88}}
+@keyframes aq-toast-swap{from{opacity:0;translate:0 8px;filter:blur(2px)}to{opacity:1;translate:0 0;filter:none}}
+@media(prefers-reduced-motion:reduce){
+  .aq-toast,.aq-toast *{animation-duration:.01s!important;animation-delay:0s!important;transition-duration:.12s!important}
+  .aq-toast .aq-toast-spin{animation:aq-toast-spin 1.6s linear infinite!important}
+}
 
 /* ---------- 폼 ---------- */
 .aq-help-error{color:var(--aq-e-red)!important;animation:aq-fade-up var(--aq-motion-base) var(--aq-enter) both}
@@ -300,7 +360,7 @@ img{max-width:100%}
 
 /* ---------- 모션 줄이기 ---------- */
 @media(prefers-reduced-motion:reduce){
-  .aq-stagger>*,.aq-step-anim,.aq-toast,.aq-skel,.aq-mini-bar,.aq-platform-track span{animation:none!important}
+  .aq-stagger>*,.aq-step-anim,.aq-skel,.aq-mini-bar,.aq-platform-track span{animation:none!important}
 }
 
 /* 홈 '확인할 작업' — 데스크톱에서는 버튼을 오른쪽에 두어 카드 높이를 줄인다 */
@@ -1178,7 +1238,6 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 .aq-check-badge.is-sm{width:18px;height:18px;vertical-align:-4px}
 .aq-complete-check,.aq-cert-done-icon{background:var(--aq-blue-500)!important;color:#fff!important;width:64px;height:64px;border-radius:50%;display:inline-grid;place-items:center}
 .aq-cert-done-icon{display:grid}
-.aq-toast.is-success .aq-toast-icon{background:var(--aq-blue-500)}
 .studio-account-check{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--aq-blue-500);color:#fff}
 .aq-paper-check{display:inline-grid;place-items:center}
 .aq-paper-agree li.is-on .aq-paper-check{background:var(--aq-blue-500);color:#fff}
@@ -1386,8 +1445,6 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 @media (prefers-reduced-motion:reduce){.aq-cadmin-emergency-form{animation:none}}
 .aq-cadmin-emergency-actions>.ui-btn:only-child{grid-column:1/-1}
 
-/* 알림(토스트): 아래로 번지는 그림자 없이 평평하게 */
-.aq-toast{box-shadow:none!important;filter:none!important}
 /* 날짜·시간 입력: iPhone에서 값이 가운데로 몰리지 않게 왼쪽 정렬, 칸 높이 고정 */
 :is(#root,#modal) .aq-cadmin .ui-field input:is([type=datetime-local],[type=date],[type=time]){display:block;width:100%}
 .aq-cadmin .aq-cadmin-check{margin:4px 0 18px}
