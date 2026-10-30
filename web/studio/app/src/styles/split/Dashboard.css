@@ -16,9 +16,9 @@
 .dashboard-grid .service-item{transition:transform var(--aq-motion-base) var(--aq-e-ease),box-shadow var(--aq-motion-base) var(--aq-e-ease),background-color var(--aq-motion-base)!important}
 #view-home .aq-home-board>.aq-home-main:only-child,#view-home .aq-home-board:has(>.aq-home-side:empty)>.aq-home-main{grid-column:1/-1}
 .aq-home-side .aq-report-card{grid-template-columns:minmax(0,1fr)}
-#view-home .aq-report-card .aq-mini-bar.is-current{background:var(--aq-primary)}
-#view-home .aq-report-card .aq-mini-col small{align-self:stretch;margin:0;padding-top:8px;border-top:1px solid var(--aq-line);text-align:center;font-weight:600}
-#view-home .aq-report-card .ui-empty{min-height:0}
+:is(#view-home,#view-publishing) .aq-report-card .aq-mini-bar.is-current{background:var(--aq-primary)}
+:is(#view-home,#view-publishing) .aq-report-card .aq-mini-col small{align-self:stretch;margin:0;padding-top:8px;border-top:1px solid var(--aq-line);text-align:center;font-weight:600}
+:is(#view-home,#view-publishing) .aq-report-card .ui-empty{min-height:0}
 @media(max-width:900px){
   .aq-home-tasks{order:1}.aq-home-upcoming{order:2}.aq-home-delivery{order:3}.aq-home-pitch{order:4}.aq-home-releases{order:5}.aq-home-money{order:6}.aq-home-side .aq-report-card{order:7}.aq-home-promo{order:8}.aq-home-news{order:9}
 }

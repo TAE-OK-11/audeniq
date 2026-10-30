@@ -18,8 +18,6 @@ import { Money } from '../components/Money';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { listeningSummary, periodLabel } from '../data/reports';
 import { useReportRows } from '../hooks/useReportRows';
-import type { CSSVarStyle } from '../hooks/useAnimations';
-import { useGrowOnView } from '../hooks/useAnimations';
 import { prefetchRoute } from '../routes';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
@@ -37,6 +35,7 @@ import type { NewsItem } from '../lib/home';
 import { MOCK } from '../lib/mode';
 import type { Release } from '../api/types';
 import { pubApi } from '../api/publishing';
+import { MiniTrend } from '../components/MiniTrend';
 import '../styles/split/Dashboard.css';
 
 type GridKey = 'releases' | 'reports' | 'settlement' | 'contracts';
@@ -93,32 +92,6 @@ function todayLabel(): string {
 
 /** 막대 위 짧은 수 — 1만 이상은 ‘3.1만’처럼 */
 const shortCount = (n: number) => (n >= 10000 ? `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}만` : num(n));
-
-/** 최근 몇 달 재생 수 막대 — 이번 달만 진하게 */
-function MiniTrend({ data }: { data: { period: string; value: number }[] }) {
-  const ref = useGrowOnView<HTMLDivElement>('.aq-mini-bar');
-  const high = Math.max(1, ...data.map(d => d.value));
-  return (
-    <div className="aq-mini-trend" ref={ref} role="img" aria-label="최근 월별 재생 수 추이">
-      {data.map((d, i) => (
-        <span key={d.period} className="aq-mini-col">
-          {/* 막대는 모두 같은 그림 칸 안에서 같은 비율로 — 숫자 줄이 한 칸에만 있어도 높이가 틀어지지 않게 */}
-          <span className="aq-mini-plot">
-            <span
-              className={`aq-mini-bar${i === data.length - 1 ? ' is-current' : ''}`}
-              style={{ '--h': `${Math.max(6, Math.round((d.value / high) * 100))}%`, '--d': `${i * 80}ms` } as CSSVarStyle}
-              title={`${periodLabel(d.period)} · ${num(d.value)}회`}
-            >
-              {/* 숫자는 이번 달 막대에만 — 막대마다 붙이면 아무것도 눈에 안 띈다. 나머지는 막대에 손을 올리면 보인다 */}
-              {i === data.length - 1 && <b className="aq-mini-val">{shortCount(d.value)}</b>}
-            </span>
-          </span>
-          <small>{Number(d.period.slice(5))}월</small>
-        </span>
-      ))}
-    </div>
-  );
-}
 
 /** 정산 — 받을 수 있는 금액과 다음 할 일(계좌 등록·지급 요청). 아직 돈이 하나도 없으면 숨긴다 */
 function MoneyCard({ payable, pending, held, minimum, registered, publishing = 0 }: {
@@ -591,7 +564,7 @@ export function Dashboard() {
                 </div>
               )}
             </div>
-            <MiniTrend data={report.trend} />
+            <MiniTrend data={report.trend} label="최근 월별 재생 수 추이" short={shortCount} format={n => `${num(n)}회`} />
             <KeyValue className="aq-report-kv" cols={2} items={[
               ['많이 들은 곡', <span className="aq-report-top"><IconTile size="sm"><Glyph name="music" size={16} /></IconTile><span>{report.topTrack || '—'}</span></span>],
               ['많이 들은 플랫폼', <span className="aq-report-top">{report.topPlatform && platformKey(report.topPlatform)
