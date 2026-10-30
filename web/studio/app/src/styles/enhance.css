@@ -646,14 +646,8 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 /* 파일 업로드 진행률 — 윤곽선 없는 얇은 바 */
 .aq-upload-progress{display:grid;gap:6px;margin-top:10px;animation:aq-fade-up var(--aq-motion-base) var(--aq-enter) both}
 .aq-upload-progress>span{display:block;height:6px;border-radius:var(--aq-r-3xl);background:var(--aq-e-blue-soft);overflow:hidden}
-.aq-upload-progress>span>i{position:relative;display:block;width:100%;height:100%;border-radius:inherit;background:var(--aq-e-blue);translate:calc(var(--p,0%) - 100%) 0;transition:translate var(--aq-motion-long) var(--aq-e-ease);overflow:hidden}
-/* 큰 파일은 진행률이 한동안 멈춰 보인다 — 채워진 부분 위로 빛이 지나가 '멈춘 게 아니라 올리는 중'임을 보여 준다.
-   다 올린 뒤 서버가 확인하는 동안(is-processing)은 막대를 다 채우고 빛이 더 빨리 지나간다 */
-.aq-upload-progress>span>i::after{content:"";position:absolute;top:0;bottom:0;left:calc(100% - var(--p,0%));right:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent) no-repeat;background-size:min(120px,60%) 100%;background-position:-100% 0;animation:aq-progress-sheen 1.6s cubic-bezier(.45,0,.35,1) infinite}
-.aq-upload-progress.is-processing>span>i::after{animation-duration:1.05s}
-@keyframes aq-progress-sheen{to{background-position:200% 0}}
+.aq-upload-progress>span>i{display:block;width:100%;height:100%;border-radius:inherit;background:var(--aq-e-blue);translate:calc(var(--p,0%) - 100%) 0;transition:translate var(--aq-motion-long) var(--aq-e-ease)}
 .aq-upload-progress>small{font-size:12px;font-weight:600;color:var(--aq-e-muted);font-variant-numeric:tabular-nums}
-@media (prefers-reduced-motion:reduce){.aq-upload-progress>span>i::after{animation:none;opacity:0}}
 
 /* ── 신청서(위자드) 단계 목록 · 데스크톱 2단 레이아웃 ───────────────── */
 .aq-wiz-rail{display:none}

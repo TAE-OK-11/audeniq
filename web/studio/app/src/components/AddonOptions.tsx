@@ -146,7 +146,7 @@ export function MvDetail({ o, set, tracks }: { o: AddonFields; set: (patch: Part
               onFile={f => void pick(f)}
             />
             {up !== null ? (
-              <div className={`aq-upload-progress${up >= 100 ? ' is-processing' : ''}`} role="progressbar" aria-valuenow={up} aria-valuemin={0} aria-valuemax={100} aria-label="영상 업로드 진행률">
+              <div className="aq-upload-progress" role="progressbar" aria-valuenow={up} aria-valuemin={0} aria-valuemax={100} aria-label="영상 업로드 진행률">
                 <span><i style={{ ['--p' as string]: `${Math.max(4, up)}%` }} /></span>
                 <small>{up < 100 ? `업로드 중 ${up}%` : '서버에서 확인하는 중…'} · <button type="button" className="ui-btn is-text is-xs" onClick={() => abort.current?.abort()}>멈추기</button></small>
               </div>
