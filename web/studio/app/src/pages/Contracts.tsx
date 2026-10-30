@@ -1,7 +1,8 @@
 // 계약서 — 라이브 view-contracts / renderContracts(오버라이드) 대응
 import { OrgContractEnd } from '../components/OrgContractEnd';
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from '../lib/router';
+import { Link, useNavigate, useSearchParams } from '../lib/router';
+import { Glyph } from '../components/Glyph';
 import { useDocs } from '../store/docs';
 import { DocEmpty } from '../components/DocCard';
 import { ContractBundle, bundleStage, type BundleStage } from '../components/ContractBundle';
@@ -12,14 +13,11 @@ import { SignatureModal } from '../components/SignatureModal';
 import { refreshDocs } from '../store/portalSync';
 import { MOCK } from '../lib/mode';
 import { IconTile } from '../ui';
-import { PublishingContracts } from '../components/publishing/PublishingContracts';
-import { pubApi } from '../api/publishing';
 
 const DOC_PATH = [
   ['배급 신청서 서명', '발매를 접수할 때'],
   ['담당자 검토', '수수료·배급 조건 확정'],
   ['배급 계약서 서명', '권리를 확인하고 서명하면 배급 시작'],
-  ['저작권 관리 계약 (선택)', '곡 저작권도 맡기면 저작권료까지 같은 잔액으로'],
 ] as const;
 
 export function Contracts() {
@@ -36,8 +34,6 @@ export function Contracts() {
   const ORDER: Record<BundleStage, number> = { 'to-sign': 0, needs: 1, review: 2, waiting: 3, signed: 4 };
   // 내 발매 목록에 있는 발매의 계약서만 — 삭제한 발매 등 목록에 없는 발매의 계약서는 보이지 않게
   const { data: releases } = useAsync(() => api.listReleases(), [], { key: 'releases' });
-  const { data: pubContracts } = useAsync(() => pubApi.listContracts(), [], { key: 'pub-contracts' });
-  const hasPublishing = !!pubContracts?.length;
   const mine = releases ? new Set(releases.map(r => r.id)) : null;
   const agreements = docs
     .filter(c => c.kind === 'agreements' && (!mine || !c.releaseId || mine.has(c.releaseId)))
@@ -61,7 +57,7 @@ export function Contracts() {
         <div>
           <p className="eyebrow">작업실</p>
           <h1>계약서</h1>
-          <p>발매마다 배급 신청서·계약서와 곡 저작권 계약을 한곳에서 확인하고 서명해요.</p>
+          <p>발매마다 배급 신청서와 계약서를 확인하고 서명해요.</p>
         </div>
       </div>
 
@@ -71,17 +67,22 @@ export function Contracts() {
             {agreements.map(c => (
               <ContractBundle key={c.id} releaseId={c.releaseId ?? ''} releaseTitle={c.releaseTitle} agreement={c} onOpenAgreement={setOpenId} />
             ))}
-            {/* 같은 회사의 저작권 관리 계약 — 발매 전 곡의 신청과 저작권 관리 계약(연장·종료)도 같은 목록에 */}
-            <PublishingContracts />
           </div>
-        ) : hasPublishing ? (
-          <div className="aq-bundle-list aq-stagger"><PublishingContracts /></div>
         ) : (
           <DocEmpty
             title="아직 계약 서류가 없어요."
             desc="발매를 접수하면 배급 신청서와 배급 계약서가 여기에 함께 정리돼요."
           />
         )}
+        {/* 곡 저작권(퍼블리싱) 계약은 퍼블리싱 메뉴의 '계약' 탭에서 — 여기에는 연결 한 줄만 */}
+        <Link to="/publishing?tab=contracts" className="ui-row aq-pub-link">
+          <IconTile size="sm"><Glyph name="scale" size={16} /></IconTile>
+          <span className="min-0">
+            <span className="ui-row-title">곡 저작권 계약은 퍼블리싱에서</span>
+            <span className="ui-row-meta"><span>저작권 관리 신청서·계약서·연장은 퍼블리싱 → 계약</span></span>
+          </span>
+          <Glyph name="chevron-right" size={16} />
+        </Link>
       </div>
 
       {/* 진행 순서는 처음 한 번 읽으면 되는 설명 — 서명할 계약서보다 위에 있어 매번 지나쳐야 했다 */}

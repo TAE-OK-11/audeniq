@@ -121,7 +121,7 @@ export function WorkEditor() {
   if (loadError) {
     return (
       <div className="view">
-        <div className="ui-empty"><h2>곡을 불러오지 못했어요.</h2><p>{loadError}</p><Link to="/releases?tab=tracks" className="ui-btn is-soft">곡 목록으로</Link></div>
+        <div className="ui-empty"><h2>곡을 불러오지 못했어요.</h2><p>{loadError}</p><Link to="/publishing?tab=songs" className="ui-btn is-soft">곡 목록으로</Link></div>
       </div>
     );
   }
@@ -206,7 +206,7 @@ export function WorkEditor() {
       </div>
       <div className="ui-page-head">
         <div>
-          <p className="eyebrow">발매·곡 관리</p>
+          <p className="eyebrow">퍼블리싱</p>
           <h1>{editing ? '곡 정보 고치기' : fromTrack ? '발매 곡으로 곡 정보 만들기' : '새 곡 등록'}</h1>
           <p>{fromTrack ? <>‘{release?.title}’의 곡 정보를 미리 채웠어요. 확인하고 고쳐 주세요.</> : '저작권 관리 계약 없이도 곡 정보와 지분을 정리해 둘 수 있어요.'}</p>
           <p className="muted small" aria-live="polite">{savedAt ? `이 브라우저에 자동 저장했어요 · ${localStamp(savedAt)}` : dirty ? '입력 중이에요' : ''}</p>

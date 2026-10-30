@@ -1,6 +1,5 @@
 // 발매 한 건의 계약 서류 묶음 — 1. 배급 신청서(접수 때 서명) → 2. 배급 계약서(심사 후 서명)
 // 계약서 화면과 발매 상세 ‘배급·권리’ 탭에서 같은 묶음으로 보여 준다.
-import { PublishingBundleStep } from './publishing/ReleasePublishing';
 import { useNavigate } from '../lib/router';
 import { docState, type DocRecord } from '../store/docs';
 import { niceDate, stripSampleSuffix } from '../lib/format';
@@ -87,8 +86,6 @@ export function ContractBundle({ releaseId, releaseTitle, agreement, hasApplicat
             </button>
           )}
         </li>
-        {/* 같은 발매 곡의 저작권 관리 계약 — 배급 계약까지 서명한 뒤 이어서 (선택) */}
-        {hasApplication && stage !== 'needs' && <PublishingBundleStep releaseId={releaseId} />}
       </ol>
     </article>
   );

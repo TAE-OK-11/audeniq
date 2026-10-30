@@ -262,21 +262,21 @@ export function WorkDetail() {
   const remove = async () => {
     const ok = await confirm({ title: '이 곡을 지울까요?', message: '곡 정보·지분·첨부 자료가 모두 지워져요. 발매와 녹음은 그대로예요.', confirmLabel: '지우기', danger: true });
     if (!ok) return;
-    try { await pubApi.deleteWork(w.id); toast('곡을 지웠어요.', 'success'); nav('/releases?tab=tracks', { replace: true }); } catch (err) { toast(errorMessage(err), 'error'); }
+    try { await pubApi.deleteWork(w.id); toast('곡을 지웠어요.', 'success'); nav('/publishing?tab=songs', { replace: true }); } catch (err) { toast(errorMessage(err), 'error'); }
   };
 
   const buttons = canEdit && (
     <>
       <Link to={`/works/${w.id}/edit`} className="ui-btn is-soft">정보 고치기</Link>
       {canApply ? <Link to={`/publishing/apply?work=${w.id}`} className="ui-btn is-primary">저작권 관리 신청</Link>
-        : <Link to={`/ar?work=${w.id}`} className="ui-btn is-soft">A&R 제출</Link>}
+        : <Link to={`/publishing?tab=ar&work=${w.id}`} className="ui-btn is-soft">A&R 제출</Link>}
     </>
   );
 
   return (
     <div id="view-release" className="view">
       <div className="spaced-actions">
-        <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={() => nav('/releases?tab=tracks')}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />곡 목록</button>
+        <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={() => nav('/publishing?tab=songs')}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />곡 목록</button>
       </div>
 
       <div className="aq-detail-hero" aria-label="곡 정보">
@@ -410,7 +410,7 @@ export function WorkDetail() {
                 {contract ? (
                   <>
                     <ContractManage contract={contract} canEdit={canEdit} />
-                    <div className="row-actions"><Link to={`/contracts?pub=${contract.id}`} className="ui-btn is-text is-sm">계약서 보기</Link></div>
+                    <div className="row-actions"><Link to={`/publishing?tab=contracts&pub=${contract.id}`} className="ui-btn is-text is-sm">계약서 보기</Link></div>
                   </>
                 ) : w.myRole === 'contributor' ? <p className="muted small">곡 소유자의 계약으로 관리되고 있어요.</p> : <SkeletonBlock height={64} />}
               </div>

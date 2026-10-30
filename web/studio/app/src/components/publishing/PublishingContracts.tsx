@@ -136,7 +136,8 @@ export function ContractManage({ contract, canEdit }: { contract: PublishingCont
 }
 
 /** 계약서 목록 안의 저작권 관리 계약 카드 — 배급 계약 묶음과 같은 목록에 섞여 들어간다. 서류만 본다 */
-export function PublishingContracts() {
+/** all: 퍼블리싱 메뉴의 '계약' 탭 — 발매한 곡의 계약까지 모두 */
+export function PublishingContracts({ all = false }: { all?: boolean }) {
   const [params] = useSearchParams();
   const focus = params.get('pub');
   const { data: contracts } = useAsync(() => pubApi.listContracts(), [], { key: 'pub-contracts' });
@@ -149,8 +150,8 @@ export function PublishingContracts() {
 
   // 발매한 곡의 서명 끝난 계약은 그 발매 계약 묶음의 '저작권 관리 계약' 줄에 있다 — 같은 계약을 두 번 보이지 않게.
   // 서명할 계약, 발매 전 곡이 든 계약, 그 줄에서 '계약 보기'로 찾아온 계약만 따로 보여 준다
-  const list = (contracts ?? []).filter(c => c.status === 'pending_sign' || c.id === focus || c.works.some(w => !releasedWork.has(w.id)));
-  const pending = (apps ?? []).filter(a => ['submitted', 'in_review', 'needs_fix'].includes(a.status) && !a.workIds.every(id => releasedWork.has(id)));
+  const list = (contracts ?? []).filter(c => all || c.status === 'pending_sign' || c.id === focus || c.works.some(w => !releasedWork.has(w.id)));
+  const pending = (apps ?? []).filter(a => ['submitted', 'in_review', 'needs_fix'].includes(a.status) && (all || !a.workIds.every(id => releasedWork.has(id))));
   if (!list.length && !pending.length) return null;
   const app = (c: PublishingContract) => (apps ?? []).find(a => a.contractId === c.id);
 

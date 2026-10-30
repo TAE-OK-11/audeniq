@@ -23,7 +23,7 @@ import { Glyph } from '../components/Glyph';
 import { ContractBundle } from '../components/ContractBundle';
 import { AlbumPrep } from '../components/AlbumPrep';
 import { TrackSheet } from '../components/TrackSheet';
-import { ReleaseWorksCard } from '../components/publishing/ReleasePublishing';
+import { PublishingLinkRow } from '../components/publishing/ReleasePublishing';
 import { CopyButton } from '../components/CopyButton';
 import { albumPrep, draftTrackOf, releaseDay, type PrepItem } from '../lib/albumPrep';
 import '../styles/split/ReleaseDetail.css';
@@ -59,12 +59,12 @@ const DELIVERY_ISSUE: Record<string, string> = {
 const RIGHTS_KEYS = ['rightsMaster', 'rightsComposition', 'rightsArtwork', 'rightsConsent'];
 
 /** 상세 탭 — 휴대폰 한 줄에 다 보이게 넷으로 묶는다.
- *  정보(발매 정보·커버·트랙) · 배급·저작권(플랫폼·계약서·곡 저작권) · 관리(발매 뒤에 하는 일) · 기록 */
+ *  정보(발매 정보·커버·트랙) · 배급·계약(플랫폼·권리·계약서) · 관리(발매 뒤에 하는 일) · 기록 */
 const DETAIL_TABS = [
   { value: 'overview', label: '정보' },
   // 성과는 발매된 뒤에만 (플랫폼 리포트가 들어오는 때)
   { value: 'stats', label: '성과' },
-  { value: 'delivery', label: '배급·저작권' },
+  { value: 'delivery', label: '배급·계약' },
   { value: 'manage', label: '관리' },
   { value: 'history', label: '기록' },
 ];
@@ -632,8 +632,8 @@ export function ReleaseDetail() {
                 onOpenAgreement={docId => nav(`/contracts?doc=${encodeURIComponent(docId)}`)}
               />
             </section>}
-            {/* 같은 곡의 작사·작곡 저작권 — 음원 배급과 곡 저작권을 한 탭에서 (계약 묶음의 저작권 관리 계약 줄과 이어서) */}
-            {!isDraft && <ReleaseWorksCard rel={rel} />}
+            {/* 곡의 작사·작곡 저작권은 퍼블리싱 메뉴에서 — 여기에는 연결 한 줄만 */}
+            {!isDraft && <PublishingLinkRow releaseId={rel.id} />}
             {docs.some(x => x.kind === 'rights') && (
               <section className="aq-relinfo-card">
                 <h2 className="subhead">권리 서류</h2>

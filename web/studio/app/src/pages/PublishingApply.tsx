@@ -137,7 +137,7 @@ export function PublishingApply() {
       )}
       <div className="ui-page-head">
         <div>
-          <p className="eyebrow">저작권 관리</p>
+          <p className="eyebrow">퍼블리싱</p>
           <h1>{step === 4 ? '신청을 받았어요' : '저작권 관리 신청'}</h1>
           <p>{step === 4 ? '심사가 끝나면 알림으로 알려 드려요.' : '곡의 저작권 등록과 사용료 징수를 AUDENIQ이 맡아요.'}</p>
         </div>

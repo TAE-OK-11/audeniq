@@ -5,14 +5,14 @@ import { durationLabel } from '../lib/catalog';
 import { Badge } from '../ui';
 import { CopyButton } from './CopyButton';
 import { Modal } from './Modal';
-import { TrackWork } from './publishing/TrackWork';
+import { PublishingLinkRow } from './publishing/ReleasePublishing';
 import '../styles/split/ReleaseDetail.css';
 
 const Empty = ({ children }: { children: string }) => <span className="aq-empty-val">{children}</span>;
 
 export function TrackSheet({ track, draft, no, onClose, edit, releaseId }: {
   track: Track; draft?: DraftTrack; no: number; onClose: () => void;
-  /** 있으면 '곡·권리'(곡 연결)를 함께 보여 준다 */
+  /** 있으면 크레딧 아래에 이 곡 저작권(퍼블리싱)으로 가는 한 줄 */
   releaseId?: string;
   /** 고칠 곳 — 없으면 버튼을 그리지 않는다 */
   edit?: { label: string; go: () => void } | null;
@@ -54,7 +54,7 @@ export function TrackSheet({ track, draft, no, onClose, edit, releaseId }: {
             <div key={k}><dt>{k}</dt><dd>{v || <Empty>입력 전</Empty>}</dd></div>
           ))}
         </dl>
-        {releaseId && <TrackWork releaseId={releaseId} trackId={t.id} />}
+        {releaseId && <PublishingLinkRow releaseId={releaseId} trackId={t.id} />}
         {!draft?.instrumental && (
           <>
             <h3 className="aq-track-sheet-h">가사</h3>
