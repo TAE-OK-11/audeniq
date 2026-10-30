@@ -1,5 +1,5 @@
-/** 작성 중에는 입력 경로와 실제 자료가 있는 탭만 노출한다. */
-export function releaseDetailVisibility(status: string, tracks: number, history: number, hasDocuments: boolean) {
+/** 작성 중에는 입력 경로와 실제 자료가 있는 탭만 노출한다. 변경 기록은 사용자 화면에 두지 않는다 */
+export function releaseDetailVisibility(status: string, tracks: number, hasDocuments: boolean) {
   const draft = status === 'draft';
   return {
     overview: true,
@@ -9,6 +9,5 @@ export function releaseDetailVisibility(status: string, tracks: number, history:
     // 퍼블리싱(작사·작곡 저작권)은 접수한 앨범의 곡이 있을 때부터
     publishing: !draft && tracks > 0,
     manage: !draft || tracks > 0,
-    history: !draft || history > 0,
   };
 }

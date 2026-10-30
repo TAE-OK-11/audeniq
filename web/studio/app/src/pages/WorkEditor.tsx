@@ -26,6 +26,7 @@ import '../styles/split/Upload.css';
 import '../styles/split/Publishing.css';
 import { Glyph } from '../components/Glyph';
 import { SplitEditor } from '../components/publishing/SplitEditor';
+import { reusableWorks } from '../lib/publishingPrep';
 import { WorkRow } from '../components/publishing/parts';
 import { Badge, Button, Callout, Field, KeyValue, inputClass, selectClass } from '../ui';
 import { ReleaseCover } from '../components/ReleaseCover';
@@ -155,7 +156,7 @@ export function WorkEditor() {
   if (loadError) {
     return (
       <div className="view">
-        <div className="ui-empty"><h2>곡을 불러오지 못했어요.</h2><p>{loadError}</p><Link to="/publishing?tab=songs" className="ui-btn is-soft">곡 목록으로</Link></div>
+        <div className="ui-empty"><h2>곡을 불러오지 못했어요.</h2><p>{loadError}</p><Link to="/releases?tab=works" className="ui-btn is-soft">곡 목록으로</Link></div>
       </div>
     );
   }
@@ -365,7 +366,7 @@ export function WorkEditor() {
 
       {step === 1 && <>
         {fromTrack && <p className="ui-field-help aq-pbl-import-note"><Glyph name="check" size={16} />발매 크레딧을 가져왔어요. 각자의 지분만 입력해 주세요.</p>}
-        <SplitEditor value={form.contributors} onChange={v => set('contributors', v)} showErrors={tried} />
+        <SplitEditor value={form.contributors} onChange={v => set('contributors', v)} showErrors={tried} reuse={reusableWorks(works ?? [], id)} />
         {fromTrack && form.contributors.length > 0 && (
           <label className={`ui-check aq-pbl-confirm${needsSplitCheck && tried ? ' aq-shake' : ''}`}>
             <input id="splitCheck" type="checkbox" checked={splitChecked} onChange={e => setSplitChecked(e.target.checked)} />

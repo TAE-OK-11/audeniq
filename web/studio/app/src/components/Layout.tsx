@@ -61,7 +61,6 @@ const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
     items: [
       { to: '/', label: '홈', icon: 'home' },
       { to: '/releases', label: '발매·곡 관리', icon: 'disc' },
-      { to: '/publishing', label: '퍼블리싱', icon: 'scale' },
       { to: '/contracts', label: '계약서', icon: 'sign' },
       { to: '/rights', label: '권리·보완 서류', icon: 'doc' },
     ],
@@ -98,8 +97,8 @@ const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
   },
 ];
 
-// 곡 상세·곡 추가는 퍼블리싱 안의 화면 — 메뉴는 '퍼블리싱'에 불이 들어온다
-const MENU_ALIAS: [RegExp, string][] = [[/^\/works(\/|$)/, '/publishing']];
+// 곡(작사·작곡 저작권) 화면은 '발매·곡 관리' 안의 화면 — 퍼블리싱은 따로 메뉴를 두지 않고 배급에 녹아 있다
+const MENU_ALIAS: [RegExp, string][] = [[/^\/works(\/|$)/, '/releases']];
 const isActive = (pathname: string, to: string) =>
   to === '/' ? pathname === '/' : pathname === to || pathname.startsWith(to + '/') || MENU_ALIAS.some(([re, t]) => t === to && re.test(pathname));
 

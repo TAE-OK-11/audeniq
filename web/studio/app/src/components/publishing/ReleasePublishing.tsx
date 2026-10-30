@@ -33,7 +33,7 @@ export function PublishingLinkRow({ releaseId, trackId }: { releaseId?: string; 
     : !linked.length ? '작사·작곡 저작권을 맡기면 저작권료까지 받아요'
     : managed ? `${linked.length}곡 중 ${managed}곡 관리 중` : '아직 맡긴 곡이 없어요';
   return (
-    <Link to={one ? `/works/${one.id}` : releaseId ? `/releases/${encodeURIComponent(releaseId)}?tab=publishing` : '/publishing?tab=songs'} className="ui-row aq-pub-link">
+    <Link to={one ? `/works/${one.id}` : releaseId ? `/releases/${encodeURIComponent(releaseId)}?tab=publishing` : '/releases?tab=works'} className="ui-row aq-pub-link">
       <IconTile size="sm"><Glyph name="scale" size={16} /></IconTile>
       <span className="min-0">
         <span className="ui-row-title">{one || !releaseId ? '작사·작곡 저작권' : '이 앨범 퍼블리싱'}</span>

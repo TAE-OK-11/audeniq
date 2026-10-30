@@ -71,7 +71,13 @@ export interface WorkContributor {
   isMe?: boolean;
 }
 
-export interface WorkAttachment { id: string; kind: 'demo' | 'lyrics' | 'score' | 'proof'; name: string; size?: number; at: string }
+export interface WorkAttachment {
+  id: string; kind: 'demo' | 'lyrics' | 'score' | 'proof'; name: string; size?: number; at: string;
+  /** 미리보기 주소 — 데모 재생·악보·증빙을 곡 화면 안에서 연다 (없으면 파일 이름만) */
+  url?: string | null;
+  /** 가사처럼 글자로 된 자료는 본문을 그대로 보여 준다 */
+  text?: string | null;
+}
 export interface WorkRecording { id: string; releaseId: string; trackId: string; title: string; releaseTitle: string; version?: string | null; isrc?: string | null; status?: string }
 export interface WorkEvent { at: string; text: string; who?: string; kind?: 'edit' | 'rights' | 'apply' | 'review' | 'register' | 'file' | 'link' }
 export interface RegistrationStep { status: RegistrationStatus; at: string; note?: string; society?: string }
@@ -100,6 +106,8 @@ export interface Work {
   application: { id: string; number: string; status: ApplicationStatus } | null;
   contractId: string | null;
   fix: WorkFix | null;
+  /** 관리 중인 곡의 지분 변경 — 참여자 확인·담당자 검토가 끝날 때까지 지금 적용값(contributors)과 따로 둔다 */
+  pendingChange?: { contributors: WorkContributor[]; requestedAt: string } | null;
   myRole: WorkRole;
   activity: WorkEvent[];
   rowVersion: number;
@@ -244,7 +252,7 @@ function seedWorks(): Work[] {
       ...base, id: 'w1', title: '첫 번째 싱글', workType: 'original', iswc: 'T-345.246.800-1', internalCode: 'AQW-000101',
       description: '하루의 끝에서 시작되는 첫 번째 이야기.',
       contributors: [me(100, ['lyricist', 'composer'], 100)],
-      attachments: [{ id: 'f1', kind: 'lyrics', name: '첫번째싱글_가사.txt', size: 1820, at: '2026-03-02 10:00' }],
+      attachments: [{ id: 'f1', kind: 'lyrics', name: '첫번째싱글_가사.txt', size: 1820, at: '2026-03-02 10:00', text: '하루의 끝에서 나는\n불 꺼진 방 안에서\n처음 쓰는 노래처럼\n너의 이름을 불러\n\n첫 번째 싱글, 첫 번째 고백\n아무도 모르게 시작된 이야기' }],
       recordings: [
         { id: 'rc1', releaseId: 'r1', trackId: 't1', title: '첫 번째 싱글', releaseTitle: '첫 번째 싱글', isrc: 'KRA262600001', status: 'live' },
         { id: 'rc2', releaseId: 'r1', trackId: 't2', title: '첫 번째 싱글', version: 'Inst.', releaseTitle: '첫 번째 싱글', isrc: 'KRA262600002', status: 'live' },
@@ -494,12 +502,16 @@ const mockApi = {
       if (!w) throw notFound();
       if (w.myRole !== 'owner' && w.myRole !== 'editor') throw new ApiError('이 곡을 고칠 권한이 없어요.', 403, 'FORBIDDEN');
       if (w.rowVersion !== rowVersion) throw new ApiError('다른 곳에서 먼저 고쳤어요. 새로 불러온 뒤 다시 저장해 주세요.', 409, 'CONFLICT');
-      const before = JSON.stringify(w.contributors.map(c => [c.name, c.share, c.publisherShare]));
-      const { recording: _r, ...rest } = patch;
+      const key = (list: WorkContributor[]) => JSON.stringify(list.map(c => [c.name, c.share, c.publisherShare, c.roles, c.society, c.ipi]));
+      const before = key(w.contributors);
+      const { recording: _r, contributors, ...rest } = patch;
       Object.assign(w, rest);
       const now = stampNow();
-      const rightsChanged = patch.contributors && before !== JSON.stringify(w.contributors.map(c => [c.name, c.share, c.publisherShare]));
-      w.activity.unshift({ at: now, text: rightsChanged ? `지분을 ${w.contributors.map(c => `${c.name} ${c.share}%`).join(' · ')}로 바꿨어요.` : '곡 정보를 고쳤어요.', kind: rightsChanged ? 'rights' : 'edit', who: d.me.name });
+      const rightsChanged = !!contributors && before !== key(contributors);
+      // 관리 중인 곡은 바로 바꾸지 않는다 — 참여자 확인과 담당자 검토가 끝나면 반영 (그동안 지금 값이 적용된다)
+      if (rightsChanged && (w.registration === 'registered' || !!w.contractId)) w.pendingChange = { contributors: structuredClone(contributors), requestedAt: now };
+      else if (contributors) { w.contributors = contributors; w.pendingChange = null; }
+      w.activity.unshift({ at: now, text: rightsChanged ? `지분을 ${contributors!.map(c => `${c.name} ${c.share}%`).join(' · ')}로 ${w.pendingChange ? '바꾸도록 요청' : '바꿨'}어요.` : '곡 정보를 고쳤어요.', kind: rightsChanged ? 'rights' : 'edit', who: d.me.name });
       w.rowVersion += 1;
       w.updatedAt = now;
       return structuredClone(w);
@@ -702,13 +714,13 @@ const mockApi = {
       return structuredClone(w);
     });
   },
-  async addAttachment(workId: string, kind: WorkAttachment['kind'], name: string, size?: number) {
+  async addAttachment(workId: string, kind: WorkAttachment['kind'], name: string, size?: number, preview?: Pick<WorkAttachment, 'url' | 'text'> & { assetId?: string }) {
     await wait(260);
     return mutate(d => {
       const w = d.works.find(x => x.id === workId);
       if (!w) throw notFound();
       const at = stampNow();
-      w.attachments.push({ id: uid(), kind, name, size, at });
+      w.attachments.push({ id: uid(), kind, name, size, at, url: preview?.url ?? null, text: preview?.text ?? null });
       w.activity.unshift({ at, text: `‘${name}’ 파일을 올렸어요.`, kind: 'file', who: d.me.name });
       return structuredClone(w);
     });
@@ -817,7 +829,9 @@ const remoteApi = {
   submitApplication: (input: ApplicationInput) => req<PublishingApplication>(orgPath('/publishing/applications'), { method: 'POST', body: input, timeoutMs: 30_000 }),
   withdrawApplication: (id: string) => req<PublishingApplication>(orgPath(`/publishing/applications/${enc(id)}/withdraw`), { method: 'POST' }),
   resubmitFix: (workId: string, note: string, files: string[]) => req<Work>(orgPath(`/works/${enc(workId)}/registration/resubmit`), { method: 'POST', body: { note, files } }),
-  addAttachment: (workId: string, kind: WorkAttachment['kind'], name: string, size?: number) => req<Work>(orgPath(`/works/${enc(workId)}/attachments`), { method: 'POST', body: { kind, name, size } }),
+  // 미리보기 주소는 서버가 올린 파일로 만든다 — 브라우저 임시 주소(blob:)는 보내지 않는다
+  addAttachment: (workId: string, kind: WorkAttachment['kind'], name: string, size?: number, preview?: Pick<WorkAttachment, 'url' | 'text'> & { assetId?: string }) =>
+    req<Work>(orgPath(`/works/${enc(workId)}/attachments`), { method: 'POST', body: { kind, name, size, asset_id: preview?.assetId, text: preview?.text ?? undefined } }),
   listContracts: () => orEmpty(req<{ items: PublishingContract[] }>(orgPath('/publishing/contracts')).then(r => r.items), [] as PublishingContract[]),
   renewContract: (id: string, months: number) => req<PublishingContract>(orgPath(`/publishing/contracts/${enc(id)}/renewal`), { method: 'POST', body: { months } }),
   requestTermination: (id: string) => req<PublishingContract>(orgPath(`/publishing/contracts/${enc(id)}/termination`), { method: 'POST' }),
