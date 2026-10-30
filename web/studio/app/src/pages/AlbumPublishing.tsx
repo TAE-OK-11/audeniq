@@ -14,6 +14,8 @@ import { RoyaltyTable } from '../components/publishing/Royalties';
 import { PublishingBundleStep, albumPublishing } from '../components/publishing/ReleasePublishing';
 import { Badge, Callout, IconTile } from '../ui';
 import { StageCard } from '../components/StageCard';
+import { useToast } from '../components/Toast';
+import { errorMessage } from '../api/errors';
 import '../styles/split/ReleaseDetail.css';
 
 const STEPS = ['곡 정리', '신청', '심사', '계약', '등록'] as const;
@@ -25,6 +27,7 @@ export function AlbumPublishing() {
   const { data: works, reload } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
   const { data: royalties } = useAsync(() => pubApi.listRoyalties(), [], { key: 'royalties:all' });
   const [busy, setBusy] = useState(false);
+  const toast = useToast();
 
   if (error) return <div className="view"><div className="ui-empty"><h2>앨범을 열 수 없어요.</h2><p>삭제됐거나 볼 수 있는 권한이 없어요.</p></div></div>;
   if (!rel || !works) return <div className="view"><SkeletonRows count={3} /></div>;
@@ -37,10 +40,15 @@ export function AlbumPublishing() {
     : a.managed.length ? 3 : a.applying.length ? 2 : a.mine.length && !missing ? 1 : 0;
   const workIds = new Set(a.mine.map(w => w.id));
   const albumRoyalties = (royalties ?? []).filter(r => workIds.has(r.workId));
+  // 보완할 곡이 하나면 안내에서 바로 그 곡으로
+  const fixWork = a.mine.find(w => w.registration === 'needs_fix' || w.application?.status === 'needs_fix');
   const applyBtn = canApply && <Link to={`/publishing/apply?release=${encodeURIComponent(rel.id)}`} className="ui-btn is-primary">이 앨범 저작권 관리 신청</Link>;
   const prepare = async () => {
     setBusy(true);
-    try { await pubApi.prepareWorksFromRelease(rel.id, false); reload(); } finally { setBusy(false); }
+    try {
+      await pubApi.prepareWorksFromRelease(rel.id, false); reload();
+      toast(`${missing}곡을 크레딧으로 정리했어요. 지분이 맞는지 확인해 주세요.`, 'success');
+    } catch (err) { toast(errorMessage(err, '정리하지 못했어요. 다시 시도해 주세요.'), 'error'); } finally { setBusy(false); }
   };
 
   return (
@@ -69,7 +77,11 @@ export function AlbumPublishing() {
       </div>
 
       <div className="aq-detail-stack">
-        {a.fix && <Callout tone="warn">보완 요청이 왔어요. 아래 곡을 눌러 고쳐 주세요.</Callout>}
+        {a.fix && (
+          <Callout tone="warn" action={fixWork && <Link to={`/works/${fixWork.id}`} className="ui-btn is-sm is-white">보완하기</Link>}>
+            {fixWork ? `‘${fixWork.title}’에 보완 요청이 왔어요.` : '보완 요청이 왔어요. 아래 곡을 눌러 고쳐 주세요.'}
+          </Callout>
+        )}
         <div className="aq-relinfo-card">
           <div className="ui-section-head"><h2 className="subhead">곡별 저작권</h2></div>
           <div className="ui-list is-inset">
@@ -114,10 +126,11 @@ export function AlbumPublishing() {
           </div>
         )}
 
-        <div className="aq-relinfo-card">
+        {/* 맡긴 곡이 없으면 빈 저작권료 카드는 숨긴다 — 할 일(곡 정리·신청)만 보이게 */}
+        {(a.managed.length > 0 || albumRoyalties.length > 0) && <div className="aq-relinfo-card">
           <h2 className="subhead">이 앨범 저작권료</h2>
           <RoyaltyTable rows={albumRoyalties} emptyText="관리 단체가 사용료를 나눠 주면 곡별로 보여 드려요. 확정된 금액은 정산 잔액에 함께 쌓여요." />
-        </div>
+        </div>}
       </div>
     </div>
   );

@@ -45,6 +45,8 @@ const PATH = [
   ['저작권료 정산', '들어온 저작권료는 배급 정산과 같은 잔액으로'],
 ] as const;
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, '');
+// 손이 가야 하는 곡이 먼저 — 보완 요청 → 맡기지 않음 → 심사 중 → 관리 중
+const urgency = (w: Work) => (matchFilter(w, 'fix') ? 0 : matchFilter(w, 'none') ? 1 : matchFilter(w, 'review') ? 2 : 3);
 
 function SongRow({ w }: { w: Work }) {
   const rec = w.recordings[0];
@@ -94,6 +96,12 @@ function Overview() {
                 <li><i className="is-held" />맡기지 않음 <b>{s.works.unregistered}곡</b></li>
               </ul>
             </div>
+            {/* 숫자만 보여 주고 끝내지 않는다 — 다음에 할 일 하나 */}
+            {s.works.unregistered > 0 ? (
+              <Link to="/publishing?tab=songs&wf=none" className="ui-btn is-soft is-block aq-pub-next">맡기지 않은 곡 보기</Link>
+            ) : s.works.inProgress > 0 ? (
+              <Link to="/publishing?tab=songs&wf=review" className="ui-btn is-soft is-block aq-pub-next">심사 중인 곡 보기</Link>
+            ) : null}
           </section>
           <SongRoyalties />
         </>
@@ -194,20 +202,26 @@ function Songs({ filter, setFilter }: { filter: WorkFilter; setFilter: (f: WorkF
   const [query, setQuery] = useState('');
   const q = norm(useDeferredValue(query));
   const shown = useMemo(() => (works ?? []).filter(w => matchFilter(w, filter)
-    && (!q || norm(w.title).includes(q) || w.contributors.some(c => norm(c.name).includes(q)) || w.recordings.some(r => norm(r.releaseTitle).includes(q)))), [works, filter, q]);
+    && (!q || norm(w.title).includes(q) || w.contributors.some(c => norm(c.name).includes(q)) || w.recordings.some(r => norm(r.releaseTitle).includes(q))))
+    .sort((a, b) => urgency(a) - urgency(b)), [works, filter, q]);
   return (
     <>
       <div className="toolbar">
         <input id="pubSongSearch" className="ui-input" type="search" aria-label="곡 검색" placeholder="곡·참여자·발매 검색" value={query} onChange={e => setQuery(e.target.value)} />
-        {/* 발매 전 곡도 작사·작곡 정보와 지분을 먼저 정리해 둘 수 있다 */}
-        <button type="button" className="ui-btn is-soft" onClick={() => nav('/works/new')}><Glyph name="plus" size={14} />곡 추가</button>
       </div>
+      {/* 발매 목록과 같은 칩 — 숫자를 붙이고, 해당하는 곡이 없는 칩은 숨긴다 */}
       <div className="ui-chips" role="group" aria-label="저작권 상태">
-        {SONG_FILTERS.map(([v, label]) => (
-          <button key={v} type="button" className={`ui-chip${filter === v ? ' is-on' : ''}`} aria-pressed={filter === v} onClick={() => setFilter(v)}>{label}</button>
-        ))}
+        {SONG_FILTERS.map(([v, label]) => {
+          const n = (works ?? []).filter(w => matchFilter(w, v)).length;
+          if (v !== 'all' && !n && filter !== v) return null;
+          return <button key={v} type="button" className={`ui-chip${filter === v ? ' is-on' : ''}`} aria-pressed={filter === v} onClick={() => setFilter(v)}>{label}<small>{n}</small></button>;
+        })}
       </div>
-      <div className="studio-result-count" aria-live="polite">{works ? `${shown.length}개의 곡` : ''}</div>
+      <div className="aq-pub-count">
+        <span className="studio-result-count" aria-live="polite">{works ? `${shown.length}개의 곡` : ''}</span>
+        {/* 발매 전 곡도 작사·작곡 정보와 지분을 먼저 정리해 둘 수 있다 */}
+        <button type="button" className="ui-btn is-ghost is-sm" onClick={() => nav('/works/new')}><Glyph name="plus" size={14} className="aq-glyph-lead" />곡 추가</button>
+      </div>
       {loading && !works ? <SkeletonRows count={4} /> : shown.length ? (
         <div className="aq-catalog-cards aq-stagger">{shown.map(w => <SongRow key={w.id} w={w} />)}</div>
       ) : (
@@ -333,6 +347,9 @@ export function Publishing() {
   };
   const go = (t: Tab) => set({ tab: t === 'overview' ? null : t, wf: null });
   const { data: works } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
+  const { data: summary } = useAsync(() => pubApi.summary(), [], { key: 'pub-summary' });
+  // 할 일은 '앨범' 탭에 있다 — 분석 탭에서도 몇 건인지 탭 숫자로 보이게
+  const todo = summary ? summary.tasks.length + (summary.suggestion ? 1 : 0) : null;
   // 계약은 배급과 같은 계약서 화면에서 — 예전 '계약' 탭 주소는 그리로
   if (params.get('tab') === 'contracts') return <Navigate to={`/contracts${params.get('pub') ? `?pub=${encodeURIComponent(params.get('pub')!)}` : ''}`} replace />;
 
@@ -348,7 +365,7 @@ export function Publishing() {
       </div>
 
       <Tabs label="퍼블리싱 메뉴" value={tab} onChange={go}
-        items={TABS.map(t => ({ ...t, count: t.value === 'songs' ? works?.length ?? null : undefined }))} />
+        items={TABS.map(t => ({ ...t, count: t.value === 'songs' ? works?.length ?? null : t.value === 'albums' ? todo : undefined }))} />
 
       <div className="ui-tab-panel" key={tab}>
         {tab === 'overview' && <Overview />}
