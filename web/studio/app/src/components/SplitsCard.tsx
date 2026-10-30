@@ -136,7 +136,7 @@ export function SplitsCard({ releaseId, embedded = false, registerSave }: {
                         <input className="ui-input" inputMode="decimal" aria-label="비율(%)" value={r.pct}
                           onChange={e => edit(t.track_id, l => l.map((x, j) => (j === i ? { ...x, pct: e.target.value.replace(/[^0-9.]/g, '') } : x)))} />%
                       </span>
-                      <button type="button" className="ui-btn is-text is-sm" onClick={() => edit(t.track_id, l => l.filter((_, j) => j !== i))}>삭제</button>
+                      <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => edit(t.track_id, l => l.filter((_, j) => j !== i))}>삭제</button>
                     </>
                   ) : (
                     <>

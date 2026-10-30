@@ -17,6 +17,10 @@ export interface AsyncState<T> {
  * 뒤에서 새로 받아 바꾼다. 새로 받기가 실패해도 보이던 데이터는 그대로 둔다. 방금 받은 데이터면 다시 받지 않는다
  * (reload()는 늘 새로 받는다). (lib/asyncCache)
  */
+// key마다 마지막으로 시작한 요청 번호 — 먼저 보낸 요청이 늦게 끝나도 캐시(와 같은 key를 보는 화면)를 옛 데이터로 덮지 않게
+const latest = new Map<string, number>();
+let seq = 0;
+
 export function useAsync<T>(fn: () => Promise<T>, deps: unknown[], opts: { key?: string } = {}): AsyncState<T> {
   // 작업 공간마다 따로 — 다른 작업 공간의 데이터를 잠깐이라도 보여 주지 않게
   const key = opts.key ? `${orgId()}|${opts.key}` : '';
@@ -41,8 +45,14 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[], opts: { key?:
       setLoading(true);
     }
     setError('');
+    const mine = ++seq;
+    if (key) latest.set(key, mine);
     fnRef.current()
-      .then(v => { if (key) cacheSet(key, v); if (alive) setData(v); })
+      .then(v => {
+        // 더 새 요청이 있으면 캐시는 그 응답에 맡긴다 (이 화면이 다시 부른 경우라면 alive가 이미 false)
+        if (key && latest.get(key) === mine) cacheSet(key, v);
+        if (alive) setData(v);
+      })
       .catch(e => { if (alive && !cached) setError(errorMessage(e)); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };

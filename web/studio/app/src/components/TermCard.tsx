@@ -56,6 +56,7 @@ export function TermCard({ releaseId }: { releaseId: string }) {
         ? `${date}에 모든 플랫폼에서 내려가요. 새 유통사가 같은 날 배급하도록 이전 자료를 전달해 주세요. 그 전까지는 취소할 수 있어요.`
         : `${date}에 모든 플랫폼에서 내려가고 새 배급이 막혀요. 그 전까지는 취소할 수 있어요.`,
       confirmLabel: transfer ? '이전 예약' : '종료 예약',
+      danger: true,
     });
     if (!ok) return;
     setBusy(true);

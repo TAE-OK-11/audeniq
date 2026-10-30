@@ -243,7 +243,7 @@ function ReleaseEditor({ artistId, artist, profile, contact, releases, item, onS
         <button type="button" className="ui-btn is-block" disabled={busy} onClick={() => void save(false)}>
           {item?.published ? '비공개로 저장' : '초안으로 저장'}
         </button>
-        {item && <button type="button" className="ui-btn is-text is-sm" disabled={busy} onClick={() => void remove()}>지우기</button>}
+        {item && <button type="button" className="ui-btn is-text is-sm aq-danger-text" disabled={busy} onClick={() => void remove()}>지우기</button>}
       </div>
     </div>
   );

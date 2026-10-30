@@ -89,7 +89,7 @@ export function CorrectionCard({ releaseId }: { releaseId: string }) {
       {st.request && (
         <p className="aq-claim-status">{STATUS[st.request.status] ?? st.request.status}
           {st.request.decision_note && <span className="muted"> · {st.request.decision_note}</span>}
-          {st.request.status === 'PENDING' && <button type="button" className="ui-btn is-text is-sm" onClick={() => void cancel()}>요청 취소</button>}
+          {st.request.status === 'PENDING' && <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => void cancel()}>요청 취소</button>}
         </p>
       )}
       {st.can_request && (
@@ -113,7 +113,7 @@ export function CorrectionCard({ releaseId }: { releaseId: string }) {
                     {!ROLES.includes(c.role) && <option value={c.role}>{c.role}</option>}
                     {ROLES.map(r => <option key={r} value={r}>{ROLE_KO[r]}</option>)}
                   </select>
-                  <button type="button" className="ui-btn is-text is-sm" aria-label={`${c.name || '크레딧'} 삭제`} onClick={() => setTracks(ts => ts.map((x, i) => (i === ti ? { ...x, credits: x.credits.filter((_, j) => j !== ci) } : x)))}>삭제</button>
+                  <button type="button" className="ui-btn is-text is-sm aq-danger-text" aria-label={`${c.name || '크레딧'} 삭제`} onClick={() => setTracks(ts => ts.map((x, i) => (i === ti ? { ...x, credits: x.credits.filter((_, j) => j !== ci) } : x)))}>삭제</button>
                 </div>
               ))}
               <button type="button" className="ui-btn is-soft is-sm" onClick={() => setTracks(ts => ts.map((x, i) => (i === ti ? { ...x, credits: [...x.credits, { name: '', role: 'Composer' }] } : x)))}><Glyph name="plus" size={14} className="aq-glyph-lead" />크레딧 추가</button>

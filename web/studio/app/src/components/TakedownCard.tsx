@@ -118,7 +118,7 @@ export function TakedownCard({ releaseId }: { releaseId: string }) {
       )}
       <div className="ui-actions">
         {req?.status === 'PENDING' && (
-          <button type="button" className="ui-btn is-soft" onClick={cancel}>중단 요청 취소</button>
+          <button type="button" className="ui-btn is-danger" onClick={cancel}>중단 요청 취소</button>
         )}
         {state.can_request && (
           <button type="button" className="ui-btn is-text aq-danger-text" onClick={() => setAsking(true)}>발매 중단 요청</button>
