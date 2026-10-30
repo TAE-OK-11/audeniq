@@ -1850,3 +1850,23 @@ a.aq-inline-link{display:inline-block;max-width:100%}
 /* 신청 완료 카드는 표시가 작다 — 조각도 작게 퍼지고 카드 밖으로 잘리지 않게 */
 .aq-doc-done{overflow:visible}
 .aq-doc-done-mark .aq-burst{scale:.62}
+
+/* ---------- 입력칸 단위 — 칸 안 오른쪽에 '원'·'%' (토스 TextField suffix). 비어 있으면 흐리게 ---------- */
+.aq-affix{position:relative;display:block}
+.aq-affix>input{width:100%;padding-right:40px!important}
+.aq-affix::after{content:attr(data-unit);position:absolute;right:16px;top:50%;translate:0 -50%;font-weight:700;color:var(--aq-text-2);pointer-events:none;transition:color var(--aq-motion-base) ease}
+.aq-affix:has(>input:placeholder-shown)::after{color:var(--aq-text-disabled)}
+.aq-splits-pct.aq-affix{display:block}
+.aq-splits-pct.aq-affix>input{padding-right:28px!important}
+.aq-splits-pct.aq-affix::after{right:12px}
+.studio-amount-field .aq-amount-unit{flex:none;margin:0 10px 0 -4px;font-size:18px;font-weight:700;color:var(--aq-text-2)}
+.studio-amount-field:has(input:placeholder-shown) .aq-amount-unit{color:var(--aq-text-disabled)}
+
+/* ---------- 금액 목록 뼈대 (SkeletonRows pattern="amount") — 정산·지급 줄과 같은 모양 ---------- */
+.aq-skeleton-list.is-amount .aq-skeleton-row{grid-template-columns:48px minmax(0,1fr) 88px}
+.aq-skeleton-list.is-amount .aq-skel-avatar{width:48px;height:48px}
+.aq-skel-amount{justify-self:end;height:16px}
+
+/* ---------- 아래 고정 버튼 줄 — 위 가는 선 대신 내용이 흰색으로 스며 사라진다 (토스 BottomCTA) ---------- */
+.step-actions{border-top:0!important}
+.step-actions::before{content:"";position:absolute;left:0;right:0;bottom:100%;height:24px;background:linear-gradient(to top,#fff,rgba(255,255,255,0));pointer-events:none}

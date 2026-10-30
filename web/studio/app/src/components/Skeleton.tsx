@@ -1,5 +1,23 @@
 // 로딩 스켈레톤 — "불러오는 중..." 텍스트 대신 레이아웃을 미리 보여줘 화면 흔들림을 줄인다.
-export function SkeletonRows({ count = 3, avatar = true }: { count?: number; avatar?: boolean }) {
+/** 목록 뼈대 — pattern은 실제 줄 모양에 맞춘다 (토스 Skeleton처럼 화면마다 같은 모양을 미리 보여 줘야 바뀔 때 덜 흔들린다)
+ *  list: 커버·제목·배지 (발매·곡 목록) · amount: 둥근 아이콘·제목·오른쪽 금액 (정산·지급 내역) */
+export function SkeletonRows({ count = 3, avatar = true, pattern = 'list' }: { count?: number; avatar?: boolean; pattern?: 'list' | 'amount' }) {
+  if (pattern === 'amount') {
+    return (
+      <div className="aq-skeleton-list is-amount" aria-busy="true" aria-label="불러오는 중">
+        {Array.from({ length: count }, (_, i) => (
+          <div key={i} className="aq-skeleton-row" style={{ animationDelay: `${i * 70}ms` }}>
+            <span className="aq-skel aq-skel-avatar" />
+            <span className="aq-skeleton-lines">
+              <span className="aq-skel aq-skel-line" style={{ width: `${58 - i * 9}%` }} />
+              <span className="aq-skel aq-skel-line is-sub" style={{ width: `${34 + i * 6}%` }} />
+            </span>
+            <span className="aq-skel aq-skel-line aq-skel-amount" style={{ width: `${68 - i * 10}%` }} />
+          </div>
+        ))}
+      </div>
+    );
+  }
   return (
     <div className="aq-skeleton-list" aria-busy="true" aria-label="불러오는 중">
       {Array.from({ length: count }, (_, i) => (
