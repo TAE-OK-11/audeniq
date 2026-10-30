@@ -1899,51 +1899,14 @@ a.aq-inline-link{display:inline-block;max-width:100%}
 .aq-skel-amount{justify-self:end;height:16px}
 
 
-/* ---------- 신청서·계약서 — 스튜디오 카드형 (화면·인쇄 같은 모양) ----------
-   머리는 연한 파란 카드, 섹션마다 연한 회색 카드 안에 흰 표. 번호·확인 표시는 AUDENIQ 파랑.
-   인쇄에서도 바탕색이 빠지지 않게 print-color-adjust:exact */
-.aq-paper{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.aq-paper *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.aq-paper .aq-paper-head{border-bottom:0;padding:26px 28px 28px;margin-bottom:22px;border-radius:var(--aq-r-xl);background:linear-gradient(135deg,var(--aq-blue-50),#fff 78%);box-shadow:inset 0 0 0 1px var(--aq-blue-100)}
-.aq-paper .aq-paper-brand{margin-bottom:26px}
-.aq-paper .aq-paper-head h1{letter-spacing:.08em;color:var(--aq-gray-900)}
-.aq-paper .aq-paper-en{color:var(--aq-blue-500);font-weight:700}
-.aq-paper .aq-paper-lead{margin:0 4px 20px}
-.aq-paper .aq-paper-sec{padding:18px 20px 20px;margin:0 0 14px;border-radius:var(--aq-r-xl);background:var(--aq-gray-50)}
-.aq-paper .aq-paper-sec h2{margin:0 0 12px}
-.aq-paper .aq-paper-sec h2>span{background:var(--aq-blue-500)}
-.aq-paper .aq-paper-annex h2 em{background:var(--aq-blue-500)}
-/* 표: 흰 둥근 판, 바깥 선 없이 줄 사이만 얇게 */
-.aq-paper .aq-paper-kv,.aq-paper .aq-paper-grid{border-collapse:separate;border-spacing:0;background:#fff;border-radius:var(--aq-r-lg);overflow:hidden;box-shadow:0 0 0 1px var(--aq-gray-150)}
-.aq-paper .aq-paper-kv :is(th,td),.aq-paper .aq-paper-grid :is(th,td){border:0;border-top:1px solid var(--aq-gray-100)}
-.aq-paper .aq-paper-kv tr:first-child>*,.aq-paper .aq-paper-grid thead th{border-top:0}
-.aq-paper .aq-paper-kv th{background:#fff;color:var(--aq-text-3);font-weight:700}
-.aq-paper .aq-paper-kv td+th{border-left:1px solid var(--aq-gray-100)}
-.aq-paper .aq-paper-grid thead th{background:var(--aq-blue-50);color:var(--aq-blue-700)}
-.aq-paper .aq-paper-grid td+td{border-left:1px solid var(--aq-gray-100)}
-.aq-paper .aq-paper-agree,.aq-paper .aq-paper-tracks{border:0;background:#fff;border-radius:var(--aq-r-lg);box-shadow:0 0 0 1px var(--aq-gray-150)}
-.aq-paper .aq-paper-check{border-radius:6px;border-color:var(--aq-gray-300)}
-.aq-paper .aq-paper-agree li.is-on .aq-paper-check{border-color:var(--aq-blue-500);background:var(--aq-blue-500)!important;color:#fff!important}
-.aq-paper .aq-paper-req{background:var(--aq-blue-50);color:var(--aq-blue-600)}
-.aq-paper .aq-paper-agree li.is-on .aq-paper-req{background:var(--aq-blue-500);color:#fff}
-.aq-paper .aq-paper-note{border-radius:var(--aq-r-lg);background:#fff;box-shadow:0 0 0 1px var(--aq-gray-150)}
-.aq-paper .aq-paper-cover{border-radius:var(--aq-r-lg)}
-/* 서명란: 흰 카드 */
-.aq-paper .aq-paper-signoff{margin:26px 0 18px;padding:28px 28px 24px;border-radius:var(--aq-r-xl);background:#fff;box-shadow:inset 0 0 0 1px var(--aq-gray-150)}
-.aq-paper .aq-paper-date{color:var(--aq-blue-600)}
-.aq-paper .aq-paper-signer strong small{display:block;margin-top:2px;font-size:12px;font-weight:600;letter-spacing:.04em;color:var(--aq-text-3)}
-.aq-paper .aq-paper-sig img.is-seal{width:64px;height:64px;max-width:none;object-fit:contain;opacity:.92}
-.aq-paper .aq-paper-to{margin:26px 0 0!important}
-/* 전자서명 기록 */
-.aq-paper-record{margin:22px 0 0;padding:14px 16px;border-radius:var(--aq-r-lg);background:var(--aq-gray-50);text-align:left}
-.aq-paper-record h3{margin:0 0 8px;font-size:12px;font-weight:800;color:var(--aq-blue-600)}
+/* ---------- 신청서·계약서 — 회사 직인·대표이사 줄, 전자서명 기록 ---------- */
+.aq-paper-signer strong small{display:block;margin-top:2px;font-size:12px;font-weight:600;letter-spacing:.04em;color:var(--aq-text-3)}
+.aq-paper-sig img.is-seal{width:64px;height:64px;max-width:none;object-fit:contain;opacity:.92}
+.aq-paper-record{margin:24px 0 0;padding:12px 14px;background:var(--aq-gray-50);text-align:left;break-inside:avoid}
+.aq-paper-record h3{margin:0 0 8px;font-size:12px;font-weight:800;color:var(--aq-text-2)}
 .aq-paper-record dl{margin:0;display:grid;gap:4px}
 .aq-paper-record dl>div{display:grid;grid-template-columns:72px minmax(0,1fr);gap:10px;font-size:12px;line-height:1.55}
 .aq-paper-record dt{color:var(--aq-text-4)}
 .aq-paper-record dd{margin:0;color:var(--aq-text);overflow-wrap:anywhere}
-/* 맨 아래 확인 코드: 연한 파란 카드 */
-.aq-paper .aq-paper-foot{border-top:0;padding:16px 18px;border-radius:var(--aq-r-xl);background:var(--aq-blue-50)!important}
-@media print{
-  .aq-paper .aq-paper-sec,.aq-paper .aq-paper-signoff,.aq-paper .aq-paper-head,.aq-paper .aq-paper-foot{box-decoration-break:clone;-webkit-box-decoration-break:clone}
-  .aq-paper .aq-paper-signoff,.aq-paper .aq-paper-foot,.aq-paper-record{break-inside:avoid}
-}
+@media print{.aq-paper-record{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+
