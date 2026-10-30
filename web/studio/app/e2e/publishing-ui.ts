@@ -15,7 +15,7 @@ const routes = [
   ['work', '/works/w1', '.aq-pbl-person-read'],
   ['registration', '/works/w2?tab=register', '.aq-bundle.is-needs'],
   ['work-income', '/works/w1?tab=revenue', '.settle-entry'],
-  ['work-files', '/works/w1?tab=files', '#up-demo'],
+  ['work-files', '/works/w1?tab=files', '.aq-pbl-files'],
   ['ar', '/ar', '.aq-ar-card'],
   ['ar-submit', '/ar?work=w4', '#arGenre'],
   ['apply', '/publishing/apply?work=w4', '.aq-pbl-song-picker'],
@@ -57,11 +57,46 @@ try {
     }
     console.log(`Layout passed: ${width}px`);
   }
-  // An album's song returns to the same album tab.
+  // Album tab: the prep check opens the song sheet at the field to fix, edits show before → after, and saving returns to the list.
+  await page.setViewportSize({ width: 390, height: 900 });
   await page.goto(base + '/releases/r2?tab=publishing');
-  await page.locator('.aq-album-pub a.ui-row[href^="/works/w2"]').click();
+  const prep = page.locator('.aq-album-pub .aq-prep');
+  await prep.waitFor();
+  assert.match(await prep.locator('.aq-prep-sub').innerText(), /신청 가능|확인 필요|정리 전/);
+  await page.locator('.aq-pbl-trackrow', { hasText: '파도' }).click();
+  const sheet = page.locator('#modal .aq-pbl-sheet');
+  await sheet.waitFor();
+  await sheet.getByRole('button', { name: /수정/ }).click();
+  assert.equal(await sheet.getByRole('button', { name: '저장' }).count(), 1);
+  await sheet.getByLabel('창작 지분', { exact: true }).first().fill('50');
+  assert.match(await sheet.locator('.aq-pbl-diff').innerText(), /60% → 50%/);
+  await noOverflow(page, 'work sheet edit');
+  await page.screenshot({ path: `${out}/album-sheet-390.png` });
+  await sheet.getByRole('button', { name: '취소' }).click();
+  await page.locator('#modal').getByRole('button', { name: '닫기' }).click();
+  await sheet.waitFor({ state: 'detached' });
+  // Selecting songs keeps the same selection for prep check, bundling and download.
+  await page.locator('.aq-pbl-pick input').first().check();
+  await page.locator('.aq-pbl-selbar').waitFor();
+  assert.match(await page.locator('#pubPrepTitle').innerText(), /고른 1곡/);
+  await noOverflow(page, 'album selection');
+  await page.screenshot({ path: `${out}/album-select-390.png`, fullPage: true });
+  // Attach materials from a dialog, then preview them inside the song sheet.
+  await page.getByRole('button', { name: '자료 첨부' }).first().click();
+  await page.locator('#modal #attachWork').waitFor();
+  await page.screenshot({ path: `${out}/album-attach-390.png` });
+  await page.locator('#modal').getByRole('button', { name: '닫기' }).click();
+  await page.locator('#modal #attachWork').waitFor({ state: 'detached' });
+  // A song's full page still returns to the same album tab.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.locator('.aq-pbl-trackrow', { hasText: '파도' }).click();
+  await page.locator('#modal').getByRole('link', { name: /곡 전체 정보 보기/ }).click();
   await page.getByRole('button', { name: '앨범으로 돌아가기' }).click();
   await page.waitForURL('**/releases/r2?tab=publishing');
+  // Lyrics attached to a song open inside the song page.
+  await page.goto(base + '/works/w1?tab=files');
+  await page.locator('.aq-pbl-files .ui-row').first().click();
+  await page.locator('.aq-pbl-file-text').waitFor();
   // Labels stay visible, optional fields retain values when collapsed, and unfinished splits can continue.
   await page.setViewportSize({ width: 390, height: 900 });
   await page.goto(base + '/works/new?release=r2&track=t4');
@@ -86,13 +121,22 @@ try {
   await page.goto(base + '/publishing');
   await page.locator('.aq-pbl-dashboard').waitFor();
   assert.match(await page.locator('.aq-report-total').innerText(), /337,860/);
+  // Period/condition filter narrows the report and is carried into the royalty list (and its CSV).
+  await page.getByLabel('징수 단체').selectOption('JASRAC');
+  await page.getByRole('button', { name: /내역 보기/ }).click();
+  assert.equal(new URL(page.url()).searchParams.get('src'), 'JASRAC');
+  await page.locator('.settle-entry').first().waitFor();
+  assert.equal(await page.locator('.settle-entry').count(), 1);
+  await page.screenshot({ path: `${out}/royalties-filtered-1440.png`, fullPage: true });
+  await page.goto(base + '/publishing');
+  await page.locator('.aq-pbl-dashboard').waitFor();
   await page.getByLabel('볼 앨범').selectOption('r2');
   await page.getByRole('tab', { name: /^곡/ }).click();
   assert.equal(new URL(page.url()).searchParams.get('release'), 'r2');
   await page.getByRole('button', { name: '저작권 관리 신청', exact: true }).click();
   await page.waitForURL('**/publishing/apply?release=r2');
   assert.deepEqual(errors, []);
-  console.log('Publishing UI passed: 12 pages × 4 widths, split editing, return navigation, album scope, and report amounts.');
+  console.log('Publishing UI passed: 12 pages × 4 widths, album prep/sheet/selection/attach, split editing, return navigation, filters, album scope, and report amounts.');
 } finally {
   await browser.close();
   if (server && 'close' in server) await server.close();

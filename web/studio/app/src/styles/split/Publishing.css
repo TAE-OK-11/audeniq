@@ -1,5 +1,5 @@
 /* Publishing layout only. Cards, controls, colors and typography use Studio's shared components/tokens.
-   anchors: aq-pbl-split aq-pbl-dashboard aq-pbl-album-stats aq-pbl-wizard aq-pbl-work aq-pbl-ar-form aq-pbl-guide */
+   anchors: aq-pbl-split aq-pbl-dashboard aq-pbl-album-stats aq-pbl-wizard aq-pbl-work aq-pbl-ar-form aq-pbl-guide aq-pbl-sheet aq-pbl-diff aq-pbl-files aq-pbl-selbar aq-pbl-trackline aq-pbl-people-board aq-pbl-reuse aq-pbl-filter */
 .aq-pbl-split{display:grid;gap:16px;margin:0}
 .aq-pbl-split>.ui-meter{margin-top:-8px}
 .aq-pbl-split>.ui-field-help{margin:0}
@@ -94,3 +94,75 @@
   .aq-pbl-royalty-list .settle-entry{grid-template-columns:36px minmax(0,1fr);gap:8px}
   .aq-pbl-royalty-list .aq-statement-end{grid-column:2;justify-self:start}
 }
+
+/* 앨범 퍼블리싱 탭 — '정보' 탭 트랙 목록(aq-tracklist)에 고르기 칸만 더했다 */
+.aq-pbl-track-tools{display:flex;align-items:center;gap:6px}
+.aq-pbl-track-list .aq-tracklist{margin-top:12px}
+.aq-pbl-trackline{display:grid;grid-template-columns:40px minmax(0,1fr);align-items:center}
+.aq-pbl-trackrow{min-width:0}
+.aq-pbl-track-list a.aq-pbl-trackrow{grid-template-columns:40px 28px minmax(0,1fr) auto;padding-left:0;text-decoration:none}
+.aq-pbl-pick{display:grid;place-items:center;width:40px;height:44px;cursor:pointer}
+.aq-pbl-pick.is-empty{cursor:default}
+.aq-pbl-pick>input{width:20px;height:20px;margin:0;accent-color:var(--aq-primary);cursor:pointer}
+.aq-tracklist li.is-picked{border-radius:var(--aq-r-lg);background:var(--aq-blue-25)}
+.aq-pbl-trackrow .aq-trackrow-side .ui-badge{white-space:nowrap}
+@media(max-width:760px){
+  .aq-pbl-trackline{grid-template-columns:34px minmax(0,1fr)}
+  .aq-pbl-pick{width:34px}
+  .aq-pbl-track-list a.aq-pbl-trackrow{grid-template-columns:34px 22px minmax(0,1fr) auto}
+  .aq-pbl-trackrow .aq-trackrow-side .ui-badge{font-size:var(--aq-fs-2xs)}
+}
+/* 고른 곡으로 할 일 — 화면 아래에 붙는 막대 (토스의 하단 고정 버튼처럼 한 손으로) */
+.aq-pbl-selbar{position:sticky;bottom:calc(12px + env(safe-area-inset-bottom));z-index:var(--aq-z-sticky);display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 10px 10px 18px;border-radius:var(--aq-r-2xl);background:var(--aq-ink);color:#fff;box-shadow:var(--aq-shadow-pop);animation:aq-pbl-rise var(--aq-motion-base) var(--aq-enter)}
+.aq-pbl-selbar-count{flex:1 1 auto;font-size:var(--aq-fs-sm);color:rgba(255,255,255,.72)}
+.aq-pbl-selbar-count b{color:#fff;font-size:var(--aq-fs-md)}
+.aq-pbl-selbar .ui-btn.is-soft{background:rgba(255,255,255,.12);color:#fff}
+.aq-pbl-selbar .ui-btn.is-soft:hover{background:rgba(255,255,255,.2)}
+.aq-pbl-selbar-close{color:rgba(255,255,255,.72)!important;min-width:36px;padding-inline:8px}
+@keyframes aq-pbl-rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@media(max-width:560px){
+  .aq-pbl-selbar{padding:10px 12px;gap:6px}
+  .aq-pbl-selbar-count{flex-basis:calc(100% - 48px)}
+  .aq-pbl-selbar>.ui-btn:not(.aq-pbl-selbar-close){flex:1 1 0;min-width:0;padding-inline:8px}
+  .aq-pbl-selbar-close{order:-1;margin-left:auto}
+  .aq-pbl-selbar-count{order:-2}
+}
+@media(prefers-reduced-motion:reduce){.aq-pbl-selbar{animation:none}}
+/* 참여자 확인 현황 */
+.aq-pbl-people-board{display:grid;gap:14px}
+.aq-pbl-people-board>*{margin:0}
+.aq-pbl-people-list{display:grid;gap:12px;margin:0;padding:0;list-style:none}
+.aq-pbl-people-list>li{display:grid;gap:8px}
+.aq-pbl-people-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 4px}
+.aq-pbl-people-head strong{font-size:var(--aq-fs-md);overflow-wrap:anywhere}
+.aq-pbl-people-list .ui-list{margin:0}
+/* 곡 시트 — 발매 '곡 시트'(aq-track-sheet)와 같은 칸 나눔 */
+.aq-pbl-sheet-sec{display:grid;gap:12px;min-width:0;scroll-margin-top:12px}
+.aq-pbl-sheet-sec>*{margin:0}
+.aq-pbl-sheet-sec>.ui-section-head{margin:0}
+.aq-pbl-person.is-focus{box-shadow:inset 0 0 0 2px var(--aq-blue-300)}
+/* 변경 전후 — 바뀌는 줄만 '60% → 50%' */
+.aq-pbl-diff{padding:14px 16px;border-radius:var(--aq-r-lg);background:var(--aq-blue-25);box-shadow:inset 0 0 0 1px var(--aq-blue-100)}
+.aq-pbl-diff h4{margin:0 0 8px;font-size:var(--aq-fs-sm);color:var(--aq-blue-700)}
+.aq-pbl-diff ul{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.aq-pbl-diff li{display:grid;gap:2px;font-size:var(--aq-fs-sm);color:var(--aq-text-2);font-variant-numeric:tabular-nums}
+.aq-pbl-diff li strong{font-size:var(--aq-fs-md);color:var(--aq-text)}
+.aq-pbl-diff li.is-added strong::after{content:" 추가";color:var(--aq-green-700);font-size:var(--aq-fs-xs)}
+.aq-pbl-diff li.is-removed strong{color:var(--aq-text-3);text-decoration:line-through}
+/* 첨부 자료 — 줄을 누르면 아래에서 재생·열람 */
+.aq-pbl-files{margin:0}
+.aq-pbl-files>li{list-style:none}
+.aq-pbl-file-go{display:inline-flex;align-items:center;gap:4px;color:var(--aq-primary-text);font-size:var(--aq-fs-sm);font-weight:600;white-space:nowrap}
+.aq-pbl-file-go .is-flip{transform:rotate(180deg)}
+.aq-pbl-file-preview{display:grid;gap:8px;justify-items:start;padding:4px 14px 14px}
+.aq-pbl-file-audio{width:100%}
+.aq-pbl-file-img{max-width:100%;max-height:420px;border-radius:var(--aq-r-md);background:var(--aq-surface)}
+.aq-pbl-file-pdf{width:100%;height:420px;border:0;border-radius:var(--aq-r-md);background:var(--aq-surface)}
+.aq-pbl-file-text{width:100%;max-height:320px;overflow:auto;margin:0;white-space:pre-wrap}
+.aq-pbl-file-none{margin:0}
+.aq-pbl-reuse{display:grid;gap:8px;justify-items:start}
+.aq-pbl-reuse>.ui-list{width:100%;margin:0}
+/* 분석 기간·조건 — 음악 리포트의 report-tools 줄 */
+.aq-pbl-filter{margin:16px 0 20px}
+@media (min-width:761px){.aq-pbl-filter>select{flex:0 1 200px;max-width:220px}}
+@media(max-width:760px){.aq-pbl-filter{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}.aq-pbl-filter>*{width:100%}}

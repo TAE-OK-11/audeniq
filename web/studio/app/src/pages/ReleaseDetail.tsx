@@ -59,7 +59,8 @@ const DELIVERY_ISSUE: Record<string, string> = {
 const RIGHTS_KEYS = ['rightsMaster', 'rightsComposition', 'rightsArtwork', 'rightsConsent'];
 
 /** 상세 탭 — 휴대폰 한 줄에 다 보이게 넷으로 묶는다.
- *  정보(발매 정보·커버·트랙) · 배급·계약(플랫폼·권리·계약서) · 관리(발매 뒤에 하는 일) · 기록 */
+ *  정보(발매 정보·커버·트랙) · 배급·계약(플랫폼·권리·계약서) · 퍼블리싱 · 관리(발매 뒤에 하는 일).
+ *  변경 기록은 사용자에게 보여 주지 않는다 (담당자 화면에만) */
 const DETAIL_TABS = [
   { value: 'overview', label: '정보' },
   // 성과는 발매된 뒤에만 (플랫폼 리포트가 들어오는 때)
@@ -67,7 +68,6 @@ const DETAIL_TABS = [
   { value: 'delivery', label: '배급·계약' },
   { value: 'publishing', label: '퍼블리싱' },
   { value: 'manage', label: '관리' },
-  { value: 'history', label: '기록' },
 ];
 
 
@@ -181,7 +181,7 @@ export function ReleaseDetail() {
     u.searchParams.delete('track');
     window.history.replaceState(window.history.state, '', `${u.pathname}${u.search}${u.hash}`);
   }, [wantTrack, rel]);
-  const visibleTabs = rel ? releaseDetailVisibility(rel.status, rel.tracks.length, rel.draft?.history?.length ?? 0,
+  const visibleTabs = rel ? releaseDetailVisibility(rel.status, rel.tracks.length,
     !!rel.draft?.application || docsForRelease(allDocs, rel.id, rel.title).length > 0) : null;
   const activeTab = visibleTabs && !visibleTabs[tab as keyof typeof visibleTabs] ? 'overview' : tab;
   // URL로 숨겨진 탭을 열거나 상태가 바뀌어도 빈 패널을 남기지 않는다.
@@ -663,23 +663,6 @@ export function ReleaseDetail() {
           </Suspense>
         )}
 
-        {activeTab === 'history' && (
-          <div className="aq-relinfo-card">
-            <h2 className="subhead">변경 기록</h2>
-            {d?.history?.length ? (
-              <ol className="ui-timeline is-latest-first">
-                {d.history.slice().reverse().map((h, i) => (
-                  <li key={`${h.time}-${i}`}>
-                    <strong>{h.text}</strong>
-                    <small>{localStamp(h.time)}</small>
-                  </li>
-                ))}
-              </ol>
-            ) : (
-              <div className="empty-note">등록된 변경 기록이 없어요.</div>
-            )}
-          </div>
-        )}
       </div>
 
       {dangerButtons && <div className="aq-detail-danger">{dangerButtons}</div>}

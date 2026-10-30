@@ -46,6 +46,8 @@ export function PublishingApply() {
   const nav = useNavigate();
   const { user } = useAuth();
   const preset = params.get('work');
+  // 앨범 퍼블리싱 탭에서 여러 곡을 골라 '신청 대상으로 묶기'로 왔으면 그 곡들만
+  const bundled = params.get('works')?.split(',').filter(Boolean) ?? [];
   // 발매 상세·계약 묶음·발매 신청에서 왔으면 그 발매 곡들의 곡을 미리 고른다
   const fromRelease = params.get('release');
 
@@ -54,12 +56,12 @@ export function PublishingApply() {
   const [preparing, setPreparing] = useState(false);
 
   const saved = useRef(readJSON<Saved | null>(SAVE_KEY, null));
-  const resume = saved.current && (!preset || saved.current.workIds.includes(preset)) ? saved.current : null;
+  const resume = saved.current && !bundled.length && (!preset || saved.current.workIds.includes(preset)) ? saved.current : null;
   const [step, setStep] = useState(resume?.step && resume.step < 4 ? resume.step : 0);
-  const [picked, setPicked] = useState<string[]>(resume?.workIds ?? (preset ? [preset] : []));
+  const [picked, setPicked] = useState<string[]>(resume?.workIds ?? (bundled.length ? bundled : preset ? [preset] : []));
   // 발매에서 왔으면 그 발매에 연결된(아직 신청 전인) 곡을 모두 고른다
   useEffect(() => {
-    if (!fromRelease || !works) return;
+    if (!fromRelease || !works || bundled.length) return;
     const ids = works.filter(w => w.recordings.some(r => r.releaseId === fromRelease) && (w.myRole === 'owner' || w.myRole === 'editor') && !activeApp(w)).map(w => w.id);
     if (ids.length) setPicked(p => Array.from(new Set([...p, ...ids])));
   }, [fromRelease, works]);

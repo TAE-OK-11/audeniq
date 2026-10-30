@@ -17,7 +17,12 @@ import { publishingReport } from '../lib/publishingReport';
 import { periodLabel } from '../data/reports';
 import { money, num } from '../lib/format';
 import { Badge, EmptyState, IconTile, KeyValue, Meter, StatGrid, StatTile, Tabs } from '../ui';
+import { MonthField } from '../components/Picker';
+import {
+  ROYALTY_PERIODS, filterFromParams, filterRoyalties, filterToParams, isDefaultFilter, royaltyFilterLabel, type RoyaltyFilter, type RoyaltyPeriod,
+} from '../lib/publishingPrep';
 import '../styles/split/Dashboard.css';
+import '../styles/split/Reports.css';
 import '../styles/split/Publishing.css';
 
 type Tab = 'overview' | 'songs' | 'royalties';
@@ -57,7 +62,7 @@ function SongRow({ w, releaseId }: { w: Work; releaseId?: string }) {
 }
 
 /** 분석 — 확인할 일 · 저작권료 리포트 · 관리 중인 곡 · 곡별 저작권료 */
-function Overview({ scope, works, rows }: { scope: Scope | null; works: Work[] | null; rows: Royalty[] | null }) {
+function Overview({ scope, works, rows, label }: { scope: Scope | null; works: Work[] | null; rows: Royalty[] | null; label: string }) {
   const nav = useNavigate();
   const { data: sum, loading } = useAsync(() => pubApi.summary(), [], { key: 'pub-summary' });
   if (loading && !sum) return <SkeletonRows count={3} />;
@@ -82,7 +87,7 @@ function Overview({ scope, works, rows }: { scope: Scope | null; works: Work[] |
         <>
           {!scope && <Tasks s={s} nav={nav} />}
           <div className="aq-pbl-dashboard">
-            <RoyaltyReport rows={rows} scope={scope} />
+            <RoyaltyReport rows={rows} label={label} />
             <section className="ui-card aq-pbl-status" aria-labelledby="pubHeroSongs">
               <div className="ui-section-head"><h2 id="pubHeroSongs">곡 관리 현황</h2><span className="ui-count is-soft">전체 {s.works.total}곡</span></div>
               <StatGrid cols={3}>
@@ -94,7 +99,7 @@ function Overview({ scope, works, rows }: { scope: Scope | null; works: Work[] |
               {scope && <Link to={`/releases/${encodeURIComponent(scope.releaseId)}?tab=publishing`} className="ui-btn is-soft is-block">이 앨범에서 관리하기<Glyph name="chevron-right" size={14} /></Link>}
             </section>
           </div>
-          <SongRoyalties rows={rows} works={works} />
+          <SongRoyalties rows={rows} works={works} label={label} />
           {/* 아직 맡긴 곡이 없을 때만 — 처음 쓰는 사람에게 순서를 */}
           {!scope && !s.works.managed && <PathGuide />}
         </>
@@ -193,18 +198,20 @@ function Songs({ filter, setFilter, scope }: { filter: WorkFilter; setFilter: (f
 }
 
 /** 저작권료 리포트 — 홈 '음악 리포트'와 같은 카드: 최근 달 금액 · 지난달 비교 · 월별 막대 · 많이 번 곡과 단체 */
-function RoyaltyReport({ rows, scope }: { rows: Royalty[] | null; scope: Scope | null }) {
+function RoyaltyReport({ rows, label }: { rows: Royalty[] | null; label: string }) {
   const nav = useNavigate();
+  const [params] = useSearchParams();
   const r = useMemo(() => publishingReport(rows ?? []), [rows]);
   return (
     <section className="ui-card aq-report-card" aria-labelledby="pubReport">
       <div className="ui-section-head aq-report-head">
         <h2 id="pubReport">저작권료 리포트{r && <small>{periodLabel(r.period)}</small>}</h2>
-        <button className="aq-head-link" type="button" onClick={() => nav(`/publishing?tab=royalties${scope ? `&release=${encodeURIComponent(scope.releaseId)}` : ''}`)}>내역 보기<Glyph name="chevron-right" size={14} /></button>
+        {/* 고른 기간·조건을 그대로 들고 내역으로 */}
+        <button className="aq-head-link" type="button" onClick={() => { const p = new URLSearchParams(params); p.set('tab', 'royalties'); p.delete('wf'); nav(`/publishing?${p}`); }}>내역 보기<Glyph name="chevron-right" size={14} /></button>
       </div>
       {!rows ? <SkeletonRows count={2} pattern="amount" /> : !r ? (
-        <EmptyState compact icon={<Glyph name="chart" size={22} />} title="아직 들어온 저작권료가 없어요">
-          관리 단체가 사용료를 나눠 주면 여기서 달마다 얼마나 벌었는지 보여 드려요. 보통 사용된 달부터 3~6개월 걸려요.
+        <EmptyState compact icon={<Glyph name="chart" size={22} />} title={label ? '이 조건에 맞는 저작권료가 없어요' : '아직 들어온 저작권료가 없어요'}>
+          {label ? `${label} 기준으로 들어온 내역이 없어요. 기간을 넓히거나 조건을 바꿔 보세요.` : '관리 단체가 사용료를 나눠 주면 여기서 달마다 얼마나 벌었는지 보여 드려요. 보통 사용된 달부터 3~6개월 걸려요.'}
         </EmptyState>
       ) : (<>
         <div className="aq-report-total">
@@ -229,7 +236,7 @@ function RoyaltyReport({ rows, scope }: { rows: Royalty[] | null; scope: Scope |
 }
 
 /** 곡별 저작권료 — 홈 '내 발매'와 같은 줄에 몫 막대만 더했다. 어느 곡이 가장 많이 벌었는지 (예상 제외) */
-function SongRoyalties({ rows, works }: { rows: Royalty[] | null; works: Work[] | null }) {
+function SongRoyalties({ rows, works, label }: { rows: Royalty[] | null; works: Work[] | null; label: string }) {
   const [expanded, setExpanded] = useState(false);
   const bySong = new Map<string, { title: string; id: string; net: number; count: number }>();
   for (const r of rows ?? []) {
@@ -243,7 +250,7 @@ function SongRoyalties({ rows, works }: { rows: Royalty[] | null; works: Work[] 
   const rec = (id: string) => works?.find(w => w.id === id)?.recordings[0];
   return (
     <section className="ui-card aq-pub-songs" aria-labelledby="pubBySong">
-      <div className="ui-section-head"><h2 id="pubBySong">곡별 저작권료</h2><span className="ui-row-meta">누적 확정 금액</span></div>
+      <div className="ui-section-head"><h2 id="pubBySong">곡별 저작권료</h2><span className="ui-row-meta">{label ? `${label} · 확정 금액` : '누적 확정 금액'}</span></div>
       <div className="ui-list aq-stagger">
         {(expanded ? top : top.slice(0, 5)).map(s => (
           <Link key={s.id} to={`/works/${s.id}?tab=revenue`} className="release-row ui-row studio-album-row aq-row-link">
@@ -263,12 +270,55 @@ function SongRoyalties({ rows, works }: { rows: Royalty[] | null; works: Work[] 
 }
 
 /** 저작권료 — 기간별 자세한 내역과 CSV (합계·추이는 '분석' 탭) */
-function RoyaltiesTab({ rows }: { rows: Royalty[] | null }) {
+function RoyaltiesTab({ rows, label }: { rows: Royalty[] | null; label: string }) {
   if (!rows) return <SkeletonRows count={3} pattern="amount" />;
   return (
     <>
       <p className="ui-field-help">확정된 저작권료는 <Link to="/settlement?type=publishing" className="aq-inline-link">정산·지급</Link> 잔액에 배급 정산금과 함께 쌓여요.</p>
-      <RoyaltyTable summary={false} rows={rows} emptyText="관리 단체가 사용료를 나눠 주면 여기서 곡별로 보여 드려요. 보통 사용된 달부터 3~6개월 걸려요." />
+      <RoyaltyTable summary={false} rows={rows} csvLabel={label}
+        emptyText={label ? `${label} 기준으로 들어온 내역이 없어요. 기간을 넓히거나 조건을 바꿔 보세요.` : '관리 단체가 사용료를 나눠 주면 여기서 곡별로 보여 드려요. 보통 사용된 달부터 3~6개월 걸려요.'} />
+    </>
+  );
+}
+
+/** 분석 기간·조건 — 음악 리포트와 같은 줄(기간 고르기 + 직접 선택 달 칸 + 고르기 칸). 고른 조건은 주소에 남아
+ *  분석 · 저작권료 내역 · CSV가 같은 조건을 쓴다 */
+function RoyaltyFilterBar({ value, onChange, rows, works }: { value: RoyaltyFilter; onChange: (f: RoyaltyFilter) => void; rows: Royalty[]; works: Work[] }) {
+  const songs = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of rows) if (!m.has(r.workId)) m.set(r.workId, works.find(w => w.id === r.workId)?.title ?? r.workTitle);
+    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1], 'ko'));
+  }, [rows, works]);
+  const sources = useMemo(() => [...new Set(rows.map(r => r.source))].sort(), [rows]);
+  const countries = useMemo(() => [...new Set(rows.map(r => r.country))].sort(), [rows]);
+  const set = (patch: Partial<RoyaltyFilter>) => onChange({ ...value, ...patch });
+  const bad = value.period === 'custom' && !!value.from && !!value.to && value.from > value.to;
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  return (
+    <>
+      <div className="report-tools aq-pbl-filter">
+        <select className="ui-select" aria-label="분석 기간" value={value.period} onChange={e => set({ period: e.target.value as RoyaltyPeriod })}>
+          {ROYALTY_PERIODS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+        </select>
+        {value.period === 'custom' && (<>
+          <MonthField id="pubFrom" aria-label="시작 월" value={value.from ?? ''} max={value.to || thisMonth} onChange={v => set({ from: v })} />
+          <MonthField id="pubTo" aria-label="끝 월" value={value.to ?? ''} min={value.from || undefined} max={thisMonth} onChange={v => set({ to: v })} />
+        </>)}
+        <select className="ui-select" aria-label="곡" value={value.work ?? ''} onChange={e => set({ work: e.target.value || undefined })}>
+          <option value="">모든 곡</option>
+          {songs.map(([id, t]) => <option key={id} value={id}>{t}</option>)}
+        </select>
+        <select className="ui-select" aria-label="징수 단체" value={value.source ?? ''} onChange={e => set({ source: e.target.value || undefined })}>
+          <option value="">모든 징수 단체</option>
+          {sources.map(x => <option key={x} value={x}>{x}</option>)}
+        </select>
+        <select className="ui-select" aria-label="국가" value={value.country ?? ''} onChange={e => set({ country: e.target.value || undefined })}>
+          <option value="">모든 국가</option>
+          {countries.map(x => <option key={x} value={x}>{x}</option>)}
+        </select>
+        {!isDefaultFilter(value) && <button type="button" className="ui-btn is-text is-sm" onClick={() => onChange({ period: '12m' })}>조건 지우기</button>}
+      </div>
+      {bad && <p className="ui-field-help aq-help-error" role="alert">시작 월이 끝 월보다 늦어요. 기간을 다시 골라 주세요.</p>}
     </>
   );
 }
@@ -297,7 +347,7 @@ export function Publishing() {
   const [params, setParams] = useSearchParams();
   const asked = params.get('tab') as Tab | null;
   const tab: Tab = asked && TABS.some(t => t.value === asked) ? asked : 'overview';
-  const filter = (params.get('wf') as WorkFilter | null) ?? 'all';
+  const songFilter = (params.get('wf') as WorkFilter | null) ?? 'all';
   const set = (patch: Record<string, string | null>) => {
     const p = new URLSearchParams(params);
     for (const [k, v] of Object.entries(patch)) { if (v === null) p.delete(k); else p.set(k, v); }
@@ -315,6 +365,11 @@ export function Publishing() {
     const ids = new Set(works.filter(w => w.recordings.some(r => r.releaseId === releaseId)).map(w => w.id));
     return royalties.filter(r => ids.has(r.workId));
   }, [royalties, works, releaseId]);
+  // 분석 기간·조건 — 분석 탭과 저작권료 탭(내역·CSV)이 같은 조건을 쓴다
+  const filter = useMemo(() => filterFromParams(params), [params]);
+  const shownRows = useMemo(() => (scopedRows ? filterRoyalties(scopedRows, filter) : null), [scopedRows, filter]);
+  // 아직 저작권료가 하나도 없으면 조건 이야기는 하지 않는다 ('최근 1년 기준 없음'이 아니라 '아직 없음')
+  const filterLabel = scopedRows?.length ? royaltyFilterLabel(filter, { work: works?.find(w => w.id === filter.work)?.title }) : '';
   // 예전 탭 주소는 기능이 옮겨 간 화면으로 — 계약서, Open A&R(홍보)
   const moved = asked === 'contracts' as string ? `/contracts${params.get('pub') ? `?pub=${encodeURIComponent(params.get('pub')!)}` : ''}`
     : asked === 'ar' as string ? `/ar${params.get('work') ? `?work=${encodeURIComponent(params.get('work')!)}` : ''}`
@@ -335,12 +390,15 @@ export function Publishing() {
       <Tabs label="퍼블리싱 메뉴" value={tab} onChange={go}
         items={TABS.map(t => ({ ...t, count: t.value === 'songs' ? works?.filter(w => inScope(w, scope)).length ?? null : undefined }))} />
 
-      <AlbumScope works={works ?? null} value={releaseId} onChange={id => set({ release: id })} />
+      <AlbumScope works={works ?? null} value={releaseId} onChange={id => set({ release: id, work: null })} />
+      {tab !== 'songs' && scopedRows && scopedRows.length > 0 && (
+        <RoyaltyFilterBar value={filter} rows={scopedRows} works={works ?? []} onChange={f => set(filterToParams(f))} />
+      )}
 
       <div className="ui-tab-panel" key={tab}>
-        {tab === 'overview' && <Overview scope={scope} works={works ?? null} rows={scopedRows} />}
-        {tab === 'songs' && <Songs scope={scope} filter={filter} setFilter={f => set({ wf: f === 'all' ? null : f })} />}
-        {tab === 'royalties' && <RoyaltiesTab rows={scopedRows} />}
+        {tab === 'overview' && <Overview scope={scope} works={works ?? null} rows={shownRows} label={filterLabel} />}
+        {tab === 'songs' && <Songs scope={scope} filter={songFilter} setFilter={f => set({ wf: f === 'all' ? null : f })} />}
+        {tab === 'royalties' && <RoyaltiesTab rows={shownRows} label={filterLabel} />}
       </div>
     </div>
   );

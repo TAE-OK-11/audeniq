@@ -20,19 +20,21 @@ export function royaltyTotals(rows: readonly Royalty[]) {
   return t;
 }
 
-function saveCsv(rows: readonly Royalty[]) {
+/** 명세서 CSV — label이 있으면 고른 조건(기간·곡·단체·국가)을 파일 이름에 붙인다 */
+export function saveRoyaltyCsv(rows: readonly Royalty[], label?: string) {
   const head = ['곡', '수익 유형', '기간', '징수 기관', '국가', '통화', '수금액', '관리 지분(%)', '수수료', '정산금', '상태'];
   const body = rows.map(r => [r.workTitle, ROYALTY_KIND_LABEL[r.kind], r.period, r.source, r.country, r.currency, r.collected, r.share, r.fee, r.net, ROYALTY_STATUS_LABEL[r.status]]);
   const csv = '﻿' + [head, ...body].map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-  a.download = `audeniq-publishing-royalties-${new Date().toISOString().slice(0, 10)}.csv`;
+  const tag = label ? `-${label.replace(/[\\/:*?"<>|~]+/g, '').replace(/\s*·\s*|\s+/g, '_')}` : '';
+  a.download = `audeniq-publishing-royalties${tag}-${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
 /** summary=false: 합계 카드 없이 내역만 (퍼블리싱 '저작권료' 탭 — 합계는 '분석' 탭에) */
-export function RoyaltyTable({ rows, showWork = true, emptyText, summary = true }: { rows: readonly Royalty[]; showWork?: boolean; emptyText?: string; summary?: boolean }) {
+export function RoyaltyTable({ rows, showWork = true, emptyText, summary = true, csvLabel }: { rows: readonly Royalty[]; showWork?: boolean; emptyText?: string; summary?: boolean; csvLabel?: string }) {
   const [status, setStatus] = useState<'all' | RoyaltyStatus>('all');
   const [open, setOpen] = useState<Royalty | null>(null);
   const counts = useMemo(() => {
@@ -64,7 +66,7 @@ export function RoyaltyTable({ rows, showWork = true, emptyText, summary = true 
       <div className="aq-list-tools aq-pbl-royalty-tools">
         <ChipGroup size="sm" label="지급 상태" value={status} onChange={setStatus}
           options={[{ value: 'all', label: '전체', count: counts.all }, ...(['confirmed', 'estimated', 'paid'] as const).map(s => ({ value: s, label: ROYALTY_STATUS_LABEL[s], count: counts[s] ?? 0 }))]} />
-        <button type="button" className="ui-btn is-soft is-sm" disabled={!shown.length} onClick={() => saveCsv(shown)}><Glyph name="download" size={14} className="aq-glyph-lead" />명세서 CSV</button>
+        <button type="button" className="ui-btn is-soft is-sm" disabled={!shown.length} onClick={() => saveRoyaltyCsv(shown, csvLabel)}><Glyph name="download" size={14} className="aq-glyph-lead" />명세서 CSV</button>
       </div>
       {!shown.length && <EmptyState compact title="이 상태의 저작권료가 없어요" actions={<button type="button" className="ui-btn is-soft is-sm" onClick={() => setStatus('all')}>전체 내역 보기</button>}>다른 지급 상태를 선택해 주세요.</EmptyState>}
       <div className="aq-catalog-cards aq-stagger aq-pbl-royalty-list">

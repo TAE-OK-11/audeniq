@@ -5,13 +5,13 @@
 import { useEffect, useState, type ChangeEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from '../lib/router';
 import { api } from '../api/client';
-import { pubApi, type Work, type WorkAttachment, type WorkContributor } from '../api/publishing';
+import { pubApi, type Work, type WorkContributor } from '../api/publishing';
 import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { MOCK } from '../lib/mode';
-import { APP_LABEL, APP_TONE, CONTRACT_LABEL, CONTRACT_TONE, LANGUAGES, REG_SENTENCE, REG_STEPS, WORK_TYPES, isManaged, pct, regStep, splitIssues, splitReady } from '../lib/publishing';
+import { APP_LABEL, APP_TONE, CONTRACT_LABEL, CONTRACT_TONE, LANGUAGES, REG_SENTENCE, REG_STEPS, WORK_TYPES, pct, regStep, splitIssues, splitReady } from '../lib/publishing';
 import { StageCard } from '../components/StageCard';
-import { STATUS_LABEL, fileSize, localStamp, statusTone } from '../lib/format';
+import { STATUS_LABEL, localStamp, statusTone } from '../lib/format';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { Modal } from '../components/Modal';
@@ -24,20 +24,22 @@ import { RegBadge, RegProgress, roleText } from '../components/publishing/parts'
 import { SplitEditor } from '../components/publishing/SplitEditor';
 import { RoyaltyTable } from '../components/publishing/Royalties';
 import { ContractManage } from '../components/publishing/PublishingContracts';
-import { Badge, Callout, EmptyState, StatGrid, StatTile, Tabs } from '../ui';
+import { AttachmentList, AttachmentModal } from '../components/publishing/Attachments';
+import { Badge, Callout, EmptyState, Segmented, StatGrid, StatTile, Tabs } from '../ui';
+import { SplitDiffList } from '../components/publishing/WorkSheet';
+import { changeNeedsReview, reusableWorks, splitDiff } from '../lib/publishingPrep';
 import { Money } from '../components/Money';
 import { useReportRows } from '../hooks/useReportRows';
 import '../styles/split/ReleaseDetail.css';
 import '../styles/split/Publishing.css';
 
 type Tab = 'overview' | 'rights' | 'register' | 'recordings' | 'revenue' | 'files';
-// 탭은 발매 상세와 같은 순서·이름으로 — 정보 · 성과 · (배급·계약 자리에) 저작권·계약 · 기록.
+// 탭은 발매 상세와 같은 순서·이름으로 — 정보 · 성과 · (배급·계약 자리에) 저작권·계약 · 자료 (변경 기록은 사용자에게 보여 주지 않는다).
 // 예전 '참여자·권리'·'녹음·발매' 탭은 정보 탭 안의 칸이 됐다 (주소로 오면 그 칸으로 내려간다)
 const TABS: { value: Tab; label: string }[] = [
-  { value: 'overview', label: '정보' }, { value: 'revenue', label: '성과' }, { value: 'register', label: '저작권·계약' }, { value: 'files', label: '자료·기록' },
+  { value: 'overview', label: '정보' }, { value: 'revenue', label: '성과' }, { value: 'register', label: '저작권·계약' }, { value: 'files', label: '자료' },
 ];
 const SECTION: Partial<Record<Tab, string>> = { rights: 'workRights', recordings: 'workRecordings' };
-const KIND_LABEL: Record<WorkAttachment['kind'], string> = { demo: '데모 음원', lyrics: '가사', score: '악보', proof: '권리 증빙' };
 const label = <T extends readonly (readonly [string, string])[]>(list: T, v: string) => list.find(([k]) => k === v)?.[1] ?? v;
 const Empty = ({ children }: { children: string }) => <span className="aq-empty-val">{children}</span>;
 
@@ -190,7 +192,9 @@ export function WorkDetail() {
   const [splitDraft, setSplitDraft] = useState<WorkContributor[] | null>(null);
   const [savingSplit, setSavingSplit] = useState(false);
   const [linking, setLinking] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [attaching, setAttaching] = useState(false);
+  const [splitView, setSplitView] = useState<'now' | 'pending'>('pending');
+  const { data: allWorks } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
 
   if (loading && !w) return <div id="view-release" className="view"><SkeletonBlock height={220} /><SkeletonBlock height={280} /></div>;
   if (error || !w) {
@@ -223,7 +227,7 @@ export function WorkDetail() {
       const nw = await pubApi.updateWork(w.id, { contributors: splitDraft }, w.rowVersion);
       update(nw);
       setSplitDraft(null);
-      toast('지분을 저장했어요.', { tone: 'success', sub: splitReady(nw.contributors) ? '바뀐 지분은 참여자에게 확인을 요청해요.' : '합계가 100%가 아니에요. 신청 전에 맞춰 주세요.' });
+      toast(nw.pendingChange ? '변경을 요청했어요.' : '지분을 저장했어요.', { tone: 'success', sub: nw.pendingChange ? '참여자 확인과 담당자 검토가 끝날 때까지 지금 값으로 관리돼요.' : splitReady(nw.contributors) ? '바뀐 지분은 참여자에게 확인을 요청해요.' : '합계가 100%가 아니에요. 신청 전에 맞춰 주세요.' });
     } catch (err) {
       toast(errorMessage(err, '지분을 저장하지 못했어요.'), { tone: 'error', action: { label: '다시 시도', onClick: h => { h.close(); void saveSplit(); } } });
       if (err && typeof err === 'object' && 'status' in err && (err as { status: number }).status === 409) reload();
@@ -250,15 +254,6 @@ export function WorkDetail() {
     const ok = await confirm({ title: `‘${title}’ 연결을 풀까요?`, message: '발매와 녹음은 그대로예요. 이 곡과의 연결만 풀어요.', confirmLabel: '연결 풀기', danger: true });
     if (!ok) return;
     try { update(await pubApi.unlinkRecording(w.id, recId)); toast('연결을 풀었어요.', 'success'); } catch (err) { toast(errorMessage(err), 'error'); }
-  };
-
-  const upload = async (e: ChangeEvent<HTMLInputElement>, kind: WorkAttachment['kind']) => {
-    const f = e.target.files?.[0];
-    e.target.value = '';
-    if (!f) return;
-    setUploading(true);
-    try { await api.uploadFile(f, kind === 'demo' ? 'AUDIO' : 'DOCUMENT'); update(await pubApi.addAttachment(w.id, kind, f.name, f.size)); toast('파일을 올렸어요.', 'success'); }
-    catch (err) { toast(errorMessage(err, '파일을 올리지 못했어요.'), 'error'); } finally { setUploading(false); }
   };
 
   const remove = async () => {
@@ -357,21 +352,31 @@ export function WorkDetail() {
             <div className="aq-relinfo-card">
               <div className="ui-section-head">
                 <h2 className="subhead">참여자·지분</h2>
-                {canEdit && !splitDraft && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setSplitDraft(structuredClone(w.contributors))}>지분 고치기</button>}
+                {canEdit && !splitDraft && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setSplitDraft(structuredClone(w.pendingChange?.contributors ?? w.contributors))}>{w.pendingChange ? '변경값 고치기' : '지분 고치기'}</button>}
               </div>
               {splitDraft ? (
                 <>
-                  <SplitEditor value={splitDraft} onChange={setSplitDraft} />
-                  {isManaged(w) && <p className="ui-field-help">관리 중인 곡의 지분 변경은 모든 참여자가 확인하고 담당자가 검토한 뒤 반영돼요.</p>}
+                  <SplitEditor value={splitDraft} onChange={setSplitDraft} reuse={reusableWorks(allWorks ?? [], w.id)} />
+                  <SplitDiffList title="바뀌는 내용" changes={splitDiff(w.pendingChange?.contributors ?? w.contributors, splitDraft)} />
+                  {changeNeedsReview(w) && <p className="ui-field-help">관리 중인 곡이라 지금 적용값은 그대로 두고, 모든 참여자가 확인하고 담당자가 검토한 뒤 바뀐 값으로 관리해요.</p>}
                   <div className="ui-actions">
                     <button type="button" className="ui-btn is-soft" onClick={() => setSplitDraft(null)} disabled={savingSplit}>취소</button>
-                    <button type="button" className={`ui-btn is-primary${savingSplit ? ' is-busy' : ''}`} disabled={savingSplit} onClick={() => void saveSplit()}>{savingSplit ? '저장 중' : '지분 저장'}</button>
+                    <button type="button" className={`ui-btn is-primary${savingSplit ? ' is-busy' : ''}`} disabled={savingSplit} onClick={() => void saveSplit()}>{savingSplit ? '저장 중' : changeNeedsReview(w) ? '변경 요청' : '지분 저장'}</button>
                   </div>
                 </>
               ) : (
-                <SplitEditor value={w.contributors} onChange={() => {}} readOnly
+                <>
+                {w.pendingChange && (
+                  <>
+                    <Segmented label="볼 지분" value={splitView} onChange={setSplitView} fill size="sm"
+                      options={[{ value: 'now', label: '지금 적용값' }, { value: 'pending', label: '검토 중인 변경값' }]} />
+                    {splitView === 'pending' && <SplitDiffList title={`${localStamp(w.pendingChange.requestedAt)} 요청 · 검토 중`} changes={splitDiff(w.contributors, w.pendingChange.contributors)} />}
+                  </>
+                )}
+                <SplitEditor value={w.pendingChange && splitView === 'pending' ? w.pendingChange.contributors : w.contributors} onChange={() => {}} readOnly
                   onRequestConfirm={canEdit ? c => void pubApi.requestSplitConfirm(w.id, c.id).then(nw => { update(nw); toast(`${c.name} 님에게 확인을 요청했어요.`, 'success'); }).catch(err => toast(errorMessage(err), 'error')) : undefined}
                   onSimulate={MOCK && canEdit ? c => void pubApi.simulateConfirm(w.id, c.id).then(update) : undefined} />
+                </>
               )}
             </div>
 
@@ -487,47 +492,19 @@ export function WorkDetail() {
         {tab === 'files' && (
           <div className="aq-detail-stack">
             <div className="aq-relinfo-card">
-              <h2 className="subhead">자료</h2>
-              {w.attachments.length ? (
-                <dl className="ui-kv is-2">
-                  {w.attachments.map(a => (
-                    <div key={a.id}><dt>{KIND_LABEL[a.kind]}</dt><dd className="break">{a.name}{a.size ? <span className="aq-empty-val"> · {fileSize(a.size)}</span> : null}</dd></div>
-                  ))}
-                </dl>
-              ) : <p className="muted small">아직 올린 자료가 없어요. 데모·가사·악보·권리 증빙을 모아 둘 수 있어요.</p>}
-              {canEdit && (
-                <div className="form-grid">
-                  {(['demo', 'lyrics', 'score', 'proof'] as const).map(k => (
-                    <div key={k} className="ui-field">
-                      <label htmlFor={`up-${k}`}>{KIND_LABEL[k]} 올리기</label>
-                      <FilePicker id={`up-${k}`} busy={uploading} onChange={e => void upload(e, k)} />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="aq-relinfo-card">
-              <h2 className="subhead">변경 기록</h2>
-              <ActivityList items={w.activity} empty="등록된 변경 기록이 없어요." />
+              <div className="ui-section-head">
+                <h2 className="subhead">자료</h2>
+                {canEdit && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setAttaching(true)}><Glyph name="clip" size={14} className="aq-glyph-lead" />자료 첨부</button>}
+              </div>
+              <AttachmentList items={w.attachments} />
             </div>
             {w.myRole === 'owner' && (!app || app.status === 'withdrawn') && (
               <div className="row-actions"><button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => void remove()}>이 곡 지우기</button></div>
             )}
+            {attaching && <AttachmentModal works={[w]} workId={w.id} onClose={() => setAttaching(false)} onAdded={update} />}
           </div>
         )}
       </div>
     </div>
-  );
-}
-
-/** 발매 상세 '기록' 탭과 같은 타임라인 */
-function ActivityList({ items, empty }: { items: Work['activity']; empty: string }) {
-  if (!items.length) return <div className="empty-note">{empty}</div>;
-  return (
-    <ol className="ui-timeline is-latest-first">
-      {items.map((a, i) => (
-        <li key={i}><strong>{a.text}</strong><small>{[a.who, localStamp(a.at)].filter(Boolean).join(' · ')}</small></li>
-      ))}
-    </ol>
   );
 }
