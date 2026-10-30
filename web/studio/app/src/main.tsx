@@ -52,18 +52,22 @@ else setTimeout(early, 1200);
 
 // 공개 페이지(스마트링크·아티스트)는 공개 앱만, 그 밖은 스튜디오 앱을 받는다 — 팬은 스튜디오 화면 코드·전체 스타일을 받지 않는다.
 // 스튜디오 주소면 화면 조각도 함께 받기 시작한다(인증 확인과 나란히)
+// 앱을 먼저 부른다 — import()가 부르는 순간 CSS <link>를 붙이므로, 전역 스타일이 화면 조각 스타일보다 앞에 놓여야
+// 화면 조각 CSS가 원래 순서대로 전역 규칙 뒤에 온다 (styles/split/)
 const publicPage = isPublicPath(currentPath());
+// 두 import()를 따로 둔다 — 한 식(삼항) 안에 두면 번들러가 두 쪽 의존 파일을 한 번에 미리 받아 공개 페이지도 스튜디오 앱·스타일을 받았다
+const loadPublic = (): Promise<ComponentType> => import('./public/PublicApp').then(m => m.PublicApp);
+const loadStudio = (): Promise<ComponentType> => import('./App').then(m => m.App);
+const loadApp = publicPage ? loadPublic : loadStudio;
+const appLoad = loadApp();
 if (!publicPage) prefetchInitialRoute();
-const loadApp = (): Promise<ComponentType> => (publicPage
-  ? import('./public/PublicApp').then(m => m.PublicApp)
-  : import('./App').then(m => m.App));
 
 // 체험 모드: 접수된 계약서 검토를 자동 완료 (별도 청크로 분리해 실제 모드 번들에는 포함되지 않음)
 // MOCK(lib/mode)과 같은 식을 그대로 쓴다 — 가져온 상수로는 실서버 빌드에도 청크가 만들어졌다
 if (import.meta.env.MODE !== 'edge' && import.meta.env.VITE_MOCK !== 'false') void import('./store/mockReviewer').then(m => m.startMockReviewer());
 
 // 잠깐 끊긴 회선이면 한 번 더, 배포로 옛 파일이 사라졌으면 한 번 새로고침 (lib/lazyComponent와 같은 규칙)
-loadApp()
+appLoad
   .catch(e => (navigator.onLine ? new Promise(r => setTimeout(r, 700)).then(loadApp) : Promise.reject(e)))
   .then(Root => {
     createRoot(root).render(
