@@ -9,6 +9,7 @@ import { Glyph } from './Glyph';
 import { Modal, useModalClose } from './Modal';
 import { useConfirm } from './Confirm';
 import { useToast } from './Toast';
+import { SkeletonRows } from './Skeleton';
 
 const ROLE: Record<string, string> = { OWNER: '소유자', EDITOR: '편집', VIEWER: '보기' };
 const ROLE_HELP = '편집: 발매를 만들고 고칠 수 있어요 · 보기: 내용만 볼 수 있어요';
@@ -86,7 +87,7 @@ function Members({ onChanged }: { onChanged: () => void }) {
     }
   };
 
-  if (!data) return <p className="muted small">멤버를 불러오는 중이에요…</p>;
+  if (!data) return <SkeletonRows count={2} />;
   const shown = data.items.filter(m => m.status !== 'REVOKED');
   return (
     <>

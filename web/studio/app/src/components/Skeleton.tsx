@@ -16,6 +16,18 @@ export function SkeletonRows({ count = 3, avatar = true }: { count?: number; ava
   );
 }
 
+/** 제목 한 줄 + 문단 두세 줄 — 안내문·초대장처럼 글로 된 화면 */
+export function SkeletonLines() {
+  return (
+    <div className="aq-page-skeleton" aria-busy="true" aria-label="불러오는 중">
+      <span className="aq-skel aq-skel-title" />
+      <span className="aq-skel aq-skel-line" style={{ width: '92%' }} />
+      <span className="aq-skel aq-skel-line" style={{ width: '84%', marginTop: 10 }} />
+      <span className="aq-skel aq-skel-line" style={{ width: '58%', marginTop: 10 }} />
+    </div>
+  );
+}
+
 export function SkeletonBlock({ height = 180, className = '' }: { height?: number; className?: string }) {
   return <div className={`aq-skel aq-skel-block${className ? ` ${className}` : ''}`} style={{ height }} aria-busy="true" aria-label="불러오는 중" />;
 }

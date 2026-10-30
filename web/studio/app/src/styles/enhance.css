@@ -163,7 +163,15 @@ img{max-width:100%}
 /* ---------- 상태 칩 ---------- */
 
 /* ---------- 버튼 ---------- */
-.aq-spinner{display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid var(--aq-gray-300);border-right-color:transparent;animation:aq-spin .7s linear infinite;vertical-align:-2px;margin-right:6px}
+/* 원 — 옅은 고리 위로 진한 호가 돌며 길어졌다 짧아진다 (토스트의 진행 중 원과 같은 모양). 색은 글자색, 안내 상자 안에서는 브랜드 파랑 */
+@property --aq-arc{syntax:'<percentage>';inherits:false;initial-value:30%}
+@keyframes aq-arc{0%,100%{--aq-arc:14%}50%{--aq-arc:64%}}
+.aq-spinner{display:inline-block;flex:none;width:16px;height:16px;border-radius:50%;vertical-align:-3px;margin-right:6px;
+  background:conic-gradient(currentColor var(--aq-arc),color-mix(in srgb,currentColor 18%,transparent) 0);
+  -webkit-mask:radial-gradient(farthest-side,#0000 calc(100% - 2.4px),#000 calc(100% - 2px));mask:radial-gradient(farthest-side,#0000 calc(100% - 2.4px),#000 calc(100% - 2px));
+  animation:aq-spin .9s linear infinite,aq-arc 1.5s ease-in-out infinite}
+.aq-loading-notice .aq-spinner{color:var(--aq-blue-500)}
+@media (prefers-reduced-motion:reduce){.aq-spinner{animation:aq-spin 1.8s linear infinite}}
 .aq-back-link svg{transition:transform var(--aq-motion-short) var(--aq-enter)}
 @media(hover:hover) and (pointer:fine){.aq-back-link:hover svg{transform:translateX(-2px)}}
 
@@ -302,7 +310,8 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
 }
 
 /* 로딩이 150ms 안에 끝나면 스켈레톤이 아예 보이지 않도록 늦게 등장 (깜빡임 방지) */
-.aq-skeleton-list,.aq-skel-block,.aq-page-skeleton{animation:aq-fade-in var(--aq-motion-base) var(--aq-enter) var(--aq-motion-short) both!important}
+/* 0.2초 안에 끝나는 로딩에는 뼈대가 번쩍였다 사라지지 않게 — 조금 기다렸다가 떠오른다 */
+.aq-skeleton-list,.aq-skel-block,.aq-page-skeleton{animation:aq-fade-in var(--aq-motion-base) var(--aq-enter) .2s both!important}
 
 /* ---------- 홈 히어로: 물방울 장식 제거 (단색 카드로 정돈) ---------- */
 
@@ -577,8 +586,14 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 /* 파일 업로드 진행률 — 윤곽선 없는 얇은 바 */
 .aq-upload-progress{display:grid;gap:6px;margin-top:10px;animation:aq-fade-up var(--aq-motion-base) var(--aq-enter) both}
 .aq-upload-progress>span{display:block;height:6px;border-radius:var(--aq-r-3xl);background:var(--aq-e-blue-soft);overflow:hidden}
-.aq-upload-progress>span>i{display:block;width:100%;height:100%;border-radius:inherit;background:var(--aq-e-blue);translate:calc(var(--p,0%) - 100%) 0;transition:translate var(--aq-motion-long) var(--aq-e-ease)}
-.aq-upload-progress>small{font-size:12px;font-weight:600;color:var(--aq-e-muted)}
+.aq-upload-progress>span>i{position:relative;display:block;width:100%;height:100%;border-radius:inherit;background:var(--aq-e-blue);translate:calc(var(--p,0%) - 100%) 0;transition:translate var(--aq-motion-long) var(--aq-e-ease);overflow:hidden}
+/* 큰 파일은 진행률이 한동안 멈춰 보인다 — 채워진 부분 위로 빛이 지나가 '멈춘 게 아니라 올리는 중'임을 보여 준다.
+   다 올린 뒤 서버가 확인하는 동안(is-processing)은 막대를 다 채우고 빛이 더 빨리 지나간다 */
+.aq-upload-progress>span>i::after{content:"";position:absolute;top:0;bottom:0;left:calc(100% - var(--p,0%));right:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent) no-repeat;background-size:min(120px,60%) 100%;background-position:-100% 0;animation:aq-progress-sheen 1.6s cubic-bezier(.45,0,.35,1) infinite}
+.aq-upload-progress.is-processing>span>i::after{animation-duration:1.05s}
+@keyframes aq-progress-sheen{to{background-position:200% 0}}
+.aq-upload-progress>small{font-size:12px;font-weight:600;color:var(--aq-e-muted);font-variant-numeric:tabular-nums}
+@media (prefers-reduced-motion:reduce){.aq-upload-progress>span>i::after{animation:none;opacity:0}}
 
 /* ── 신청서(위자드) 단계 목록 · 데스크톱 2단 레이아웃 ───────────────── */
 .aq-wiz-rail{display:none}

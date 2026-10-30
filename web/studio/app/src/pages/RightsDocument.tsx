@@ -9,6 +9,7 @@ import { errorMessage } from '../api/errors';
 import { localStamp } from '../lib/format';
 import { sha256Hex } from '../lib/application';
 import { rightsHashInput } from '../lib/rightsDocument';
+import { PageSkeleton } from '../components/Skeleton';
 
 export function RightsDocument() {
   const { id } = useParams();
@@ -33,7 +34,7 @@ export function RightsDocument() {
       .then(hash => { if (!cancelled) setIntegrity(hash === doc.electronic?.content_hash ? 'ok' : 'changed'); });
     return () => { cancelled = true; };
   }, [doc]);
-  if (loading) return <p role="status">문서를 불러오는 중이에요.</p>;
+  if (loading) return <PageSkeleton />;
   if (error || !doc?.electronic) return <div className="ui-empty"><h1>문서를 확인할 수 없어요.</h1><p>{error || '이 계정에서 볼 수 있는 전자 문서가 없어요.'}</p><button className="ui-btn is-soft" onClick={() => nav('/rights')}>권리 서류로 돌아가기</button></div>;
   const e = doc.electronic;
   return <div className="aq-doc-view view-enter">

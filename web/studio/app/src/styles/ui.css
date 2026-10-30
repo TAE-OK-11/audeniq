@@ -86,12 +86,21 @@
 .ui-btn.is-block{display:flex;width:100%}
 .ui-btn.is-icon{width:var(--btn-h);padding:0;flex:none}
 .ui-btn.is-busy{cursor:progress}
-/* 글자 버튼은 '접수하는 중'처럼 글자가 이미 알려 준다 — 글자 옆에 붙어 돌던 원은 빼고 버튼이 은은하게 숨 쉰다.
-   글자가 없는 아이콘 버튼만 아이콘 자리에 원을 돌린다 */
-.ui-btn.is-busy:not(.is-icon){animation:aq-btn-busy 1.3s ease-in-out infinite}
-@keyframes aq-btn-busy{50%{opacity:.72}}
-.ui-btn.is-icon.is-busy::after{content:"";flex:none;width:15px;height:15px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:aq-spin .7s linear infinite}
-@media (prefers-reduced-motion:reduce){.ui-btn.is-busy:not(.is-icon){animation:none;opacity:.8}}
+/* 글자 버튼은 '접수하는 중'처럼 글자가 이미 알려 준다 — 원 대신 버튼 위로 옅은 빛이 왼쪽에서 오른쪽으로 지나간다
+   (예전엔 버튼 전체가 흐려졌다 돌아와 깜빡이는 것처럼 보였다). 글자는 그대로 또렷하다.
+   글자가 없는 아이콘 버튼만 아이콘 자리에 원(.aq-spinner와 같은 모양)을 돌린다 */
+.ui-btn.is-busy:not(.is-icon),.ui-btn[aria-busy=true]:not(.is-icon){
+  background-image:linear-gradient(105deg,transparent 30%,color-mix(in srgb,currentColor 16%,transparent) 50%,transparent 70%);
+  background-size:240% 100%;background-repeat:no-repeat;background-position:135% 0;animation:aq-btn-sheen 1.5s cubic-bezier(.4,0,.2,1) infinite}
+@keyframes aq-btn-sheen{to{background-position:-35% 0}}
+/* 처리 중인 버튼은 '못 누르는 버튼'이 아니다 — 흐리게(.45) 하지 않고 제 색 그대로 둔다 */
+.ui-btn.is-busy:disabled,.ui-btn[aria-busy=true]:disabled{opacity:1}
+.ui-btn.is-primary.is-busy:disabled,.ui-btn.is-primary[aria-busy=true]:disabled{--btn-bg:var(--aq-blue-500)}
+.ui-btn.is-icon.is-busy::after{content:"";flex:none;width:16px;height:16px;border-radius:50%;
+  background:conic-gradient(currentColor var(--aq-arc),color-mix(in srgb,currentColor 18%,transparent) 0);
+  -webkit-mask:radial-gradient(farthest-side,#0000 calc(100% - 2.4px),#000 calc(100% - 2px));mask:radial-gradient(farthest-side,#0000 calc(100% - 2.4px),#000 calc(100% - 2px));
+  animation:aq-spin .9s linear infinite,aq-arc 1.5s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.ui-btn.is-busy:not(.is-icon),.ui-btn[aria-busy=true]:not(.is-icon){animation:none;background-image:none;opacity:.8}}
 /* 버튼 끝 화살표 (발매 등록하기 →) */
 .ui-btn-arrow{display:grid;place-items:center;flex:none;transition:transform var(--aq-dur) var(--aq-ease)}
 .ui-btn:not(:disabled):hover>.ui-btn-arrow{transform:translateX(3px)}
