@@ -290,7 +290,9 @@ export function WorkDetail() {
           <h1>{w.title}</h1>
           {/* 발매 상세처럼 이름만 — 지분은 정보 탭의 참여자·지분에서 */}
           <p className="aq-detail-artist">{w.contributors.map(c => c.name).join(' · ') || '참여자 없음'}</p>
-          <p className="aq-detail-meta">{[label(WORK_TYPES, w.workType), w.genre, w.iswc && `ISWC ${w.iswc}`, w.myRole === 'contributor' && '공동 참여 곡'].filter(Boolean).join(' · ')}</p>
+          {/* 항목 단위로만 줄을 바꾼다 — ISWC 번호가 'T-' / '345…'로 쪼개지지 않게 */}
+          <p className="aq-detail-meta">{[label(WORK_TYPES, w.workType), w.genre, w.iswc && `ISWC ${w.iswc}`, w.myRole === 'contributor' && '공동 참여 곡'].filter(Boolean)
+            .map((x, i) => <span key={i}>{i > 0 && ' · '}<span className="aq-nowrap">{x}</span></span>)}</p>
         </div>
         <div className="aq-detail-actions is-wide">{buttons}</div>
         {/* 진행 단계는 발매 상세처럼 머리 카드 안 아래쪽 흰 판으로 — 맡기기 전과 등록이 끝난 뒤에는 배지만 */}

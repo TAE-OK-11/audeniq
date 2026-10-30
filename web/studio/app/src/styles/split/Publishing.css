@@ -13,3 +13,16 @@
   .aq-splits-row.aq-pbl-split-row>select,.aq-splits-row.aq-pbl-split-row>input[aria-label="IPI/CAE"]{grid-column:span 1}
   .aq-splits-row.aq-pbl-split-row>select{grid-column:1 / 2}
 }
+/* 참여자 이름 옆 배지와 이름 사이 */
+.aq-pbl-split legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+@media(max-width:640px){
+  /* 입력 줄 — 이름은 위 제목에 있으니 고정 이름 칸은 빼고, 창작 % · 관리 % 한 줄, 관리 단체 한 줄, IPI와 삭제 한 줄 */
+  .aq-splits-row.aq-pbl-split-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto}
+  .aq-splits-row.aq-pbl-split-row>.aq-splits-name{display:none}
+  .aq-splits-row.aq-pbl-split-row>input[aria-label="이름"]{grid-column:1/-1}
+  .aq-splits-row.aq-pbl-split-row>select{grid-column:1/-1}
+  .aq-splits-row.aq-pbl-split-row>input[aria-label="IPI/CAE"]{grid-column:1/3}
+  /* 읽기 전용 줄(곡 상세) — 역할·단체·IPI는 한 줄 전체, 지분 숫자는 그 아래 */
+  .aq-pbl-split .aq-splits-row:not(.aq-pbl-split-row){grid-template-columns:auto minmax(0,1fr)}
+  .aq-pbl-split .aq-splits-row:not(.aq-pbl-split-row)>.aq-splits-name{grid-column:1/-1;font-size:14px;line-height:1.5}
+}

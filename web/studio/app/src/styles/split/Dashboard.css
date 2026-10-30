@@ -20,7 +20,7 @@
 :is(#view-home,#view-publishing) .aq-report-card .aq-mini-col small{align-self:stretch;margin:0;padding-top:8px;border-top:1px solid var(--aq-line);text-align:center;font-weight:600}
 :is(#view-home,#view-publishing) .aq-report-card .ui-empty{min-height:0}
 @media(max-width:900px){
-  .aq-home-tasks{order:1}.aq-home-upcoming{order:2}.aq-home-delivery{order:3}.aq-home-pitch{order:4}.aq-home-releases{order:5}.aq-home-money{order:6}.aq-home-side .aq-report-card{order:7}.aq-home-promo{order:8}.aq-home-news{order:9}
+  #view-home .aq-home-tasks{order:1}#view-home .aq-home-upcoming{order:2}#view-home .aq-home-delivery{order:3}#view-home .aq-home-pitch{order:4}#view-home .aq-home-releases{order:5}#view-home .aq-home-money{order:6}#view-home .aq-home-side .aq-report-card{order:7}#view-home .aq-home-promo{order:8}#view-home .aq-home-news{order:9}
 }
 @media(max-width:760px){#view-home .aq-task-text small{-webkit-line-clamp:2;line-clamp:2}}
 @media(prefers-reduced-motion:reduce){

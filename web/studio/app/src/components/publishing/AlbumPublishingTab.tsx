@@ -40,7 +40,7 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
   const totals = royaltyTotals(albumRoyalties);
   // 보완할 곡이 있으면 안내에서 바로 그 곡으로
   const fixWork = a.mine.find(w => w.registration === 'needs_fix' || w.application?.status === 'needs_fix');
-  const text = a.fix ? '보완 요청이 왔어요. 아래에서 고쳐 주세요.'
+  const text = a.fix ? '심사 중에 보완할 곡이 생겼어요. 고쳐서 다시 내면 심사가 이어져요.'
     : a.managed.length ? `${rel.tracks.length}곡 중 ${a.managed.length}곡의 저작권을 AUDENIQ이 관리하고 있어요. 저작권료는 정산 잔액에 함께 쌓여요.`
     : a.applying.length ? `${a.applying.length}곡을 심사하고 있어요. 끝나면 알림으로 알려 드려요.`
     : '이 앨범 곡의 작사·작곡 저작권도 맡기면 방송·스트리밍 저작권료까지 받아 드려요. (선택)';
