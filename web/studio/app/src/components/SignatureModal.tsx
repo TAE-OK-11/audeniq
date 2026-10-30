@@ -17,6 +17,7 @@ import { compactSignature } from '../lib/application';
 import { parseStamp } from '../lib/date';
 import { MOCK_REVIEW_SECONDS } from '../store/mockReviewer';
 import { CheckIcon } from './Check';
+import { Burst } from './Burst';
 
 const CERT_PROVIDERS = ['PASS', '카카오 인증서', '네이버 인증서', '토스 인증서'];
 
@@ -536,7 +537,7 @@ export function SignatureModal({
         ) : (
           <section id="aqCompletePane">
             <div className="aq-complete-hero">
-              <span className="aq-complete-check" aria-hidden="true"><CheckIcon size={28} /></span>
+              <span className="aq-complete-check" aria-hidden="true"><CheckIcon size={28} /><Burst /></span>
               <h3>{MOCK ? '서명을 마쳤어요' : '계약이 체결됐어요'}</h3>
               <p>{MOCK ? '서명과 본인 인증을 모두 마쳤어요.' : '이제 플랫폼으로 배급을 시작해요.'}</p>
             </div>

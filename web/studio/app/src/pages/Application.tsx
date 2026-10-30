@@ -19,6 +19,7 @@ import { ApplicationCheckout } from '../components/ReleaseAddons';
 import { Glyph } from '../components/Glyph';
 import { rereleaseSummary } from '../lib/rerelease';
 import { territorySummary } from '../lib/territories';
+import { Burst } from '../components/Burst';
 
 type Integrity = 'checking' | 'ok' | 'changed' | 'legacy';
 
@@ -106,6 +107,7 @@ export function Application() {
         <div className="aq-doc-done" role="status">
           <span className="aq-doc-done-mark" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="22" height="22"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            <Burst />
           </span>
           <div className="min-0">
             {/* 무엇을 했는지는 이 발매 이름으로, 다음에 무엇이 오는지는 단계로 — 신청 직후 가장 궁금한 건 '이제 뭐가 남았지'다 */}
