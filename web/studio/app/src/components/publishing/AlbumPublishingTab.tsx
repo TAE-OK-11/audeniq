@@ -1,5 +1,6 @@
-// 발매 상세 '퍼블리싱' 탭 — 이 앨범 곡들의 작사·작곡 저작권을 앨범 단위로 관리한다.
-// 진행 상태 → 곡별 저작권 → 계약 → 이 앨범 저작권료. 계약서·정산·알림·문의는 배급과 같은 화면을 함께 쓴다 (여기서는 그쪽으로 잇기만)
+// 발매 상세 '퍼블리싱' 탭 — 이 앨범 곡들의 작사·작곡 저작권을 '관리'하는 곳: 신청 · 곡 정리 · 계약.
+// 번 돈은 한 장으로만 (받은 금액 · 확정 전 예상) — 월별 추이·곡별·자세한 내역은 퍼블리싱 메뉴에서 이 앨범을 골라 본다.
+// 계약서·정산·알림·문의는 배급과 같은 화면을 함께 쓴다
 // 탭을 열 때 받는다: 처음 여는 '정보' 탭에는 필요 없다
 import { useState } from 'react';
 import { Link } from '../../lib/router';
@@ -14,9 +15,10 @@ import { StageCard } from '../StageCard';
 import { ManageHead } from '../ManageHead';
 import { useToast } from '../Toast';
 import { RegBadge, roleText } from './parts';
-import { RoyaltyTable } from './Royalties';
+import { royaltyTotals } from './Royalties';
+import { Money } from '../Money';
 import { PublishingBundleStep, albumPublishing } from './ReleasePublishing';
-import { Badge, Callout, IconTile } from '../../ui';
+import { Badge, Callout, IconTile, KeyValue } from '../../ui';
 
 const STEPS = ['곡 정리', '신청', '심사', '계약', '등록'] as const;
 
@@ -35,6 +37,7 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
     : a.managed.length ? 3 : a.applying.length ? 2 : a.mine.length && !missing ? 1 : 0;
   const workIds = new Set(a.mine.map(w => w.id));
   const albumRoyalties = (royalties ?? []).filter(r => workIds.has(r.workId));
+  const totals = royaltyTotals(albumRoyalties);
   // 보완할 곡이 있으면 안내에서 바로 그 곡으로
   const fixWork = a.mine.find(w => w.registration === 'needs_fix' || w.application?.status === 'needs_fix');
   const text = a.fix ? '보완 요청이 왔어요. 아래에서 고쳐 주세요.'
@@ -113,12 +116,22 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
         </div>
       )}
 
-      {/* 맡긴 곡이 없으면 빈 저작권료 카드는 숨긴다 — 할 일(곡 정리·신청)만 보이게 */}
+      {/* 번 돈은 간단히 — 받은 금액과 확정 전 예상만. 추이·곡별·내역은 퍼블리싱 메뉴에서 이 앨범을 골라 둔 채로 */}
       {(a.managed.length > 0 || albumRoyalties.length > 0) && (
-        <div className="aq-relinfo-card">
-          <h2 className="subhead">이 앨범 저작권료</h2>
-          <RoyaltyTable rows={albumRoyalties} emptyText="관리 단체가 사용료를 나눠 주면 곡별로 보여 드려요. 확정된 금액은 정산 잔액에 함께 쌓여요." />
-        </div>
+        <section className="aq-relinfo-card aq-album-earn" aria-labelledby="albumEarn">
+          <div className="ui-section-head">
+            <h2 id="albumEarn" className="subhead">이 앨범 저작권료</h2>
+            {albumRoyalties.length > 0 && <Link to={`/publishing?release=${encodeURIComponent(rel.id)}`} className="aq-head-link">자세히 보기<Glyph name="chevron-right" size={14} /></Link>}
+          </div>
+          {albumRoyalties.length ? (
+            <KeyValue cols={2} items={[
+              ['지금까지 받은 저작권료', <b className="aq-pub-amount"><Money value={totals.confirmed + totals.paid} animate /></b>],
+              ['확정 전 예상', totals.estimated ? <Money value={totals.estimated} /> : '—'],
+            ]} />
+          ) : (
+            <p className="ui-field-help">관리 단체가 사용료를 나눠 주면 여기에 보여 드려요. 보통 사용된 달부터 3~6개월 걸려요.</p>
+          )}
+        </section>
       )}
     </div>
   );

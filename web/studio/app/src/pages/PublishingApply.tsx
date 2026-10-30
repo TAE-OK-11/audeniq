@@ -2,7 +2,7 @@
 // 1 대상 선택 → 2 권리 확인 → 3 계약 조건 → 4 전자계약 → 5 완료.
 // 수수료·기간은 서버 계약 정책(/publishing/policy)에서 받고, 같은 신청은 멱등 키로 한 번만 접수된다.
 // 고르던 내용은 이 브라우저에 남겨 두어 새로고침·연결 끊김 뒤에도 이어서 할 수 있다.
-// 모양은 배급 신청과 같다: 단계 막대(StepBar), 선택 줄(ui-check), 동의 묶음(aq-agree-box), 손 서명(SignaturePad), 아래 고정 버튼(step-actions)
+// 모양은 배급 신청과 같다: 신청서 틀(WizardShell), 선택 줄(ui-check), 동의 묶음(aq-agree-box), 손 서명(SignaturePad), 아래 고정 버튼(step-actions)
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from '../lib/router';
 import { pubApi, type PublishingApplication, type Work } from '../api/publishing';
@@ -13,7 +13,7 @@ import { readJSON, removeKey, writeJSON } from '../lib/storage';
 import { uid } from '../lib/store';
 import { APP_LABEL, pct, splitIssues, splitReady, termLabel } from '../lib/publishing';
 import { money } from '../lib/format';
-import { StepBar } from '../components/StepBar';
+import { WizardShell, type WizardStep } from '../components/WizardShell';
 import { SkeletonBlock } from '../components/Skeleton';
 import { Glyph } from '../components/Glyph';
 import { SignaturePad, type SignaturePadHandle } from '../components/SignaturePad';
@@ -22,7 +22,13 @@ import { Badge, Callout, EmptyState, KeyValue, StatGrid, StatTile, Steps } from 
 import { CheckIcon } from '../components/Check';
 import '../styles/split/Upload.css';
 
-const STEPS = ['신청 대상 선택', '권리 정보 확인', '계약 조건 확인', '전자계약', '신청 완료'];
+// 단계 제목은 배급 신청서와 같은 말투 — 두 줄 큰 제목 + 한 줄 안내 (틀은 components/WizardShell)
+const STEPS: WizardStep[] = [
+  { short: '곡 선택', title: '어떤 곡을\n맡길까요?', sub: '여러 곡을 한 번에 신청할 수 있어요.' },
+  { short: '권리 확인', title: '권리 정보를\n확인해 주세요.', sub: '지분과 관리할 나라·권리를 골라요.' },
+  { short: '계약 조건', title: '계약 조건을\n확인해 주세요.', sub: '수수료는 실제로 받은 사용료에서만 떼요.' },
+  { short: '전자계약', title: '계약서에\n서명해 주세요.', sub: '본인인증·정산 계좌는 배급에서 등록한 것을 그대로 써요.' },
+];
 const AGREE = [
   ['terms', '저작권 관리 계약서의 내용을 모두 읽고 이해했어요.'],
   ['rights', '신청한 곡에 대해 적은 지분만큼 권리를 가지고 있어요.'],
@@ -82,7 +88,9 @@ export function PublishingApply() {
   }, [step, picked, territories, rights, key, result]);
 
   // 단계를 옮기면 맨 위로 — 긴 계약서를 읽고 내려온 자리에서 다음 단계가 시작되지 않게
-  useEffect(() => { topRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, [step]);
+  // 지나온 단계는 위 진행 칸·왼쪽 목록에서 눌러 돌아갈 수 있다
+  const [reached, setReached] = useState(step);
+  useEffect(() => { setReached(r => Math.max(r, step)); window.scrollTo({ top: 0, behavior: 'smooth' }); }, [step]);
 
   const mine = useMemo(() => (works ?? []).filter(w => w.myRole === 'owner' || w.myRole === 'editor'), [works]);
   const chosen = mine.filter(w => picked.includes(w.id) && !activeApp(w));
@@ -126,28 +134,48 @@ export function PublishingApply() {
   const toggle = (list: string[], set: (v: string[]) => void, v: string) => set(list.includes(v) ? list.filter(x => x !== v) : [...list, v]);
   const fee = 100000 * policy.commissionRate / 100;
 
-  return (
-    <div className="view" ref={topRef}>
-      {step < 4 && (
-        <div className="spaced-actions">
-          <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={() => (step ? setStep(step - 1) : nav(-1))}>
-            <Glyph name="arrow-left" size={15} className="aq-glyph-lead" />{step ? '이전 단계' : '돌아가기'}
-          </button>
+  // 신청을 받았으면 신청서 틀을 벗고 결과만
+  if (step === 4 && result) {
+    return (
+      <div className="view" ref={topRef}>
+        <div className="ui-page-head">
+          <div>
+            <p className="eyebrow">퍼블리싱</p>
+            <h1>신청을 받았어요</h1>
+            <p>심사가 끝나면 알림으로 알려 드려요.</p>
+          </div>
         </div>
-      )}
-      <div className="ui-page-head">
-        <div>
-          <p className="eyebrow">퍼블리싱</p>
-          <h1>{step === 4 ? '신청을 받았어요' : '저작권 관리 신청'}</h1>
-          <p>{step === 4 ? '심사가 끝나면 알림으로 알려 드려요.' : '곡의 저작권 등록과 사용료 징수를 AUDENIQ이 맡아요.'}</p>
-        </div>
+        <section className="ui-tab-panel" aria-live="polite">
+          <EmptyState icon={<CheckIcon size={22} />} tone="green" title={`신청번호 ${result.number}`}
+            actions={<><Link to={`/works/${result.workIds[0]}?tab=register`} className="ui-btn is-primary">진행 상황 보기</Link><Link to="/contracts" className="ui-btn is-soft">계약서</Link></>}>
+            {result.workTitles.join(', ')} · {result.workTitles.length}개 곡
+          </EmptyState>
+          <div className="ui-card">
+            <Steps steps={['제출 완료', '심사', '승인', '외부 등록']} current={1} label="처리 진행 상황" />
+            <p className="ui-field-help">보통 영업일 3~5일 안에 심사 결과를 알려 드려요. 보완이 필요하면 알림과 곡 화면에 함께 보여요. 서명한 계약서는 계약서 화면에서 받을 수 있어요.</p>
+          </div>
+        </section>
       </div>
-      {step < 4 && <StepBar steps={STEPS.slice(0, 4)} current={step} />}
+    );
+  }
 
+  const back = () => (step ? setStep(step - 1) : nav(-1));
+  return (
+    <WizardShell
+      label="저작권 관리 신청" title="저작권 관리 신청" steps={STEPS} step={Math.min(step, 3)} reached={Math.max(reached, step)}
+      onStep={setStep} onBack={back}
+      summary={{ title: releaseTitle ?? (chosen.length ? chosen[0].title : '곡을 골라 주세요'), lines: [`${chosen.length}곡 선택`, `수수료 ${policy.commissionRate}%`] }}
+      railNote="입력 내용은 이 브라우저에 임시 저장돼요."
+      actions={<>
+        <button type="button" id="wizardBack" className="ui-btn is-soft" onClick={back} disabled={busy}>{step ? '이전' : '나가기'}</button>
+        {step < 3
+          ? <button type="button" id="wizardNext" className="ui-btn is-primary" disabled={!canNext} onClick={() => setStep(step + 1)}>다음으로</button>
+          : <button type="button" id="wizardNext" className={`ui-btn is-primary${busy ? ' is-busy' : ''}`} disabled={!canNext || busy} onClick={() => void submit()}>{busy ? '신청하는 중' : '서명하고 신청'}</button>}
+      </>}
+    >
       {step === 0 && (
-        <section className="ui-tab-panel aq-form-block" key="s0" aria-labelledby="s0t">
-          <h2 id="s0t">어떤 곡을 맡길까요?</h2>
-          <p className="ui-field-help">{releaseTitle ? `‘${releaseTitle}’ 발매 곡을 골라 두었어요. ` : ''}여러 곡을 한 번에 신청할 수 있어요. 지분이 맞지 않는 곡은 먼저 고쳐 주세요.</p>
+        <>
+          <p className="ui-field-help">{releaseTitle ? `‘${releaseTitle}’ 발매 곡을 골라 두었어요. ` : ''}지분이 맞지 않는 곡은 먼저 고쳐 주세요.</p>
           {fromRelease && (
             <Callout tone="neutral" action={
               <button type="button" className={`ui-btn is-white is-sm${preparing ? ' is-busy' : ''}`} disabled={preparing}
@@ -181,11 +209,11 @@ export function PublishingApply() {
             </EmptyState>
           )}
           <div className="row-actions"><Link to="/works/new" className="ui-btn is-text is-sm">목록에 없는 곡 — 새 곡 만들기</Link></div>
-        </section>
+        </>
       )}
 
       {step === 1 && (
-        <section className="ui-tab-panel" key="s1" aria-label="권리 정보 확인">
+        <>
           {blocked.length > 0 && <Callout tone="danger"><b>지분이 맞지 않는 곡이 있어 신청할 수 없어요.</b> 지분은 저장돼 있으니 고친 뒤 이어서 신청해요.</Callout>}
           {conflicts.length > 0 && <Callout tone="warn"><b>기존 저작권 관리 계약과 겹칠 수 있어요.</b> {conflicts.map(w => `‘${w.title}’(${w.priorPublisher || '기존 퍼블리셔'})`).join(', ')} — 신청은 되고, 담당자가 먼저 검토해요.</Callout>}
           {pendingPeople.length > 0 && <Callout tone="neutral">공동 참여자 {pendingPeople.length}명이 아직 지분을 확인하지 않았어요. 확인 전에는 ‘확인 필요’ 상태로 심사해요.</Callout>}
@@ -230,11 +258,11 @@ export function PublishingApply() {
               ))}
             </div>
           </div>
-        </section>
+        </>
       )}
 
       {step === 2 && (
-        <section className="ui-tab-panel" key="s2" aria-label="계약 조건">
+        <>
           <StatGrid cols={2}>
             <StatTile label="관리 수수료" value={policy.commissionRate} unit="%" hint="징수한 사용료에서만 떼요. 가입비·월 이용료는 없어요." />
             <StatTile label="최초 계약 기간" value={termLabel(policy.initialTermMonths)} hint={`${policy.renewalOptions.map(termLabel).join(' · ')} 단위로 연장할 수 있어요.`} />
@@ -249,12 +277,12 @@ export function PublishingApply() {
             ]} />
           </div>
           <Callout tone="neutral">계약이 끝나도 그동안의 등록·정산 기록은 그대로 남아요. 종료 후에는 새 곡을 관리에 넣을 수 없어요.</Callout>
-        </section>
+        </>
       )}
 
       {step === 3 && (
-        <section className="ui-tab-panel aq-form-block" key="s3" aria-labelledby="s3t">
-          <h2 id="s3t">저작권 관리 계약서</h2>
+        <>
+          <h2 className="subhead">저작권 관리 계약서</h2>
           <div className="aq-terms-body" tabIndex={0} aria-label="저작권 관리 계약서" style={{ maxHeight: 320, overflowY: 'auto' }} onScroll={e => {
             const el = e.currentTarget;
             if (el.scrollTop + el.clientHeight >= el.scrollHeight - 24) setReadAll(true);
@@ -290,31 +318,9 @@ export function PublishingApply() {
           {failure && (
             <Callout tone="danger" action={<button type="button" className="ui-btn is-white is-sm" onClick={() => void submit()}>다시 시도</button>}>{failure}</Callout>
           )}
-        </section>
+        </>
       )}
 
-      {step === 4 && result && (
-        <section className="ui-tab-panel" key="s4" aria-live="polite">
-          <EmptyState icon={<CheckIcon size={22} />} tone="green" title={`신청번호 ${result.number}`}
-            actions={<><Link to={`/works/${result.workIds[0]}?tab=register`} className="ui-btn is-primary">진행 상황 보기</Link><Link to="/contracts" className="ui-btn is-soft">계약서</Link></>}>
-            {result.workTitles.join(', ')} · {result.workTitles.length}개 곡
-          </EmptyState>
-          <div className="ui-card">
-            <Steps steps={['제출 완료', '심사', '승인', '외부 등록']} current={1} label="처리 진행 상황" />
-            <p className="ui-field-help">보통 영업일 3~5일 안에 심사 결과를 알려 드려요. 보완이 필요하면 알림과 곡 화면에 함께 보여요. 서명한 계약서는 계약서 화면에서 받을 수 있어요.</p>
-          </div>
-        </section>
-      )}
-
-      {/* 발매 신청서와 같은 아래 고정 버튼 줄 — 옅은 '이전', 진한 '다음으로' */}
-      {step < 4 && (
-        <div className="ui-actions aq-pub-actions">
-          <button type="button" className="ui-btn is-soft" onClick={() => (step ? setStep(step - 1) : nav(-1))} disabled={busy}>{step ? '이전' : '나가기'}</button>
-          {step < 3
-            ? <button type="button" className="ui-btn is-primary" disabled={!canNext} onClick={() => setStep(step + 1)}>다음으로</button>
-            : <button type="button" className={`ui-btn is-primary${busy ? ' is-busy' : ''}`} disabled={!canNext || busy} onClick={() => void submit()}>{busy ? '신청하는 중' : '서명하고 신청'}</button>}
-        </div>
-      )}
-    </div>
+    </WizardShell>
   );
 }
