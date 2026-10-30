@@ -1707,14 +1707,13 @@ a.aq-inline-link{display:inline-block;max-width:100%}
 .aq-task-go i,.chevron,.toggle-arrow{display:inline-flex;align-items:center}
 .aq-event-hero-cta{display:inline-flex;align-items:center;gap:2px}
  .aq-release-fix button>svg{vertical-align:-2px}
-/* 발매 신청 — 휴대폰: 위 ‹ 가 이전 단계 역할을 하므로 아래는 다음 버튼 하나만, 바탕 없이 버튼만 떠 있다
-   (흰색으로 스며드는 바닥은 연한 파란 카드 위에서 흰 띠로 덮여 보였다 — 스크린샷) */
+/* 발매 신청 — 휴대폰: 위 ‹ 가 이전 단계 역할을 하므로 아래는 다음 버튼 하나만, 선 없이 흰색으로 스며드는 바닥 */
 @media(max-width:759.98px){
   #view-new .step-actions #wizardBack{display:none!important}
   #view-new .step-actions{
     grid-template-columns:minmax(0,1fr);border-top:0!important;
-    background:transparent!important;
-    padding-top:12px!important;padding-bottom:max(16px,env(safe-area-inset-bottom))!important
+    background:linear-gradient(180deg,rgba(255,255,255,0),#fff 22px)!important;
+    padding-top:22px!important;padding-bottom:max(16px,env(safe-area-inset-bottom))!important
   }
   #view-new .step-actions:has(#wizardSaveNow){grid-template-columns:minmax(0,1fr) minmax(0,1.6fr)}
   #view-new .step-actions .ui-btn{--btn-h:var(--aq-h-lg);--btn-r:var(--aq-r-ctl-lg);--btn-fs:var(--aq-fs-title-sm)}
@@ -1868,5 +1867,3 @@ a.aq-inline-link{display:inline-block;max-width:100%}
 .aq-skeleton-list.is-amount .aq-skel-avatar{width:48px;height:48px}
 .aq-skel-amount{justify-self:end;height:16px}
 
-/* ---------- 아래 고정 버튼 줄 — 위 가는 선 없이 ---------- */
-.step-actions{border-top:0!important}
