@@ -10,6 +10,9 @@ import { SkeletonRows } from '../components/Skeleton';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { Glyph } from '../components/Glyph';
 import { Badge, Tabs } from '../ui';
+import { pubApi, type Work } from '../api/publishing';
+import { RegBadge } from '../components/publishing/parts';
+import { APP_LABEL, APP_TONE } from '../lib/publishing';
 import { downloadCodesCsv } from '../api/portal';
 import { errorMessage } from '../api/errors';
 import { useToast } from '../components/Toast';
@@ -91,6 +94,9 @@ export function Releases() {
     return out;
   }, [tracksWanted, listData], { key: tracksWanted && listData ? 'release-tracks' : undefined });
   const tracks = useMemo(() => trackData ?? [], [trackData]);
+  // 곡마다 작사·작곡 저작권(퍼블리싱) 상태 — 맡겼거나 진행 중인 곡에만 배지를 단다
+  const { data: works } = useAsync(() => (tracksWanted ? pubApi.listWorks() : Promise.resolve(null)), [tracksWanted], { key: tracksWanted ? 'works' : undefined });
+  const workByTrack = useMemo(() => new Map<string, Work>((works ?? []).flatMap(w => w.recordings.map(r => [`${r.releaseId}:${r.trackId}`, w] as const))), [works]);
   const toast = useToast();
   const [csvBusy, setCsvBusy] = useState(false);
   const codesCsv = async () => {
@@ -300,7 +306,10 @@ export function Releases() {
                     <span className="ui-row-title">{t.title || '제목 없는 곡'}{t.explicit && <em className="aq-explicit" title="Explicit">E</em>}</span>
                     <span className="ui-row-meta">{t.releaseTitle} · {t.artist || '아티스트 없음'}</span>
                   </div>
-                  <span className="chevron" aria-hidden="true"><Glyph name="chevron-right" size={18} /></span>
+                  <span className="aq-track-end">
+                    <PubBadge w={workByTrack.get(`${t.releaseId}:${t.id}`)} />
+                    <span className="chevron" aria-hidden="true"><Glyph name="chevron-right" size={18} /></span>
+                  </span>
                 </div>
               ))}
             </div>
@@ -315,4 +324,12 @@ export function Releases() {
       )}
     </div>
   );
+}
+
+/** 전체 트랙의 퍼블리싱 배지 — 맡기지 않은 곡은 비워 둔다 (배급 목록에 '미신청'이 줄마다 붙으면 시끄럽다) */
+function PubBadge({ w }: { w?: Work }) {
+  if (!w) return null;
+  if (w.application && !['approved', 'withdrawn'].includes(w.application.status)) return <Badge tone={APP_TONE[w.application.status]}>{APP_LABEL[w.application.status]}</Badge>;
+  if (w.registration === 'none' || w.registration === 'preparing') return null;
+  return <RegBadge status={w.registration} />;
 }

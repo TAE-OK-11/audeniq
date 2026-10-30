@@ -10,7 +10,6 @@ import { PreReleaseCard } from './PreReleaseCard';
 import { ReleaseAddons } from './ReleaseAddons';
 import { SmartLinkCard } from './SmartLinkCard';
 import { SplitsCard } from './SplitsCard';
-import { ReleasePublishingCard } from './publishing/ReleasePublishing';
 import { TakedownCard } from './TakedownCard';
 import { TermCard } from './TermCard';
 
@@ -24,8 +23,6 @@ export function ReleaseManageTab({ rel, cover }: { rel: ReleaseDetail; cover?: s
           <section className="aq-manage-group" aria-label="수익·홍보">
             <h3 className="aq-manage-group-title">수익·홍보</h3>
             <SplitsCard releaseId={rel.id} />
-            {/* 이 앨범 곡의 작사·작곡 저작권 — 선택. 누르면 앨범 퍼블리싱 설정 */}
-            <ReleasePublishingCard releaseId={rel.id} trackCount={rel.tracks.length} />
             <PreReleaseCard releaseId={rel.id} preorderStart={d?.preorder_start} releaseDate={rel.release_date} releaseTime={d?.release_time} />
             <SmartLinkCard releaseId={rel.id} promo={{
               title: rel.title, artist: rel.artist ?? '', releaseDate: rel.release_date ?? null, cover,

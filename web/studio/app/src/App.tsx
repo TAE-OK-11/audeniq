@@ -60,7 +60,7 @@ const WorkDetail = lazyPage(pageLoaders.WorkDetail, m => m.WorkDetail);
 const WorkEditor = lazyPage(pageLoaders.WorkEditor, m => m.WorkEditor);
 const PublishingApply = lazyPage(pageLoaders.PublishingApply, m => m.PublishingApply);
 const Publishing = lazyPage(pageLoaders.Publishing, m => m.Publishing);
-const AlbumPublishing = lazyPage(pageLoaders.AlbumPublishing, m => m.AlbumPublishing);
+const OpenAr = lazyPage(pageLoaders.OpenAr, m => m.OpenAr);
 const RightsDocument = lazyPage(pageLoaders.RightsDocument, m => m.RightsDocument);
 const Inquiries = lazyPage(pageLoaders.Inquiries, m => m.Inquiries);
 const Notifications = lazyPage(pageLoaders.Notifications, m => m.Notifications);
@@ -165,10 +165,10 @@ function WorkEditorRoute() {
   return <WorkEditor key={id + loc.search} />;
 }
 
-/** 예전 Open A&R 주소 — 퍼블리싱의 'Open A&R' 탭으로 (?work= 그대로) */
-function ArMoved() {
-  const loc = useLocation();
-  return <Navigate to={`/publishing?tab=ar${loc.search ? `&${loc.search.slice(1)}` : ''}`} replace />;
+/** 예전 앨범 퍼블리싱 주소 — 발매 상세의 '퍼블리싱' 탭으로 */
+function AlbumPubMoved() {
+  const { id = '' } = useParams();
+  return <Navigate to={`/releases/${encodeURIComponent(id)}?tab=publishing`} replace />;
 }
 
 function ReleaseDetailRoute() {
@@ -203,7 +203,7 @@ function PortalRoutes() {
             <Route path="/releases/bulk" element={<Navigate to="/releases" replace />} />
             <Route path="/releases/:id" element={<ReleaseDetailRoute />} />
             <Route path="/releases/:id/application" element={<Application />} />
-            <Route path="/releases/:id/publishing" element={<AlbumPublishing />} />
+            <Route path="/releases/:id/publishing" element={<AlbumPubMoved />} />
             <Route path="/upload" element={<UploadRoute />} />
             {/* 곡 — 음악 라이브러리의 '곡' 탭에서 들어온다 (저작권 관리) */}
             <Route path="/works" element={<Navigate to="/publishing?tab=songs" replace />} />
@@ -212,7 +212,7 @@ function PortalRoutes() {
             <Route path="/works/:id/edit" element={<WorkEditorRoute />} />
             <Route path="/publishing/apply" element={<PublishingApply />} />
             <Route path="/publishing" element={<Publishing />} />
-            <Route path="/ar" element={<ArMoved />} />
+            <Route path="/ar" element={<OpenAr />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/settlement" element={<Settlement />} />
             <Route path="/contracts" element={<Contracts />} />

@@ -102,8 +102,7 @@ function SubmitForm({ works, preset, onDone }: { works: Work[]; preset: string |
   );
 }
 
-/** embedded: 퍼블리싱 메뉴의 'Open A&R' 탭 — 머리는 퍼블리싱 화면이 그린다 */
-export function OpenAr({ embedded = false }: { embedded?: boolean } = {}) {
+export function OpenAr() {
   const [params] = useSearchParams();
   const preset = params.get('work');
   const toast = useToast();
@@ -120,16 +119,14 @@ export function OpenAr({ embedded = false }: { embedded?: boolean } = {}) {
   };
 
   return (
-    <div className={embedded ? undefined : 'view'}>
-      {embedded ? <p className="ui-field-help">곡 데모를 AUDENIQ A&R에 보내면 심사 후 레이블·아티스트에게 피칭해 드려요.</p> : (
-        <div className="ui-page-head">
-          <div>
-            <p className="eyebrow">퍼블리싱</p>
-            <h1>Open A&R</h1>
-            <p>곡 데모를 AUDENIQ A&R에 보내면 심사 후 레이블·아티스트에게 피칭해 드려요.</p>
-          </div>
+    <div className="view" id="view-ar">
+      <div className="ui-page-head">
+        <div>
+          <p className="eyebrow">홍보</p>
+          <h1>Open A&R</h1>
+          <p>곡 데모를 AUDENIQ A&R에 보내면 심사 후 레이블·아티스트에게 피칭해 드려요.</p>
         </div>
-      )}
+      </div>
       <Segmented tabs className="aq-seg-tabs" label="Open A&R" value={view} onChange={setView}
         options={[{ value: 'list', label: `내 제출${active.length ? ` ${active.length}` : ''}` }, { value: 'submit', label: '새로 제출' }]} />
 

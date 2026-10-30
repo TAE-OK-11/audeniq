@@ -77,6 +77,8 @@ const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
     group: '홍보',
     items: [
       { to: '/artist', label: '아티스트 페이지', icon: 'globe' },
+      // 곡 데모 피칭 — 퍼블리싱 곡을 레이블·아티스트에게 알리는 일이라 홍보에
+      { to: '/ar', label: 'Open A&R', icon: 'megaphone' },
     ],
   },
   {

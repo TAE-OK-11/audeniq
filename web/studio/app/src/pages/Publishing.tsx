@@ -1,9 +1,9 @@
-// 퍼블리싱 — 메뉴의 '퍼블리싱'은 전체를 한눈에 보는 곳: 분석(현황·앨범별·할 일) · 곡 · 저작권료 · Open A&R.
-// 앨범 하나의 퍼블리싱 설정은 발매 상세 '관리' 탭의 선택 카드 → 앨범 퍼블리싱 화면(/releases/:id/publishing)에서 한다.
-// 계약서·정산·알림·문의·계정은 배급과 같은 화면을 함께 쓴다 (여기에 따로 두지 않는다)
+// 퍼블리싱 — 메뉴의 '퍼블리싱'은 전체를 한눈에 보는 곳: 분석(할 일·저작권료·현황) · 곡.
+// 나머지는 원래 있던 화면에 나눠 둔다: 앨범 단위 설정은 발매 상세 '퍼블리싱' 탭, 저작권료 내역은 정산·지급,
+// Open A&R은 홍보 메뉴, 계약서·알림·문의·계정은 배급과 같은 화면을 함께 쓴다
 import { useDeferredValue, useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from '../lib/router';
-import { pubApi, type PublishingTask, type Royalty, type Work } from '../api/publishing';
+import { pubApi, type PublishingSummary, type PublishingTask, type Royalty, type Work } from '../api/publishing';
 import { useAsync } from '../hooks/useAsync';
 import { APP_LABEL, APP_TONE, matchFilter, type WorkFilter } from '../lib/publishing';
 import { Glyph, type GlyphName } from '../components/Glyph';
@@ -11,22 +11,14 @@ import { ReleaseCover } from '../components/ReleaseCover';
 import { SkeletonRows } from '../components/Skeleton';
 import { Money } from '../components/Money';
 import { RegBadge } from '../components/publishing/parts';
-import { albumPublishing } from '../components/publishing/ReleasePublishing';
-import { api } from '../api/client';
-import { RoyaltyTable } from '../components/publishing/Royalties';
-import { OpenAr } from './OpenAr';
 import { MiniTrend } from '../components/MiniTrend';
 import { periodLabel } from '../data/reports';
 import { money, num } from '../lib/format';
 import { Badge, EmptyState, IconTile, KeyValue, Meter, Tabs } from '../ui';
 import '../styles/split/Dashboard.css';
 
-// 탭마다 한 가지 일만 — 분석은 숫자만, 할 일·앨범은 '앨범', 곡 목록은 '곡', 내역은 '저작권료'
-type Tab = 'overview' | 'albums' | 'songs' | 'royalties' | 'ar';
-const TABS: { value: Tab; label: string }[] = [
-  { value: 'overview', label: '분석' }, { value: 'albums', label: '앨범' }, { value: 'songs', label: '곡' },
-  { value: 'royalties', label: '저작권료' }, { value: 'ar', label: 'Open A&R' },
-];
+type Tab = 'overview' | 'songs';
+const TABS: { value: Tab; label: string }[] = [{ value: 'overview', label: '분석' }, { value: 'songs', label: '곡' }];
 const SONG_FILTERS: [WorkFilter, string][] = [['all', '전체'], ['managed', '관리 중'], ['review', '심사 중'], ['fix', '보완 필요'], ['none', '미신청'], ['unreleased', '미발매']];
 const TASK_ICON: Record<PublishingTask['kind'], GlyphName> = { fix: 'warning', split: 'users', sign: 'sign', renew: 'repeat', ar: 'megaphone' };
 const TASK_BTN: Record<PublishingTask['kind'], string> = { fix: '보완', split: '확인', sign: '서명', renew: '갱신', ar: '보기' };
@@ -64,8 +56,9 @@ function SongRow({ w }: { w: Work }) {
   );
 }
 
-/** 분석 — 숫자만: 관리 중인 곡 · 확정된 저작권료 · 곡별 저작권료 */
+/** 분석 — 확인할 일 · 저작권료 리포트 · 관리 중인 곡 · 곡별 저작권료 */
 function Overview() {
+  const nav = useNavigate();
   const { data: s, loading } = useAsync(() => pubApi.summary(), [], { key: 'pub-summary' });
   if (loading && !s) return <SkeletonRows count={3} />;
   if (!s) return null;
@@ -78,6 +71,7 @@ function Overview() {
         </EmptyState>
       ) : (
         <>
+          <Tasks s={s} nav={nav} />
           <RoyaltyReport />
           {/* 정산·지급의 '받을 수 있는 금액'과 같은 카드 — 큰 숫자 하나 + 한 막대로 나눈 몫 + 범례 */}
           <section className="ui-card settle-hero" aria-labelledby="pubHeroSongs">
@@ -104,51 +98,50 @@ function Overview() {
             ) : null}
           </section>
           <SongRoyalties />
+          {/* 아직 맡긴 곡이 없을 때만 — 처음 쓰는 사람에게 순서를 */}
+          {!s.works.managed && <PathGuide />}
         </>
       )}
     </div>
   );
 }
 
-/** 앨범 — 할 일과 앨범별 현황 (누르면 그 앨범의 퍼블리싱 설정), 처음 쓰는 사람을 위한 진행 순서 */
-function Albums() {
-  const nav = useNavigate();
-  const { data: s } = useAsync(() => pubApi.summary(), [], { key: 'pub-summary' });
+/** 확인할 일 — 홈 '확인할 작업'과 같은 줄: 아이콘 · 할 일 · 오른쪽 버튼 글자 */
+function Tasks({ s, nav }: { s: PublishingSummary; nav: (to: string) => void }) {
+  if (!s.tasks.length && !s.suggestion) return null;
   return (
-    <div className="aq-detail-stack">
+    <section className="ui-card aq-home-tasks" aria-labelledby="pubTasks">
+      <div className="ui-section-head">
+        <h2 id="pubTasks">확인할 일</h2>
+        <span className="ui-count is-soft">{s.tasks.length + (s.suggestion ? 1 : 0)}</span>
+      </div>
+      <ul className="aq-task-list aq-stagger">
+        {s.tasks.map(t => (
+          <li key={t.id}>
+            <button type="button" className={`aq-task is-${t.kind === 'fix' ? 'warn' : 'info'}`} onClick={() => nav(t.to)}>
+              <span className="ui-icon" aria-hidden="true"><Glyph name={TASK_ICON[t.kind]} size={20} /></span>
+              <span className="aq-task-text"><strong>{t.title}</strong><small>{t.sub}</small></span>
+              <span className="aq-task-go">{TASK_BTN[t.kind]}<i aria-hidden="true"><Glyph name="chevron-right" size={14} /></i></span>
+            </button>
+          </li>
+        ))}
+        {s.suggestion && (
+          <li>
+            <button type="button" className="aq-task is-info" onClick={() => nav(`/works/new?release=${encodeURIComponent(s.suggestion!.releaseId)}&track=${encodeURIComponent(s.suggestion!.trackId)}`)}>
+              <span className="ui-icon" aria-hidden="true"><Glyph name="plus" size={20} /></span>
+              <span className="aq-task-text"><strong>‘{s.suggestion.title}’ 저작권도 맡길까요?</strong><small>{s.suggestion.releaseTitle}에 실린 곡이에요</small></span>
+              <span className="aq-task-go">정리<i aria-hidden="true"><Glyph name="chevron-right" size={14} /></i></span>
+            </button>
+          </li>
+        )}
+      </ul>
+    </section>
+  );
+}
 
-      {/* 홈 '확인할 작업'과 같은 줄 — 아이콘 · 할 일 · 오른쪽 버튼 글자 */}
-      {s && (s.tasks.length > 0 || s.suggestion) && (
-        <section className="ui-card aq-home-tasks" aria-labelledby="pubTasks">
-          <div className="ui-section-head">
-            <h2 id="pubTasks">확인할 일</h2>
-            <span className="ui-count is-soft">{s.tasks.length + (s.suggestion ? 1 : 0)}</span>
-          </div>
-          <ul className="aq-task-list aq-stagger">
-            {s.tasks.map(t => (
-              <li key={t.id}>
-                <button type="button" className={`aq-task is-${t.kind === 'fix' ? 'warn' : 'info'}`} onClick={() => nav(t.to)}>
-                  <span className="ui-icon" aria-hidden="true"><Glyph name={TASK_ICON[t.kind]} size={20} /></span>
-                  <span className="aq-task-text"><strong>{t.title}</strong><small>{t.sub}</small></span>
-                  <span className="aq-task-go">{TASK_BTN[t.kind]}<i aria-hidden="true"><Glyph name="chevron-right" size={14} /></i></span>
-                </button>
-              </li>
-            ))}
-            {s.suggestion && (
-              <li>
-                <button type="button" className="aq-task is-info" onClick={() => nav(`/works/new?release=${encodeURIComponent(s.suggestion!.releaseId)}&track=${encodeURIComponent(s.suggestion!.trackId)}`)}>
-                  <span className="ui-icon" aria-hidden="true"><Glyph name="plus" size={20} /></span>
-                  <span className="aq-task-text"><strong>‘{s.suggestion.title}’ 저작권도 맡길까요?</strong><small>{s.suggestion.releaseTitle}에 실린 곡이에요</small></span>
-                  <span className="aq-task-go">정리<i aria-hidden="true"><Glyph name="chevron-right" size={14} /></i></span>
-                </button>
-              </li>
-            )}
-          </ul>
-        </section>
-      )}
-
-      <AlbumList />
-
+/** 퍼블리싱은 이렇게 진행돼요 — 처음 쓰는 사람을 위한 순서 */
+function PathGuide() {
+  return (
       <section className="aq-doc-path-wrap" aria-labelledby="pubPath">
         <h2 id="pubPath">퍼블리싱은 이렇게 진행돼요</h2>
         <ol className="ui-card ui-list is-inset aq-doc-path">
@@ -160,39 +153,6 @@ function Albums() {
           ))}
         </ol>
       </section>
-    </div>
-  );
-}
-
-/** 앨범별 — 앨범마다 몇 곡을 맡겼는지. 누르면 그 앨범의 퍼블리싱 설정 */
-function AlbumList() {
-  const { data: works } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
-  const { data: releases } = useAsync(() => api.listReleases(), [], { key: 'releases' });
-  if (!works || !releases) return null;
-  const rows = releases.filter(r => r.status !== 'draft' && (r.track_count ?? 0) > 0).map(r => {
-    const a = albumPublishing(works, r.id, r.track_count ?? 0);
-    return { r, a };
-  });
-  if (!rows.length) return null;
-  return (
-    <section className="ui-card" aria-labelledby="pubAlbums">
-      <div className="ui-section-head"><h2 id="pubAlbums">앨범별</h2></div>
-      {/* 홈 '내 발매'와 같은 줄 — 커버 · 제목 · 관리 중인 곡 수 · 오른쪽 상태 배지 */}
-      <div className="ui-list aq-stagger">
-        {rows.map(({ r, a }) => (
-          <Link key={r.id} to={`/releases/${r.id}/publishing`} className="release-row ui-row studio-album-row aq-row-link">
-            <ReleaseCover id={r.id} src={r.coverData} />
-            <div className="min-0">
-              <span className="ui-row-title">{r.title || '제목 없는 발매'}</span>
-              <span className="ui-row-meta">{r.artist || '아티스트 없음'} · {r.track_count}곡 중 {a.managed.length}곡 관리 중</span>
-            </div>
-            <div className="ui-row-end">
-              {a.status ? <Badge tone={a.status.tone}>{a.status.label}</Badge> : <Badge tone="gray">미신청</Badge>}
-            </div>
-          </Link>
-        ))}
-      </div>
-    </section>
   );
 }
 
@@ -260,7 +220,7 @@ function RoyaltyReport() {
     <section className="ui-card aq-report-card" aria-labelledby="pubReport">
       <div className="ui-section-head aq-report-head">
         <h2 id="pubReport">저작권료 리포트{r && <small>{periodLabel(r.period)}</small>}</h2>
-        <button className="aq-head-link" type="button" onClick={() => nav('/publishing?tab=royalties')}>내역 보기<Glyph name="chevron-right" size={14} /></button>
+        <button className="aq-head-link" type="button" onClick={() => nav('/settlement?type=publishing')}>정산 내역<Glyph name="chevron-right" size={14} /></button>
       </div>
       {!rows ? <SkeletonRows count={2} pattern="amount" /> : !r ? (
         <EmptyState compact icon={<Glyph name="chart" size={22} />} title="아직 들어온 저작권료가 없어요">
@@ -322,18 +282,6 @@ function SongRoyalties() {
   );
 }
 
-/** 저작권료 — 기간별 내역만 (합계·곡별 분석은 '분석' 탭) */
-function RoyaltiesTab() {
-  const { data: rows, loading } = useAsync(() => pubApi.listRoyalties(), [], { key: 'royalties:all' });
-  if (loading && !rows) return <SkeletonRows count={3} pattern="amount" />;
-  return (
-    <>
-      <p className="ui-field-help">확정된 저작권료는 <Link to="/settlement?type=publishing" className="aq-inline-link">정산·지급</Link> 잔액에 배급 정산금과 함께 쌓여요.</p>
-      <RoyaltyTable summary={false} rows={rows ?? []} emptyText="관리 단체가 사용료를 나눠 주면 여기서 곡별로 보여 드려요. 보통 사용된 달부터 3~6개월 걸려요." />
-    </>
-  );
-}
-
 export function Publishing() {
   const nav = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -347,11 +295,12 @@ export function Publishing() {
   };
   const go = (t: Tab) => set({ tab: t === 'overview' ? null : t, wf: null });
   const { data: works } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
-  const { data: summary } = useAsync(() => pubApi.summary(), [], { key: 'pub-summary' });
-  // 할 일은 '앨범' 탭에 있다 — 분석 탭에서도 몇 건인지 탭 숫자로 보이게
-  const todo = summary ? summary.tasks.length + (summary.suggestion ? 1 : 0) : null;
-  // 계약은 배급과 같은 계약서 화면에서 — 예전 '계약' 탭 주소는 그리로
-  if (params.get('tab') === 'contracts') return <Navigate to={`/contracts${params.get('pub') ? `?pub=${encodeURIComponent(params.get('pub')!)}` : ''}`} replace />;
+  // 예전 탭 주소는 기능이 옮겨 간 화면으로 — 계약서, 저작권료 내역(정산·지급), Open A&R(홍보)
+  const moved = asked === 'contracts' as string ? `/contracts${params.get('pub') ? `?pub=${encodeURIComponent(params.get('pub')!)}` : ''}`
+    : asked === 'royalties' as string ? '/settlement?type=publishing'
+    : asked === 'ar' as string ? `/ar${params.get('work') ? `?work=${encodeURIComponent(params.get('work')!)}` : ''}`
+    : null;
+  if (moved) return <Navigate to={moved} replace />;
 
   return (
     <div className="view" id="view-publishing">
@@ -365,14 +314,11 @@ export function Publishing() {
       </div>
 
       <Tabs label="퍼블리싱 메뉴" value={tab} onChange={go}
-        items={TABS.map(t => ({ ...t, count: t.value === 'songs' ? works?.length ?? null : t.value === 'albums' ? todo : undefined }))} />
+        items={TABS.map(t => ({ ...t, count: t.value === 'songs' ? works?.length ?? null : undefined }))} />
 
       <div className="ui-tab-panel" key={tab}>
         {tab === 'overview' && <Overview />}
-        {tab === 'albums' && <Albums />}
         {tab === 'songs' && <Songs filter={filter} setFilter={f => set({ wf: f === 'all' ? null : f })} />}
-        {tab === 'royalties' && <RoyaltiesTab />}
-        {tab === 'ar' && <OpenAr embedded />}
       </div>
     </div>
   );

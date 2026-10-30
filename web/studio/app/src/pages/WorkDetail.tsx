@@ -270,7 +270,7 @@ export function WorkDetail() {
     <>
       <Link to={`/works/${w.id}/edit`} className="ui-btn is-soft">정보 고치기</Link>
       {canApply ? <Link to={`/publishing/apply?work=${w.id}`} className="ui-btn is-primary">저작권 관리 신청</Link>
-        : <Link to={`/publishing?tab=ar&work=${w.id}`} className="ui-btn is-soft">A&R 제출</Link>}
+        : <Link to={`/ar?work=${w.id}`} className="ui-btn is-soft">A&R 제출</Link>}
     </>
   );
 

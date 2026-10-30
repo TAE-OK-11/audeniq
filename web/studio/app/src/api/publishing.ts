@@ -439,7 +439,7 @@ function mockSummary(d: PubDb): PublishingSummary {
     // 연장은 계약서(서류) 화면이 아니라 곡 화면의 계약 관리에서
     if (c.status === 'expiring' && !c.renewal && c.works[0]) tasks.push({ id: `renew-${c.id}`, kind: 'renew', title: '저작권 관리 계약 갱신 요청', sub: `${c.endDate}에 끝나요. 연장하면 관리가 끊기지 않아요.`, to: `/works/${c.works[0].id}?tab=register` });
   }
-  for (const a of d.ar) if (a.status === 'needs_fix') tasks.push({ id: `ar-${a.id}`, kind: 'ar', title: `A&R ‘${a.workTitle}’ 보완 요청`, sub: a.fixReason ?? '', to: '/publishing?tab=ar' });
+  for (const a of d.ar) if (a.status === 'needs_fix') tasks.push({ id: `ar-${a.id}`, kind: 'ar', title: `A&R ‘${a.workTitle}’ 보완 요청`, sub: a.fixReason ?? '', to: '/ar' });
   const pub = d.royalties.reduce((acc, r) => {
     if (r.status === 'estimated') acc.estimated += r.net; else acc.confirmed += r.net;
     return acc;

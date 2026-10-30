@@ -1915,11 +1915,12 @@ a.aq-inline-link{display:inline-block;max-width:100%}
 .aq-pub-songs .ui-row>.min-0{display:grid;gap:8px}
 .aq-pub-songs .ui-meter{height:6px}
 .aq-pub-amount{flex:none;font-weight:800;font-variant-numeric:tabular-nums}
+.aq-track-end{display:flex;align-items:center;gap:6px}
 .aq-pub-count{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 0 4px}
 .aq-pub-count .studio-result-count{margin:0}
 .settle-hero .aq-pub-next{margin-top:18px}
 /* 앨범 퍼블리싱 — 저작권료 표(칩 줄·CSV 버튼)가 카드를 화면 밖으로 밀지 않게 */
-.aq-album-pub .aq-detail-stack>*{min-width:0}
+.aq-album-pub>*{min-width:0}
 .aq-pub-songs .ui-row>.min-0{flex:1}
 .settle-entry-amount.is-estimated{color:var(--aq-text-4)}
 
