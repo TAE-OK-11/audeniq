@@ -17,8 +17,9 @@ function BackIcon() {
 }
 
 export function WizardShell({
-  label, title, steps, step, reached = step, onStep, onBack, saveLabel, summary, railNote, notice, children, actions,
+  label, title, className, steps, step, reached = step, onStep, onBack, saveLabel, summary, railNote, notice, children, actions,
 }: {
+  className?: string;
   /** 흐름 이름 — '저작권 관리 신청' (읽어 주기·왼쪽 진행 막대) */
   label: string;
   /** 위 막대 가운데 제목 */
@@ -42,7 +43,7 @@ export function WizardShell({
   const s = steps[step];
   const n = String(steps.length).padStart(2, '0');
   return (
-    <section id="view-new" className="view">
+    <section id="view-new" className={`view${className ? ` ${className}` : ''}`}>
       <div className="wizard">
         <div className="aq-wiz-top">
           <div className="wizard-topbar" aria-label={`${label} 탐색`}>

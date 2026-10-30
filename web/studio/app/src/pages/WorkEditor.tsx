@@ -16,13 +16,14 @@ import { stampNow } from '../lib/date';
 import { localStamp, fileSize } from '../lib/format';
 import { uid } from '../lib/store';
 import { draftTrackOf } from '../lib/albumPrep';
-import { LANGUAGES, SOCIETIES, WORK_TYPES, pct, similarWorks, splitIssues, splitNames, splitReady } from '../lib/publishing';
+import { LANGUAGES, WORK_TYPES, pct, similarWorks, splitIssues, splitNames, splitReady } from '../lib/publishing';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { FilePicker } from '../components/FilePicker';
 import { SkeletonBlock } from '../components/Skeleton';
 import { ReviewCard, WizardShell, type WizardStep } from '../components/WizardShell';
 import '../styles/split/Upload.css';
+import '../styles/split/Publishing.css';
 import { Glyph } from '../components/Glyph';
 import { SplitEditor } from '../components/publishing/SplitEditor';
 import { WorkRow } from '../components/publishing/parts';
@@ -43,7 +44,7 @@ const ISWC_RE = /^T-?\d{3}\.?\d{3}\.?\d{3}-?\d$/i;
 
 // 단계 제목은 배급 신청서와 같은 말투 — 두 줄 큰 제목 + 한 줄 안내
 const REST: WizardStep[] = [
-  { short: '참여자·지분', title: '누가 얼마씩\n가지나요?', sub: '작사·작곡·편곡 참여자와 저작권 지분을 나눠요.' },
+  { short: '참여자·지분', title: '참여자와 지분을\n확인해 주세요.', sub: '작사·작곡·편곡에 참여한 사람의 몫을 나눠요.' },
   { short: '권리·자료', title: '권리 정보와\n자료를 확인해 주세요.', sub: '모르는 칸은 비워 둬도 저장돼요.' },
   { short: '최종 확인', title: '곡 정보를\n마지막으로 확인해 주세요.', sub: '수정을 누르면 그 단계로 돌아가요.' },
 ];
@@ -217,7 +218,7 @@ export function WorkEditor() {
       base.current = JSON.stringify(form);
       const ok = splitReady(form.contributors);
       toast(editing ? '곡 정보를 저장했어요.' : '곡을 만들었어요.', { tone: 'success', sub: ok ? undefined : '지분을 맞추면 저작권 관리를 신청할 수 있어요.' });
-      nav(then === 'apply' && ok ? `/publishing/apply?work=${encodeURIComponent(w.id)}` : `/works/${w.id}`, { replace: true });
+      nav(then === 'apply' && ok ? `/publishing/apply?work=${encodeURIComponent(w.id)}` : `/works/${w.id}${releaseId ? `?release=${encodeURIComponent(releaseId)}` : ''}`, { replace: true });
     } catch (err) {
       toast(errorMessage(err, '저장하지 못했어요. 입력한 내용은 이 브라우저에 남아 있어요.'), { tone: 'error', action: { label: '다시 시도', onClick: h => { h.close(); void save(then); } } });
     } finally { setBusy(false); }
@@ -243,6 +244,7 @@ export function WorkEditor() {
   const steps = fromTrack ? TRACK_STEPS : STEPS;
   return (
     <WizardShell
+      className="aq-pbl-wizard"
       label="곡 정보 등록" title={editing ? '곡 정보 수정' : '새 곡 정보'}
       steps={editing ? steps.map((x, i) => (i ? x : { ...x, title: '곡 정보를\n고쳐 주세요.' })) : steps}
       step={step} reached={editing ? LAST : reached} onStep={setStep} onBack={back}
@@ -362,21 +364,14 @@ export function WorkEditor() {
       </>}
 
       {step === 1 && <>
-        <p className="ui-field-help">{fromTrack
-          ? '배급 신청서의 작사·작곡·편곡 크레딧으로 참여자를 채워 두었어요. 저작권 지분은 자동으로 정하지 않으니 각자의 몫만 나눠 주세요.'
-          : '작사·작곡·편곡에 참여한 사람과 각자의 몫을 적어요. AUDENIQ 작가는 찾아서 추가하고, 없으면 이름만으로 외부 참여자를 추가해요.'}</p>
-        <SplitEditor value={form.contributors} onChange={v => set('contributors', v)} />
+        {fromTrack && <p className="ui-field-help aq-pbl-import-note"><Glyph name="check" size={16} />발매 크레딧을 가져왔어요. 각자의 지분만 입력해 주세요.</p>}
+        <SplitEditor value={form.contributors} onChange={v => set('contributors', v)} showErrors={tried} />
         {fromTrack && form.contributors.length > 0 && (
-          <label className={`ui-check${needsSplitCheck && tried ? ' aq-shake' : ''}`}>
+          <label className={`ui-check aq-pbl-confirm${needsSplitCheck && tried ? ' aq-shake' : ''}`}>
             <input id="splitCheck" type="checkbox" checked={splitChecked} onChange={e => setSplitChecked(e.target.checked)} />
-            <span><b>지분을 직접 확인했어요.</b> 크레딧은 발매 정보에서 가져왔지만, 저작권 지분은 자동으로 정하지 않아요.</span>
+            <span><b>참여자와 지분을 직접 확인했어요.</b><small>크레딧은 가져오지만 지분은 자동으로 정하지 않아요.</small></span>
           </label>
         )}
-        <p className="ui-field-help" aria-live="polite">
-          {issues.some(i => i.level === 'error')
-            ? '지분을 맞추지 않아도 저장돼요. 저작권 관리 신청은 맞춘 뒤에 할 수 있어요.'
-            : form.contributors.length ? '지분이 맞아요. 저장하고 바로 신청할 수 있어요.' : '참여자를 추가해 주세요.'}
-        </p>
       </>}
 
       {step === 2 && <>
@@ -397,7 +392,7 @@ export function WorkEditor() {
             <input id="workPriorName" className={inputClass()} value={form.priorPublisher ?? ''} onChange={e => set('priorPublisher', e.target.value || null)} placeholder="퍼블리셔 이름" />
           </Field>
         </Reveal>
-        <p className="ui-field-help">관리 단체 가입 여부와 IPI/CAE 번호는 ‘참여자·지분’ 단계에서 사람마다 적어요. 모르는 칸은 비워 둬도 저장돼요. 아는 관리 단체: {SOCIETIES.slice(0, 5).join(' · ')} 등</p>
+        <p className="ui-field-help">관리 단체·IPI 번호는 ‘참여자·지분’의 ‘관리 범위·작가 정보’에서 입력할 수 있어요.</p>
 
         <h2 className="subhead">첨부 자료</h2>
         <p className="ui-field-help">{fromTrack && form.attachments.length

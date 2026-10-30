@@ -12,9 +12,11 @@ import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { SkeletonRows } from '../components/Skeleton';
 import { Glyph } from '../components/Glyph';
-import { Badge, Callout, EmptyState, Field, IconTile, Segmented, Steps, inputClass, selectClass } from '../ui';
+import { Badge, Callout, EmptyState, Field, IconTile, Segmented, Tabs, inputClass, selectClass } from '../ui';
 import { Reveal } from '../ui/Reveal';
 import '../styles/split/Dashboard.css';
+import '../styles/split/Publishing.css';
+import { StageCard } from '../components/StageCard';
 
 const MOODS = ['신나는', '잔잔한', '신비로운', '슬픈', '설레는', '강렬한', '따뜻한', '어두운', '청량한'];
 const AR_STEPS = ['제출', '심사', '심사 완료', '제안'];
@@ -58,7 +60,7 @@ function SubmitForm({ works, preset, onDone }: { works: Work[]; preset: string |
   };
 
   return (
-    <section className="ui-card" aria-labelledby="arForm">
+    <section className="ui-card aq-pbl-ar-form" aria-labelledby="arForm">
       <h2 id="arForm">데모 제출</h2>
       <Field label="곡" htmlFor="arWork" required help={!works.length ? undefined : '데모 음원이 있는 곡을 골라 주세요.'}>
         <select id="arWork" className={selectClass()} value={workId} onChange={e => setWorkId(e.target.value)}>
@@ -120,15 +122,16 @@ export function OpenAr() {
 
   return (
     <div className="view" id="view-ar">
-      <div className="ui-page-head">
+      <div className="ui-page-head aq-head-inline">
         <div>
           <p className="eyebrow">홍보</p>
           <h1>Open A&R</h1>
           <p>곡 데모를 AUDENIQ A&R에 보내면 심사 후 레이블·아티스트에게 피칭해 드려요.</p>
         </div>
+        {view === 'list' && <button type="button" className="ui-btn is-primary" onClick={() => setView('submit')}><Glyph name="plus" size={14} />데모 제출</button>}
       </div>
-      <Segmented tabs className="aq-seg-tabs" label="Open A&R" value={view} onChange={setView}
-        options={[{ value: 'list', label: `내 제출${active.length ? ` ${active.length}` : ''}` }, { value: 'submit', label: '새로 제출' }]} />
+      <Tabs label="Open A&R" value={view} onChange={setView}
+        items={[{ value: 'list', label: '내 제출', count: active.length }, { value: 'submit', label: '새로 제출' }]} />
 
       {view === 'submit' ? (
         <div className="ui-tab-panel" key="submit">
@@ -156,7 +159,7 @@ export function OpenAr() {
                     </div>
                     <Glyph name="chevron-right" size={16} />
                   </Link>
-                  {s.status !== 'closed' && <Steps steps={AR_STEPS} current={arStep(s.status)} warn={s.status === 'needs_fix'} label="A&R 진행 단계" />}
+                  {s.status !== 'closed' && <StageCard steps={AR_STEPS} current={arStep(s.status)} tone={s.status === 'needs_fix' ? 'warn' : undefined} label="A&R 진행 단계" />}
                   {s.fixReason && <Callout tone="warn">{s.fixReason}</Callout>}
                   {['submitted', 'in_review', 'needs_fix'].includes(s.status) && (
                     <div className="row-actions"><button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => void withdraw(s)}>제출 취소</button></div>
@@ -173,8 +176,8 @@ export function OpenAr() {
       )}
 
       {/* 진행 순서 — 계약서 화면의 '계약은 이렇게 진행돼요'와 같은 목록 */}
-      <section className="aq-doc-path-wrap" aria-labelledby="arPathTitle">
-        <h2 id="arPathTitle" className="subhead">Open A&R은 이렇게 진행돼요</h2>
+      <details className="aq-doc-path-wrap aq-pbl-guide" open={!list?.length}>
+        <summary>Open A&R 진행 안내<Glyph name="chevron-down" size={16} /></summary>
         <ol className="ui-card ui-list is-inset aq-doc-path">
           {AR_PATH.map(([title, when], i) => (
             <li key={title} className="ui-row">
@@ -183,7 +186,7 @@ export function OpenAr() {
             </li>
           ))}
         </ol>
-      </section>
+      </details>
     </div>
   );
 }

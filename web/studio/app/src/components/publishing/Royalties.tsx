@@ -8,7 +8,9 @@ import { Money } from '../Money';
 import { Modal } from '../Modal';
 import { Link } from '../../lib/router';
 import { Glyph } from '../Glyph';
-import { Badge, ChipGroup, EmptyState } from '../../ui';
+import { Badge, ChipGroup, EmptyState, StatGrid, StatTile } from '../../ui';
+
+import '../../styles/split/Publishing.css';
 
 const periodText = (p: string) => `${p.slice(0, 4)}년 ${Number(p.slice(5, 7))}월분`;
 
@@ -55,29 +57,17 @@ export function RoyaltyTable({ rows, showWork = true, emptyText, summary = true 
   }
   return (
     <>
-      {/* 정산·지급의 '받을 수 있는 금액'과 같은 카드 — 큰 금액 하나 + 한 막대로 나눈 몫 + 범례 */}
-      {summary && <section className="ui-card settle-hero" aria-label="저작권료 합계">
-        <h2>확정된 저작권료</h2>
-        <strong className="settle-hero-amount"><Money value={totals.confirmed + totals.paid} animate /></strong>
-        <div className="settle-split">
-          <div className="settle-split-bar" aria-hidden="true">
-            <i className="is-left" style={{ flexGrow: totals.confirmed }} />
-            <i className="is-used" style={{ flexGrow: totals.paid }} />
-            {totals.estimated > 0 && <i className="is-held" style={{ flexGrow: totals.estimated }} />}
-          </div>
-          <ul className="settle-split-legend">
-            <li><i className="is-left" />받을 수 있음 <b><Money value={totals.confirmed} /></b></li>
-            <li><i className="is-used" />지급 완료 <b><Money value={totals.paid} /></b></li>
-            {totals.estimated > 0 && <li><i className="is-held" />확정 전 예상 <b><Money value={totals.estimated} /></b></li>}
-          </ul>
-        </div>
-      </section>}
-      <div className="aq-list-tools">
+      {summary && <StatGrid cols={2} className="aq-pbl-royalty-summary">
+        <StatTile compact label="누적 확정 저작권료" value={<Money value={totals.confirmed + totals.paid} />} hint={`지급 완료 내역 포함`} />
+        <StatTile compact label="확정 전 예상" value={<Money value={totals.estimated} />} hint="확정 후 정산 잔액에 반영돼요" tone="muted" />
+      </StatGrid>}
+      <div className="aq-list-tools aq-pbl-royalty-tools">
         <ChipGroup size="sm" label="지급 상태" value={status} onChange={setStatus}
           options={[{ value: 'all', label: '전체', count: counts.all }, ...(['confirmed', 'estimated', 'paid'] as const).map(s => ({ value: s, label: ROYALTY_STATUS_LABEL[s], count: counts[s] ?? 0 }))]} />
-        <button type="button" className="ui-btn is-soft is-sm" onClick={() => saveCsv(shown)}><Glyph name="download" size={14} className="aq-glyph-lead" />명세서 CSV</button>
+        <button type="button" className="ui-btn is-soft is-sm" disabled={!shown.length} onClick={() => saveCsv(shown)}><Glyph name="download" size={14} className="aq-glyph-lead" />명세서 CSV</button>
       </div>
-      <div className="aq-catalog-cards aq-stagger">
+      {!shown.length && <EmptyState compact title="이 상태의 저작권료가 없어요" actions={<button type="button" className="ui-btn is-soft is-sm" onClick={() => setStatus('all')}>전체 내역 보기</button>}>다른 지급 상태를 선택해 주세요.</EmptyState>}
+      <div className="aq-catalog-cards aq-stagger aq-pbl-royalty-list">
         {byPeriod.map(([p, list]) => (
           <section key={p} className="settle-day" aria-label={periodText(p)}>
             <h3 className="settle-day-head">{periodText(p)}</h3>

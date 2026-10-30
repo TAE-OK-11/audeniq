@@ -13,10 +13,12 @@ import { Money } from '../components/Money';
 import { RegBadge } from '../components/publishing/parts';
 import { RoyaltyTable } from '../components/publishing/Royalties';
 import { MiniTrend } from '../components/MiniTrend';
+import { publishingReport } from '../lib/publishingReport';
 import { periodLabel } from '../data/reports';
 import { money, num } from '../lib/format';
-import { Badge, EmptyState, IconTile, KeyValue, Meter, Tabs } from '../ui';
+import { Badge, EmptyState, IconTile, KeyValue, Meter, StatGrid, StatTile, Tabs } from '../ui';
 import '../styles/split/Dashboard.css';
+import '../styles/split/Publishing.css';
 
 type Tab = 'overview' | 'songs' | 'royalties';
 const TABS: { value: Tab; label: string }[] = [{ value: 'overview', label: '분석' }, { value: 'songs', label: '곡' }, { value: 'royalties', label: '저작권료' }];
@@ -27,12 +29,6 @@ const SONG_FILTERS: [WorkFilter, string][] = [['all', '전체'], ['managed', '�
 const TASK_ICON: Record<PublishingTask['kind'], GlyphName> = { fix: 'warning', split: 'users', sign: 'sign', renew: 'repeat', ar: 'megaphone' };
 const TASK_BTN: Record<PublishingTask['kind'], string> = { fix: '보완', split: '확인', sign: '서명', renew: '갱신', ar: '보기' };
 const shortWon = (n: number) => (n >= 10000 ? `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}만` : num(n));
-const nextMonth = (p: string) => { const [y, m] = p.split('-').map(Number); return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`; };
-const topBy = (rows: readonly Royalty[], key: (r: Royalty) => string) => {
-  const m = new Map<string, number>();
-  for (const r of rows) m.set(key(r), (m.get(key(r)) ?? 0) + r.net);
-  return [...m.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
-};
 const PATH = [
   ['저작권 관리 신청', '맡길 곡과 지분을 고르고 신청서에 서명'],
   ['담당자 심사', '참여자·지분·권리를 확인해요'],
@@ -44,10 +40,10 @@ const norm = (s: string) => s.toLowerCase().replace(/\s+/g, '');
 // 손이 가야 하는 곡이 먼저 — 보완 요청 → 맡기지 않음 → 심사 중 → 관리 중
 const urgency = (w: Work) => (matchFilter(w, 'fix') ? 0 : matchFilter(w, 'none') ? 1 : matchFilter(w, 'review') ? 2 : 3);
 
-function SongRow({ w }: { w: Work }) {
+function SongRow({ w, releaseId }: { w: Work; releaseId?: string }) {
   const rec = w.recordings[0];
   return (
-    <Link to={`/works/${w.id}`} className="track-row ui-row aq-track-row" aria-label={`${w.title || '제목 없는 곡'} 저작권 보기`}>
+    <Link to={`/works/${w.id}${releaseId ? `?release=${encodeURIComponent(releaseId)}` : ''}`} className="track-row ui-row aq-track-row" aria-label={`${w.title || '제목 없는 곡'} 저작권 보기`}>
       <ReleaseCover id={rec?.releaseId ?? w.id} />
       <div className="min-0">
         <span className="ui-row-title">{w.title || '제목 없는 곡'}</span>
@@ -66,7 +62,7 @@ function Overview({ scope, works, rows }: { scope: Scope | null; works: Work[] |
   const { data: sum, loading } = useAsync(() => pubApi.summary(), [], { key: 'pub-summary' });
   if (loading && !sum) return <SkeletonRows count={3} />;
   if (!sum || !works) return null;
-  // 앨범을 고르면 곡 수도 그 앨범 곡으로 센다 (할 일은 전체 기준이라 그때는 숨긴다)
+  // 관리 현황은 선택한 앨범을 기준으로 센다
   const mine = works.filter(w => inScope(w, scope));
   const s = scope ? {
     ...sum, works: {
@@ -78,41 +74,26 @@ function Overview({ scope, works, rows }: { scope: Scope | null; works: Work[] |
   return (
     <div className="aq-detail-stack">
       {!s.works.total ? (
-        <EmptyState icon={<Glyph name="scale" size={22} />} title={scope ? '이 앨범에는 아직 정리한 곡이 없어요' : '아직 맡긴 곡이 없어요'}
+        <EmptyState icon={<Glyph name="scale" size={22} />} title={scope ? '이 앨범에는 아직 등록한 곡이 없어요' : '아직 등록한 곡이 없어요'}
           actions={<Link to={scope ? `/releases/${encodeURIComponent(scope.releaseId)}?tab=publishing` : '/publishing/apply'} className="ui-btn is-primary">{scope ? '앨범에서 시작하기' : '저작권 관리 신청'}</Link>}>
           곡을 쓴 사람에게는 작사·작곡 저작권이 있어요. 맡기면 방송·스트리밍 저작권료를 AUDENIQ이 받아 배급 정산과 같은 잔액으로 드려요.
         </EmptyState>
       ) : (
         <>
           {!scope && <Tasks s={s} nav={nav} />}
-          <RoyaltyReport rows={rows} scope={scope} />
-          {/* 정산·지급의 '받을 수 있는 금액'과 같은 카드 — 큰 숫자 하나 + 한 막대로 나눈 몫 + 범례 */}
-          <section className="ui-card settle-hero" aria-labelledby="pubHeroSongs">
-            <h2 id="pubHeroSongs">저작권 관리 중인 곡</h2>
-            <strong className="settle-hero-amount">{s.works.managed}<span className="aq-money-unit">곡</span></strong>
-            <div className="settle-split">
-              <p className="settle-split-cap" aria-hidden="true">전체 <b>{s.works.total}곡</b> 중</p>
-              <div className="settle-split-bar" aria-hidden="true">
-                {/* 0곡인 몫은 그리지 않는다 — 빈 몫이 얇은 줄로 남지 않게 */}
-                {s.works.managed > 0 && <i className="is-left" style={{ flexGrow: s.works.managed }} />}
-                {s.works.inProgress > 0 && <i className="is-used" style={{ flexGrow: s.works.inProgress }} />}
-                {s.works.unregistered > 0 && <i className="is-held" style={{ flexGrow: s.works.unregistered }} />}
-              </div>
-              <ul className="settle-split-legend">
-                <li><i className="is-left" />관리 중 <b>{s.works.managed}곡</b></li>
-                <li><i className="is-used" />심사·등록 준비 <b>{s.works.inProgress}곡</b></li>
-                <li><i className="is-held" />맡기지 않음 <b>{s.works.unregistered}곡</b></li>
-              </ul>
-            </div>
-            {/* 숫자만 보여 주고 끝내지 않는다 — 다음에 할 일 하나 */}
-            {scope && (s.works.unregistered > 0 || s.works.inProgress > 0) ? (
-              <Link to={`/releases/${encodeURIComponent(scope.releaseId)}?tab=publishing`} className="ui-btn is-soft is-block aq-pub-next">이 앨범 퍼블리싱 관리</Link>
-            ) : s.works.unregistered > 0 ? (
-              <Link to="/publishing?tab=songs&wf=none" className="ui-btn is-soft is-block aq-pub-next">맡기지 않은 곡 보기</Link>
-            ) : s.works.inProgress > 0 ? (
-              <Link to="/publishing?tab=songs&wf=review" className="ui-btn is-soft is-block aq-pub-next">심사 중인 곡 보기</Link>
-            ) : null}
-          </section>
+          <div className="aq-pbl-dashboard">
+            <RoyaltyReport rows={rows} scope={scope} />
+            <section className="ui-card aq-pbl-status" aria-labelledby="pubHeroSongs">
+              <div className="ui-section-head"><h2 id="pubHeroSongs">곡 관리 현황</h2><span className="ui-count is-soft">전체 {s.works.total}곡</span></div>
+              <StatGrid cols={3}>
+                <StatTile compact label="관리 중" value={s.works.managed} unit="곡" />
+                <StatTile compact label="진행 중" value={s.works.inProgress} unit="곡" />
+                <StatTile compact label="미신청" value={s.works.unregistered} unit="곡" />
+              </StatGrid>
+              <Link to={`/publishing?tab=songs${scope ? `&release=${encodeURIComponent(scope.releaseId)}` : ''}`} className="aq-head-link">곡별 상태 보기<Glyph name="chevron-right" size={14} /></Link>
+              {scope && <Link to={`/releases/${encodeURIComponent(scope.releaseId)}?tab=publishing`} className="ui-btn is-soft is-block">이 앨범에서 관리하기<Glyph name="chevron-right" size={14} /></Link>}
+            </section>
+          </div>
           <SongRoyalties rows={rows} works={works} />
           {/* 아직 맡긴 곡이 없을 때만 — 처음 쓰는 사람에게 순서를 */}
           {!scope && !s.works.managed && <PathGuide />}
@@ -200,7 +181,7 @@ function Songs({ filter, setFilter, scope }: { filter: WorkFilter; setFilter: (f
         <button type="button" className="ui-btn is-ghost is-sm" onClick={() => nav('/works/new')}><Glyph name="plus" size={14} className="aq-glyph-lead" />곡 추가</button>
       </div>
       {loading && !works ? <SkeletonRows count={4} /> : shown.length ? (
-        <div className="aq-catalog-cards aq-stagger">{shown.map(w => <SongRow key={w.id} w={w} />)}</div>
+        <div className="aq-catalog-cards aq-stagger">{shown.map(w => <SongRow key={w.id} w={w} releaseId={scope?.releaseId} />)}</div>
       ) : (
         <div className="ui-empty">
           <h2>{query || filter !== 'all' ? '조건에 맞는 곡이 없어요.' : '아직 곡이 없어요.'}</h2>
@@ -214,24 +195,7 @@ function Songs({ filter, setFilter, scope }: { filter: WorkFilter; setFilter: (f
 /** 저작권료 리포트 — 홈 '음악 리포트'와 같은 카드: 최근 달 금액 · 지난달 비교 · 월별 막대 · 많이 번 곡과 단체 */
 function RoyaltyReport({ rows, scope }: { rows: Royalty[] | null; scope: Scope | null }) {
   const nav = useNavigate();
-  const r = useMemo(() => {
-    const list = rows ?? [];
-    if (!list.length) return null;
-    const by = new Map<string, number>();
-    for (const x of list) by.set(x.period, (by.get(x.period) ?? 0) + x.net);
-    const periods = [...by.keys()].sort();
-    // 비는 달도 막대 자리는 남긴다 — 들어오지 않은 달이 그대로 보이게. 최근 여섯 달까지만
-    const trend: { period: string; value: number }[] = [];
-    for (let p = periods[0]; p <= periods[periods.length - 1]; p = nextMonth(p)) trend.push({ period: p, value: by.get(p) ?? 0 });
-    const last = trend[trend.length - 1];
-    const prev = trend[trend.length - 2];
-    const lastRows = list.filter(x => x.period === last.period);
-    return {
-      period: last.period, amount: last.value, prev: prev?.value, trend: trend.slice(-6),
-      estimated: lastRows.some(x => x.status === 'estimated'),
-      topSong: topBy(list, x => x.workTitle), topSource: topBy(list, x => x.source),
-    };
-  }, [rows]);
+  const r = useMemo(() => publishingReport(rows ?? []), [rows]);
   return (
     <section className="ui-card aq-report-card" aria-labelledby="pubReport">
       <div className="ui-section-head aq-report-head">
@@ -244,19 +208,19 @@ function RoyaltyReport({ rows, scope }: { rows: Royalty[] | null; scope: Scope |
         </EmptyState>
       ) : (<>
         <div className="aq-report-total">
-          <small>{Number(r.period.slice(5))}월분 저작권료</small>
-          <strong><Money value={r.amount} animate /></strong>
+          <small>{r.hasConfirmed ? `최근 확정 · ${Number(r.period.slice(5))}월분 저작권료` : '확정 전 예상 내역만 있어요'}</small>
+          <strong className={!r.hasConfirmed ? 'aq-pbl-report-pending' : undefined}>{r.hasConfirmed ? <Money value={r.amount} animate /> : '확정 내역을 기다리고 있어요'}</strong>
           {(r.estimated || r.prev != null) && (
             <div className="aq-home-report-note">
-              {r.estimated && <Badge tone="gray">확정 전 예상 포함</Badge>}
+              {r.estimated > 0 && <small>확정 전 예상 <Money value={r.estimated} /></small>}
               {r.prev != null && <small>지난달 {money(r.prev)}</small>}
             </div>
           )}
         </div>
-        <MiniTrend data={r.trend} label="최근 월별 저작권료 추이" short={shortWon} format={money} />
+        {r.hasConfirmed && <MiniTrend data={r.trend} label="최근 월별 확정 저작권료 추이" short={shortWon} format={money} />}
         <KeyValue className="aq-report-kv" cols={2} items={[
-          ['많이 번 곡', <span className="aq-report-top"><IconTile size="sm"><Glyph name="music" size={16} /></IconTile><span>{r.topSong || '—'}</span></span>],
-          ['많이 걷은 단체', <span className="aq-report-top"><IconTile size="sm"><Glyph name="globe" size={16} /></IconTile><span>{r.topSource || '—'}</span></span>],
+          ['이달의 주요 곡', <span className="aq-report-top"><IconTile size="sm"><Glyph name="music" size={16} /></IconTile><span>{r.topSong || '—'}</span></span>],
+          ['이달의 주요 징수 단체', <span className="aq-report-top"><IconTile size="sm"><Glyph name="globe" size={16} /></IconTile><span>{r.topSource || '—'}</span></span>],
         ]} />
         <p className="ui-row-meta aq-report-foot">관리 단체가 확정한 저작권료는 <Link to="/settlement?type=publishing" className="aq-inline-link">정산·지급</Link> 잔액에 배급 정산금과 함께 쌓여요.</p>
       </>)}
@@ -266,6 +230,7 @@ function RoyaltyReport({ rows, scope }: { rows: Royalty[] | null; scope: Scope |
 
 /** 곡별 저작권료 — 홈 '내 발매'와 같은 줄에 몫 막대만 더했다. 어느 곡이 가장 많이 벌었는지 (예상 제외) */
 function SongRoyalties({ rows, works }: { rows: Royalty[] | null; works: Work[] | null }) {
+  const [expanded, setExpanded] = useState(false);
   const bySong = new Map<string, { title: string; id: string; net: number; count: number }>();
   for (const r of rows ?? []) {
     if (r.status === 'estimated') continue;
@@ -278,9 +243,9 @@ function SongRoyalties({ rows, works }: { rows: Royalty[] | null; works: Work[] 
   const rec = (id: string) => works?.find(w => w.id === id)?.recordings[0];
   return (
     <section className="ui-card aq-pub-songs" aria-labelledby="pubBySong">
-      <div className="ui-section-head"><h2 id="pubBySong">곡별 저작권료</h2></div>
+      <div className="ui-section-head"><h2 id="pubBySong">곡별 저작권료</h2><span className="ui-row-meta">누적 확정 금액</span></div>
       <div className="ui-list aq-stagger">
-        {top.map(s => (
+        {(expanded ? top : top.slice(0, 5)).map(s => (
           <Link key={s.id} to={`/works/${s.id}?tab=revenue`} className="release-row ui-row studio-album-row aq-row-link">
             <ReleaseCover id={rec(s.id)?.releaseId ?? s.id} />
             <div className="min-0">
@@ -292,6 +257,7 @@ function SongRoyalties({ rows, works }: { rows: Royalty[] | null; works: Work[] 
           </Link>
         ))}
       </div>
+      {top.length > 5 && <button type="button" className="ui-btn is-soft is-block" aria-expanded={expanded} onClick={() => setExpanded(v => !v)}>{expanded ? '접기' : `전체 ${top.length}곡 보기`}</button>}
     </section>
   );
 }
@@ -363,11 +329,11 @@ export function Publishing() {
           <h1>퍼블리싱</h1>
           <p>곡의 작사·작곡 저작권을 등록하고 저작권료를 받아요.</p>
         </div>
-        <button type="button" className="ui-btn is-primary" onClick={() => nav('/publishing/apply')}><Glyph name="plus" size={14} />저작권 관리 신청</button>
+        <button type="button" className="ui-btn is-primary" onClick={() => nav(`/publishing/apply${releaseId ? `?release=${encodeURIComponent(releaseId)}` : ''}`)}><Glyph name="plus" size={14} />저작권 관리 신청</button>
       </div>
 
       <Tabs label="퍼블리싱 메뉴" value={tab} onChange={go}
-        items={TABS.map(t => ({ ...t, count: t.value === 'songs' ? works?.length ?? null : undefined }))} />
+        items={TABS.map(t => ({ ...t, count: t.value === 'songs' ? works?.filter(w => inScope(w, scope)).length ?? null : undefined }))} />
 
       <AlbumScope works={works ?? null} value={releaseId} onChange={id => set({ release: id })} />
 

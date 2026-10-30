@@ -5,7 +5,7 @@ import { useDeferredValue, useEffect, useState } from 'react';
 import { pubApi, type ContributorRole, type Creator, type WorkContributor } from '../../api/publishing';
 import { uid } from '../../lib/store';
 import { ROLE_LABEL, SOCIETIES, evenSplit, pct, splitIssues, sumShares } from '../../lib/publishing';
-import { Badge, IconTile } from '../../ui';
+import { Badge, Field, IconTile } from '../../ui';
 import { Glyph } from '../Glyph';
 import { SplitBar, roleText } from './parts';
 import '../../styles/split/Publishing.css';
@@ -57,19 +57,16 @@ function CreatorSearch({ onPick, onExternal, taken }: { onPick: (c: Creator) => 
   );
 }
 
-export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSimulate }: {
+export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSimulate, showErrors = false }: {
   value: WorkContributor[];
   onChange: (next: WorkContributor[]) => void;
   readOnly?: boolean;
-  /** 저장된 곡에서만 — 참여자에게 확인 요청 */
   onRequestConfirm?: (c: WorkContributor) => void;
-  /** 체험 모드에서 상대 확인 흉내 */
   onSimulate?: (c: WorkContributor) => void;
+  showErrors?: boolean;
 }) {
   const total = sumShares(value);
-  const pubTotal = sumShares(value, 'publisherShare');
   const issues = splitIssues(value);
-  const rowIssue = (id: string) => issues.find(i => i.contributorId === id);
   const set = (id: string, patch: Partial<WorkContributor>) => onChange(value.map(c => (c.id === id ? { ...c, ...patch } : c)));
   const rest = Math.max(0, Math.round((100 - total) * 100) / 100);
   const fromCreator = (cr: Creator) => onChange([...value, {
@@ -80,76 +77,81 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
   const external = (name: string) => onChange([...value, { id: uid(), creatorId: null, name, roles: [], society: null, ipi: null, external: true, share: rest, publisherShare: 0, confirm: 'pending' }]);
   const even = () => { const s = evenSplit(value.length); onChange(value.map((c, i) => ({ ...c, share: s[i], publisherShare: Math.min(c.publisherShare, s[i]) }))); };
   const num = (v: string) => (v === '' ? 0 : Number(v.replace(/[^0-9.]/g, '')) || 0);
+  const invalid = showErrors || total > 100;
 
   return (
-    <div className="aq-splits aq-pbl-split">
-      <SplitBar list={value} />
-      {value.map(c => {
-        const err = rowIssue(c.id);
-        return (
-          <fieldset key={c.id} className="aq-splits-track">
-            <legend>
-              {c.name || '이름 없는 참여자'}{c.isMe && ' (나)'}
-              {c.external ? <Badge tone="gray">외부 참여자</Badge> : !c.isMe && <Badge tone="blue">AUDENIQ 작가</Badge>}
-              {c.confirm === 'confirmed' ? <Badge tone="green">확인 완료</Badge> : c.confirm === 'disputed' ? <Badge tone="red">이의 제기</Badge> : !c.isMe && <Badge tone="amber">확인 대기</Badge>}
-            </legend>
-            {!readOnly && <div className="ui-chips" role="group" aria-label={`${c.name} 역할`}>
-              {ROLES.map(r => (
-                <button key={r} type="button" className="ui-chip is-sm" aria-pressed={c.roles.includes(r)} disabled={readOnly}
-                  onClick={() => set(c.id, { roles: c.roles.includes(r) ? c.roles.filter(x => x !== r) : [...c.roles, r] })}>
-                  {ROLE_LABEL[r]}
-                </button>
-              ))}
-            </div>}
-            {readOnly ? (
-              <div className="aq-splits-row">
-                <span className="aq-splits-name">{roleText(c)}<span className="muted"> · {[c.society, c.ipi && `IPI ${c.ipi}`].filter(Boolean).join(' · ') || '관리 단체·IPI 없음'}</span></span>
-                <span className="aq-splits-share">{pct(c.share)}</span>
-                <span className="muted small">관리 {pct(c.publisherShare)}</span>
-                <span className="aq-splits-money small muted">
-                  {onRequestConfirm && !c.isMe && c.confirm !== 'confirmed' && <button type="button" className="ui-btn is-text is-sm" onClick={() => onRequestConfirm(c)}>확인 요청 다시 보내기</button>}
-                  {onSimulate && !c.isMe && c.confirm !== 'confirmed' && <button type="button" className="ui-btn is-text is-sm" onClick={() => onSimulate(c)}>체험: 상대가 확인함</button>}
-                </span>
-              </div>
-            ) : (
-              <div className="aq-splits-row aq-pbl-split-row">
-                {c.external
-                  ? <input className="ui-input" aria-label="이름" maxLength={100} placeholder="이름·활동명" value={c.name} onChange={e => set(c.id, { name: e.target.value })} />
-                  : <span className="aq-splits-name">{c.name}</span>}
-                <span className="aq-splits-pct aq-affix" data-unit="%">
-                  <input className="ui-input" inputMode="decimal" aria-label="창작 지분(%)" value={c.share || ''} placeholder="창작"
-                    onChange={e => { const v = num(e.target.value); set(c.id, { share: v, publisherShare: Math.min(c.publisherShare, v) }); }} />
-                </span>
-                <span className="aq-splits-pct aq-affix" data-unit="%">
-                  <input className="ui-input" inputMode="decimal" aria-label="퍼블리셔 관리 지분(%)" value={c.publisherShare || ''} placeholder="관리"
-                    onChange={e => set(c.id, { publisherShare: num(e.target.value) })} />
-                </span>
-                <select className="ui-select" aria-label="관리 단체" value={c.society ?? ''} onChange={e => set(c.id, { society: e.target.value || null })}>
-                  <option value="">관리 단체 모름</option>
-                  {SOCIETIES.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-                <input className="ui-input" inputMode="numeric" aria-label="IPI/CAE" placeholder="IPI/CAE" value={c.ipi ?? ''} readOnly={!c.external && !c.isMe}
-                  onChange={e => set(c.id, { ipi: e.target.value.replace(/\D/g, '').slice(0, 11) || null })} />
-                <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => onChange(value.filter(x => x.id !== c.id))}>삭제</button>
-              </div>
-            )}
-            {err && <small className={`ui-field-help${err.level === 'error' ? ' is-error' : ' is-warn'}`}>{err.text}</small>}
-          </fieldset>
-        );
-      })}
-
-      {!readOnly && <CreatorSearch taken={new Set(value.map(c => c.creatorId ?? '').filter(Boolean))} onPick={fromCreator} onExternal={external} />}
-
-      <div className="aq-splits-foot">
-        <span className={total > 100 ? 'aq-splits-over' : 'muted small'} aria-live="polite">
-          창작 지분 합계 {pct(total)}{total === 100 ? ' · 맞아요' : total > 100 ? ' · 100%를 넘어요' : ` · ${pct(rest)} 남았어요`} · 퍼블리셔 관리 {pct(pubTotal)}
-        </span>
-        {!readOnly && value.length > 1 && <button type="button" className="ui-btn is-soft is-sm" onClick={even}>균등하게 나누기</button>}
+    <div className="aq-pbl-split">
+      <div className="aq-pbl-split-total" aria-live="polite">
+        <span>창작 지분 합계 <strong className={total > 100 ? 'aq-danger-text' : ''}>{pct(total)} <small>/ 100%</small></strong></span>
+        {!readOnly && value.length > 1 && <button type="button" className="ui-btn is-soft is-sm" onClick={even}>균등 분배</button>}
       </div>
-      {issues.filter(i => !i.contributorId).map(i => (
-        <small key={i.text} className={`ui-field-help${i.level === 'error' ? ' is-error' : ' is-warn'}`}>{i.text}</small>
-      ))}
-      <p className="ui-field-help">창작 지분은 작가끼리 나눈 몫, 퍼블리셔 관리 지분은 그중 AUDENIQ이 관리를 맡는 몫이에요.</p>
+      <SplitBar list={value} />
+      {!readOnly && total < 100 && <p className="ui-field-help">남은 {pct(rest)}를 참여자에게 나눠 주세요. 미완성 정보도 저장할 수 있어요.</p>}
+
+      <div className="aq-pbl-people">
+        {value.map((c, i) => {
+          const errors = issues.filter(x => x.contributorId === c.id && x.level === 'error');
+          const prefix = `pbl-person-${c.id}`;
+          return readOnly ? (
+            <div key={c.id} className="aq-pbl-person-read">
+              <IconTile size="sm" tone="gray"><Glyph name="user" size={17} /></IconTile>
+              <div className="min-0">
+                <strong>{c.name || '이름 없는 참여자'}{c.isMe && ' (나)'}</strong>
+                <span className="ui-row-meta">{roleText(c)}{c.society && ` · ${c.society}`}{c.ipi && <> · <span className="aq-nowrap">IPI {c.ipi}</span></>}</span>
+                <span className="ui-row-meta">AUDENIQ 관리 {pct(c.publisherShare)}</span>
+              </div>
+              <div className="aq-pbl-person-end">
+                <b>{pct(c.share)}</b>
+                <Badge tone={c.confirm === 'confirmed' ? 'green' : c.confirm === 'disputed' ? 'red' : 'amber'}>{c.confirm === 'confirmed' ? '확인 완료' : c.confirm === 'disputed' ? '이의 제기' : '확인 대기'}</Badge>
+              </div>
+              {(onRequestConfirm || onSimulate) && !c.isMe && c.confirm !== 'confirmed' && <div className="aq-pbl-person-actions">
+                {onRequestConfirm && <button type="button" className="ui-btn is-text is-sm" onClick={() => onRequestConfirm(c)}>확인 요청 다시 보내기</button>}
+                {onSimulate && <button type="button" className="ui-btn is-text is-sm" onClick={() => onSimulate(c)}>체험: 상대가 확인함</button>}
+              </div>}
+            </div>
+          ) : (
+            <fieldset key={c.id} className="aq-pbl-person">
+              <legend className="sr-only">참여자 {i + 1}: {c.name || '이름 없음'}</legend>
+              <div className="aq-pbl-person-head">
+                <IconTile size="sm" tone="gray"><Glyph name="user" size={17} /></IconTile>
+                <div className="min-0"><strong>{c.name || `참여자 ${i + 1}`}{c.isMe && ' (나)'}</strong><small>{c.external ? '외부 참여자' : 'AUDENIQ 작가'}</small></div>
+                <button type="button" className="ui-btn is-text is-sm aq-danger-text" aria-label={`${c.name || '참여자'} 삭제`} onClick={() => onChange(value.filter(x => x.id !== c.id))}>삭제</button>
+              </div>
+              {c.external && <Field label="이름·활동명" htmlFor={`${prefix}-name`}>
+                <input id={`${prefix}-name`} className="ui-input" maxLength={100} value={c.name} onChange={e => set(c.id, { name: e.target.value })} />
+              </Field>}
+              <div className="aq-pbl-person-fields">
+                <Field label="참여 역할">
+                  <div className="ui-chips is-wrap" role="group" aria-label={`${c.name} 역할`}>
+                    {ROLES.map(r => <button key={r} type="button" className="ui-chip is-sm" aria-pressed={c.roles.includes(r)} onClick={() => set(c.id, { roles: c.roles.includes(r) ? c.roles.filter(x => x !== r) : [...c.roles, r] })}>{ROLE_LABEL[r]}</button>)}
+                  </div>
+                </Field>
+                <Field label="창작 지분" htmlFor={`${prefix}-share`}>
+                  <span className="aq-affix" data-unit="%"><input id={`${prefix}-share`} className="ui-input" inputMode="decimal" value={c.share || ''} placeholder="0" onChange={e => { const v = num(e.target.value); set(c.id, { share: v, publisherShare: Math.min(c.publisherShare, v) }); }} /></span>
+                </Field>
+              </div>
+              <details className="aq-pbl-person-more" open={invalid && c.publisherShare > c.share ? true : undefined}>
+                <summary>관리 범위·작가 정보 <Glyph name="chevron-down" size={15} /></summary>
+                <p className="ui-field-help">관리 지분은 이 곡 전체에서 AUDENIQ에 맡기는 몫이에요. 창작 지분을 넘을 수 없으며, 수수료와는 별개예요.</p>
+                <div className="form-grid">
+                  <Field label="AUDENIQ 관리 지분" htmlFor={`${prefix}-managed`}>
+                    <span className="aq-affix" data-unit="%"><input id={`${prefix}-managed`} className="ui-input" inputMode="decimal" value={c.publisherShare || ''} placeholder="0" onChange={e => set(c.id, { publisherShare: num(e.target.value) })} /></span>
+                  </Field>
+                  <Field label="저작권 관리 단체" htmlFor={`${prefix}-society`}>
+                    <select id={`${prefix}-society`} className="ui-select" value={c.society ?? ''} onChange={e => set(c.id, { society: e.target.value || null })}><option value="">모름·입력 전</option>{SOCIETIES.map(s => <option key={s} value={s}>{s}</option>)}</select>
+                  </Field>
+                  <Field label="IPI/CAE 번호" htmlFor={`${prefix}-ipi`} help="모르면 비워 두세요.">
+                    <input id={`${prefix}-ipi`} className="ui-input" inputMode="numeric" placeholder="작가 식별 번호" value={c.ipi ?? ''} readOnly={!c.external && !c.isMe} onChange={e => set(c.id, { ipi: e.target.value.replace(/\D/g, '').slice(0, 11) || null })} />
+                  </Field>
+                </div>
+              </details>
+              {invalid && errors.map(err => <small key={err.text} className="ui-field-help is-error" role="alert">{err.text}</small>)}
+            </fieldset>
+          );
+        })}
+      </div>
+      {!readOnly && <Field label="참여자 추가"><CreatorSearch taken={new Set(value.map(c => c.creatorId ?? '').filter(Boolean))} onPick={fromCreator} onExternal={external} /></Field>}
+      {invalid && issues.filter(i => !i.contributorId && i.level === 'error').map(i => <small key={i.text} className="ui-field-help is-error" role="alert">{i.text}</small>)}
     </div>
   );
 }

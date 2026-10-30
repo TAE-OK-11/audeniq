@@ -6,13 +6,15 @@ import { useNavigate, useSearchParams } from '../../lib/router';
 import { pubApi, type PublishingApplication, type PublishingContract } from '../../api/publishing';
 import { errorMessage } from '../../api/errors';
 import { useAsync } from '../../hooks/useAsync';
-import { APP_LABEL, APP_TONE, daysLeft, termLabel } from '../../lib/publishing';
+import { APP_LABEL, APP_TONE, CONTRACT_LABEL, CONTRACT_TONE, daysLeft, termLabel } from '../../lib/publishing';
 import { localStamp, niceDate } from '../../lib/format';
 import { useToast } from '../Toast';
 import { useConfirm } from '../Confirm';
 import { Modal } from '../Modal';
 import { CheckIcon } from '../Check';
-import { Badge, Meter, Segmented } from '../../ui';
+import { Badge, KeyValue, Meter, Segmented } from '../../ui';
+
+import '../../styles/split/Publishing.css';
 
 const RIGHT_NAME: Record<string, string> = { performance: '공연권', mechanical: '복제권', digital: '전송권', sync: '싱크' };
 const TERR_NAME: Record<string, string> = { KR: '대한민국', JP: '일본', US: '미국', WORLD: '그 밖의 국가' };
@@ -68,7 +70,7 @@ function ApplicationBundle({ a }: { a: PublishingApplication }) {
   const nav = useNavigate();
   const fix = a.status === 'needs_fix';
   return (
-    <article className={`aq-bundle is-${fix ? 'needs' : 'review'}`} aria-label={`${a.workTitles.join(', ')} 저작권 관리 신청`}>
+    <article className={`aq-bundle aq-pbl-contract is-${fix ? 'needs' : 'review'}`} aria-label={`${a.workTitles.join(', ')} 저작권 관리 신청`}>
       <header className="aq-bundle-head">
         <div className="min-0">
           <strong>{a.workTitles.join(', ')}</strong>
@@ -163,14 +165,18 @@ export function PublishingContracts({ all = false }: { all?: boolean }) {
         const a = app(c);
         return (
           <article key={c.id} ref={c.id === focus ? el => { focused.current = el; } : undefined}
-            className={`aq-bundle is-${signed ? 'signed' : 'to-sign'}`} aria-label={`저작권 관리 계약 ${c.number}`}>
+            className={`aq-bundle aq-pbl-contract is-${signed ? 'signed' : 'to-sign'}`} aria-label={`저작권 관리 계약 ${c.number}`}>
             <header className="aq-bundle-head">
               <div className="min-0">
                 <strong>{c.works.map(w => w.title).join(', ')}</strong>
                 <span>{c.signedAt ? `${niceDate(c.signedAt)} 서명` : '서명 전'} · {c.number}</span>
               </div>
-              <Badge tone={signed ? 'green' : 'amber'} className="aq-bundle-state">{signed ? '체결 완료' : '서명 필요'}</Badge>
+              <Badge tone={CONTRACT_TONE[c.status]} className="aq-bundle-state">{CONTRACT_LABEL[c.status]}</Badge>
             </header>
+            <KeyValue cols={2} className="aq-pbl-contract-summary" items={[
+              ['계약 기간', `${c.startDate} ~ ${c.endDate}`],
+              ['관리 수수료', `${c.commissionRate}%`],
+            ]} />
             <ol className="aq-bundle-docs">
               <li className="is-done">
                 <span className="aq-bundle-no" aria-hidden="true"><CheckIcon size={14} /></span>

@@ -8,19 +8,18 @@ import type { ReleaseDetail } from '../../api/types';
 import { pubApi, type Work } from '../../api/publishing';
 import { errorMessage } from '../../api/errors';
 import { useAsync } from '../../hooks/useAsync';
-import { APP_LABEL, APP_TONE, pct } from '../../lib/publishing';
+import { APP_LABEL, APP_TONE } from '../../lib/publishing';
 import { Glyph } from '../Glyph';
 import { SkeletonBlock } from '../Skeleton';
-import { StageCard } from '../StageCard';
 import { ManageHead } from '../ManageHead';
 import { useToast } from '../Toast';
-import { RegBadge, roleText } from './parts';
+import { RegBadge, peopleLine } from './parts';
 import { royaltyTotals } from './Royalties';
 import { Money } from '../Money';
 import { PublishingBundleStep, albumPublishing } from './ReleasePublishing';
-import { Badge, Callout, IconTile, KeyValue } from '../../ui';
+import { Badge, Callout, IconTile, KeyValue, StatGrid, StatTile } from '../../ui';
 
-const STEPS = ['곡 정리', '신청', '심사', '계약', '등록'] as const;
+import '../../styles/split/Publishing.css';
 
 export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
   const toast = useToast();
@@ -33,8 +32,6 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
   const byTrack = new Map<string, Work>(a.mine.flatMap(w => w.recordings.filter(r => r.releaseId === rel.id).map(r => [r.trackId, w] as const)));
   const missing = rel.tracks.filter(t => !byTrack.has(t.id)).length;
   const canApply = a.mine.some(w => w.myRole !== 'contributor' && (w.registration === 'none' || w.registration === 'preparing') && (!w.application || w.application.status === 'withdrawn'));
-  const step = a.managed.length >= rel.tracks.length && rel.tracks.length ? 4
-    : a.managed.length ? 3 : a.applying.length ? 2 : a.mine.length && !missing ? 1 : 0;
   const workIds = new Set(a.mine.map(w => w.id));
   const albumRoyalties = (royalties ?? []).filter(r => workIds.has(r.workId));
   const totals = royaltyTotals(albumRoyalties);
@@ -56,9 +53,13 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
     <div className="aq-detail-stack aq-album-pub">
       {/* '관리' 탭 카드와 같은 머리 — 아이콘 · 제목 · 상태, 아래에 진행 단계와 할 일 하나 */}
       <section className="ui-card aq-manage-card" aria-labelledby="albumPubHead">
-        <ManageHead id="albumPubHead" icon="scale" title="퍼블리싱" status={a.status} />
+        <ManageHead id="albumPubHead" icon="scale" title="작사·작곡 저작권 관리" status={a.status} />
         <p className="ui-field-help">{text}</p>
-        <StageCard steps={STEPS} current={step} complete={step === STEPS.length - 1} tone={a.fix ? 'warn' : undefined} label="퍼블리싱 진행 단계" />
+        <StatGrid cols={3} className="aq-pbl-album-stats">
+          <StatTile compact label="관리 중" value={a.managed.length} unit="곡" />
+          <StatTile compact label="심사 중" value={a.applying.length} unit="곡" />
+          <StatTile compact label="정보 등록 전" value={missing} unit="곡" />
+        </StatGrid>
         {canApply && (
           <div className="row-actions">
             <Link to={`/publishing/apply?release=${encodeURIComponent(rel.id)}`} className="ui-btn is-primary is-sm">이 앨범 저작권 관리 신청</Link>
@@ -67,22 +68,22 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
       </section>
 
       {a.fix && (
-        <Callout tone="warn" action={fixWork && <Link to={`/works/${fixWork.id}`} className="ui-btn is-sm is-white">보완하기</Link>}>
+        <Callout tone="warn" action={fixWork && <Link to={`/works/${fixWork.id}?release=${encodeURIComponent(rel.id)}`} className="ui-btn is-sm is-white">보완하기</Link>}>
           {fixWork ? `‘${fixWork.title}’에 보완 요청이 왔어요.` : '보완 요청이 왔어요. 아래 곡을 눌러 고쳐 주세요.'}
         </Callout>
       )}
 
-      <div className="aq-relinfo-card">
-        <div className="ui-section-head"><h2 className="subhead">곡별 저작권</h2></div>
+      <div className="aq-relinfo-card aq-pbl-track-list">
+        <div className="ui-section-head"><h2 className="subhead">곡별 저작권</h2><span className="ui-count is-soft">{rel.tracks.length}곡</span></div>
         <div className="ui-list is-inset">
           {rel.tracks.map((t, i) => {
             const w = byTrack.get(t.id);
             return w ? (
-              <Link key={t.id} to={`/works/${w.id}`} className="ui-row">
+              <Link key={t.id} to={`/works/${w.id}?release=${encodeURIComponent(rel.id)}`} className="ui-row">
                 <IconTile size="sm"><span className="aq-preview-no">{i + 1}</span></IconTile>
                 <span className="min-0">
                   <span className="ui-row-title">{t.title}</span>
-                  <span className="ui-row-meta">{w.contributors.map(c => <span key={c.id}>{c.name} {roleText(c)} {pct(c.share)}</span>)}</span>
+                  <span className="ui-row-meta">{peopleLine(w.contributors)}</span>
                 </span>
                 {w.application && !['approved', 'withdrawn'].includes(w.application.status)
                   ? <Badge tone={APP_TONE[w.application.status]}>{APP_LABEL[w.application.status]}</Badge> : <RegBadge status={w.registration} />}
@@ -125,7 +126,7 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
           </div>
           {albumRoyalties.length ? (
             <KeyValue cols={2} items={[
-              ['지금까지 받은 저작권료', <b className="aq-pub-amount"><Money value={totals.confirmed + totals.paid} animate /></b>],
+              ['누적 확정 저작권료', <b className="aq-pub-amount"><Money value={totals.confirmed + totals.paid} animate /></b>],
               ['확정 전 예상', totals.estimated ? <Money value={totals.estimated} /> : '—'],
             ]} />
           ) : (

@@ -21,6 +21,7 @@ import { SplitBar, roleText } from '../components/publishing/parts';
 import { Badge, Callout, EmptyState, KeyValue, StatGrid, StatTile, Steps } from '../ui';
 import { CheckIcon } from '../components/Check';
 import '../styles/split/Upload.css';
+import '../styles/split/Publishing.css';
 
 // 단계 제목은 배급 신청서와 같은 말투 — 두 줄 큰 제목 + 한 줄 안내 (틀은 components/WizardShell)
 const STEPS: WizardStep[] = [
@@ -162,6 +163,7 @@ export function PublishingApply() {
   const back = () => (step ? setStep(step - 1) : nav(-1));
   return (
     <WizardShell
+      className="aq-pbl-wizard"
       label="저작권 관리 신청" title="저작권 관리 신청" steps={STEPS} step={Math.min(step, 3)} reached={Math.max(reached, step)}
       onStep={setStep} onBack={back}
       summary={{ title: releaseTitle ?? (chosen.length ? chosen[0].title : '곡을 골라 주세요'), lines: [`${chosen.length}곡 선택`, `수수료 ${policy.commissionRate}%`] }}
@@ -183,11 +185,11 @@ export function PublishingApply() {
                 {preparing ? '만드는 중' : '크레딧으로 곡 정보 만들기'}
               </button>
             }>
-              곡이 없는 곡은 발매 신청서의 작사·작곡 크레딧으로 바로 만들 수 있어요.
+              저작권 정보가 없는 곡은 발매 크레딧에서 가져올 수 있어요.
             </Callout>
           )}
           {mine.length ? (
-            <div className="aq-agree-box">
+            <div className="aq-agree-box aq-pbl-song-picker">
               {mine.map(w => {
                 const busyApp = activeApp(w);
                 return (
@@ -222,7 +224,7 @@ export function PublishingApply() {
             return (
               <div key={w.id} className="ui-card">
                 <div className="ui-section-head">
-                  <h2>{w.title}<small>{w.iswc ?? w.internalCode}</small></h2>
+                  <h2>{w.title}</h2>
                   <Link to={`/works/${w.id}?tab=rights`} className="aq-head-link">고치기<Glyph name="chevron-right" size={14} /></Link>
                 </div>
                 <SplitBar list={w.contributors} />
@@ -231,7 +233,7 @@ export function PublishingApply() {
                     <div key={c.id} className="ui-row is-flat">
                       <span className="min-0">
                         <span className="ui-row-title">{c.name}{c.isMe && ' (나)'} · {pct(c.share)}</span>
-                        <span className="ui-row-meta"><span>{roleText(c)}</span><span>{c.society ?? '단체 없음'}</span><span>{c.ipi ? `IPI ${c.ipi}` : 'IPI 없음'}</span></span>
+                        <span className="ui-row-meta"><span>{roleText(c)}</span>{c.society && <span>{c.society}</span>}</span>
                       </span>
                       {c.confirm === 'confirmed' ? <Badge tone="green">확인</Badge> : c.confirm === 'disputed' ? <Badge tone="red">이의</Badge> : <Badge tone="amber">확인 필요</Badge>}
                     </div>
