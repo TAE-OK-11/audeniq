@@ -85,12 +85,16 @@
 .ui-btn.is-lg{--btn-h:var(--aq-h-lg);--btn-r:var(--aq-r-ctl-lg);--btn-px:22px;--btn-fs:var(--aq-fs-lg)}
 .ui-btn.is-block{display:flex;width:100%}
 .ui-btn.is-icon{width:var(--btn-h);padding:0;flex:none}
-.ui-btn.is-busy{cursor:progress}
-/* 글자 버튼은 '접수하는 중'처럼 글자가 이미 알려 준다 — 깜빡이거나 빛이 지나가지 않고 제 색 그대로 둔다.
-   글자가 없는 아이콘 버튼만 아이콘 자리에 원(.aq-spinner와 같은 모양)을 돌린다 */
-/* 처리 중인 버튼은 '못 누르는 버튼'이 아니다 — 흐리게(.45) 하지 않고 제 색 그대로 둔다 */
-.ui-btn.is-busy:disabled,.ui-btn[aria-busy=true]:disabled{opacity:1}
-.ui-btn.is-primary.is-busy:disabled,.ui-btn.is-primary[aria-busy=true]:disabled{--btn-bg:var(--aq-blue-500)}
+/* 처리 중 — '접수하는 중'처럼 글자가 '…중'이면(lib/busyButtons가 data-busy를 붙인다) 버튼이 처리 중 색으로 바뀐다.
+   회색 '못 누르는 버튼'과 헷갈리지 않게: 꽉 찬 버튼은 한 단계 진하게, 옅은 버튼은 진한 파랑 면으로. 깜빡임·빛 없이 색만 */
+.ui-btn:is(.is-busy,[aria-busy=true],[data-busy]){cursor:progress;transition:background-color var(--aq-motion-base) ease,color var(--aq-motion-base) ease}
+.ui-btn:is(.is-busy,[aria-busy=true],[data-busy]):disabled{opacity:1;--btn-bg:var(--aq-blue-150);--btn-fg:var(--aq-blue-700)}
+.ui-btn.is-primary:is(.is-busy,[aria-busy=true],[data-busy]):disabled{--btn-bg:var(--aq-blue-800);--btn-fg:#fff}
+.ui-btn.is-danger:is(.is-busy,[aria-busy=true],[data-busy]):disabled{--btn-bg:var(--aq-red-100);--btn-fg:var(--aq-red-700)}
+.ui-btn.is-danger-solid:is(.is-busy,[aria-busy=true],[data-busy]):disabled{--btn-bg:var(--aq-red-700);--btn-fg:#fff}
+.ui-btn.is-warn-solid:is(.is-busy,[aria-busy=true],[data-busy]):disabled{--btn-bg:#8A4A10;--btn-fg:#fff}
+.ui-btn:is(.is-text,.is-ghost):is(.is-busy,[aria-busy=true],[data-busy]):disabled{--btn-bg:var(--aq-blue-100)}
+/* 글자가 없는 아이콘 버튼만 아이콘 자리에 원(.aq-spinner와 같은 모양)을 돌린다 */
 .ui-btn.is-icon.is-busy::after{content:"";flex:none;width:16px;height:16px;border-radius:50%;
   background:conic-gradient(currentColor var(--aq-arc),color-mix(in srgb,currentColor 18%,transparent) 0);
   -webkit-mask:radial-gradient(farthest-side,#0000 calc(100% - 2.4px),#000 calc(100% - 2px));mask:radial-gradient(farthest-side,#0000 calc(100% - 2.4px),#000 calc(100% - 2px));
@@ -1061,8 +1065,8 @@ legend{padding:0}
 }
 :is(#root,#modal) input[type=search]::-webkit-search-cancel-button:hover{background-color:var(--aq-gray-300,#cfd6e2)}
 /* 비활성 버튼 — 주 실행(파란) 버튼과 '저장 중' 표시를 뺀 나머지는 회색 면·회색 글자 (흐린 파랑이라 보조 버튼과 헷갈리던 것) */
-.ui-btn:disabled:not(.is-primary):not(.is-busy){opacity:1;--btn-bg:var(--aq-gray-100);--btn-fg:var(--aq-text-disabled);--btn-bg-hover:var(--btn-bg);--btn-fg-hover:var(--btn-fg)}
-.ui-btn:is(.is-text,.is-ghost):disabled:not(.is-busy){--btn-bg:transparent}
+.ui-btn:disabled:not(.is-primary):not(.is-busy):not([data-busy]):not([aria-busy=true]){opacity:1;--btn-bg:var(--aq-gray-100);--btn-fg:var(--aq-text-disabled);--btn-bg-hover:var(--btn-bg);--btn-fg-hover:var(--btn-fg)}
+.ui-btn:is(.is-text,.is-ghost):disabled:not(.is-busy):not([data-busy]):not([aria-busy=true]){--btn-bg:transparent}
 
 /* 선택창·달력 닫힘 — Picker가 닫히기 직전 모습을 복사해(is-leaving) 시트는 아래로 내려가고 뒤 어둠이 걷히며,
    작은 창은 살짝 줄어들며 사라진다. 들어올 때보다 조금 빠르게, 가속하며 나간다 */

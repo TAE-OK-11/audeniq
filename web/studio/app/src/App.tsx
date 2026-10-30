@@ -23,6 +23,7 @@ import './styles/wizard-motion.css';
 import './styles/design-align.css';
 import { lazyComponent } from './lib/lazyComponent';
 import { preloadMoreFont } from './lib/fonts';
+import { watchBusyButtons } from './lib/busyButtons';
 
 // 배포 직후 옛 청크가 사라지면 한 번 새로고침해 새 버전을 받는다 (lib/lazyComponent)
 const lazyPage = lazyComponent;
@@ -205,6 +206,8 @@ function PortalRoutes() {
 }
 
 export function App() {
+  // '…중' 글자로 바뀐 막힌 버튼에 처리 중 색 (lib/busyButtons)
+  useEffect(() => watchBusyButtons(), []);
   return (
     <BrowserRouter>
       <AuthProvider>
