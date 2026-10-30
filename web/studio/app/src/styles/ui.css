@@ -85,15 +85,22 @@
 .ui-btn.is-lg{--btn-h:var(--aq-h-lg);--btn-r:var(--aq-r-ctl-lg);--btn-px:22px;--btn-fs:var(--aq-fs-lg)}
 .ui-btn.is-block{display:flex;width:100%}
 .ui-btn.is-icon{width:var(--btn-h);padding:0;flex:none}
-/* 처리 중 — '접수하는 중'처럼 글자가 '…중'이면(lib/busyButtons가 data-busy를 붙인다) 버튼이 처리 중 색으로 바뀐다.
-   회색 '못 누르는 버튼'과 헷갈리지 않게: 꽉 찬 버튼은 한 단계 진하게, 옅은 버튼은 진한 파랑 면으로. 깜빡임·빛 없이 색만 */
-.ui-btn:is(.is-busy,[aria-busy=true],[data-busy]){cursor:progress;transition:background-color var(--aq-motion-base) ease,color var(--aq-motion-base) ease}
-.ui-btn:is(.is-busy,[aria-busy=true],[data-busy]):disabled{opacity:1;--btn-bg:var(--aq-blue-150);--btn-fg:var(--aq-blue-700)}
-.ui-btn.is-primary:is(.is-busy,[aria-busy=true],[data-busy]):disabled{--btn-bg:var(--aq-blue-800);--btn-fg:#fff}
-.ui-btn.is-danger:is(.is-busy,[aria-busy=true],[data-busy]):disabled{--btn-bg:var(--aq-red-100);--btn-fg:var(--aq-red-700)}
-.ui-btn.is-danger-solid:is(.is-busy,[aria-busy=true],[data-busy]):disabled{--btn-bg:var(--aq-red-700);--btn-fg:#fff}
-.ui-btn.is-warn-solid:is(.is-busy,[aria-busy=true],[data-busy]):disabled{--btn-bg:#8A4A10;--btn-fg:#fff}
-.ui-btn:is(.is-text,.is-ghost):is(.is-busy,[aria-busy=true],[data-busy]):disabled{--btn-bg:var(--aq-blue-100)}
+/* 처리 중 — 토스 TDS 버튼처럼 글자 자리에 점 세 개가 차례로 움직이고, 버튼 너비·색은 그대로다.
+   '접수하는 중'처럼 글자가 '…중'인 막힌 버튼은 lib/busyButtons가 data-busy를 붙인다. 너비는 누르기 직전 너비(--busy-w)로 고정해
+   글자가 길어져도 버튼이 늘었다 줄지 않는다. 글자는 화면에서만 감추고 화면 읽기 프로그램은 그대로 읽는다 */
+.ui-btn:is(.is-busy,[aria-busy=true],[data-busy]){cursor:progress}
+.ui-btn:is(.is-busy,[aria-busy=true],[data-busy]):disabled{opacity:1}
+.ui-btn.is-primary:is(.is-busy,[aria-busy=true],[data-busy]):disabled{--btn-bg:var(--aq-btn-primary,var(--aq-primary));--btn-fg:var(--aq-btn-primary-fg,#fff)}
+.ui-btn:is(.is-busy,[aria-busy=true],[data-busy]):not(.is-icon){width:var(--busy-w,auto);min-width:var(--busy-w,0);max-width:var(--busy-w,100%);overflow:hidden;white-space:nowrap;color:transparent}
+.ui-btn:is(.is-busy,[aria-busy=true],[data-busy]):not(.is-icon)>*{visibility:hidden}
+.ui-btn:is(.is-busy,[aria-busy=true],[data-busy]):not(.is-icon)::after{content:"";position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;
+  --dot-on:var(--btn-fg);--dot-off:color-mix(in srgb,var(--btn-fg) 32%,transparent);
+  background:var(--dot-off);box-shadow:-11px 0 0 var(--dot-on),11px 0 0 var(--dot-off);animation:aq-dots 1.05s linear infinite}
+@keyframes aq-dots{
+  0%,100%{background:var(--dot-off);box-shadow:-11px 0 0 var(--dot-on),11px 0 0 var(--dot-off)}
+  33%{background:var(--dot-on);box-shadow:-11px 0 0 var(--dot-off),11px 0 0 var(--dot-off)}
+  66%{background:var(--dot-off);box-shadow:-11px 0 0 var(--dot-off),11px 0 0 var(--dot-on)}}
+@media (prefers-reduced-motion:reduce){.ui-btn:is(.is-busy,[aria-busy=true],[data-busy]):not(.is-icon)::after{animation:none;background:var(--dot-on);box-shadow:-11px 0 0 var(--dot-on),11px 0 0 var(--dot-on)}}
 /* 글자가 없는 아이콘 버튼만 아이콘 자리에 원(.aq-spinner와 같은 모양)을 돌린다 */
 .ui-btn.is-icon.is-busy::after{content:"";flex:none;width:16px;height:16px;border-radius:50%;
   background:conic-gradient(currentColor var(--aq-arc),color-mix(in srgb,currentColor 18%,transparent) 0);
