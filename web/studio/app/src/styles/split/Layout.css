@@ -97,7 +97,7 @@
   #portalNav .aq-nav-foot .aq-logout:hover{background:var(--aq-red-50)!important}
   #portalNav .aq-nav-foot .aq-nav-legal{justify-content:center;column-gap:14px}
 }
-.aq-route-bar{position:absolute;left:0;right:0;top:0;z-index:2;height:3px;border-radius:0 2px 2px 0;background:var(--aq-blue-500);transform:scaleX(0);transform-origin:0 50%;opacity:0;pointer-events:none}
+.aq-route-bar{position:absolute;left:0;right:0;top:0;z-index:2;height:3px;border-radius:0 2px 2px 0;background:linear-gradient(90deg,var(--aq-blue-300),var(--aq-blue-500) 70%);transform:scaleX(0);transform-origin:0 50%;opacity:0;pointer-events:none}
 @media (prefers-reduced-motion:reduce){
   .aq-route-bar.is-run{transform:scaleX(1);transition:opacity var(--aq-motion-base) ease .15s}
 }

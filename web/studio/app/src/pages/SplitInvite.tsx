@@ -6,6 +6,7 @@ import { req } from '../api/http';
 import { errorMessage } from '../api/errors';
 import { useAuth } from '../api/auth';
 import { MOCK } from '../lib/mode';
+import { SkeletonLines } from '../components/Skeleton';
 
 interface Invite {
   title: string; artist: string | null; track_title: string; from: string; name: string;
@@ -58,7 +59,7 @@ export function SplitInvite() {
       <article className="aq-terms aq-split-invite">
         {gone ? (
           <><h1>이 링크는 쓸 수 없어요</h1><p className="muted">이미 처리됐거나, 새 요청 메일이 와서 바뀐 링크예요. 가장 최근 메일의 링크를 열어 주세요.</p></>
-        ) : !inv ? <p className="muted">불러오는 중…</p> : done ? (
+        ) : !inv ? <SkeletonLines /> : done ? (
           <div className="ui-callout is-success" role="status">
             {done === 'ACCEPTED'
               ? <>수락했어요. ‘{inv.track_title}’ 수익 중 {pct}가 정산될 때마다 내 잔액에 쌓여요. <Link to="/settlement">정산·지급 보기</Link></>

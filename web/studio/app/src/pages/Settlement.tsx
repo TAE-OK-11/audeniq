@@ -350,7 +350,7 @@ export function Settlement() {
                 </section>
               ))}
               {statementsNext && (
-                <button type="button" className="ui-btn is-white aq-report-more" onClick={loadMoreStatements} disabled={loadingMore}>
+                <button type="button" className={`ui-btn is-white aq-report-more${loadingMore ? ' is-busy' : ''}`} onClick={loadMoreStatements} disabled={loadingMore}>
                   {loadingMore ? '불러오는 중…' : '이전 내역 더 보기'}
                   <Glyph name="chevron-down" size={15} />
                 </button>

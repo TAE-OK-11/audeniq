@@ -1279,7 +1279,7 @@ body.wizard-mode .portal-header,.portal-header:has(#portalNav:not([hidden])){box
    300% 무늬(--aq-skel-w:900%)도 같은 식. 바탕은 비워 두고 띠가 칸 전체를 늘 덮는다(반투명 무늬도 예전처럼 비친다) */
 .aq-skel{display:block;border-radius:8px;--aq-skel-bg:linear-gradient(90deg,#F3F6FB 25%,#EAF0F8 37%,#F3F6FB 63%)}
 .aq-skel,.ui-skel-rows>span{position:relative;overflow:hidden;background:none!important;animation:none}
-.aq-skel::after,.ui-skel-rows>span::after{content:"";position:absolute;top:0;bottom:0;left:0;width:var(--aq-skel-w,1200%);background:var(--aq-skel-bg) 0 0/33.3333% 100% repeat-x;animation:var(--aq-skel-anim,aq-shimmer-4) 1.4s ease-in-out infinite;pointer-events:none}
+.aq-skel::after,.ui-skel-rows>span::after{content:"";position:absolute;top:0;bottom:0;left:0;width:var(--aq-skel-w,1200%);background:var(--aq-skel-bg) 0 0/33.3333% 100% repeat-x;animation:var(--aq-skel-anim,aq-shimmer-4) 1.6s cubic-bezier(.4,0,.2,1) infinite;pointer-events:none}
 @keyframes aq-shimmer-4{from{transform:translateX(-70.8333%)}to{transform:translateX(-20.8333%)}}
 @keyframes aq-shimmer-3{from{transform:translateX(-66.6667%)}to{transform:translateX(-22.2222%)}}
 /* 칸 자체에 다른 animation이 걸려 예전에 반짝임이 없던 자리는 띠도 멈춘다 (큰 덩어리는 살며시 나타나기만, 목록 들어오기·출력 종이) */
@@ -1864,7 +1864,7 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 
 /* ---------- 기다림을 덜 느끼게 ----------
    목록 자리표시(SkeletonList)도 다른 자리표시처럼 150ms 뒤에 살며시 — 금방 오는 응답에는 아예 보이지 않아 깜빡이지 않는다 */
-.ui-skel-rows,.aq-acct-skel{animation:aq-fade-in var(--aq-motion-base) var(--aq-enter) var(--aq-motion-short) both}
+.ui-skel-rows,.aq-acct-skel{animation:aq-fade-in var(--aq-motion-base) var(--aq-enter) .2s both}
 .aq-acct-skel .aq-skel-lines{padding:0}
 .aq-acct-skel .aq-skel-lines>.aq-skel{height:13px}
 .aq-acct-skel .aq-skel-lines>.aq-skel+.aq-skel{height:11px}
