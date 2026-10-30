@@ -157,15 +157,16 @@ Org member reads; VIEWER cannot write. Shapes are camelCase and match `web/studi
 | POST | `/api/orgs/{org}/works/{id}/rights/{contributor}/confirmation` | Records a confirmation request (mail is stage 2) |
 | POST/DELETE | `/api/orgs/{org}/works/{id}/recordings[/{rec}]` | `{release_id,track_id}` |
 | POST | `/api/orgs/{org}/works/{id}/attachments` | `{kind,name,size,asset_id?,text?}` |
-| POST | `/api/orgs/{org}/works/{id}/registration/resubmit` | Answer a fix request `{note,files}` |
+| POST | `/api/orgs/{org}/works/{id}/registration/resubmit` | Answer a fix request `{note}` once requested documents are in (`WORK_DOCUMENTS_DUE`) |
 | POST | `/api/orgs/{org}/releases/{id}/works` | Make works from track credits `{enroll,skip_titles}` |
 | GET | `/api/orgs/{org}/creators?q=` | Me + names used on this org's works |
 | GET/PUT | `/api/me/creator` | The writer's roles, society, IPI |
-| GET/POST | `/api/orgs/{org}/publishing/applications` | Submit needs 100%, roles, a composer, no dispute, every agreement, current `policyVersion` (`POLICY_CHANGED`), `idempotencyKey` |
+| GET/POST | `/api/orgs/{org}/publishing/applications` | Submit needs 100%, roles, a composer, no dispute, every agreement, current `policyVersion` (`POLICY_CHANGED`), `idempotencyKey`; recorded as a `release_applications` row (form `PUBLISHING`), sealed |
 | POST | `/api/orgs/{org}/publishing/applications/{id}/withdraw` | From submitted / in_review / needs_fix |
 | GET | `/api/orgs/{org}/publishing/contracts`, `/royalties`, `/works/{id}/royalties` | Empty until stage 2 |
 | GET | `/api/staff/publishing/applications[?status=]`, `/{id}` | Staff queue and one application with its works |
-| POST | `/api/staff/publishing/applications/{id}/decision` | Review duty: `start_review`, `approve`, `needs_fix` (`reason`, `work_ids`, `fields`, `documents`), `reject` (`reason`), `register` (`society`) |
+| POST | `/api/staff/publishing/applications/{id}/claim` | Review duty: take into review (as release `claim`) |
+| POST | `/api/staff/publishing/applications/{id}/decision` | Review duty, release decision shape: `action` APPROVE, REQUEST_CORRECTION (`reason`, `work_ids`, `fields`, `documents` → RIGHTS_PROOF rows on 권리·보완 서류), REJECT (`reason`), REGISTER (`society`) |
 
 ## Staff portal (`/api/staff/*`)
 

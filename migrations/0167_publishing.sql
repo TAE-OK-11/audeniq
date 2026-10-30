@@ -12,8 +12,21 @@
 -- edited; submission requires exactly 100%. Once a work is registered, a share
 -- change is held as a pending change until it is reviewed, and the registered
 -- values stay in force (pending_contributors).
+--
+-- Only what distribution has no equivalent for is new (works, shares,
+-- recordings, attachments, the review state of an application). The rest is
+-- the distribution machinery, widened a little:
+--  * the signed original goes into portal.release_applications (form
+--    'PUBLISHING', no release), with its number, signature, agreements, server
+--    hash and signer identity, and is sealed like a release application;
+--  * documents staff ask for are RIGHTS_PROOF rows of portal.documents linked
+--    to the work: the 권리·보완 서류 screen, upload and notices already handle them;
+--  * notices go through portal.notify; history is operations.audit_events.
 CREATE SEQUENCE portal.pub_work_code_seq START 101;
-CREATE SEQUENCE portal.pub_application_seq START 1;
+
+ALTER TABLE portal.release_applications ALTER COLUMN release_id DROP NOT NULL;
+ALTER TABLE portal.release_applications ADD CONSTRAINT release_applications_release_or_publishing
+ CHECK (release_id IS NOT NULL OR form = 'PUBLISHING');
 
 CREATE TABLE portal.pub_works (
  id uuid PRIMARY KEY,
@@ -113,22 +126,21 @@ CREATE TABLE portal.pub_work_status_log (
 );
 CREATE INDEX pub_work_status_log_work ON portal.pub_work_status_log(work_id, at);
 
+-- The review state of a publishing application; what was signed is the
+-- release_applications row it points at (record_id).
 CREATE TABLE portal.pub_applications (
  id uuid PRIMARY KEY,
  org_id uuid NOT NULL REFERENCES identity.orgs ON DELETE RESTRICT,
- number text NOT NULL UNIQUE,
+ record_id uuid NOT NULL UNIQUE REFERENCES portal.release_applications ON DELETE RESTRICT,
  status text NOT NULL DEFAULT 'submitted' CHECK (status IN ('submitted','in_review','needs_fix','approved','rejected','withdrawn')),
  territories text[] NOT NULL CHECK (cardinality(territories) BETWEEN 1 AND 10),
  rights text[] NOT NULL CHECK (cardinality(rights) BETWEEN 1 AND 10),
- policy_version text NOT NULL,
- agreed text[] NOT NULL,
- signature_name text NOT NULL CHECK (length(btrim(signature_name)) BETWEEN 1 AND 200),
- signature_method text NOT NULL CHECK (signature_method IN ('typed','drawn')),
- signature_data text NULL CHECK (length(signature_data) <= 300000),
  idempotency_key text NOT NULL CHECK (length(idempotency_key) BETWEEN 8 AND 120),
  fix_reason text NULL CHECK (length(fix_reason) <= 2000),
+ reply_note text NULL CHECK (length(reply_note) <= 1000),
  submitted_by uuid NOT NULL REFERENCES identity.users ON DELETE RESTRICT,
  submitted_at timestamptz NOT NULL DEFAULT now(),
+ claimed_by uuid NULL REFERENCES identity.users ON DELETE RESTRICT,
  decided_by uuid NULL REFERENCES identity.users ON DELETE RESTRICT,
  decided_at timestamptz NULL,
  UNIQUE (org_id, id),
@@ -146,19 +158,35 @@ CREATE TABLE portal.pub_application_works (
 );
 CREATE INDEX pub_application_works_work ON portal.pub_application_works(work_id);
 
--- What happened to an application, newest last (append-only).
-CREATE TABLE portal.pub_application_events (
- id uuid PRIMARY KEY,
- org_id uuid NOT NULL,
- application_id uuid NOT NULL,
- text text NOT NULL CHECK (length(text) BETWEEN 1 AND 500),
- actor_user_id uuid NULL REFERENCES identity.users ON DELETE RESTRICT,
- at timestamptz NOT NULL DEFAULT now(),
- FOREIGN KEY (org_id, application_id) REFERENCES portal.pub_applications(org_id, id) ON DELETE RESTRICT
-);
-CREATE INDEX pub_application_events_app ON portal.pub_application_events(application_id, at);
-CREATE TRIGGER immutable BEFORE UPDATE OR DELETE ON portal.pub_application_events
- FOR EACH ROW EXECUTE FUNCTION operations.reject_mutation();
+-- A requested document can belong to a work instead of a release.
+ALTER TABLE portal.documents ADD COLUMN work_id uuid NULL REFERENCES portal.pub_works ON DELETE RESTRICT;
+CREATE INDEX documents_work ON portal.documents(work_id) WHERE work_id IS NOT NULL;
+
+-- Notices for the work's registration, as releases have (0039).
+CREATE FUNCTION portal.pub_work_status_notice() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS $$
+DECLARE t text := '‘' || left(NEW.title, 80) || '’';
+BEGIN
+ IF NEW.registration IS NOT DISTINCT FROM OLD.registration THEN RETURN NEW; END IF;
+ IF NEW.registration = 'internal_review' AND OLD.registration <> 'needs_fix' THEN
+  PERFORM portal.notify(NEW.org_id, 'RELEASE', t || ' 저작권 관리 신청이 접수됐어요.',
+   '담당자가 참여자와 지분을 확인하고 있어요.', '/works/' || NEW.id);
+ ELSIF NEW.registration = 'needs_fix' THEN
+  PERFORM portal.notify(NEW.org_id, 'RELEASE', t || '에 저작권 보완 요청이 있어요.',
+   left(coalesce(NEW.fix->>'reason', '곡 화면에서 요청 내용을 확인해 주세요.'), 300), '/works/' || NEW.id || '?tab=register');
+ ELSIF NEW.registration = 'ready' THEN
+  PERFORM portal.notify(NEW.org_id, 'RELEASE', t || ' 저작권 관리 신청이 승인됐어요.',
+   '관리 단체 등록을 준비하고 있어요.', '/works/' || NEW.id);
+ ELSIF NEW.registration = 'registered' THEN
+  PERFORM portal.notify(NEW.org_id, 'RELEASE', t || ' 저작권 등록이 끝났어요.',
+   '이제 관리 단체가 나눠 주는 저작권료를 받을 수 있어요.', '/works/' || NEW.id);
+ ELSIF NEW.registration = 'rejected' THEN
+  PERFORM portal.notify(NEW.org_id, 'RELEASE', t || ' 저작권 관리 신청이 반려됐어요.',
+   '곡 화면에서 사유를 확인해 주세요.', '/works/' || NEW.id);
+ END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER pub_works_status_notice AFTER UPDATE OF registration ON portal.pub_works
+ FOR EACH ROW EXECUTE FUNCTION portal.pub_work_status_notice();
 
 -- The signed-in writer's own publishing details (활동명은 계정 프로필, IPI·단체는 여기).
 CREATE TABLE portal.pub_creator_profiles (

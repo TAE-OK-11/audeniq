@@ -8,9 +8,17 @@
 //! works the same against either. Contracts, society registration and
 //! royalties are stage 2: their list routes answer empty.
 //!
+//! New tables hold only what distribution has nothing for (works, shares,
+//! recordings, attachments, an application's review state). Everything else
+//! is the distribution machinery: the signed application is a
+//! `portal.release_applications` record (form `PUBLISHING`, sealed), the
+//! documents staff ask for are `portal.documents` rights proofs, notices come
+//! from `portal.notify`, and an application's history is its audit trail.
+//!
 //! Access: any ACTIVE member of the org reads; VIEWER cannot write. Staff
-//! decide applications through `/api/staff/publishing/*` (review duty). Every
-//! mutation is audited as `publishing.*`.
+//! claim and decide applications through `/api/staff/publishing/*` with the
+//! release review's shapes (review duty). Every mutation is audited as
+//! `publishing.*`.
 use crate::{
     api::AppState,
     auth::{self, Actor},
@@ -415,8 +423,9 @@ async fn works_json(
     }
     let mut apps: HashMap<Uuid, Value> = HashMap::new();
     for r in sqlx::query(
-        "SELECT DISTINCT ON (aw.work_id) aw.work_id, a.id, a.number, a.status
+        "SELECT DISTINCT ON (aw.work_id) aw.work_id, a.id, ra.application_no AS number, a.status
            FROM portal.pub_application_works aw JOIN portal.pub_applications a ON a.id=aw.application_id
+           JOIN portal.release_applications ra ON ra.id=a.record_id
           WHERE aw.work_id = ANY($1) ORDER BY aw.work_id, a.submitted_at DESC, a.id",
     )
     .bind(&ids)
@@ -1104,23 +1113,32 @@ pub async fn prepare_from_release(
 // Applications
 // ---------------------------------------------------------------------------
 
+/// What happened to an application, from the audit trail (no copy kept).
+const HISTORY: &str = "COALESCE((SELECT jsonb_agg(jsonb_build_object('at',e.occurred_at,'text',
+      CASE e.action WHEN 'publishing.application_submitted' THEN '제출 완료' WHEN 'publishing.application_claimed' THEN '심사 시작'
+        WHEN 'publishing.application_request_correction' THEN '보완 요청' WHEN 'publishing.fix_resubmitted' THEN '보완 제출'
+        WHEN 'publishing.application_approve' THEN '승인' WHEN 'publishing.application_reject' THEN '반려'
+        WHEN 'publishing.application_register' THEN '관리 단체 등록 완료' WHEN 'publishing.application_withdrawn' THEN '신청 철회' END)
+      ORDER BY e.occurred_at, e.id)
+    FROM operations.audit_events e WHERE e.resource_id=a.id AND e.action LIKE 'publishing.%'),'[]')";
+
 async fn applications_json(
     c: &mut PgConnection,
     org: Option<Uuid>,
     ids: Option<Vec<Uuid>>,
     status: Option<&str>,
 ) -> Result<Vec<Value>> {
-    let rows = sqlx::query(
-        "SELECT a.id, a.org_id, o.name AS org_name, a.number, a.status, a.territories, a.rights, a.submitted_at, a.fix_reason,
+    let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "SELECT a.id, a.org_id, o.name AS org_name, ra.application_no, a.status, a.territories, a.rights, a.submitted_at, a.fix_reason, a.reply_note,
+                ra.server_hash,
                 COALESCE((SELECT jsonb_agg(jsonb_build_object('id',w.id,'title',w.title) ORDER BY w.title)
                             FROM portal.pub_application_works aw JOIN portal.pub_works w ON w.id=aw.work_id WHERE aw.application_id=a.id),'[]') AS works,
-                COALESCE((SELECT jsonb_agg(jsonb_build_object('at',e.at,'text',e.text) ORDER BY e.at, e.id)
-                            FROM portal.pub_application_events e WHERE e.application_id=a.id),'[]') AS history
-           FROM portal.pub_applications a JOIN identity.orgs o ON o.id=a.org_id
+                {HISTORY} AS history
+           FROM portal.pub_applications a JOIN identity.orgs o ON o.id=a.org_id JOIN portal.release_applications ra ON ra.id=a.record_id
           WHERE ($1::uuid IS NULL OR a.org_id=$1) AND ($2::uuid[] IS NULL OR a.id = ANY($2)) AND ($3::text IS NULL OR a.status=$3)
           ORDER BY a.submitted_at DESC, a.id
-          LIMIT 200",
-    )
+          LIMIT 200"
+    )))
     .bind(org)
     .bind(ids)
     .bind(status)
@@ -1133,12 +1151,15 @@ async fn applications_json(
             let list = works.as_array().cloned().unwrap_or_default();
             json!({
                 "id": r.get::<Uuid, _>("id"), "orgId": r.get::<Uuid, _>("org_id"), "orgName": r.get::<String, _>("org_name"),
-                "number": r.get::<String, _>("number"), "status": r.get::<String, _>("status"),
+                "number": r.get::<String, _>("application_no"), "status": r.get::<String, _>("status"),
                 "workIds": list.iter().map(|w| w["id"].clone()).collect::<Vec<_>>(),
                 "workTitles": list.iter().map(|w| w["title"].clone()).collect::<Vec<_>>(),
                 "territories": r.get::<Vec<String>, _>("territories"), "rights": r.get::<Vec<String>, _>("rights"),
                 "submittedAt": ts(r.get("submitted_at")), "contractId": Value::Null,
-                "fixReason": r.get::<Option<String>, _>("fix_reason"), "history": r.get::<Value, _>("history"),
+                "fixReason": r.get::<Option<String>, _>("fix_reason"), "replyNote": r.get::<Option<String>, _>("reply_note"),
+                // The confirmation code of the signed original, as on 배급 신청서.
+                "documentCode": r.get::<Option<String>, _>("server_hash"),
+                "history": r.get::<Value, _>("history"),
             })
         })
         .collect())
@@ -1148,24 +1169,6 @@ pub async fn list_applications(s: &AppState, a: &Actor, org: Uuid) -> Result<Val
     let mut c = s.pool.acquire().await?;
     auth::membership_read(&mut c, a, org).await?;
     Ok(json!({"items": applications_json(&mut c, Some(org), None, None).await?}))
-}
-
-async fn event(
-    c: &mut PgConnection,
-    org: Uuid,
-    app: Uuid,
-    text: &str,
-    by: Option<Uuid>,
-) -> Result<()> {
-    sqlx::query("INSERT INTO portal.pub_application_events(id,org_id,application_id,text,actor_user_id) VALUES($1,$2,$3,$4,$5)")
-        .bind(Uuid::new_v4())
-        .bind(org)
-        .bind(app)
-        .bind(text.chars().take(500).collect::<String>())
-        .bind(by)
-        .execute(&mut *c)
-        .await?;
-    Ok(())
 }
 
 async fn set_registration(
@@ -1188,8 +1191,28 @@ async fn set_registration(
     Ok(())
 }
 
-/// Submit an application (신청서 접수). The same idempotency key returns the
-/// application already made instead of a second one.
+/// The same number format as 배급 신청서 (`AUD-20261030-K7Q2MX`), made on the
+/// server since the publishing screen does not number its own.
+fn application_no() -> Result<String> {
+    use rand::{TryRng, rngs::SysRng};
+    const ALPHABET: &[u8; 32] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let mut raw = [0u8; 6];
+    SysRng
+        .try_fill_bytes(&mut raw)
+        .map_err(|_| Error::Internal)?;
+    let day = (Utc::now() + chrono::Duration::hours(9)).format("%Y%m%d");
+    let tail: String = raw
+        .iter()
+        .map(|b| ALPHABET[usize::from(b % 32)] as char)
+        .collect();
+    Ok(format!("AUD-{day}-{tail}"))
+}
+
+/// Submit an application (신청서 접수). What was signed is recorded like a
+/// release application — `portal.release_applications` with form
+/// `PUBLISHING`, the server's own copy and hash, the signer's verified
+/// identity — and sealed. The same idempotency key returns the application
+/// already made instead of a second one.
 pub async fn submit_application(
     s: &AppState,
     a: &Actor,
@@ -1235,27 +1258,25 @@ pub async fn submit_application(
     {
         return Err(Error::InvalidCode("APPLICATION_RIGHTS_INVALID"));
     }
-    if !AGREEMENTS.iter().all(|k| i.agreed.iter().any(|x| x == k)) {
+    let agreed = dedup(&i.agreed);
+    if !AGREEMENTS.iter().all(|k| agreed.iter().any(|x| x == k))
+        || agreed.iter().any(|x| !AGREEMENTS.contains(&x.as_str()))
+    {
         return Err(Error::InvalidCode("APPLICATION_AGREEMENT_REQUIRED"));
     }
-    let sig_name = clean(&i.signature.name, 200, "APPLICATION_SIGNATURE_INVALID")?;
-    if sig_name.is_empty() || !["typed", "drawn"].contains(&i.signature.method.as_str()) {
+    let signer = clean(&i.signature.name, 120, "APPLICATION_SIGNATURE_INVALID")?;
+    if signer.is_empty() || i.signature.method != "drawn" {
         return Err(Error::InvalidCode("APPLICATION_SIGNATURE_INVALID"));
     }
-    let sig_data = match i.signature.data.filter(|d| !d.is_empty()) {
-        Some(d) if d.len() <= 300_000 && d.starts_with("data:image/png;base64,") => Some(d),
-        Some(_) => return Err(Error::InvalidCode("APPLICATION_SIGNATURE_INVALID")),
-        None if i.signature.method == "drawn" => {
-            return Err(Error::InvalidCode("APPLICATION_SIGNATURE_INVALID"));
-        }
-        None => None,
-    };
+    // The same signature check (and AV scan) as 배급 신청서.
+    let sig =
+        crate::upload_safety::signature(s, i.signature.data.as_deref().unwrap_or_default()).await?;
     let key = i.idempotency_key.trim().to_string();
     if !(8..=120).contains(&key.len()) {
         return Err(Error::Invalid);
     }
     let mut tx = s.pool.begin().await?;
-    auth::membership(&mut tx, a, org, true).await?;
+    let role = auth::membership(&mut tx, a, org, true).await?;
     // One submission per org at a time, so a resent request finds the first.
     sqlx::query("SELECT 1 FROM identity.orgs WHERE id=$1 FOR UPDATE")
         .bind(org)
@@ -1314,24 +1335,55 @@ pub async fn submit_application(
     {
         return Err(Error::PolicyGate("WORK_SPLIT_INCOMPLETE"));
     }
-    let id = Uuid::new_v4();
+    // The server's own copy of what was signed: every work as it stands now.
+    let no = application_no()?;
+    let submitted = Utc::now().to_rfc3339();
+    let snapshot = works_json(&mut tx, org, a.party, &role, Filter::Ids(works.clone())).await?;
+    let content = json!({
+        "application_no": no, "form": "PUBLISHING", "terms_version": POLICY_VERSION,
+        "works": snapshot, "territories": territories, "rights": rights,
+        "signer": {"name": signer, "role": "저작권자", "agreements": agreed, "client_submitted_at": submitted,
+                   "signature_sha256": crate::domain::sha256_hex(&sig)},
+    });
+    let server_hash = crate::domain::sha256_json(&content);
+    let identity = crate::consents::signer_identity(&mut tx, a.user).await?;
+    let record = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO portal.pub_applications(id,org_id,number,territories,rights,policy_version,agreed,signature_name,signature_method,signature_data,idempotency_key,submitted_by)
-         VALUES($1,$2,'PUB-'||to_char(now() AT TIME ZONE 'Asia/Seoul','YYYY')||'-'||lpad(nextval('portal.pub_application_seq')::text,4,'0'),$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+        "INSERT INTO portal.release_applications(id,org_id,release_id,application_no,form,content_hash,signer_name,signer_role,agreements,signature,client_submitted_at,submitted_by,content,server_hash,signer_identity)
+         VALUES($1,$2,NULL,$3,'PUBLISHING',$4,$5,'저작권자',$6,$7,$8,$9,$10,$4,$11)",
     )
-    .bind(id)
+    .bind(record)
     .bind(org)
-    .bind(&territories)
-    .bind(&rights)
-    .bind(POLICY_VERSION)
-    .bind(&i.agreed)
-    .bind(&sig_name)
-    .bind(&i.signature.method)
-    .bind(sig_data)
-    .bind(&key)
+    .bind(&no)
+    .bind(&server_hash)
+    .bind(&signer)
+    .bind(&agreed)
+    .bind(&sig)
+    .bind(&submitted)
     .bind(a.user)
+    .bind(&content)
+    .bind(&identity)
     .execute(&mut *tx)
     .await?;
+    crate::seal::seal(
+        &mut tx,
+        &s.payout_keys,
+        crate::seal::Kind::Application,
+        record,
+        "SUBMITTED",
+    )
+    .await?;
+    let id = Uuid::new_v4();
+    sqlx::query("INSERT INTO portal.pub_applications(id,org_id,record_id,territories,rights,idempotency_key,submitted_by) VALUES($1,$2,$3,$4,$5,$6,$7)")
+        .bind(id)
+        .bind(org)
+        .bind(record)
+        .bind(&territories)
+        .bind(&rights)
+        .bind(&key)
+        .bind(a.user)
+        .execute(&mut *tx)
+        .await?;
     for w in &works {
         sqlx::query("INSERT INTO portal.pub_application_works(org_id,application_id,work_id) VALUES($1,$2,$3)")
             .bind(org)
@@ -1341,7 +1393,6 @@ pub async fn submit_application(
             .await?;
     }
     set_registration(&mut tx, org, &works, "internal_review", None, None).await?;
-    event(&mut tx, org, id, "제출 완료", Some(a.user)).await?;
     audit(&mut tx, a, org, id, "publishing.application_submitted").await?;
     let out = applications_json(&mut tx, Some(org), Some(vec![id]), None)
         .await?
@@ -1387,7 +1438,6 @@ pub async fn withdraw_application(s: &AppState, a: &Actor, org: Uuid, id: Uuid) 
         .execute(&mut *tx)
         .await?;
     set_registration(&mut tx, org, &works, "none", None, Some("신청 철회")).await?;
-    event(&mut tx, org, id, "신청 철회", Some(a.user)).await?;
     audit(&mut tx, a, org, id, "publishing.application_withdrawn").await?;
     let out = applications_json(&mut tx, Some(org), Some(vec![id]), None)
         .await?
@@ -1405,7 +1455,9 @@ pub struct ResubmitIn {
     pub files: Vec<String>,
 }
 
-/// Answer a fix request: the work goes back to review with the note.
+/// Answer a fix request: the work goes back to review with the note. The
+/// documents staff asked for are submitted on 권리·보완 서류 (the same
+/// upload as release proofs); a work waits until none is still due.
 pub async fn resubmit_fix(
     s: &AppState,
     a: &Actor,
@@ -1423,21 +1475,23 @@ pub async fn resubmit_fix(
     if registration != "needs_fix" {
         return Err(Error::PolicyGate("WORK_NO_FIX_REQUESTED"));
     }
-    let app: Option<Uuid> = sqlx::query_scalar(
-        "SELECT x.id FROM portal.pub_application_works aw JOIN portal.pub_applications x ON x.id=aw.application_id
-          WHERE aw.work_id=$1 AND x.status='needs_fix' ORDER BY x.submitted_at DESC LIMIT 1",
+    let due: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM portal.documents WHERE org_id=$1 AND work_id=$2 AND kind='RIGHTS_PROOF' AND status IN ('AWAITING_DOCUMENTS','NEEDS'))",
     )
+    .bind(org)
     .bind(work)
-    .fetch_optional(&mut *tx)
+    .fetch_one(&mut *tx)
     .await?;
-    let shares: Vec<ShareRow> =
-        sqlx::query("SELECT name, roles, share_bps, publisher_share_bps, confirm FROM portal.pub_work_contributors WHERE work_id=$1")
-            .bind(work)
-            .fetch_all(&mut *tx)
-            .await?
-            .into_iter()
-            .map(|r| (r.get("name"), r.get("roles"), r.get("share_bps"), r.get("publisher_share_bps"), r.get("confirm")))
-            .collect();
+    if due {
+        return Err(Error::PolicyGate("WORK_DOCUMENTS_DUE"));
+    }
+    let shares: Vec<ShareRow> = sqlx::query("SELECT name, roles, share_bps, publisher_share_bps, confirm FROM portal.pub_work_contributors WHERE work_id=$1")
+        .bind(work)
+        .fetch_all(&mut *tx)
+        .await?
+        .into_iter()
+        .map(|r| (r.get("name"), r.get("roles"), r.get("share_bps"), r.get("publisher_share_bps"), r.get("confirm")))
+        .collect();
     if !split_ready(&shares) {
         return Err(Error::PolicyGate("WORK_SPLIT_INCOMPLETE"));
     }
@@ -1450,31 +1504,27 @@ pub async fn resubmit_fix(
         Some("보완 제출"),
     )
     .await?;
+    let app: Option<Uuid> = sqlx::query_scalar(
+        "SELECT x.id FROM portal.pub_application_works aw JOIN portal.pub_applications x ON x.id=aw.application_id
+          WHERE aw.work_id=$1 AND x.status='needs_fix' ORDER BY x.submitted_at DESC LIMIT 1",
+    )
+    .bind(work)
+    .fetch_optional(&mut *tx)
+    .await?;
     if let Some(app) = app {
         // Back to review once none of its works still waits for a fix.
-        let waiting: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM portal.pub_application_works aw JOIN portal.pub_works w ON w.id=aw.work_id
-                            WHERE aw.application_id=$1 AND w.registration='needs_fix')",
+        sqlx::query(
+            "UPDATE portal.pub_applications SET reply_note=NULLIF($2,''),
+                    status=CASE WHEN EXISTS(SELECT 1 FROM portal.pub_application_works aw JOIN portal.pub_works w ON w.id=aw.work_id
+                                             WHERE aw.application_id=$1 AND w.registration='needs_fix') THEN status ELSE 'in_review' END
+              WHERE id=$1",
         )
         .bind(app)
-        .fetch_one(&mut *tx)
+        .bind(&note)
+        .execute(&mut *tx)
         .await?;
-        if !waiting {
-            sqlx::query("UPDATE portal.pub_applications SET status='in_review', fix_reason=NULL WHERE id=$1").bind(app).execute(&mut *tx).await?;
-        }
-        let files = if i.files.is_empty() {
-            String::new()
-        } else {
-            format!(" · 첨부 {}", i.files.join(", "))
-        };
-        let text = if note.is_empty() {
-            format!("보완 제출{files}")
-        } else {
-            format!("보완 제출 — {note}{files}")
-        };
-        event(&mut tx, org, app, &text, Some(a.user)).await?;
+        audit(&mut tx, a, org, app, "publishing.fix_resubmitted").await?;
     }
-    audit(&mut tx, a, org, work, "publishing.fix_resubmitted").await?;
     let out = one(&mut tx, org, a, &role, work).await?;
     tx.commit().await?;
     Ok(out)
@@ -1682,20 +1732,22 @@ pub async fn save_my_creator(s: &AppState, a: &Actor, i: CreatorIn) -> Result<Va
 // Staff review
 // ---------------------------------------------------------------------------
 
+/// The same shape as a release decision (`/api/staff/releases/{id}/decision`).
 #[derive(Deserialize)]
 pub struct DecisionIn {
-    /// start_review · approve · needs_fix · reject · register
-    pub decision: String,
+    /// APPROVE · REQUEST_CORRECTION · REJECT · REGISTER (society registration done)
+    pub action: String,
     #[serde(default)]
-    pub reason: Option<String>,
-    /// needs_fix: only these works (default: every work of the application).
+    pub reason: String,
+    /// REQUEST_CORRECTION: only these works (default: every work of the application).
     #[serde(default)]
     pub work_ids: Vec<Uuid>,
     #[serde(default)]
     pub fields: Vec<String>,
+    /// REQUEST_CORRECTION: documents to submit on 권리·보완 서류, one row per work.
     #[serde(default)]
     pub documents: Vec<String>,
-    /// register: the collecting society the works were registered with.
+    /// REGISTER: the collecting society the works were registered with.
     #[serde(default)]
     pub society: Option<String>,
 }
@@ -1739,23 +1791,57 @@ pub async fn staff_application(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<
     Ok(app)
 }
 
+async fn staff_audit(
+    c: &mut PgConnection,
+    st: &staff::Staff,
+    org: Uuid,
+    id: Uuid,
+    action: &str,
+) -> Result<()> {
+    operations::audit(
+        c,
+        Some(st.actor.user),
+        Some(org),
+        Some(id),
+        action,
+        "STAFF",
+        st.actor.request,
+    )
+    .await
+}
+
+/// Take an application into review (as `/api/staff/releases/{id}/claim`).
+pub async fn staff_claim(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<Value> {
+    let st = staff::staff(s, h, true).await?;
+    staff::require(&st, Duty::Review)?;
+    let mut tx = s.pool.begin().await?;
+    let (org, status, _) = lock_application(&mut tx, None, id).await?;
+    if status != "submitted" {
+        return Err(Error::PolicyGate("APPLICATION_STATE"));
+    }
+    sqlx::query("UPDATE portal.pub_applications SET status='in_review', claimed_by=$2 WHERE id=$1")
+        .bind(id)
+        .bind(st.actor.user)
+        .execute(&mut *tx)
+        .await?;
+    staff_audit(&mut tx, &st, org, id, "publishing.application_claimed").await?;
+    let out = applications_json(&mut tx, None, Some(vec![id]), None)
+        .await?
+        .pop()
+        .ok_or(Error::Internal)?;
+    tx.commit().await?;
+    Ok(out)
+}
+
 pub async fn staff_decide(s: &AppState, h: &HeaderMap, id: Uuid, i: DecisionIn) -> Result<Value> {
     let st = staff::staff(s, h, true).await?;
     staff::require(&st, Duty::Review)?;
-    let reason = opt_clean(i.reason.as_deref(), 2000, "APPLICATION_REASON_INVALID")?;
+    let reason = clean(&i.reason, 2000, "APPLICATION_REASON_INVALID")?;
     let mut tx = s.pool.begin().await?;
     let (org, status, works) = lock_application(&mut tx, None, id).await?;
     let open = ["submitted", "in_review"].contains(&status.as_str());
-    let by = Some(st.actor.user);
-    match i.decision.as_str() {
-        "start_review" if status == "submitted" => {
-            sqlx::query("UPDATE portal.pub_applications SET status='in_review' WHERE id=$1")
-                .bind(id)
-                .execute(&mut *tx)
-                .await?;
-            event(&mut tx, org, id, "심사 시작", by).await?;
-        }
-        "approve" if open => {
+    match i.action.as_str() {
+        "APPROVE" if open => {
             sqlx::query("UPDATE portal.pub_applications SET status='approved', decided_by=$2, decided_at=now() WHERE id=$1")
                 .bind(id)
                 .bind(st.actor.user)
@@ -1770,12 +1856,11 @@ pub async fn staff_decide(s: &AppState, h: &HeaderMap, id: Uuid, i: DecisionIn) 
                 Some("권리 정보 확인 완료"),
             )
             .await?;
-            event(&mut tx, org, id, "승인", by).await?;
         }
-        "needs_fix" if open => {
-            let reason = reason
-                .clone()
-                .ok_or(Error::InvalidCode("APPLICATION_REASON_REQUIRED"))?;
+        "REQUEST_CORRECTION" if open => {
+            if reason.is_empty() {
+                return Err(Error::InvalidCode("APPLICATION_REASON_REQUIRED"));
+            }
             let target: Vec<Uuid> = if i.work_ids.is_empty() {
                 works.clone()
             } else {
@@ -1793,13 +1878,11 @@ pub async fn staff_decide(s: &AppState, h: &HeaderMap, id: Uuid, i: DecisionIn) 
                 .map(|d| clean(d, 100, "APPLICATION_REASON_INVALID"))
                 .collect::<Result<Vec<_>>>()?;
             let fix = json!({"reason": reason, "fields": i.fields, "documents": documents, "requestedAt": Utc::now().to_rfc3339()});
-            sqlx::query(
-                "UPDATE portal.pub_applications SET status='needs_fix', fix_reason=$2 WHERE id=$1",
-            )
-            .bind(id)
-            .bind(&reason)
-            .execute(&mut *tx)
-            .await?;
+            sqlx::query("UPDATE portal.pub_applications SET status='needs_fix', fix_reason=$2, reply_note=NULL WHERE id=$1")
+                .bind(id)
+                .bind(&reason)
+                .execute(&mut *tx)
+                .await?;
             set_registration(
                 &mut tx,
                 org,
@@ -1809,12 +1892,32 @@ pub async fn staff_decide(s: &AppState, h: &HeaderMap, id: Uuid, i: DecisionIn) 
                 Some(&reason),
             )
             .await?;
-            event(&mut tx, org, id, "보완 요청", by).await?;
+            // Each document waits on 권리·보완 서류, like a proof asked for a release.
+            for w in &target {
+                let title: String =
+                    sqlx::query_scalar("SELECT title FROM portal.pub_works WHERE id=$1")
+                        .bind(w)
+                        .fetch_one(&mut *tx)
+                        .await?;
+                for d in &documents {
+                    sqlx::query(
+                        "INSERT INTO portal.documents(id,org_id,release_id,work_id,kind,title,review_note,status)
+                         VALUES($1,$2,NULL,$3,'RIGHTS_PROOF',$4,$5,'AWAITING_DOCUMENTS')",
+                    )
+                    .bind(Uuid::new_v4())
+                    .bind(org)
+                    .bind(w)
+                    .bind(format!("{} · {d}", title.chars().take(80).collect::<String>()))
+                    .bind(reason.chars().take(1000).collect::<String>())
+                    .execute(&mut *tx)
+                    .await?;
+                }
+            }
         }
-        "reject" if open || status == "needs_fix" => {
-            let reason = reason
-                .clone()
-                .ok_or(Error::InvalidCode("APPLICATION_REASON_REQUIRED"))?;
+        "REJECT" if open || status == "needs_fix" => {
+            if reason.is_empty() {
+                return Err(Error::InvalidCode("APPLICATION_REASON_REQUIRED"));
+            }
             sqlx::query("UPDATE portal.pub_applications SET status='rejected', fix_reason=$2, decided_by=$3, decided_at=now() WHERE id=$1")
                 .bind(id)
                 .bind(&reason)
@@ -1822,41 +1925,43 @@ pub async fn staff_decide(s: &AppState, h: &HeaderMap, id: Uuid, i: DecisionIn) 
                 .execute(&mut *tx)
                 .await?;
             set_registration(&mut tx, org, &works, "rejected", None, Some(&reason)).await?;
-            event(&mut tx, org, id, "반려", by).await?;
         }
-        "register" if status == "approved" => {
+        "REGISTER" if status == "approved" => {
             let society = opt_clean(i.society.as_deref(), 60, "WORK_SOCIETY_INVALID")?
                 .ok_or(Error::Invalid)?;
             for w in &works {
-                sqlx::query("UPDATE portal.pub_works SET registration='registered', row_version=row_version+1, updated_at=now() WHERE id=$1 AND registration IN ('ready','submitted','external_review')")
-                    .bind(w)
-                    .execute(&mut *tx)
-                    .await?;
-                log_status(
-                    &mut tx,
-                    org,
-                    *w,
-                    "registered",
-                    Some("곡 코드 발급"),
-                    Some(&society),
+                let n = sqlx::query(
+                    "UPDATE portal.pub_works SET registration='registered', row_version=row_version+1, updated_at=now()
+                      WHERE id=$1 AND registration IN ('ready','submitted','external_review')",
                 )
-                .await?;
+                .bind(w)
+                .execute(&mut *tx)
+                .await?
+                .rows_affected();
+                if n == 1 {
+                    log_status(
+                        &mut tx,
+                        org,
+                        *w,
+                        "registered",
+                        Some("곡 코드 발급"),
+                        Some(&society),
+                    )
+                    .await?;
+                }
             }
-            event(&mut tx, org, id, &format!("{society} 등록 완료"), by).await?;
         }
-        "start_review" | "approve" | "needs_fix" | "reject" | "register" => {
+        "APPROVE" | "REQUEST_CORRECTION" | "REJECT" | "REGISTER" => {
             return Err(Error::PolicyGate("APPLICATION_STATE"));
         }
         _ => return Err(Error::Invalid),
     }
-    operations::audit(
+    staff_audit(
         &mut tx,
-        by,
-        Some(org),
-        Some(id),
-        &format!("publishing.application_{}", i.decision),
-        "STAFF",
-        st.actor.request,
+        &st,
+        org,
+        id,
+        &format!("publishing.application_{}", i.action.to_lowercase()),
     )
     .await?;
     let out = applications_json(&mut tx, None, Some(vec![id]), None)
@@ -2127,6 +2232,13 @@ async fn h_staff_decide(
 ) -> Result<Json<Value>> {
     Ok(Json(staff_decide(&s, &h, id, i).await?))
 }
+async fn h_staff_claim(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    Ok(Json(staff_claim(&s, &h, id).await?))
+}
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -2175,6 +2287,10 @@ pub fn routes() -> Router<AppState> {
         .route("/api/me/creator", get(h_me).put(h_me_save))
         .route("/api/staff/publishing/applications", get(h_staff_list))
         .route("/api/staff/publishing/applications/{id}", get(h_staff_one))
+        .route(
+            "/api/staff/publishing/applications/{id}/claim",
+            post(h_staff_claim),
+        )
         .route(
             "/api/staff/publishing/applications/{id}/decision",
             post(h_staff_decide),

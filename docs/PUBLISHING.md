@@ -6,23 +6,26 @@ camelCase shapes so the screens need no change.
 
 ## Stage 1 — works and applications (migration 0167, `crates/core/src/publishing.rs`)
 
-- **Works** (`portal.pub_works`): a musical work separate from a recording. Internal code `AQW-000101`,
-  optional ISWC (normalized `T-123.456.789-0`). Archived, never deleted.
-- **Contributors and shares** (`portal.pub_work_contributors`): basis points (10000 = 100%). Drafts may be
-  under 100%, never over. The managed (publisher) share cannot exceed the creative share. The applicant's own
-  row is linked to their party and confirmed; any other row whose share changes goes back to `pending`.
-- **Recordings** (`portal.pub_work_recordings`): links to `catalog.tracks`. `POST /releases/{id}/works` makes
-  works from track credits (composer · lyricist · arranger), shares split evenly to be checked.
-- **Attachments** (`portal.pub_work_attachments`): demo, lyrics, score, proof. Text bodies (lyrics .txt) are
-  stored and shown in place; files point at `catalog.assets`.
-- **Application** (`portal.pub_applications`, 신청서 접수): number `PUB-2026-0001`; territories, rights,
-  agreements, signature; one per idempotency key. Submission requires every work to be at 100% with roles, a
-  composer and no dispute, and not already in an active application. Works move to `internal_review`.
-- **Staff review**: start review → approve (`ready`) / ask for a fix (works `needs_fix` with reason, fields,
-  documents) / reject; `register` records the collecting society (`registered`). The writer answers a fix with
-  `registration/resubmit`; the application returns to review once no work waits for a fix.
-- **Registered works**: share changes are held as `pendingChange`; the registered values stay in force.
-- Every mutation is audited (`publishing.*`). Application history is append-only.
+Distribution already has an application, signing, documents, notices, review and audit. Publishing reuses
+them and adds tables only for what has no distribution equivalent.
+
+| Need | Reused from distribution | New |
+|---|---|---|
+| Signed application (신청서 접수) | `portal.release_applications` with `form='PUBLISHING'` and no release: same `AUD-YYYYMMDD-XXXXXX` number, signature check (`upload_safety::signature`), agreements, server copy + hash, signer identity (`consents::signer_identity`), document seal (`seal::Kind::Application`) | `portal.pub_applications`: review state, territories, rights, idempotency key, works |
+| Documents staff ask for | `portal.documents` `RIGHTS_PROOF` rows (`work_id` instead of `release_id`): 권리·보완 서류 screen, `/documents/{id}/proof` upload, staff document review, "제출할 서류가 있어요" notice | — |
+| Notices | `portal.notify` (trigger on the work's registration, like `release_status_notice`) | trigger only |
+| History | `operations.audit_events` (`publishing.*`), shown as the application's history | — |
+| Staff review | Release review shapes: `claim`, then `decision` with `action` APPROVE / REQUEST_CORRECTION / REJECT (+ REGISTER) and `reason` | routes |
+| Attachments | `catalog.assets` uploads | `portal.pub_work_attachments` (kind, text body for lyrics) |
+| Works, shares, recordings | — | `portal.pub_works`, `pub_work_contributors` (basis points), `pub_work_recordings`, `pub_work_status_log` |
+
+Rules:
+- Shares are drafts until submitted (never over 100%); submission needs 100%, roles, a composer, no dispute.
+  The applicant's own row is confirmed; another row whose share changes goes back to `pending`.
+- A work in review cannot change shares; when asked to fix it can. A registered work keeps its shares in force
+  and holds a change as `pendingChange`.
+- A fix is answered with `registration/resubmit` once every requested document is in (`WORK_DOCUMENTS_DUE`).
+- Works are archived, never deleted, and not once applied (`WORK_IN_USE`).
 
 ## Stage 2 — not yet
 

@@ -7,6 +7,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 mod support;
+/// A real 1×1 PNG: the signature goes through the same check as 배급 신청서.
+const SIG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 use support::{User, app, call, create_artist, create_release, row_version, user};
 
 async fn staff_user(app: &Router, pool: &PgPool) -> User {
@@ -17,6 +19,16 @@ async fn staff_user(app: &Router, pool: &PgPool) -> User {
         .await
         .unwrap();
     s
+}
+
+/// The signature passed the image check before (as in mcp.rs / stage1.rs):
+/// the media engine that re-encodes it is not needed for these flows.
+async fn admit_signature(pool: &PgPool) {
+    sqlx::query("INSERT INTO catalog.inline_file_safety(source_sha256, rule_version) VALUES($1,'1') ON CONFLICT DO NOTHING")
+        .bind(audeniq_core::domain::sha256_hex(SIG))
+        .execute(pool)
+        .await
+        .unwrap();
 }
 
 async fn track(app: &Router, pool: &PgPool, u: &User, release: Uuid, title: &str, no: i32) -> Uuid {
@@ -45,7 +57,7 @@ fn apply(works: &[&str], key: &str) -> Value {
     json!({
         "workIds": works, "territories": ["KR", "WORLD"], "rights": ["performance", "mechanical", "digital"],
         "policyVersion": "2026-10", "agreed": ["terms", "rights", "exclusive", "share"],
-        "signature": {"name": "서린", "method": "drawn", "data": "data:image/png;base64,iVBORw0KGgo="},
+        "signature": {"name": "서린", "method": "drawn", "data": SIG},
         "idempotencyKey": key,
     })
 }
@@ -53,6 +65,7 @@ fn apply(works: &[&str], key: &str) -> Value {
 #[sqlx::test]
 async fn work_to_application_to_review(pool: PgPool) {
     let (app, _store) = app(pool.clone()).await;
+    admit_signature(&pool).await;
     let u = user(&app).await;
     let base = format!("/api/orgs/{}", u.org);
     let release = create_release(&app, &u).await;
@@ -175,7 +188,17 @@ async fn work_to_application_to_review(pool: PgPool) {
     .await;
     assert_eq!(s, StatusCode::OK, "{a}");
     assert_eq!(a["status"], "submitted");
-    assert!(a["number"].as_str().unwrap().starts_with("PUB-"));
+    assert!(a["number"].as_str().unwrap().starts_with("AUD-"));
+    // The signed original is a 배급 신청서 record (form PUBLISHING), sealed.
+    let (form, sealed): (String, bool) = sqlx::query_as(
+        "SELECT ra.form, EXISTS(SELECT 1 FROM operations.document_seals s WHERE s.doc_kind='APPLICATION' AND s.doc_id=ra.id)
+           FROM portal.release_applications ra WHERE ra.application_no=$1 AND ra.release_id IS NULL",
+    )
+    .bind(a["number"].as_str().unwrap())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!((form.as_str(), sealed), ("PUBLISHING", true));
     let app_id = a["id"].as_str().unwrap().to_string();
     let (_, again) = call(
         &app,
@@ -272,14 +295,24 @@ async fn work_to_application_to_review(pool: PgPool) {
     assert_eq!(one["works"][0]["contributors"].as_array().unwrap().len(), 2);
     let decision_path = format!("/api/staff/publishing/applications/{app_id}/decision");
     let decide = |d: Value| call(&app, "POST", &decision_path, d, Some(&st));
-    let (s, _) = decide(json!({"decision": "start_review"})).await;
-    assert_eq!(s, StatusCode::OK);
-    let (s, e) = decide(json!({"decision": "needs_fix"})).await;
+    let (s, x) = call(
+        &app,
+        "POST",
+        &format!("/api/staff/publishing/applications/{app_id}/claim"),
+        json!({}),
+        Some(&st),
+    )
+    .await;
+    assert_eq!(
+        (s, x["status"].as_str()),
+        (StatusCode::OK, Some("in_review"))
+    );
+    let (s, e) = decide(json!({"action": "REQUEST_CORRECTION"})).await;
     assert_eq!(
         (s, e["error"]["code"].as_str()),
         (StatusCode::BAD_REQUEST, Some("APPLICATION_REASON_REQUIRED"))
     );
-    let (s, x) = decide(json!({"decision": "needs_fix", "reason": "김하늘 님 IPI를 적어 주세요.", "fields": ["contributors.ipi"], "documents": ["공동 작곡 합의서"]})).await;
+    let (s, x) = decide(json!({"action": "REQUEST_CORRECTION", "reason": "김하늘 님 IPI를 적어 주세요.", "fields": ["contributors.ipi"], "documents": ["공동 작곡 합의서"]})).await;
     assert_eq!(s, StatusCode::OK, "{x}");
     assert_eq!(x["status"], "needs_fix");
     let (_, w) = call(
@@ -292,6 +325,35 @@ async fn work_to_application_to_review(pool: PgPool) {
     .await;
     assert_eq!(w["registration"], "needs_fix");
     assert_eq!(w["fix"]["documents"][0], "공동 작곡 합의서");
+    // The document waits on 권리·보완 서류 like a release proof, with its notice.
+    let (_, docs) = call(
+        &app,
+        "GET",
+        &format!("{base}/documents"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    let doc = docs["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["title"] == "파도 · 공동 작곡 합의서")
+        .cloned()
+        .expect("requested document");
+    let (_, notes) = call(
+        &app,
+        "GET",
+        &format!("{base}/notifications"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    let text = notes.to_string();
+    assert!(
+        text.contains("저작권 보완 요청") && text.contains("제출할 서류가 있어요"),
+        "{text}"
+    );
 
     // The writer fixes the shares (allowed while asked) and resubmits.
     let rv = w["rowVersion"].as_i64().unwrap();
@@ -306,6 +368,26 @@ async fn work_to_application_to_review(pool: PgPool) {
     )
     .await;
     assert_eq!(s, StatusCode::OK, "{w}");
+    // Not before the document is in.
+    let (s, e) = call(
+        &app,
+        "POST",
+        &format!("{base}/works/{id}/registration/resubmit"),
+        json!({"note": "IPI를 적었어요."}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (StatusCode::UNPROCESSABLE_ENTITY, Some("WORK_DOCUMENTS_DUE"))
+    );
+    sqlx::query(
+        "UPDATE portal.documents SET status='REVIEW', file_name='합의서.pdf' WHERE id=$1::uuid",
+    )
+    .bind(doc["id"].as_str().unwrap())
+    .execute(&pool)
+    .await
+    .unwrap();
     let (s, w) = call(
         &app,
         "POST",
@@ -327,22 +409,25 @@ async fn work_to_application_to_review(pool: PgPool) {
     .await;
     let mine = &apps["items"][0];
     assert_eq!(mine["status"], "in_review");
-    assert!(mine["history"].as_array().unwrap().iter().any(|h| {
-        h["text"]
-            .as_str()
-            .unwrap()
-            .starts_with("보완 제출 — IPI를 적었어요.")
-    }));
+    assert_eq!(mine["replyNote"], "IPI를 적었어요.");
+    // History is the audit trail of the application.
+    let steps: Vec<&str> = mine["history"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|h| h["text"].as_str())
+        .collect();
+    assert_eq!(steps, ["제출 완료", "심사 시작", "보완 요청", "보완 제출"]);
 
     // Approve, then register with the society.
-    let (s, x) = decide(json!({"decision": "approve"})).await;
+    let (s, x) = decide(json!({"action": "APPROVE"})).await;
     assert_eq!(
         (s, x["status"].as_str()),
         (StatusCode::OK, Some("approved"))
     );
-    let (s, _) = decide(json!({"decision": "reject", "reason": "늦은 반려"})).await;
+    let (s, _) = decide(json!({"action": "REJECT", "reason": "늦은 반려"})).await;
     assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
-    let (s, _) = decide(json!({"decision": "register", "society": "KOMCA"})).await;
+    let (s, _) = decide(json!({"action": "REGISTER", "society": "KOMCA"})).await;
     assert_eq!(s, StatusCode::OK);
     let (_, w) = call(
         &app,
@@ -405,6 +490,7 @@ async fn work_to_application_to_review(pool: PgPool) {
 #[sqlx::test]
 async fn prepare_from_credits_withdraw_and_isolation(pool: PgPool) {
     let (app, _store) = app(pool.clone()).await;
+    admit_signature(&pool).await;
     let u = user(&app).await;
     let base = format!("/api/orgs/{}", u.org);
     let release = create_release(&app, &u).await;
