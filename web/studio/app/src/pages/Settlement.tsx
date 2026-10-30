@@ -1,5 +1,8 @@
 // 정산·지급 — hero + 탭 구조의 단순화된 레이아웃
-import { Link } from '../lib/router';
+import { Link, useSearchParams } from '../lib/router';
+import { pubApi } from '../api/publishing';
+import { useAsync } from '../hooks/useAsync';
+import { RoyaltyTable } from '../components/publishing/Royalties';
 import { SplitsReceived } from '../components/SplitsReceived';
 import { useEffect, useState } from 'react';
 import { Modal, useModalClose } from '../components/Modal';
@@ -35,7 +38,7 @@ import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
 import { Money } from '../components/Money';
 import { Segmented } from '../components/Segmented';
-import { Badge, type Tone } from '../ui';
+import { Badge, ChipGroup, type Tone } from '../ui';
 
 /** 정산은 플랫폼별·월별로 나뉘어 들어오지 않는다 — 운영팀이 정산금(크레딧)을 넣으면 잔액에 쌓이고, 아티스트가 원할 때 지급을 요청한다.
  *  그래서 내역은 통장처럼 날짜별 적립·차감 줄로 보여 준다 */
@@ -148,6 +151,12 @@ export function Settlement() {
     }
   };
   const [tab, setTab] = useState<'statements' | 'payouts'>('statements');
+  // 수익 유형 — 배급 정산과 퍼블리싱 저작권료는 원장이 따로다. 같은 화면에서 거르기만 하고 더하지 않는다 (?type=)
+  const [params, setParams] = useSearchParams();
+  const revType = (['distribution', 'publishing'] as const).find(t => t === params.get('type')) ?? 'all';
+  const setRevType = (v: 'all' | 'distribution' | 'publishing') => { const p = new URLSearchParams(params); if (v === 'all') p.delete('type'); else p.set('type', v); setParams(p, { replace: true }); };
+  const { data: royalties } = useAsync(() => pubApi.listRoyalties(), [], { key: 'royalties:all' });
+  const hasPub = !!royalties?.length || revType === 'publishing';
   const [showPayout, setShowPayout] = useState(false);
   const [showStatement, setShowStatement] = useState(false);
   const [showPaymentSetup, setShowPaymentSetup] = useState(false);
@@ -318,6 +327,26 @@ export function Settlement() {
       </section>
       <SplitsReceived />
 
+      {hasPub && (
+        <ChipGroup label="수익 유형" value={revType} onChange={setRevType} hideZero={false}
+          options={[{ value: 'all', label: '전체' }, { value: 'distribution', label: '배급' }, { value: 'publishing', label: '퍼블리싱', count: royalties?.length ?? 0 }]} />
+      )}
+
+      {revType === 'publishing' ? (
+        <section className="ui-tab-panel" key="pub" aria-labelledby="pubSettleTitle">
+          <div className="ui-section-head"><h2 id="pubSettleTitle">퍼블리싱 저작권료</h2></div>
+          <p className="ui-field-help">관리 단체가 나눠 준 저작권료예요. 확정된 금액은 위 ‘받을 수 있는 금액’에 <b>퍼블리싱</b> 적립으로 들어와 같은 계좌로 받아요. 예상 금액은 아직 받을 수 없어요.</p>
+          {royalties ? <RoyaltyTable rows={royalties} /> : <SkeletonRows count={3} />}
+        </section>
+      ) : (<>
+      {revType === 'all' && hasPub && royalties && (
+        <Link to="/settlement?type=publishing" className="ui-row aq-statement-card settle-entry">
+          <span className="aq-statement-icon" aria-hidden="true"><Glyph name="scale" size={17} /></span>
+          <div className="min-0"><span className="ui-row-title">퍼블리싱 저작권료</span><span className="ui-row-meta"><span>예상 <Money value={royalties.filter(r => r.status === 'estimated').reduce((n, r) => n + r.net, 0)} /> 별도</span></span></div>
+          <div className="aq-statement-end"><span className="settle-entry-amount is-plus">+<Money value={royalties.filter(r => r.status !== 'estimated').reduce((n, r) => n + r.net, 0)} /></span><Glyph name="chevron-right" size={16} /></div>
+        </Link>
+      )}
+
       <Segmented
         tabs className="aq-seg-tabs" label="정산 내역 구분" value={tab} onChange={setTab}
         options={[{ value: 'statements', label: '적립 내역' }, { value: 'payouts', label: '지급 요청 기록' }] as const}
@@ -400,6 +429,7 @@ export function Settlement() {
           )}
         </div>
       )}
+      </>)}
 
       {detailStatement && (
         <Modal title={entryTitle(detailStatement)} onClose={() => setDetail(null)}>

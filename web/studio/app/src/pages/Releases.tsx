@@ -15,6 +15,8 @@ import { errorMessage } from '../api/errors';
 import { useToast } from '../components/Toast';
 import { MOCK } from '../lib/mode';
 import { openFixes, pendingProofs, proofPath, useDocs, type DocRecord } from '../store/docs';
+import { WorkLibrary } from '../components/publishing/WorkLibrary';
+import { pubApi } from '../api/publishing';
 
 const FILTERS = [
   { value: 'all', label: '전체' },
@@ -57,7 +59,7 @@ export function Releases() {
   const docs = useDocs();
   const [params, setParams] = useSearchParams();
   const tabParam = params.get('tab');
-  const tab = tabParam === 'tracks' ? tabParam : 'releases';
+  const tab = tabParam === 'tracks' || tabParam === 'works' ? tabParam : 'releases';
   const filter = params.get('status') || 'all';
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('updated');
@@ -73,6 +75,8 @@ export function Releases() {
   };
 
   const { data: listData, loading: listLoading, error: listError, reload } = useAsync(() => api.listReleases(), [], { key: 'releases' });
+  // 저작물 탭 개수 — 작품 목록은 라이브러리 탭과 같은 캐시를 쓴다 (퍼블리싱 API가 없는 서버면 빈 목록)
+  const { data: works } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
   const list = useMemo(() => listData ?? [], [listData]);
   // 트랙은 '전체 트랙' 탭을 처음 열 때만 발매별 상세를 불러온다 (목록만 볼 때 N건 추가 요청 방지).
   // 탭에 손가락이 닿는 순간(누르기 직전) 미리 받기 시작해, 바꿨을 때 빈 화면이 거의 보이지 않게 한다
@@ -149,7 +153,7 @@ export function Releases() {
         <div>
           <p className="eyebrow">작업실</p>
           <h1 id="catalogTitle">발매·곡 관리</h1>
-          <p>발매마다 심사가 어디까지 왔는지 보여 드려요.</p>
+          <p>{tab === 'works' ? '작사·작곡한 작품의 지분과 저작권 관리 상태를 보여 드려요.' : '발매마다 심사가 어디까지 왔는지 보여 드려요.'}</p>
         </div>
         <button type="button" className="ui-btn is-primary" onClick={() => nav('/upload')}><Glyph name="plus" size={14} />새 발매</button>
       </div>
@@ -159,13 +163,16 @@ export function Releases() {
         items={[
           { value: 'releases', label: '발매 목록', count: listLoading ? null : list.length },
           { value: 'tracks', label: '전체 트랙', count: listLoading ? null : trackCount },
+          { value: 'works', label: '저작물', count: works?.length ?? null },
         ]}
         onChange={v => setParam('tab', v, 'releases')}
-        onIntent={v => { if (v === 'tracks') setTracksWanted(true); }}
+        onIntent={v => { if (v === 'tracks') setTracksWanted(true); if (v === 'works') void pubApi.listWorks(); }}
         className="is-fill"
       />
 
-      {loading ? (
+      {tab === 'works' ? (
+        <WorkLibrary />
+      ) : loading ? (
         listLoading || slowTracks ? <SkeletonRows count={4} /> : <div className="aq-tab-wait" aria-busy="true" />
       ) : error ? (
         <div className="ui-empty">

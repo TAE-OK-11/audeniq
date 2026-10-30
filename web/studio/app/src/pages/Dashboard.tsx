@@ -36,6 +36,8 @@ import { BrandMark } from '../components/BrandMark';
 import type { NewsItem } from '../lib/home';
 import { MOCK } from '../lib/mode';
 import type { Release } from '../api/types';
+import { pubApi } from '../api/publishing';
+import { PublishingHomeCard, PublishingSuggest } from '../components/publishing/PublishingHome';
 import '../styles/split/Dashboard.css';
 
 type GridKey = 'releases' | 'reports' | 'settlement' | 'contracts';
@@ -73,6 +75,7 @@ const TASK_ICONS = {
   star: <Glyph name="star" size={20} />,
   users: <Glyph name="users" size={20} />,
   approval: <Glyph name="approval" size={20} />,
+  scale: <Glyph name="scale" size={20} />,
 };
 
 function greeting(): string {
@@ -321,6 +324,9 @@ export function Dashboard() {
   const signals = useHomeSignals(releases, loading);
   const upcoming = loading ? undefined : upcomingRelease(releases);
   const extra = useHomeCards(releases, loading, upcoming);
+  // 퍼블리싱 — 쓰는 사람에게는 작품 현황·처리할 일, 아직 안 쓰는 사람에게는 곡 하나 제안 (서버에 기능이 없으면 빈 요약)
+  const { data: pub } = useAsync(() => pubApi.summary(), [], { key: 'pub-summary' });
+  const pubActive = !!pub && (pub.enrolled || pub.works.total > 0);
   // 나중에 불러온 카드도 같은 등장 연출로 — 카드가 생기면 다시 맡긴다
 
   const needs = releases.filter(r => r.status === 'needs').length;
@@ -364,6 +370,13 @@ export function Dashboard() {
       icon: 'users', name: `수익 분배 수락 대기 ${waiting}명`,
       sub: one ? `‘${one.title}’ 공동작업자가 아직 수락하지 않았어요. 메일을 다시 보낼 수 있어요.` : '공동작업자가 수락하면 그분 몫이 바로 정산돼요.',
       btn: '확인', to: one ? `/releases/${one.releaseId}` : '/releases', tone: 'info',
+    });
+  }
+  // 퍼블리싱에서 실제로 처리할 일 — 보완·지분 확인은 기한이 걸린 일, 서명·갱신은 안내
+  for (const t of pub?.tasks ?? []) {
+    tasks.push({
+      icon: t.kind === 'fix' ? 'alert' : t.kind === 'sign' ? 'pen' : t.kind === 'renew' ? 'doc' : 'scale', name: t.title, sub: t.sub,
+      btn: t.kind === 'fix' ? '보완' : t.kind === 'sign' ? '서명' : t.kind === 'renew' ? '갱신' : '확인', to: t.to, tone: t.kind === 'fix' ? 'warn' : 'info',
     });
   }
   if (drafts) tasks.push({ icon: 'draft', name: `작성 중인 발매 ${drafts}건`, sub: '이어서 작성하고 접수해 보세요.', btn: '보기', to: '/releases?status=draft', tone: 'info' });
@@ -547,6 +560,8 @@ export function Dashboard() {
             {extra.delivery && <DeliveryCard d={extra.delivery} />}
             {signals.pitchActive && <PitchHomeCard p={signals.pitchActive} />}
             {!loading && <MoneyCard payable={payable} pending={payoutPending} held={held} minimum={minimum} registered={isPaymentRegistered(payment)} />}
+            {pubActive && pub && <PublishingHomeCard s={pub} />}
+            {!pubActive && pub?.suggestion && <PublishingSuggest s={pub.suggestion} />}
           {/* 리포트 — 제목은 짧게(기간은 보조 글자), 금액 옆에 전월 대비, 아래에 세 숫자. 모양은 Badge · KeyValue · EmptyState */}
           <section className="ui-card aq-report-card" aria-labelledby="reportTitle">
             <div className="ui-section-head aq-report-head">

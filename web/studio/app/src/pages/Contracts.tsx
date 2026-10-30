@@ -12,6 +12,7 @@ import { SignatureModal } from '../components/SignatureModal';
 import { refreshDocs } from '../store/portalSync';
 import { MOCK } from '../lib/mode';
 import { IconTile } from '../ui';
+import { PublishingContracts } from '../components/publishing/PublishingContracts';
 
 const DOC_PATH = [
   ['배급 신청서 서명', '발매를 접수할 때'],
@@ -56,7 +57,7 @@ export function Contracts() {
         <div>
           <p className="eyebrow">작업실</p>
           <h1>계약서</h1>
-          <p>발매마다 배급 신청서와 계약서를 확인하고 서명해요.</p>
+          <p>발매마다 배급 신청서와 계약서를, 작품마다 퍼블리싱 계약을 확인하고 서명해요.</p>
         </div>
       </div>
 
@@ -74,6 +75,9 @@ export function Contracts() {
           />
         )}
       </div>
+
+      {/* 퍼블리싱 계약 — 신청·계약이 있을 때만 (없으면 아무것도 그리지 않는다) */}
+      <PublishingContracts />
 
       {/* 진행 순서는 처음 한 번 읽으면 되는 설명 — 서명할 계약서보다 위에 있어 매번 지나쳐야 했다 */}
       <section className="aq-doc-path-wrap" aria-labelledby="docPathTitle">

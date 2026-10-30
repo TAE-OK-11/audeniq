@@ -557,7 +557,7 @@ export function ReleaseDetail() {
               )}
               {openTrack !== null && rel.tracks[openTrack] && (
                 <TrackSheet track={rel.tracks[openTrack]} no={openTrack + 1} draft={draftTrackOf(rel.tracks[openTrack], d)}
-                  onClose={() => setOpenTrack(null)} edit={trackEdit} />
+                  onClose={() => setOpenTrack(null)} edit={trackEdit} releaseId={rel.id} />
               )}
               {/* 제출 전 안내 — 접수가 끝난 발매(검토 중·발매 완료)에서는 할 수 있는 일이 없는 문장이었다 */}
               {(isDraft || needsFix) && (

@@ -1,0 +1,15 @@
+/*  저작물 지분 입력(SplitEditor)에서만 쓰는 배치 규칙 — 모양은 '공동작업자 수익 분배'(live.css aq-splits-*)를 그대로 쓰고,
+   칸이 더 많은 줄(이름 · 창작 % · 관리 % · 관리 단체 · IPI · 삭제)과 작가 찾기 목록의 자리만 잡는다.
+   아래 클래스를 쓰는 파일은 이 파일을 import해야 한다 (splitCss.test.ts가 확인).
+   anchors: aq-pbl-split aq-pbl-split-row aq-pbl-search aq-pbl-search-list  */
+.aq-pbl-split .ui-chips{margin:0}
+.aq-splits-row.aq-pbl-split-row{grid-template-columns:minmax(0,1.2fr) 88px 88px minmax(0,1fr) minmax(0,1fr) auto}
+.aq-pbl-search{position:relative}
+.aq-pbl-search>.ui-input{width:100%}
+.aq-pbl-search-list{margin-top:6px}
+.aq-pbl-search-list .ui-row:disabled{cursor:default;opacity:.6}
+@media(max-width:760px){
+  .aq-splits-row.aq-pbl-split-row{grid-template-columns:minmax(0,1fr) 88px 88px}
+  .aq-splits-row.aq-pbl-split-row>select,.aq-splits-row.aq-pbl-split-row>input[aria-label="IPI/CAE"]{grid-column:span 1}
+  .aq-splits-row.aq-pbl-split-row>select{grid-column:1 / 2}
+}
