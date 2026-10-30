@@ -1649,6 +1649,14 @@ a.aq-inline-link{display:inline-block;max-width:100%}
 .aq-paper-parties{display:grid;gap:4px;margin-top:10px}
 .aq-paper-parties .aq-paper-signer{margin-top:18px}
 .aq-paper-parties .aq-paper-signer strong{min-width:160px;text-align:right}
+/* 회사·이용자 두 줄의 이름표·이름·서명 칸을 같은 세로줄에 — 서명 그림이 있으면 칸이 넓어져 밑줄 길이가 달랐다 */
+@media(min-width:641px){
+  .aq-paper-parties .aq-paper-signer{display:grid;grid-template-columns:80px 220px 190px;justify-content:end;gap:16px}
+  .aq-paper-parties .aq-paper-signer>span:first-child{text-align:right}
+  .aq-paper-parties .aq-paper-sig{min-width:0}
+  .aq-paper-parties .aq-paper-sig img{max-width:100%}
+}
+.aq-paper-foot .aq-paper-pending{display:block;font-style:normal;font-size:13px;font-weight:600;color:var(--aq-text-2)}
 .aq-doc-done.is-pending{background:var(--aq-e-blue-soft)}
 .aq-doc-done.is-pending .aq-doc-done-mark{background:var(--aq-e-blue)}
 .aq-doc-done.is-pending strong{color:var(--aq-e-ink)}

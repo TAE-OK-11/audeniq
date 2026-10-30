@@ -57,6 +57,9 @@ export function Agreement() {
     ['체결일', signed ? localStamp(doc.localSignatureAt) : '서명 전'],
   ];
   const termsRef = parsed.meta.find(([k]) => k === '적용 약관')?.[1];
+  // 서명 전에도 서명란에 이용자 이름을 — 계약 당사자의 '서명자' 칸에서 (괄호 설명은 뗀다)
+  const partyName = parsed.articles.flatMap(a => a.blocks).flatMap(b => (b.kind === 'kv' ? b.rows : []))
+    .find(([k]) => k === '서명자')?.[1].replace(/\s*\(.*\)\s*$/, '');
 
   const renderBlocks = (blocks: Block[]) => blocks.map((b, i) => {
     switch (b.kind) {
@@ -145,7 +148,7 @@ export function Agreement() {
             </div>
             <div className="aq-paper-signer">
               <span>이용자</span>
-              <strong>{doc.signerName || '—'}</strong>
+              <strong>{doc.signerName || partyName || '—'}</strong>
               <span className="aq-paper-sig">
                 {doc.localSignatureData ? <img src={doc.localSignatureData} alt={`${doc.signerName} 서명`} /> : <em>(서명)</em>}
               </span>
@@ -156,7 +159,7 @@ export function Agreement() {
         <footer className="aq-paper-foot">
           <div>
             <span>문서 확인 코드 (SHA-256)</span>
-            <code>{doc.confirmations?.content_hash ? hashLabel(doc.confirmations.content_hash) : '서명하면 발급돼요'}</code>
+            {doc.confirmations?.content_hash ? <code>{hashLabel(doc.confirmations.content_hash)}</code> : <em className="aq-paper-pending">서명하면 발급돼요</em>}
           </div>
           <Badge tone={docBadgeTone(doc)} className="aq-paper-integrity">{docState(doc)}</Badge>
           <p>

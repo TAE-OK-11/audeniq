@@ -55,6 +55,13 @@ async function contentHash(root: Element | null): Promise<string | undefined> {
   return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** 발급하지 못했을 때 머리말 제목: 문서의 큰 제목(신청서·계약서 등). 없으면 탭 제목에서 알림 수 '(3) '와 사이트 이름을 뗀다 */
+function fallbackTitle(root: Element): string {
+  const h = root.querySelector('h1')?.textContent?.replace(/\s+/g, ' ').trim();
+  if (h) return h;
+  return document.title.replace(/^\(\d+\+?\)\s*/, '').replace(/\s*[·|-]\s*AUDENIQ[\w ]*$/i, '').trim() || 'AUDENIQ';
+}
+
 const nextFrame = () => new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r())));
 
 /**
@@ -73,7 +80,7 @@ export async function printWithStamp(doc: { kind: PrintKind; ref: string; title?
   } catch (e) {
     set({
       document_code: '—', verification_code: '—', printed_at: new Date().toISOString(), printed_by: '—',
-      title: doc.title ?? document.title, verify_url: '',
+      title: doc.title ?? fallbackTitle(root), verify_url: '',
       unverified: MOCK ? '체험 모드 출력물 — 원본 검증코드가 없어요' : '검증코드를 발급하지 못한 출력물 — 원본으로 확인되지 않아요',
     });
     void e;
