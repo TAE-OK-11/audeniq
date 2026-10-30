@@ -534,12 +534,18 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
    ========================================================================== */
 .auth-page{background:#fff}
 .auth-page>.aq-auth-glow{display:none}
-.auth-page::before,.auth-page::after{content:"";position:absolute;z-index:0;border-radius:50%;filter:blur(80px);pointer-events:none}
-.auth-page::before{width:520px;height:520px;left:-120px;top:-140px;background:#c9d8ff;opacity:.9}
-.auth-page::after{width:480px;height:480px;right:-120px;bottom:-160px;background:#e2d6ff;opacity:.9}
+/* 빛 번짐은 filter:blur(80px) 원 대신 같은 모양의 방사 그라데이션으로 그린다 — 반지름 --r 원을 80px 흐린 것과 같은 가장자리
+   (가우스 누적 분포: 원 경계에서 ±80px마다 84%·50%·16%). 아이폰 사파리는 큰 흐림 레이어를 타일로 나눠 그리다가
+   위에 겹친 글자(하단 링크·로고) 자리만 흐림이 빠져 흰 네모가 보였고, 흐림 필터는 휴대폰 GPU에도 무겁다.
+   상자는 원보다 240px씩 크게(흐림이 퍼지는 자리까지) 두고 가운데는 예전 원의 가운데와 같다 */
+.auth-page::before,.auth-page::after{content:"";position:absolute;z-index:0;pointer-events:none;opacity:.9;
+  width:calc(2 * var(--r) + 480px);height:calc(2 * var(--r) + 480px);
+  background:radial-gradient(circle closest-side,rgb(var(--c)) calc(var(--r) - 160px),rgb(var(--c) / .84) calc(var(--r) - 80px),rgb(var(--c) / .5) var(--r),rgb(var(--c) / .16) calc(var(--r) + 80px),rgb(var(--c) / .023) calc(var(--r) + 160px),rgb(var(--c) / 0) calc(var(--r) + 240px))}
+.auth-page::before{--r:260px;--c:201 216 255;left:-360px;top:-380px}
+.auth-page::after{--r:240px;--c:226 214 255;right:-360px;bottom:-400px}
 @media (max-width:760px){
-  .auth-page::before{width:340px;height:340px;left:-140px;top:-120px}
-  .auth-page::after{width:320px;height:320px;right:-140px;bottom:-120px}
+  .auth-page::before{--r:170px;left:-380px;top:-360px}
+  .auth-page::after{--r:160px;right:-380px;bottom:-360px}
 }
 
 /* 카드는 스튜디오 디자인 그대로 — 스튜디오 머리와 같은 로고 줄(로고 + STUDIO 표시)을 카드 위에 두고,
@@ -686,6 +692,8 @@ details.auth-privacy>p{margin:2px 0 0}
     /* 머리글이 없는 공개 화면(스마트링크·아티스트 소개·보도자료)은 흰 띠를 두지 않는다 — 바탕이 흐린 커버 색이라
        상태 표시줄 칸만 흰색으로 칠해지고, 스크롤하면 그 흰 칸이 커졌다 줄었다 하며 움직여 보였다(녹화) */
     body:has(.aq-smartlink)>.aq-tint-top{display:none}
+    /* 로그인·가입·계정 찾기도 같다 — 흰 머리가 없고 바탕이 빛 번짐 색이라, 스크롤하면 로고 아래로 흰 줄(띠의 보이는 4px)이 보였다 */
+    body:has(.auth-page)>.aq-tint-top{display:none}
   }
 }
 /* 공개 화면(스마트링크·아티스트 소개·소식·디스코그래피·보도자료)에는 위 흰 덮개(lib/topCover.ts)도 두지 않는다 —
@@ -1806,6 +1814,11 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
   #modal.aq-chat-mode>.modal-inner{height:100dvh!important;display:flex!important;flex-direction:column}
   #modal.aq-chat-mode #modalBody{flex:1 0 auto;display:flex;flex-direction:column}
   #modal.aq-chat-mode .aq-thread-reply{margin-top:auto}
+}
+/* 휴대폰 아래 시트: 끝에서 더 당겨도 내용이 고무줄처럼 끌려 카드 안에 빈 흰 판이 생기지 않게 한다.
+   맨 위에서 아래로 당기면 시트째 끌려 내려간다 (components/Modal의 touch 끌기) */
+@media (max-width:760px){
+  #modal .modal-inner{overscroll-behavior-y:none}
 }
 
 

@@ -306,32 +306,30 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
   const bumpRef = useRef(guard);
   bumpRef.current = guard;
 
-  // 휴대폰 아래 시트: 위쪽 머리(손잡이)를 잡고 끌어내려 닫는다. 덜 끌면 제자리로 부드럽게 돌아간다.
+  // 휴대폰 아래 시트: 끌어내려 닫는다. 덜 끌면 제자리로 부드럽게 돌아간다.
   // 놓는 순간의 속도(최근 움직임)로 닫을지 정하고, 닫을 때는 그 속도를 이어받아 내려간다
+  // - 위쪽 머리(손잡이·제목): 어디서든 바로 끌린다 (pointer)
+  // - 내용: 맨 위까지 올라간 상태에서 아래로 당기면 시트째 끌린다 (touch) — 예전엔 iOS가 시트 안 내용만 고무줄처럼
+  //   끌어내려 카드 위쪽이 빈 흰 판으로 늘어나 보였다
   const sheet = useRef<{ y: number; dy: number; v: number; lastY: number; lastT: number } | null>(null);
   const isSheet = () => window.matchMedia?.('(max-width: 760px)').matches && !NOT_SHEET_MODES.some(m => modalClass?.includes(m));
-  const onDragStart = (e: React.PointerEvent) => {
-    if (closeDisabledRef.current || e.pointerType === 'mouse' || !isSheet()) return;
-    if ((e.target as Element).closest('button,a,input,select,textarea')) return;
-    sheet.current = { y: e.clientY, dy: 0, v: 0, lastY: e.clientY, lastT: performance.now() };
-    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-  };
-  const onDragMove = (e: React.PointerEvent) => {
+  const dragBegin = (y: number) => { sheet.current = { y, dy: 0, v: 0, lastY: y, lastT: performance.now() }; };
+  const dragTo = (y: number) => {
     const d = sheet.current;
     const el = innerRef.current;
     if (!d || !el) return;
-    d.dy = Math.max(0, e.clientY - d.y);
+    d.dy = Math.max(0, y - d.y);
     const now = performance.now();
     const dt = now - d.lastT;
-    if (dt > 0) d.v = d.v * 0.4 + ((e.clientY - d.lastY) / dt) * 0.6; // px/ms, 최근 움직임에 무게
-    d.lastY = e.clientY;
+    if (dt > 0) d.v = d.v * 0.4 + ((y - d.lastY) / dt) * 0.6; // px/ms, 최근 움직임에 무게
+    d.lastY = y;
     d.lastT = now;
     // 위로는 끌리지 않고, 아래로는 손가락을 따라간다
     el.style.transition = 'none';
     el.style.animation = 'none';
     el.style.transform = `translate3d(0,${d.dy}px,0)`;
   };
-  const onDragEnd = () => {
+  const dragEnd = () => {
     const d = sheet.current;
     const el = innerRef.current;
     sheet.current = null;
@@ -356,6 +354,70 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
       el.style.transform = '';
     }
   };
+  const onDragStart = (e: React.PointerEvent) => {
+    if (closeDisabledRef.current || e.pointerType === 'mouse' || !isSheet()) return;
+    if ((e.target as Element).closest('button,a,input,select,textarea')) return;
+    dragBegin(e.clientY);
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+  };
+  const onDragMove = (e: React.PointerEvent) => dragTo(e.clientY);
+  const dragRef = useRef({ dragBegin, dragTo, dragEnd, isSheet });
+  dragRef.current = { dragBegin, dragTo, dragEnd, isSheet };
+  // 내용에서 당기기 — 아래로 움직이기 시작할 때 시트(와 손가락 아래 스크롤 칸)가 맨 위면 시트를 끈다.
+  // 스크롤을 막아야 하므로 passive가 아닌 touchmove로 받는다
+  useEffect(() => {
+    const el = innerRef.current;
+    if (!el) return;
+    let start: { x: number; y: number; target: Element } | null = null;
+    let mode: '' | 'drag' | 'scroll' = '';
+    const scrolledAbove = (t: Element) => {
+      for (let n: Element | null = t; n && n !== el.parentElement; n = n.parentElement) {
+        if (n instanceof HTMLElement && n.scrollTop > 0) return true;
+      }
+      return false;
+    };
+    const onStart = (e: TouchEvent) => {
+      start = null;
+      mode = '';
+      if (e.touches.length !== 1 || closeDisabledRef.current || !dragRef.current.isSheet()) return;
+      const t = e.target as Element;
+      if (t.closest('.modal-top')) return; // 머리는 pointer 쪽이 맡는다
+      start = { x: e.touches[0].clientX, y: e.touches[0].clientY, target: t };
+    };
+    const onMove = (e: TouchEvent) => {
+      if (!start) return;
+      const y = e.touches[0].clientY;
+      if (!mode) {
+        const dy = y - start.y;
+        const dx = e.touches[0].clientX - start.x;
+        if (Math.abs(dy) < 6 && Math.abs(dx) < 6) return;
+        // 아래로, 세로로, 맨 위에서 시작한 당김만 시트를 끈다 (가로 넘김·글 선택·위로 스크롤은 그대로)
+        mode = dy > 0 && Math.abs(dy) > Math.abs(dx) && !scrolledAbove(start.target) ? 'drag' : 'scroll';
+        if (mode === 'drag') {
+          (document.activeElement as HTMLElement | null)?.blur?.();
+          dragRef.current.dragBegin(y);
+        }
+      }
+      if (mode !== 'drag') return;
+      e.preventDefault();
+      dragRef.current.dragTo(y);
+    };
+    const onEnd = () => {
+      if (mode === 'drag') dragRef.current.dragEnd();
+      start = null;
+      mode = '';
+    };
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchmove', onMove, { passive: false });
+    el.addEventListener('touchend', onEnd);
+    el.addEventListener('touchcancel', onEnd);
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onEnd);
+    };
+  }, []);
 
   const cls = ['modal', modalClass, leaving ? 'is-leaving' : '', nudge ? 'is-nudge' : ''].filter(Boolean).join(' ');
 
@@ -375,7 +437,7 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
         className="modal-inner" ref={innerRef} tabIndex={-1}
         role="dialog" aria-modal="true" aria-labelledby={titleId}
       >
-        <div className="modal-top" onPointerDown={onDragStart} onPointerMove={onDragMove} onPointerUp={onDragEnd} onPointerCancel={onDragEnd}>
+        <div className="modal-top" onPointerDown={onDragStart} onPointerMove={onDragMove} onPointerUp={dragEnd} onPointerCancel={dragEnd}>
           <h2 id={titleId}>{title}</h2>
           <button className="icon-button" type="button" aria-label="닫기" onClick={requestClose} disabled={closeDisabled}>
             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M6 6l12 12M18 6 6 18" /></svg>
