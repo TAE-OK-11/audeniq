@@ -71,8 +71,10 @@ function StatementForm({ onSave }: { onSave: (s: { amount: number; note: string 
       <p className="small muted">실제로는 운영팀이 정산금을 넣어 드려요. 체험에서는 직접 넣어 지급 요청까지 해 볼 수 있어요.</p>
       <div className="ui-field">
         <label htmlFor="stAmount">금액 (원)</label>
-        <input id="stAmount" inputMode="numeric" required placeholder="예: 50,000"
-          value={amount ? Number(amount).toLocaleString('ko-KR') : ''} onChange={e => setAmount(e.target.value.replace(/\D/g, '').replace(/^0+/, '').slice(0, 15))} />
+        <span className="aq-affix" data-unit="원">
+          <input id="stAmount" inputMode="numeric" required placeholder="예: 50,000"
+            value={amount ? Number(amount).toLocaleString('ko-KR') : ''} onChange={e => setAmount(e.target.value.replace(/\D/g, '').replace(/^0+/, '').slice(0, 15))} />
+        </span>
       </div>
       <div className="ui-field">
         <label htmlFor="stNote">내용<span className="aq-optional">선택</span></label>
@@ -331,7 +333,7 @@ export function Settlement() {
               </button>
             </div>
           )}
-          {listsPending ? <SkeletonRows count={3} /> : orderedStatements.length ? (
+          {listsPending ? <SkeletonRows count={3} pattern="amount" /> : orderedStatements.length ? (
             <div className="aq-catalog-cards aq-stagger">
               {/* 통장처럼 날짜별로 — 들어온 정산금은 +, 운영팀이 거둬 간 금액은 − */}
               {statementDays.map(([d, rows]) => (
@@ -368,7 +370,7 @@ export function Settlement() {
         </div>
       ) : (
         <div id="payoutList" className="ui-tab-panel" key="po">
-          {listsPending ? <SkeletonRows count={3} /> : payouts.length ? (
+          {listsPending ? <SkeletonRows count={3} pattern="amount" /> : payouts.length ? (
             <div className="aq-catalog-cards aq-stagger">
               {(MOCK ? [...payouts].reverse() : payouts).map(p => (
                 <button type="button" key={p.id} className="ui-row aq-statement-card" onClick={() => setDetail({ kind: 'payout', id: p.id })}>
@@ -456,6 +458,7 @@ export function Settlement() {
                     value={amount ? Number(amount).toLocaleString('ko-KR') : ''}
                     onChange={e => setAmount(e.target.value.replace(/\D/g, '').replace(/^0+/, '').slice(0, 15))}
                   />
+                  <span className="aq-amount-unit" aria-hidden="true">원</span>
                   <button type="button" id="payoutAll" className="ui-btn is-white is-sm" onClick={() => setAmount(String(Math.floor(left)))}>전액</button>
                 </div>
                 <p className="ui-field-help">
