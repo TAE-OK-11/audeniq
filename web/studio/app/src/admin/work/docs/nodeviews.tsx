@@ -1,6 +1,7 @@
 // 문서 블록의 화면 — 서버 값은 모두 React 글자로만 그린다(HTML로 넣지 않음). 실시간 값은 EmbedStore가
 // 같은 화면의 블록들을 한 요청으로 묶어 불러온다.
-import { createContext, useContext, type ReactNode } from 'react';
+import { useContext, type ReactNode } from 'react';
+import { DocsContext, type DocsCtx } from './context';
 import { NodeViewContent, NodeViewWrapper, type ReactNodeViewProps } from '@tiptap/react';
 import { Link } from '../../../lib/router';
 import { Glyph } from '../../../components/Glyph';
@@ -8,17 +9,9 @@ import { when } from '../../labels';
 import { ENTITY_KIND, PRIORITY_CODE, PRIORITY_NAME, TASK_STATUS, DOC_STATUS, entityLink } from '../labels';
 import { sizeLabel, type People } from '../ui';
 import type { EntityKind, Priority, TaskStatus } from '../types';
-import { EmbedStore, useEmbed } from './embeds';
+import { useEmbed } from './embeds';
 import { embedKey, isSafeUrl } from './model';
 
-export interface DocsCtx {
-  embeds: EmbedStore;
-  people: People;
-  editable: boolean;
-  inlineUrl: (attachmentId: string) => string;
-  fileUrl: (attachmentId: string) => string;
-}
-export const DocsContext = createContext<DocsCtx | null>(null);
 function useDocs(): DocsCtx {
   const c = useContext(DocsContext);
   if (!c) throw new Error('DocsContext missing');

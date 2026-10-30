@@ -23,6 +23,7 @@ const STATUS_EVERY_MS = 60_000;
 // 점검·서버 장애 중에는 같은 간격으로 상태를 확인해, 복구되면 전체 화면을 자동으로 내린다.
 const STATUS_DURING_SERVER_DOWN_MS = 30_000;
 const VERSION_EVERY_MS = 5 * 60_000;
+const VERSION_MIN_GAP_MS = 60_000;
 /** ‘지금 새로고침’을 누른 대상 버전 — 새로고침 뒤에도 같은 차이면 다시 묻지 않는다 */
 const RELOADED_FOR_KEY = 'aq-update-reloaded-for';
 
@@ -59,17 +60,25 @@ function currentEntry(): string | null {
   const el = document.querySelector<HTMLScriptElement>('script[type="module"][src*="/assets/index-"]');
   return el ? new URL(el.src, window.location.href).pathname : null;
 }
-async function latestEntry(): Promise<string | null> {
+async function latestEntry(timeoutMs = 10_000): Promise<string | null> {
   try {
     // 주소마다 다른 쿼리를 붙여 CDN(CloudFront) 캐시를 건너뛴다. '/'는 엣지에 캐시돼 연달아 배포한 뒤
     // 한동안 옛 index를 돌려줬다 — 새 버전 화면에서도 '다른 버전'으로 보여 새로고침해도 이 창이 계속 떴다
-    const res = await fetch(`${import.meta.env.BASE_URL}?__v=${Date.now()}`, { cache: 'no-store', credentials: 'same-origin', headers: { Accept: 'text/html' } });
+    const res = await fetch(`${import.meta.env.BASE_URL}?__v=${Date.now()}`, { cache: 'no-store', credentials: 'same-origin', headers: { Accept: 'text/html' }, signal: AbortSignal.timeout(timeoutMs) });
     if (!res.ok) return null;
     const m = ENTRY_RE.exec(await res.text());
     return m ? new URL(m[1], window.location.href).pathname : null;
   } catch {
     return null;
   }
+}
+
+/** 새 버전으로 다시 연다 — 같은 주소를 reload()하면 엣지(CloudFront)·브라우저가 캐시해 둔 옛 index를 다시 줘서
+ *  '지금 새로고침'을 눌러도 그대로였다. 주소마다 다른 표시(__r)를 붙여 새 index를 받고, 열리면 main.tsx가 표시를 지운다 */
+function reloadFresh() {
+  const url = new URL(window.location.href);
+  url.searchParams.set('__r', Date.now().toString(36));
+  window.location.replace(url.toString());
 }
 
 // ---------------------------------------------------------------------------
@@ -99,9 +108,11 @@ export function detectDeviceIssues(): DeviceIssue[] {
 // ---------------------------------------------------------------------------
 function DialogBody({ kind, title, body, meta, actions }: {
   kind: ErrorKind; title: string; body: ReactNode; meta?: string[];
-  actions: { label: string; onClick: () => void; primary?: boolean }[];
+  actions: { label: string; onClick: () => void; primary?: boolean; busyLabel?: string }[];
 }) {
   const close = useModalClose();
+  // 누른 버튼은 바로 '…하는 중'으로 — 새로고침 전 확인하는 동안 화면이 그대로라 눌리지 않은 것처럼 보였다
+  const [busy, setBusy] = useState('');
   return (
     <div className={`aq-sysdialog is-${kind}`}>
       <span className="aq-sysdialog-icon"><ErrorIcon kind={kind} /></span>
@@ -110,8 +121,10 @@ function DialogBody({ kind, title, body, meta, actions }: {
       {meta && <p className="aq-sysdialog-meta">{meta.join(' · ')}</p>}
       <div className="aq-sysdialog-actions">
         {actions.map(a => (
-          <button key={a.label} type="button" className={`ui-btn${a.primary ? ' is-primary' : ' is-soft'}`} onClick={() => { a.onClick(); if (!a.primary) close(); }}>
-            {a.label}
+          <button key={a.label} type="button" className={`ui-btn${a.primary ? ' is-primary' : ' is-soft'}${busy === a.label ? ' is-busy' : ''}`}
+            disabled={!!busy} aria-busy={busy === a.label || undefined}
+            onClick={() => { if (a.busyLabel) setBusy(a.label); a.onClick(); if (!a.primary) close(); }}>
+            {busy === a.label && a.busyLabel ? a.busyLabel : a.label}
           </button>
         ))}
       </div>
@@ -222,9 +235,12 @@ export function SystemStatus({ children }: { children: ReactNode }) {
     const mine = currentEntry();
     if (!mine) return;
     let busy = false;
+    // 탭을 자주 오가도 index를 매번 받지 않게 — 마지막 확인 뒤 1분이 지났을 때만
+    let lastAt = Date.now();
     const check = async () => {
-      if (busy || document.visibilityState !== 'visible') return;
+      if (busy || document.visibilityState !== 'visible' || Date.now() - lastAt < VERSION_MIN_GAP_MS) return;
       busy = true;
+      lastAt = Date.now();
       const latest = await latestEntry();
       busy = false;
       // 이 버전으로 가려고 이미 새로고침했는데도 그대로면(엣지·브라우저 캐시가 옛 화면을 준 경우) 다시 묻지 않는다 —
@@ -328,7 +344,7 @@ export function SystemStatus({ children }: { children: ReactNode }) {
             body={<p>스튜디오가 업데이트됐어요. 새로고침하면 최신 기능과 수정 사항이 적용돼요. 작성 중인 내용이 있으면 저장한 뒤 새로고침해 주세요.</p>}
             actions={[
               { label: '나중에', onClick: () => { void latestEntry().then(v => { updateDismissedFor.current = v; }); setUpdateReady(false); } },
-              { label: '지금 새로고침', onClick: () => { void latestEntry().then(v => { if (v) safeSet('session', RELOADED_FOR_KEY, v); window.location.reload(); }); }, primary: true },
+              { label: '지금 새로고침', busyLabel: '새로고침하는 중', primary: true, onClick: () => { void latestEntry(3000).then(v => { if (v) safeSet('session', RELOADED_FOR_KEY, v); reloadFresh(); }); } },
             ]}
           />
         </Modal>

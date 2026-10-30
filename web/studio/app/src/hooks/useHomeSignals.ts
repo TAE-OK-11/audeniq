@@ -4,9 +4,10 @@
 // 실패하면 그 신호만 빠진다 (홈은 다른 할 일을 그대로 보여 준다).
 import { useEffect, useState } from 'react';
 import type { Release } from '../api/types';
-import { orgPath, req } from '../api/http';
+import { orgId, orgPath, req } from '../api/http';
 import { aiActionRequests, aiPermissionRequests, aiSubmissions } from '../api/aiConnections';
 import { MOCK } from '../lib/mode';
+import { cacheAge, cacheGet, cacheSet } from '../lib/asyncCache';
 import { shiftDate, todayStr } from '../lib/date';
 import { pitchDaysLeft } from '../lib/home';
 
@@ -31,14 +32,21 @@ const PITCH_RESULT_DAYS = 30;
 const SPLIT_CHECK = 5;
 
 const EMPTY: HomeSignals = { splits: [] };
+/** 홈에 다시 들어와도 이만큼 안에 받은 신호는 다시 묻지 않는다 — 무언가 바꾸면(lib/asyncCache) 바로 비워진다 */
+export const HOME_FRESH_MS = 60_000;
 
 export function useHomeSignals(releases: Release[], loading: boolean): HomeSignals {
-  const [signals, setSignals] = useState<HomeSignals>(EMPTY);
   // 목록이 같으면 다시 묻지 않는다 (상태·발매일이 바뀌면 다시)
   const key = releases.map(r => `${r.id}:${r.status}:${r.release_date ?? ''}`).join('|');
+  const cacheKey = `${orgId()}|home-signals|${key}`;
+  // 다시 들어온 홈은 지난번 신호를 바로 — 카드가 뒤늦게 끼어들며 화면이 밀리지 않게
+  const [signals, setSignals] = useState<HomeSignals>(() => cacheGet<HomeSignals>(cacheKey) ?? EMPTY);
 
   useEffect(() => {
     if (MOCK || loading) return;
+    const cached = cacheGet<HomeSignals>(cacheKey);
+    if (cached) setSignals(cached);
+    if (cached && cacheAge(cacheKey) < HOME_FRESH_MS) return;
     let alive = true;
     const today = todayStr();
     // 피칭은 접수한 발매가 나오기 전에만 — 발매일이 가까운 것부터
@@ -104,11 +112,13 @@ export function useHomeSignals(releases: Release[], loading: boolean): HomeSigna
     });
 
     void Promise.all([pitch, pitchActive, splits, ai]).then(([p, pa, s, a]) => {
-      if (alive) setSignals({ pitch: p, pitchActive: pa, splits: s, ai: a });
+      const next = { pitch: p, pitchActive: pa, splits: s, ai: a };
+      cacheSet(cacheKey, next);
+      if (alive) setSignals(next);
     });
     return () => { alive = false; };
     // releases는 key로 본다
-  }, [key, loading]);
+  }, [cacheKey, loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return signals;
 }

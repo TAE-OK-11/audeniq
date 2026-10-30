@@ -133,9 +133,12 @@ const PROFILE_LIMIT = 48 * 1024; // 요청 본문 64KB 한도 안에서 여유�
  *  커버는 업로드한 파일(artwork_asset_id = coverAssetId)로 참조·검사되므로, 그 참조가 있으면
  *  PNG가 아닌 인라인 미리보기는 비워 보낸다 (2026-10-10 중계 Worker 긴급 패치와 같은 규칙). */
 export function storedCoverData(coverData: string | undefined, coverAssetId: string | undefined): string | undefined {
-  if (!coverData || !coverAssetId) return coverData;
+  if (!coverData || coverData.startsWith('data:image/png;base64,')) return coverData;
+  // PNG가 아닌 data:·blob:은 업로드 전이어도 보내지 않는다 — 커버를 고르고 원본을 올리는 동안 자동 저장이
+  // JPEG 미리보기를 보내 400이 되어 '저장 안 됨'이 떴다. 미리보기는 화면 상태에 남아 있다
+  if (/^(data|blob):/.test(coverData)) return '';
   // 서버 이미지 주소(coverImageUrl)도 저장하지 않는다: 자산 ID로 다시 만든다
-  return coverData.startsWith('data:image/png;base64,') ? coverData : '';
+  return coverAssetId ? '' : coverData;
 }
 
 /** 서버에 보관된 커버 이미지 주소 (작은 미리보기가 있으면 그것). 업로드한 원본은 발매까지 서버에 남는다. */
@@ -730,7 +733,8 @@ export const remoteApi = {
     await req(detailPath(id), { method: 'DELETE', body: { row_version: rel.row_version } });
   },
   /** 음원·커버를 R2에 직접 올리고 서버에 등록 */
-  async uploadFile(file: File, kind: UploadKind, onProgress?: (r: number) => void, signal?: AbortSignal): Promise<UploadResult> {
+  /** onReceived: 파일이 저장소에 다 올라간 순간(서버의 마무리 확인 전) — 화면은 이때부터 다음으로 넘어갈 수 있다 */
+  async uploadFile(file: File, kind: UploadKind, onProgress?: (r: number) => void, signal?: AbortSignal, onReceived?: () => void): Promise<UploadResult> {
     const contentType = uploadContentType(file, kind);
     if (!contentType) {
       throw new ApiError(kind === 'AUDIO' ? '음원은 WAV, FLAC, ALAC(.m4a), AIFF, WavPack, TTA 파일만 올릴 수 있어요.' : kind === 'DOCUMENT' ? '서류는 PDF, JPG, PNG 파일만 올릴 수 있어요.' : '커버는 JPG 또는 PNG 파일만 올릴 수 있어요.', 400, 'UPLOAD_TYPE_UNSUPPORTED');
@@ -764,7 +768,7 @@ export const remoteApi = {
         } else if (saved && e instanceof ApiError && (e.status === 404 || e.status === 409)) {
           // 이어 올리려던 세션이 닫혔다 (만료·취소) — 처음부터 다시
           multipart.forgetSession(file);
-          return remoteApi.uploadFile(file, kind, onProgress, signal);
+          return remoteApi.uploadFile(file, kind, onProgress, signal, onReceived);
         }
         throw e;
       }
@@ -777,6 +781,7 @@ export const remoteApi = {
         throw e;
       }
     }
+    onReceived?.();
     for (let attempt = 0; ; attempt++) {
       if (signal?.aborted) throw new ApiError('업로드를 취소했어요.', 0, 'ABORTED');
       try {

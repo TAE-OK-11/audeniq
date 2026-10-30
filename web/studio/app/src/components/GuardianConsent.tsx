@@ -45,12 +45,17 @@ export function GuardianConsentPanel({ org, releaseId, onClose, onReady }: {
 
   useEffect(() => {
     let live = true;
+    // 서명과 증명서가 모두 준비되면 더 바뀔 것이 없다 — 그 뒤로는 4초마다 묻지 않는다
+    let ready = false;
     const load = () => guardianApi.status(org, releaseId)
-      .then(s => { if (live) setStatus(s); })
+      .then(s => { ready = s.ready; if (live) setStatus(s); })
       .catch(e => { if (live) setError(errorMessage(e, '동의 상태를 불러오지 못했어요.')); });
     void load();
-    const t = window.setInterval(load, POLL_MS);
-    return () => { live = false; window.clearInterval(t); };
+    // 다른 탭·앱에 가 있는 동안은 묻지 않고, 돌아오면 바로 한 번 확인한다
+    const t = window.setInterval(() => { if (!ready && document.visibilityState === 'visible') void load(); }, POLL_MS);
+    const onVisible = () => { if (!ready && document.visibilityState === 'visible') void load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { live = false; window.clearInterval(t); document.removeEventListener('visibilitychange', onVisible); };
   }, [org, releaseId]);
 
   const guardian = status?.guardian;

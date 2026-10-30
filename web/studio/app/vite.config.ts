@@ -2,9 +2,10 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
-import { retainAssets } from './build/retain-assets';
-import { compactCss, purgeCss } from './build/purge-css';
-import { hoverGuard } from './build/hover-guard';
+import { retainAssets } from './build/retain-assets.ts';
+import { compactCss, purgeCss } from './build/purge-css.ts';
+import { hoverGuard } from './build/hover-guard.ts';
+import { dedupeCss } from './build/dedupe-css.ts';
 
 const src = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -20,13 +21,18 @@ export default defineConfig(({ command, mode }) => {
   }
   return ({
   base: '/',
-  plugins: [react(), retainAssets()],
+  // 묶인 CSS에서 뒤 파일에 늘 덮이는 선언을 지운다 (build/dedupe-css)
+  plugins: [react(), retainAssets(), dedupeCss()],
   css: {
     postcss: {
       // :hover는 마우스 환경에서만 (휴대폰 sticky hover 방지) — 개발·빌드 모두 적용해 화면이 같게 한다
       // 빌드에서만 미사용 CSS 제거 (개발 중에는 새 클래스를 바로 쓸 수 있도록 전체 유지)
       plugins: command === 'build'
-        ? [hoverGuard(), purgeCss({ content: [src('./src'), src('./index.html')] }), compactCss()]
+        ? [hoverGuard(), purgeCss({
+          content: [src('./src'), src('./index.html')],
+          // 공개 페이지 스타일은 공개 앱(과 모든 화면이 함께 쓰는 main·상호작용 보조)에 나오는 클래스만
+          scoped: { file: /styles[\\/]public\.css$/, roots: [src('./src/main.tsx'), src('./src/public/PublicApp.tsx')], exclude: [src('./src/App.tsx'), src('./src/routes.ts')], extra: [src('./index.html')] },
+        }), compactCss()]
         : [hoverGuard()],
     },
   },

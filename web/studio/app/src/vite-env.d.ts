@@ -5,6 +5,8 @@ interface ImportMetaEnv {
   readonly VITE_MOCK?: string;
   /** 실제 API 기본 주소 (예: https://api.audeniq.com). 비우면 같은 출처 */
   readonly VITE_API_BASE?: string;
+  /** 실사용 성능 지표를 보낼 주소 (예: /api/rum). 비우면 보내지 않는다 (lib/vitals) */
+  readonly VITE_RUM_ENDPOINT?: string;
 }
 
 interface ImportMeta {

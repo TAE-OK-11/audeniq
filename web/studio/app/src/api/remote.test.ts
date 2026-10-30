@@ -202,8 +202,9 @@ describe('서버 값 정리', () => {
     const jpeg = 'data:image/jpeg;base64,/9j/4AAQ';
     expect(storedCoverData(jpeg, 'asset-1')).toBe('');
     expect(storedCoverData('blob:https://studio/x', 'asset-1')).toBe('');
-    // 업로드 전에는 그대로 둔다 (서버가 커버를 아직 참조하지 못함)
-    expect(storedCoverData(jpeg, undefined)).toBe(jpeg);
+    // 업로드 전에도 JPEG 미리보기는 보내지 않는다 (서버가 PNG 서명 외 인라인 이미지를 거절해 저장 전체가 실패했다)
+    expect(storedCoverData(jpeg, undefined)).toBe('');
+    expect(storedCoverData(jpeg, '')).toBe('');
     expect(storedCoverData('data:image/png;base64,iVBOR', 'asset-1')).toBe('data:image/png;base64,iVBOR');
     // 서버 보관 커버의 표시 주소는 저장하지 않는다 (자산 ID로 다시 만든다)
     expect(storedCoverData('/api/orgs/o/assets/a/image', 'asset-1')).toBe('');

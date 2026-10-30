@@ -124,7 +124,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 }
 /* 빠진 입력칸은 흔들지 않고(옅은 빨강 면으로 이미 표시됨), 오류 안내는 살짝 떠오르기만 */
 .aq-invalid{animation:none}
-.aq-shake{animation:aq-fade-up .22s var(--aq-e-ease) both}
+.aq-shake{animation:aq-fade-up var(--aq-motion-base) var(--aq-enter) both}
 /* 큰 등장 하나만 길던 곳을 같은 박자로 */
 .auth-card{animation-duration:.45s}
 @media(hover:hover){.dashboard-grid .service-item:hover{background:var(--aq-blue-100)}}
@@ -336,7 +336,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 #view-new .aq-review-card .ui-btn.aq-review-edit{flex:none;position:static;margin:0;min-width:52px;font-size:13px}
 
 /* ---------- 접수 실패 ---------- */
-.aq-submit-error{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px 12px;margin-top:20px;padding:18px;border-radius:var(--aq-r-2xl);background:var(--aq-red-50);animation:aq-fade-up .32s var(--aq-e-spring) both}
+.aq-submit-error{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px 12px;margin-top:20px;padding:18px;border-radius:var(--aq-r-2xl);background:var(--aq-red-50);animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) both}
 .aq-submit-error-icon{display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:var(--aq-red-500);color:#fff}
 .aq-submit-error-text strong{display:block;margin:4px 0 4px;font-size:15px;letter-spacing:0;color:var(--aq-red-700)}
 .aq-submit-error-text p{margin:0;font-size:14px;line-height:1.6;color:var(--portal-ink);overflow-wrap:anywhere}
@@ -358,8 +358,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 @keyframes aq-menu-in{from{opacity:0;transform:translate3d(0,-8px,0) scale(.98)}to{opacity:1;transform:none}}
 @keyframes aq-menu-out{to{opacity:0;transform:translate3d(0,-6px,0) scale(.98)}}
 .portal-header #portalNav{transform-origin:calc(100% - 28px) 0;animation:aq-menu-in var(--aq-motion-base) var(--aq-enter) both!important}
-.portal-header #portalNav.is-closing{animation:aq-menu-out .15s cubic-bezier(.4,0,1,1) forwards!important;pointer-events:none}
-#portalNav.is-closing>*{animation:none}
+.portal-header #portalNav.is-closing{animation:aq-menu-out var(--aq-motion-short) var(--aq-exit) forwards!important;pointer-events:none}
 #portalNav .aq-nav-card button,#portalNav .aq-nav-me button{animation:none!important}
 @media (max-width:760px){
   /* 휴대폰은 화면 전체를 덮으므로 크기 변화 없이 살짝 내려오며 나타난다.
@@ -450,7 +449,6 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
    ========================================================================== */
 /* 휴대폰 아래 시트: 위쪽에 손잡이를 보여 주고, 머리를 잡고 끌어내려 닫는다 (Modal.tsx) */
 @media (max-width:760px){
-  #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode)>.modal-inner{position:relative}
   #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode):not(.aq-confirm-mode):not(.aq-sysdialog-mode)>.modal-inner::before{
     content:"";position:absolute;top:8px;left:50%;width:36px;height:4px;margin-left:-18px;border-radius:2px;background:var(--aq-gray-200);pointer-events:none
   }
@@ -496,6 +494,8 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
   /* 그 99% 흰색 너머로 뒤 화면 글자가 흐리게 비쳤다(문의 대화 창 등) — 시트 안의 머리·본문에 불투명한 흰 면을 깔아 가린다.
      시트(고정 레이어) 자체는 99% 그대로라 위의 아이폰 Safari 잘림 대응은 그대로. 그림자 펼침으로 시트 안쪽 여백까지 덮는다 */
   #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode)>.modal-inner>:is(.modal-top,#modalBody){background:#fff;box-shadow:0 0 0 24px #fff}
+  /* 시스템 창(새 버전·기기 확인)은 닫기 줄을 본문 아이콘 위로 겹쳐 올린다 — 흰 면을 깔면 아이콘이 가려졌다 */
+  #modal.aq-sysdialog-mode>.modal-inner>.modal-top:not(#modalBody){background:none;box-shadow:none}
 }
 
 /* 줄에서 고른 탭·칩으로 밀어 줄 때 부드럽게 (lib/rowNav.ts) */
@@ -543,8 +543,9 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .aq-smartlink-list a:focus-visible{outline:var(--aq-focus);outline-offset:2px}
 .aq-smartlink-logo{border-radius:12px!important}
 .aq-smartlink-name{display:grid;gap:2px;min-width:0}
-.aq-smartlink-name strong{font-size:var(--aq-fs-lg);font-weight:700;letter-spacing:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.aq-smartlink-name small{font-size:var(--aq-fs-xs);color:var(--aq-text-4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 이름·설명은 두 줄까지 — 한 줄로 자르면 휴대폰에서 'YouTube Mu…'처럼 플랫폼 이름이 잘렸다 */
+.aq-smartlink-name strong{font-size:var(--aq-fs-lg);font-weight:700;letter-spacing:0;line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow-wrap:anywhere}
+.aq-smartlink-name small{font-size:var(--aq-fs-xs);color:var(--aq-text-4);line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
 .aq-smartlink-go{display:inline-flex;align-items:center;gap:2px;height:var(--aq-h-xs,32px);padding:0 10px 0 14px;border-radius:var(--aq-r-pill);background:var(--aq-primary);color:#fff;font-size:13px;font-weight:700;white-space:nowrap}
 .aq-smartlink-list a:hover .aq-smartlink-go{background:var(--aq-primary-hover)}
 @media (prefers-reduced-motion:reduce){.aq-smartlink-list a:is(:active,.is-pressed){transform:none}}
@@ -704,7 +705,7 @@ details.auth-privacy>p{margin:2px 0 0}
 
 /* 음악 리포트 — 처음 불러오는 동안의 자리 표시(Reports.tsx ReportSkeleton). 실제 카드와 같은 칸·대략 같은 높이,
    옅은 파랑 카드 위에서 보이도록 흰 빛으로 반짝인다 */
-.aq-report.is-pending .aq-skel{background:linear-gradient(90deg,#fff 25%,rgba(255,255,255,.5) 45%,#fff 65%);background-size:300% 100%}
+.aq-report.is-pending .aq-skel{--aq-skel-bg:linear-gradient(90deg,#fff 25%,rgba(255,255,255,.5) 45%,#fff 65%);--aq-skel-w:900%;--aq-skel-anim:aq-shimmer-3}
 .aq-report.is-pending .aq-report-rows .min-0{gap:8px}
 .aq-report-skel-amount{width:min(220px,60%);height:50px;margin:2px 0 0;border-radius:var(--aq-r-md)}
 .aq-report-skel-pill{width:118px;height:28px;margin-top:12px;border-radius:var(--aq-r-pill)}
@@ -779,7 +780,6 @@ button.aq-inline-link{display:inline;padding:0;border:0;background:none;font:inh
 .aq-pay-field .ui-field-help{display:block;margin-top:8px}
 /* 알림 줄 끝 — 파란 점(안 읽음)과 화살표를 한 줄로 */
 .aq-notice-end{display:inline-flex;align-items:center;gap:8px;flex:none}
-#readAllNotices{gap:4px}
 /* 달력에서 고를 수 없는 날도 읽을 수 있게 (거의 보이지 않던 회색 300 → 400) */
 .aq-cal-grid button:disabled{color:var(--aq-gray-400)}
 /* 머리의 알림·프로필 버튼도 터치 기기에서는 손가락 영역을 44px로 */
@@ -816,8 +816,11 @@ button.settle-hero-account.is-button .min-0{display:grid}
   .aq-side-cta{display:flex;width:100%;justify-content:flex-start;gap:8px;margin:0 0 20px;padding:0 12px}
   .aq-side-group{margin-bottom:18px}
   .aq-side-title{margin:0 0 6px;padding:0 12px;font-size:12px;font-weight:700;color:var(--aq-text-4)}
-  .aq-side-item{display:flex;align-items:center;gap:10px;min-height:42px;padding:0 12px;border-radius:var(--aq-r-md);font-size:15px;font-weight:600;color:var(--aq-text-2);text-decoration:none;transition:background-color var(--aq-dur-fast) var(--aq-ease)}
+  .aq-side-item{display:flex;align-items:center;min-height:42px;border-radius:var(--aq-r-md);font-size:15px;font-weight:600;color:var(--aq-text-2);text-decoration:none;transition:background-color var(--aq-dur-fast) var(--aq-ease)}
   .aq-side-item svg{color:var(--aq-text-4)}
+  /* 이름은 한 줄 — 상태 배지('보완 1')가 붙으면 '권리·보완 서류'가 두 줄로 꺾였다. 여백을 조금 줄여 자리를 만든다 */
+  .aq-side-item{gap:8px;padding:0 10px}
+  .aq-side-item>span:not([class]){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .aq-side-item:hover{background:var(--aq-gray-50,#f7f9fc)}
   .aq-side-item.is-active{background:var(--aq-surface);color:var(--aq-blue-500)}
   .aq-side-item.is-active svg{color:var(--aq-blue-500)}
@@ -992,7 +995,7 @@ body.wizard-mode .portal-header,.portal-header:has(#portalNav:not([hidden])){box
 .aq-artistpage{align-items:flex-start}
 .aq-artist-card{max-width:440px;margin:clamp(0px,4vh,40px) 0}
 .aq-artist-avatar{display:grid;place-items:center;width:96px;height:96px;margin:8px auto 0;border-radius:50%;color:#fff;font-size:38px;font-weight:var(--aq-fw-heavy,800);box-shadow:0 0 0 4px #fff,0 10px 28px -12px rgba(27,51,104,.45)}
-.aq-artist-card h1{margin-top:18px;font-size:24px}
+.aq-artist-card h1{margin-top:18px}
 .aq-artist-bio{margin:8px 0 0;font-size:14px;line-height:1.7;color:var(--aq-text-2);white-space:pre-line;word-break:keep-all;overflow-wrap:anywhere}
 .aq-artist-platforms{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin:18px 0 0;padding:0;list-style:none}
 .aq-artist-platforms a{display:block;border-radius:12px;transition:transform var(--aq-press-out) var(--aq-press-spring)}
@@ -1106,7 +1109,7 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
 .aq-press-release{display:grid;grid-template-columns:88px minmax(0,1fr);gap:14px;align-items:start}
 .aq-press-cover{display:grid;place-items:center;width:88px;height:88px;object-fit:cover;border-radius:var(--aq-r-lg);background:var(--aq-gray-100)}
 .aq-press-cover.is-empty .aq-cover-glyph{width:36%;height:36%;color:#fff}
-.aq-press-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.aq-press-actions{display:flex;flex-wrap:wrap}
 .aq-press-links .ui-row{padding-block:12px}
 .aq-press-link{display:flex;align-items:center;gap:10px;min-width:0;font-weight:700}
 .aq-press-link small{display:block;font-size:12px;font-weight:500;color:var(--aq-text-4)}
@@ -1114,7 +1117,7 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
 @media(max-width:560px){.aq-press-release{grid-template-columns:64px minmax(0,1fr)}.aq-press-cover{width:64px;height:64px}}
 
 /* 스마트링크 — 발매 전 카운트다운, 가사(자주 묻는 질문과 같은 펼침 줄) */
-.aq-smartlink-countdown{display:grid;gap:2px;margin:14px auto 0;padding:12px 18px;border-radius:var(--aq-r-lg);background:var(--aq-blue-50);width:max-content;max-width:100%}
+.aq-smartlink-countdown{display:grid;margin:14px auto 0;border-radius:var(--aq-r-lg);width:max-content;max-width:100%}
 .aq-smartlink-countdown small{font-size:12px;font-weight:700;color:var(--aq-blue-500)}
 .aq-smartlink-countdown strong{font-size:24px;font-weight:800;letter-spacing:-.01em;color:var(--aq-text);font-variant-numeric:tabular-nums}
 /* 신청서 사전 공개 빠른 선택, 발매 상세 '플랫폼 사전 공개' 카드 */
@@ -1193,7 +1196,7 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
 .aq-post.is-past{opacity:.72}
 .aq-post-tags{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 .aq-post-kind,.aq-post-pin,.aq-post-dday{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;border-radius:var(--aq-r-pill);font-size:11px;font-weight:800}
-.aq-post-kind.is-notice{background:var(--aq-blue-50);color:var(--aq-blue-500)}
+.aq-post-kind.is-notice{color:var(--aq-blue-500)}
 .aq-post-kind.is-event{background:var(--aq-green-50);color:var(--aq-green-600)}
 .aq-post-pin{background:var(--aq-gray-100,#eef1f5);color:var(--aq-text-2)}
 .aq-post-dday{background:var(--aq-primary);color:#fff}
@@ -1217,13 +1220,11 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
 .aq-cheer-msg{min-height:84px;resize:none}
 .aq-cheer-foot{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .aq-cheer-count{font-size:12px;color:var(--aq-text-4);font-variant-numeric:tabular-nums}
-.aq-cheer-done{margin:0;font-size:13px;font-weight:700;color:var(--aq-blue-500)}
+.aq-cheer-done{font-size:13px;font-weight:700;color:var(--aq-blue-500)}
 .aq-cheer-note{margin:0;font-size:11px;color:var(--aq-text-4)}
 .aq-cheer-empty{margin:14px 0 0;padding:18px 12px;border-radius:var(--aq-r-xl);background:var(--aq-surface);font-size:13px;color:var(--aq-text-3);text-align:center}
 .aq-cheer-list{display:grid;gap:4px;margin:12px 0 0;padding:0;list-style:none}
-.aq-cheer{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:start;padding:12px 4px}
-.aq-cheer+.aq-cheer{box-shadow:inset 0 1px 0 var(--aq-line)}
-.aq-cheer.is-fresh{animation:aq-land-fade .5s cubic-bezier(.22,.61,.36,1) both}
+.aq-cheer{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:start}
 .aq-cheer.is-hidden .aq-cheer-text,.aq-cheer.is-hidden .aq-cheer-avatar{opacity:.45}
 .aq-cheer-avatar{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;color:#fff;font-size:14px;font-weight:800}
 .aq-cheer-head{display:flex;align-items:baseline;gap:8px;margin:0;font-size:13px}
@@ -1231,7 +1232,7 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
 .aq-cheer-head time{flex:none;font-size:12px;color:var(--aq-text-4)}
 .aq-cheer-hidden-tag{flex:none;padding:0 6px;border-radius:var(--aq-r-pill);background:var(--aq-gray-100,#eef1f5);font-size:11px;font-weight:700;color:var(--aq-text-3)}
 .aq-cheer-text{margin:3px 0 0;font-size:14px;line-height:1.6;color:var(--aq-text-2);white-space:pre-line;word-break:keep-all;overflow-wrap:anywhere}
-.aq-cheer-heart{display:inline-flex;align-items:center;gap:4px;margin:6px 0 0;padding:2px 8px;border-radius:var(--aq-r-pill);background:var(--aq-red-50);font-size:11px;font-weight:700;color:var(--aq-red-500)}
+.aq-cheer-heart{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:var(--aq-r-pill);background:var(--aq-red-50);font-size:11px;font-weight:700;color:var(--aq-red-500)}
 .aq-cheer-more{margin-top:8px}
 @media (prefers-reduced-motion:reduce){.aq-cheer.is-fresh{animation:none}}
 
@@ -1239,7 +1240,7 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
 .aq-artist-subhead{margin:-4px 0 18px}
 .aq-artist-back{display:flex;align-items:center;gap:10px;margin:0 -8px;padding:6px 8px;border-radius:var(--aq-r-lg);color:inherit;text-decoration:none}
 .aq-artist-back>.aq-glyph{flex:none;color:var(--aq-text-3)}
-.aq-artist-back strong{display:block;font-size:17px;font-weight:800;color:var(--aq-text)}
+.aq-artist-back strong{display:block;font-weight:800;color:var(--aq-text)}
 .aq-artist-back small{display:block;font-size:13px;font-weight:600;color:var(--aq-text-3)}
 .aq-artist-back:focus-visible{outline:var(--aq-focus);outline-offset:2px}
 @media (hover:hover){.aq-artist-back:hover{background:var(--aq-gray-50)}}
@@ -1247,7 +1248,7 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
 .aq-news-filter{margin:0 0 12px}
 .aq-artist-sub .aq-smartlink-foot{text-align:center}
 
-.aq-disco-stats{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px;padding:0;list-style:none}
+.aq-disco-stats{padding:0;list-style:none}
 .aq-disco-stats li{padding:4px 10px;border-radius:var(--aq-r-pill);background:var(--aq-surface);font-size:12px;font-weight:700;color:var(--aq-text-2)}
 .aq-disco-year{margin:18px 0 0}
 .aq-disco-list{display:grid;gap:10px;margin:0;padding:0;list-style:none}
@@ -1328,22 +1329,32 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
 .aq-cheer-done{animation:aq-soft-pop var(--aq-motion-base) var(--aq-enter) both}
 .aq-cheer{border-radius:var(--aq-r-lg)}
 .aq-cheer.is-fresh{animation:aq-land-fade .5s cubic-bezier(.22,.61,.36,1) both,aq-cheer-glow 1.8s ease-out}
-.aq-cheer.is-leaving{animation:aq-leave .26s var(--aq-enter) forwards;pointer-events:none}
+.aq-cheer.is-leaving{animation:aq-leave var(--aq-motion-base) var(--aq-exit) forwards;pointer-events:none}
 .aq-cheer.is-hidden{transition:opacity var(--aq-dur) var(--aq-ease)}
 .aq-cheer-heart{animation:aq-soft-pop var(--aq-motion-base) var(--aq-enter) both}
 .aq-cheer-empty{display:grid;justify-items:center;gap:6px}
 .aq-cheer-empty>.aq-glyph{color:var(--aq-primary);opacity:.7}
 /* 불러오는 동안 — 실제 줄 모양 그대로 */
-.aq-skel{display:block;border-radius:8px;background:linear-gradient(90deg,#F3F6FB 25%,#EAF0F8 37%,#F3F6FB 63%);background-size:400% 100%;animation:aq-shimmer 1.4s ease-in-out infinite}
+/* 반짝이는 띠는 ::after가 transform으로 옮긴다 — background-position을 움직이면 자리표시마다 매 프레임 다시 칠했다.
+   모양·속도·주기는 예전(background-size 400%, 150%→-50%)과 같다: 무늬를 3장 이어 붙인 띠(1200%)를 한 주기만큼 민다.
+   300% 무늬(--aq-skel-w:900%)도 같은 식. 바탕은 비워 두고 띠가 칸 전체를 늘 덮는다(반투명 무늬도 예전처럼 비친다) */
+.aq-skel{display:block;border-radius:8px;--aq-skel-bg:linear-gradient(90deg,#F3F6FB 25%,#EAF0F8 37%,#F3F6FB 63%)}
+.aq-skel,.ui-skel-rows>span{position:relative;overflow:hidden;background:none!important;animation:none}
+.aq-skel::after,.ui-skel-rows>span::after{content:"";position:absolute;top:0;bottom:0;left:0;width:var(--aq-skel-w,1200%);background:var(--aq-skel-bg) 0 0/33.3333% 100% repeat-x;animation:var(--aq-skel-anim,aq-shimmer-4) 1.4s ease-in-out infinite;pointer-events:none}
+@keyframes aq-shimmer-4{from{transform:translateX(-70.8333%)}to{transform:translateX(-20.8333%)}}
+@keyframes aq-shimmer-3{from{transform:translateX(-66.6667%)}to{transform:translateX(-22.2222%)}}
+/* 칸 자체에 다른 animation이 걸려 예전에 반짝임이 없던 자리는 띠도 멈춘다 (큰 덩어리는 살며시 나타나기만, 목록 들어오기·출력 종이) */
+.aq-skel-block::after,#main .view:not(#view-new) .aq-stagger>.aq-skel::after,.aq-paper .aq-skel::after{animation:none}
 .aq-cheer-list.is-skeleton .aq-cheer-avatar{background:none}
 .aq-cheer-list.is-skeleton .aq-cheer-avatar.aq-skel{border-radius:50%}
+.aq-cheer-list.is-skeleton .aq-cheer-avatar.aq-skel::after{content:none}
 .aq-skel-lines{display:grid;gap:8px;padding-top:4px}
 .aq-skel-lines>.aq-skel{height:12px;width:40%}
 .aq-skel-lines>.aq-skel+.aq-skel{width:85%}
 .aq-pub-skel{display:grid;gap:10px}
 .aq-pub-skel>.aq-skel{height:112px;border-radius:var(--aq-r-xl)}
 .aq-pub-skel.is-tall>.aq-skel{height:168px}
-@media (prefers-reduced-motion:reduce){.aq-skel,.aq-cheer.is-fresh,.aq-cheer-send-heart.is-pop,.aq-cheer.is-leaving,.aq-soft-in,.aq-cheer-done,.aq-cheer-heart{animation:none}}
+@media (prefers-reduced-motion:reduce){.aq-skel::after,.ui-skel-rows>span::after{animation:none}.aq-skel,.aq-cheer.is-fresh,.aq-cheer-send-heart.is-pop,.aq-cheer.is-leaving,.aq-soft-in,.aq-cheer-done,.aq-cheer-heart{animation:none}}
 
 /* 디스코그래피 — 나머지 곡은 높이가 부드럽게 열린다 */
 .aq-disco-item{transition:background-color var(--aq-dur) var(--aq-ease)}
@@ -1363,7 +1374,7 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
 
 /* 스튜디오 관리 창 — 글쓰기↔목록이 부드럽게 바뀌고, 지운 줄은 접히듯 사라진다 */
 .aq-mgr-swap{animation:aq-soft-pop var(--aq-motion-long) var(--aq-enter) both}
-.aq-mgr-post.is-leaving{animation:aq-leave .26s var(--aq-enter) forwards;pointer-events:none}
+.aq-mgr-post.is-leaving{animation:aq-leave var(--aq-motion-base) var(--aq-exit) forwards;pointer-events:none}
 .aq-mgr-post.is-saved>.aq-post{animation:aq-saved-ring .9s ease-out .15s}
 .aq-mgr-actions .ui-btn{transition:background-color var(--aq-dur) var(--aq-ease),transform var(--aq-press-out) var(--aq-press-spring)}
 .aq-heart-pop{display:inline-flex;animation:aq-heart-pop .45s var(--aq-enter)}
@@ -1390,10 +1401,10 @@ textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:ver
 .aq-pub-card.aq-press-card>section{margin:0}
 .aq-press-meta{display:flex;justify-content:flex-start;margin:-14px 0 0;padding-left:82px;text-align:left}
 /* 맨 아래 — 같은 아티스트의 다른 화면 알약 + Distributed by AUDENIQ */
-.aq-pub-foot{display:grid;justify-items:center;gap:12px;margin:28px 0 0;padding:0;border:0;background:none;box-shadow:none}
+.aq-pub-foot{display:grid;justify-items:center;margin:28px 0 0;padding:0;border:0;background:none;box-shadow:none}
 .aq-pub-card.aq-press-card>.aq-pub-foot{margin-top:6px}
 .aq-pub-foot nav{display:flex;flex-wrap:wrap;justify-content:center;gap:6px}
-.aq-pub-foot nav a{display:inline-flex;align-items:center;min-height:32px;padding:0 12px;border-radius:var(--aq-r-pill);background:var(--aq-surface);font-size:13px;font-weight:700;color:var(--aq-text-2);text-decoration:none;transition:background-color var(--aq-dur) var(--aq-ease),color var(--aq-dur) var(--aq-ease),transform var(--aq-press-out) var(--aq-press-spring)}
+.aq-pub-foot nav a{display:inline-flex;align-items:center;border-radius:var(--aq-r-pill);background:var(--aq-surface);font-weight:700;color:var(--aq-text-2);text-decoration:none;transition:background-color var(--aq-dur) var(--aq-ease),color var(--aq-dur) var(--aq-ease),transform var(--aq-press-out) var(--aq-press-spring)}
 .aq-pub-foot nav a:is(:active,.is-pressed){transform:scale(var(--aq-press-btn));transition-duration:var(--aq-press-in)}
 .aq-pub-foot nav a:focus-visible{outline:var(--aq-focus);outline-offset:2px}
 @media (hover:hover){.aq-pub-foot nav a:hover{background:var(--aq-blue-50);color:var(--aq-primary)}}
@@ -1425,8 +1436,8 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-pub-foot{gap:16px;margin-top:32px;padding-top:20px;position:relative}
 .aq-pub-foot::before{content:"";position:absolute;top:0;left:24px;right:24px;height:1px;background:var(--aq-line)}
 .aq-pub-foot nav a{min-height:30px;padding:0 12px;font-size:12.5px}
-.aq-pub-brand{display:inline-flex;align-items:center;gap:7px;padding:4px 6px;border-radius:8px;color:var(--aq-text-4);text-decoration:none;opacity:.7;transition:opacity var(--aq-dur) var(--aq-ease)}
-.aq-pub-brand small{font-size:11px;font-weight:500;letter-spacing:.02em;line-height:1}
+.aq-pub-brand{display:inline-flex;align-items:center;gap:7px;padding:4px 6px;border-radius:8px;color:var(--aq-text-4);text-decoration:none;transition:opacity var(--aq-dur) var(--aq-ease)}
+.aq-pub-brand small{font-size:11px;letter-spacing:.02em;line-height:1}
 .aq-pub-brand img{display:block;width:72px;height:auto}
 @media (hover:hover){.aq-pub-brand:hover{opacity:1}}
 .aq-pub-brand:is(:active,.is-pressed){opacity:1}
@@ -1750,7 +1761,7 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 .aq-tracklist-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
 .aq-tracklist-head>span{color:var(--aq-text-3);font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
 .aq-tracklist{margin:0;padding:4px;list-style:none;border-radius:var(--aq-r-xl);background:#fff}
-.aq-trackrow{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:14px;align-items:center;width:100%;padding:13px 14px;border:0;border-radius:var(--aq-r-lg);background:none;font:inherit;color:inherit;text-align:left;cursor:pointer;transition:background-color var(--aq-motion-short) var(--aq-enter)}
+.aq-trackrow{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:14px;align-items:center;width:100%;padding:13px 14px;border:0;border-radius:var(--aq-r-lg);background:none;font:inherit;color:inherit;text-align:left;cursor:pointer}
 .aq-tracklist li+li{box-shadow:inset 0 1px 0 var(--aq-line)}
 @media(hover:hover){.aq-trackrow:hover{background:var(--aq-surface)}.aq-trackrow:hover .aq-track-chev{transform:translateX(3px)}}
 .aq-trackrow:focus-visible{outline:var(--aq-focus);outline-offset:-2px}
@@ -1874,8 +1885,8 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
   .ui-page-head.aq-head-inline>:is(.ui-btn,.ui-page-actions){grid-column:2;grid-row:2;width:auto}
 }
 
-/* 계정 정보 맨 위 프로필 — 아래 설정 카드들과 같은 옅은 파랑 카드로 (흰 바탕에 혼자 떠 있지 않게) */
-@media(max-width:1023px){
+/* 계정 정보 맨 위 프로필 — 아래 설정 카드들과 같은 옅은 파랑 카드로 (흰 바탕에 혼자 떠 있지 않게). 태블릿부터는 왼쪽 프로필 카드(desktop.css) */
+@media(max-width:759.98px){
   .aq-settings>.ui-page-head{margin-bottom:18px}
   .aq-settings>.aq-set-profile{padding:18px 16px;background:var(--aq-surface);border-radius:var(--aq-r-2xl)}
   @media(hover:hover){.aq-settings>.aq-set-profile:hover{background:var(--aq-blue-100)}}
@@ -1928,7 +1939,7 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 #view-notifications .aq-notice-symbol .aq-unread{position:absolute;top:-3px;right:-3px;width:12px;height:12px;border:2px solid var(--aq-surface);border-radius:50%;background:var(--aq-blue-500)}
 #view-notifications .aq-notice-copy{display:grid;gap:4px;min-width:0}
 #view-notifications .aq-notice-copy strong{overflow:visible;color:var(--aq-text);font-size:16px;font-weight:700;line-height:1.45;white-space:normal}
-#view-notifications .aq-notice-detail{overflow:hidden;color:var(--aq-text-3);font-size:14px;line-height:1.5;text-overflow:ellipsis;white-space:nowrap}
+#view-notifications .aq-notice-detail{overflow:hidden;color:var(--aq-text-3);line-height:1.5;text-overflow:ellipsis;white-space:nowrap}
 #view-notifications .aq-notice-detail time{color:var(--aq-text-4)}
 .aq-notice-more{padding:3px 9px;border-radius:var(--aq-r-pill);background:#fff;color:var(--aq-text-3);font-size:12px;font-weight:700;white-space:nowrap}
 /* 읽음/안 읽음 — 카드 모양은 같고 바탕색만: 안 읽은 알림은 옅은 파랑 + 파란 점 + 굵은 제목, 읽은 알림은 살짝 푸른 기가 도는 옅은 회색(완전 회색은 죽어 보였다).
@@ -2006,11 +2017,11 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 
 /* ---------- 기다림을 덜 느끼게 ----------
    목록 자리표시(SkeletonList)도 다른 자리표시처럼 150ms 뒤에 살며시 — 금방 오는 응답에는 아예 보이지 않아 깜빡이지 않는다 */
-.ui-skel-rows,.aq-acct-skel{animation:aq-fade-in .2s ease .15s both}
+.ui-skel-rows,.aq-acct-skel{animation:aq-fade-in var(--aq-motion-base) var(--aq-enter) .15s both}
 .aq-acct-skel .aq-skel-lines{padding:0}
 .aq-acct-skel .aq-skel-lines>.aq-skel{height:13px}
 .aq-acct-skel .aq-skel-lines>.aq-skel+.aq-skel{height:11px}
-.aq-acct-skel .aq-skel{background:linear-gradient(90deg,#fff 25%,#F5F8FD 45%,#fff 65%);background-size:300% 100%}
+.aq-acct-skel .aq-skel{--aq-skel-bg:linear-gradient(90deg,#fff 25%,#F5F8FD 45%,#fff 65%);--aq-skel-w:900%;--aq-skel-anim:aq-shimmer-3}
 /* 다음 화면을 준비하는 동안 머리 맨 위 얇은 파란 막대 — 지금 화면은 그대로, 눌렀다는 것만 바로 알린다.
    150ms 안에 끝나면 보이지 않고, 오래 걸릴수록 천천히 차오르다가 준비되면 끝까지 채우고 사라진다 */
 .aq-route-bar{position:absolute;left:0;right:0;top:0;z-index:2;height:3px;border-radius:0 2px 2px 0;background:var(--aq-blue-500);transform:scaleX(0);transform-origin:0 50%;opacity:0;pointer-events:none}
@@ -2024,3 +2035,12 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
    내 메시지가 서버 목록으로 바뀌어 들어올 때는 다시 떠오르지 않게(같은 말풍선이 깜빡이지 않게) — 떠오르는 건 처음 보낼 때와 담당자 답변만 */
 .aq-thread li:not(.is-staff):not(.is-sending){animation:none}
 .aq-thread li.is-sending{opacity:.6;transition:opacity .2s}
+
+/* ---------- 접근성: 작은 글자 대비 4.5:1 ----------
+   11~12px 숫자 배지·제품 표시·개수가 기준에 조금 못 미쳤다(흰 글자/빨강 3.9, 파랑/옅은 파랑 4.4).
+   빨강은 한 단계 짙게(4.7), 옅은 파랑 위 파란 글자는 누름 색(blue-600, 5.1)으로 — 눈으로는 거의 같은 색 */
+.aq-badge,.aq-side-badge,.aq-nav-count{background:#D93036}
+.ui-product,.ui-count,.ui-count.is-soft,.ui-avatar.header-profile,.auth-page>.aq-auth-brand .ui-product,.ui-tab[aria-selected=true] .ui-count{color:var(--aq-blue-600)}
+/* 키보드로 옮겨 온 입력칸 — 면 색만 아주 옅게 바뀌어(대비 1.05) 어디에 있는지 보이지 않았다. 마우스·터치로 누를 때는 그대로 */
+/* 입력칸 테두리를 지우는 :is(#root,#modal) … !important 규칙(enhance.css)보다 앞서도록 같은 범위·!important로 */
+html.aq-kbd :is(#root,#modal) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea):is(:focus,:focus-visible){outline:var(--aq-focus)!important;outline-offset:2px!important}

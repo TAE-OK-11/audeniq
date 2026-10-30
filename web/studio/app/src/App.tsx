@@ -4,7 +4,6 @@ import { Suspense, useEffect, useState, type ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from './lib/router';
 import { artistPath, artistPressPath, releasePath } from './lib/publicLinks';
 import { AuthProvider, useAuth } from './api/auth';
-import { Layout } from './components/Layout';
 import { ToastProvider } from './components/Toast';
 import { hasPasskeyHandoff } from './lib/passkeyHandoff';
 import { hasPhoneHandoff } from './lib/phoneHandoff';
@@ -12,7 +11,7 @@ import { ConfirmProvider } from './components/Confirm';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { SystemStatus } from './components/SystemStatus';
 import { PageSkeleton } from './components/Skeleton';
-import { pageLoaders } from './routes';
+import { pageLoaders, prefetchCommonRoutes } from './routes';
 import './styles/tokens.css';
 import './styles/design.css';
 import './styles/live.css';
@@ -22,9 +21,8 @@ import './styles/ui.css';
 import './styles/desktop.css';
 import './styles/wizard-motion.css';
 import './styles/design-align.css';
-import { SelectHost } from './components/PickerSurface';
-import { PrintStampHost } from './lib/printStamp';
 import { lazyComponent } from './lib/lazyComponent';
+import { preloadMoreFont } from './lib/fonts';
 
 // 배포 직후 옛 청크가 사라지면 한 번 새로고침해 새 버전을 받는다 (lib/lazyComponent)
 const lazyPage = lazyComponent;
@@ -69,10 +67,31 @@ const AiApprove = lazyPage(pageLoaders.AiApprove, m => m.AiApprove);
 const AiAction = lazyPage(pageLoaders.AiAction, m => m.AiAction);
 const AiConnect = lazyPage(pageLoaders.AiConnect, m => m.AiConnect);
 const AdminApp = lazyPage(pageLoaders.Admin, m => m.AdminApp);
+// 머리글·메뉴 — 로그인·공개 페이지에는 필요 없어 따로 받는다 (포털 주소로 들어오면 routes가 인증 확인과 함께 미리 받는다)
+const Layout = lazyPage(pageLoaders.Layout, m => m.Layout);
+// 터치 기기의 선택 시트·출력 도장 — 첫 화면에는 필요 없어 한가할 때 받는다 (그 전에는 기본 선택 창이 열린다)
+const SelectHost = lazyComponent(() => import('./components/PickerSurface'), m => m.SelectHost);
+const PrintStampHost = lazyComponent(() => import('./lib/printStamp'), m => m.PrintStampHost);
+
+function IdleHosts() {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const go = () => setReady(true);
+    if ('requestIdleCallback' in window) { const id = window.requestIdleCallback(go, { timeout: 2000 }); return () => window.cancelIdleCallback(id); }
+    const t = setTimeout(go, 1200);
+    return () => clearTimeout(t);
+  }, []);
+  return ready ? <Suspense fallback={null}><SelectHost /><PrintStampHost /></Suspense> : null;
+}
+
+/** index.html이 그려 둔 첫 화면이 있었는지 — 있었으면 첫 BootScreen은 다시 흐려졌다 나타나지 않고 그대로 이어진다 */
+let htmlBoot = !!document.querySelector('#root > .aq-boot');
 
 function BootScreen() {
+  const [still] = useState(() => htmlBoot);
+  useEffect(() => { htmlBoot = false; }, []);
   return (
-    <div className="aq-boot" role="status" aria-label="AUDENIQ STUDIO를 불러오는 중">
+    <div className="aq-boot" role="status" aria-label="AUDENIQ STUDIO를 불러오는 중" style={still ? { animation: 'none' } : undefined}>
       <img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="" />
       <span className="aq-boot-bar" />
     </div>
@@ -82,6 +101,13 @@ function BootScreen() {
 /** 로그인 필요 — 원래 가려던 주소를 기억해 로그인 후 되돌아간다 */
 function Protected({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
+  // 로그인한 화면에는 이름·제목이 나온다 — 글꼴 두 번째 조각을 한가할 때 받아 둔다 (lib/fonts)
+  useEffect(() => {
+    if (!user) return;
+    if ('requestIdleCallback' in window) { const id = window.requestIdleCallback(preloadMoreFont, { timeout: 1500 }); return () => window.cancelIdleCallback(id); }
+    const t = setTimeout(preloadMoreFont, 800);
+    return () => clearTimeout(t);
+  }, [user]);
   const loc = useLocation();
   // AI 앱 연결 화면에서 로그인하러 왔으면 (Google·Apple 로그인 포함) 로그인 뒤 그 화면으로
   const [leaving, setLeaving] = useState(false);
@@ -100,6 +126,8 @@ function GuestOnly({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   const loc = useLocation();
   rememberAiConnectReturn(loc.search);
+  // 로그인·가입 화면을 보는 동안 한가할 때 홈 화면을 미리 받아 둔다 — 로그인하자마자 홈이 바로 뜬다
+  useEffect(() => { prefetchCommonRoutes(); }, []);
   if (loading) return <BootScreen />;
   if (user) {
     // 막 가입했으면 휴대폰 번호 확인부터 (pages/PhoneSetup)
@@ -182,8 +210,7 @@ export function App() {
       <AuthProvider>
         <ToastProvider>
           <ConfirmProvider>
-            <SelectHost />
-            <PrintStampHost />
+            <IdleHosts />
             <ErrorBoundary fullPage>
               <SystemStatus>
                 <Suspense fallback={<BootScreen />}>

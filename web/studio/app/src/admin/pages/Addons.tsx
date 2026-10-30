@@ -198,9 +198,11 @@ function OrderCard({ o, ok, onDone, toast }: { o: StaffOrder; ok: boolean; onDon
 interface LyricTrack { id: string; title: string; lyrics: string; lrc: string | null; source: string | null; registered: string[] }
 
 function LyricsEditor({ orderId, ok, toast }: { orderId: string; ok: boolean; toast: ReturnType<typeof useToast> }) {
-  const { data, reload } = useAsync(() => req<{ items: LyricTrack[]; services: string[] }>(`/api/staff/addons/${orderId}/lyrics`), [orderId]);
+  const { data, error, reload } = useAsync(() => req<{ items: LyricTrack[]; services: string[] }>(`/api/staff/addons/${orderId}/lyrics`), [orderId]);
   const [lrc, setLrc] = useState<Record<string, string>>({});
   const [reg, setReg] = useState<Record<string, string[]>>({});
+  // 못 불러오면 자리표시가 끝없이 돌았다 — 이유와 다시 시도
+  if (error && !data) return <ErrorBox message={error} onRetry={reload} />;
   if (!data) return <SkeletonList rows={1} />;
   const save = async (t: LyricTrack) => {
     const text = lrc[t.id] ?? t.lrc ?? '';

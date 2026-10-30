@@ -1,7 +1,7 @@
 // AUDENIQ Docs — 직원 내부 문서. 왼쪽 트리(검색·보관함), 가운데 편집기, 오른쪽 댓글·정보·기록.
 // 저장은 자동(Autosave: 잠깐 쉬면 묶어서, 실패하면 다시 시도, 충돌은 덮어쓰지 않음)이고 버전 충돌은
 // 서버가 409로 알려 준다. 권한(보기·편집·관리·소유)은 서버가 정하고 화면은 그 값을 따른다.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Editor } from '@tiptap/react';
 import { useNavigate, useParams, useSearchParams } from '../../../lib/router';
 import { useToast } from '../../../components/Toast';
@@ -17,14 +17,28 @@ import type { DocDetail, DocNode, DocSaveInput, DocTemplate } from '../types';
 import { Autosave, type AutosaveSnapshot } from '../docs/autosave';
 import { EmbedStore } from '../docs/embeds';
 import { normalizeDoc } from '../docs/model';
-import { DocsContext, type DocsCtx } from '../docs/nodeviews';
-import { DocEditor, type CommentAnchor } from '../docs/DocEditor';
+import { DocsContext, type DocsCtx } from '../docs/context';
+import type { CommentAnchor } from '../docs/DocEditor';
+import { lazyComponent } from '../../../lib/lazyComponent';
 import { DocSearchResults, DocTree } from '../docs/DocTree';
 import { CommentsPanel, InfoPanel, VersionsPanel } from '../docs/DocPanels';
 import { MoveDialog, NewDocDialog, ReasonDialog, ShareDialog, TemplateDialog } from '../docs/DocDialogs';
 import '../../../styles/docs.css';
 import { josa } from '../../../lib/josa';
 import { isAdmin } from '../../api';
+
+// 편집기(TipTap)는 문서를 열 때만 받는다 — 목록·검색은 편집기 없이 바로 열린다
+const loadEditor = () => import('../docs/DocEditor');
+const DocEditor = lazyComponent(loadEditor, m => m.DocEditor);
+// 문서 화면에 들어오면 한가할 때 편집기를 미리 받아 둔다 (문서를 열 때 기다리지 않게)
+let editorPrefetched = false;
+function prefetchEditor() {
+  if (editorPrefetched) return;
+  editorPrefetched = true;
+  const go = () => { void loadEditor().catch(() => { editorPrefetched = false; }); };
+  if ('requestIdleCallback' in window) window.requestIdleCallback(go, { timeout: 3000 });
+  else setTimeout(go, 1500);
+}
 
 type Panel = 'comments' | 'info' | 'versions' | null;
 const LEVEL_RANK = { NONE: 0, VIEWER: 1, EDITOR: 2, MANAGER: 3, OWNER: 4 } as const;
@@ -297,8 +311,10 @@ function DocView({ id, people, onTreeChange, onAncestors }: { id: string; people
         </div>
 
         <div className="adm-doc-body">
-          <DocEditor key={`${id}:${epoch}`} docId={id} content={d.content} editable={canEdit} people={people}
-            onChange={changed} onReady={onReady} onComment={a => { setAnchor(a); setPanel('comments'); }} />
+          <Suspense fallback={<SkeletonList rows={4} />}>
+            <DocEditor key={`${id}:${epoch}`} docId={id} content={d.content} editable={canEdit} people={people}
+              onChange={changed} onReady={onReady} onComment={a => { setAnchor(a); setPanel('comments'); }} />
+          </Suspense>
           {panel && (
             <aside className="adm-doc-side" aria-label="문서 패널">
               <button type="button" className="ui-btn is-text is-muted adm-doc-side-close" onClick={() => setPanel(null)}>닫기</button>
@@ -336,6 +352,7 @@ function DocView({ id, people, onTreeChange, onAncestors }: { id: string; people
 
 export function Docs() {
   const { id } = useParams<{ id: string }>();
+  useEffect(prefetchEditor, []);
   const nav = useNavigate();
   const toast = useToast();
   const people = usePeople();

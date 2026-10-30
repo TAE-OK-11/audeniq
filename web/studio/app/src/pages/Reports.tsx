@@ -234,7 +234,7 @@ export function Reports() {
     <div id="view-reports" className="view">
       <div className="ui-page-head">
         <div>
-          <p className="eyebrow">내 작업실</p>
+          <p className="eyebrow">수익·성과</p>
           <h1 id="reportsTitle">음악 리포트</h1>
           <p>플랫폼별 재생과 수익을 기간·곡마다 나눠 봐요.</p>
         </div>

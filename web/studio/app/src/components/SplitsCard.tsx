@@ -2,7 +2,7 @@
 // 받는 분에게 이메일로 수락 요청이 가고, 수락하면 그분 AUDENIQ 계정 잔액으로 바로 정산된다 (세금·출금도 각자).
 // 수락 전에 들어온 몫은 보관했다가 수락하면 옮기고, 거절하면 신청자에게 돌아온다.
 // 발매 신청을 마치면 바꿀 수 없다 (서버가 SPLIT_LOCKED로 막는다).
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { orgPath, req } from '../api/http';
 import { errorMessage } from '../api/errors';
 import { ReadFailure } from './ReadFailure';
@@ -27,7 +27,11 @@ const toBps = (pct: string) => Math.round(Number(pct.replace(',', '.')) * 100);
 const fromBps = (bps: number) => String(bps / 100);
 const pctLabel = (bps: number) => `${(bps / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}%`;
 
-export function SplitsCard({ releaseId, embedded = false }: { releaseId: string; embedded?: boolean }) {
+export function SplitsCard({ releaseId, embedded = false, registerSave }: {
+  releaseId: string; embedded?: boolean;
+  /** 저장하지 않은 분배가 있으면 저장 함수를 넘긴다(없으면 null) — 신청서가 다음 단계로 넘어갈 때 대신 저장한다 */
+  registerSave?: (save: (() => Promise<boolean>) | null) => void;
+}) {
   const toast = useToast();
   const [loadFailed, setLoadFailed] = useState(false);
   const [sheet, setSheet] = useState<Sheet | null>(null);
@@ -48,6 +52,12 @@ export function SplitsCard({ releaseId, embedded = false }: { releaseId: string;
     } catch { setLoadFailed(true); }
   }, [base]);
   useEffect(() => { void load(); }, [load]);
+  const saveRef = useRef<() => Promise<boolean>>(async () => true);
+  useEffect(() => {
+    if (!registerSave) return;
+    registerSave(dirty ? () => saveRef.current() : null);
+    return () => registerSave(null);
+  }, [dirty, registerSave]);
   if (loadFailed) return <ReadFailure label="수익 분배" retry={load} />;
   if (!sheet || !sheet.tracks.length) return null;
   const anyShare = sheet.tracks.some(t => t.shares.length);
@@ -57,15 +67,16 @@ export function SplitsCard({ releaseId, embedded = false }: { releaseId: string;
   // 저장 검사는 서버와 같게 거절한 분 비율도 합에 넣는다 (지우면 그 비율을 다른 분에게 줄 수 있다)
   const ownerBps = (track: string) => 10000 - (rows[track] ?? []).reduce((a, r) => a + (toBps(r.pct) || 0), 0);
 
-  const save = async () => {
+  /** 저장에 성공했으면 true */
+  const save = async (): Promise<boolean> => {
     for (const t of sheet.tracks) {
       for (const r of rows[t.track_id] ?? []) {
-        if (!r.name.trim()) { toast(`'${t.title}' 공동작업자 이름을 적어 주세요.`, 'error'); return; }
-        if (!r.id && !r.email.trim()) { toast(`'${t.title}' ${r.name}님의 이메일을 적어 주세요.`, 'error'); return; }
+        if (!r.name.trim()) { toast(`'${t.title}' 공동작업자 이름을 적어 주세요.`, 'error'); return false; }
+        if (!r.id && !r.email.trim()) { toast(`'${t.title}' ${r.name}님의 이메일을 적어 주세요.`, 'error'); return false; }
         const bps = toBps(r.pct);
-        if (!(bps >= 1 && bps <= 10000)) { toast(`'${t.title}' ${r.name}님의 비율을 0.01–100% 사이로 적어 주세요.`, 'error'); return; }
+        if (!(bps >= 1 && bps <= 10000)) { toast(`'${t.title}' ${r.name}님의 비율을 0.01–100% 사이로 적어 주세요.`, 'error'); return false; }
       }
-      if (ownerBps(t.track_id) < 0) { toast(`'${t.title}' 분배 합계가 100%를 넘어요.`, 'error'); return; }
+      if (ownerBps(t.track_id) < 0) { toast(`'${t.title}' 분배 합계가 100%를 넘어요.`, 'error'); return false; }
     }
     setBusy(true);
     try {
@@ -77,14 +88,17 @@ export function SplitsCard({ releaseId, embedded = false }: { releaseId: string;
         })),
       }));
       const v = await req<{ invited: number }>(base(), { method: 'PUT', body: { tracks } });
-      toast(v.invited ? `저장했어요. ${v.invited}명에게 수락 요청 메일을 보내요.` : '저장했어요.', 'success');
+      toast(v.invited ? `수익 분배를 저장했어요. ${v.invited}명에게 수락 요청 메일을 보내요.` : '수익 분배를 저장했어요.', 'success');
       await load();
+      return true;
     } catch (e) {
       toast(errorMessage(e), 'error');
+      return false;
     } finally {
       setBusy(false);
     }
   };
+  saveRef.current = save;
   const resend = async (share: string) => {
     try { await req(`${base()}/${encodeURIComponent(share)}/resend`, { method: 'POST', body: {} }); toast('수락 요청 메일을 다시 보내요.', 'success'); }
     catch (e) { toast(errorMessage(e), 'error'); }

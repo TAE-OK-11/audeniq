@@ -66,6 +66,9 @@ async function mount(path = '/admin/docs/d1') {
     );
   });
   await flush(30);
+  // 편집기는 문서를 열 때 따로 받는다 — 받은 뒤 그려질 때까지 기다린다
+  await act(async () => { await import('./DocEditor'); });
+  await flush(30);
 }
 
 beforeEach(() => {

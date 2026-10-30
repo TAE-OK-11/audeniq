@@ -1,1355 +1,62 @@
-import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
-import { FilePicker } from '../components/FilePicker';
 import { preorderChoices } from '../lib/preRelease';
-import { FileCard } from '../components/FileCard';
 import { useNavigate, useSearchParams } from '../lib/router';
 import { useToast } from '../components/Toast';
-import { Modal } from '../components/Modal';
 import { SignaturePad, type SignaturePadHandle } from '../components/SignaturePad';
 import { useConfirm } from '../components/Confirm';
 import { useProgressFill } from '../hooks/useAnimations';
-import { ApiError, MOCK, api, type ArtistProfileLinks, type DspAvailability, type ReleasePayload } from '../api/client';
+import { ApiError, MOCK, api, type DspAvailability } from '../api/client';
 import { PartialSaveError, errorMessage } from '../api/errors';
-import { addDoc, docsForRelease, getDocsSnapshot, useDocs, type DocRecord } from '../store/docs';
+import { useDocs } from '../store/docs';
 import { RightsDocumentModal } from '../components/RightsDocumentModal';
 import { GuardianConsentPanel } from '../components/GuardianConsent';
 import { orgId } from '../api/http';
 import { useProfanity } from '../lib/profanity';
 import { DocumentModal } from '../components/DocumentModal';
-import { RIGHTS_DOCUMENTS, type RightsDocumentContext, type RightsDocumentKind } from '../lib/rightsDocument';
-import { RERELEASE_KINDS, RERELEASE_AVAILABILITY, rereleaseIssue, rereleaseSummary, type RereleaseData } from '../lib/rerelease';
+import { type RightsDocumentContext, type RightsDocumentKind } from '../lib/rightsDocument';
+import { rereleaseIssue } from '../lib/rerelease';
 import { pushNotice } from '../store/support';
 import { useProfile } from '../store/profile';
-import { fileSize, localStamp } from '../lib/format';
-import { DSP, GENRES, KINDS, LANGUAGES, dspLabel, genreLabel, kindLabel } from '../lib/catalog';
+import { fileSize } from '../lib/format';
+import { GENRES, KINDS, LANGUAGES, dspLabel, kindLabel } from '../lib/catalog';
 import { formatKoreanDate, stampNow, todayStr } from '../lib/date';
 import { fixCountWord, fixPath, isDocumentFix, resolveCorrection, splitCorrections, type ResolvedCorrection } from '../lib/corrections';
 import { checkAudioFile, formatDuration, specLabel } from '../lib/audioSpec';
 import { AGREEMENTS, SIGNER_ROLES, compactSignature, createApplication } from '../lib/application';
-import {
-  artistIssue, artistWarning, COVER_MAX, COVER_MIN, coverIssue, isrcValid, LEAD_DAYS, minReleaseDate, mmssToSeconds, normalizeIsrc,
-  profileLinkIssue, PROFILE_LINKS, releaseTypeIssue, rightsLineIssue, titleIssue, titleWarning, upcValid,
-} from '../lib/dsp';
+import { artistIssue, COVER_MAX, COVER_MIN, coverIssue, expectedReleaseType, isrcValid, minReleaseDate, mmssToSeconds, normalizeIsrc, profileLinkIssue, PROFILE_LINKS, releaseTypeIssue, rightsLineIssue, titleIssue, upcValid } from '../lib/dsp';
 import { uid } from '../lib/store';
 import { CheckIcon } from '../components/Check';
-import { ChipPicker, OTHER } from '../components/ChipPicker';
-import { AddonSummary, EMPTY_ADDONS, LyricDetail, MvDetail, addonProblem, type AddonFields } from '../components/AddonOptions';
+import { AddonSummary, addonProblem } from '../components/AddonOptions';
 import { mockOrdersFromApplication } from '../lib/addons';
 import { Glyph } from '../components/Glyph';
 import { Badge, IconTile } from '../ui';
-import { TrackChecks } from '../components/TrackChecks';
-import { Segmented } from '../components/Segmented';
 import { DateField } from '../components/Picker';
 import { BrandMark } from '../components/BrandMark';
 import { SplitsCard } from '../components/SplitsCard';
 import { fetchArtistPages, type ArtistPages } from '../lib/artistPages';
-import { TERRITORY_GROUPS, WORLD, parseTerritories, territoryName, territorySummary, worldExcept } from '../lib/territories';
+import { parseTerritories, territorySummary } from '../lib/territories';
 import { revealField } from '../lib/motion';
-import { addCredit, creditChips, type CreditHistory } from '../lib/credits';
+import { maskPreviewInput, previewLabel, previewSecs, settlePreviewInput } from '../lib/previewTime';
+import { type CreditHistory } from '../lib/credits';
+import { AUDIO_RE, DSP_COLOR, DSP_GROUPS, EMPTY, EMPTY_OPTIONS, MORE_INFO_FIELDS, RELEASE_TIMES, RIGHTS_CHECKS, type ReleaseOptions, STEPS, type SaveState, type Track, type UploadState, type WizardForm, applicableConditionals, clearFieldError, ensureReleaseDocuments, isContentId, makeCoverThumbnail, newTrack, previewOk, rightsOk, scaleCover, shiftDate, showFieldError, toPayload, uploadCoverPreview } from './upload/model';
+import { BackIcon, KoreanDateField, breakAtDots } from './upload/fields';
+import { lazyComponent } from '../lib/lazyComponent';
+import { TrackEditor, UploadStatus } from './upload/tracks';
+import { SkeletonBlock } from '../components/Skeleton';
 
-/** 동시 발매로 고를 수 있는 한국 시간 (서버는 정각·30분만 받는다) */
-const RELEASE_TIMES = ['00:00', '09:00', '12:00', '13:00', '18:00', '19:00', '20:00'];
-
-/** 'm:ss' 또는 초 → 서버에 보낼 초 (비었거나 형식이 틀리면 '') */
-function previewSecs(v: string | undefined): string {
-  const s = (v ?? '').trim();
-  if (!s) return '';
-  const m = /^(\d{1,2}):([0-5]\d)$/.exec(s);
-  if (m) { const n = Number(m[1]) * 60 + Number(m[2]); return n <= 3600 ? String(n) : ''; }
-  return /^\d{1,4}$/.test(s) && Number(s) <= 3600 ? String(Number(s)) : '';
-}
-/** 저장된 초 → 화면 'm:ss' */
-function previewLabel(v: string | number | undefined): string {
-  const n = typeof v === 'number' ? v : /^\d+$/.test(String(v ?? '')) ? Number(v) : NaN;
-  return Number.isFinite(n) ? `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}` : '';
-}
-/** 'YYYY-MM-DD'에 일수를 더한다 */
-function shiftDate(d: string, days: number): string {
-  const t = new Date(`${d}T00:00:00Z`);
-  t.setUTCDate(t.getUTCDate() + days);
-  return t.toISOString().slice(0, 10);
-}
-
-/** 플랫폼 이름은 ‘·’ 뒤에서만 줄을 바꾼다 — 좁은 칸에서 ‘Instagram·Fa / cebook’처럼 단어 중간이 끊기던 것 */
-const breakAtDots = (label: string) =>
-  label.split('·').flatMap((part, i): React.ReactNode[] => (i ? [<span key={i}>·<wbr />{part}</span>] : [part]));
-
-const STEPS = [
-  { short: '발매 정보', kicker: '01 / 06 · 발매 정보', title: '어떤 음악을\n발매할까요?', sub: '별표(*) 칸만 채우면 다음 단계로 넘어갈 수 있어요.' },
-  { short: '트랙 등록', kicker: '02 / 06 · 트랙 등록', title: '발매할 곡을\n등록해 주세요.', sub: '곡마다 음원 파일과 크레딧을 넣어요.' },
-  { short: '커버아트', kicker: '03 / 06 · 커버아트', title: '커버아트를\n등록해 주세요.', sub: `${COVER_MIN}×${COVER_MIN}px 이상 정사각형 이미지가 필요해요.` },
-  { short: '배급 설정', kicker: '04 / 06 · 배급 설정', title: '언제, 어디에\n발매할까요?', sub: `보통 접수일로부터 ${LEAD_DAYS.normal}일 뒤부터 발매할 수 있어요.` },
-  { short: '권리 확인', kicker: '05 / 06 · 권리 확인', title: '음악의 권리를\n확인해 주세요.', sub: '권리자 정보와 필요한 증빙을 준비해 주세요.' },
-  { short: '최종 확인', kicker: '06 / 06 · 최종 확인', title: '발매 정보를\n마지막으로 확인해 주세요.', sub: '빠진 항목이 있으면 여기서 알려 드려요.' },
-];
-
-/** 1~5는 '한·두·세·네·다섯 가지만', 그 이상은 'N가지를' */
-
-/** 1단계에서 접어 두는 선택 칸 */
-const MORE_INFO_FIELDS = ['f-label', 'f-notes'];
-
-const RIGHTS_CHECKS: [string, string][] = [
-  ['rightsMaster', '음원 마스터를 배급할 권한이 있어요.'],
-  ['rightsComposition', '작사·작곡·편곡 등 저작물 이용에 필요한 허락을 확보했어요.'],
-  ['rightsArtwork', '커버아트와 사용한 이미지·폰트에 필요한 이용 권한이 있어요.'],
-  ['rightsConsent', '입력한 정보가 정확하며 필요한 권리 증빙을 요청받으면 제출할 수 있어요.'],
-];
-
-const CONDITIONAL_RIGHTS: [string, string, (o: ReleaseOptions) => boolean][] = [
-  ['rightsSamples', '샘플링·피처링 관련 제3자 권리 허락을 확보했어요.', o => o.sample || o.featured],
-  ['rightsAi', 'AI 생성·보조 제작물의 플랫폼 수용 기준을 확인했어요.', o => o.ai],
-  ['rightsShared', '공동 권리자와의 배급 위임 범위를 확인했어요.', o => o.shared],
-  ['rightsRerelease', '이전 발매와 겹쳐 보내지 않는지 확인했어요.', o => o.rerelease],
-];
-
-interface Track {
-  id: string;
-  title: string; version: string; isrc: string;
-  composers: string; lyricists: string; arrangers: string; performers: string;
-  producer: string;
-  lyrics: string;
-  audioName: string; audioSize: number; explicit: boolean; duration: string;
-  /** 업로드 완료된 음원 자산 ID (실서버) */
-  assetId: string;
-  /** 서버 트랙 ID (실서버, 임시 저장 간 매칭) */
-  serverId: string;
-  /** 미리듣기·숏폼 클립 시작점 (입력 그대로 'm:ss' 또는 초) */
-  previewStart: string;
-  featuring: string;
-  instrumental: boolean;
-  /** 음원 규격 표기 */
-  audioSpec: string;
-}
-
-/** 파일 업로드 진행 상태 (저장하지 않는 화면 전용 상태) */
-interface UploadState { pct: number; state: 'uploading' | 'done' | 'error'; message?: string }
-
-interface CoverTrackInfo {
-  trackId: string;
-  originalTitle: string;
-  originalArtist: string;
-  originalWriters: string;
-}
-
-interface ReleaseOptions extends RereleaseData, AddonFields {
-  express: boolean; expressAck: boolean; expressReason: string;
-  minor: boolean;
-  guardian: string; guardianRelation: string; guardianContact: string;
-  guardian2: string; guardian2Relation: string; guardian2Contact: string;
-  guardianConsentDone: boolean; familyCertName: string; familyCertMethod: string;
-  cover: boolean; coverTracks: CoverTrackInfo[]; coverRightsAck: boolean; coverLicenseFile: string; coverLicenseAssetId?: string;
-  sample: boolean; sampleLicenseFile: string; sampleLicenseAssetId?: string;
-  featured: boolean; featuredConsentFile: string; featuredConsentAssetId?: string;
-  ai: boolean; aiTool: string;
-  contentIdExclusiveRightsAck?: boolean; contentIdOriginalRecordingAck?: boolean;
-  /** 버튼으로 고른 AI 활용 방식·도구 (aiTool은 이걸 합친 문장) */
-  aiUses: string[]; aiTools: string[]; aiUseOther: string; aiToolOther: string;
-  shared: boolean; sharedContractFile: string; sharedContractAssetId?: string;
-  rerelease: boolean; previousTitle: string; previousId: string;
-}
-
-interface WizardForm {
-  artist: string; title: string; type: string; language: string; genre: string;
-  genreCustom: string; label: string; notes: string;
-  tracks: Track[];
-  coverName: string; coverData: string; coverAssetId: string; coverThumbAssetId: string; coverPreviewAssetId: string;
-  releaseDate: string; releaseTime: string; preorderStart: string; originalDate: string; upc: string;
-  territories: string[]; platforms: string[];
-  ownership: string; phonogram: string; copyright: string;
-  rightsChecks: Record<string, boolean>;
-  options: ReleaseOptions;
-  artistProfile: ArtistProfileLinks;
-}
-
-const newTrack = (): Track => ({
-  id: uid('t'),
-  title: '', version: '', isrc: '', composers: '', lyricists: '', arrangers: '', performers: '',
-  producer: '',
-  lyrics: '',
-  audioName: '', audioSize: 0, explicit: false, duration: '',
-  assetId: '', serverId: '', previewStart: '', featuring: '', instrumental: false, audioSpec: '',
-});
-
-const EMPTY_OPTIONS: ReleaseOptions = {
-  express: false, expressAck: false, expressReason: '',
-  minor: false,
-  guardian: '', guardianRelation: '', guardianContact: '',
-  guardian2: '', guardian2Relation: '', guardian2Contact: '',
-  guardianConsentDone: false, familyCertName: '', familyCertMethod: '',
-  cover: false, coverTracks: [], coverRightsAck: false, coverLicenseFile: '',
-  sample: false, sampleLicenseFile: '',
-  featured: false, featuredConsentFile: '',
-  ai: false, aiTool: '', aiUses: [], aiTools: [], aiUseOther: '', aiToolOther: '',
-  shared: false, sharedContractFile: '',
-  rerelease: false, previousTitle: '', previousId: '',
-  ...EMPTY_ADDONS,
-};
-
-/** YouTube Content ID — 다른 사람 영상에 권리를 주장하는 별도 서비스라 '모두 배급'에 넣지 않고 따로 켠다 */
-const isContentId = (slug: string) => slug === 'youtube-cid' || slug === 'D-27';
-
-const EMPTY: WizardForm = {
-  artist: '', title: '', type: 'single', language: 'ko', genre: '', genreCustom: '',
-  label: '', notes: '',
-  tracks: [newTrack()],
-  coverName: '', coverData: '', coverAssetId: '', coverThumbAssetId: '', coverPreviewAssetId: '',
-  releaseDate: '', releaseTime: '', preorderStart: '', originalDate: '', upc: '',
-  territories: ['WORLD'], platforms: MOCK ? DSP.map(d => d[0]).filter(s => !isContentId(s)) : [],
-  ownership: '', phonogram: '', copyright: '',
-  rightsChecks: {},
-  options: EMPTY_OPTIONS,
-  artistProfile: { isNew: true, spotify: '', apple: '', melon: '' },
-};
-
-const SERVICE_OPTIONS: [keyof ReleaseOptions, string, string][] = [
-  ['express', '신속 발매 · 10,000원', '심사와 전송을 먼저 처리해 3영업일 안에 발매해요.'],
-  ['mv', '뮤직비디오 배급 · 19,000원부터', '멜론·지니·벅스·FLO·바이브·유튜브에 보내고, 영상물등급위원회 심의도 대신해요.'],
-  ['lyricSync', 'AI 가사 싱크 · 곡당 5,000원', '가사에 노래 시간을 맞춘 싱크 가사를 만들어 Musixmatch·국내 플랫폼에 등록해요.'],
-];
-
-const RIGHTS_OPTIONS: [keyof ReleaseOptions, string, string][] = [
-  ['minor', '미성년 아티스트·권리자', '법정대리인의 동의와 권한 확인이 필요해요.'],
-  ['cover', '커버곡', '원곡의 작사·작곡 저작물 이용 권한을 확인해요.'],
-  ['sample', '샘플링·타인 음원 사용', '원본 음원과 저작물의 이용 허락을 확인해요.'],
-  ['featured', '피처링·공동 실연', '참여자 크레딧과 필요한 이용 허락을 확인해요.'],
-  ['ai', 'AI 생성·보조 제작', '제작 방식과 각 플랫폼의 수용 기준을 검토해요.'],
-  ['shared', '공동 권리자·레이블 계약', '각 권리자와 배급 위임 범위를 확인해요.'],
-  ['rerelease', '기존 발매 이전·재발매', '이전 발매의 음반·음원 코드와 겹치지 않는지 확인해요.'],
-];
-
-const OPTIONS_CATALOG: [keyof ReleaseOptions, string, string][] = [
-  ...SERVICE_OPTIONS,
-  ...RIGHTS_OPTIONS,
-];
-
-function rightsOk(f: WizardForm): boolean {
-  if (!RIGHTS_CHECKS.every(([k]) => f.rightsChecks[k])) return false;
-  return CONDITIONAL_RIGHTS
-    .filter(([, , cond]) => cond(f.options))
-    .every(([k]) => f.rightsChecks[k]);
-}
-
-function applicableConditionals(o: ReleaseOptions): [string, string][] {
-  return CONDITIONAL_RIGHTS
-    .filter(([, , cond]) => cond(o))
-    .map(([k, label]) => [k, label]);
-}
-
-function KoreanDateField({ id, label, required, value, min, onChange, help }: {
-  id: string; label: React.ReactNode; required?: boolean;
-  value: string; min?: string; onChange: (v: string) => void; help?: React.ReactNode;
-}) {
-  return (
-    <div className="ui-field">
-      <label htmlFor={id}>{label}{required && <> <span className="required">*</span></>}</label>
-      <DateField id={id} value={value} min={min} required={required} onChange={onChange} />
-      {help && <small className="ui-field-help">{help}</small>}
-    </div>
-  );
-}
-
-/** 칸 바로 아래 안내 — 칸을 감싼 .ui-field(없으면 칸 자신) 뒤에 한 줄을 붙이고 칸과 aria-describedby로 잇는다.
- *  한 번에 하나만 둔다 */
-const FIELD_ERROR_ID = 'wizardFieldError';
-function clearFieldError() {
-  const old = document.getElementById(FIELD_ERROR_ID);
-  if (!old) return;
-  document.querySelector(`[aria-describedby~="${FIELD_ERROR_ID}"]`)?.removeAttribute('aria-describedby');
-  old.remove();
-}
-function showFieldError(el: HTMLElement, msg: string) {
-  clearFieldError();
-  const host = el.closest<HTMLElement>('.ui-field, .aq-option-detail, .aq-pick, .ui-check') ?? el;
-  // 같은 칸에 더 구체적인 안내가 이미 빨갛게 떠 있으면(예: '원본 파일이 아니에요') 그것만 둔다 —
-  // '파일을 선택해 주세요'가 아래에 또 붙어 빨간 줄이 두 개가 됐다. 칸은 그대로 흔들고 커서를 둔다
-  if (host.querySelector('.aq-help-error:not(#' + FIELD_ERROR_ID + ')')) return;
-  const note = document.createElement('p');
-  note.id = FIELD_ERROR_ID;
-  note.className = 'ui-field-help aq-help-error aq-field-error';
-  note.setAttribute('role', 'alert');
-  note.textContent = msg;
-  if (host.matches('.ui-field, .aq-option-detail')) host.appendChild(note);
-  else host.insertAdjacentElement('afterend', note);
-  if (!el.hasAttribute('aria-describedby')) el.setAttribute('aria-describedby', FIELD_ERROR_ID);
-}
-
-function BackIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24" fill="none"
-      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m15 18-6-6 6-6" />
-    </svg>
-  );
-}
-
-function selectedOptions(o: ReleaseOptions): [keyof ReleaseOptions, string, string][] {
-  return OPTIONS_CATALOG.filter(([id]) => !!o[id]);
-}
-
-function DocAttach({ id, label, fileName, assetId, busy, onSelect, required, help, kind, releaseId, onElectronic, onOpenDoc }: {
-  id: string; label: React.ReactNode; fileName: string;
-  assetId?: string; busy?: boolean;
-  onSelect: (file: File) => void; required?: boolean; help?: string;
-  kind: RightsDocumentKind; releaseId?: string; onElectronic: (kind: RightsDocumentKind) => void; onOpenDoc: (id: string) => void;
-}) {
-  const [method, setMethod] = useState<'electronic' | 'upload'>(fileName ? 'upload' : 'electronic');
-  const docs = useDocs().filter(d => d.releaseId === releaseId && d.electronic?.document_kind === kind);
-  return (
-    <div className="ui-field doc-attach aq-rights-evidence">
-      <strong>{label}{required && <> <span className="required">*</span></>}</strong>
-      <Segmented className="aq-method" label="서류 준비 방법" value={method} onChange={setMethod} options={[{ value: 'electronic', label: 'AUDENIQ에서 작성' }, { value: 'upload', label: '보유한 서류 첨부' }] as const} />
-      {method === 'electronic' ? (
-        <button type="button" className="aq-dropzone aq-filecard" onClick={() => onElectronic(kind)}>
-          <span className="aq-dropzone-icon" aria-hidden="true"><Glyph name="sign" size={26} /></span>
-          <span className="aq-dropzone-text">
-            <strong>{docs.length ? '권리자 추가로 서명받기' : `${RIGHTS_DOCUMENTS[kind].title} 작성하기`}</strong>
-            <small>발매 정보로 문서를 만들고 권리자가 직접 서명해요</small>
-          </span>
-        </button>
-      ) : <><label className="sr-only" htmlFor={id}>{label}</label><FileCard
-        id={id} fileName={fileName} busy={busy}
-        accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
-        hint={help || 'PDF · JPG · PNG'}
-        status={fileName ? (assetId ? '올렸어요 · 다시 누르면 바꿀 수 있어요' : '올린 기록이 없어요. 다시 첨부해 주세요') : undefined}
-        onFile={f => onSelect(f)}
-      /></>}
-      {docs.map(d => <button key={d.id} type="button" className="aq-rights-receipt" onClick={() => onOpenDoc(d.id)}><CheckIcon size={16} /><span>{d.electronic?.rights_holder} · {d.reviewStatus === 'needs' ? '보완 요청' : '서명 완료'}<small>{d.reviewStatus === 'approved' ? 'AUDENIQ 검토 승인' : d.reviewStatus === 'needs' ? d.reviewNote : 'AUDENIQ 검토 중'} · 문서 보기</small></span></button>)}
-    </div>
-  );
-}
-
-const certSvg = (d: string) => (
-  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg>
+// 배급 설정 단계부터 쓰는 조각 — 신청서를 처음 열 때는 받지 않고, 한가할 때 미리 받아 둔다 (아래 Upload의 useEffect)
+const loadOptions = () => import('./upload/options');
+const OptionsSection = lazyComponent(loadOptions, m => m.OptionsSection);
+const TerritoryPicker = lazyComponent(loadOptions, m => m.TerritoryPicker);
+const OptionDocsBanner = lazyComponent(loadOptions, m => m.OptionDocsBanner);
+const FinalReviewBanner = lazyComponent(loadOptions, m => m.FinalReviewBanner);
+/** 그 조각을 받는 동안 그 자리만 비워 둔다 — 단계 전체가 자리표시로 바뀌지 않게 */
+const Later = ({ children, h = 0 }: { children: ReactNode; h?: number }) => (
+  <Suspense fallback={h ? <SkeletonBlock height={h} /> : null}>{children}</Suspense>
 );
-const CERT_METHODS: { key: string; label: string; sub: string; icon: React.ReactNode }[] = [
-  { key: 'camera', label: '직접 촬영', sub: '카메라로 찍기', icon: certSvg('M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Zm8 9a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z') },
-  { key: 'pdf', label: 'PDF 선택', sub: '파일에서 고르기', icon: certSvg('M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Zm0 0v5h5M9 13h6M9 17h4') },
-  { key: 'wallet', label: '전자문서지갑', sub: '연동 준비 중', icon: certSvg('M3 7a2 2 0 0 1 2-2h13v4M3 7v10a2 2 0 0 0 2 2h15V9H5a2 2 0 0 1-2-2Zm13 7h.01') },
-];
 
-function GuardianConsentModal({ guardianName, onClose, onComplete }: {
-  guardianName: string;
-  onClose: () => void;
-  onComplete: (certName: string, certMethod: string) => void;
-}) {
-  const padRef = useRef<SignaturePadHandle>(null);
-  const [signed, setSigned] = useState(false);
-  const [certName, setCertName] = useState('');
-  const [certMethod, setCertMethod] = useState('');
-  const [ack, setAck] = useState(false);
-  const cameraRef = useRef<HTMLInputElement>(null);
-  const pdfRef = useRef<HTMLInputElement>(null);
 
-  const pick = (method: string) => {
-    if (method === 'camera') cameraRef.current?.click();
-    else if (method === 'pdf') pdfRef.current?.click();
-    else { setCertMethod('wallet'); setCertName('전자문서지갑에서 가져옴'); }
-  };
-  const onFile = (method: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (f) { setCertMethod(method); setCertName(f.name); }
-    e.target.value = '';
-  };
-
-  const missing = !ack ? '동의 항목을 체크해 주세요.' : !signed ? '법정대리인 서명을 입력해 주세요.' : !certName ? '가족관계증명서를 제출해 주세요.' : '';
-
-  return (
-    <Modal title="법정대리인 동의" onClose={onClose} dismissible={false} modalClass="aq-guardian-mode">
-      <div className="guardian-modal-body">
-        <p className="guardian-consent-text">
-          미성년 아티스트의 음원 발매에 대해 법정대리인{guardianName ? <strong> {guardianName}</strong> : ''}님의 동의를 확인해요.
-          아래 순서대로 진행해 주세요.
-        </p>
-
-        <ol className="aq-guardian-steps">
-          <li className={ack ? 'is-done' : ''}>
-            <span className="aq-guardian-no" aria-hidden="true">{ack ? <CheckIcon size={13} /> : 1}</span>
-            <label className="aq-guardian-agree">
-              <input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} />
-              <span>미성년자의 음원 발매와 배급에 법정대리인으로서 동의해요.<small>동의 내용은 발매 심사 때 확인돼요.</small></span>
-            </label>
-          </li>
-          <li className={signed ? 'is-done' : ''}>
-            <span className="aq-guardian-no" aria-hidden="true">{signed ? <CheckIcon size={13} /> : 2}</span>
-            <div className="min-0">
-              <strong className="aq-guardian-label">법정대리인 전자서명 <span className="required">*</span></strong>
-              <SignaturePad ref={padRef} id="aqGuardianPad" label="법정대리인 서명 입력" height={170} onChange={setSigned} />
-            </div>
-          </li>
-          <li className={certName ? 'is-done' : ''}>
-            <span className="aq-guardian-no" aria-hidden="true">{certName ? <CheckIcon size={13} /> : 3}</span>
-            <div className="min-0">
-              <strong className="aq-guardian-label">가족관계증명서 <span className="required">*</span></strong>
-              <div className="aq-cert-methods" role="radiogroup" aria-label="가족관계증명서 제출 방법">
-                {CERT_METHODS.map(m => (
-                  <button
-                    key={m.key} type="button" role="radio" aria-checked={certMethod === m.key}
-                    className={`aq-cert-method${certMethod === m.key ? ' is-active' : ''}`}
-                    onClick={() => pick(m.key)}
-                  >
-                    <span className="aq-cert-icon">{m.icon}</span>
-                    <strong>{m.label}</strong>
-                    <small>{m.sub}</small>
-                  </button>
-                ))}
-              </div>
-              <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={onFile('camera')} />
-              <input ref={pdfRef} type="file" accept=".pdf,application/pdf" hidden onChange={onFile('pdf')} />
-              {certName && (
-                <p className="aq-cert-picked">
-                  <span className="aq-check-badge is-sm"><CheckIcon size={10} /></span> {certName}
-                  {certMethod === 'wallet' && <small>전자문서지갑 연동 후 원본을 가져와요. 지금은 선택 상태로 저장돼요.</small>}
-                </p>
-              )}
-            </div>
-          </li>
-        </ol>
-      </div>
-      <div className="aq-modal-foot aq-guardian-foot aq-sticky-foot">
-        <p className="aq-guardian-missing" aria-live="polite">{missing}</p>
-        <button type="button" className="ui-btn is-soft" onClick={onClose}>닫기</button>
-        <button type="button" className="ui-btn is-primary" disabled={!!missing} onClick={() => onComplete(certName, certMethod)}>동의 완료</button>
-      </div>
-    </Modal>
-  );
-}
-
-/** 배급 지역 — 기본은 ‘전 세계’ 스위치만. 끄면 배급할 지역 또는 뺄 지역을 고른다 */
-function TerritoryPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
-  const plan = parseTerritories(value);
-  const plainWorld = plan.world && !plan.excluded.length;
-  const [open, setOpen] = useState(!plainWorld);
-  const [mode, setMode] = useState<'exclude' | 'include'>(plan.world ? 'exclude' : 'include');
-  const [query, setQuery] = useState('');
-  const picked = mode === 'exclude' ? plan.excluded : plan.included;
-  const write = (codes: string[]) => onChange(mode === 'exclude' ? worldExcept(codes) : codes);
-  const toggle = (code: string) => write(picked.includes(code) ? picked.filter(c => c !== code) : [...picked, code]);
-  const q = query.trim().toLowerCase();
-  const groups = TERRITORY_GROUPS
-    .map(([region, codes]) => [region, codes.filter(c => !q || territoryName(c).toLowerCase().includes(q) || c.toLowerCase() === q)] as const)
-    .filter(([, codes]) => codes.length > 0);
-  const n = picked.length;
-  const headline = !open || (mode === 'exclude' && !n) ? '전 세계에 배급해요.'
-    : mode === 'exclude' ? `전 세계에서 ${n}곳을 빼고 배급해요.`
-      : n ? `${n}개 국가·지역에만 배급해요.` : '배급할 지역을 골라 주세요.';
-  const help = !open ? '특정 지역만 고르거나 빼려면 스위치를 꺼 주세요.'
-    : mode === 'exclude' ? (n ? territorySummary(value) : '아래에서 배급하지 않을 지역을 골라 주세요.')
-      : n ? picked.map(territoryName).join(', ') : '아래에서 배급할 지역을 하나 이상 골라 주세요.';
-
-  return (
-    <div id="aqTerritories" className="aq-territory">
-      <div className="distribution-default">
-        <div className="min-0">
-          <strong>{headline}</strong>
-          <p className="ui-field-help break">{help}</p>
-        </div>
-        <label className="aq-switch">
-          <input
-            type="checkbox" aria-label="전 세계 배급"
-            checked={!open}
-            onChange={e => {
-              if (e.target.checked) { onChange([WORLD]); setOpen(false); setQuery(''); } else setOpen(true);
-            }}
-          />
-          <span />
-        </label>
-      </div>
-      {open && (
-        <div className="aq-territory-panel aq-reveal">
-          <Segmented
-            className="aq-territory-mode" label="지역 선택 방식" value={mode}
-            onChange={m => { setMode(m); onChange(m === 'exclude' ? [WORLD] : []); }}
-            options={[{ value: 'exclude', label: '뺄 지역 고르기' }, { value: 'include', label: '배급할 지역 고르기' }] as const}
-          />
-          <div className="aq-territory-search">
-            <label className="sr-only" htmlFor="aqTerritorySearch">국가·지역 검색</label>
-            <input id="aqTerritorySearch" type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="국가·지역 이름으로 찾기" autoComplete="off" />
-          </div>
-          {n > 0 && (
-            <div className="aq-territory-picked">
-              <span>{mode === 'exclude' ? '빼는 지역' : '배급할 지역'} <b>{n}</b>곳</span>
-              <button type="button" className="ui-btn is-ghost is-xs" onClick={() => write([])}>모두 해제</button>
-            </div>
-          )}
-          {groups.length === 0 && <p className="aq-territory-empty">‘{query.trim()}’에 맞는 국가·지역이 없어요.</p>}
-          {groups.map(([region, codes]) => {
-            const all = codes.every(c => picked.includes(c));
-            return (
-              <div key={region} className="aq-territory-group">
-                <div className="aq-territory-region">
-                  <p>{region}</p>
-                  {!q && (
-                    <button type="button" className="ui-btn is-ghost is-xs" onClick={() => write(all ? picked.filter(c => !codes.includes(c)) : [...new Set([...picked, ...codes])])}>
-                      {all ? '모두 해제' : '모두 선택'}
-                    </button>
-                  )}
-                </div>
-                <div className="aq-chips" role="group" aria-label={`${region} 국가·지역`}>
-                  {codes.map(c => {
-                    const on = picked.includes(c);
-                    return (
-                      <button key={c} type="button" className={`aq-chip${on ? ' is-on' : ''}${on && mode === 'exclude' ? ' is-excluded' : ''}`} aria-pressed={on} onClick={() => toggle(c)}>
-                        {territoryName(c)}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-      <p className="aq-territory-note">
-        <Glyph name="info" size={16} />
-        <span>AUDENIQ 이용약관과 관련 법령에 따라 배급이 제한된 국가·지역은 전 세계 배급을 선택해도 자동으로 제외돼요. <a href="/terms" target="_blank" rel="noopener" className="aq-inline-link">약관 보기</a></span>
-      </p>
-    </div>
-  );
-}
-
-/** 플랫폼 구분용 색 (로고 대신 첫 글자 배지) */
-const DSP_COLOR: Record<string, string> = {
-  melon: '#00c73c', genie: '#1d6bf3', flo: '#3f3fff', bugs: '#ff3a3a', spotify: '#1db954', apple: '#fa2d48',
-  youtube: '#ff0033', amazon: '#1ec8d6', tidal: '#111827', deezer: '#a238ff', qobuz: '#1f2a44',
-  pandora: '#224099', soundcloud: '#ff5500', audiomack: '#ffa200', anghami: '#9b2cf5', boomplay: '#1e90ff',
-  jiosaavn: '#2bc5b4', kkbox: '#09cef6', 'line-music': '#06c755', awa: '#f05a28', netease: '#e60026',
-  tencent: '#31c27c', napster: '#2259ff', iheart: '#c6002b', meta: '#0866ff', tiktok: '#111111',
-  'youtube-cid': '#cc0000', snapchat: '#e6cf00', beatport: '#01ff95',
-  itunes: '#ea4cc0', 'claro-musica': '#da291c', pretzel: '#1a8cff', triller: '#ff0f63', touchtunes: '#003da5', yandex: '#fc3f1d',
-  kuaishou: '#ff4906', joox: '#00d05a', trebel: '#6c2bd9', mixcloud: '#5000ff', twitch: '#9146ff', peloton: '#df1c2f',
-  canva: '#00c4cc', lickd: '#ff3d6e', adaptr: '#2d2d86', styngr: '#ff7a00',
-};
-
-/** 플랫폼 선택 화면의 묶음 — 서버가 주는 region/category 기준 */
-const DSP_GROUPS: [string, (d: { region: string; category?: string }) => boolean][] = [
-  ['국내', d => d.region === 'KR'],
-  ['해외 스트리밍', d => d.region !== 'KR' && (d.category ?? 'STREAMING') === 'STREAMING'],
-  ['소셜·숏폼 영상', d => d.category === 'SOCIAL'],
-  ['스토어', d => d.category === 'STORE'],
-  ['피트니스·크리에이터·게임 라이선스', d => d.category === 'LICENSING'],
-];
-
-const AI_USES = [
-  '전체를 AI로 제작했어요', '작곡(멜로디)에 AI 도움을 받았어요', '작사에 AI 도움을 받았어요', 'AI로 보컬(목소리)을 만들었어요',
-  '편곡·반주에 AI를 사용했어요', '믹싱·마스터링에 AI 도구를 썼어요', '커버아트를 AI로 만들었어요',
-];
-const AI_TOOLS = ['Suno', 'Udio', 'ChatGPT', 'Stable Audio', 'AIVA', 'Midjourney'];
-const EXPRESS_REASONS = ['공연 일정에 맞춰야 해요', '방송·광고 일정이 있어요', '이벤트·프로모션 일정이 있어요', '영상·드라마 공개일에 맞춰야 해요'];
-
-/** 고른 버튼을 심사용 문장으로 합친다 */
-function aiSummary(o: Pick<ReleaseOptions, 'aiUses' | 'aiTools' | 'aiUseOther' | 'aiToolOther'>): string {
-  const uses = o.aiUses.map(u => (u === OTHER ? o.aiUseOther.trim() : u)).filter(Boolean);
-  const tools = o.aiTools.map(t => (t === OTHER ? o.aiToolOther.trim() : t)).filter(Boolean);
-  return [uses.join(' · '), tools.length ? `도구: ${tools.join(', ')}` : ''].filter(Boolean).join(' / ');
-}
-
-function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, onOpenDoc, releaseId, onGuardian }: {
-  form: WizardForm;
-  group: 'service' | 'rights';
-  set: <K extends keyof WizardForm>(key: K, value: WizardForm[K]) => void;
-  onDocument: (name: keyof ReleaseOptions, asset: keyof ReleaseOptions, file: File) => void;
-  uploads: Record<string, UploadState>;
-  onElectronic: (kind: RightsDocumentKind) => void; onOpenDoc: (id: string) => void; releaseId?: string;
-  /** 실서버: 법정대리인 동의 창 (임시 저장 후 서명 요청) */
-  onGuardian: () => void;
-}) {
-  const o = form.options;
-  const setOpt = <K extends keyof ReleaseOptions>(key: K, value: ReleaseOptions[K]) =>
-    set('options', { ...o, [key]: value });
-  const [showGuardianModal, setShowGuardianModal] = useState(false);
-  const [expressOther, setExpressOther] = useState(false);
-  // 예전 신청서(직접 입력한 aiTool만 있음)는 ‘기타’로 보여 준다
-  const aiUses = o.aiUses?.length ? o.aiUses : o.aiTool ? [OTHER] : [];
-  const aiUseOther = o.aiUses?.length ? o.aiUseOther ?? '' : o.aiTool;
-  const setAi = (patch: Partial<ReleaseOptions>) => {
-    const next = { aiUses, aiTools: o.aiTools ?? [], aiUseOther, aiToolOther: o.aiToolOther ?? '', ...patch };
-    set('options', { ...o, ...next, aiTool: aiSummary(next) });
-  };
-  const expressPick = !o.expressReason ? (expressOther ? [OTHER] : []) : EXPRESS_REASONS.includes(o.expressReason) ? [o.expressReason] : [OTHER];
-
-  // 선택한 카드 바로 밑에 여는 입력 (목록 맨 아래가 아니라)
-  const detail: Partial<Record<keyof ReleaseOptions, React.ReactNode>> = {
-    mv: <MvDetail o={o} set={patch => set('options', { ...o, ...patch })} tracks={form.tracks} />,
-    lyricSync: <LyricDetail o={o} set={patch => set('options', { ...o, ...patch })} tracks={form.tracks} />,
-    express: (
-      <div className="aq-option-detail">
-        <h3>신속 발매 · 10,000원</h3>
-        <p className="aq-option-intro">신청 후 3영업일 안에 발매되도록 심사와 플랫폼 전송을 먼저 처리해요. 신청을 마치면 부가서비스에서 정산금이나 카드로 결제해요. 보완이 필요하거나 일정을 맞출 수 없으면 담당자가 연락하고, 진행하지 못하면 전액 환불해요.</p>
-        <div className="ui-field">
-          <label htmlFor="aqExpressReason">신속 발매가 필요한 이유<span className="aq-optional">선택</span></label>
-          <ChipPicker
-            id="aqExpressReason" single list options={EXPRESS_REASONS} value={expressPick}
-            onChange={v => { setExpressOther(v[0] === OTHER); setOpt('expressReason', v[0] && v[0] !== OTHER ? v[0] : ''); }}
-            other={EXPRESS_REASONS.includes(o.expressReason) ? '' : o.expressReason} onOther={v => setOpt('expressReason', v)}
-            otherPlaceholder="신속 발매가 필요한 이유"
-          />
-        </div>
-        {/* 위 선택지와 같은 모양의 한 줄 — 확인 표시도 오른쪽 */}
-        <label className={`aq-pick aq-ack${o.expressAck ? ' is-on' : ''}`}>
-          <input
-            type="checkbox" id="aqExpressAck" className="aq-ack-input"
-            checked={o.expressAck}
-            onChange={e => setOpt('expressAck', e.target.checked)}
-          />
-          <span>신속 발매 비용 10,000원을 결제할게요.<small>신청을 마친 뒤 부가서비스에서 결제해요. 자동으로 결제되지는 않아요.</small></span>
-          <span className="aq-pick-mark" aria-hidden="true">{o.expressAck && <CheckIcon size={12} />}</span>
-        </label>
-      </div>
-    ),
-    minor: (
-      <div className="aq-option-detail">
-        <h3>법정대리인 확인</h3>
-        <p className="aq-option-intro">본인 및 권리자의 동의 범위를 확인할 수 있도록 보호자 정보를 입력해 주세요. 법정대리인은 2명을 입력하는 것이 원칙이지만, 1명인 경우도 접수할 수 있어요.</p>
-        <h4 className="aq-guardian-head">법정대리인 1</h4>
-        <div className="ui-field">
-          <label htmlFor="aqGuardian">법정대리인 성명 <span className="required">*</span></label>
-          <input
-            id="aqGuardian" autoComplete="name" maxLength={90} value={o.guardian}
-            onChange={e => setOpt('guardian', e.target.value)}
-            placeholder="법정대리인 성명"
-          />
-        </div>
-        <div className="ui-field">
-          <label htmlFor="aqGuardianRelation">아티스트와의 관계 <span className="required">*</span></label>
-          <select
-            id="aqGuardianRelation" value={o.guardianRelation}
-            onChange={e => setOpt('guardianRelation', e.target.value)}
-          >
-            <option value="">관계를 선택해 주세요.</option>
-            {['부', '모', '기타 법정대리인'].map(x => (
-              <option key={x} value={x}>{x}</option>
-            ))}
-          </select>
-        </div>
-        <div className="ui-field">
-          <label htmlFor="aqGuardianContact">법정대리인 연락처 또는 이메일 <span className="required">*</span></label>
-          <input
-            id="aqGuardianContact" maxLength={160} value={o.guardianContact}
-            onChange={e => setOpt('guardianContact', e.target.value)}
-            placeholder="확인이 가능한 연락처"
-          />
-        </div>
-        <h4 className="aq-guardian-head">법정대리인 2 <small>(해당하는 경우)</small></h4>
-        <div className="ui-field">
-          <label htmlFor="aqGuardian2">법정대리인 성명</label>
-          <input
-            id="aqGuardian2" autoComplete="name" maxLength={90} value={o.guardian2}
-            onChange={e => setOpt('guardian2', e.target.value)}
-            placeholder="법정대리인 성명"
-          />
-        </div>
-        <div className="ui-field">
-          <label htmlFor="aqGuardian2Relation">아티스트와의 관계</label>
-          <select
-            id="aqGuardian2Relation" value={o.guardian2Relation}
-            onChange={e => setOpt('guardian2Relation', e.target.value)}
-          >
-            <option value="">관계를 선택해 주세요.</option>
-            {['부', '모', '기타 법정대리인'].map(x => (
-              <option key={x} value={x}>{x}</option>
-            ))}
-          </select>
-        </div>
-        <div className="ui-field">
-          <label htmlFor="aqGuardian2Contact">법정대리인 연락처 또는 이메일</label>
-          <input
-            id="aqGuardian2Contact" maxLength={160} value={o.guardian2Contact}
-            onChange={e => setOpt('guardian2Contact', e.target.value)}
-            placeholder="확인이 가능한 연락처"
-          />
-        </div>
-        <div className="ui-field">
-          <label>법정대리인 동의</label>
-          <button
-            type="button" className="ui-btn is-soft" style={{ width: '100%' }}
-            onClick={() => (MOCK ? setShowGuardianModal(true) : onGuardian())}
-          >
-            {o.guardianConsentDone ? '법정대리인 동의를 마쳤어요 · 다시 확인하기' : '법정대리인 동의 받기'}
-          </button>
-          <p className="ui-field-help">
-            {o.guardianConsentDone
-              ? `동의 완료${o.familyCertName ? ` · 가족관계증명서: ${o.familyCertName}` : ''}`
-              : MOCK ? '동의창에서 법정대리인 서명과 가족관계증명서를 제출해요.'
-                : '법정대리인이 직접 본인확인 후 서명하고, 가족관계증명서를 올려요.'}
-          </p>
-        </div>
-        <p className="aq-option-note">{MOCK
-          ? '법정대리인 정보 입력만으로 본인 확인이나 동의 검증이 완료되지는 않아요. 담당자 확인 후 서명 단계를 안내해요.'
-          : '서명은 법정대리인 본인만 할 수 있어요. AUDENIQ이 가족관계증명서로 관계를 확인한 뒤 심사를 진행해요.'}</p>
-      </div>
-    ),
-    cover: (
-      <div className="aq-option-detail">
-        <h3>커버곡 정보</h3>
-        <p className="aq-option-intro">커버한 트랙을 선택하고, 원곡 정보를 입력해 주세요.</p>
-        {form.tracks.map((t, i) => {
-          const info = o.coverTracks.find(c => c.trackId === t.id);
-          const toggleCover = (checked: boolean) => {
-            setOpt('coverTracks', checked
-              ? [...o.coverTracks, { trackId: t.id, originalTitle: '', originalArtist: '', originalWriters: '' }]
-              : o.coverTracks.filter(c => c.trackId !== t.id));
-          };
-          const setCoverInfo = (key: keyof Omit<CoverTrackInfo, 'trackId'>, value: string) => {
-            setOpt('coverTracks', o.coverTracks.map(c =>
-              c.trackId === t.id ? { ...c, [key]: value } : c));
-          };
-          return (
-            <div key={t.id} className="cover-track-item">
-              <label className="ui-check is-plain">
-                <input
-                  type="checkbox" checked={!!info}
-                  onChange={e => toggleCover(e.target.checked)}
-                />
-                <span><strong>트랙 {i + 1} · {t.title.trim() || '(제목 없음)'}</strong></span>
-              </label>
-              {info && (
-                <div className="cover-track-fields">
-                  <div className="ui-field">
-                    <label htmlFor={`cover-orig-title-${i}`}>원곡 제목 <span className="required">*</span></label>
-                    <input
-                      id={`cover-orig-title-${i}`} maxLength={200} value={info.originalTitle}
-                      onChange={e => setCoverInfo('originalTitle', e.target.value)}
-                      placeholder="원곡의 제목"
-                    />
-                  </div>
-                  <div className="ui-field">
-                    <label htmlFor={`cover-orig-artist-${i}`}>원곡 아티스트 <span className="required">*</span></label>
-                    <input
-                      id={`cover-orig-artist-${i}`} maxLength={200} value={info.originalArtist}
-                      onChange={e => setCoverInfo('originalArtist', e.target.value)}
-                      placeholder="원곡자 또는 원 아티스트"
-                    />
-                  </div>
-                  <div className="ui-field">
-                    <label htmlFor={`cover-orig-writers-${i}`}>원곡 작사 / 작곡</label>
-                    <input
-                      id={`cover-orig-writers-${i}`} maxLength={200} value={info.originalWriters}
-                      onChange={e => setCoverInfo('originalWriters', e.target.value)}
-                      placeholder="알고 있다면 입력"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-        <label className="ui-check is-plain" style={{ marginTop: 12 }}>
-          <input
-            type="checkbox" id="aqCoverRightsAck"
-            checked={o.coverRightsAck}
-            onChange={e => setOpt('coverRightsAck', e.target.checked)}
-          />
-          <span>원곡 저작권자의 이용 허락을 받았거나, 정당한 라이선스 절차를 진행할 것을 확인해요.<small>허락 없는 커버곡 배급은 저작권 침해가 될 수 있어요.</small></span>
-        </label>
-        <DocAttach
-          kind="composition" releaseId={releaseId} onElectronic={onElectronic} onOpenDoc={onOpenDoc}
-          id="aqCoverLicense" label="원곡 이용 허락서"
-          fileName={o.coverLicenseFile} assetId={o.coverLicenseAssetId} busy={uploads.coverLicenseFile?.state === 'uploading'}
-          onSelect={file => onDocument('coverLicenseFile', 'coverLicenseAssetId', file)}
-          help="이용 허락서나 라이선스 계약서를 첨부해 주세요."
-        />
-      </div>
-    ),
-    sample: (
-      <div className="aq-option-detail">
-        <h3>샘플링·타인 음원 사용</h3>
-        <p className="aq-option-intro">사용한 원본 음원과 저작물의 출처를 확인해요.</p>
-        <DocAttach
-          kind="sample" releaseId={releaseId} onElectronic={onElectronic} onOpenDoc={onOpenDoc}
-          id="aqSampleLicense" label="원본 이용 허락서"
-          fileName={o.sampleLicenseFile} assetId={o.sampleLicenseAssetId} busy={uploads.sampleLicenseFile?.state === 'uploading'}
-          onSelect={file => onDocument('sampleLicenseFile', 'sampleLicenseAssetId', file)}
-          help="샘플링 원본의 이용 허락서나 라이선스 계약서를 첨부해 주세요."
-        />
-        <p className="aq-option-note">허락 없는 샘플링은 저작권 침해가 될 수 있어요.</p>
-      </div>
-    ),
-    featured: (
-      <div className="aq-option-detail">
-        <h3>피처링·공동 실연</h3>
-        <p className="aq-option-intro">참여자의 크레딧과 이용 허락을 확인해요.</p>
-        <DocAttach
-          kind="performer" releaseId={releaseId} onElectronic={onElectronic} onOpenDoc={onOpenDoc}
-          id="aqFeaturedConsent" label="참여자 동의서 (있으면)"
-          fileName={o.featuredConsentFile} assetId={o.featuredConsentAssetId} busy={uploads.featuredConsentFile?.state === 'uploading'}
-          onSelect={file => onDocument('featuredConsentFile', 'featuredConsentAssetId', file)}
-          help="피처링 참여자의 동의서나 계약서를 첨부해 주세요."
-        />
-      </div>
-    ),
-    shared: (
-      <div className="aq-option-detail">
-        <h3>공동 권리자·레이블 계약</h3>
-        <p className="aq-option-intro">각 권리자와의 배급 위임 범위를 확인해요.</p>
-        <DocAttach
-          kind="shared" releaseId={releaseId} onElectronic={onElectronic} onOpenDoc={onOpenDoc}
-          id="aqSharedContract" label="공동 권리 계약서"
-          fileName={o.sharedContractFile} assetId={o.sharedContractAssetId} busy={uploads.sharedContractFile?.state === 'uploading'}
-          onSelect={file => onDocument('sharedContractFile', 'sharedContractAssetId', file)}
-          help="배급 위임 범위가 명시된 계약서를 첨부해 주세요."
-        />
-      </div>
-    ),
-    rerelease: (
-      <div className="aq-option-detail">
-        <h3>기존 발매 이전·재발매</h3>
-        <p className="aq-option-intro">현재 상황을 고르면 기존 코드와 서비스 이전에 필요한 내용을 안내해 드려요.</p>
-        <div className="ui-field">
-          <label>어떤 상황인가요? <span className="required">*</span></label>
-          <ChipPicker id="aqRereleaseKind" single options={Object.values(RERELEASE_KINDS)} value={o.rereleaseKind ? [RERELEASE_KINDS[o.rereleaseKind]] : []}
-            onChange={v => set('options', { ...o, rereleaseKind: (Object.entries(RERELEASE_KINDS).find(([, label]) => label === v[0])?.[0] ?? '') as RereleaseData['rereleaseKind'], rereleaseAck: false })} />
-        </div>
-        <div className="ui-field">
-          <label htmlFor="aqPreviousTitle">기존 발매명 <span className="required">*</span></label>
-          <input
-            id="aqPreviousTitle" maxLength={180} value={o.previousTitle}
-            onChange={e => setOpt('previousTitle', e.target.value)}
-            placeholder="기존 앨범·싱글 제목"
-          />
-        </div>
-        <div className="ui-field">
-          <label htmlFor="aqPreviousDistributor">이전 유통사·레이블 (알고 있다면)</label>
-          <input id="aqPreviousDistributor" maxLength={160} value={o.previousDistributor ?? ''} onChange={e => setOpt('previousDistributor', e.target.value)} placeholder="기존 배급을 맡은 곳" />
-        </div>
-        <div className="ui-field">
-          <label htmlFor="aqPreviousUrl">기존 발매 링크 <span className="aq-optional">선택</span></label>
-          <input id="aqPreviousUrl" type="url" maxLength={500} value={o.previousUrl ?? ''} onChange={e => setOpt('previousUrl', e.target.value)} placeholder="https://…" />
-        </div>
-        <KoreanDateField
-          id="aqOriginalDate" label={o.rereleaseKind === 'new_version' ? '이전 버전의 최초 발매일' : '최초 발매일'} required
-          value={form.originalDate}
-          onChange={v => set('originalDate', v)}
-        />
-        <div className="ui-field"><label>기존 음원은 지금 서비스 중인가요? <span className="required">*</span></label>
-          <ChipPicker id="aqPreviousAvailability" single options={Object.values(RERELEASE_AVAILABILITY)} value={o.previousAvailability ? [RERELEASE_AVAILABILITY[o.previousAvailability]] : []}
-            onChange={v => set('options', { ...o, previousAvailability: (Object.entries(RERELEASE_AVAILABILITY).find(([, label]) => label === v[0])?.[0] ?? '') as RereleaseData['previousAvailability'], rereleaseAck: false })} />
-        </div>
-        <div className="ui-field"><label htmlFor="aqRereleaseAudio">이번 음원은 기존 녹음과 같은가요? <span className="required">*</span></label>
-          <select id="aqRereleaseAudio" value={o.rereleaseAudio ?? ''} onChange={e => set('options', { ...o, rereleaseAudio: e.target.value as RereleaseData['rereleaseAudio'], rereleaseAck: false })}>
-            <option value="">선택해 주세요</option><option value="same">같은 녹음 · 음원 내용 변경 없음</option><option value="changed">새 녹음·리믹스 등 음악 내용 변경</option><option value="unknown">리마스터처럼 바뀐 점이 있는지 확인이 필요해요</option>
-          </select>
-        </div>
-        {o.rereleaseAudio && <div className="aq-option-note" role="status">
-          {o.rereleaseAudio === 'same' ? '같은 녹음은 기존 ISRC를 유지해요. 제목·아티스트·길이 등 기존 정보를 맞춰 주세요. 스트리밍 수와 플레이리스트 연결 결과는 플랫폼에서 결정해요.'
-            : o.rereleaseAudio === 'changed' ? '새 녹음·리믹스처럼 음악 내용이 달라지면 새로운 ISRC가 필요해요. 기존 코드는 비교용으로 보관하고 새 음원에 적용하지 않아요.'
-              : '단순 음량 조정과 음악 내용 변경은 코드 처리 방식이 달라요. 변경 내용을 아래에 적고 문의 메뉴에서 확인해 주세요. 확인 전에는 임시 저장해 둘 수 있어요.'}
-        </div>}
-        <div className="ui-field"><label htmlFor="aqPreviousUpc">기존 음반 코드 UPC <span className="aq-optional">선택</span></label>
-          <input id="aqPreviousUpc" inputMode="numeric" maxLength={14} value={o.previousUpc ?? ''} onChange={e => setOpt('previousUpc', e.target.value)} placeholder="기존 앨범·싱글의 UPC" />
-          {o.rereleaseKind === 'transfer' && o.rereleaseAudio === 'same' && o.previousUpc && <button type="button" className="ui-btn is-white is-sm" onClick={() => set('upc', o.previousUpc ?? '')}>같은 음반의 UPC를 배급 설정에 넣기</button>}
-          <p className="ui-field-help">트랙 구성이나 버전이 다른 음반은 새 UPC를 사용해요. 기존 UPC는 이전 유통사에서 확인할 수 있어요.</p>
-        </div>
-        <h4>트랙별 기존 ISRC</h4>
-        {form.tracks.map((t, i) => <div key={t.id} className="ui-field">
-          <label htmlFor={`aqPreviousIsrc-${i}`}>{i + 1}. {t.title || '제목 없는 트랙'} · 기존 ISRC{o.rereleaseAudio === 'same' && <> <span className="required">*</span></>}</label>
-          <input id={`aqPreviousIsrc-${i}`} maxLength={15} value={o.rereleaseTracks?.find(x => x.trackId === t.id)?.previousIsrc ?? (i === 0 ? o.previousId : '')}
-            onChange={e => setOpt('rereleaseTracks', form.tracks.map((track, k) => ({ trackId: track.id, previousIsrc: track.id === t.id ? e.target.value : o.rereleaseTracks?.find(x => x.trackId === track.id)?.previousIsrc ?? (k === 0 ? o.previousId : '') })))} placeholder="예: KR-ABC-26-00001" />
-        </div>)}
-        {o.rereleaseAudio === 'same' && <button type="button" className="ui-btn is-soft" onClick={() => {
-          const previous = form.tracks.map((t, i) => ({ trackId: t.id, previousIsrc: o.rereleaseTracks?.find(x => x.trackId === t.id)?.previousIsrc ?? (i === 0 ? o.previousId : '') }));
-          set('tracks', form.tracks.map(t => ({ ...t, isrc: previous.find(x => x.trackId === t.id)?.previousIsrc || t.isrc })));
-          setOpt('rereleaseTracks', previous);
-        }}>기존 ISRC를 트랙 등록에 적용</button>}
-        <p className="ui-field-help">ISRC를 모르면 이전 유통사의 발매 내역에서 확인해 주세요. 같은 녹음에 새 코드를 발급하지 않도록 확인 후 접수해요.</p>
-        <div className="ui-field"><label htmlFor="aqRereleaseRights">기존 계약과 이번 배급 권한 <span className="required">*</span></label>
-          <select id="aqRereleaseRights" value={o.rereleaseRights ?? ''} onChange={e => setOpt('rereleaseRights', e.target.value as RereleaseData['rereleaseRights'])}>
-            <option value="">선택해 주세요</option><option value="owned">내가 권리자이며 이전 계약의 제한을 확인했어요</option><option value="permission">권리자·레이블로부터 이번 배급 허락을 받았어요</option><option value="pending">계약 또는 이전 허락을 확인 중이에요</option>
-          </select>
-        </div>
-        {o.rereleaseRights === 'permission' && <DocAttach kind="master" releaseId={releaseId} onElectronic={onElectronic} onOpenDoc={onOpenDoc}
-          id="aqRereleasePermission" label="이번 배급 이용 허락서" fileName={o.rereleasePermissionFile ?? ''} assetId={o.rereleasePermissionAssetId} busy={uploads.rereleasePermissionFile?.state === 'uploading'} onSelect={file => onDocument('rereleasePermissionFile', 'rereleasePermissionAssetId', file)} />}
-        <div className="ui-field"><label htmlFor="aqRereleaseNotes">변경 사항·이전 일정·확인이 필요한 내용</label><textarea id="aqRereleaseNotes" maxLength={1200} rows={3} value={o.rereleaseNotes ?? ''} onChange={e => setOpt('rereleaseNotes', e.target.value)} placeholder="예: 기존 서비스 종료 요청일, 리마스터 변경 내용, 이전 계약 확인 상황" /></div>
-        {(o.previousAvailability === 'live' || o.previousAvailability === 'takedown_requested') && <p className="aq-option-note">기존 서비스가 남아 있어요. 이전 유통사와 종료·이전 일정을 조율하고, 새 서비스 연결을 확인한 뒤 중복 송출을 정리해 주세요. AUDENIQ 신청만으로 기존 서비스가 내려가지는 않아요.</p>}
-        <label className="ui-check is-plain"><input id="aqRereleaseAck" type="checkbox" checked={!!o.rereleaseAck} onChange={e => setOpt('rereleaseAck', e.target.checked)} /><span>기존 계약·음원 코드·서비스 상태를 확인했고, 서비스 이전 일정과 플랫폼 연결 결과는 별도로 확인할게요.</span></label>
-        <p className="ui-field-help">코드 안내 기준: <a href="https://isrc.ifpi.org/why-use-isrc/when-to-assign" target="_blank" rel="noreferrer">IFPI ISRC</a> · <a href="https://support.spotify.com/sc-en/artists/article/re-uploading-music/" target="_blank" rel="noreferrer">Spotify 재업로드 안내</a></p>
-      </div>
-    ),
-    ai: (
-      <div className="aq-option-detail">
-        <h3>AI 활용 내역</h3>
-        <div className="ui-field">
-          <label htmlFor="aqAiTool">어떻게 활용했나요? <span className="required">*</span> <small className="muted">여러 개 고를 수 있어요</small></label>
-          <ChipPicker
-            id="aqAiTool" list options={AI_USES} value={aiUses} onChange={v => setAi({ aiUses: v })}
-            other={aiUseOther} onOther={v => setAi({ aiUseOther: v })} otherPlaceholder="AI를 활용한 부분을 적어 주세요"
-          />
-        </div>
-        <div className="ui-field">
-          <label htmlFor="aqAiTools">사용한 도구<span className="aq-optional">선택</span></label>
-          <ChipPicker
-            id="aqAiTools" options={AI_TOOLS} value={o.aiTools ?? []} onChange={v => setAi({ aiTools: v })}
-            other={o.aiToolOther ?? ''} onOther={v => setAi({ aiToolOther: v })} otherPlaceholder="도구 이름"
-          />
-        </div>
-        <p className="ui-field-help">이용 약관과 상업적 이용 허가 자료를 요청할 수 있어요. 모든 배급 플랫폼이 AI 음악을 받는 것은 아니에요.</p>
-      </div>
-    ),
-  };
-  const list = group === 'service' ? SERVICE_OPTIONS : RIGHTS_OPTIONS;
-  // 권리 단계의 '해당하는 항목' 7개는 대부분 해당이 없다 — 먼저 '특별한 경우가 있나요?'를 묻고 '있어요'일 때만 펼친다.
-  // 이미 고른 항목이 있으면 처음부터 펼쳐 둔다
-  const anyRights = RIGHTS_OPTIONS.some(([id]) => !!o[id]);
-  const [special, setSpecial] = useState(anyRights);
-  const showList = group === 'service' || special || anyRights;
-
-  return (
-    <>
-      {group === 'service' ? (
-        <>
-          <h2 className="subhead" style={{ marginTop: 25 }}>부가서비스</h2>
-          <p className="aq-option-intro">필요한 서비스를 선택해 주세요.</p>
-        </>
-      ) : (
-        <>
-          <h2 className="subhead" style={{ marginTop: 25 }}>특별한 경우가 있나요?</h2>
-          <p className="aq-option-intro">커버곡·샘플링·피처링·AI 제작·공동 권리·미성년·재발매 중 해당하는 게 있으면 알려 주세요.</p>
-          <div className="aq-yesno" role="radiogroup" aria-label="특별한 경우가 있나요?">
-            <button type="button" role="radio" aria-checked={!showList} className={`ui-chip${!showList ? ' is-on' : ''}`} disabled={anyRights} onClick={() => setSpecial(false)}>없어요</button>
-            <button type="button" role="radio" aria-checked={showList} className={`ui-chip${showList ? ' is-on' : ''}`} onClick={() => setSpecial(true)}>있어요</button>
-          </div>
-          {showList && <p className="aq-option-intro">해당하는 항목을 모두 선택해 주세요. 누르면 바로 아래에 필요한 확인 사항이 열려요.</p>}
-        </>
-      )}
-      {showList && <div className="aq-options aq-reveal">
-        {list.map(([id, title, sub]) => (
-          <Fragment key={id}>
-            <label className={`aq-option${o[id] ? ' is-on' : ''}`}>
-              <span className="aq-option-text"><strong>{title}</strong><small>{sub}</small></span>
-              <input
-                type="checkbox" aria-label={title}
-                checked={!!o[id]}
-                onChange={e => setOpt(id, e.target.checked as ReleaseOptions[typeof id])}
-              />
-            </label>
-            {!!o[id] && detail[id]}
-          </Fragment>
-        ))}
-      </div>}
-      {group === 'rights' && form.platforms.some(p => p === 'youtube-cid' || p === 'D-27') && (
-        <div className="aq-option-detail" id="aqContentIdRights">
-          <h3>YouTube Content ID 권리 확인</h3>
-          <p>다른 이용자의 영상에 권리 주장을 하는 서비스예요. 일반 YouTube Music 배급과 별도로, 참조 음원의 독점 권리와 고유성을 확인해 주세요.</p>
-          <label className="ui-check is-plain">
-            <input type="checkbox" checked={!!o.contentIdExclusiveRightsAck} onChange={e => setOpt('contentIdExclusiveRightsAck', e.target.checked)} />
-            <span>신청한 모든 지역에서 참조 음원 전체에 대한 독점 권리가 있어요.</span>
-          </label>
-          <label className="ui-check is-plain">
-            <input type="checkbox" checked={!!o.contentIdOriginalRecordingAck} onChange={e => setOpt('contentIdOriginalRecordingAck', e.target.checked)} />
-            <span>직접 제작한 고유한 녹음이며, 비독점 루프·무료 이용 음원·공공저작물 등을 포함하지 않아요.</span>
-          </label>
-          <p className="hint">직접 만든 녹음이 아니면 Content ID를 꺼 주세요. 커버·샘플·리믹스는 권리와 참조 제외 구간을 한 번 더 확인해요.</p>
-          <button type="button" className="ui-btn is-soft is-sm" onClick={() => set('platforms', form.platforms.filter(p => !isContentId(p)))}>Content ID 사용 안 함</button>
-        </div>
-      )}
-      {showGuardianModal && (
-        <GuardianConsentModal
-          guardianName={o.guardian}
-          onClose={() => setShowGuardianModal(false)}
-          onComplete={(certName, certMethod) => {
-            // 단일 업데이트로 통합 — 연속 setOpt는 stale closure로 마지막만 남음
-            set('options', { ...o, guardianConsentDone: true, familyCertName: certName, familyCertMethod: certMethod });
-            setShowGuardianModal(false);
-          }}
-        />
-      )}
-      {group === 'rights' && <p className="aq-option-note">선택한 내용에 따라 권리·계약 서류가 별도로 준비돼요.</p>}
-    </>
-  );
-}
-
-function OptionDocsBanner({ options }: { options: ReleaseOptions }) {
-  const chosen = selectedOptions(options);
-  if (!chosen.length) return null;
-  return (
-    <div className="aq-req-banner">
-      <h3>추가 확인이 필요한 항목</h3>
-      <p>허락서·동의서는 신청 화면에서 자동 작성하고 권리자가 직접 서명할 수 있어요. 완성된 문서는 권리·보완 서류에 보관돼요.</p>
-      <div>{chosen.map(([id, title]) => <span key={id} className="aq-req-tag">{title}</span>)}</div>
-      {options.minor && (
-        <p style={{ marginTop: 13 }}>법정대리인 동의서는 아티스트 본인의 확인과 별도로 관리돼요.</p>
-      )}
-    </div>
-  );
-}
-
-function FinalReviewBanner({ form }: { form: WizardForm }) {
-  const o = form.options;
-  const chosen = selectedOptions(o);
-  const warnings: string[] = [];
-  if (o.express) warnings.push('신속 발매: 원하는 날짜와 이용 조건을 확인한 뒤 진행');
-  if (o.minor) warnings.push('미성년: 법정대리인 동의서와 자격 확인 필요');
-  if (o.ai) warnings.push('AI 음원: 이용 권한과 플랫폼별 허용 기준 확인 필요');
-  if (chosen.length) warnings.push('필요한 허락서·동의서는 AUDENIQ 전자 문서 작성 또는 보유 서류 첨부로 준비');
-  if (o.rerelease) warnings.push(rereleaseSummary(o));
-  // 배급은 되지만 플랫폼 검수에서 걸릴 수 있는 표기
-  const named = form.tracks.filter(t => t.title.trim());
-  for (const w of [titleWarning(form.title), artistWarning(form.artist)]) if (w) warnings.push(w);
-  named.forEach((t, k) => {
-    const w = titleWarning(t.title);
-    if (w) warnings.push(`트랙 ${k + 1}: ${w}`);
-    if (t.audioSpec.includes('모노')) warnings.push(`트랙 ${k + 1}: 모노 음원이에요. 스테레오 마스터가 있다면 교체해 주세요.`);
-    const secs = mmssToSeconds(t.duration);
-    if (secs && secs < 30) warnings.push(`트랙 ${k + 1}: 30초 미만 곡은 일부 플랫폼에서 재생 수익이 집계되지 않아요.`);
-  });
-  const noLyrics = named.filter(t => !t.instrumental && !t.lyrics.trim()).length;
-  if (noLyrics) warnings.push(`가사가 없는 보컬 곡이 ${noLyrics}곡 있어요. 국내 플랫폼 가사 노출을 원하면 곡 상세 정보에 가사를 입력해 주세요.`);
-  const incomplete = form.tracks.filter(t => !t.audioName || !t.title || !t.composers).length;
-  const withAudio = form.tracks.filter(t => t.audioName).length;
-  return (
-    <div className="aq-req-banner">
-      <h3>접수 전 확인해 주세요.</h3>
-      <div className="aq-review-list">
-        <div className="aq-review-item">
-          <span>발매 옵션</span>
-          <strong>{chosen.length ? chosen.map(([, title]) => title).join(' · ') : '일반 발매'}</strong>
-        </div>
-        <div className="aq-review-item">
-          <span>트랙 필수 정보</span>
-          <strong>{incomplete ? `${incomplete}곡 보완 필요` : '입력 완료'}</strong>
-        </div>
-        <div className="aq-review-item">
-          <span>원본 음원</span>
-          <strong>{withAudio} / {form.tracks.length}곡 선택</strong>
-        </div>
-        <div className="aq-review-item">
-          <span>커버아트</span>
-          <strong>{form.coverName || '등록 전'}</strong>
-        </div>
-      </div>
-      {warnings.map(w => <p key={w} className="aq-option-note">{w}</p>)}
-    </div>
-  );
-}
-
-/** 업로드 진행 표시 */
-function UploadStatus({ upload, idle }: { upload?: UploadState; idle: string }) {
-  if (!upload || upload.state === 'done') return <p className="ui-field-help">{idle}</p>;
-  if (upload.state === 'error') return <p className="ui-field-help aq-help-error" role="alert">{upload.message || '파일을 올리지 못했어요. 다시 선택해 주세요.'}</p>;
-  const pct = Math.round(upload.pct * 100);
-  return (
-    <div className="aq-upload-progress" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="업로드 진행률">
-      <span><i style={{ width: `${Math.max(4, pct)}%` }} /></span>
-      <small>{pct < 100 ? `업로드 중 ${pct}%` : '서버에서 확인하는 중…'}</small>
-    </div>
-  );
-}
-
-// 트랙 입력 행 — memo로 감싸 한 곡 입력 시 다른 곡이 리렌더되지 않도록 분리
-/** 크레딧 칸 아래 — 예전 발매에 쓴 이름을 눌러서 덧붙인다 (칸에 이미 있는 이름은 빼고 다섯 개까지) */
-function CreditChips({ names, value, onAdd, label }: { names?: string[]; value: string; onAdd: (v: string) => void; label: string }) {
-  const chips = names ? creditChips(names, value) : [];
-  if (!chips.length) return null;
-  return (
-    <div className="aq-credit-chips" role="group" aria-label={`${label} — 예전에 쓴 이름`}>
-      {chips.map(n => (
-        <button key={n} type="button" className="aq-credit-chip" onClick={() => onAdd(addCredit(value, n))}>
-          <Glyph name="plus" size={12} />{n}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-const TrackEditor = memo(function TrackEditor({
-  track: t, index: i, expanded, canDelete, upload, collapsed = false, complete = false, onOpen, onCollapse,
-  onToggleExpand, onDeleteTrack, setTrack, onTrackAudio, credits, forcedExplicit = null,
-}: {
-  track: Track; index: number; expanded: boolean; canDelete: boolean;
-  /** 예전 발매에 쓴 크레딧 이름 — 칸 아래 제안 칩 */
-  credits?: CreditHistory;
-  /** 곡이 여럿일 때 지금 고치는 곡만 펼치고 나머지는 한 줄 요약으로 접는다 */
-  collapsed?: boolean; complete?: boolean; onOpen?: (id: string) => void; onCollapse?: () => void;
-  onToggleExpand: (id: string) => void; onDeleteTrack: (id: string) => void;
-  setTrack: (id: string, key: keyof Track, value: string | boolean | number) => void;
-  onTrackAudio: (id: string, e: React.ChangeEvent<HTMLInputElement>) => void;
-  upload?: UploadState;
-  /** 가사·곡 제목·앨범 제목에 욕설이 있어 19세 이용가로 정해진 곡 (lib/profanity — 서버가 저장할 때도 같게 정한다) */
-  forcedExplicit?: 'track' | 'release' | null;
-}) {
-  if (collapsed) {
-    const meta = [t.composers.trim() && `작곡 ${t.composers.trim()}`, t.audioName ? (t.duration || '음원 등록') : '음원 없음'].filter(Boolean).join(' · ');
-    return (
-      <article className="track-editor is-collapsed">
-        <button type="button" className="aq-track-summary" aria-expanded={false} onClick={() => onOpen?.(t.id)}>
-          <span className="aq-track-summary-no" aria-hidden="true">{i + 1}</span>
-          <span className="min-0">
-            <strong>{t.title.trim() || '곡 제목 없음'}</strong>
-            <small>{meta}</small>
-          </span>
-          <Badge tone={complete ? 'green' : 'amber'}>{complete ? '입력 완료' : '입력 필요'}</Badge>
-          <Glyph name="chevron-down" size={18} className="aq-track-summary-chev" />
-        </button>
-      </article>
-    );
-  }
-  return (
-    <article className="track-editor">
-      <div className="minor-actions">
-        <h3>트랙 {i + 1}</h3>
-        <span className="ui-actions">
-          {onCollapse && <button type="button" className="ui-btn is-text is-sm is-muted" onClick={onCollapse}>접기</button>}
-          {canDelete && (
-            // 접기와 같은 글자 버튼 — 지우는 일은 빨간 글자로만 (흰 알약에 파란 글자는 주 동작처럼 보였다)
-            <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => onDeleteTrack(t.id)}>삭제</button>
-          )}
-        </span>
-      </div>
-      <div className="ui-field track-title-field">
-        <label htmlFor={`tr-${i}-title`}>곡 제목 <span className="required">*</span></label>
-        <input id={`tr-${i}-title`} value={t.title} onChange={e => setTrack(t.id, 'title', e.target.value)} placeholder="곡명만 입력 (피처링·버전 표기 제외)" maxLength={200} />
-        {/* 19세 표시 칸은 '상세 정보' 안에 있어 접혀 있을 때도 보이게 제목 아래에 한 줄 */}
-        {forcedExplicit && !expanded && (
-          <small className="aq-explicit-auto" role="status">
-            {forcedExplicit === 'release' ? '앨범 제목' : '가사나 곡 제목'}에 욕설이 있어 이 곡은 19세 이용가로 표시돼요.
-          </small>
-        )}
-      </div>
-      <div className="ui-field">
-        <label htmlFor={`tr-${i}-featuring`}>피처링 아티스트</label>
-        <input id={`tr-${i}-featuring`} value={t.featuring} onChange={e => setTrack(t.id, 'featuring', e.target.value)} placeholder="없으면 비워 두세요 · 여러 명은 쉼표로 구분" maxLength={200} />
-      </div>
-      <div className="form-grid">
-        <div className="ui-field">
-          <label htmlFor={`tr-${i}-composers`}>작곡 <span className="required">*</span></label>
-          <input id={`tr-${i}-composers`} value={t.composers} onChange={e => setTrack(t.id, 'composers', e.target.value)} placeholder="실명 또는 활동명, 쉼표로 구분" maxLength={200} />
-          <CreditChips names={credits?.composers} value={t.composers} label="작곡" onAdd={v => setTrack(t.id, 'composers', v)} />
-        </div>
-        <div className="ui-field">
-          <label htmlFor={`tr-${i}-lyricists`}>작사 {!t.instrumental && <span className="required">*</span>}</label>
-          <input
-            id={`tr-${i}-lyricists`} value={t.instrumental ? '' : t.lyricists} disabled={t.instrumental}
-            onChange={e => setTrack(t.id, 'lyricists', e.target.value)}
-            placeholder={t.instrumental ? '연주곡은 입력하지 않아요' : '실명 또는 활동명, 쉼표로 구분'} maxLength={200}
-          />
-          {!t.instrumental && <CreditChips names={credits?.lyricists} value={t.lyricists} label="작사" onAdd={v => setTrack(t.id, 'lyricists', v)} />}
-        </div>
-      </div>
-      <label className="ui-check is-plain aq-inst-line">
-        <input type="checkbox" checked={t.instrumental} onChange={e => setTrack(t.id, 'instrumental', e.target.checked)} />
-        <span><strong>가사 없는 연주곡이에요</strong><small>보컬·가사가 없으면 작사와 가사를 입력하지 않아도 돼요.</small></span>
-      </label>
-      <div className="ui-field">
-        <label htmlFor={`trackFile-${i}`}>음원 파일 <span className="required">*</span></label>
-        <FilePicker
-          id={`trackFile-${i}`} fileName={t.audioName}
-          accept=".wav,.flac,.m4a,.aif,.aiff,.aifc,.wv,.tta,audio/wav,audio/flac,audio/mp4,audio/aiff,audio/wavpack,audio/tta"
-          onChange={e => onTrackAudio(t.id, e)} placeholder="음원 파일을 선택해 주세요"
-        />
-        <UploadStatus upload={upload} idle={t.audioName
-          ? `${t.audioName}${t.audioSpec ? ` · ${t.audioSpec}` : t.audioSize ? ` · ${fileSize(t.audioSize)}` : ''}${t.assetId ? ' · 업로드 완료' : MOCK ? '' : ' · 업로드되지 않았어요. 파일을 다시 선택해 주세요.'}`
-          : '무손실 원본 WAV·FLAC·ALAC(.m4a)·AIFF·WavPack(.wv)·TTA · 44.1kHz 이상, 16bit 이상, 스테레오'} />
-        {!MOCK && t.assetId && upload?.state !== 'uploading' && <TrackChecks assetId={t.assetId} />}
-      </div>
-      <div className="track-duration-label" aria-live="polite">
-        {t.duration ? `곡 길이 · ${t.duration}` : '음원을 선택하면 곡 길이를 자동으로 확인해요.'}
-      </div>
-      <button
-        type="button" className="track-detail-toggle"
-        onClick={() => onToggleExpand(t.id)}
-        aria-expanded={expanded}
-      >
-        <span>상세 정보 {t.isrc ? `· ${t.isrc}` : ''}</span>
-        <span className={`toggle-arrow${expanded ? ' open' : ''}`}><Glyph name="chevron-right" size={16} /></span>
-      </button>
-      {expanded && (
-        <div className="track-detail-body">
-          <div className="form-grid">
-            <div className="ui-field">
-              <label htmlFor={`tr-${i}-version`}>버전 / 부제</label>
-              <input id={`tr-${i}-version`} value={t.version} onChange={e => setTrack(t.id, 'version', e.target.value)} placeholder="예: Acoustic Version" maxLength={200} />
-            </div>
-            <div className="ui-field">
-              <label htmlFor={`tr-${i}-isrc`}>ISRC <span className="aq-optional">선택</span></label>
-              <input id={`tr-${i}-isrc`} value={t.isrc} onChange={e => setTrack(t.id, 'isrc', e.target.value)} placeholder="예: KR-ABC-26-00001" maxLength={200} />
-            </div>
-            <div className="ui-field">
-              <label htmlFor={`tr-${i}-arrangers`}>편곡</label>
-              <input id={`tr-${i}-arrangers`} value={t.arrangers} onChange={e => setTrack(t.id, 'arrangers', e.target.value)} placeholder="참여자 이름" maxLength={200} />
-              <CreditChips names={credits?.arrangers} value={t.arrangers} label="편곡" onAdd={v => setTrack(t.id, 'arrangers', v)} />
-            </div>
-            <div className="ui-field">
-              <label htmlFor={`tr-${i}-performers`}>실연자 (보컬·연주)</label>
-              <input id={`tr-${i}-performers`} value={t.performers} onChange={e => setTrack(t.id, 'performers', e.target.value)} placeholder="참여자 이름" maxLength={200} />
-            </div>
-            <div className="ui-field">
-              <label htmlFor={`tr-${i}-producer`}>프로듀서</label>
-              <input id={`tr-${i}-producer`} value={t.producer} onChange={e => setTrack(t.id, 'producer', e.target.value)} placeholder="프로듀서 이름" maxLength={200} />
-            </div>
-          </div>
-          {!t.instrumental && <div className="ui-field">
-            <label htmlFor={`tr-${i}-lyrics`}>가사 전문</label>
-            <textarea
-              id={`tr-${i}-lyrics`} value={t.lyrics}
-              onChange={e => setTrack(t.id, 'lyrics', e.target.value)}
-              rows={4} maxLength={10000} placeholder="가사 전체를 입력해 주세요 (국내 플랫폼 가사 노출·심의에 쓰여요)"
-            />
-          </div>}
-          <label className="ui-check is-plain">
-            <input
-              type="checkbox" checked={t.explicit || !!forcedExplicit} disabled={!!forcedExplicit}
-              onChange={e => setTrack(t.id, 'explicit', e.target.checked)}
-            />
-            <span>
-              청소년 이용불가 / Explicit 가사가 포함돼요.
-              {forcedExplicit && (
-                <small className="aq-explicit-auto" role="status">
-                  {forcedExplicit === 'release' ? '앨범 제목' : '가사나 곡 제목'}에 욕설이 있어 19세 이용가로 표시했어요. 그 부분을 고치면 표시가 풀려요.
-                </small>
-              )}
-            </span>
-          </label>
-        </div>
-      )}
-    </article>
-  );
-});
-
-/** 폼 → 서버 전송 형식 */
-function toPayload(form: WizardForm, step: number): ReleasePayload {
-  return {
-    title: form.title.trim(),
-    artist: form.artist.trim(),
-    type: form.type,
-    language: form.language,
-    genre: form.genre === '__other__' ? form.genreCustom.trim() : form.genre,
-    genreCustom: form.genreCustom.trim(),
-    label: form.label.trim(),
-    upc: form.upc.trim(),
-    notes: form.notes.trim(),
-    coverName: form.coverName,
-    coverData: form.coverData,
-    // 비운 커버('')도 그대로 보낸다 — undefined면 서버의 이전 커버로 되돌아간다
-    coverAssetId: form.coverAssetId,
-    coverThumbAssetId: form.coverThumbAssetId || undefined,
-    coverPreviewAssetId: form.coverPreviewAssetId || undefined,
-    originalDate: form.options.rerelease && form.options.rereleaseKind === 'new_version' ? form.releaseDate : form.originalDate,
-    release_date: form.releaseDate || '',
-    release_time: form.releaseTime || '',
-    preorder_start: form.preorderStart || '',
-    tracks: form.tracks.map(t => ({
-      id: t.id, title: t.title.trim(), isrc: t.isrc.trim(), duration: t.duration,
-      version: t.version.trim(), composers: t.composers.trim(),
-      lyricists: t.lyricists.trim(), arrangers: t.arrangers.trim(),
-      performers: t.performers.trim(), audioName: t.audioName,
-      audioSize: t.audioSize, explicit: t.explicit,
-      producer: t.producer.trim(), lyrics: t.lyrics.trim(),
-      assetId: t.assetId || undefined, serverId: t.serverId || undefined,
-      previewStart: previewSecs(t.previewStart),
-      featuring: t.featuring.trim(), instrumental: t.instrumental, audioSpec: t.audioSpec || undefined,
-    })),
-    territories: form.territories,
-    platforms: form.platforms,
-    ownership: form.ownership.trim(),
-    phonogram: form.phonogram.trim(),
-    copyright: form.copyright.trim(),
-    rightsChecks: form.rightsChecks,
-    options: { ...form.options, ...(form.options.rerelease ? { previousReleaseDate: form.originalDate } : {}) },
-    lastStep: step,
-    artistProfile: form.artistProfile.isNew
-      ? { isNew: true, spotify: '', apple: '', melon: '' }
-      : { ...form.artistProfile, spotify: form.artistProfile.spotify.trim(), apple: form.artistProfile.apple.trim(), melon: form.artistProfile.melon.trim() },
-  };
-}
-
-// 미리보기용 썸네일 생성 (최대 480px JPEG, 보통 20~40KB) — 브라우저 저장소 용량을 넘지 않도록 원본 대신 저장
-function makeCoverThumbnail(file: File): Promise<{ data: string; width: number; height: number }> {
-  // 실서버는 발매 정보(최대 64KB)에 함께 저장하므로 더 작게
-  return MOCK ? scaleCover(file, 480, 0.8) : scaleCover(file, 240, 0.72);
-}
-
-/** 커버를 긴 변 max px JPEG로 줄인다 (width·height는 원본 크기).
- *  서버의 이미지 자산은 JPEG·PNG만 받고(WebP 미지원) 브라우저마다 WebP 저장 지원도 달라 JPEG로 한다.
- *  화면에 쓸 크기로만 줄이고 화질은 높게(0.86) 둬서 눈으로는 원본과 구분되지 않으면서 용량은 수십 분의 일이 된다. */
-function scaleCover(file: File, max: number, quality: number): Promise<{ data: string; width: number; height: number }> {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const scale = Math.min(1, max / Math.max(img.width, img.height));
-      const w = Math.max(1, Math.round(img.width * scale));
-      const h = Math.max(1, Math.round(img.height * scale));
-      const canvas = document.createElement('canvas');
-      canvas.width = w; canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      if (ctx) { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; ctx.drawImage(img, 0, 0, w, h); }
-      resolve({ data: canvas.toDataURL('image/jpeg', quality), width: img.width, height: img.height });
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('이미지를 읽을 수 없어요.')); };
-    img.src = url;
-  });
-}
-
-/** 커버 미리보기(JPEG)를 이미지 파일로 올리고 자산 ID를 돌려준다 */
-async function uploadCoverPreview(dataUrl: string): Promise<string> {
-  // fetch(data:)는 CSP connect-src에 막힐 수 있어 직접 바꾼다
-  const bin = atob(dataUrl.slice(dataUrl.indexOf(',') + 1));
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  const file = new File([bytes], 'cover-preview.jpg', { type: 'image/jpeg' });
-  const r = await api.uploadFile(file, 'IMAGE', () => {});
-  return r.assetId;
-}
-
-const AUDIO_RE = /\.(wav|flac|m4a|aif|aiff|aifc|wv|tta)$/i;
-
-/** 발매 신청 시 계약서·권리 서류를 준비 (같은 발매에 이미 있으면 다시 만들지 않음) */
-function ensureReleaseDocuments(f: WizardForm, releaseId: string) {
-  const title = f.title.trim() || '제목 없는 발매';
-  const existing = docsForRelease(getDocsSnapshot(), releaseId);
-  if (existing.some(d => d.kind === 'agreements')) return;
-  const genreVal = f.genre === '__other__' ? f.genreCustom.trim() : genreLabel(f.genre);
-  const at = stampNow();
-  const lines = [
-    'AUDENIQ 디지털 음원 배급 신청·계약서',
-    '',
-    '1. 신청인 및 발매 정보',
-    `아티스트: ${f.artist.trim() || '입력 전'}`,
-    `발매명: ${title}`,
-    `발매 유형: ${kindLabel(f.type)}`,
-    `장르: ${genreVal || '입력 전'}`,
-    `발매 희망일: ${f.releaseDate || '미정'}${f.releaseTime ? ` (한국 시간 ${f.releaseTime} 동시 발매)` : ''}`,
-    `레이블 표기: ${f.label.trim() || '입력 전'}`,
-    `수록곡: ${f.tracks.map((t, i) => `${i + 1}. ${t.title.trim() || '제목 없음'} (${t.duration || '길이 확인 전'})`).join(' / ')}`,
-    '',
-    '2. 권리자 및 배급 범위',
-    `마스터 권리자: ${f.ownership.trim() || '입력 전'}`,
-    `℗ 표기: ${f.phonogram.trim() || '입력 전'}`,
-    `© 표기: ${f.copyright.trim() || '입력 전'}`,
-    `배급 지역: ${territorySummary(f.territories)}`,
-    `배급 플랫폼: ${f.platforms.map(dspLabel).join(', ')}`,
-    `추가 확인 항목: ${selectedOptions(f.options).map(([, t]) => t).join(', ') || '일반 발매'}`,
-    '',
-    '3. 신청인의 확인',
-    '신청인은 제출한 음원, 가사, 커버아트, 크레딧 및 메타데이터를 배급할 적법한 권한을 보유하고 있으며, 제3자의 권리가 포함된 경우 필요한 허락을 확보했음을 확인합니다.',
-    '',
-    `신청일: ${localStamp(at)}`,
-  ];
-  const base = {
-    releaseId, releaseTitle: title, version: '1.0', created: at,
-    fileName: '', checked: false, checkedAt: '', consentHistory: [],
-    reviewNote: '', signerName: '', localSignatureData: '', localSignatureAt: '',
-  };
-  const rights: DocRecord = {
-    ...base, id: uid('doc'), kind: 'rights',
-    title: title + ' · 권리 증빙 제출',
-    content: '발매 권리를 확인할 수 있는 자료를 제출해 주세요. 해당하는 자료: 마스터 음원 제작 또는 이용 허락서, 커버아트 사용 허락서, 공동 창작·피처링 또는 커버곡의 권리 허락서. 필요한 자료만 제출하면 돼요.',
-    reviewHistory: [{ status: '서류 접수 대기', time: at, detail: '권리 관련 증빙이 필요한 경우 제출해 주세요.' }],
-    reviewStatus: 'awaiting_documents',
-  };
-  const agreement: DocRecord = {
-    ...base, id: uid('doc'), kind: 'agreements',
-    title: title + ' · AUDENIQ 디지털 음원 배급 신청·계약서',
-    content: lines.join('\n'),
-    reviewHistory: [{ status: '접수 요청', time: at, detail: '신청서를 만들었어요. 담당자 검토가 끝나면 서명할 수 있어요.' }],
-    reviewStatus: 'prepared',
-  };
-  if (!existing.some(d => d.kind === 'rights')) addDoc(rights);
-  addDoc(agreement);
-}
-
-type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'saved'; at: string } | { kind: 'error'; message?: string };
 
 export function Upload() {
   const nav = useNavigate();
@@ -1406,6 +113,8 @@ export function Upload() {
   // 접수 요청 자체가 실패했을 때 (입력 오류와 따로, 다시 시도 버튼과 함께 보여 준다)
   const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // 접수 직전 서버가 올린 파일을 마무리하는 동안
+  const [finishing, setFinishing] = useState(false);
   // 중복 제출 방지용 ref (비동기 경계에서도 동작)
   const submittingRef = useRef(false);
   const [loadingEdit, setLoadingEdit] = useState(!!editId);
@@ -1416,6 +125,7 @@ export function Upload() {
   const [expandedTracks, setExpandedTracks] = useState<Set<string>>(new Set());
   // 레이블 표기·앨범 소개는 선택 항목이라 접어 둔다 — 첫 단계에 칸이 여덟 개라 무엇이 꼭 필요한지 흐렸다
   const [moreInfo, setMoreInfo] = useState(false);
+  const [typeNudge, setTypeNudge] = useState(false);
   // 트랙 단계: 곡이 여럿이면 하나만 펼친다 (null = 다 접음)
   const [openTrack, setOpenTrack] = useState<string | null | undefined>(undefined);
   const [save, setSave] = useState<SaveState>({ kind: 'idle' });
@@ -1423,6 +133,8 @@ export function Upload() {
   // 업로드 진행 상태 — 키: 트랙 ID 또는 'cover'
   const [uploads, setUploads] = useState<Record<string, UploadState>>({});
   const uploadAborts = useRef(new Map<string, AbortController>());
+  // 서버가 마무리 중인 업로드 — 접수할 때 이것만 기다린다
+  const uploadPending = useRef(new Map<string, Promise<string | null>>());
   const setUpload = useCallback((key: string, u: UploadState | null) => {
     setUploads(prev => {
       const next = { ...prev };
@@ -1436,20 +148,30 @@ export function Upload() {
     const ctrl = new AbortController();
     uploadAborts.current.set(key, ctrl);
     setUpload(key, { pct: 0, state: 'uploading' });
-    try {
-      const r = await api.uploadFile(file, kind, pct => setUpload(key, { pct, state: 'uploading' }), ctrl.signal);
-      if (ctrl.signal.aborted) return null;
-      setUpload(key, { pct: 1, state: 'done' });
-      // '올리는 중' 안내가 떠 있었다면 끝났으니 지운다
-      setError(prev => (prev.includes('올리는 중이에요') ? '' : prev));
-      return r.assetId;
-    } catch (e) {
-      if (ctrl.signal.aborted) return null;
-      setUpload(key, { pct: 0, state: 'error', message: errorMessage(e, '파일을 올리지 못했어요. 다시 선택해 주세요.') });
-      return null;
-    } finally {
-      if (uploadAborts.current.get(key) === ctrl) uploadAborts.current.delete(key);
-    }
+    const run = (async () => {
+      try {
+        const r = await api.uploadFile(file, kind, pct => setUpload(key, { pct, state: 'uploading' }), ctrl.signal, () => {
+          // 저장소에 다 올라갔다 — 서버의 마무리 확인을 기다리지 않고 '올렸어요'로 두고 다음으로 넘어갈 수 있게
+          if (ctrl.signal.aborted) return;
+          setUpload(key, { pct: 1, state: 'received' });
+          setError(prev => (prev.includes('올리는 중이에요') ? '' : prev));
+        });
+        if (ctrl.signal.aborted) return null;
+        setUpload(key, { pct: 1, state: 'done' });
+        // '올리는 중' 안내가 떠 있었다면 끝났으니 지운다
+        setError(prev => (prev.includes('올리는 중이에요') ? '' : prev));
+        return r.assetId;
+      } catch (e) {
+        if (ctrl.signal.aborted) return null;
+        setUpload(key, { pct: 0, state: 'error', message: errorMessage(e, '파일을 올리지 못했어요. 다시 선택해 주세요.') });
+        return null;
+      } finally {
+        if (uploadAborts.current.get(key) === ctrl) uploadAborts.current.delete(key);
+      }
+    })();
+    uploadPending.current.set(key, run);
+    void run.finally(() => { if (uploadPending.current.get(key) === run) uploadPending.current.delete(key); });
+    return run;
   }, [setUpload]);
   const attachOptionDocument = useCallback(async (name: keyof ReleaseOptions, asset: keyof ReleaseOptions, file: File) => {
     if (!/\.(pdf|png|jpe?g)$/i.test(file.name) || file.size > 20 * 1024 * 1024) {
@@ -1584,6 +306,14 @@ export function Upload() {
     });
     return () => { cancelled = true; };
   }, [editId, nav, toast]); // eslint-disable-line react-hooks/exhaustive-deps -- fix 파라미터는 처음 불러올 때만 쓴다
+
+  // 배급 설정·권리 확인 조각은 첫 단계를 그린 뒤 한가할 때 받아 둔다 — 그 단계에 가면 바로 보인다
+  useEffect(() => {
+    const go = () => { void loadOptions(); };
+    if ('requestIdleCallback' in window) { const id = window.requestIdleCallback(go, { timeout: 2500 }); return () => window.cancelIdleCallback(id); }
+    const t = setTimeout(go, 1500);
+    return () => clearTimeout(t);
+  }, []);
 
   // 위자드에서는 헤더 숨김 + 레이아웃 패딩 제거 (그리기 전에 — 머리글이 한 번 보였다 사라지지 않게)
   useLayoutEffect(() => {
@@ -1810,7 +540,7 @@ export function Upload() {
         const up = uploads[t.id];
         if (up?.state === 'uploading') return fail(`트랙 ${k + 1}의 음원을 올리는 중이에요. 업로드가 끝나면 다음으로 넘어갈 수 있어요.`, null);
         if (up?.state === 'error') return fail(`트랙 ${k + 1}의 음원 파일을 올리지 못했어요. 다시 선택해 주세요.`, `#trackFile-${k}`);
-        if (!MOCK && !t.assetId) return fail(`트랙 ${k + 1}의 음원을 올린 기록이 없어요. 파일을 다시 선택해 주세요.`, `#trackFile-${k}`);
+        if (!MOCK && !t.assetId && up?.state !== 'received') return fail(`트랙 ${k + 1}의 음원을 올린 기록이 없어요. 파일을 다시 선택해 주세요.`, `#trackFile-${k}`);
         const dupIsrc = t.isrc.trim() && form.tracks.findIndex(o => o.isrc.trim() && normalizeIsrc(o.isrc) === normalizeIsrc(t.isrc)) !== k;
         if (dupIsrc) {
           setExpandedTracks(prev => new Set(prev).add(t.id));
@@ -1822,15 +552,16 @@ export function Upload() {
         }
       }
     }
-    if (i === 1) {
-      const typeErr = releaseTypeIssue(form.type, form.tracks.map(t => mmssToSeconds(t.duration)));
-      if (typeErr) return fail(typeErr, null);
+    if (i === 1 && typeIssue) {
+      // 돌아가서 바꾸라고만 하지 않고, 트랙 목록 아래의 '○○로 바꾸기' 버튼을 띄워 그 자리에서 바꾼다
+      flushSync(() => setTypeNudge(true));
+      return fail(`${kindLabel(suggestedType)}(으)로 바꾸면 바로 넘어갈 수 있어요.`, '#aqTypeFix');
     }
     if (i === 2) {
       if (!form.coverName) return fail('커버아트를 등록해 주세요.', '#coverFile');
       if (uploads.cover?.state === 'uploading') return fail('커버아트를 올리는 중이에요. 업로드가 끝나면 다음으로 넘어갈 수 있어요.', null);
       if (uploads.cover?.state === 'error') return fail('커버아트를 올리지 못했어요. 이미지를 다시 선택해 주세요.', '#coverFile');
-      if (!MOCK && !form.coverAssetId) return fail('커버아트를 올린 기록이 없어요. 이미지를 다시 선택해 주세요.', '#coverFile');
+      if (!MOCK && !form.coverAssetId && uploads.cover?.state !== 'received') return fail('커버아트를 올린 기록이 없어요. 이미지를 다시 선택해 주세요.', '#coverFile');
     }
     if (i === 3) {
       if (!form.releaseDate) return fail('발매일을 선택해 주세요.', '#f-releaseDate');
@@ -1843,8 +574,14 @@ export function Upload() {
       if (form.preorderStart && (form.preorderStart >= form.releaseDate || form.preorderStart < shiftDate(form.releaseDate, -90))) {
         return fail('사전 공개 시작일은 발매일 1–90일 전으로 골라 주세요.', '#f-preorder');
       }
-      const badPreview = form.tracks.find(t => t.previewStart.trim() && !previewSecs(t.previewStart));
-      if (badPreview) return fail(`'${badPreview.title}' 미리듣기 시작점을 m:ss 형식으로 적어 주세요. (예: 1:05)`, '.aq-preview-starts');
+      const named = form.tracks.filter(t => t.title.trim());
+      const badPreview = named.findIndex(t => t.previewStart.trim() && !previewOk(t));
+      if (badPreview >= 0) {
+        const t = named[badPreview];
+        return fail(previewSecs(t.previewStart)
+          ? `'${t.title}' 미리듣기 시작 지점이 곡 길이(${t.duration})보다 뒤예요. 곡 안의 시간으로 골라 주세요.`
+          : `'${t.title}' 미리듣기 시작 지점을 확인해 주세요. 초는 59까지 쓸 수 있어요. (예: 1:05)`, `#f-preview-${badPreview}`);
+      }
       const tp = parseTerritories(form.territories);
       if (!tp.world && !tp.included.length) return fail('배급할 지역을 하나 이상 골라 주세요. 모든 지역에 배급하려면 ‘전 세계 배급’을 켜 주세요.', '#aqTerritories');
       if (!dsps) return fail(dspError || '플랫폼 배급 가능 상태를 확인하는 중이에요.', '#aqPlatforms');
@@ -1929,7 +666,14 @@ export function Upload() {
     if (vt?.finished) vt.finished.then(done, done); else done();
   };
 
-  const goStep = (to: number) => {
+  // 수익 분배에 저장하지 않은 입력이 있으면 단계를 옮기기 전에 대신 저장한다 — 예전엔 '다음으로'를 누르면 조용히 사라졌다.
+  // 입력이 잘못됐으면(이름·비율) 그 단계에 머물고 이유를 보여 준다
+  const splitsSave = useRef<(() => Promise<boolean>) | null>(null);
+  const registerSplitsSave = useCallback((fn: (() => Promise<boolean>) | null) => { splitsSave.current = fn; }, []);
+  const flushSplits = async () => !splitsSave.current || splitsSave.current();
+
+  const goStep = async (to: number) => {
+    if (to !== step && !(await flushSplits())) return;
     setStep(to);
     setReached(r => Math.max(r, to));
     setError('');
@@ -1949,6 +693,22 @@ export function Upload() {
     setSubmitting(true);
     setSubmitError('');
     try {
+      // 서버가 아직 마무리 중인 파일이 있으면 여기서만 기다린다 (단계 이동은 기다리지 않았다)
+      if (uploadPending.current.size) {
+        setFinishing(true);
+        await Promise.all(uploadPending.current.values());
+        setFinishing(false);
+        // 마무리 중 실패한 파일이 있으면 그 단계로 — 자산 ID가 들어간 뒤 상태로 다시 확인한다
+        await new Promise(r => requestAnimationFrame(r));
+        const f0 = formRef.current;
+        const badTrack = f0.tracks.findIndex(t => !MOCK && !t.assetId);
+        if (badTrack >= 0 || (!MOCK && !f0.coverAssetId)) {
+          const to = badTrack >= 0 ? 1 : 2;
+          goStep(to);
+          setError(badTrack >= 0 ? `트랙 ${badTrack + 1}의 음원을 서버가 받지 못했어요. 파일을 다시 선택해 주세요.` : '커버아트를 서버가 받지 못했어요. 이미지를 다시 선택해 주세요.');
+          return;
+        }
+      }
       await saveChain.current.catch(() => {});
       // 기다리는 동안 자동 저장이 서버 트랙 id를 받아 왔을 수 있다 — 클로저의 form이 아니라 최신 상태로 보낸다(트랙 중복 방지)
       const f = formRef.current;
@@ -1985,6 +745,7 @@ export function Upload() {
     } finally {
       submittingRef.current = false;
       setSubmitting(false);
+      setFinishing(false);
     }
   };
 
@@ -2042,15 +803,20 @@ export function Upload() {
       setForm(f => ({ ...f, coverData: thumb.data, coverAssetId: '', coverThumbAssetId: '', coverPreviewAssetId: '' }));
       const assetId = await startUpload('cover', file, 'IMAGE');
       if (assetId) {
-        // 화면에 보여 줄 미리보기도 서버에 보관한다 — 원본(3000px 이상, 수 MB)은 배급용으로 서버에만 두고 화면엔 쓰지 않는다.
-        // 목록용 240px와 상세의 큰 커버용 1080px 두 가지 (실패하면 작은 미리보기로 보여 준다)
-        const [thumbId, previewId] = MOCK ? ['', ''] : await Promise.all([
-          uploadCoverPreview(thumb.data).catch(() => ''),
-          scaleCover(file, 1080, 0.86).then(p => uploadCoverPreview(p.data)).catch(() => ''),
-        ]);
-        setForm(f => (f.coverName === file.name ? { ...f, coverAssetId: assetId, coverThumbAssetId: thumbId, coverPreviewAssetId: previewId } : f));
+        // 원본이 등록되면 바로 반영한다 — 미리보기 두 장까지 기다렸다 넣으면 그동안 '다음'을 눌렀을 때 '올린 기록이 없어요'가 떴다
         dirtyRef.current = true;
-        toast('커버 이미지를 올렸어요.');
+        setForm(f => (f.coverName === file.name ? { ...f, coverAssetId: assetId } : f));
+        if (!MOCK) {
+          // 화면에 보여 줄 미리보기도 서버에 보관한다 — 원본(3000px 이상, 수 MB)은 배급용으로 서버에만 두고 화면엔 쓰지 않는다.
+          // 목록용 240px와 상세의 큰 커버용 1080px 두 가지 (실패하면 작은 미리보기로 보여 준다)
+          void Promise.all([
+            uploadCoverPreview(thumb.data).catch(() => ''),
+            scaleCover(file, 1080, 0.86).then(p => uploadCoverPreview(p.data)).catch(() => ''),
+          ]).then(([thumbId, previewId]) => {
+            dirtyRef.current = true;
+            setForm(f => (f.coverAssetId === assetId ? { ...f, coverThumbAssetId: thumbId, coverPreviewAssetId: previewId } : f));
+          });
+        }
       }
     } catch {
       toast('커버 이미지를 불러오지 못했어요.');
@@ -2144,19 +910,36 @@ export function Upload() {
     return () => window.clearTimeout(timer);
   }, [focusField, step, loadingEdit]);
 
+  // 발매일 기본값 — 배급 설정에 처음 오면 가장 빠른 날짜를 넣어 둔다(눌러서 바꾼다). 자동으로 넣은 날짜는
+  // 신속 발매를 켜고 끌 때 새 기준의 가장 빠른 날짜로 따라 바뀌고, 직접 고른 날짜는 건드리지 않는다
+  const autoDate = useRef('');
+  const earliest = minReleaseDate(form.options.express);
+  useEffect(() => {
+    if (loadingEdit || step < 3) return;
+    if (form.releaseDate && form.releaseDate !== autoDate.current) return;
+    if (form.releaseDate === earliest) return;
+    autoDate.current = earliest;
+    set('releaseDate', earliest);
+  }, [step, earliest, form.releaseDate, loadingEdit, set]);
+
   // 서명자 기본값: 권리자 → 아티스트 정보의 이름
   const signerName = signer.touched ? signer.name : (form.ownership || profile.name || '');
   const resubmit = !!editId && origStatus !== 'draft' && hasApplication;
   const s = STEPS[step];
   const showMoreInfo = moreInfo || !!form.label.trim() || !!form.notes.trim() || fixes.some(f => !!f.field && MORE_INFO_FIELDS.includes(f.field));
   // 곡 입력이 다 됐는지 — 접힌 곡 요약의 '입력 완료/필요' 표시
-  const trackComplete = (t: Track) => !!(t.title.trim() && t.composers.trim() && (t.instrumental || t.lyricists.trim()) && t.audioName && (MOCK || t.assetId));
+  const trackComplete = (t: Track) => !!(t.title.trim() && t.composers.trim() && (t.instrumental || t.lyricists.trim()) && t.audioName && (MOCK || t.assetId || uploads[t.id]?.state === 'received'));
   // 처음엔 아직 덜 채운 첫 곡(없으면 첫 곡)을 펼친다
   const shownTrack = openTrack === undefined
     ? (form.tracks.find(t => !trackComplete(t)) ?? form.tracks[0])?.id ?? null
     : openTrack;
-  const nextLabel = submitting ? '접수하는 중' : step === STEPS.length - 1 ? (resubmit ? '다시 접수하기' : editId && origStatus !== 'draft' ? '서명하고 수정 완료' : '서명하고 접수하기') : '다음으로';
+  const nextLabel = finishing ? '파일 마무리 중' : submitting ? '접수하는 중' : step === STEPS.length - 1 ? (resubmit ? '다시 접수하기' : editId && origStatus !== 'draft' ? '서명하고 수정 완료' : '서명하고 접수하기') : '다음으로';
   const genreIsCustom = form.genre === '__other__';
+  // 발매 유형이 곡 구성과 맞지 않을 때 — 모든 곡의 길이를 알게 되면(또는 넘어가려 하면) 바꾸기 버튼을 띄운다
+  const trackSecs = form.tracks.map(t => mmssToSeconds(t.duration));
+  const typeIssue = releaseTypeIssue(form.type, trackSecs);
+  const suggestedType = expectedReleaseType(trackSecs);
+  const showTypeFix = !!typeIssue && (typeNudge || trackSecs.every(Boolean));
   const availablePlatforms = dsps?.filter(d => d.available).map(d => d.slug) ?? [];
   // '모두 배급'은 Content ID를 뺀 음악 플랫폼 전체 — Content ID는 켜져 있든 아니든 따로 본다
   const basePlatforms = availablePlatforms.filter(p => !isContentId(p));
@@ -2217,7 +1000,8 @@ export function Upload() {
           <span className="wizard-top-title">{editId ? (origStatus === 'draft' ? '발매 이어서 작성' : '발매 정보 수정') : '새로운 발매'}</span>
           <span className="aq-save-slot" aria-live="polite">
             {saveLabel && (
-              <span className={`aq-save-state is-${canAutoSave ? save.kind : 'edit'}`} title={saveTitle}>{saveLabel}</span>
+              // 상태가 바뀔 때마다 새로 그려 '저장 중 → 저장됨'이 살며시 바뀐다
+              <span key={canAutoSave ? save.kind : 'edit'} className={`aq-save-state is-${canAutoSave ? save.kind : 'edit'}`} title={saveTitle}>{saveLabel}</span>
             )}
           </span>
         </div>
@@ -2475,6 +1259,18 @@ export function Upload() {
                 />
               ))}
             </div>
+            {showTypeFix && (
+              <div id="aqTypeFix" className="ui-callout is-warn is-row aq-reveal" role="status" tabIndex={-1}>
+                <span>
+                  <strong>{form.tracks.length}곡{trackSecs.every(Boolean) ? ` · 총 ${Math.round(trackSecs.reduce((a, b) => a + b, 0) / 60)}분` : ''}</strong>
+                  {' '}구성은 플랫폼 기준으로 ‘{kindLabel(suggestedType)}’이에요. 지금은 ‘{kindLabel(form.type)}’으로 골라져 있어요.
+                </span>
+                <button
+                  type="button" className="ui-btn is-primary is-sm"
+                  onClick={() => { set('type', suggestedType); setTypeNudge(false); clearFieldError(); setError(''); toast(`발매 유형을 ${kindLabel(suggestedType)}(으)로 바꿨어요.`, 'success'); }}
+                >{kindLabel(suggestedType)}(으)로 바꾸기</button>
+              </div>
+            )}
             <div className="spaced-actions">
               <button
                 type="button" className="ui-btn is-soft"
@@ -2522,7 +1318,7 @@ export function Upload() {
                   <small>{form.coverName ? '다른 이미지로 바꾸려면 다시 선택해 주세요.' : `JPG · PNG, 정사각형 ${COVER_MIN}~${COVER_MAX}px (최대 20MB)`}</small>
                 </span>
               </label>
-              {uploads.cover && uploads.cover.state !== 'done' && <UploadStatus upload={uploads.cover} idle="" />}
+              {uploads.cover && <UploadStatus upload={uploads.cover} idle="올렸어요. 바로 다음 단계로 넘어가도 돼요." />}
               {coverWarn && <p className="ui-field-help aq-help-warn">{coverWarn}</p>}
             </div>
             {form.coverData && (
@@ -2561,7 +1357,8 @@ export function Upload() {
                 value={form.releaseDate} min={origDate && origDate < minReleaseDate(form.options.express) ? origDate : minReleaseDate(form.options.express)}
                 onChange={v => set('releaseDate', v)}
                 help={<>
-                  가장 빠른 날짜는 <b>{formatKoreanDate(minReleaseDate(form.options.express))}</b>이에요{form.options.express ? ' (신속 발매, 최소 3일)' : ' (플랫폼 검수에 2주가 걸려요)'}.
+                  {form.releaseDate && form.releaseDate === autoDate.current ? <>가장 빠른 날짜로 넣어 두었어요. 원하는 날이 있으면 눌러서 바꿔 주세요{form.options.express ? ' (신속 발매, 최소 3일)' : ' (플랫폼 검수에 2주가 걸려요)'}.</>
+                    : <>가장 빠른 날짜는 <b>{formatKoreanDate(earliest)}</b>이에요{form.options.express ? ' (신속 발매, 최소 3일)' : ' (플랫폼 검수에 2주가 걸려요)'}.</>}
                   {' '}플레이리스트 추천을 받으려면 3~4주 뒤를 권해요.
                   {!form.options.express && <>
                     {' '}<button type="button" className="aq-inline-link" onClick={() => {
@@ -2616,17 +1413,19 @@ export function Upload() {
                         <span className="ui-row-meta">{t.duration ? `길이 ${t.duration}` : '미리듣기 시작'}</span>
                       </span>
                       <input className="ui-input" inputMode="numeric" placeholder="0:00" maxLength={5} value={t.previewStart}
+                        id={`f-preview-${i}`} autoComplete="off"
                         aria-label={`${t.title} 미리듣기 시작 지점`}
-                        aria-invalid={!!t.previewStart.trim() && !previewSecs(t.previewStart)}
-                        onChange={e => setTrack(t.id, 'previewStart', e.target.value.replace(/[^0-9:]/g, ''))} />
+                        aria-invalid={!!t.previewStart.trim() && !previewOk(t)}
+                        onChange={e => setTrack(t.id, 'previewStart', maskPreviewInput(e.target.value))}
+                        onBlur={e => { const v = settlePreviewInput(e.target.value); if (v !== t.previewStart) setTrack(t.id, 'previewStart', v); }} />
                     </label>
                   ))}
                 </div>
-                <small className="ui-field-help">곡별 미리듣기·숏폼 클립이 시작하는 곳이에요. 비우면 플랫폼이 정해요. 예: 1:05</small>
+                <small className="ui-field-help">곡별 미리듣기·숏폼 클립이 시작하는 곳이에요. 숫자만 입력하면 돼요 (0105 → 1:05). 비우면 플랫폼이 정해요.</small>
               </div>
             )}
             <h2 className="subhead">배급 지역</h2>
-            <TerritoryPicker value={form.territories} onChange={v => set('territories', v)} />
+            <Later h={88}><TerritoryPicker value={form.territories} onChange={v => set('territories', v)} /></Later>
             <h2 className="subhead">배급 플랫폼</h2>
             <div className="distribution-default">
               <div>
@@ -2700,7 +1499,11 @@ export function Upload() {
             </div>
             )}
             {!dsps && <p className="ui-field-help" role="status">{dspError || '플랫폼 목록을 서버에서 불러오는 중이에요.'}</p>}
-            <div className="aq-fix-zone"><OptionsSection form={form} set={set} group="service" onDocument={attachOptionDocument} uploads={uploads} onElectronic={kind => void openElectronic(kind)} onOpenDoc={setOpenDocId} releaseId={draftIdRef.current ?? undefined} onGuardian={() => void openGuardian()} /></div>
+            {/* 공동작업자 수익 분배 — 정산은 배급 조건이라 권리 확인이 아니라 여기서 정한다. 임시 저장된 발매(서버의 곡 목록)를 기준으로 */}
+            {draftIdRef.current
+              ? <SplitsCard releaseId={draftIdRef.current} embedded registerSave={registerSplitsSave} />
+              : !MOCK && <p className="small muted">임시 저장이 끝나면 공동작업자 수익 분배를 정할 수 있어요.</p>}
+            <div className="aq-fix-zone"><Later h={240}><OptionsSection form={form} set={set} group="service" onDocument={attachOptionDocument} uploads={uploads} onElectronic={kind => void openElectronic(kind)} onOpenDoc={setOpenDocId} releaseId={draftIdRef.current ?? undefined} onGuardian={() => void openGuardian()} /></Later></div>
           </section>
         )}
 
@@ -2750,7 +1553,7 @@ export function Upload() {
                 <span className="aq-autofill-text">‘{form.label.trim() || form.artist.trim()}’(으)로 권리자 정보 채우기</span>
               </button>
             )}
-            <div id="aqSpecialOptions" className="aq-fix-zone"><OptionsSection form={form} set={set} group="rights" onDocument={attachOptionDocument} uploads={uploads} onElectronic={kind => void openElectronic(kind)} onOpenDoc={setOpenDocId} releaseId={draftIdRef.current ?? undefined} onGuardian={() => void openGuardian()} /></div>
+            <div id="aqSpecialOptions" className="aq-fix-zone"><Later h={160}><OptionsSection form={form} set={set} group="rights" onDocument={attachOptionDocument} uploads={uploads} onElectronic={kind => void openElectronic(kind)} onOpenDoc={setOpenDocId} releaseId={draftIdRef.current ?? undefined} onGuardian={() => void openGuardian()} /></Later></div>
             <h2 className="subhead">필수 확인 항목</h2>
             <div className="field-group">
               {RIGHTS_CHECKS.map(([k, label]) => (
@@ -2784,11 +1587,7 @@ export function Upload() {
             <div className="ui-callout">
               허락서·동의서는 위의 AUDENIQ 전자 문서 도구에서 작성하고 권리자가 직접 서명할 수 있어요. 완성된 서류는 ‘권리·보완 서류’에도 보관돼요.
             </div>
-            <OptionDocsBanner options={form.options} />
-            {/* 공동작업자 수익 분배: 임시 저장된 발매(서버의 곡 목록)를 기준으로 정한다 */}
-            {draftIdRef.current
-              ? <SplitsCard releaseId={draftIdRef.current} embedded />
-              : !MOCK && <p className="small muted">임시 저장이 끝나면 공동작업자 수익 분배를 정할 수 있어요.</p>}
+            <Later><OptionDocsBanner options={form.options} /></Later>
           </section>
         )}
 
@@ -2810,7 +1609,7 @@ export function Upload() {
                 ? '‘다시 접수하기’를 누르면 고친 내용으로 다시 검토를 받아요. 처음 낸 배급 신청서는 그대로 유지돼요.'
                 : `아래에 서명하고 ‘${editId && origStatus !== 'draft' ? '서명하고 수정 완료' : '서명하고 접수하기'}’를 누르면 배급 신청서가 발급되고 권리 확인서가 준비돼요. 최종 승인과 배급일은 담당자 검토 후 확정돼요.`}
             </div>
-            <FinalReviewBanner form={form} />
+            <Later h={160}><FinalReviewBanner form={form} /></Later>
             <AddonSummary options={form.options} onEdit={() => goStep(3)} />
 
             {!resubmit && (

@@ -75,13 +75,14 @@ export const api = {
    * 파일 업로드. 실서버: 서명 URL로 R2에 직접 PUT 후 등록.
    * 체험 모드: 업로드 없이 진행률만 흉내 낸다.
    */
-  uploadFile: async (file: File, kind: UploadKind, onProgress?: (r: number) => void, signal?: AbortSignal): Promise<UploadResult> => {
-    if (!MOCK) return remoteApi.uploadFile(file, kind, onProgress, signal);
+  uploadFile: async (file: File, kind: UploadKind, onProgress?: (r: number) => void, signal?: AbortSignal, onReceived?: () => void): Promise<UploadResult> => {
+    if (!MOCK) return remoteApi.uploadFile(file, kind, onProgress, signal, onReceived);
     for (let i = 1; i <= 5; i++) {
       if (signal?.aborted) throw new ApiError('업로드를 취소했어요.', 0, 'ABORTED');
       await delay(60);
       onProgress?.(i / 5);
     }
+    onReceived?.();
     return { assetId: `mock-${kind.toLowerCase()}-${Date.now().toString(36)}` };
   },
 };

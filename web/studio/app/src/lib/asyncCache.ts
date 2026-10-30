@@ -45,6 +45,12 @@ export function onCacheClear(fn: () => void): () => void {
   return () => { clearListeners.delete(fn); };
 }
 
+/** 받은 지 얼마나 됐는지(ms) — 없으면 Infinity */
+export function cacheAge(key: string): number {
+  const t = stamp.get(key);
+  return t === undefined ? Infinity : Date.now() - t;
+}
+
 /** 방금(FRESH_MS 안에) 받은 데이터인지 */
 export function cacheFresh(key: string): boolean {
   const t = stamp.get(key);

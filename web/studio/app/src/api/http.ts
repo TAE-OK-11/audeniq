@@ -92,10 +92,13 @@ async function send<T>(path: string, opts: ReqOptions): Promise<T> {
   opts.signal?.addEventListener('abort', abort, { once: true });
   if (opts.signal?.aborted) ctrl.abort();
   let res: Response;
+  let text: string;
   try {
     res = await fetch(`${API_BASE}${path}`, { method, headers, body, credentials: 'include', signal: ctrl.signal, cache: 'no-store' });
+    // 본문을 다 받을 때까지 제한 시간을 둔다 — 머리만 오고 본문이 멈추면 화면이 끝없이 기다렸다
+    text = await res.text();
   } catch (e) {
-    const aborted = e instanceof DOMException && e.name === 'AbortError';
+    const aborted = ctrl.signal.aborted || (e instanceof DOMException && e.name === 'AbortError');
     // 기기가 온라인인데 연결 자체가 안 되면 서버 쪽 문제로 본다 (오프라인은 SystemStatus가 따로 알린다)
     if (!aborted && !opts.quietServer && navigator.onLine && !opts.signal?.aborted) reportServerIssue({ kind: 'down', status: 0, code: 'NETWORK' });
     throw new ApiError(aborted ? '서버 응답이 늦어요. 잠시 후 다시 시도해 주세요.' : '네트워크 연결을 확인해 주세요.', 0, aborted ? 'TIMEOUT' : 'NETWORK');
@@ -104,7 +107,6 @@ async function send<T>(path: string, opts: ReqOptions): Promise<T> {
     opts.signal?.removeEventListener('abort', abort);
   }
 
-  const text = await res.text();
   let data: unknown = null;
   if (text) {
     try { data = JSON.parse(text); } catch { data = null; }

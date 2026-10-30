@@ -35,7 +35,7 @@
 #modal.adm-w-modal .modal-inner{max-width:720px}
 .adm-w-grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 14px}
 .adm-w-form .ui-seg{flex-wrap:wrap}
-.adm-w-picker{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
+.adm-w-picker{flex-wrap:wrap;align-items:center}
 .adm-w-picker .ui-select{flex:0 0 auto;min-width:110px}
 .adm-w-picker .ui-select+.ui-select{flex:1 1 160px;min-width:0;width:auto}
 .adm-w-picker .ui-input{flex:1 1 160px;min-width:0;width:auto}
@@ -50,8 +50,6 @@
 .adm-w-switch-row{display:flex;align-items:center;justify-content:space-between;gap:14px}
 .adm-w-switch-row b{display:block;font-size:14px;font-weight:700}
 .adm-w-switch-row small{display:block;margin-top:2px;font-size:12px;color:var(--adm-muted);line-height:1.5}
-.aq-switch input:disabled+span{opacity:.5}
-.aq-switch input:focus-visible+span{outline:3px solid var(--aq-blue-450);outline-offset:2px}
 
 /* ---------- 업무 상세 ---------- */
 .adm-w-task-head{margin:0 0 18px}
@@ -135,7 +133,7 @@
 .adm-w-filter-row .ui-select{--ui-input-h:var(--aq-h-sm);--ui-input-r:var(--aq-r-ctl-sm)}
 .adm-w-thread-tools{margin-top:10px}
 @media (max-width:640px){
-  .adm-w-filter-row .ui-select{flex:1 1 calc(50% - 10px);min-width:0}
+  .adm-w-filter-row .ui-select{min-width:0}
   .adm-w-note-top{flex-wrap:wrap}
 }
 /* 거르기 줄: 검색칸이 넓게, 고르기 칸은 남은 폭을 나눠 한 줄에 — 좁으면 두 칸씩 */
@@ -173,8 +171,10 @@
 .adm-w-holidays .adm-w-inline .ui-input{flex:1 1 160px;max-width:240px}
 
 @media (max-width:640px){
-  .adm-w-inbox-row{grid-template-columns:minmax(0,1fr) auto}
+  /* 휴대폰: 배지·기한은 제목 아래 한 줄로 — 오른쪽에 두면 제목이 'Paper / Moon'처럼 좁게 꺾였다 */
+  .adm-w-inbox-row{grid-template-columns:minmax(0,1fr)}
   .adm-w-inbox-row>.adm-w-inbox-icon{display:none}
+  .adm-w-inbox-row>.ui-row-end{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-start}
   .adm-w-exc-top{grid-template-columns:minmax(0,1fr)}
   .adm-w-exc-top>.adm-w-inbox-icon{display:none}
   .adm-w-ellipsis{max-width:200px}

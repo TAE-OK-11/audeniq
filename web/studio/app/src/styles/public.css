@@ -1,0 +1,12 @@
+/* 공개 페이지(스마트링크·아티스트 페이지) 스타일 — 스튜디오와 같은 파일을 같은 순서로 불러오고,
+   빌드에서 공개 페이지 코드에 나오는 클래스의 규칙만 남긴다 (build/purge-css의 publicTokens).
+   순서가 같으므로 남은 규칙끼리의 덮어쓰기는 스튜디오와 똑같다. */
+@import './tokens.css';
+@import './design.css';
+@import './live.css';
+@import './enhance.css';
+@import './controls.css';
+@import './ui.css';
+@import './desktop.css';
+@import './wizard-motion.css';
+@import './design-align.css';

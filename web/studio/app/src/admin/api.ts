@@ -365,15 +365,17 @@ const remote = {
 export type StaffApi = typeof remote;
 
 /** 체험 모드에서만 예시 데이터를 불러온다 — 실서버 빌드에는 mock.ts가 아예 들어가지 않는다 (MOCK은 빌드 때 정해지는 상수) */
-function lazyMock(): StaffApi {
+function lazyMock(loader: () => Promise<StaffApi>): StaffApi {
   let mod: Promise<StaffApi> | null = null;
-  const load = () => (mod ??= import('./mock').then(m => m.mockStaff as StaffApi));
+  const load = () => (mod ??= loader());
   return new Proxy({} as StaffApi, {
     get: (_, key) => (...args: unknown[]) => load().then(api => (api[key as keyof StaffApi] as (...a: unknown[]) => unknown)(...args)),
   });
 }
 
-export const staffApi: StaffApi = MOCK ? lazyMock() : remote;
+// 실서버 빌드에서 바로 거짓이 되는 식을 앞에 둔다 — 다른 모듈의 상수(MOCK)만으로는 실서버 빌드에도 예시 데이터 청크가 만들어졌다
+export const staffApi: StaffApi = import.meta.env.MODE !== 'edge' && import.meta.env.VITE_MOCK !== 'false' && MOCK
+  ? lazyMock(() => import('./mock').then(m => m.mockStaff as StaffApi)) : remote;
 
 /** SHA-256 (hex) — 승인 직전 ERN이 바뀌지 않았는지 서버에 함께 보낸다 */
 export async function sha256Hex(text: string): Promise<string> {

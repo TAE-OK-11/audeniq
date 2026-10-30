@@ -17,6 +17,7 @@ import { useConfirm } from '../components/Confirm';
 import { MOCK } from '../lib/mode';
 import { josa } from '../lib/josa';
 import { AiAppRow, AiFlowFrame as Frame, AiFlowHeader as Header, AiFlowLoading, AiFlowPage, workspaceName } from '../components/AiFlow';
+import { navigableUrl } from '../lib/safeUrl';
 
 type Phase =
   | { at: 'code'; error?: string }
@@ -300,7 +301,9 @@ function Review({ request, d, onDone, onFailed }: {
 const frameTitle = (d: AiConnectDetails) => (d.audience === 'api' ? '앱 연결' : 'AI 앱 연결');
 const hostOf = (url: string) => { try { return new URL(url).host.replace(/^www\./, ''); } catch { return null; } };
 
-function Done({ approved, d, redirect, granted }: { approved: boolean; d: AiConnectDetails; redirect?: string; granted: string[] }) {
+function Done({ approved, d, redirect: rawRedirect, granted }: { approved: boolean; d: AiConnectDetails; redirect?: string; granted: string[] }) {
+  // 서버가 준 돌아갈 주소라도 스크립트를 실행하는 주소면 가지 않는다 (앱 전용 주소는 그대로)
+  const redirect = navigableUrl(rawRedirect);
   const titles = d.scopes.filter(s => granted.includes(s.scope)).map(s => s.title);
   useEffect(() => {
     if (!redirect) return;

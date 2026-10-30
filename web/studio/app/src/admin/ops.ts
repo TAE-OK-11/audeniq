@@ -26,7 +26,8 @@ const remote = {
 type OpsApi = typeof remote;
 
 /** 체험 모드에서만 예시 데이터 (opsMock.ts는 실서버 빌드에 들어가지 않는다) */
-export const opsApi: OpsApi = MOCK
+// 실서버 빌드에서 바로 거짓이 되는 식을 앞에 둔다 — 다른 모듈의 상수(MOCK)만으로는 실서버 빌드에도 예시 데이터 청크가 만들어졌다
+export const opsApi: OpsApi = import.meta.env.MODE !== 'edge' && import.meta.env.VITE_MOCK !== 'false' && MOCK
   ? {
     index: () => import('./opsMock').then(m => m.mockOps.index()),
     read: <T>(area: OpsArea, op: string, q: Record<string, string | undefined> = {}) => import('./opsMock').then(m => m.mockOps.read<T>(area, op, q)),

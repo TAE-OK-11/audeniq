@@ -98,7 +98,7 @@ export function ArtistStudio() {
   return (
     <div className="view aq-studio" id="view-artist">
       <PageHeader
-        eyebrow="아티스트" title="아티스트 페이지"
+        eyebrow="홍보" title="아티스트 페이지"
         sub="소개 페이지·스마트링크·소식·팬 응원의 반응을 보고 한곳에서 고쳐요."
         actions={artists && artists.length > 1 ? (
           <select className="ui-select aq-studio-pick" aria-label="아티스트" value={artist?.artist_id ?? ''} onChange={e => setParam('artist', e.target.value)}>

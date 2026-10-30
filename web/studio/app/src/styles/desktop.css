@@ -1,6 +1,6 @@
 /* ==========================================================================
    PC(넓은 화면) 배치 — 휴대폰용 한 줄 목록을 그대로 늘리지 않고, 넓은 폭에 맞게 칸을 나눈다.
-   1024px 이상에서만 적용되므로 휴대폰·태블릿 세로 화면은 기존 배치 그대로다. (상단 메뉴바는 공통이라 제외)
+   페이지 배치는 760px(태블릿 세로)부터, 마우스·신청서 왼쪽 단계 카드는 1024px부터. (상단 메뉴바는 공통이라 제외)
    ========================================================================== */
 /* 신청서 아래 버튼 줄 — 휴대폰과 같은 비율로 입력 영역 폭을 꽉 채운다
    [이전 1][다음으로 2], 버튼 3개면 [나가기 1][수정 완료 1][다음으로 1.5] */
@@ -23,7 +23,9 @@
   .ui-stats.is-cols-3 > :last-child:nth-child(odd):not(:first-child) { grid-column: auto; }
 }
 
-@media (min-width: 1024px) {
+/* 페이지 배치(두 칸·카드 격자)는 태블릿 세로(갤럭시 탭 800px~)부터 — 744px 넘는 폭에 휴대폰 한 줄 배치를 그대로 늘리면
+   계정 정보의 '이름 ······ 값' 줄이 화면 양 끝으로 벌어지고 카드가 한 줄에 하나씩 길게 늘어졌다. */
+@media (min-width: 760px) {
   /* 왼쪽 칸을 화면에 고정할 때의 위치(상단 메뉴바 아래) */
   .view { --pc-sticky-top: 96px; }
 
@@ -106,6 +108,9 @@
     font-size: var(--aq-fs-sm); font-weight: var(--aq-fw-bold);
   }
 
+}
+
+@media (min-width: 1024px) {
   /* ── 다듬기: 누를 수 있는 카드는 마우스를 올리면 면이 한 단계 진해져 PC에서 바로 알아보게 (그림자·띄우기 없음) ── */
   :is(.aq-release-card, .aq-track-row, .aq-notice-card, .aq-event-card, .aq-ticket-card, .aq-bundle-list > *) {
     transition: background-color .2s ease;
@@ -169,10 +174,8 @@
     box-shadow: 0 -1px 0 var(--aq-gray-100);
   }
 
-  /* 5단계 해당 항목 — 2칸(선택하면 열리는 확인 사항은 한 줄 전체) */
-  #view-new .aq-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  #view-new .aq-options > .aq-option { margin: 0 !important; height: 100%; }
-  #view-new .aq-options > :not(.aq-option) { grid-column: 1 / -1; margin: 0 !important; }
+  /* 부가서비스·해당 항목은 휴대폰처럼 한 줄에 하나 — 2칸이면 고른 카드 아래 확인 사항이 한 줄 전체로 끼어들어
+     옆 카드가 그 아래로 밀리고 고른 카드만 반쪽 폭으로 남았다 */
   /* 6단계 최종 확인 — 항목 카드 2칸, 수정 버튼은 오른쪽 */
   #view-new .step-section > .aq-catalog-cards:has(.aq-review-card) {
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: stretch;
