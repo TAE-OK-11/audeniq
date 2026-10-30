@@ -1890,3 +1890,13 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 /* 키보드로 옮겨 온 입력칸 — 면 색만 아주 옅게 바뀌어(대비 1.05) 어디에 있는지 보이지 않았다. 마우스·터치로 누를 때는 그대로 */
 /* 입력칸 테두리를 지우는 :is(#root,#modal) … !important 규칙(enhance.css)보다 앞서도록 같은 범위·!important로 */
 html.aq-kbd :is(#root,#modal) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea):is(:focus,:focus-visible){outline:var(--aq-focus)!important;outline-offset:2px!important}
+
+/* 휴대폰 창(아래 시트)의 입력 양식 — 보이는 높이(svh)가 860px 아래면 칸 간격·제목 아래 간격·긴 입력칸 높이를 줄여
+   새 문의·권리 서류 작성처럼 짧은 양식이 버튼까지 한 화면에 들어오게 한다 (갤럭시 S24 650px에서 16~130px 넘쳤다).
+   긴 내용 칸은 최대 높이만 줄어 넘는 글은 칸 안에서 스크롤된다. 키 큰 폰·PC는 그대로 */
+@media (max-width:760px){
+  #modal:not(.aq-payout-setup-mode) .modal-inner .ui-field{margin-bottom:clamp(10px,18px + (100svh - 860px) * .05,18px);gap:clamp(6px,8px + (100svh - 860px) * .02,8px)}
+  #modal .modal-inner .ui-field textarea:not(#tReply){max-height:clamp(60px,184px + (100svh - 860px) * .6,600px);min-height:min(112px,clamp(60px,184px + (100svh - 860px) * .6,600px))}
+  #modal:not(.aq-sysdialog-mode):not(.aq-signature-mode) .modal-top{margin-bottom:clamp(12px,20px + (100svh - 860px) * .05,20px)}
+  #modal .modal-inner #modalBody>form>p.small:first-child,#modal .modal-inner #modalBody>p.small:first-child{margin-bottom:clamp(12px,20px + (100svh - 860px) * .05,20px)}
+}
