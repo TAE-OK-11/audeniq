@@ -59,6 +59,7 @@ const Rights = lazyPage(pageLoaders.Rights, m => m.Rights);
 const WorkDetail = lazyPage(pageLoaders.WorkDetail, m => m.WorkDetail);
 const WorkEditor = lazyPage(pageLoaders.WorkEditor, m => m.WorkEditor);
 const PublishingApply = lazyPage(pageLoaders.PublishingApply, m => m.PublishingApply);
+const Publishing = lazyPage(pageLoaders.Publishing, m => m.Publishing);
 const OpenAr = lazyPage(pageLoaders.OpenAr, m => m.OpenAr);
 const RightsDocument = lazyPage(pageLoaders.RightsDocument, m => m.RightsDocument);
 const Inquiries = lazyPage(pageLoaders.Inquiries, m => m.Inquiries);
@@ -153,7 +154,7 @@ function MovedLink({ to }: { to: (slug: string) => string }) {
   return <Navigate to={`${to(slug)}${loc.search}${loc.hash ?? ''}`} replace />;
 }
 
-/** 다른 작품으로 바로 옮겨 가면 앞 작품의 탭·입력이 남지 않게 새로 그린다 */
+/** 다른 곡으로 바로 옮겨 가면 앞 곡의 탭·입력이 남지 않게 새로 그린다 */
 function WorkDetailRoute() {
   const { id = '' } = useParams();
   return <WorkDetail key={id} />;
@@ -162,6 +163,12 @@ function WorkEditorRoute() {
   const { id = '' } = useParams();
   const loc = useLocation();
   return <WorkEditor key={id + loc.search} />;
+}
+
+/** 예전 앨범 퍼블리싱 주소 — 발매 상세의 '퍼블리싱' 탭으로 */
+function AlbumPubMoved() {
+  const { id = '' } = useParams();
+  return <Navigate to={`/releases/${encodeURIComponent(id)}?tab=publishing`} replace />;
 }
 
 function ReleaseDetailRoute() {
@@ -196,13 +203,15 @@ function PortalRoutes() {
             <Route path="/releases/bulk" element={<Navigate to="/releases" replace />} />
             <Route path="/releases/:id" element={<ReleaseDetailRoute />} />
             <Route path="/releases/:id/application" element={<Application />} />
+            <Route path="/releases/:id/publishing" element={<AlbumPubMoved />} />
             <Route path="/upload" element={<UploadRoute />} />
-            {/* 저작물 — 음악 라이브러리의 '저작물' 탭에서 들어온다 (퍼블리싱) */}
-            <Route path="/works" element={<Navigate to="/releases?tab=tracks" replace />} />
+            {/* 곡 — 음악 라이브러리의 '곡' 탭에서 들어온다 (저작권 관리) */}
+            <Route path="/works" element={<Navigate to="/publishing?tab=songs" replace />} />
             <Route path="/works/new" element={<WorkEditorRoute />} />
             <Route path="/works/:id" element={<WorkDetailRoute />} />
             <Route path="/works/:id/edit" element={<WorkEditorRoute />} />
             <Route path="/publishing/apply" element={<PublishingApply />} />
+            <Route path="/publishing" element={<Publishing />} />
             <Route path="/ar" element={<OpenAr />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/settlement" element={<Settlement />} />

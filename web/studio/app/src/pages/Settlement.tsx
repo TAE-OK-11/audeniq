@@ -43,7 +43,7 @@ import { Badge, ChipGroup, type Tone } from '../ui';
 /** 정산은 플랫폼별·월별로 나뉘어 들어오지 않는다 — 운영팀이 정산금(크레딧)을 넣으면 잔액에 쌓이고, 아티스트가 원할 때 지급을 요청한다.
  *  그래서 내역은 통장처럼 날짜별 적립·차감 줄로 보여 준다 */
 const entryTitle = (s: Statement) => s.note || (s.amount < 0 ? '정산금 차감' : '정산금 적립');
-const entryKind = (s: Statement) => (s.amount < 0 ? '차감' : revenueTypeOf(s) === 'publishing' ? '퍼블리싱 적립' : '적립');
+const entryKind = (s: Statement) => (s.amount < 0 ? '차감' : revenueTypeOf(s) === 'publishing' ? '저작권료 적립' : '적립');
 /** 'YYYY-MM-DD' → '9월 29일' (올해가 아니면 연도까지) */
 function dayLabel(d: string, now = new Date()): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d);
@@ -151,7 +151,7 @@ export function Settlement() {
     }
   };
   const [tab, setTab] = useState<'statements' | 'payouts'>('statements');
-  // 수익 유형 — 배급 정산과 퍼블리싱 저작권료는 원장이 따로다. 같은 화면에서 거르기만 하고 더하지 않는다 (?type=)
+  // 수익 유형 — 배급 정산과 저작권료는 원장이 따로다. 같은 화면에서 거르기만 하고 더하지 않는다 (?type=)
   const [params, setParams] = useSearchParams();
   const revType = (['distribution', 'publishing'] as const).find(t => t === params.get('type')) ?? 'all';
   const setRevType = (v: 'all' | 'distribution' | 'publishing') => { const p = new URLSearchParams(params); if (v === 'all') p.delete('type'); else p.set('type', v); setParams(p, { replace: true }); };
@@ -340,7 +340,7 @@ export function Settlement() {
             <div className="aq-list-tools">
               {hasPub ? (
                 <ChipGroup size="sm" label="수익 유형" value={revType} onChange={setRevType} hideZero={false}
-                  options={[{ value: 'all', label: '전체' }, { value: 'distribution', label: '배급' }, { value: 'publishing', label: '퍼블리싱' }]} />
+                  options={[{ value: 'all', label: '전체' }, { value: 'distribution', label: '배급' }, { value: 'publishing', label: '저작권료' }]} />
               ) : <span>{statementsNext ? `최근 ${orderedStatements.length}건` : `전체 ${orderedStatements.length}건`}</span>}
               <button type="button" className="ui-btn is-soft is-sm" onClick={exportStatements} disabled={exporting}>
                 <Glyph name="download" size={14} className="aq-glyph-lead" />{exporting ? '내려받는 중…' : '전체 기간 CSV'}
@@ -349,8 +349,8 @@ export function Settlement() {
           )}
           {revType !== 'distribution' && estimated > 0 && (
             <div className="ui-callout is-neutral is-row">
-              <span>확정 전인 퍼블리싱 예상 저작권료 <b>{money(estimated)}</b> — 관리 단체가 확정하면 여기에 적립돼요.</span>
-              <Link to="/releases?tab=tracks&wf=managed" className="ui-btn is-white is-sm">작품별 보기</Link>
+              <span>확정 전인 예상 저작권료 <b>{money(estimated)}</b> — 관리 단체가 확정하면 여기에 적립돼요.</span>
+              <Link to="/publishing" className="ui-btn is-white is-sm">곡별 보기</Link>
             </div>
           )}
           {listsPending ? <SkeletonRows count={3} pattern="amount" /> : orderedStatements.length ? (
@@ -430,8 +430,8 @@ export function Settlement() {
             {detailStatement.platform && <div><dt>플랫폼</dt><dd>{detailStatement.platform}</dd></div>}
             {detailStatement.period && <div><dt>정산 기간</dt><dd>{detailStatement.period}</dd></div>}
             {detailRoyalty && <>
-              <div><dt>작품</dt><dd><Link to={`/works/${detailRoyalty.workId}?tab=revenue`} className="aq-inline-link">{detailRoyalty.workTitle}</Link></dd></div>
-              <div><dt>수익 유형</dt><dd>퍼블리싱 · {ROYALTY_KIND_LABEL[detailRoyalty.kind]}</dd></div>
+              <div><dt>곡</dt><dd><Link to={`/works/${detailRoyalty.workId}?tab=revenue`} className="aq-inline-link">{detailRoyalty.workTitle}</Link></dd></div>
+              <div><dt>수익 유형</dt><dd>저작권료 · {ROYALTY_KIND_LABEL[detailRoyalty.kind]}</dd></div>
               <div><dt>수금액</dt><dd><Money value={detailRoyalty.collected} currency={detailRoyalty.currency} /></dd></div>
               <div><dt>관리 지분 · 수수료</dt><dd>{pct(detailRoyalty.share)} · <Money value={detailRoyalty.fee} currency={detailRoyalty.currency} /></dd></div>
               <div><dt>국가</dt><dd>{detailRoyalty.country}</dd></div>

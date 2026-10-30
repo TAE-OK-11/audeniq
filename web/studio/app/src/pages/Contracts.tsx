@@ -19,7 +19,7 @@ const DOC_PATH = [
   ['배급 신청서 서명', '발매를 접수할 때'],
   ['담당자 검토', '수수료·배급 조건 확정'],
   ['배급 계약서 서명', '권리를 확인하고 서명하면 배급 시작'],
-  ['퍼블리싱 계약 (선택)', '곡 저작권도 맡기면 저작권료까지 같은 잔액으로'],
+  ['저작권 관리 계약 (선택)', '곡 저작권도 맡기면 저작권료까지 같은 잔액으로'],
 ] as const;
 
 export function Contracts() {
@@ -61,7 +61,7 @@ export function Contracts() {
         <div>
           <p className="eyebrow">작업실</p>
           <h1>계약서</h1>
-          <p>발매마다 배급 신청서·계약서와 곡 저작권(퍼블리싱) 계약을 한곳에서 확인하고 서명해요.</p>
+          <p>발매마다 배급 신청서·계약서와 곡 저작권 계약을 한곳에서 확인하고 서명해요.</p>
         </div>
       </div>
 
@@ -71,7 +71,7 @@ export function Contracts() {
             {agreements.map(c => (
               <ContractBundle key={c.id} releaseId={c.releaseId ?? ''} releaseTitle={c.releaseTitle} agreement={c} onOpenAgreement={setOpenId} />
             ))}
-            {/* 같은 회사의 퍼블리싱 계약 — 발매 전 작품의 신청과 저작권 관리 계약(연장·종료)도 같은 목록에 */}
+            {/* 같은 회사의 저작권 관리 계약 — 발매 전 곡의 신청과 저작권 관리 계약(연장·종료)도 같은 목록에 */}
             <PublishingContracts />
           </div>
         ) : hasPublishing ? (

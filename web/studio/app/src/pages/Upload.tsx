@@ -28,7 +28,7 @@ import { artistIssue, COVER_MAX, COVER_MIN, coverIssue, expectedReleaseType, isr
 import { uid } from '../lib/store';
 import { CheckIcon } from '../components/Check';
 import { AddonSummary, addonProblem } from '../components/AddonOptions';
-import { ReleasePublishingChoice, takePublishingIntent } from '../components/publishing/ReleasePublishing';
+import { takePublishingIntent } from '../components/publishing/ReleasePublishing';
 import { pubApi } from '../api/publishing';
 import { mockOrdersFromApplication } from '../lib/addons';
 import { Glyph } from '../components/Glyph';
@@ -1570,11 +1570,8 @@ export function Upload() {
               </button>
             )}
             <div id="aqSpecialOptions" className="aq-fix-zone"><Later h={160}><OptionsSection form={form} set={set} group="rights" onDocument={attachOptionDocument} uploads={uploads} onElectronic={kind => void openElectronic(kind)} onOpenDoc={setOpenDocId} releaseId={draftIdRef.current ?? undefined} onGuardian={() => void openGuardian()} /></Later></div>
-            {/* 같은 신청서에서 곡의 작사·작곡 저작권까지 — 저작물로 정리하거나 퍼블리싱도 함께 맡긴다 */}
-            <ReleasePublishingChoice
-              tracks={form.tracks.map(t => ({ id: t.serverId || t.id, title: t.title, composers: t.composers, lyricists: t.lyricists, instrumental: t.instrumental }))}
-              coverIds={form.options.cover ? form.options.coverTracks.map(c => c.trackId) : []} draftId={draftIdRef.current}
-            />
+            {/* 곡의 작사·작곡 저작권은 퍼블리싱 메뉴에서 — 신청서에는 한 줄 안내만 (적은 크레딧으로 곡 정보는 미리 정리해 둔다) */}
+            <p className="ui-field-help">작사·작곡 저작권은 발매 뒤 <b>퍼블리싱</b> 메뉴에서 맡길 수 있어요. 여기 적은 크레딧으로 곡 정보를 미리 정리해 둘게요.</p>
             <h2 className="subhead">필수 확인 항목</h2>
             <div className="field-group">
               {RIGHTS_CHECKS.map(([k, label]) => (

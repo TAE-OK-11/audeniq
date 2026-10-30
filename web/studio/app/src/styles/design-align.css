@@ -139,8 +139,9 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .aq-track-file.is-missing{color:var(--aq-text-4)}
 
 /* 계약서 진행 순서 — 한 장의 카드 안에 구분선 목록 (번호 아이콘 · 단계 · 언제) */
-#view-contracts .aq-doc-path-wrap{margin:32px 0 0}
-#view-contracts .aq-doc-path-wrap h2{margin:0 0 10px;font-size:var(--aq-fs-md,16px);font-weight:700;color:var(--aq-text-2)}
+/* 계약서·퍼블리싱 화면 아래 '…이렇게 진행돼요' — 처음 한 번 읽는 설명이라 작은 제목 */
+:is(#view-contracts,#view-publishing) .aq-doc-path-wrap{margin:32px 0 0}
+:is(#view-contracts,#view-publishing) .aq-doc-path-wrap h2{margin:0 0 10px;font-size:var(--aq-fs-md,16px);font-weight:700;color:var(--aq-text-2)}
 #view-contracts .aq-doc-path{padding:4px 20px}
 
 /* 계약서 발매 묶음 — 계정 정보 화면 같은 옅은 파랑 카드 + 줄(흰 칸 없음), 상태는 색 글자 */

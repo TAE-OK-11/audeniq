@@ -61,6 +61,7 @@ const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
     items: [
       { to: '/', label: '홈', icon: 'home' },
       { to: '/releases', label: '발매·곡 관리', icon: 'disc' },
+      { to: '/publishing', label: '퍼블리싱', icon: 'scale' },
       { to: '/contracts', label: '계약서', icon: 'sign' },
       { to: '/rights', label: '권리·보완 서류', icon: 'doc' },
     ],
@@ -76,6 +77,8 @@ const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
     group: '홍보',
     items: [
       { to: '/artist', label: '아티스트 페이지', icon: 'globe' },
+      // 곡 데모 피칭 — 퍼블리싱 곡을 레이블·아티스트에게 알리는 일이라 홍보에
+      { to: '/ar', label: 'Open A&R', icon: 'megaphone' },
     ],
   },
   {
@@ -95,8 +98,8 @@ const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
   },
 ];
 
-// 저작물은 음악 라이브러리(발매·곡 관리)의 한 탭, 퍼블리싱 신청은 계약 흐름 — 메뉴는 그 자리에 불이 들어온다
-const MENU_ALIAS: [RegExp, string][] = [[/^\/works(\/|$)/, '/releases'], [/^\/ar(\/|$)/, '/releases'], [/^\/publishing(\/|$)/, '/contracts']];
+// 곡 상세·곡 추가는 퍼블리싱 안의 화면 — 메뉴는 '퍼블리싱'에 불이 들어온다
+const MENU_ALIAS: [RegExp, string][] = [[/^\/works(\/|$)/, '/publishing']];
 const isActive = (pathname: string, to: string) =>
   to === '/' ? pathname === '/' : pathname === to || pathname.startsWith(to + '/') || MENU_ALIAS.some(([re, t]) => t === to && re.test(pathname));
 
@@ -104,9 +107,7 @@ const APP_TITLE = 'AUDENIQ STUDIO';
 /** 탭 제목에 쓸 화면 이름 — 메뉴 이름을 그대로 쓰고, 홈과 메뉴에 없는 화면은 앱 이름만 */
 function pageLabel(pathname: string): string {
   if (pathname === '/upload') return '새 발매';
-  if (pathname.startsWith('/works')) return '곡 권리';
-  if (pathname.startsWith('/ar')) return 'Open A&R';
-  if (pathname.startsWith('/publishing')) return '퍼블리싱 신청';
+  if (pathname.startsWith('/publishing/apply')) return '저작권 관리 신청';
   for (const g of NAV_GROUPS) for (const item of g.items) if (item.to !== '/' && isActive(pathname, item.to)) return item.label;
   return '';
 }

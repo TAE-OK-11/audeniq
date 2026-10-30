@@ -23,7 +23,6 @@ import { Glyph } from '../components/Glyph';
 import { ContractBundle } from '../components/ContractBundle';
 import { AlbumPrep } from '../components/AlbumPrep';
 import { TrackSheet } from '../components/TrackSheet';
-import { ReleaseWorksCard } from '../components/publishing/ReleasePublishing';
 import { CopyButton } from '../components/CopyButton';
 import { albumPrep, draftTrackOf, releaseDay, type PrepItem } from '../lib/albumPrep';
 import '../styles/split/ReleaseDetail.css';
@@ -38,6 +37,7 @@ import { DELIVERY_STAGE, DELIVERY_TONE } from '../lib/delivery';
 
 // '관리'·'통계' 탭은 열 때 받는다 — 처음 여는 '정보' 탭에는 필요 없는 카드들이다
 const ReleaseManageTab = lazyComponent(() => import('../components/ReleaseManageTab'), m => m.ReleaseManageTab);
+const AlbumPublishingTab = lazyComponent(() => import('../components/publishing/AlbumPublishingTab'), m => m.AlbumPublishingTab);
 const ReleaseStats = lazyComponent(() => import('../components/ReleaseStats'), m => m.ReleaseStats);
 
 // 플랫폼 기준으로 고쳐야 하는 항목 안내
@@ -65,6 +65,7 @@ const DETAIL_TABS = [
   // 성과는 발매된 뒤에만 (플랫폼 리포트가 들어오는 때)
   { value: 'stats', label: '성과' },
   { value: 'delivery', label: '배급·계약' },
+  { value: 'publishing', label: '퍼블리싱' },
   { value: 'manage', label: '관리' },
   { value: 'history', label: '기록' },
 ];
@@ -567,8 +568,6 @@ export function ReleaseDetail() {
                 </div>
               )}
             </div>
-            {/* 같은 곡의 작사·작곡 저작권 — 배급과 퍼블리싱을 한 발매 화면에서 */}
-            {!isDraft && <ReleaseWorksCard rel={rel} />}
           </div>
         )}
 
@@ -650,6 +649,12 @@ export function ReleaseDetail() {
               </section>
             )}
           </div>
+        )}
+
+        {activeTab === 'publishing' && (
+          <Suspense fallback={<SkeletonBlock height={240} />}>
+            <AlbumPublishingTab rel={rel} />
+          </Suspense>
         )}
 
         {activeTab === 'manage' && (

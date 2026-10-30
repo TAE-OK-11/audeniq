@@ -105,22 +105,22 @@ img{max-width:100%}
 .aq-home-main,.aq-home-side{display:grid;gap:13px;align-content:start;min-width:0}
 .aq-home-main>*,.aq-home-side>*{margin:0}
 .aq-home-side:empty{display:none}
-/* 홈 리포트 — 배치만: 금액과 전월 대비를 한 줄에, 막대는 가운데 고르게, 세 숫자는 막대 아래 */
-#view-home .aq-report-card .aq-report-head{margin-bottom:4px}
-#view-home .aq-report-card .ui-row-meta{margin:8px 0 0;padding:0;clip-path:none}
-#view-home .aq-home-report-note{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:10px}
-#view-home .aq-report-foot{display:block;margin-top:16px}
+/* 홈 리포트(퍼블리싱 저작권료 리포트도 같은 모양) — 배치만: 금액과 전월 대비를 한 줄에, 막대는 가운데 고르게, 세 숫자는 막대 아래 */
+:is(#view-home,#view-publishing) .aq-report-card .aq-report-head{margin-bottom:4px}
+:is(#view-home,#view-publishing) .aq-report-card .ui-row-meta{margin:8px 0 0;padding:0;clip-path:none}
+:is(#view-home,#view-publishing) .aq-home-report-note{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:10px}
+:is(#view-home,#view-publishing) .aq-report-foot{display:block;margin-top:16px}
 /* 홈 리포트 막대 — 36px 막대, 위만 6px 둥글게, 한 기준선 위에 선다. 이번 달만 진한 파랑, 숫자도 이번 달만(글자 색) */
-#view-home .aq-report-card .aq-mini-trend{justify-content:stretch;gap:0;height:116px;margin:8px 0 0;padding-top:4px}
-#view-home .aq-report-card .aq-mini-col{flex:1 1 0;gap:0}
-#view-home .aq-report-card .aq-mini-plot{flex:1;display:flex;align-items:flex-end;justify-content:center;align-self:stretch;min-height:0;padding-top:24px}
-#view-home .aq-report-card .aq-mini-bar{position:relative}
-#view-home .aq-report-card .aq-mini-val{position:absolute;bottom:100%;left:50%;margin-bottom:6px;transform:translateX(-50%);color:var(--aq-text)}
-#view-home .aq-report-card .aq-mini-bar{width:36px;max-width:36px;border-radius:6px 6px 0 0;background:var(--aq-blue-300)}
-#view-home .aq-report-card .aq-mini-col:last-child small{color:var(--aq-text-2);font-weight:700}
+:is(#view-home,#view-publishing) .aq-report-card .aq-mini-trend{justify-content:stretch;gap:0;height:116px;margin:8px 0 0;padding-top:4px}
+:is(#view-home,#view-publishing) .aq-report-card .aq-mini-col{flex:1 1 0;gap:0}
+:is(#view-home,#view-publishing) .aq-report-card .aq-mini-plot{flex:1;display:flex;align-items:flex-end;justify-content:center;align-self:stretch;min-height:0;padding-top:24px}
+:is(#view-home,#view-publishing) .aq-report-card .aq-mini-bar{position:relative}
+:is(#view-home,#view-publishing) .aq-report-card .aq-mini-val{position:absolute;bottom:100%;left:50%;margin-bottom:6px;transform:translateX(-50%);color:var(--aq-text)}
+:is(#view-home,#view-publishing) .aq-report-card .aq-mini-bar{width:36px;max-width:36px;border-radius:6px 6px 0 0;background:var(--aq-blue-300)}
+:is(#view-home,#view-publishing) .aq-report-card .aq-mini-col:last-child small{color:var(--aq-text-2);font-weight:700}
 .aq-report-top{display:flex;align-items:center;gap:10px;min-width:0}
 .aq-report-top>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#view-home .aq-report-kv{margin-top:24px}
+:is(#view-home,#view-publishing) .aq-report-kv{margin-top:24px}
 @media(max-width:900px){
   #view-home .aq-home-board{display:flex;flex-direction:column;align-items:stretch;gap:11px}
   .aq-home-main,.aq-home-side{display:contents}
@@ -1910,3 +1910,28 @@ a.aq-inline-link{display:inline-block;max-width:100%}
 .aq-paper-record dd{margin:0;color:var(--aq-text);overflow-wrap:anywhere}
 @media print{.aq-paper-record{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 
+
+/* 퍼블리싱 — 곡별 저작권료 줄: 제목 아래 막대, 오른쪽 금액 */
+.aq-pub-songs .ui-row>.min-0{display:grid;gap:8px}
+.aq-pub-songs .ui-meter{height:6px}
+.aq-pub-amount{flex:none;font-weight:800;font-variant-numeric:tabular-nums}
+.aq-track-end{display:flex;align-items:center;gap:6px}
+.aq-pub-count{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 0 4px}
+.aq-pub-count .studio-result-count{margin:0}
+.settle-hero .aq-pub-next{margin-top:18px}
+/* 앨범 퍼블리싱 — 저작권료 표(칩 줄·CSV 버튼)가 카드를 화면 밖으로 밀지 않게 */
+.aq-album-pub>*{min-width:0}
+.aq-pub-songs .ui-row>.min-0{flex:1}
+.settle-entry-amount.is-estimated{color:var(--aq-text-4)}
+
+/* 퍼블리싱 입력 화면(곡 정보·저작권 관리 신청) — 발매 신청서처럼 카드 없이 흰 화면에 회색 칸, 구역은 굵은 제목으로 */
+.aq-form-block{margin:28px 0 0}
+.aq-form-block>h2{margin:0 0 6px;font-size:18px;font-weight:800;letter-spacing:-.01em}
+.aq-form-block>h2+.ui-field-help{margin:0 0 16px}
+/* 아래 고정 버튼 줄 — 발매 신청서의 '다음으로' 줄과 같은 자리·모양 (휴대폰) */
+@media(max-width:760px){
+  .aq-pub-actions{position:sticky;bottom:0;z-index:5;display:flex;gap:10px;margin:24px -20px 0;padding:12px 20px max(12px,env(safe-area-inset-bottom));background:#fff}
+  .aq-pub-actions::before{content:"";position:absolute;left:0;right:0;bottom:100%;height:24px;background:linear-gradient(to top,#fff,rgba(255,255,255,0));pointer-events:none}
+  .aq-pub-actions .ui-btn{flex:1;--btn-h:var(--aq-h-lg)}
+  .aq-pub-actions .ui-btn.is-primary{flex:1.45}
+}

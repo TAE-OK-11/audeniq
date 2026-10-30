@@ -1,4 +1,4 @@
-// 퍼블리싱 화면 조각 — 등록 상태 배지·진행, 지분 막대, 작품 줄. 작품 상세·라이브러리·곡 상세·홈이 같이 쓴다.
+// 저작권 관리 화면 조각 — 등록 상태 배지·진행, 지분 막대, 곡 줄. 곡 상세·라이브러리·곡 상세·홈이 같이 쓴다.
 // 새 모양을 만들지 않고 발매 화면과 같은 부품을 쓴다: 진행은 StageCard(발매 상세), 이력은 ui-timeline(발매 '기록' 탭),
 // 지분 막대는 Meter(홈 플랫폼 반영), 줄은 ui-row + IconTile(홈 피칭 카드)
 import { useState } from 'react';
@@ -78,16 +78,16 @@ export function peopleLine(list: readonly WorkContributor[], max = 2) {
   return names.length > max ? `${names.slice(0, max).join(' · ')} 외 ${names.length - max}명` : names.join(' · ') || '참여자 없음';
 }
 
-/** 라이브러리·연결 목록의 작품 한 줄 — 발매 목록 줄과 같은 ui-row */
+/** 라이브러리·연결 목록의 곡 한 줄 — 발매 목록 줄과 같은 ui-row */
 export function WorkRow({ work: w, to, onClick, end }: { work: Work; to?: string; onClick?: () => void; end?: React.ReactNode }) {
   const body = (
     <>
       <IconTile tone={w.recordings.length ? 'blue' : 'gray'}><Glyph name={w.recordings.length ? 'music' : 'pencil'} size={20} /></IconTile>
       <span className="min-0">
-        <span className="ui-row-title">{w.title || '제목 없는 작품'}</span>
+        <span className="ui-row-title">{w.title || '제목 없는 곡'}</span>
         <span className="ui-row-meta">
           <span>{peopleLine(w.contributors)}</span>
-          <span>{w.recordings.length ? `녹음 ${w.recordings.length}개` : '미공개 작품'}</span>
+          <span>{w.recordings.length ? `녹음 ${w.recordings.length}개` : '미공개 곡'}</span>
           <span>{w.iswc ?? w.internalCode}</span>
         </span>
       </span>
