@@ -143,7 +143,7 @@ export function OpenAr() {
           {loading && !list ? <SkeletonRows count={2} /> : list?.length ? (
             <div className="aq-stagger">
               {list.map(s => (
-                <section key={s.id} className="ui-card aq-home-pitch" aria-label={`${s.workTitle} A&R 제출`}>
+                <section key={s.id} className="ui-card aq-ar-card" aria-label={`${s.workTitle} A&R 제출`}>
                   <div className="ui-section-head">
                     <h2>{s.workTitle}</h2>
                     <Badge tone={AR_TONE[s.status]}>{AR_LABEL[s.status]}</Badge>

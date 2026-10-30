@@ -282,7 +282,6 @@ export function WorkEditor() {
       {step === 0 && <>
         {fromTrack && release && track ? (
           <>
-            <p className="ui-field-help">발매 정보는 다시 적지 않아요. 바꿀 게 있으면 <Link to={`/releases/${encodeURIComponent(release.id)}`} className="aq-inline-link">발매 상세</Link>에서 고쳐 주세요.</p>
             {/* 배급 신청서의 곡 정보 — 읽기만. 퍼블리싱에 필요한 건 아래와 다음 단계에서 */}
             <div className="ui-card aq-work-from">
               <div className="aq-work-from-head">
@@ -303,6 +302,7 @@ export function WorkEditor() {
                 ['가사', fromDraft?.instrumental ? '없음 (연주곡)' : fromDraft?.lyrics?.trim() ? '있음' : '없음'],
               ]} />
             </div>
+            <Link to={`/releases/${encodeURIComponent(release.id)}`} className="ui-btn is-text is-sm">발매 정보는 발매 상세에서 고쳐요<Glyph name="chevron-right" size={14} /></Link>
             <h2 className="subhead">퍼블리싱 정보</h2>
           </>
         ) : (

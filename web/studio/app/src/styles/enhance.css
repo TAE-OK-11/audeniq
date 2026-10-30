@@ -1930,3 +1930,36 @@ a.aq-inline-link{display:inline-block;max-width:100%}
 .aq-work-from-head{display:flex;align-items:center;gap:14px;margin-bottom:16px}
 .aq-work-from-head>:first-child{flex:none;width:56px;height:56px;border-radius:14px}
 .aq-work-from-head .ui-row-title{display:block}
+/* ── 퍼블리싱 화면 간격 다듬기 (모바일 점검에서 붙거나 좁았던 곳) */
+/* 한 탭 안에 묶음(aq-detail-stack)이 둘 이상이면 묶음 사이도 카드 사이와 같은 간격 — 곡 상세 '정보' 탭에서 카드가 붙어 있었다 */
+#view-release .ui-tab-panel>:is(.aq-detail-stack,.aq-relinfo-card)+:is(.aq-detail-stack,.aq-relinfo-card){margin-top:14px}
+/* 퍼블리싱 분석 — 카드마다 다른 바깥 여백(정산 카드·리포트 카드)을 지우고 묶음 간격 하나로 */
+#view-publishing .aq-detail-stack{display:grid;gap:14px}
+#view-publishing .aq-detail-stack>*{margin:0}
+#view-publishing .aq-detail-stack>.aq-doc-path-wrap{margin-top:18px}
+/* 앨범 고르기 줄과 아래 안내·카드 사이 */
+.aq-pub-scope{margin:0 0 16px}
+/* 저작권료 탭 — 안내 한 줄과 칩 줄을 띄우고, 칩은 옆으로 밀어 보되 CSV 버튼에 가리지 않게 */
+#view-publishing .ui-tab-panel>.ui-field-help{margin:0 0 12px}
+#view-publishing .aq-list-tools{flex-wrap:wrap;align-items:flex-start;row-gap:10px}
+#view-publishing .aq-list-tools>.ui-chips{flex:1 1 100%;min-width:0;margin:0}
+#view-publishing .aq-list-tools>.ui-btn{margin-left:auto}
+/* 발매 상세 '퍼블리싱' 탭 — 카드 안 진행 단계는 아래 여백 없이, 목록 아래 버튼은 띄워서 */
+.aq-album-pub .aq-manage-card>.aq-stage{margin:14px 0 0;padding-bottom:4px}
+.aq-album-pub .aq-manage-card>.row-actions{margin-top:14px}
+.aq-album-pub .aq-relinfo-card>.row-actions{margin-top:14px}
+.aq-album-pub .aq-album-earn .ui-kv{margin-top:10px}
+/* Open A&R 제출 카드 — 제목 · 곡 줄 · 진행 단계 사이를 띄우고, 아래 '이렇게 진행돼요'도 카드와 떼어 놓는다 */
+#view-ar .aq-stagger{display:grid;gap:14px}
+#view-ar .aq-ar-card{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
+/* 안의 줄 몇몇이 다른 화면용 칸 위치(grid-column)를 들고 와 두 칸으로 갈라졌다 — 모두 한 칸 전체로 */
+#view-ar .aq-ar-card>*{grid-column:1/-1;margin:0}
+#view-ar .aq-ar-card .row-actions{margin:-4px 0 0}
+#view-ar .aq-doc-path-wrap{margin:32px 0 0}
+#view-ar .aq-doc-path-wrap h2{margin:0 0 10px;font-size:var(--aq-fs-md,16px);font-weight:700;color:var(--aq-text-2)}
+/* 신청서 틀 안 — 안내 한 줄·작은 제목·카드가 붙지 않게 (배급 신청서의 step-section 간격에 맞춘다) */
+#view-new .step-section>.ui-field-help{margin:0 0 16px}
+#view-new .step-section>h2.subhead{margin:32px 0 12px}
+#view-new .step-section>h2.subhead:first-child{margin-top:0}
+#view-new .step-section>.aq-work-from{margin:0 0 8px}
+#view-new .step-section>.aq-work-from+.ui-btn{margin:0 0 8px}

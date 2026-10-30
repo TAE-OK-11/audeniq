@@ -241,7 +241,7 @@
 .ui-chip.is-danger:is([aria-pressed=true],.is-on){background:var(--aq-red-100);color:var(--aq-red-600)}
 .ui-chip-count,.ui-chip>small{margin:0;color:var(--aq-text-4);font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
 /* 고른 칩(파랑 바탕)은 흰 글자 그대로 — 예전 투명도 .75는 숫자를 3.2~3.5:1로 흐렸다 */
-.ui-chip.is-on>small,.ui-chip.is-on .ui-chip-count{color:inherit}
+.ui-chip.is-on>small,.ui-chip.is-on .ui-chip-count,.ui-chip[aria-pressed="true"]>small,.ui-chip[aria-pressed="true"] .ui-chip-count{color:inherit;opacity:.85}
 .ui-chip.is-sm{min-height:var(--aq-h-xs);padding:0 11px;border-radius:var(--aq-r-ctl-xs);font-size:12px}
 :is(.ui-card,.ui-box,.ui-on-soft) .ui-chip:not([aria-pressed=true]):not(.is-on){background:#fff}
 
