@@ -11,11 +11,11 @@
 .aq-pay-flow .aq-pay-receipt dl{padding:clamp(6px,1.2vh,12px) 20px clamp(8px,1.4vh,14px)}
 .aq-pay-flow .aq-pay-receipt dl>div{padding:clamp(4px,.9vh,9px) 0;border-bottom:0}
 .aq-pay-flow .aq-pay-actions .ui-btn:not(:disabled):active{transform:scale(.98)}
-.aq-pay-flow .aq-bank .aq-bank-logo{transition:transform .2s var(--aq-e-ease)}
+.aq-pay-flow .aq-bank .aq-bank-logo{transition:transform var(--aq-motion-base) var(--aq-e-ease)}
 @media(prefers-reduced-motion:no-preference){
-  .aq-pay-success>h1{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) .18s both}
-  .aq-pay-success>.aq-pay-success-sub{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) .22s both}
-  .aq-pay-flow .aq-pay-receipt{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) .3s both}
+  .aq-pay-success>h1{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) var(--aq-motion-short) both}
+  .aq-pay-success>.aq-pay-success-sub{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) var(--aq-motion-base) both}
+  .aq-pay-flow .aq-pay-receipt{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) var(--aq-motion-long) both}
   .aq-pay-success>.aq-pay-success-note{animation:aq-fade-in var(--aq-motion-long) ease .42s both}
 }
 #modal .aq-pay-field input::placeholder{color:var(--aq-text-disabled);font-weight:600}

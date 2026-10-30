@@ -368,11 +368,20 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
   useEffect(() => {
     const el = innerRef.current;
     if (!el) return;
-    let start: { x: number; y: number; target: Element } | null = null;
+    let start: { x: number; y: number; t: number; target: Element } | null = null;
     let mode: '' | 'drag' | 'scroll' = '';
     const scrolledAbove = (t: Element) => {
       for (let n: Element | null = t; n && n !== el.parentElement; n = n.parentElement) {
         if (n instanceof HTMLElement && n.scrollTop > 0) return true;
+      }
+      return false;
+    };
+    // 스스로 끄는 것(사진 자르기·슬라이더·서명·입력칸 글 선택) 위에서 시작한 당김은 그대로 둔다
+    const ownsDrag = (t: Element) => {
+      if (t.closest('input,textarea,select,canvas,[contenteditable="true"]')) return true;
+      for (let n: Element | null = t; n && n !== el; n = n.parentElement) {
+        const ta = getComputedStyle(n).touchAction;
+        if (ta === 'none' || (ta.includes('pan-x') && !ta.includes('pan-y'))) return true;
       }
       return false;
     };
@@ -381,8 +390,8 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
       mode = '';
       if (e.touches.length !== 1 || closeDisabledRef.current || !dragRef.current.isSheet()) return;
       const t = e.target as Element;
-      if (t.closest('.modal-top')) return; // 머리는 pointer 쪽이 맡는다
-      start = { x: e.touches[0].clientX, y: e.touches[0].clientY, target: t };
+      if (t.closest('.modal-top') || ownsDrag(t)) return; // 머리는 pointer 쪽이 맡는다
+      start = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: performance.now(), target: t };
     };
     const onMove = (e: TouchEvent) => {
       if (!start) return;
@@ -391,6 +400,8 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
         const dy = y - start.y;
         const dx = e.touches[0].clientX - start.x;
         if (Math.abs(dy) < 6 && Math.abs(dx) < 6) return;
+        // 길게 누른 뒤 움직이면(글 선택·끌어 옮기기) 시트를 끌지 않는다
+        if (performance.now() - start.t > 450) { start = null; return; }
         // 아래로, 세로로, 맨 위에서 시작한 당김만 시트를 끈다 (가로 넘김·글 선택·위로 스크롤은 그대로)
         mode = dy > 0 && Math.abs(dy) > Math.abs(dx) && !scrolledAbove(start.target) ? 'drag' : 'scroll';
         if (mode === 'drag') {

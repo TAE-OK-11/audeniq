@@ -12,7 +12,6 @@ export const TASK_STATUS: Record<TaskStatus, [string, Tone]> = {
   DONE: ['완료', 'green'],
   CANCELLED: ['취소', 'gray'],
 };
-export const OPEN_STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'BLOCKED'];
 
 export const PRIORITY: Record<Priority, [string, Tone]> = {
   URGENT: ['긴급', 'red'], HIGH: ['높음', 'amber'], NORMAL: ['보통', 'blue'], LOW: ['낮음', 'gray'],

@@ -20,22 +20,22 @@
 
 /* PC 단계 카드 — 지금 단계는 진한 면, 바뀔 때 면과 글자 색만 부드럽게 */
 @media(min-width:1024px){
-  .aq-wiz-rail .aq-wiz-steps button{transition:background-color .2s ease,color .2s ease}
-  .aq-wiz-rail .aq-wiz-step-no{transition:background-color .2s ease,color .2s ease}
+  .aq-wiz-rail .aq-wiz-steps button{transition:background-color var(--aq-motion-base) ease,color var(--aq-motion-base) ease}
+  .aq-wiz-rail .aq-wiz-step-no{transition:background-color var(--aq-motion-base) ease,color var(--aq-motion-base) ease}
 }
 
 /* 보완 요청 패널 — 접고 펼칠 때 높이가 짧게 따라 바뀐다 */
 #view-new .aq-fix-title{width:fit-content;max-width:100%}
 /* 움직이는 입력 영역이 위아래 고정 막대 위로 올라오지 않게 막대도 따로 떼어 맨 위에 둔다 */
-::view-transition-group(aq-fix),::view-transition-group(aq-fix-title),::view-transition-group(aq-wiz-body){animation-duration:.32s;animation-timing-function:cubic-bezier(.22,1,.36,1)}
+::view-transition-group(aq-fix),::view-transition-group(aq-fix-title),::view-transition-group(aq-wiz-body){animation-duration:var(--aq-motion-long);animation-timing-function:cubic-bezier(.22,1,.36,1)}
 ::view-transition-group(aq-fix){overflow:clip;border-radius:24px}
-::view-transition-old(aq-fix),::view-transition-new(aq-fix){height:100%;object-fit:none;object-position:top;animation-duration:.24s}
-::view-transition-old(aq-fix){animation-duration:.16s}
-::view-transition-old(aq-fix-title),::view-transition-new(aq-fix-title){height:100%;object-fit:fill;animation-duration:.36s}
+::view-transition-old(aq-fix),::view-transition-new(aq-fix){height:100%;object-fit:none;object-position:top;animation-duration:var(--aq-motion-base)}
+::view-transition-old(aq-fix){animation-duration:var(--aq-motion-short)}
+::view-transition-old(aq-fix-title),::view-transition-new(aq-fix-title){height:100%;object-fit:fill;animation-duration:var(--aq-motion-long)}
 ::view-transition-group(aq-wiz-top),::view-transition-group(aq-wiz-actions){animation:none;z-index:2}
 ::view-transition-old(aq-wiz-top),::view-transition-old(aq-wiz-actions){display:none}
 ::view-transition-new(aq-wiz-top),::view-transition-new(aq-wiz-actions){animation:none}
-::view-transition-old(root),::view-transition-new(root){animation-duration:.2s}
+::view-transition-old(root),::view-transition-new(root){animation-duration:var(--aq-motion-base)}
 
 /* 이동한 입력칸 — 옅은 노랑 면이 잠깐 번졌다 사라진다 */
 #view-new .aq-fix-flash{animation:aq-fix-flash 1.8s var(--aq-e-ease) 1}

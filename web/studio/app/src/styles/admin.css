@@ -19,7 +19,7 @@
 .adm-side{position:sticky;top:calc(var(--aq-header-h) + 28px);align-self:start;display:grid;gap:22px}
 .adm-side-group{display:grid;gap:3px}
 .adm-side-label{font-size:12px;font-weight:700;letter-spacing:.02em;color:var(--aq-text-4);padding:0 12px 6px}
-.adm-side a{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;padding:10px 12px;border-radius:var(--aq-r-md);color:var(--aq-text-2);font-size:14px;font-weight:700;letter-spacing:0;transition:background-color .18s var(--adm-ease),color .18s var(--adm-ease)}
+.adm-side a{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;padding:10px 12px;border-radius:var(--aq-r-md);color:var(--aq-text-2);font-size:14px;font-weight:700;letter-spacing:0;transition:background-color var(--aq-motion-short) var(--adm-ease),color var(--aq-motion-short) var(--adm-ease)}
 .adm-side a:hover{background:var(--adm-soft-2);color:var(--adm-ink)}
 .adm-side a[aria-current=page]{background:var(--adm-blue-soft);color:var(--adm-blue)}
 .adm-side a span{display:flex;align-items:center;gap:10px;min-width:0}
@@ -96,7 +96,7 @@
 .adm-dsp-more{margin-top:8px}
 .adm-dsp-more>summary{display:inline-flex;align-items:center;gap:4px;min-height:36px;padding:0 4px;font-size:13px;font-weight:700;color:var(--aq-blue-500);cursor:pointer;list-style:none}
 .adm-dsp-more>summary::-webkit-details-marker{display:none}
-.adm-dsp-more>summary svg{transition:transform .2s}
+.adm-dsp-more>summary svg{transition:transform var(--aq-motion-base)}
 .adm-dsp-more[open]>summary svg{transform:rotate(90deg)}
 .adm-dsp-more .adm-dsp-list{margin-top:6px}
 .adm-note{border-radius:var(--aq-r-md)}
@@ -188,7 +188,7 @@
 .adm-more{margin-top:8px}
 .adm-more summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--aq-text-4);list-style:none;display:inline-flex;align-items:center;gap:4px}
 .adm-more summary::-webkit-details-marker{display:none}
-.adm-more summary::after{content:"";width:14px;height:14px;background:currentColor;-webkit-mask:var(--aq-icon-chevron) center/contain no-repeat;mask:var(--aq-icon-chevron) center/contain no-repeat;transition:transform .18s var(--adm-ease)}
+.adm-more summary::after{content:"";width:14px;height:14px;background:currentColor;-webkit-mask:var(--aq-icon-chevron) center/contain no-repeat;mask:var(--aq-icon-chevron) center/contain no-repeat;transition:transform var(--aq-motion-short) var(--adm-ease)}
 .adm-more[open] summary::after{transform:rotate(90deg)}
 .adm-more>div{margin-top:8px}
 
@@ -308,7 +308,7 @@
 .adm-track-title{flex:1;min-width:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:14px}
 .adm-track-title small{color:var(--adm-muted);font-weight:600}
 .adm-track-meta{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--adm-muted);font-weight:600;font-variant-numeric:tabular-nums}
-.adm-track-chev{flex:none;color:var(--aq-text-disabled);transition:transform .2s ease}
+.adm-track-chev{flex:none;color:var(--aq-text-disabled);transition:transform var(--aq-motion-base) ease}
 /* 스튜디오 복사본의 details[open]>summary>span 회전 규칙이 번호·제목까지 돌리지 않게 */
 .adm-track[open]>summary>span{transform:none}
 .adm-track[open] .adm-track-chev{transform:rotate(90deg)}
@@ -369,7 +369,7 @@
 .adm-detail-nav .adm-back{margin-bottom:0;min-height:40px}
 .adm-detail-nav-end{display:flex;align-items:center;gap:8px;margin-left:auto}
 @keyframes adm-spin{to{transform:rotate(360deg)}}
-.adm-next-btn{display:inline-flex;align-items:center;gap:4px;color:var(--adm-blue);font-size:13px;font-weight:700;text-decoration:none;transition:background-color .15s}
+.adm-next-btn{display:inline-flex;align-items:center;gap:4px;color:var(--adm-blue);font-size:13px;font-weight:700;text-decoration:none;transition:background-color var(--aq-motion-short)}
 .adm-next-btn:hover{background:var(--aq-blue-150)}
 
 /* 결정 바 — 오른쪽 결정 칸이 고정되지 않는 폭(≤1180px)에서만 화면 아래에 */
@@ -404,7 +404,7 @@
 .adm-brief-ok>summary{display:flex;align-items:center;gap:10px;border-radius:var(--aq-r-md);background:#fff;font-size:13px;font-weight:700;color:var(--aq-text-2);cursor:pointer;list-style:none}
 .adm-brief-ok>summary::-webkit-details-marker{display:none}
 .adm-brief-ok>summary .adm-brief-mark{background:var(--aq-green-600)}
-.adm-brief-ok>summary>svg:last-child{margin-left:auto;transition:transform .2s var(--adm-ease)}
+.adm-brief-ok>summary>svg:last-child{margin-left:auto;transition:transform var(--aq-motion-base) var(--adm-ease)}
 .adm-brief-ok[open]>summary>svg:last-child{transform:rotate(90deg)}
 .adm-brief-ok ul{margin-top:6px}
 .adm-brief.is-compact ul:empty{display:none}
@@ -414,7 +414,7 @@
 .adm-rights-more{margin-top:8px}
 .adm-rights-more>summary{display:inline-flex;align-items:center;gap:4px;min-height:32px;font-size:13px;font-weight:700;color:var(--aq-blue-500);cursor:pointer;list-style:none}
 .adm-rights-more>summary::-webkit-details-marker{display:none}
-.adm-rights-more>summary svg{transition:transform .2s var(--adm-ease)}
+.adm-rights-more>summary svg{transition:transform var(--aq-motion-base) var(--adm-ease)}
 .adm-rights-more[open]>summary svg{transform:rotate(90deg)}
 .adm-rights-more ul{margin-top:6px}
 /* 처리 이력 더 보기 */
@@ -424,7 +424,7 @@
 @media (max-width:1180px){
   .adm-jump{position:sticky;top:var(--aq-header-h);z-index:30;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -24px 16px;padding:10px 24px;background:rgba(255,255,255,.94);-webkit-backdrop-filter:saturate(1.4) blur(12px);backdrop-filter:saturate(1.4) blur(12px)}
   .adm-jump::-webkit-scrollbar{display:none}
-  .adm-jump button{flex:none;display:inline-flex;align-items:center;gap:5px;border:0;color:var(--aq-text-2);font:inherit;font-size:13px;font-weight:700;cursor:pointer;transition:background-color .15s,color .15s}
+  .adm-jump button{flex:none;display:inline-flex;align-items:center;gap:5px;border:0;color:var(--aq-text-2);font:inherit;font-size:13px;font-weight:700;cursor:pointer;transition:background-color var(--aq-motion-short),color var(--aq-motion-short)}
   .adm-jump button span{min-width:18px;height:18px;padding:0 5px;border-radius:var(--aq-r-sm);background:#fff;font-size:11px;font-weight:800;line-height:18px;text-align:center;color:var(--aq-text-3)}
   .adm-jump button span.is-bad{background:var(--aq-red-100);color:var(--aq-red-600)}
   .adm-anchor{scroll-margin-top:136px}
@@ -453,7 +453,7 @@
 .adm-info-more{margin-top:14px;padding-top:12px;border-top:1px solid var(--aq-gray-150)}
 .adm-info-more>summary{display:flex;align-items:center;gap:6px;min-height:36px;font-size:13px;font-weight:700;color:var(--aq-blue-500);cursor:pointer;list-style:none}
 .adm-info-more>summary::-webkit-details-marker{display:none}
-.adm-info-more>summary svg{margin-left:auto;transition:transform .2s var(--adm-ease)}
+.adm-info-more>summary svg{margin-left:auto;transition:transform var(--aq-motion-base) var(--adm-ease)}
 .adm-info-more[open]>summary svg{transform:rotate(90deg)}
 .adm-info-more[open]>summary{margin-bottom:10px}
 .adm-hero-when{display:block;margin-top:4px;font-size:13px;color:var(--adm-muted);font-variant-numeric:tabular-nums}
@@ -504,7 +504,7 @@
 .adm-brief-fold>summary{display:grid;gap:4px;list-style:none;cursor:pointer}
 .adm-brief-fold>summary::-webkit-details-marker{display:none}
 .adm-brief-fold>summary>span{display:inline-flex;align-items:center;gap:3px;font-size:12px;font-weight:700;color:var(--aq-blue-500)}
-.adm-brief-fold>summary>span svg{transition:transform .2s var(--adm-ease)}
+.adm-brief-fold>summary>span svg{transition:transform var(--aq-motion-base) var(--adm-ease)}
 .adm-brief-fold[open]>summary>span svg{transform:rotate(90deg)}
 .adm-brief-fold>small{display:block;margin-top:2px}
 /* 이력 필터: 한 줄로, 넘치면 옆으로 밀기 */
@@ -604,7 +604,7 @@
 .adm-opt-off{margin-top:10px}
 .adm-opt-off>summary{display:inline-flex;align-items:center;gap:4px;min-height:34px;font-size:13px;font-weight:700;color:var(--adm-muted);cursor:pointer;list-style:none}
 .adm-opt-off>summary::-webkit-details-marker{display:none}
-.adm-opt-off>summary svg{transition:transform .2s var(--adm-ease)}
+.adm-opt-off>summary svg{transition:transform var(--aq-motion-base) var(--adm-ease)}
 .adm-opt-off[open]>summary svg{transform:rotate(90deg)}
 .adm-opt-off .adm-tags{margin-top:4px}
 .adm-opt-off .adm-tags span{background:#fff;color:var(--aq-text-3);font-weight:600}
@@ -622,7 +622,7 @@
 .adm-tl-day h3,.adm-track-meta,.adm-hero-when{font-variant-numeric:tabular-nums}
 /* 누를 때 반응: 회색 탭 하이라이트 대신 살짝 눌림 (스튜디오와 같게) */
 .adm-body{-webkit-tap-highlight-color:transparent}
-.adm-track summary,.adm-next-btn,.adm-jump button{transition:background-color .18s var(--adm-ease),color .18s var(--adm-ease),transform .16s var(--adm-ease)}
+.adm-track summary,.adm-next-btn,.adm-jump button{transition:background-color var(--aq-motion-short) var(--adm-ease),color var(--aq-motion-short) var(--adm-ease),transform var(--aq-motion-short) var(--adm-ease)}
 :is(.adm-icon-btn,.adm-next-btn,.adm-jump button):active{transform:scale(.96)}
 .adm-track summary:active{background:var(--aq-blue-100)}
 /* 키보드 이동 때만 보이는 파란 테 */
@@ -651,7 +651,7 @@
 .adm-refresh svg{display:block}
 .adm-refresh.is-spinning svg{animation:adm-spin .7s cubic-bezier(.45,.05,.35,1) infinite}
 .adm-refresh.is-done{background:var(--aq-green-50);color:var(--aq-green-600)}
-.adm-refresh.is-done svg{animation:adm-pop .32s var(--adm-ease) both}
+.adm-refresh.is-done svg{animation:adm-pop var(--aq-motion-long) var(--adm-ease) both}
 @keyframes adm-pop{from{transform:scale(.85);opacity:0}to{transform:none;opacity:1}}
 @media (prefers-reduced-motion:reduce){.adm-refresh svg{animation:none!important}}
 /* 스튜디오 공통 규칙(details[open] > summary span 45° 회전)이 관리자 접기 줄의 체크 표시·글자까지 돌려 ‘ㄴ’처럼 보이던 문제 */
@@ -684,9 +684,9 @@
   .adm-hero,.adm-release-hero,.adm-brief.is-compact,.adm-decide{animation:adm-rise var(--aq-motion-long) var(--adm-ease) .04s both}
   .adm-hero-num{animation:adm-scale-in var(--aq-motion-long) var(--adm-ease) .12s both}
   /* 펼치기: 안쪽 내용이 위에서 살짝 내려오며 */
-  :is(.adm-body,#modal) details[open]>:not(summary){animation:adm-reveal .28s var(--adm-ease) both}
+  :is(.adm-body,#modal) details[open]>:not(summary){animation:adm-reveal var(--aq-motion-base) var(--adm-ease) both}
   /* 아래 결정 바는 올라오며 등장 */
-  @media (max-width:1180px){.adm-decide-bar{animation:adm-bar-up var(--aq-motion-long) var(--adm-ease) .15s both}}
+  @media (max-width:1180px){.adm-decide-bar{animation:adm-bar-up var(--aq-motion-long) var(--adm-ease) var(--aq-motion-short) both}}
   /* 하위 탭 밑줄이 그어지며 */
   /* 칩·개수는 살짝 튀게 */
   .adm-jump button span.is-bad{animation:adm-scale-in var(--aq-motion-long) var(--adm-ease) both}
@@ -696,10 +696,10 @@
   /* 담당 상태 점: 내 담당이면 은은하게 숨쉬기 */
   .adm-claim.is-mine .adm-claim-who i{animation:none}
   /* 선택 칩·탭 전환 */
-  :is(.adm-jump button){transition:background-color .22s var(--adm-ease),color .22s var(--adm-ease),transform .16s var(--adm-ease),box-shadow .22s var(--adm-ease)}
+  :is(.adm-jump button){transition:background-color var(--aq-motion-base) var(--adm-ease),color var(--aq-motion-base) var(--adm-ease),transform var(--aq-motion-short) var(--adm-ease),box-shadow var(--aq-motion-base) var(--adm-ease)}
   /* 넓은 화면: 누르는 카드는 올려 놓으면 살짝 떠오름 */
   /* 화살표는 올려 놓으면 앞으로 */
-  .adm-next-btn svg,.adm-back svg{transition:transform .2s var(--adm-ease)}
+  .adm-next-btn svg,.adm-back svg{transition:transform var(--aq-motion-base) var(--adm-ease)}
   .adm-next-btn:hover svg{transform:translateX(3px)}
   .adm-back:hover svg{transform:translateX(-3px)}
 }

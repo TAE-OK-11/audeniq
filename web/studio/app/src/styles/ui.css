@@ -636,17 +636,17 @@ summary::-webkit-details-marker{display:none}
 #portalNav .aq-nav-me{position:relative;overflow:hidden}
 #portalNav .aq-nav-me>*{position:relative}
 #portalNav .aq-nav-me button{width:100%;border:0;font:inherit;cursor:pointer;text-align:left}
-#portalNav .aq-nav-me-row{display:grid!important;align-items:center;min-height:0!important;border-radius:var(--aq-r-lg)!important;background:none!important;color:var(--aq-text);transition:background-color .15s ease}
+#portalNav .aq-nav-me-row{display:grid!important;align-items:center;min-height:0!important;border-radius:var(--aq-r-lg)!important;background:none!important;color:var(--aq-text);transition:background-color var(--aq-motion-short) ease}
 #portalNav .aq-nav-me-avatar{display:grid;place-items:center;flex:none;font-style:normal;font-weight:var(--aq-fw-bold);transform:none!important}
 #portalNav .aq-nav-me-text{display:grid;min-width:0;font-style:normal}
 #portalNav .aq-nav-me-text strong{font-weight:var(--aq-fw-bold);letter-spacing:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #portalNav .aq-nav-me-chev{color:var(--aq-text-disabled)}
-#portalNav .aq-nav-me-alert{display:grid!important;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;min-height:0!important;margin:6px 0 0;border-radius:var(--aq-r-md)!important;background:var(--aq-amber-50)!important;color:var(--aq-amber-700)!important;font-weight:var(--aq-fw-bold)!important;transition:background-color .15s ease}
+#portalNav .aq-nav-me-alert{display:grid!important;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;min-height:0!important;margin:6px 0 0;border-radius:var(--aq-r-md)!important;background:var(--aq-amber-50)!important;color:var(--aq-amber-700)!important;font-weight:var(--aq-fw-bold)!important;transition:background-color var(--aq-motion-short) ease}
 #portalNav .aq-nav-me-alert:hover{background:var(--aq-amber-100)!important}
-#portalNav .aq-nav-cta{display:flex!important;align-items:center;justify-content:center;gap:6px;margin:8px 0 0;padding:0 16px!important;background:var(--aq-primary)!important;color:#fff!important;font-weight:var(--aq-fw-bold)!important;transition:background-color .15s ease,transform .12s ease}
+#portalNav .aq-nav-cta{display:flex!important;align-items:center;justify-content:center;gap:6px;margin:8px 0 0;padding:0 16px!important;background:var(--aq-primary)!important;color:#fff!important;font-weight:var(--aq-fw-bold)!important;transition:background-color var(--aq-motion-short) ease,transform .12s ease}
 #portalNav .aq-nav-cta:hover{background:var(--aq-blue-600)!important}
-#portalNav .aq-nav-card button{transition:background-color .15s ease,transform .12s ease}
-.aq-nav-ico{transition:background-color .2s ease,color .2s ease}
+#portalNav .aq-nav-card button{transition:background-color var(--aq-motion-short) ease,transform .12s ease}
+.aq-nav-ico{transition:background-color var(--aq-motion-base) ease,color var(--aq-motion-base) ease}
 #portalNav .aq-nav-card button.active .aq-nav-ico{background:#fff;color:var(--aq-blue-500)}
 #portalNav .aq-nav-count{border-radius:999px}
 /* 메뉴마다 지금 처리할 일 — 설명 자리에 상태 배지 */
@@ -712,7 +712,7 @@ summary::-webkit-details-marker{display:none}
 .aq-verify-help{margin:4px 0 0;text-align:center;color:var(--aq-text-3);font-size:var(--aq-fs-sm);line-height:1.6}
 .aq-verify-help a{font-weight:600}
 .aq-verify-methods{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-.aq-verify-method{position:relative;display:grid;gap:4px;align-content:start;padding:16px;border-radius:var(--aq-r-lg);background:var(--aq-gray-50);cursor:pointer;transition:background-color .2s ease,box-shadow .2s ease,transform .12s ease}
+.aq-verify-method{position:relative;display:grid;gap:4px;align-content:start;padding:16px;border-radius:var(--aq-r-lg);background:var(--aq-gray-50);cursor:pointer;transition:background-color var(--aq-motion-base) ease,box-shadow var(--aq-motion-base) ease,transform .12s ease}
 .aq-verify-method input{position:absolute;opacity:0;pointer-events:none}
 .aq-verify-method:hover{background:var(--aq-gray-100)}
 .aq-verify-method:active{transform:scale(.98)}
@@ -731,7 +731,7 @@ summary::-webkit-details-marker{display:none}
 /* 인증번호 6칸 — 숫자 하나씩 칸에 보이고, 다음에 입력될 칸이 파랗게 표시된다 */
 .aq-otp{position:relative;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
 .aq-otp-input{position:absolute;inset:0;z-index:1;width:100%;height:100%;margin:0;padding:0;border:0;background:transparent;color:transparent;caret-color:transparent;font-size:16px;opacity:0;cursor:text}
-.aq-otp-cell{position:relative;display:grid;place-items:center;height:56px;border-radius:14px;background:var(--aq-field);color:var(--aq-text);font-size:24px;font-weight:var(--aq-fw-bold);font-variant-numeric:tabular-nums;transition:background-color .15s ease,box-shadow .15s ease}
+.aq-otp-cell{position:relative;display:grid;place-items:center;height:56px;border-radius:14px;background:var(--aq-field);color:var(--aq-text);font-size:24px;font-weight:var(--aq-fw-bold);font-variant-numeric:tabular-nums;transition:background-color var(--aq-motion-short) ease,box-shadow var(--aq-motion-short) ease}
 .aq-otp-cell.is-active{background:#fff;box-shadow:inset 0 0 0 2px var(--aq-blue-500)}
 .aq-otp-cell.is-active:not(.is-filled)::after{content:"";width:2px;height:24px;border-radius:1px;background:var(--aq-blue-500);animation:aq-otp-caret 1s steps(1) infinite}
 .aq-otp-cell.is-filled{animation:aq-check-pop var(--aq-motion-base) var(--aq-enter)}

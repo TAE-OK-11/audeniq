@@ -53,13 +53,13 @@
 /* 공지사항 — 굵은 검은 선·줄 구분선 게시판 대신, 다른 목록처럼 옅은 면 카드 줄 */
 .aq-nboard-list{display:grid;gap:8px;border-top:0}
 .aq-nboard-list li{border-bottom:0}
-.aq-nboard-row{padding:20px 22px;border-radius:var(--aq-r-xl);background:var(--aq-surface);transition:background-color .2s var(--aq-e-ease)}
+.aq-nboard-row{padding:20px 22px;border-radius:var(--aq-r-xl);background:var(--aq-surface);transition:background-color var(--aq-motion-base) var(--aq-e-ease)}
 @media (hover:hover){.aq-nboard-row:hover{background:var(--aq-blue-100)}}
 .aq-nboard-title{font-size:16px}
 .aq-nboard-date{font-size:13px}
 @media(min-width:760px){.aq-nboard-row{padding:24px 28px}.aq-nboard-title{font-size:18px}.aq-nboard-date{font-size:14px}}
 .aq-narticle-sibling{gap:8px;border-top:0}
-.aq-narticle-sibling a{padding:18px 22px;border-bottom:0;border-radius:var(--aq-r-xl);background:var(--aq-surface);transition:background-color .2s var(--aq-e-ease)}
+.aq-narticle-sibling a{padding:18px 22px;border-bottom:0;border-radius:var(--aq-r-xl);background:var(--aq-surface);transition:background-color var(--aq-motion-base) var(--aq-e-ease)}
 @media (hover:hover){.aq-narticle-sibling a:hover{background:var(--aq-blue-100)}}
 .aq-nhero-eyebrow,.aq-nboard-eyebrow{letter-spacing:0}
 
@@ -99,7 +99,7 @@
 @media(hover:hover){.aq-fix-list .ui-btn.is-soft:hover{background:var(--aq-blue-150)!important}}
 
 /* 정산·지급 — 줄 전체를 눌러 상세를 열고, 삭제는 상세 안에서만 */
-button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-align:left;cursor:pointer;transition:background-color .2s ease}
+button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-align:left;cursor:pointer;transition:background-color var(--aq-motion-base) ease}
 @media(hover:hover){button.aq-statement-card:hover{background:var(--aq-blue-100)}}
 .aq-statement-end>svg{color:var(--aq-text-disabled);flex:none}
 .aq-statement-detail{margin:4px 0 0}
@@ -152,7 +152,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .aq-bundle:not(.is-compact) .aq-bundle-docs li:not(.is-done) .aq-bundle-no{background:var(--aq-blue-150);color:var(--aq-blue-500)}
 
 /* 권리·보완 서류 — 숫자 칸 3개·주황 카드 대신: 보완 요청은 위 알림 줄 하나, 서류는 계정 정보 화면 같은 옅은 파랑 카드 안의 줄 */
-.aq-doc-alert{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:14px;width:100%;margin:0 0 14px;padding:18px 18px 18px 20px;border:0;border-radius:var(--aq-r-2xl);background:var(--aq-amber-50);color:var(--aq-text);font:inherit;text-align:left;cursor:pointer;transition:background-color .2s ease}
+.aq-doc-alert{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:14px;width:100%;margin:0 0 14px;padding:18px 18px 18px 20px;border:0;border-radius:var(--aq-r-2xl);background:var(--aq-amber-50);color:var(--aq-text);font:inherit;text-align:left;cursor:pointer;transition:background-color var(--aq-motion-base) ease}
 @media(hover:hover){.aq-doc-alert:hover{background:var(--aq-amber-100)}}
 /* 보완 알림 — 홈 '먼저 할 일'처럼 옅은 주황 면 + 흰 아이콘 칸, 제목은 진한 글자, 사유는 두 줄까지 */
 .aq-doc-alert .ui-icon{--ic:44px;--tone-bg:#fff;--tone-fg:var(--aq-amber-700)}
@@ -226,7 +226,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 /* 단계 머리 — 칸 막대 + 'n단계 · 이름' (수익 받을 정보 등록 흐름과 같은 모양) */
 .aq-stepbar{margin:0 0 18px}
 .aq-stepbar-track{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:4px}
-.aq-stepbar-track span{height:4px;border-radius:var(--aq-r-pill);background:var(--aq-gray-150);transition:background-color .3s ease}
+.aq-stepbar-track span{height:4px;border-radius:var(--aq-r-pill);background:var(--aq-gray-150);transition:background-color var(--aq-motion-long) ease}
 .aq-stepbar-track span.is-on{background:var(--aq-blue-500)}
 .aq-stepbar-label{margin:10px 0 0;font-size:13px;color:var(--aq-text-4)}
 .aq-stepbar-label b{font-weight:700;color:var(--aq-blue-500)}
@@ -277,7 +277,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .aq-dm-sec .aq-document-snapshot{margin:8px 0 0;background:#fff}
 .aq-dm-links{display:grid;margin:6px -8px -6px}
 .aq-dm-links:empty{display:none}
-.aq-dm-link{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;width:100%;min-height:48px;padding:0 8px;border:0;border-radius:var(--aq-r-md);background:none;color:var(--aq-blue-500);font:inherit;font-size:14px;font-weight:700;text-align:left;cursor:pointer;transition:background-color .2s ease}
+.aq-dm-link{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;width:100%;min-height:48px;padding:0 8px;border:0;border-radius:var(--aq-r-md);background:none;color:var(--aq-blue-500);font:inherit;font-size:14px;font-weight:700;text-align:left;cursor:pointer;transition:background-color var(--aq-motion-base) ease}
 .aq-dm-link>svg:last-child{color:var(--aq-text-disabled)}
 @media(hover:hover){.aq-dm-link:hover{background:var(--aq-surface-hover)}}
 .aq-dm-steps{display:grid;gap:0;margin:4px 0 0;padding:0;list-style:none}
@@ -357,7 +357,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
    (꾸민 티가 나고, 내리는 동안 덜 불러온 것처럼 보였다). 이제 내용은 늘 제자리에 있고 화면을 옮길 때 투명도만 짧게 바뀐다.
    움직임(transform)을 주지 않는 것은 화면 아래 고정 버튼 줄이 그동안 흔들리지 않게. 발매 신청 위자드는 자체 단계 모션을 쓴다. */
 @keyframes aq-view-fade{from{opacity:0}}
-.view-enter{animation:aq-view-fade .2s ease-out backwards}
+.view-enter{animation:aq-view-fade var(--aq-motion-base) ease-out backwards}
 @media (prefers-reduced-motion:reduce){.view-enter,.view-enter>.view>*{animation:none!important}}
 #main .view:not(#view-new) .aq-stagger>*{animation:none}
 /* 불러오자마자 저절로 떠오르거나 톡 튀던 장식 — 카드·커버·배지·점·기록 줄. 누른 뒤의 반응(복사됨·하트·저장됨·오류)과 막대 차오름은 그대로 */
@@ -421,10 +421,10 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 }
 /* 닫을 수 없는 창의 바깥을 누르면 창이 살짝 튀어 반응한다 */
 @keyframes aq-modal-nudge{0%,100%{transform:none}40%{transform:scale(1.01)}}
-#modal.is-nudge>.modal-inner{animation:aq-modal-nudge .3s var(--aq-enter)!important}
+#modal.is-nudge>.modal-inner{animation:aq-modal-nudge var(--aq-motion-long) var(--aq-enter)!important}
 
 /* 알림(토스트): 옆으로 밀어 닫을 수 있게 가로 끌기는 앱이 받는다 */
-.aq-toast{touch-action:pan-y;transition:transform .2s var(--aq-enter),opacity .2s ease;-webkit-user-select:none;user-select:none}
+.aq-toast{touch-action:pan-y;transition:transform var(--aq-motion-base) var(--aq-enter),opacity var(--aq-motion-base) ease;-webkit-user-select:none;user-select:none}
 
 /* 길게 누를 때 버튼·칩·탭 글자가 선택되거나 시스템 메뉴가 뜨지 않게 */
 :is(.ui-btn,.ui-chip,.ui-tab,.ui-seg>button,.aq-set-row,.service-item,#portalNav button){-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
@@ -571,12 +571,12 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .aq-auth-back{display:grid;place-items:center;flex:none;width:32px;height:32px;margin:-6px 6px -6px -6px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--aq-text-2);cursor:pointer}
 .aq-auth-back:active{background:var(--aq-blue-100)}
 @media(hover:hover){.aq-auth-back:hover{background:var(--aq-blue-100)}}
-.aq-auth-steps>span{flex:1;height:4px;border-radius:2px;background:var(--aq-blue-100);transition:background-color .3s var(--aq-enter)}
+.aq-auth-steps>span{flex:1;height:4px;border-radius:2px;background:var(--aq-blue-100);transition:background-color var(--aq-motion-long) var(--aq-enter)}
 .aq-auth-steps>span.is-on{background:var(--aq-blue-500)}
 .aq-auth-steps>small{margin-left:6px;color:var(--aq-text-3);font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
 @keyframes aq-step-in{from{opacity:0;transform:translate3d(18px,0,0)}}
 @keyframes aq-step-back{from{opacity:0;transform:translate3d(-18px,0,0)}}
-.aq-step-pane{animation:aq-step-in .32s var(--aq-enter) both}
+.aq-step-pane{animation:aq-step-in var(--aq-motion-long) var(--aq-enter) both}
 .aq-step-pane.is-back{animation-name:aq-step-back}
 .aq-step-pane>.auth-later{display:flex;margin:6px auto 0}
 .aq-step-pane>.auth-agree{margin-top:16px}
@@ -654,12 +654,12 @@ details.auth-privacy>p{margin:2px 0 0}
    끌어내려 닫을 때는 Modal이 손가락 속도로 정한 시간(--aq-sheet-out)을 쓴다. */
 :root{--aq-sheet-ease:cubic-bezier(.32,.72,0,1);--aq-motion-sheet:.40s;--aq-motion-sheet-out:.30s}
 @media (max-width:760px){
-  #modal:not([hidden]):not(.aq-payout-setup-mode):not(.aq-signature-mode){animation:aq-overlay-enter .32s ease-out both}
+  #modal:not([hidden]):not(.aq-payout-setup-mode):not(.aq-signature-mode){animation:aq-overlay-enter var(--aq-motion-long) ease-out both}
   #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode)>.modal-inner{animation:aq-sheet-up var(--aq-motion-sheet) var(--aq-sheet-ease) both}
   #modal.is-leaving:not(.aq-payout-setup-mode):not(.aq-signature-mode){animation:aq-overlay-out var(--aq-sheet-out,var(--aq-motion-sheet-out)) ease forwards!important}
   #modal.is-leaving:not(.aq-payout-setup-mode):not(.aq-signature-mode)>.modal-inner{animation:aq-sheet-down var(--aq-sheet-out,var(--aq-motion-sheet-out)) var(--aq-sheet-ease) forwards!important}
 }
-.aq-picker.is-sheet{animation:aq-picker-fade .32s ease-out both}
+.aq-picker.is-sheet{animation:aq-picker-fade var(--aq-motion-long) ease-out both}
 .aq-picker.is-sheet .aq-picker-box{animation:aq-picker-up var(--aq-motion-sheet) var(--aq-sheet-ease) both}
 .aq-picker.is-leaving.is-sheet{animation:aq-picker-scrim-out var(--aq-motion-sheet-out) ease forwards}
 .aq-picker.is-leaving.is-sheet .aq-picker-box{animation:aq-picker-down var(--aq-motion-sheet-out) var(--aq-sheet-ease) forwards}
@@ -896,7 +896,7 @@ button.settle-hero-account.is-button .min-0{display:grid}
    - 넓은 화면 왼쪽 메뉴: 처음 열 때 한 번 같은 움직임
    - 자주 묻는 질문: 펼치면 답이 6px 아래에서 나타난다
    ========================================================================== */
-.portal-header{border-bottom-color:transparent!important;transition:box-shadow .28s var(--aq-enter)}
+.portal-header{border-bottom-color:transparent!important;transition:box-shadow var(--aq-motion-base) var(--aq-enter)}
 .portal-header.is-scrolled{box-shadow:0 5px 24px -14px #171B2930!important}
 body.wizard-mode .portal-header,.portal-header:has(#portalNav:not([hidden])){box-shadow:none!important}
 
@@ -1842,22 +1842,22 @@ html:has(body .aq-smartlink),body:has(.aq-smartlink){background:var(--aq-gray-50
 
 /* ---------- 기다림을 덜 느끼게 ----------
    목록 자리표시(SkeletonList)도 다른 자리표시처럼 150ms 뒤에 살며시 — 금방 오는 응답에는 아예 보이지 않아 깜빡이지 않는다 */
-.ui-skel-rows,.aq-acct-skel{animation:aq-fade-in var(--aq-motion-base) var(--aq-enter) .15s both}
+.ui-skel-rows,.aq-acct-skel{animation:aq-fade-in var(--aq-motion-base) var(--aq-enter) var(--aq-motion-short) both}
 .aq-acct-skel .aq-skel-lines{padding:0}
 .aq-acct-skel .aq-skel-lines>.aq-skel{height:13px}
 .aq-acct-skel .aq-skel-lines>.aq-skel+.aq-skel{height:11px}
 .aq-acct-skel .aq-skel{--aq-skel-bg:linear-gradient(90deg,#fff 25%,#F5F8FD 45%,#fff 65%);--aq-skel-w:900%;--aq-skel-anim:aq-shimmer-3}
 /* 다음 화면을 준비하는 동안 머리 맨 위 얇은 파란 막대 — 지금 화면은 그대로, 눌렀다는 것만 바로 알린다.
    150ms 안에 끝나면 보이지 않고, 오래 걸릴수록 천천히 차오르다가 준비되면 끝까지 채우고 사라진다 */
-.aq-route-bar.is-run{opacity:1;transform:scaleX(.85);transition:opacity .2s ease .15s,transform 4s cubic-bezier(.08,.7,.2,1) .15s}
-.aq-route-bar.is-done{opacity:0;transform:scaleX(1);transition:transform .22s ease-out,opacity .25s ease .18s}
+.aq-route-bar.is-run{opacity:1;transform:scaleX(.85);transition:opacity var(--aq-motion-base) ease .15s,transform 4s cubic-bezier(.08,.7,.2,1) .15s}
+.aq-route-bar.is-done{opacity:0;transform:scaleX(1);transition:transform var(--aq-motion-base) ease-out,opacity var(--aq-motion-base) ease .18s}
 @media (prefers-reduced-motion:reduce){
   .ui-skel-rows,.aq-acct-skel{animation:none}
 }
 /* 문의 대화 — 보낸 메시지는 바로 말풍선으로 뜨고, 서버에 닿기 전까지만 살짝 옅게.
    내 메시지가 서버 목록으로 바뀌어 들어올 때는 다시 떠오르지 않게(같은 말풍선이 깜빡이지 않게) — 떠오르는 건 처음 보낼 때와 담당자 답변만 */
 .aq-thread li:not(.is-staff):not(.is-sending){animation:none}
-.aq-thread li.is-sending{opacity:.6;transition:opacity .2s}
+.aq-thread li.is-sending{opacity:.6;transition:opacity var(--aq-motion-base)}
 
 /* ---------- 접근성: 작은 글자 대비 4.5:1 ----------
    11~12px 숫자 배지·제품 표시·개수가 기준에 조금 못 미쳤다(흰 글자/빨강 3.9, 파랑/옅은 파랑 4.4).

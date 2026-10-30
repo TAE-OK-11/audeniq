@@ -13,7 +13,7 @@
   .dashboard-grid .service-item:hover{transform:none!important;box-shadow:none!important}
 }
 /* ── enhance.css */
-.dashboard-grid .service-item{transition:transform .28s var(--aq-e-ease),box-shadow .28s var(--aq-e-ease),background-color .2s!important}
+.dashboard-grid .service-item{transition:transform var(--aq-motion-base) var(--aq-e-ease),box-shadow var(--aq-motion-base) var(--aq-e-ease),background-color var(--aq-motion-base)!important}
 #view-home .aq-home-board>.aq-home-main:only-child,#view-home .aq-home-board:has(>.aq-home-side:empty)>.aq-home-main{grid-column:1/-1}
 .aq-home-side .aq-report-card{grid-template-columns:minmax(0,1fr)}
 #view-home .aq-report-card .aq-mini-bar.is-current{background:var(--aq-primary)}

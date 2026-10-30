@@ -1,12 +1,6 @@
-// DSP별 요구 조건 — 레지스트리 사양(무엇을 요구하는지)과 이 발매의 스테이징 검사(맞는지)를 한 표로.
-// 문제가 있으면 바로 빨간색: 콘텐츠 차단(BLOCKER)은 빨강, 권고(WARNING)는 주황, 연동 대기는 회색.
-import type { DspItem, StagingRow } from './api';
-import { Badge } from './ui';
-import { checkLabel } from './labels';
-import { Glyph } from '../components/Glyph';
-import { CheckIcon } from '../components/Check';
+// DSP별 요구 조건 — 레지스트리 사양(무엇을 요구하는지). 배급 승인 화면의 한 줄 요약(DSP_NAME 등)도 여기 둔다.
+import type { DspItem } from './api';
 
-export type ReqState = 'ok' | 'bad' | 'warn' | 'wait' | 'pending';
 interface Req { key: string; label: string; codes: string[]; spec: (d: DspItem) => string; partner?: boolean; krOnly?: boolean }
 
 export const DSP_REQS: Req[] = [
@@ -51,61 +45,6 @@ const MODEL_LABEL: Record<string, string> = { SubscriptionModel: '구독', Adver
 const dealLabel = (d: DspItem) => (d.deal?.commercial_models ?? []).map(m => MODEL_LABEL[m] ?? m).join('+');
 
 export const reqsFor = (d: DspItem) => DSP_REQS.filter(r => !r.krOnly || d.region === 'Kr');
-
-function reqState(r: Req, row: StagingRow | undefined): { state: ReqState; detail: string } {
-  if (!row) return { state: 'pending', detail: '' };
-  const hits = row.checks.filter(c => r.codes.includes(c.code));
-  const worst = hits.find(c => c.severity === 'BLOCKER') ?? hits.find(c => c.severity === 'WARNING');
-  if (!worst) return { state: 'ok', detail: '' };
-  const detail = [worst.detail, worst.message].find(v => v && /[가-힣]/.test(v)) ?? checkLabel(worst.code);
-  if (worst.severity === 'BLOCKER') return { state: r.partner ? 'wait' : 'bad', detail };
-  return { state: worst.severity === 'WARNING' ? 'warn' : 'ok', detail };
-}
-
-const STATE_LABEL: Record<ReqState, [string, 'green' | 'red' | 'amber' | 'gray' | 'blue']> = {
-  ok: ['충족', 'green'], bad: ['문제', 'red'], warn: ['확인 권고', 'amber'], wait: ['플랫폼 연동 대기', 'gray'], pending: ['검사 전', 'gray'],
-};
-
-/** 요청한 플랫폼마다: 요구 조건 × 이 발매의 충족 여부. 콘텐츠 문제가 하나라도 있으면 카드 전체가 빨간색 */
-export function DspRequirements({ codes, dsps, staging }: { codes: string[]; dsps: DspItem[]; staging: StagingRow[] }) {
-  // 최신 패키지 기준 (staged_at 내림차순으로 온다)
-  const latest = staging.length ? staging[0].package_id : null;
-  const rows = staging.filter(s => s.package_id === latest);
-  const list = dsps.filter(d => codes.includes(d.code ?? d.dsp));
-  if (!list.length) return <p className="small muted">요청한 플랫폼이 없어요.</p>;
-  return (
-    <div className="adm-dspreq-grid">
-      {list.map(d => {
-        const row = rows.find(s => s.dsp === (d.code ?? d.dsp));
-        const results = reqsFor(d).map(r => ({ r, ...reqState(r, row) }));
-        const bad = results.some(x => x.state === 'bad');
-        const warn = !bad && results.some(x => x.state === 'warn');
-        return (
-          <div key={d.code ?? d.dsp} className={`adm-dspreq ui-on-soft${bad ? ' is-bad' : warn ? ' is-warn' : ''}`}>
-            <div className="adm-dspreq-top">
-              <b>{d.name}</b>
-              <Badge tone={bad ? 'red' : warn ? 'amber' : row ? 'green' : 'gray'}>
-                {bad ? `문제 ${results.filter(x => x.state === 'bad').length}건` : warn ? '확인 권고' : row ? '요구 조건 충족' : '배급 준비 후 검사'}
-              </Badge>
-            </div>
-            <ul>
-              {results.map(({ r, state, detail }) => (
-                <li key={r.key} className={`is-${state}`} title={detail || undefined}>
-                  <span className="adm-dspreq-dot" aria-hidden="true">{state === 'ok' ? <CheckIcon size={11} /> : state === 'bad' ? <Glyph name="alert" size={12} /> : null}</span>
-                  <span className="adm-min">
-                    <b>{r.label}</b>
-                    <small>{r.spec(d)}</small>
-                  </span>
-                  <Badge tone={STATE_LABEL[state][1]}>{STATE_LABEL[state][0]}</Badge>
-                </li>
-              ))}
-            </ul>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 // ---------- 배급 승인 화면용: 코드 대신 한 줄 요약 ----------
 export const DSP_NAME: Record<string, string> = {

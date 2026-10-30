@@ -4,9 +4,6 @@ import { messageForCode } from '../api/errors';
 import { PLATFORM_NAMES } from './platformNames';
 import { releaseMoment } from './countdown';
 
-/** 발매 전 페이지에 버튼을 놓는 순서 (서버 offered()와 같은 순서) */
-export const PRESAVE_PLATFORMS = ['spotify', 'deezer', 'tidal'] as const;
-
 export interface PresaveResult { ok: boolean; text: string }
 
 /** 주소의 결과 표시 — 없으면 null */

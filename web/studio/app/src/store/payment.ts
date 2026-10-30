@@ -25,7 +25,6 @@ const store = createStore<PaymentInfo | null>(null, {
   serialize: p => (p ? mask(p) : null),
 });
 
-export const getPayment = store.get;
 export const usePayment = store.use;
 
 /** 등록 판정 — 끝자리가 0000인 실제 계좌도 있으므로 끝자리 값으로 거르지 않는다 */

@@ -171,10 +171,6 @@ const store = createStore<DocRecord[]>(MOCK ? initialDocs() : [], {
 export const useDocs = store.use;
 export const getDocsSnapshot = store.get;
 
-export function getDoc(id: string): DocRecord | undefined {
-  return store.get().find(d => d.id === id);
-}
-
 export function setDocs(list: DocRecord[]): void {
   store.set(list);
 }
@@ -185,10 +181,6 @@ export function addDoc(doc: DocRecord): void {
 
 export function updateDoc(id: string, patch: Partial<DocRecord>): void {
   store.set(list => list.map(d => (d.id === id ? { ...d, ...patch } : d)));
-}
-
-export function removeDoc(id: string): void {
-  store.set(list => list.filter(d => d.id !== id));
 }
 
 /** 발매에 연결된 문서 (releaseId 우선, 없으면 제목으로 매칭) */

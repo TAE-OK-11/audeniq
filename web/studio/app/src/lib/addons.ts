@@ -136,14 +136,6 @@ export function mockOrdersFromApplication(releaseId: string, title: string, o: R
   }
 }
 
-// ---------------------------------------------------------------------------
-// 서버
-// ---------------------------------------------------------------------------
-export async function fetchConfig(): Promise<AddonConfig> {
-  if (MOCK) return { prices: PRICES, card: { provider: 'toss', label: '토스페이먼츠' }, balance: mock.balance, mv_platforms: MV_PLATFORMS };
-  return req<AddonConfig>(orgPath('/addons/config'), { quiet401: true });
-}
-
 export async function fetchReleaseAddons(releaseId: string): Promise<ReleaseAddons> {
   if (MOCK) return mockState(releaseId);
   return req<ReleaseAddons>(orgPath(`/releases/${encodeURIComponent(releaseId)}/addons`), { quiet401: true });
