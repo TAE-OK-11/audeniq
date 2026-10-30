@@ -1,0 +1,23 @@
+/*  Notifications 화면 조각에서만 쓰는 규칙 — 전역 스타일(App.tsx가 불러오는 9개 파일)에서 원래 순서대로 옮겼다.
+   이 조각을 받을 때 전역 스타일 뒤에 붙고, 원래 자리보다 뒤에 있던 같은 우선순위 규칙과 겹치지 않는 것만 옮겼다.
+   아래 클래스를 쓰는 파일은 이 파일을 import해야 한다 (splitCss.test.ts가 확인).
+   anchors: aq-notice-chev aq-notice-copy aq-notice-detail aq-notice-pagehead aq-notice-symbol aq-pager aq-pager-gap aq-pager-num aq-pager-step aq-unread view-notifications  *//* ── design-align.css */
+@media(hover:hover){.aq-pager button:not(:disabled):not(.is-on):hover{background:var(--aq-surface)}}
+.aq-pager .aq-pager-num.is-on{background:var(--aq-primary);color:#fff}
+.aq-pager .aq-pager-step:disabled{color:var(--aq-text-disabled);cursor:default}
+.aq-pager-gap{min-width:20px;color:var(--aq-text-4);text-align:center}
+#view-notifications .aq-notice-pagehead{margin-bottom:20px}
+@media(hover:hover){#view-notifications .aq-notice-card:hover{background:var(--aq-blue-100)}}
+#view-notifications .aq-notice-card:focus-visible{outline:var(--aq-focus);outline-offset:2px}
+#view-notifications .aq-notice-symbol{position:relative;width:48px;height:48px;flex-basis:48px;border-radius:var(--aq-r-md);background:var(--aq-blue-150);color:var(--aq-blue-500)}
+#view-notifications .aq-notice-symbol .aq-unread{position:absolute;top:-3px;right:-3px;width:12px;height:12px;border:2px solid var(--aq-surface);border-radius:50%;background:var(--aq-blue-500)}
+#view-notifications .aq-notice-copy{display:grid;gap:4px;min-width:0}
+#view-notifications .aq-notice-copy strong{overflow:visible;color:var(--aq-text);font-size:16px;font-weight:700;line-height:1.45;white-space:normal}
+#view-notifications .aq-notice-detail{overflow:hidden;color:var(--aq-text-3);line-height:1.5;text-overflow:ellipsis;white-space:nowrap}
+#view-notifications .aq-notice-detail time{color:var(--aq-text-4)}
+#view-notifications .aq-notice-card.is-read{background:#F3F5F9}
+@media(hover:hover){#view-notifications .aq-notice-card.is-read:hover{background:#ECEFF5}}
+#view-notifications .aq-notice-card.is-read .aq-notice-symbol{background:#fff;color:var(--aq-blue-500)}
+#view-notifications .aq-notice-card.is-read .aq-notice-detail{color:var(--aq-text-3)}
+@media(max-width:560px){#view-notifications .aq-notice-card{gap:12px;padding:16px}}
+#view-notifications .aq-notice-chev{color:var(--aq-text-disabled)}

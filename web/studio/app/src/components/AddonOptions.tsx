@@ -13,6 +13,7 @@ import { Glyph } from './Glyph';
 import { Segmented } from './Segmented';
 import { useToast } from './Toast';
 import { IconTile } from '../ui';
+import '../styles/split/Upload.css';
 
 export interface AddonFields {
   mv: boolean; mvTier: MvTier; mvTrack: number;

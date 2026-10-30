@@ -10,6 +10,7 @@ import { Glyph } from './Glyph';
 import { API_BASE } from '../api/http';
 import { MOCK } from '../lib/mode';
 import { cssUrl } from '../lib/safeUrl';
+import '../styles/split/PublicPage.css';
 
 /** 스크롤로 떠오르는 덩어리 — 소식 카드, 발매 칸, 응원 폼·줄, 디스코그래피, 플랫폼 줄, 가사 */
 export const PUBLIC_UNITS = [

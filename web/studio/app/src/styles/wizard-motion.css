@@ -14,30 +14,19 @@
   /* 보완 요청 패널은 제목과 함께 한 덩어리로 */
   #view-new .aq-fix-panel{animation:aq-wiz-step-in var(--aq-motion-base) var(--aq-enter) backwards}
   /* 오류 안내는 살짝 나타나고, 빠진 칸은 옅은 빨강으로 한 번 물든다 */
-  #view-new #wizardError.aq-shake{animation:aq-wiz-step-in var(--aq-motion-base) var(--aq-enter) backwards}
-  #view-new .aq-invalid:is(input,select,textarea){animation:aq-wiz-invalid 1.2s ease 1}
-  #view-new .aq-invalid:not(input,select,textarea){animation:none}
 }
 
 /* 모바일 진행 막대 — 지금 칸까지 색이 부드럽게 바뀐다 */
-#view-new .wizard-progress-seg{transition:background-color .3s ease!important}
 
 /* PC 단계 카드 — 지금 단계는 진한 면, 바뀔 때 면과 글자 색만 부드럽게 */
 @media(min-width:1024px){
   .aq-wiz-rail .aq-wiz-steps button{transition:background-color .2s ease,color .2s ease}
   .aq-wiz-rail .aq-wiz-step-no{transition:background-color .2s ease,color .2s ease}
-  .aq-wiz-rail-progress i::after{transition:width .3s var(--aq-e-ease)}
 }
 
 /* 보완 요청 패널 — 접고 펼칠 때 높이가 짧게 따라 바뀐다 */
-html.aq-vt-fix #view-new .aq-fix-panel{view-transition-name:aq-fix}
 #view-new .aq-fix-title{width:fit-content;max-width:100%}
-html.aq-vt-fix #view-new .aq-fix-title{view-transition-name:aq-fix-title}
-html.aq-vt-fix #view-new #wizardBody{view-transition-name:aq-wiz-body}
 /* 움직이는 입력 영역이 위아래 고정 막대 위로 올라오지 않게 막대도 따로 떼어 맨 위에 둔다 */
-html.aq-vt-fix #view-new .wizard-topbar{view-transition-name:aq-wiz-top}
-html.aq-vt-fix #view-new .step-actions{view-transition-name:aq-wiz-actions}
-html.aq-vt-fix #view-new .aq-fix-note,html.aq-vt-fix #view-new .aq-fix-list li{animation:none}
 ::view-transition-group(aq-fix),::view-transition-group(aq-fix-title),::view-transition-group(aq-wiz-body){animation-duration:.32s;animation-timing-function:cubic-bezier(.22,1,.36,1)}
 ::view-transition-group(aq-fix){overflow:clip;border-radius:24px}
 ::view-transition-old(aq-fix),::view-transition-new(aq-fix){height:100%;object-fit:none;object-position:top;animation-duration:.24s}
@@ -54,5 +43,4 @@ html.aq-vt-fix #view-new .aq-fix-note,html.aq-vt-fix #view-new .aq-fix-list li{a
 
 @media(prefers-reduced-motion:reduce){
   #view-new .aq-fix-flash,#view-new .aq-invalid{animation:none!important}
-  #view-new .wizard-progress-seg,.aq-wiz-rail .aq-wiz-steps button,.aq-wiz-rail .aq-wiz-step-no,.aq-wiz-rail-progress i::after{transition:none!important}
 }

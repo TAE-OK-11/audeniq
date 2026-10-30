@@ -8,6 +8,7 @@ import { Badge } from '../../ui';
 import { TrackChecks } from '../../components/TrackChecks';
 import { addCredit, creditChips, type CreditHistory } from '../../lib/credits';
 import { type Track, type UploadState } from './model';
+import '../../styles/split/Upload.css';
 
 
 /** 업로드 진행 표시 */

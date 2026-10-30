@@ -1,0 +1,104 @@
+/*  Layout 화면 조각에서만 쓰는 규칙 — 전역 스타일(App.tsx가 불러오는 9개 파일)에서 원래 순서대로 옮겼다.
+   이 조각을 받을 때 전역 스타일 뒤에 붙고, 원래 자리보다 뒤에 있던 같은 우선순위 규칙과 겹치지 않는 것만 옮겼다.
+   아래 클래스를 쓰는 파일은 이 파일을 import해야 한다 (splitCss.test.ts가 확인).
+   anchors: aq-badge aq-logout aq-menu-open aq-nav-card aq-nav-count aq-nav-cta aq-nav-end aq-nav-foot aq-nav-label aq-nav-legal aq-nav-me aq-nav-me-alert aq-nav-me-row aq-nav-me-text aq-route-bar aq-side-badge aq-side-cta aq-side-group aq-side-item aq-side-status aq-side-title aq-sidebar is-closing menu-toggle portal-nav portalNav  */
+/* ── live.css */
+@media(max-width:760px){.portal-nav{right:20px}}
+
+.portal-header .menu-toggle[aria-expanded="true"]>span:first-child{transform:translateY(4.5px) rotate(45deg)}
+.portal-header .menu-toggle[aria-expanded="true"]>span:last-child{transform:translateY(-4.5px) rotate(-45deg)}
+
+.portal-header .menu-toggle[aria-expanded=true]>span:first-child{transform:translateY(3.5px) rotate(45deg)}
+.portal-header .menu-toggle[aria-expanded=true]>span:last-child{transform:translateY(-3.5px) rotate(-45deg)}
+@media(max-width:370px){.portal-header .portal-nav{right:15px}}
+@media(prefers-reduced-motion:reduce){ .portal-header .menu-toggle[aria-expanded=true]>span:first-child{transform:translateY(3.5px) rotate(45deg)!important}
+ .portal-header .menu-toggle[aria-expanded=true]>span:last-child{transform:translateY(-3.5px) rotate(-45deg)!important}
+}
+#portalNav{position:fixed!important;top:var(--aq-menu-top,76px)!important;bottom:auto!important;right:max(12px,env(safe-area-inset-right))!important;max-height:calc(100dvh - var(--aq-menu-top,76px) - 12px)!important;overflow-y:auto!important;overscroll-behavior:contain;z-index:71!important;-webkit-overflow-scrolling:touch}
+@media(max-width:760px){
+ #portalNav{top:var(--aq-menu-top,calc(68px + env(safe-area-inset-top)))!important}
+ 
+}
+/* ── enhance.css */
+.portal-nav button>span::after{content:none!important}
+/* ── ui.css */
+.portal-nav .aq-nav-card button.active .aq-nav-label{font-weight:var(--aq-fw-bold)}
+#portalNav .aq-logout:hover{color:var(--aq-red-600)!important;text-decoration-color:currentColor}
+#portalNav .aq-nav-me-text small{font-weight:400;color:var(--aq-text-4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#portalNav .aq-nav-me-alert i{font-style:normal;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#portalNav .aq-nav-cta:active{transform:scale(.98)}
+#portalNav .aq-nav-cta>span,#portalNav .aq-nav-me-alert>span,#portalNav .aq-nav-me-row>span{display:none}
+#portalNav .aq-nav-card button:active{transform:scale(.985)}
+#portalNav .aq-nav-me-text small{font-size:var(--aq-fs-sm)}
+#portalNav .aq-nav-card button.active{background:#fff;color:var(--aq-blue-500)}
+#portalNav .aq-nav-end::after{content:none}
+#portalNav .aq-logout{background:var(--aq-surface)!important}
+@media (min-width:761px){
+  #portalNav{padding-bottom:0!important}
+  #portalNav .aq-nav-foot .aq-nav-legal button{padding:4px 0!important;font-size:var(--aq-fs-sm)!important}
+  #portalNav .aq-logout{padding:7px 14px!important}
+}
+@media (max-width:760px){
+  #portalNav{left:0!important;right:0!important;bottom:auto!important;width:100%!important;max-width:none!important;height:calc(100dvh - var(--aq-menu-top,68px))!important;max-height:none!important;border-radius:0;box-shadow:none;padding:20px 16px max(28px,env(safe-area-inset-bottom))}
+}
+#portalNav .aq-nav-legal button:hover{color:var(--aq-text-2)!important}
+/* ── design-align.css */
+.portal-header #portalNav.is-closing{animation:aq-menu-out var(--aq-motion-short) var(--aq-exit) forwards!important;pointer-events:none}
+#portalNav .aq-nav-card button,#portalNav .aq-nav-me button{animation:none!important}
+@media (max-width:760px){
+  .portal-header #portalNav.is-closing{animation-name:aq-menu-out-full!important}html.aq-menu-open{overflow:hidden}
+}
+@media (min-width:761px) and (max-width:1023px){
+  html.aq-menu-open body::after{content:"";position:fixed;inset:0;z-index:60;background:rgba(23,27,41,.18);animation:aq-fade-in var(--aq-motion-base) var(--aq-enter) both}
+}
+@media (prefers-reduced-motion:reduce){html.aq-menu-open body::after{animation:none}}
+#portalNav .aq-nav-foot{flex-wrap:wrap;row-gap:6px}
+#portalNav .aq-nav-legal{flex-wrap:wrap;column-gap:12px;row-gap:2px}
+#portalNav .aq-nav-legal button{white-space:nowrap}
+@media (min-width:1024px){
+  .aq-side-item>span:not([class]){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  body:not(.wizard-mode) .portal-header .menu-toggle{display:none!important}
+  .aq-side-status{margin-left:auto;font-size:11px}
+}
+@media (min-width:1024px){
+  @media (max-height:900px){
+    .aq-sidebar{padding-top:14px;padding-bottom:16px}
+  }
+}
+@media (min-width:1024px){
+  @media (max-height:900px){
+    .aq-side-cta{margin-bottom:14px}
+  }
+}
+@media (min-width:1024px){
+  @media (max-height:900px){
+    .aq-side-group{margin-bottom:10px}
+  }
+}
+@media (min-width:1024px){
+  @media (max-height:900px){
+    .aq-side-title{margin-bottom:2px}
+  }
+}
+@media (min-width:1024px){
+  @media (max-height:900px){
+    .aq-side-item{min-height:36px}
+  }
+}
+#portalNav>.aq-nav-me,#portalNav>.aq-nav-card,#portalNav>.aq-nav-foot{animation:aq-land-fade var(--aq-motion-base) ease-out backwards}
+@media (max-width:760px){#portalNav>.aq-nav-me,#portalNav>.aq-nav-card,#portalNav>.aq-nav-foot{animation-delay:.08s}}
+#portalNav.is-closing>*{animation:none}
+@media(max-width:760px){
+  #portalNav .aq-nav-me-row{padding:14px!important;border-radius:var(--aq-r-2xl)!important;background:var(--aq-surface)!important}
+  #portalNav .aq-nav-me-row:hover,#portalNav .aq-nav-me.is-active .aq-nav-me-row{background:var(--aq-blue-100)!important}
+  #portalNav .aq-nav-foot{flex-direction:column;align-items:stretch!important;gap:14px;padding:0!important}
+  #portalNav .aq-nav-foot .aq-logout{order:-1;display:flex;align-items:center;width:100%!important;min-height:56px!important;padding:0 20px!important;
+    border-radius:var(--aq-r-2xl)!important;background:var(--aq-surface)!important;color:var(--aq-red-600)!important;font-size:var(--aq-fs-lg)!important;font-weight:600!important;text-align:left}
+  #portalNav .aq-nav-foot .aq-logout:hover{background:var(--aq-red-50)!important}
+  #portalNav .aq-nav-foot .aq-nav-legal{justify-content:center;column-gap:14px}
+}
+.aq-route-bar{position:absolute;left:0;right:0;top:0;z-index:2;height:3px;border-radius:0 2px 2px 0;background:var(--aq-blue-500);transform:scaleX(0);transform-origin:0 50%;opacity:0;pointer-events:none}
+@media (prefers-reduced-motion:reduce){
+  .aq-route-bar.is-run{transform:scaleX(1);transition:opacity .2s ease .15s}
+}
+.aq-badge,.aq-side-badge,.aq-nav-count{background:#D93036}

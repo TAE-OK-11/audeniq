@@ -15,6 +15,7 @@ import { errorMessage } from '../api/errors';
 import { MonthField } from '../components/Picker';
 import { platformKey, platformLabel } from '../lib/platformNames';
 import { BrandMark } from '../components/BrandMark';
+import '../styles/split/Reports.css';
 
 // 서버에서 받아 올 기간 (월 단위, 한국 시간). 그 안에서 아래 PERIODS로 다시 좁힌다.
 type RangeKey = 'last12' | 'thisYear' | 'lastYear' | 'custom';

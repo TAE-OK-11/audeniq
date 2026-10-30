@@ -14,6 +14,7 @@ import { LIVE_NOTICE_EVENT } from '../lib/liveEvents';
 import { prefetchCommonRoutes, prefetchRoute } from '../routes';
 import { useAsync, useCacheClears } from '../hooks/useAsync';
 import { Glyph, type GlyphName } from './Glyph';
+import '../styles/split/Layout.css';
 
 // 라우트 변경 시 view 진입 애니메이션만 재시작 (children remount 없음 → useEffect/API 재실행 방지)
 function ViewEnter({ pathname, children }: { pathname: string; children: ReactNode }) {

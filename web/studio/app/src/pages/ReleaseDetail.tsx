@@ -25,6 +25,7 @@ import { AlbumPrep } from '../components/AlbumPrep';
 import { TrackSheet } from '../components/TrackSheet';
 import { CopyButton } from '../components/CopyButton';
 import { albumPrep, draftTrackOf, releaseDay, type PrepItem } from '../lib/albumPrep';
+import '../styles/split/ReleaseDetail.css';
 
 /** 아직 없는 값 — 실제 값처럼 진하게 보이지 않도록 흐리게 */
 const Empty = ({ children }: { children: string }) => <span className="aq-empty-val">{children}</span>;

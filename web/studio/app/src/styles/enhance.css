@@ -70,7 +70,6 @@ img{max-width:100%}
 }
 .aq-cover{transition:transform var(--aq-motion-long) var(--aq-enter)}
 .chevron{transition:transform .2s var(--aq-e-ease),color .2s}
-.dashboard-grid .service-item{transition:transform .28s var(--aq-e-ease),box-shadow .28s var(--aq-e-ease),background-color .2s!important}
 
 /* 이미지 커버 */
 .cover.has-image{background:var(--aq-gray-100)!important;padding:0}
@@ -105,9 +104,7 @@ img{max-width:100%}
 #view-home .aq-home-board{align-items:start}
 .aq-home-main,.aq-home-side{display:grid;gap:13px;align-content:start;min-width:0}
 .aq-home-main>*,.aq-home-side>*{margin:0}
-#view-home .aq-home-board>.aq-home-main:only-child,#view-home .aq-home-board:has(>.aq-home-side:empty)>.aq-home-main{grid-column:1/-1}
 .aq-home-side:empty{display:none}
-.aq-home-side .aq-report-card{grid-template-columns:minmax(0,1fr)}
 /* 홈 리포트 — 배치만: 금액과 전월 대비를 한 줄에, 막대는 가운데 고르게, 세 숫자는 막대 아래 */
 #view-home .aq-report-card .aq-report-head{margin-bottom:4px}
 #view-home .aq-report-card .ui-row-meta{margin:8px 0 0;padding:0;clip-path:none}
@@ -120,17 +117,13 @@ img{max-width:100%}
 #view-home .aq-report-card .aq-mini-bar{position:relative}
 #view-home .aq-report-card .aq-mini-val{position:absolute;bottom:100%;left:50%;margin-bottom:6px;transform:translateX(-50%);color:var(--aq-text)}
 #view-home .aq-report-card .aq-mini-bar{width:36px;max-width:36px;border-radius:6px 6px 0 0;background:var(--aq-blue-300)}
-#view-home .aq-report-card .aq-mini-bar.is-current{background:var(--aq-primary)}
-#view-home .aq-report-card .aq-mini-col small{align-self:stretch;margin:0;padding-top:8px;border-top:1px solid var(--aq-line);text-align:center;font-weight:600}
 #view-home .aq-report-card .aq-mini-col:last-child small{color:var(--aq-text-2);font-weight:700}
 .aq-report-top{display:flex;align-items:center;gap:10px;min-width:0}
 .aq-report-top>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #view-home .aq-report-kv{margin-top:24px}
-#view-home .aq-report-card .ui-empty{min-height:0}
 @media(max-width:900px){
   #view-home .aq-home-board{display:flex;flex-direction:column;align-items:stretch;gap:11px}
   .aq-home-main,.aq-home-side{display:contents}
-  .aq-home-tasks{order:1}.aq-home-upcoming{order:2}.aq-home-delivery{order:3}.aq-home-pitch{order:4}.aq-home-releases{order:5}.aq-home-money{order:6}.aq-home-side .aq-report-card{order:7}.aq-home-promo{order:8}.aq-home-news{order:9}
 }
 /* 왼쪽 메뉴가 같은 곳을 배지와 함께 보여 주는 넓은 화면에서는 바로가기 칸을 숨긴다 */
 @media(min-width:1024px){#view-home .aq-home-shortcuts{display:none}}
@@ -138,7 +131,6 @@ img{max-width:100%}
 .aq-home-money .aq-report-total{margin-top:4px}
 .aq-home-money .aq-report-total .ui-row-meta,:is(.aq-home-upcoming,.aq-home-pitch)>.ui-row-meta{display:block;margin:8px 0 0;padding:0;clip-path:none}
 /* 휴대폰은 폭이 좁아 할 일 설명이 한 줄에서 잘린다('2분이면…') — 두 줄까지 */
-@media(max-width:760px){#view-home .aq-task-text small{-webkit-line-clamp:2;line-clamp:2}}
 .aq-home-money,:is(.aq-home-upcoming,.aq-home-pitch){display:grid;gap:14px;align-content:start}
 .aq-home-money .ui-section-head,:is(.aq-home-upcoming,.aq-home-pitch) .ui-section-head{margin-bottom:0}
 :is(.aq-home-upcoming,.aq-home-pitch)>.ui-row-meta{margin:0}
@@ -288,7 +280,6 @@ img{max-width:100%}
 .aq-platform-track span{transform-origin:left;animation:aq-grow-x .5s var(--aq-enter) both}
 .aq-platform-bars li:nth-child(2) .aq-platform-track span{animation-delay:.08s}
 .aq-platform-bars li:nth-child(3) .aq-platform-track span{animation-delay:.16s}
-.aq-platform-bars li:nth-child(n+4) .aq-platform-track span{animation-delay:.24s}
 .report-bar{transition:filter .2s}
 .report-bar:hover{filter:brightness(1.1)}
 .aq-countup{font-variant-numeric:tabular-nums}
@@ -302,14 +293,12 @@ img{max-width:100%}
 /* ---------- 모션 줄이기 ---------- */
 @media(prefers-reduced-motion:reduce){
   .aq-stagger>*,.aq-step-anim,.aq-toast,.aq-skel,.aq-mini-bar,.aq-platform-track span{animation:none!important}
-  .aq-mini-bar{transform:none!important}
 }
 
 /* 홈 '확인할 작업' — 데스크톱에서는 버튼을 오른쪽에 두어 카드 높이를 줄인다 */
 body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))}
 @media(max-width:760px){
   #homeReleases .aq-cover{width:54px!important;height:54px!important;flex-basis:54px!important;border-radius:var(--aq-r-md)!important}
-  #homeReleases .release-row{grid-template-columns:54px minmax(0,1fr) auto!important;gap:12px!important}
 }
 
 /* 로딩이 150ms 안에 끝나면 스켈레톤이 아예 보이지 않도록 늦게 등장 (깜빡임 방지) */
@@ -340,11 +329,9 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
 .aq-pay-receipt-badge{margin-left:auto;flex-shrink:0;font-size:11px;font-weight:800;color:var(--aq-green-600);background:var(--aq-green-50);padding:5px 9px;border-radius:var(--aq-r-sm)}
 .aq-pay-receipt dl{margin:0;padding:8px 18px 12px}
 .aq-pay-receipt dl>div{display:flex;justify-content:space-between;gap:16px;padding:10px 0;border-bottom:1px solid var(--aq-gray-150)}
-.aq-pay-receipt dl>div:last-child{border-bottom:0}
 .aq-pay-receipt dt{font-size:13px;color:var(--aq-text-4)}
 .aq-pay-receipt dd{margin:0;font-size:14px;font-weight:700;color:var(--aq-text);text-align:right;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
 .aq-pay-success-note{width:min(440px,100%);font-size:12px;line-height:1.65;color:var(--aq-text-disabled)}
-.aq-pay-success{padding-bottom:8px!important}
 .aq-pay-success-note{margin-bottom:0}
 /* 낮은 화면(휴대폰 브라우저 주소창·툴바 포함)에서도 완료 내용과 확인 버튼이 한 화면에 들어오게 */
 @media(max-height:820px){
@@ -357,7 +344,6 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
   .aq-pay-receipt{margin:18px 0 10px}
   .aq-pay-receipt-head{padding:14px 16px 4px}
   .aq-pay-receipt dl{padding:4px 16px 8px}
-  .aq-pay-receipt dl>div{padding:8px 0}
 }
 @media(max-height:680px){
   .aq-success-mark{width:56px;height:56px;margin-bottom:10px}
@@ -372,11 +358,8 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
 .aq-pay-flow .aq-pay-receipt{width:100%;margin:clamp(14px,3vh,36px) 0 clamp(10px,1.6vh,16px);border-radius:24px;background:var(--aq-gray-50);overflow:visible}
 .aq-pay-flow .aq-pay-receipt-head{gap:14px;padding:clamp(12px,2.2vh,22px) 20px clamp(10px,1.8vh,18px);border-bottom:1px solid var(--aq-gray-150)}
 .aq-pay-flow .aq-pay-receipt-head>.aq-bank-logo{width:clamp(40px,6vh,48px);height:clamp(40px,6vh,48px);flex:0 0 auto;border-radius:50%!important;background:#fff!important;box-shadow:0 0 0 1px rgba(17,24,39,.05)}
-.aq-pay-flow .aq-pay-receipt-head>.aq-bank-logo.is-symbol>img{width:30px;height:30px}
 .aq-pay-flow .aq-pay-receipt-head small{margin:0 0 2px;font-size:13px;font-weight:600;color:var(--aq-text-3)}
 .aq-pay-flow .aq-pay-receipt-head strong{font-size:20px;font-weight:800;letter-spacing:.02em;color:var(--aq-text);font-variant-numeric:tabular-nums}
-.aq-pay-flow .aq-pay-receipt dl{padding:clamp(6px,1.2vh,12px) 20px clamp(8px,1.4vh,14px)}
-.aq-pay-flow .aq-pay-receipt dl>div{padding:clamp(4px,.9vh,9px) 0;border-bottom:0}
 .aq-pay-flow .aq-pay-receipt dt{font-size:14px}
 .aq-pay-flow .aq-pay-receipt dd{font-size:14px;font-weight:600;color:var(--aq-text-2)}
 .aq-pay-flow .aq-pay-success-note{width:100%;font-size:13px;color:var(--aq-text-4);text-align:center}
@@ -392,10 +375,8 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
 /* 입력 칸·검색·버튼의 상태 변화(포커스, 사용 가능해짐)도 끊기지 않게 */
 .aq-pay-flow .aq-pay-field input,.aq-pay-flow .aq-bank-search input{transition:background-color .2s ease,box-shadow .2s ease}
 .aq-pay-flow .aq-pay-actions .ui-btn{transition:background-color .25s ease,color .25s ease,opacity .25s ease,transform .12s ease}
-.aq-pay-flow .aq-pay-actions .ui-btn:not(:disabled):active{transform:scale(.98)}
 .aq-pay-flow .aq-pay-type span{transition:background-color .2s ease,box-shadow .2s ease,transform .12s ease}
 .aq-pay-flow .aq-pay-type:active span{transform:scale(.985)}
-.aq-pay-flow .aq-bank .aq-bank-logo{transition:transform .2s var(--aq-e-ease)}
 .aq-pay-flow .aq-bank:hover .aq-bank-logo{transform:translateY(-2px)}
 .aq-pay-flow .aq-bank.selected .aq-bank-logo{transform:scale(1.04)}
 @media(prefers-reduced-motion:no-preference){
@@ -412,11 +393,7 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
   .aq-pay-error-dialog{animation:aq-fade-up var(--aq-motion-base) var(--aq-enter) both,aq-shake .38s ease .18s}
   /* 등록 완료: 체크 → 제목·설명 → 영수증 → 안내·확인 버튼. 축하는 짧게 — 다음 할 일(확인 버튼)을 1초 넘게 기다리게 하지 않는다
      (예전엔 버튼이 1.35초 뒤에 나타났다. 지금은 약 0.8초) */
-  .aq-pay-success>h1{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) .18s both}
-  .aq-pay-success>.aq-pay-success-sub{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) .22s both}
-  .aq-pay-flow .aq-pay-receipt{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) .3s both}
   .aq-pay-receipt dl>div{animation:none}
-  .aq-pay-success>.aq-pay-success-note{animation:aq-fade-in var(--aq-motion-long) ease .42s both}
   .aq-pay-actions.is-final .ui-btn{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) .45s both}
 }
 @media(prefers-reduced-motion:reduce){.aq-pay-flow .aq-bank .aq-bank-logo,.aq-pay-flow .aq-pay-type span{transform:none!important}}
@@ -433,7 +410,6 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
 /* 흰 카드 안의 입력칸은 회색 면 (흰 칸이면 카드에 묻힌다) */
 .cover-track-item{--aq-field-bg:var(--aq-field);--aq-field-hover-bg:var(--aq-field-hover);--aq-field-focus-bg:var(--aq-blue-150)}
 .track-detail-toggle{background:#fff!important;transition:background-color .2s!important}
-.track-detail-toggle:hover{background:var(--aq-blue-100)!important}
 
 /* 수령인 유형 선택: 테두리 대신 채움으로 선택 표시 */
 .aq-pay-type span{position:relative}
@@ -447,8 +423,6 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
   padding:16px 18px!important;min-height:60px;font-size:20px!important;font-weight:700;letter-spacing:.01em;
   box-shadow:none!important;transition:background-color .2s,box-shadow .2s!important
 }
-#modal .aq-pay-field input::placeholder{color:var(--aq-text-disabled);font-weight:600}
-#modal .aq-pay-field label{display:block;margin-bottom:9px}
 .aq-pay-field{margin-top:30px}
 @media(max-width:760px){#modal .aq-pay-field input{font-size:18px!important;min-height:56px}}
 /* 포커스는 접근성을 위해 부드러운 광채로만 표시 */
@@ -615,11 +589,7 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 .aq-wiz-steps button{display:flex;align-items:center;gap:12px;width:100%;border:0;background:transparent;padding:10px 12px;border-radius:var(--aq-r-md);font:inherit;font-size:14px;font-weight:600;color:var(--aq-text-disabled);text-align:left;cursor:pointer;transition:background-color .2s var(--aq-e-ease),color .2s var(--aq-e-ease)}
 .aq-wiz-steps button:disabled{cursor:default}
 /* 아직 가지 않은 단계도 이름은 읽히게 — 흐린 글자(--aq-text-disabled)라 앞으로 무엇을 할지 보이지 않았다. 누를 수 없는 것은 그대로 */
-.aq-wiz-steps li:not(.is-done):not(.is-current) button{color:var(--aq-text-4);font-weight:500;opacity:1}
 .aq-wiz-steps li:not(.is-done):not(.is-current) .aq-wiz-step-no{color:var(--aq-text-4)}
-.aq-wiz-steps li.is-done button{color:var(--aq-text-2)}
-.aq-wiz-steps li.is-done button:hover{background:var(--aq-gray-50)}
-.aq-wiz-steps li.is-current button{background:var(--aq-e-blue-soft);color:var(--aq-e-blue);font-weight:700}
 .aq-wiz-step-no{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;flex:none;font-size:12px;font-weight:800;background:var(--aq-gray-100);color:var(--aq-text-disabled);transition:background-color .25s var(--aq-e-ease),color .25s var(--aq-e-ease)}
 .aq-wiz-steps li.is-done .aq-wiz-step-no{background:var(--aq-blue-150);color:var(--aq-e-blue)}
 .aq-wiz-steps li.is-current .aq-wiz-step-no{background:var(--aq-e-blue);color:#fff}
@@ -666,7 +636,6 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 }
 /* 계좌 입력 칸 위 간격 — 공용 .ui-field 여백(ui.css)이 나중에 읽혀 덮어쓰던 것을 되살린다 */
 .ui-field.aq-pay-field{margin:30px 0 0}
-.ui-field.aq-pay-field+.ui-field.aq-pay-field{margin-top:22px}
 
 /* ── 수익 받기 흐름 반응형: 구간마다 값을 바꾸지 않고 화면 너비·높이에 맞춰 연속으로 늘고 준다 ──
    세로 휴대폰(390×844)·가로 휴대폰(844×390)·노트북(1024×700)·데스크톱(1440×900)에서 모두 목록과 입력 칸이 보이게 */
@@ -674,7 +643,6 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 .aq-pay-flow .aq-pay-top>button{width:clamp(38px,6vh,44px);height:clamp(38px,6vh,44px)}
 .aq-pay-flow .aq-pay-main{width:min(720px,calc(100% - clamp(40px,6vw,48px) - env(safe-area-inset-left) - env(safe-area-inset-right)));padding:clamp(14px,5vh,48px) 0 clamp(20px,5vh,42px);container-type:inline-size}
 .aq-pay-flow .aq-pay-main:has(.aq-bank-sticky){padding-top:0}
-.aq-pay-flow .aq-pay-main:has(.aq-bank-sticky) .aq-pay-head>.eyebrow:first-child{margin-top:clamp(14px,5vh,48px)}
 .aq-pay-flow .aq-pay-head>.eyebrow{margin-bottom:clamp(8px,2vh,17px)}
 .aq-pay-flow .aq-pay-head>h1{font-size:clamp(24px,min(8.7vw,6.5vh),48px)}
 .aq-pay-flow .aq-pay-lead{margin-top:clamp(8px,2vh,17px);font-size:clamp(13px,1.8vh,16px)}
@@ -697,14 +665,13 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 .aq-pay-flow .aq-selected-bank,.aq-pay-flow .aq-pay-review{margin-top:clamp(14px,3.5vh,28px);padding:clamp(12px,2vh,17px) clamp(14px,2vw,18px)}
 .aq-pay-flow .ui-field.aq-pay-field{margin-top:clamp(16px,3.6vh,30px)}
 .aq-pay-flow .ui-field.aq-pay-field+.ui-field.aq-pay-field{margin-top:clamp(12px,2.6vh,22px)}
-.aq-pay-flow .ui-field.aq-pay-field{gap:0}#modal .aq-pay-flow .aq-pay-field label{margin-bottom:clamp(6px,2vh,17px)}
+.aq-pay-flow .ui-field.aq-pay-field{gap:0}
 .aq-pay-flow .aq-pay-privacy{margin-top:clamp(16px,3.4vh,27px)}
 .aq-pay-flow .aq-pay-actions{padding-top:clamp(8px,1.6vh,13px);padding-bottom:max(clamp(10px,2vh,16px),env(safe-area-inset-bottom))}
 .aq-pay-flow .aq-pay-actions .ui-btn{--btn-h:clamp(48px,7vh,var(--aq-h-lg))}
 @media(max-height:560px){.aq-pay-flow .aq-pay-success{min-height:0}}
 /* 약관 동의: 전체 동의 상자·항목·요약 카드의 체크박스와 글자 시작선을 한 세로줄에 맞춘다
    (위에서 아래로 훑을 때 시선이 좌우로 흔들리지 않게) */
-.aq-pay-flow{--agree-x:20px;--agree-box:21px;--agree-gap:13px}
 .aq-pay-flow .aq-agree-all{padding:18px var(--agree-x);gap:var(--agree-gap)}
 .aq-pay-flow .aq-agree-list{padding:4px var(--agree-x) 14px}
 .aq-pay-flow .aq-agree-list label{grid-template-columns:var(--agree-box) minmax(0,1fr) 24px;gap:var(--agree-gap)}
@@ -713,15 +680,12 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 
 /* ── PC(넓은 창): 왼쪽에 단계 제목, 오른쪽에 고르기·입력. 하단 버튼도 오른쪽 칸에 맞춘다 ── */
 @media(min-width:1024px){
-  .aq-pay-flow{--pay-w:min(1180px,calc(100% - 96px));--pay-cols:minmax(280px,400px) minmax(0,1fr);--pay-gap:clamp(48px,6vw,104px)}
   .aq-pay-flow .aq-pay-top{width:var(--pay-w);padding-left:0;padding-right:0}
   .aq-pay-flow .aq-pay-main{width:var(--pay-w);display:grid;grid-template-columns:var(--pay-cols);column-gap:var(--pay-gap);align-items:start}
   .aq-pay-head{position:sticky;top:0}
   .aq-pay-flow .aq-pay-head>h1{font-size:clamp(32px,4.6vh,44px)}
   .aq-pay-flow .aq-pay-body>:first-child{margin-top:0}
   /* 금융기관 단계는 고정 탭 때문에 스크롤 영역 위 여백이 0 — 오른쪽 칸 위 여백을 제목과 맞춘다 */
-  .aq-pay-flow .aq-pay-main:has(.aq-bank-sticky) .aq-pay-body{padding-top:clamp(14px,5vh,48px)}
-  .aq-pay-flow .aq-pay-main:has(.aq-bank-sticky) .aq-bank-sticky{margin-top:0}
   .aq-pay-flow .aq-pay-success{grid-column:1/-1}
   .aq-pay-flow .aq-pay-actions{width:var(--pay-w);margin:0 auto;padding-left:0;padding-right:0;display:grid;grid-template-columns:var(--pay-cols);column-gap:var(--pay-gap);box-sizing:border-box}
   .aq-pay-flow .aq-pay-actions .ui-btn{grid-column:2;width:100%;margin:0}
@@ -750,11 +714,9 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 .aq-profile-links .ui-field>label{display:flex;align-items:center;gap:8px}
 .aq-profile-links .aq-dsp-mark{width:22px;height:22px;border-radius:7px;font-size:11px;filter:none;opacity:1}
 .aq-inst-line{margin:-8px 0 14px}
-.track-editor .ui-field input:disabled{opacity:.55}
 .aq-apply-sign{margin-top:30px}
 .aq-apply-sign>.ui-field-help{margin:-4px 0 18px}
 .aq-agree-box{background:var(--aq-blue-50);border-radius:var(--aq-r-lg);padding:6px 18px;margin-top:4px}
-.aq-agree-box .ui-check.is-plain+.check-line{border-top:1px solid var(--aq-gray-150)}
 .aq-agree-all-line strong{font-size:14px}
 
 /* ── 배급 신청서 (정식 서류) ─────────────────────────────────────────── */
@@ -1070,25 +1032,21 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 .aq-home-date{margin:0 0 8px;font-size:13px;font-weight:700;color:var(--aq-e-blue);letter-spacing:0}
 a.aq-home-hero{text-decoration:none;color:inherit}
 #view-home .aq-home-hero{padding:24px 22px 22px;border-radius:var(--aq-r-2xl);gap:18px;margin-bottom:14px}
-#view-home .aq-home-hero:after{display:none}
 #view-home .aq-home-hero .eyebrow{margin:0 0 8px;font-size:12px;letter-spacing:.02em}
 #view-home .aq-home-hero h2{margin:0;font-size:22px;line-height:1.35;letter-spacing:-.025em}
 #view-home .aq-home-hero p:not(.eyebrow){margin-top:6px;font-size:13px}
-#view-home .aq-home-hero .aq-hero-cta{min-height:48px}
 @media (hover:hover){a.aq-home-hero:hover .aq-hero-cta{filter:brightness(1.06)}}
 @media (min-width:768px){
   #view-home .aq-home-title{margin-bottom:24px}
   #view-home .aq-home-title h1{font-size:36px}
   #view-home .aq-home-hero{padding:30px 34px;border-radius:var(--aq-r-2xl);flex-direction:row;align-items:center}
   #view-home .aq-home-hero h2{font-size:26px}
-  #view-home .aq-home-hero .aq-hero-cta{min-width:170px}
 }
 /* 모바일 헤더: STUDIO 표시는 로고와 겹치는 정보라 숨기고 알림·프로필·메뉴만 */
 @media (max-width:767px){
   .portal-header .header-right{gap:8px}
 }
 /* 홈 바로가기 카드: 설명은 한 줄로 맞춰 제목 높이를 가지런히 */
-#view-home .service-item p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* 발매 거절 — 진행 단계의 검토를 빨간 ‘거절’로, 상태 칩·안내 카드도 빨간 계열 */
 
 /* 신청서: 트랙·권리자·식별자·전자 문서가 같은 면 색과 속도로 반응한다. */
@@ -1168,7 +1126,6 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 .aq-dsp.is-on .aq-dsp-mark{filter:none;opacity:1}
 .aq-dsp.is-on .aq-dsp-check{color:var(--aq-primary)}
 .aq-dsp.is-unavailable{background:var(--aq-gray-100);color:var(--aq-text-4);opacity:.55;filter:grayscale(1)}
-.aq-dsp.is-unavailable:not(.is-on){cursor:not-allowed}
 .aq-dsp.is-unavailable .aq-dsp-name{white-space:normal}
 .aq-dsp.is-unavailable .aq-dsp-name small{display:block;font-size:10px;font-weight:600}
 .aq-option.is-unavailable:not(.is-on){opacity:.55;filter:grayscale(1)}
@@ -1227,7 +1184,6 @@ svg.aq-glyph{flex:none;fill:none!important;stroke:currentColor!important;stroke-
 @media (hover:none),(pointer:coarse){
   /* 누를 때는 빠르게(--aq-press-in), 뗄 때는 각 요소의 기본 전환 시간으로 복귀 */
   :is(.service-item,.aq-event-card,.aq-task,.aq-action-card,.aq-bank,.aq-chip,.aq-dsp,.aq-row-link,.aq-header-bell,.menu-toggle,.aq-pay-type span,.aq-cert-method,.aq-sign-provider,.portal-nav button):is(:active,.is-pressed){transition-duration:var(--aq-press-in)!important}
-  .aq-row-link:active{background-color:var(--aq-blue-100)!important}
   .aq-pay-type:active span{background:var(--aq-gray-100)!important}
   /* 길게 눌렀을 때 뜨는 시스템 메뉴·텍스트 선택이 버튼 조작을 방해하지 않게 */
   :is(.service-item,.aq-bank,.aq-chip,.menu-toggle,.aq-header-bell){-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
@@ -1348,7 +1304,6 @@ body:has(#modal .aq-sticky-foot) .aq-toast-stack,body:has(.aq-form-actions.is-pi
 @media(prefers-reduced-motion:reduce){.aq-pick,.aq-pick-mark{transition:none}.aq-pick.is-on .aq-pick-mark svg{animation:none}}
 
 /* 메뉴 항목 화살표는 아이콘 하나만 (예전 CSS 글자 ›와 겹쳐 두 개로 보이던 문제) */
-.portal-nav button>span::after{content:none!important}
 .portal-nav button>span{color:var(--aq-text-disabled)}
 .portal-nav button.active>span,.portal-nav button[aria-current=page]>span{color:currentColor}
 
@@ -1457,7 +1412,6 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 
 /* 커버아트: 커버 색이 바탕에 번지는 무대 + 같은 폭의 정보 카드 */
 #view-release .studio-album-aside.aq-cover-card{background:var(--aq-blue-50)!important;padding:22px!important}
-.aq-cover-card .subhead{margin:0 0 14px!important}
 .aq-cover-stage{position:relative;isolation:isolate;overflow:hidden;max-width:420px;padding:18px;border-radius:var(--aq-r-xl);background:var(--aq-gray-150)}
 .aq-cover-glow{position:absolute;z-index:-1;left:-20%;top:-20%;width:140%!important;max-width:none!important;height:140%;object-fit:cover;filter:blur(40px) saturate(1.5);opacity:.7;pointer-events:none}
 .aq-cover-stage::after{content:"";position:absolute;inset:0;z-index:-1;background:rgba(255,255,255,.18)}
@@ -1672,7 +1626,6 @@ a.aq-inline-link{display:inline-block;max-width:100%}
   }
   #view-new .step-actions .ui-btn{width:100%!important;min-width:0!important;padding-left:12px!important;padding-right:12px!important;white-space:nowrap}
 }
-#view-new .step-actions #wizardSaveNow{background:var(--aq-blue-100)!important;color:var(--aq-blue-600)!important}
 @media(min-width:760px){
   #view-new .step-actions{gap:10px!important}
   #view-new .step-actions #wizardBack{flex:0 0 auto!important;width:auto!important;min-width:128px!important}
@@ -1702,8 +1655,6 @@ a.aq-inline-link{display:inline-block;max-width:100%}
 /* 발매 신청 — 휴대폰: 단계 이름은 아래 '02 / 06 · 트랙 등록' 한 곳에만. 막대 위 같은 이름은 숨긴다.
    입력칸에 포커스가 가면 바닥 버튼에 가리지 않게 그만큼 위에서 멈춘다(iOS 키보드 포함). */
 @media(max-width:759.98px){
-  #view-new .wizard-progress-seg em{display:none!important}
-  #view-new .wizard-progress{padding-top:14px!important}
   html:has(#view-new){scroll-padding-bottom:120px}
 }
 
@@ -1739,7 +1690,6 @@ a.aq-inline-link{display:inline-block;max-width:100%}
 .aq-fix-list .ui-btn.is-primary{background:var(--aq-blue-500);color:#fff}
 .aq-fix-list .ui-btn.is-primary:hover{background:var(--aq-blue-600)}
 .aq-fix-list .ui-btn svg{margin-right:-4px}
-.aq-fix-cta{justify-self:start}
 .aq-fix-foot{margin:0;font-size:var(--aq-fs-sm);line-height:1.6;color:var(--aq-text-3)}
 /* 발매 상세 — 상단 진행 카드와 탭 사이 */
 #view-release .aq-fix-panel{margin:0 0 24px}

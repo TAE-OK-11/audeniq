@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { PrepItem } from '../lib/albumPrep';
 import { Glyph, type GlyphName } from './Glyph';
+import '../styles/split/ReleaseDetail.css';
 
 const ICON: Record<PrepItem['key'], GlyphName> = {
   cover: 'image', audio: 'music', credits: 'users', date: 'calendar', agreement: 'sign', proofs: 'doc', codes: 'qr',

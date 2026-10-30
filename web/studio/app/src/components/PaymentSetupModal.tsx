@@ -14,6 +14,7 @@ import { errorMessage } from '../api/errors';
 import { Glyph } from './Glyph';
 import { requestPortalRefresh } from '../store/portalSync';
 import { getAccountSnapshot } from '../store/account';
+import '../styles/split/PaymentSetup.css';
 
 // 은행: 주요 시중은행 → iM·부산·경남 → 인터넷은행 → 씨티·수협·산업 → 상호금융·저축은행 → 전북·광주·제주은행
 // 증권사: 주요 대형사(한투·미래·NH·삼성·KB·신한·하나)와 토스증권을 앞에, 나머지는 자기자본·이용 규모 순

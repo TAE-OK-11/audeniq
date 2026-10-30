@@ -1,4 +1,5 @@
 import { BANK_SYMBOLS } from '../lib/bankSymbols';
+import '../styles/split/PaymentSetup.css';
 
 // 가로로 긴 글자 로고 — 정사각 칸에 넣으면 너무 작아져 기관 카드에서 가로 폭을 더 준다
 const WIDE = new Set(['miraeasset.svg', 'samsung.svg']);

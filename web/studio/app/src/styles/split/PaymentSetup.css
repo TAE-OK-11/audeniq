@@ -1,0 +1,32 @@
+/*  결제 정보(PaymentSetupModal) 화면 조각에서만 쓰는 규칙 — 전역 스타일(App.tsx가 불러오는 9개 파일)에서 원래 순서대로 옮겼다.
+   이 조각을 받을 때 전역 스타일 뒤에 붙고, 원래 자리보다 뒤에 있던 같은 우선순위 규칙과 겹치지 않는 것만 옮겼다.
+   아래 클래스를 쓰는 파일은 이 파일을 import해야 한다 (splitCss.test.ts가 확인).
+   anchors: aq-bank aq-bank-group aq-bank-logo aq-bank-sticky aq-pay-actions aq-pay-body aq-pay-field aq-pay-flow aq-pay-head aq-pay-main aq-pay-receipt aq-pay-receipt-head aq-pay-success aq-pay-success-note aq-pay-success-sub is-symbol  *//* ── live.css */.aq-pay-field label{font-size:13px!important;color:var(--aq-text-3)!important}.aq-bank:active{transform:scale(.97)}.aq-bank[hidden],.aq-bank-group[hidden]{display:none!important}/* ── enhance.css */
+.aq-pay-receipt dl>div:last-child{border-bottom:0}
+.aq-pay-success{padding-bottom:8px!important}
+@media(max-height:820px){
+  .aq-pay-receipt dl>div{padding:8px 0}
+}
+.aq-pay-flow .aq-pay-receipt-head>.aq-bank-logo.is-symbol>img{width:30px;height:30px}
+.aq-pay-flow .aq-pay-receipt dl{padding:clamp(6px,1.2vh,12px) 20px clamp(8px,1.4vh,14px)}
+.aq-pay-flow .aq-pay-receipt dl>div{padding:clamp(4px,.9vh,9px) 0;border-bottom:0}
+.aq-pay-flow .aq-pay-actions .ui-btn:not(:disabled):active{transform:scale(.98)}
+.aq-pay-flow .aq-bank .aq-bank-logo{transition:transform .2s var(--aq-e-ease)}
+@media(prefers-reduced-motion:no-preference){
+  .aq-pay-success>h1{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) .18s both}
+  .aq-pay-success>.aq-pay-success-sub{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) .22s both}
+  .aq-pay-flow .aq-pay-receipt{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) .3s both}
+  .aq-pay-success>.aq-pay-success-note{animation:aq-fade-in var(--aq-motion-long) ease .42s both}
+}
+#modal .aq-pay-field input::placeholder{color:var(--aq-text-disabled);font-weight:600}
+#modal .aq-pay-field label{display:block;margin-bottom:9px}
+.ui-field.aq-pay-field+.ui-field.aq-pay-field{margin-top:22px}
+.aq-pay-flow .aq-pay-main:has(.aq-bank-sticky) .aq-pay-head>.eyebrow:first-child{margin-top:clamp(14px,5vh,48px)}#modal .aq-pay-flow .aq-pay-field label{margin-bottom:clamp(6px,2vh,17px)}
+.aq-pay-flow{--agree-x:20px;--agree-box:21px;--agree-gap:13px}
+@media(min-width:1024px){
+  .aq-pay-flow{--pay-w:min(1180px,calc(100% - 96px));--pay-cols:minmax(280px,400px) minmax(0,1fr);--pay-gap:clamp(48px,6vw,104px)}
+  .aq-pay-flow .aq-pay-main:has(.aq-bank-sticky) .aq-pay-body{padding-top:clamp(14px,5vh,48px)}
+  .aq-pay-flow .aq-pay-main:has(.aq-bank-sticky) .aq-bank-sticky{margin-top:0}
+}
+/* ── design-align.css */
+.aq-pay-flow .aq-pay-type:is(:active,.is-pressed) span{transform:scale(var(--aq-press-row));transition-duration:var(--aq-press-in)}

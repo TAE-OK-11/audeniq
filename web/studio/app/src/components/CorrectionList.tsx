@@ -2,6 +2,7 @@ import { useNavigate } from '../lib/router';
 import type { Correction } from '../api/types';
 import { Glyph } from './Glyph';
 import { WIZ_STEP_NAMES, fixPath, isDocumentFix, resolveCorrection } from '../lib/corrections';
+import '../styles/split/ReleaseDetail.css';
 
 /** 담당자의 전체 의견 — 고칠 항목이 아니라 참고할 말이라 버튼 없이 검토팀 말풍선으로 보여 준다 (신청서 보완 패널과 같은 모양) */
 export function ReviewNote({ text }: { text: string }) {

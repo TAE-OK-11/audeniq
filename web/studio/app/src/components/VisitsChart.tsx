@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DayPoint } from '../lib/artistStudio';
 import { num } from '../lib/format';
+import '../styles/split/ArtistStudio.css';
 
 const H = 168;
 const PAD_TOP = 8;

@@ -1,0 +1,61 @@
+/*  Dashboard 화면 조각에서만 쓰는 규칙 — 전역 스타일(App.tsx가 불러오는 9개 파일)에서 원래 순서대로 옮겼다.
+   이 조각을 받을 때 전역 스타일 뒤에 붙고, 원래 자리보다 뒤에 있던 같은 우선순위 규칙과 겹치지 않는 것만 옮겼다.
+   아래 클래스를 쓰는 파일은 이 파일을 import해야 한다 (splitCss.test.ts가 확인).
+   anchors: aq-grid-status aq-hero-cta aq-home-board aq-home-delivery aq-home-hero aq-home-main aq-home-money aq-home-new aq-home-news aq-home-pitch aq-home-promo aq-home-releases aq-home-side aq-home-skel aq-home-tasks aq-home-top aq-home-upcoming aq-mini-bar aq-mini-col aq-report-card aq-row-link dashboard-columns dashboard-grid homeReleases is-urgent release-row view-home  */
+/* ── live.css */
+#view-home .empty-note:before{content:none}
+.data-list .release-row{grid-template-columns:64px minmax(0,1fr) auto}
+@media(max-width:760px){
+ .data-list .release-row{grid-template-columns:50px minmax(0,1fr) auto}
+ 
+}
+@media(prefers-reduced-motion:reduce){
+  .dashboard-grid .service-item:hover{transform:none!important;box-shadow:none!important}
+}
+/* ── enhance.css */
+.dashboard-grid .service-item{transition:transform .28s var(--aq-e-ease),box-shadow .28s var(--aq-e-ease),background-color .2s!important}
+#view-home .aq-home-board>.aq-home-main:only-child,#view-home .aq-home-board:has(>.aq-home-side:empty)>.aq-home-main{grid-column:1/-1}
+.aq-home-side .aq-report-card{grid-template-columns:minmax(0,1fr)}
+#view-home .aq-report-card .aq-mini-bar.is-current{background:var(--aq-primary)}
+#view-home .aq-report-card .aq-mini-col small{align-self:stretch;margin:0;padding-top:8px;border-top:1px solid var(--aq-line);text-align:center;font-weight:600}
+#view-home .aq-report-card .ui-empty{min-height:0}
+@media(max-width:900px){
+  .aq-home-tasks{order:1}.aq-home-upcoming{order:2}.aq-home-delivery{order:3}.aq-home-pitch{order:4}.aq-home-releases{order:5}.aq-home-money{order:6}.aq-home-side .aq-report-card{order:7}.aq-home-promo{order:8}.aq-home-news{order:9}
+}
+@media(max-width:760px){#view-home .aq-task-text small{-webkit-line-clamp:2;line-clamp:2}}
+@media(prefers-reduced-motion:reduce){
+  .aq-mini-bar{transform:none!important}
+}
+@media(max-width:760px){
+  #homeReleases .release-row{grid-template-columns:54px minmax(0,1fr) auto!important;gap:12px!important}
+}
+#view-home .aq-home-hero:after{display:none}
+#view-home .aq-home-hero .aq-hero-cta{min-height:48px}
+@media (min-width:768px){
+  #view-home .aq-home-hero .aq-hero-cta{min-width:170px}
+}
+#view-home .service-item p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (hover:none),(pointer:coarse){
+  .aq-row-link:active{background-color:var(--aq-blue-100)!important}
+}
+/* ── ui.css */
+.aq-mini-bar{max-width:44px}
+/* ── design-align.css */
+#view-home .aq-report-grid{border-top:0!important;padding-top:4px}
+#view-home .aq-home-hero{min-height:0}
+@media (min-width:761px){#view-home .aq-home-hero{padding:24px 28px}}
+#view-home .aq-home-top>.ui-page-head>.ui-btn.aq-home-new{display:inline-flex}
+@media (min-width:761px){#view-home .aq-home-skel{height:129px!important}}
+@media(hover:hover){#view-home a.aq-home-hero.is-urgent:hover{background:var(--aq-amber-100)}}
+#view-home .service-item p.aq-grid-status{color:var(--aq-text-2);font-weight:600}
+@media (min-width:1024px){#view-home .aq-home-top>.ui-page-head>.ui-btn.aq-home-new{display:none}}
+@media (min-width:901px){#view-home .dashboard-columns{align-items:start}}
+@media (max-width:760px){
+  #view-home .dashboard-grid{gap:8px;margin:8px 0 24px}
+  #view-home .dashboard-grid .service-item{min-height:0;flex-direction:row;align-items:center;justify-content:flex-start;gap:10px;padding:14px 12px;border-radius:var(--aq-r-xl)}
+  #view-home .dashboard-grid .service-item>div{min-width:0}
+  #view-home .dashboard-grid .service-item .ui-icon{flex:none;width:36px;height:36px}
+  #view-home .dashboard-grid .service-item .ui-icon svg{width:19px;height:19px}
+  #view-home .dashboard-grid .service-item h3{margin:0 0 2px;font-size:14px;line-height:1.3}
+  #view-home .dashboard-grid .service-item p{white-space:normal;font-size:12px;line-height:1.35}
+}

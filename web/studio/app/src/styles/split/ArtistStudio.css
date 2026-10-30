@@ -1,0 +1,31 @@
+/*  ArtistStudio 화면 조각에서만 쓰는 규칙 — 전역 스타일(App.tsx가 불러오는 9개 파일)에서 원래 순서대로 옮겼다.
+   이 조각을 받을 때 전역 스타일 뒤에 붙고, 원래 자리보다 뒤에 있던 같은 우선순위 규칙과 겹치지 않는 것만 옮겼다.
+   아래 클래스를 쓰는 파일은 이 파일을 import해야 한다 (splitCss.test.ts가 확인).
+   anchors: aq-al-bio aq-al-link-fields aq-crop aq-crop-ring aq-crop-stage aq-crop-zoom aq-photo-actions aq-photo-now aq-photo-platform aq-photo-platform-name aq-share-value aq-studio-avatar aq-studio-bar aq-studio-id aq-studio-tools aq-studio-two aq-visits aq-visits-bar aq-visits-grid aq-visits-tip aq-visits-x is-hover  *//* ── design-align.css */
+textarea.aq-al-bio{min-height:112px;padding:14px 16px;line-height:1.6;resize:vertical}
+.aq-al-link-fields input{width:100%;min-width:0;border:0;padding:2px 0;background:transparent;font:inherit;color:var(--aq-text);outline:none}
+.aq-al-link-fields input::placeholder{color:var(--aq-text-4);font-weight:500}
+.aq-visits{position:relative}
+.aq-visits-grid line{stroke:var(--aq-line);stroke-width:1}
+.aq-visits-grid text,.aq-visits-x{fill:var(--aq-text-4);font-size:11px;font-weight:var(--aq-fw-medium)}
+.aq-visits-bar{fill:var(--aq-primary);transition:fill var(--aq-motion-short) var(--aq-enter)}
+.aq-visits-bar.is-hover{fill:var(--aq-blue-800)}
+.aq-visits-tip{position:absolute;top:0;transform:translateX(-50%);display:grid;gap:2px;min-width:150px;padding:10px 12px;border-radius:var(--aq-r-md);background:var(--aq-text);color:#fff;font-size:12px;line-height:1.5;pointer-events:none;white-space:nowrap}
+.aq-share-value{color:var(--aq-text);font-weight:var(--aq-fw-bold);font-variant-numeric:tabular-nums}
+.aq-photo-platform{align-items:center}
+.aq-photo-platform.is-disabled{cursor:default}
+.aq-photo-platform-name{flex:1;color:var(--aq-text);font-weight:var(--aq-fw-medium)}
+.aq-crop{display:grid;gap:14px}
+.aq-crop-stage:active{cursor:grabbing}
+.aq-crop-ring{position:absolute;inset:0;border-radius:50%;box-shadow:0 0 0 999px rgba(23,27,41,.42),inset 0 0 0 2px rgba(255,255,255,.9);pointer-events:none}
+.aq-crop-zoom{display:flex;align-items:center;gap:12px;font-size:14px;font-weight:var(--aq-fw-medium);color:var(--aq-text-2)}
+@media (max-width:760px){
+  .aq-studio-id{grid-template-columns:auto minmax(0,1fr);gap:14px}
+  .aq-studio-tools{grid-column:1/-1;justify-content:flex-start}
+  .aq-studio-avatar{width:64px;height:64px}
+  .aq-studio-two{grid-template-columns:minmax(0,1fr);gap:0}
+  .aq-studio-bar{flex-wrap:wrap}
+  .aq-photo-now{grid-template-columns:minmax(0,1fr);justify-items:center;text-align:center}
+  .aq-photo-actions{justify-content:center}
+}
+@media (prefers-reduced-motion:reduce){.aq-visits-bar{transition:none}}

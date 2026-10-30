@@ -36,6 +36,7 @@ import { BrandMark } from '../components/BrandMark';
 import type { NewsItem } from '../lib/home';
 import { MOCK } from '../lib/mode';
 import type { Release } from '../api/types';
+import '../styles/split/Dashboard.css';
 
 type GridKey = 'releases' | 'reports' | 'settlement' | 'contracts';
 
