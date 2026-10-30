@@ -234,15 +234,15 @@ img{max-width:100%}
 .aq-toast-act:active{scale:.94}
 .aq-toast-act:focus-visible{outline:2px solid #fff;outline-offset:1px}
 .aq-toast.is-error .aq-toast-act{color:#fff;text-decoration:underline;text-decoration-thickness:1.5px;text-underline-offset:4px}
-/* 등장: 아이콘이 먼저 톡 → 옆으로 펼쳐짐 → 글자 / 퇴장: 글자 먼저, 아이콘 크기로 접히며 내려감 */
-.aq-toast.is-in{animation:aq-toast-grow .62s var(--aq-enter) both}
-.aq-toast.is-in>:is(.aq-toast-body,.aq-toast-act){animation:aq-toast-fade .26s ease .24s both}
-.aq-toast.is-leaving{animation:aq-toast-shrink .26s var(--aq-exit) forwards;pointer-events:none}
+/* 등장: 화면 아래에서 올라오며 나타남(아이콘은 톡) / 퇴장: 글자 먼저, 아래로 내려가며 사라짐 */
+.aq-toast.is-in{animation:aq-toast-rise .46s var(--aq-enter) both}
+.aq-toast.is-in>:is(.aq-toast-body,.aq-toast-act){animation:aq-toast-fade .24s ease .1s both}
+.aq-toast.is-leaving{animation:aq-toast-sink .26s var(--aq-exit) forwards;pointer-events:none}
 .aq-toast.is-leaving>:is(.aq-toast-body,.aq-toast-act){animation:aq-toast-fade-out .1s ease forwards}
 .aq-toast.is-fling{opacity:0;pointer-events:none}
-@keyframes aq-toast-grow{0%{opacity:0;translate:0 16px;clip-path:inset(0 calc(100% - 56px) 0 0 round var(--toast-r))}28%{opacity:1;translate:0 0;clip-path:inset(0 calc(100% - 56px) 0 0 round var(--toast-r))}100%{clip-path:inset(0 0 0 0 round var(--toast-r))}}
-@keyframes aq-toast-fade{from{opacity:0;translate:-4px 0}to{opacity:1;translate:0 0}}
-@keyframes aq-toast-shrink{to{opacity:0;translate:0 10px;clip-path:inset(0 calc(100% - 56px) 0 0 round var(--toast-r))}}
+@keyframes aq-toast-rise{from{opacity:0;translate:0 calc(100% + 24px)}40%{opacity:1}}
+@keyframes aq-toast-fade{from{opacity:0}to{opacity:1}}
+@keyframes aq-toast-sink{to{opacity:0;translate:0 calc(100% + 16px)}}
 @keyframes aq-toast-fade-out{to{opacity:0}}
 @keyframes aq-toast-pop{from{scale:.3;opacity:0}to{scale:1;opacity:1}}
 @keyframes aq-toast-draw{to{stroke-dashoffset:0}}
