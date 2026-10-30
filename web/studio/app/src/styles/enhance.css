@@ -884,6 +884,26 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
   .aq-paper-kv th,.aq-paper-grid thead th{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .aq-paper-scroll{overflow:visible}
   .aq-paper-grid{min-width:0}
+  /* 쪽 나눔 — 섹션을 통째로 다음 쪽으로 넘기면 곡이 많은 신청서·긴 계약서에서 앞 쪽이 반 넘게 비었다.
+     긴 표(수록곡)·확인 항목은 쪽을 넘어 이어지고(머리줄은 쪽마다 다시), 한 줄이 쪽 사이에서 잘리지는 않는다.
+     짧은 정보 표와 서명란은 통째로, 섹션 제목은 다음 내용과 같은 쪽에 */
+  .aq-paper-sec{break-inside:auto}
+  .aq-paper-sec h2{break-after:avoid;page-break-after:avoid}
+  .aq-paper-kv,.aq-paper-release,.aq-paper-note{break-inside:avoid}
+  .aq-paper-grid thead{display:table-header-group}
+  .aq-paper-grid tr,.aq-paper-agree li,.aq-paper-tracks li,.aq-paper-p{break-inside:avoid}
+  /* 확인 표시는 종이 서류처럼 검정 잉크 */
+  .aq-paper-agree li.is-on .aq-paper-check{background:#fff!important;color:var(--aq-gray-900)!important}
+}
+/* 수록곡 표 — 번호·길이는 머리줄도 가운데, 칸 너비를 정해 작사·작곡이 좁게 꺾이지 않게, 긴 파일 이름은 줄바꿈 */
+@media (min-width:601px), print{
+  .aq-paper-grid{table-layout:fixed}
+  .aq-paper-grid thead th:nth-child(1){width:44px}
+  .aq-paper-grid thead th:nth-child(3),.aq-paper-grid thead th:nth-child(4){width:15%}
+  .aq-paper-grid thead th:nth-child(5){width:58px}
+  .aq-paper-grid thead th:nth-child(6){width:31%}
+  .aq-paper-grid thead th:is(:nth-child(1),:nth-child(5)){text-align:center}
+  .aq-paper-grid td{overflow-wrap:anywhere}
 }
 .aq-paper-note{margin:0 0 10px;padding:10px 14px;background:var(--aq-gray-50);font-size:13px;line-height:1.6;color:var(--aq-text-2)}
 .aq-doc-open-app{margin:12px 0 4px;width:100%}
@@ -1606,6 +1626,8 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 /* 문장 끝 링크가 줄 끝에서 쪼개져 '보기'만 다음 줄로 떨어지지 않게 — 한 덩어리로 넘어가고, 한 줄보다 길면 그 안에서 줄바꿈 */
 a.aq-inline-link{display:inline-block;max-width:100%}
 @media print{.aq-terms-toc,.aq-terms-back,.aq-sign-top span{display:none!important}.aq-terms{background:#fff;padding:0}}
+/* 인쇄: 장·조 제목이 쪽 맨 아래에 홀로 남고 본문만 다음 쪽으로 넘어가지 않게 — 제목은 다음 내용과 같은 쪽에 */
+@media print{.aq-terms :is(h2,h3){break-after:avoid;page-break-after:avoid;break-inside:avoid}}
 
 /* 배급 계약서 서명: 권리·배급 권한 확인 체크 */
 .aq-confirm-boxes{display:grid;gap:10px;margin:4px 0 16px;padding:16px;border:0;border-radius:var(--aq-r-lg);background:var(--aq-blue-50)}
