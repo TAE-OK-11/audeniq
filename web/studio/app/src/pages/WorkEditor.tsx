@@ -2,6 +2,7 @@
 // 저작권 관리 계약 없이도 곡만 등록해 둘 수 있고, 지분이 틀려도 임시 저장은 된다(신청할 때만 막는다).
 // 발매 곡에서 들어오면(?release=&track=) 곡 정보·크레딧을 미리 채우되 지분은 사용자가 직접 확인해야 저장된다.
 // 입력은 이 브라우저에 자동 저장돼 연결이 끊기거나 화면을 떠나도 이어서 쓸 수 있다 (기획안 10.3)
+// 배급 신청서처럼 단계별로 한 화면에 한 가지만: 기본 정보 → 참여자·지분 → 권리·자료 → 확인
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from '../lib/router';
 import { api } from '../api/client';
@@ -13,15 +14,17 @@ import { stampNow } from '../lib/date';
 import { localStamp, fileSize } from '../lib/format';
 import { uid } from '../lib/store';
 import { draftTrackOf } from '../lib/albumPrep';
-import { LANGUAGES, SOCIETIES, WORK_TYPES, similarWorks, splitIssues, splitNames, splitReady } from '../lib/publishing';
+import { LANGUAGES, SOCIETIES, WORK_TYPES, pct, similarWorks, splitIssues, splitNames, splitReady } from '../lib/publishing';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { FilePicker } from '../components/FilePicker';
 import { SkeletonBlock } from '../components/Skeleton';
+import { StepBar } from '../components/StepBar';
 import { Glyph } from '../components/Glyph';
 import { SplitEditor } from '../components/publishing/SplitEditor';
 import { WorkRow } from '../components/publishing/parts';
 import { Badge, Button, Callout, Field, inputClass, selectClass } from '../ui';
+import { roleText } from '../components/publishing/parts';
 import { Reveal } from '../ui/Reveal';
 
 type Form = Omit<WorkInput, 'recording'>;
@@ -34,7 +37,10 @@ const ATTACH_KINDS: [WorkAttachment['kind'], string, string][] = [
 ];
 const ISWC_RE = /^T-?\d{3}\.?\d{3}\.?\d{3}-?\d$/i;
 
-interface Saved { form: Form; at: string; splitChecked: boolean }
+const STEPS = ['기본 정보', '참여자·지분', '권리·자료', '확인'];
+const LAST = STEPS.length - 1;
+
+interface Saved { form: Form; at: string; splitChecked: boolean; step?: number }
 
 export function WorkEditor() {
   const { id } = useParams();
@@ -60,7 +66,9 @@ export function WorkEditor() {
   const [uploading, setUploading] = useState<string | null>(null);
   const [tried, setTried] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [step, setStep] = useState(0);
   const base = useRef<string>('');
+  const topRef = useRef<HTMLDivElement>(null);
 
   // 처음 채우기: 고치기 → 서버 곡, 발매 곡 → 곡 정보, 그 밖 → 빈 칸. 이 브라우저에 쓰다 만 내용이 있으면 이어 쓰기를 묻는다
   useEffect(() => {
@@ -102,10 +110,10 @@ export function WorkEditor() {
     if (JSON.stringify(form) === base.current) return;
     const t = window.setTimeout(() => {
       const at = stampNow();
-      if (writeJSON(draftKey, { form, at, splitChecked } satisfies Saved)) setSavedAt(at);
+      if (writeJSON(draftKey, { form, at, splitChecked, step } satisfies Saved)) setSavedAt(at);
     }, 800);
     return () => window.clearTimeout(t);
-  }, [form, splitChecked]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [form, splitChecked, step]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 저장하지 않은 채 창을 닫으려 하면 브라우저가 한 번 묻는다
   const dirty = !!form && JSON.stringify(form) !== base.current;
@@ -115,6 +123,13 @@ export function WorkEditor() {
     window.addEventListener('beforeunload', on);
     return () => window.removeEventListener('beforeunload', on);
   }, [dirty]);
+
+  // 단계를 옮기면 화면 맨 위(단계 막대)부터 — 긴 단계 끝에서 다음 단계 중간으로 떨어지지 않게
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) { first.current = false; return; }
+    topRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }, [step]);
 
   const dupes = useMemo(() => (form && works ? similarWorks(form.title, works, id) : []), [form?.title, works, id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -141,6 +156,13 @@ export function WorkEditor() {
   const fromTrack = !editing && !!track;
   const needsSplitCheck = fromTrack && !splitChecked && form.contributors.length > 0;
   const locked = existing && existing.application && ['submitted', 'in_review', 'approved'].includes(existing.application.status);
+  // 다음 단계로 — 이 단계에서 꼭 필요한 것만 막는다 (지분이 덜 맞아도 저장은 된다)
+  const next = () => {
+    if (step === 0 && !form.title.trim()) { setTried(true); document.getElementById('workTitle')?.focus(); return; }
+    if (step === 1 && needsSplitCheck) { setTried(true); document.getElementById('splitCheck')?.focus(); return; }
+    setStep(s => Math.min(LAST, s + 1));
+  };
+  const back = () => (step ? setStep(step - 1) : void cancel());
 
   const upload = async (kind: WorkAttachment['kind'], e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -157,8 +179,8 @@ export function WorkEditor() {
 
   const save = async (then?: 'apply') => {
     setTried(true);
-    if (!form.title.trim()) { document.getElementById('workTitle')?.focus(); return; }
-    if (needsSplitCheck) { document.getElementById('splitCheck')?.focus(); toast('가져온 크레딧의 지분을 확인해 주세요.', 'error'); return; }
+    if (!form.title.trim()) { setStep(0); return; }
+    if (needsSplitCheck) { setStep(1); toast('가져온 크레딧의 지분을 확인해 주세요.', 'error'); return; }
     if (busy) return;
     setBusy(true);
     const clean: Form = { ...form, title: form.title.trim(), altTitles: form.altTitles.map(t => t.trim()).filter(Boolean) };
@@ -200,9 +222,9 @@ export function WorkEditor() {
   };
 
   return (
-    <div className="view">
+    <div className="view" ref={topRef}>
       <div className="spaced-actions">
-        <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={() => void cancel()}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />{editing ? '곡으로' : '돌아가기'}</button>
+        <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={back}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />{step ? '이전 단계' : editing ? '곡으로' : '돌아가기'}</button>
       </div>
       <div className="ui-page-head">
         <div>
@@ -217,7 +239,7 @@ export function WorkEditor() {
         <Callout tone="info" action={
           <span className="row-actions">
             <Button size="sm" variant="white" onClick={() => { removeKey(draftKey); setRestored(null); }}>새로 쓰기</Button>
-            <Button size="sm" variant="primary" onClick={() => { setForm(restored.form); setSplitChecked(restored.splitChecked); setSavedAt(restored.at); setRestored(null); }}>이어서 쓰기</Button>
+            <Button size="sm" variant="primary" onClick={() => { setForm(restored.form); setSplitChecked(restored.splitChecked); setSavedAt(restored.at); setStep(Math.min(LAST, restored.step ?? 0)); setRestored(null); }}>이어서 쓰기</Button>
           </span>
         }>
           <b>{localStamp(restored.at)}에 쓰던 내용이 있어요.</b> 저장하기 전에 화면을 떠났어요.
@@ -225,7 +247,9 @@ export function WorkEditor() {
       )}
       {locked && <Callout tone="warn">저작권 관리 심사 중이거나 관리 중인 곡이에요. 지금 고친 내용은 담당자가 확인한 뒤 반영돼요.</Callout>}
 
-      <section className="aq-form-block" aria-labelledby="secBasic">
+      <StepBar steps={STEPS} current={step} />
+
+      {step === 0 && <section className="ui-tab-panel aq-form-block" key="s0" aria-labelledby="secBasic">
         <h2 id="secBasic">기본 정보</h2>
         <Field label="곡 제목" htmlFor="workTitle" required error={titleErr}>
           <input id="workTitle" className={inputClass('lg')} value={form.title} maxLength={200} onChange={e => set('title', e.target.value)} placeholder="예: 새벽 네 시" autoComplete="off" />
@@ -277,9 +301,9 @@ export function WorkEditor() {
             <input id="workAlt" className={inputClass()} value={form.altTitles.join(',')} onChange={e => set('altTitles', e.target.value ? e.target.value.split(',') : [])} placeholder="예: 4 AM" />
           </Field>
         </Reveal>
-      </section>
+      </section>}
 
-      <section className="aq-form-block" aria-labelledby="secPeople">
+      {step === 1 && <section className="ui-tab-panel aq-form-block" key="s1" aria-labelledby="secPeople">
         <h2 id="secPeople">참여자·지분</h2>
         <p className="ui-field-help">작사·작곡·편곡에 참여한 사람과 각자의 몫을 적어요. AUDENIQ 작가는 찾아서 추가하고, 없으면 이름만으로 외부 참여자를 추가해요.</p>
         <SplitEditor value={form.contributors} onChange={v => set('contributors', v)} />
@@ -289,9 +313,14 @@ export function WorkEditor() {
             <span><b>지분을 직접 확인했어요.</b> 크레딧은 발매 정보에서 가져왔지만, 저작권 지분은 자동으로 정하지 않아요.</span>
           </label>
         )}
-      </section>
+        <p className="ui-field-help" aria-live="polite">
+          {issues.some(i => i.level === 'error')
+            ? '지분을 맞추지 않아도 저장돼요. 저작권 관리 신청은 맞춘 뒤에 할 수 있어요.'
+            : form.contributors.length ? '지분이 맞아요. 저장하고 바로 신청할 수 있어요.' : '참여자를 추가해 주세요.'}
+        </p>
+      </section>}
 
-      <section className="aq-form-block" aria-labelledby="secRights">
+      {step === 2 && <section className="ui-tab-panel aq-form-block" key="s2" aria-labelledby="secRights">
         <h2 id="secRights">권리 정보</h2>
         <div className="form-grid">
           <Field label="ISWC" htmlFor="workIswc" warn={iswcErr} help={!iswcErr ? (existing ? `없으면 내부 번호 ${existing.internalCode}로 관리해요.` : '발급받은 경우에만. 없으면 내부 번호로 관리해요.') : undefined}>
@@ -310,10 +339,9 @@ export function WorkEditor() {
           </Field>
         </Reveal>
         <p className="ui-field-help">관리 단체 가입 여부와 IPI/CAE 번호는 참여자마다 위에서 적어요. 모르는 칸은 비워 둬도 저장돼요. 아는 관리 단체: {SOCIETIES.slice(0, 5).join(' · ')} 등</p>
-      </section>
 
-      <section className="aq-form-block" aria-labelledby="secFiles">
-        <h2 id="secFiles">첨부 자료</h2>
+        <h2 id="secFiles" className="aq-form-sub">첨부 자료</h2>
+        <p className="ui-field-help">없어도 저장돼요. 데모 음원은 Open A&R 제출 때, 증빙 자료는 심사 때 써요.</p>
         <div className="form-grid">
           {ATTACH_KINDS.map(([kind, label, accept]) => {
             const mine = form.attachments.filter(a => a.kind === kind);
@@ -331,21 +359,47 @@ export function WorkEditor() {
             );
           })}
         </div>
-      </section>
+      </section>}
 
-      <p className="ui-field-help" aria-live="polite">
-        {issues.some(i => i.level === 'error')
-          ? '지분을 맞추지 않아도 저장돼요. 저작권 관리 신청은 맞춘 뒤에 할 수 있어요.'
-          : form.contributors.length ? '지분이 맞아요. 저장하고 바로 신청할 수 있어요.' : '참여자를 추가해 주세요.'}
-      </p>
+      {/* 확인 — 적은 내용을 한눈에. 줄을 누르면 그 단계로 돌아가 고친다 */}
+      {step === LAST && (
+        <section className="ui-tab-panel aq-form-block" key="s3" aria-labelledby="secReview">
+          <h2 id="secReview">이대로 저장할까요?</h2>
+          <div className="ui-list is-inset ui-card aq-work-review">
+            {([
+              [0, '기본 정보', form.title.trim() || '제목 없음', [WORK_TYPES.find(x => x[0] === form.workType)?.[1], LANGUAGES.find(x => x[0] === form.language)?.[1], form.genre].filter(Boolean).join(' · ')],
+              [1, '참여자·지분', form.contributors.length ? `${form.contributors.length}명` : '참여자 없음',
+                form.contributors.map(c => `${c.name} ${roleText(c)} ${pct(c.share)}`).join(' · ') || '참여자를 추가하면 저작권 관리를 신청할 수 있어요'],
+              [2, '권리·자료', form.iswc || 'ISWC 없음', [form.hasPriorPublisher ? `기존 퍼블리셔 ${form.priorPublisher || '있음'}` : '기존 계약 없음', `첨부 ${form.attachments.length}개`].join(' · ')],
+            ] as const).map(([to, label, title, meta]) => (
+              <button key={label} type="button" className="ui-row" onClick={() => setStep(to)}>
+                <span className="min-0">
+                  <span className="ui-row-meta"><span>{label}</span></span>
+                  <span className="ui-row-title">{title}</span>
+                  <span className="ui-row-meta"><span>{meta}</span></span>
+                </span>
+                <span className="ui-btn is-xs is-white">고치기</span>
+              </button>
+            ))}
+          </div>
+          {issues.some(i => i.level === 'error')
+            ? <Callout tone="warn">지분이 아직 맞지 않아요. 저장은 되고, 저작권 관리 신청은 맞춘 뒤에 할 수 있어요.</Callout>
+            : form.contributors.length > 0 && !editing && <Callout tone="info">지분이 맞아요. 저장하고 바로 저작권 관리를 신청할 수 있어요.</Callout>}
+        </section>
+      )}
+
       <div className="ui-actions aq-pub-actions">
-        <button type="button" className="ui-btn is-soft" onClick={() => void cancel()} disabled={busy}>나가기</button>
-        <button type="button" className={`ui-btn ${!editing && splitReady(form.contributors) ? 'is-soft' : 'is-primary'}${busy ? ' is-busy' : ''}`} onClick={() => void save()} disabled={busy}>
-          {busy ? '저장하는 중' : editing ? '저장' : '곡 저장'}
-        </button>
-        {!editing && splitReady(form.contributors) && (
-          <button type="button" className="ui-btn is-primary" onClick={() => void save('apply')} disabled={busy}>저장하고 신청</button>
-        )}
+        <button type="button" className="ui-btn is-soft" onClick={back} disabled={busy}>{step ? '이전' : '나가기'}</button>
+        {step < LAST ? (
+          <button type="button" className="ui-btn is-primary" onClick={next}>다음으로</button>
+        ) : (<>
+          <button type="button" className={`ui-btn ${!editing && splitReady(form.contributors) ? 'is-soft' : 'is-primary'}${busy ? ' is-busy' : ''}`} onClick={() => void save()} disabled={busy}>
+            {busy ? '저장하는 중' : editing ? '저장' : '곡 저장'}
+          </button>
+          {!editing && splitReady(form.contributors) && (
+            <button type="button" className="ui-btn is-primary" onClick={() => void save('apply')} disabled={busy}>저장하고 신청</button>
+          )}
+        </>)}
       </div>
     </div>
   );
