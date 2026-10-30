@@ -255,6 +255,17 @@ export function Application() {
               {app.signature ? <img src={app.signature} alt={`${app.signerName} 서명`} /> : <em>{issued ? '(서명)' : '(계약서 서명 전)'}</em>}
             </span>
           </div>
+          {issued && (
+            <div className="aq-paper-record">
+              <h3>전자서명 기록</h3>
+              <dl>
+                <div><dt>신청인</dt><dd>{app.signerName} ({app.signerRole})</dd></div>
+                <div><dt>서명 일시</dt><dd>{localStamp(app.submittedAt)}</dd></div>
+                {profile.email && <div><dt>서명 계정</dt><dd>{profile.email}</dd></div>}
+                <div><dt>서명 방법</dt><dd>AUDENIQ STUDIO 로그인 계정에서 손글씨 전자서명 · 동의 항목 {app.agreements.length}개 직접 체크</dd></div>
+              </dl>
+            </div>
+          )}
           <p className="aq-paper-to">AUDENIQ 귀중</p>
         </section>
 

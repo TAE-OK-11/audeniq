@@ -14,6 +14,8 @@ import { SkeletonBlock } from '../components/Skeleton';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
 import { parseAgreement, type Block } from '../lib/agreementDoc';
+import { COMPANY, companyRows, companySeal } from '../lib/company';
+import { useProfile } from '../store/profile';
 
 function longDate(stamp: string): string {
   const d = parseStamp(stamp);
@@ -24,6 +26,7 @@ export function Agreement() {
   const { id = '' } = useParams();
   const nav = useNavigate();
   const doc = useDocs().find(d => d.id === id && d.kind === 'agreements');
+  const profile = useProfile();
   const [loading, setLoading] = useState(!MOCK);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -57,6 +60,7 @@ export function Agreement() {
     ['체결일', signed ? localStamp(doc.localSignatureAt) : '서명 전'],
   ];
   const termsRef = parsed.meta.find(([k]) => k === '적용 약관')?.[1];
+  const seal = companySeal();
   // 서명 전에도 서명란에 이용자 이름을 — 계약 당사자의 '서명자' 칸에서 (괄호 설명은 뗀다)
   const partyName = parsed.articles.flatMap(a => a.blocks).flatMap(b => (b.kind === 'kv' ? b.rows : []))
     .find(([k]) => k === '서명자')?.[1].replace(/\s*\(.*\)\s*$/, '');
@@ -65,7 +69,8 @@ export function Agreement() {
     switch (b.kind) {
       case 'kv': return (
         <table key={i} className="aq-paper-kv"><tbody>
-          {b.rows.map(([k, v]) => <tr key={k}><th>{k}</th><td>{v}</td></tr>)}
+          {b.rows.flatMap(([k, v]) => (k === '회사' ? [[k, v] as [string, string], ...companyRows()] : [[k, v] as [string, string]]))
+            .map(([k, v]) => <tr key={k}><th>{k}</th><td>{v}</td></tr>)}
         </tbody></table>
       );
       case 'list': return <ol key={i} className="aq-paper-tracks">{b.items.map(t => <li key={t}>{t}</li>)}</ol>;
@@ -143,8 +148,10 @@ export function Agreement() {
           <div className="aq-paper-parties">
             <div className="aq-paper-signer">
               <span>회사</span>
-              <strong>주식회사 AUDENIQ</strong>
-              <span className="aq-paper-sig"><em>{doc.approvedAt ? `담당자 승인 · ${longDate(doc.approvedAt)}` : '담당자 승인 전'}</em></span>
+              <strong>{COMPANY.name}{COMPANY.ceo && <small>대표이사 {COMPANY.ceo}</small>}</strong>
+              <span className="aq-paper-sig">
+                {doc.approvedAt && seal ? <img className="is-seal" src={seal} alt={`${COMPANY.name} 직인`} /> : <em>{doc.approvedAt ? `담당자 승인 · ${longDate(doc.approvedAt)}` : '담당자 승인 전'}</em>}
+              </span>
             </div>
             <div className="aq-paper-signer">
               <span>이용자</span>
@@ -154,6 +161,18 @@ export function Agreement() {
               </span>
             </div>
           </div>
+          {signed && (
+            <div className="aq-paper-record">
+              <h3>전자서명 기록</h3>
+              <dl>
+                <div><dt>서명자</dt><dd>{doc.signerName || partyName || '—'}</dd></div>
+                <div><dt>서명 일시</dt><dd>{localStamp(doc.localSignatureAt)}</dd></div>
+                {profile.email && <div><dt>서명 계정</dt><dd>{profile.email}</dd></div>}
+                <div><dt>서명 방법</dt><dd>AUDENIQ STUDIO 로그인 계정에서 손글씨 전자서명{doc.confirmations?.items.length ? ` · 확인 항목 ${doc.confirmations.items.filter(i => i.checked).length}개 직접 체크` : ''}</dd></div>
+                <div><dt>회사 승인</dt><dd>{doc.approvedAt ? localStamp(doc.approvedAt) : '승인 전'}</dd></div>
+              </dl>
+            </div>
+          )}
         </section>
 
         <footer className="aq-paper-foot">
