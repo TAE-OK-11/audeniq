@@ -53,6 +53,23 @@ export function CorrectionCard({ releaseId }: { releaseId: string }) {
     setReason('');
     setOpen(true);
   };
+  // 지운 줄은 토스트의 '되돌리기'로 같은 자리에 되살린다 (빈 줄은 묻지 않고 지운다)
+  const removeCredit = (ti: number, ci: number) => {
+    const row = tracks[ti]?.credits[ci];
+    if (!row) return;
+    setTracks(ts => ts.map((x, i) => (i === ti ? { ...x, credits: x.credits.filter((_, j) => j !== ci) } : x)));
+    if (!row.name.trim()) return;
+    toast(`${row.name.trim()} 크레딧을 지웠어요`, {
+      tone: 'success',
+      action: {
+        label: '되돌리기',
+        onClick: h => {
+          setTracks(ts => ts.map((x, i) => (i === ti ? { ...x, credits: [...x.credits.slice(0, ci), row, ...x.credits.slice(ci)] } : x)));
+          h.update('크레딧을 되돌렸어요', { tone: 'success', duration: 2000 });
+        },
+      },
+    });
+  };
   const setCredit = (ti: number, ci: number, patch: Partial<Credit>) =>
     setTracks(ts => ts.map((t, i) => (i !== ti ? t : { ...t, credits: t.credits.map((c, j) => (j === ci ? { ...c, ...patch } : c)) })));
   const submit = async () => {
@@ -113,7 +130,7 @@ export function CorrectionCard({ releaseId }: { releaseId: string }) {
                     {!ROLES.includes(c.role) && <option value={c.role}>{c.role}</option>}
                     {ROLES.map(r => <option key={r} value={r}>{ROLE_KO[r]}</option>)}
                   </select>
-                  <button type="button" className="ui-btn is-text is-sm aq-danger-text" aria-label={`${c.name || '크레딧'} 삭제`} onClick={() => setTracks(ts => ts.map((x, i) => (i === ti ? { ...x, credits: x.credits.filter((_, j) => j !== ci) } : x)))}>삭제</button>
+                  <button type="button" className="ui-btn is-text is-sm aq-danger-text" aria-label={`${c.name || '크레딧'} 삭제`} onClick={() => removeCredit(ti, ci)}>삭제</button>
                 </div>
               ))}
               <button type="button" className="ui-btn is-soft is-sm" onClick={() => setTracks(ts => ts.map((x, i) => (i === ti ? { ...x, credits: [...x.credits, { name: '', role: 'Composer' }] } : x)))}><Glyph name="plus" size={14} className="aq-glyph-lead" />크레딧 추가</button>
