@@ -1916,6 +1916,8 @@ a.aq-inline-link{display:inline-block;max-width:100%}
 .aq-pub-songs .ui-meter{height:6px}
 .aq-pub-amount{flex:none;font-weight:800;font-variant-numeric:tabular-nums}
 .aq-track-end{display:flex;align-items:center;gap:6px}
+.aq-pub-scope{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 14px}
+.aq-pub-scope .ui-select{width:auto;min-width:0;max-width:60%}
 .aq-pub-count{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 0 4px}
 .aq-pub-count .studio-result-count{margin:0}
 .settle-hero .aq-pub-next{margin-top:18px}
