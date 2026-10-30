@@ -1,8 +1,8 @@
-// 퍼블리싱 — 곡의 작사·작곡 저작권을 한 메뉴에서. 메뉴는 '퍼블리싱' 한 줄, 안에서 탭으로 나눈다.
-//  개요(할 일·현황·진행 순서) · 곡(저작권 상태별 곡 목록) · 계약(신청·계약·연장) · 저작권료 · Open A&R
-// 화면 모양은 발매·곡 관리와 같다: 머리(제목 + 주 버튼) → 탭 → 검색·칩 → 줄 목록. 배급 화면에는 이리로 오는 한 줄만 남긴다
+// 퍼블리싱 — 메뉴의 '퍼블리싱'은 전체를 한눈에 보는 곳: 분석(현황·앨범별·할 일) · 곡 · 저작권료 · Open A&R.
+// 앨범 하나의 퍼블리싱 설정은 발매 상세 '관리' 탭의 선택 카드 → 앨범 퍼블리싱 화면(/releases/:id/publishing)에서 한다.
+// 계약서·정산·알림·문의·계정은 배급과 같은 화면을 함께 쓴다 (여기에 따로 두지 않는다)
 import { useDeferredValue, useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from '../lib/router';
+import { Link, Navigate, useNavigate, useSearchParams } from '../lib/router';
 import { pubApi, type PublishingTask, type Work } from '../api/publishing';
 import { useAsync } from '../hooks/useAsync';
 import { APP_LABEL, APP_TONE, matchFilter, type WorkFilter } from '../lib/publishing';
@@ -11,15 +11,15 @@ import { ReleaseCover } from '../components/ReleaseCover';
 import { SkeletonRows } from '../components/Skeleton';
 import { Money } from '../components/Money';
 import { RegBadge } from '../components/publishing/parts';
-import { PublishingContracts } from '../components/publishing/PublishingContracts';
+import { albumPublishing } from '../components/publishing/ReleasePublishing';
+import { api } from '../api/client';
 import { RoyaltyTable } from '../components/publishing/Royalties';
 import { OpenAr } from './OpenAr';
-import { Badge, EmptyState, IconTile, StatGrid, StatTile, Tabs } from '../ui';
+import { Badge, EmptyState, IconTile, Meter, StatGrid, StatTile, Tabs } from '../ui';
 
-type Tab = 'overview' | 'songs' | 'contracts' | 'royalties' | 'ar';
+type Tab = 'overview' | 'songs' | 'royalties' | 'ar';
 const TABS: { value: Tab; label: string }[] = [
-  { value: 'overview', label: '개요' }, { value: 'songs', label: '곡' }, { value: 'contracts', label: '계약' },
-  { value: 'royalties', label: '저작권료' }, { value: 'ar', label: 'Open A&R' },
+  { value: 'overview', label: '분석' }, { value: 'songs', label: '곡' }, { value: 'royalties', label: '저작권료' }, { value: 'ar', label: 'Open A&R' },
 ];
 const SONG_FILTERS: [WorkFilter, string][] = [['all', '전체'], ['managed', '관리 중'], ['review', '심사 중'], ['fix', '보완 필요'], ['none', '미신청'], ['unreleased', '미발매']];
 const TASK_ICON: Record<PublishingTask['kind'], GlyphName> = { fix: 'alert', split: 'users', sign: 'sign', renew: 'repeat', ar: 'megaphone' };
@@ -69,6 +69,8 @@ function Overview({ go }: { go: (t: Tab) => void }) {
         </StatGrid>
       )}
 
+      <AlbumList />
+
       {(s.tasks.length > 0 || s.suggestion) && (
         <section className="ui-card" aria-labelledby="pubTasks">
           <h2 id="pubTasks" className="subhead">확인할 일</h2>
@@ -109,6 +111,35 @@ function Overview({ go }: { go: (t: Tab) => void }) {
   );
 }
 
+/** 앨범별 — 앨범마다 몇 곡을 맡겼는지. 누르면 그 앨범의 퍼블리싱 설정 */
+function AlbumList() {
+  const { data: works } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
+  const { data: releases } = useAsync(() => api.listReleases(), [], { key: 'releases' });
+  if (!works || !releases) return null;
+  const rows = releases.filter(r => r.status !== 'draft' && (r.track_count ?? 0) > 0).map(r => {
+    const a = albumPublishing(works, r.id, r.track_count ?? 0);
+    return { r, a };
+  });
+  if (!rows.length) return null;
+  return (
+    <section className="ui-card" aria-labelledby="pubAlbums">
+      <h2 id="pubAlbums" className="subhead">앨범별</h2>
+      <div className="ui-list is-inset">
+        {rows.map(({ r, a }) => (
+          <Link key={r.id} to={`/releases/${r.id}/publishing`} className="ui-row">
+            <ReleaseCover id={r.id} src={r.coverData} className="cover aq-cover is-sm" />
+            <span className="min-0">
+              <span className="ui-row-title">{r.title}</span>
+              <span className="ui-row-meta"><span>{r.track_count}곡 중 {a.managed.length}곡 관리 중</span></span>
+            </span>
+            {a.status ? <Badge tone={a.status.tone}>{a.status.label}</Badge> : <Badge tone="gray">미신청</Badge>}
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function Songs({ filter, setFilter }: { filter: WorkFilter; setFilter: (f: WorkFilter) => void }) {
   const nav = useNavigate();
   const { data: works, loading } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
@@ -144,9 +175,34 @@ function Songs({ filter, setFilter }: { filter: WorkFilter; setFilter: (f: WorkF
 function RoyaltiesTab() {
   const { data: rows, loading } = useAsync(() => pubApi.listRoyalties(), [], { key: 'royalties:all' });
   if (loading && !rows) return <SkeletonRows count={3} pattern="amount" />;
+  // 곡별 합계 — 어느 곡이 저작권료를 가장 많이 벌었는지 (예상 제외)
+  const bySong = new Map<string, { title: string; id: string; net: number }>();
+  for (const r of rows ?? []) {
+    if (r.status === 'estimated') continue;
+    const cur = bySong.get(r.workId) ?? { title: r.workTitle, id: r.workId, net: 0 };
+    cur.net += r.net; bySong.set(r.workId, cur);
+  }
+  const top = [...bySong.values()].sort((a, b) => b.net - a.net);
+  const max = top[0]?.net ?? 0;
   // 합계 칸은 RoyaltyTable이 그린다 (확정·예상·지급 완료) — 정산 잔액과 합쳐진다는 안내만 더한다
   return (
     <>
+      {top.length > 0 && (
+        <section className="ui-card aq-pub-songs" aria-labelledby="pubBySong">
+          <h2 id="pubBySong" className="subhead">곡별 저작권료</h2>
+          <div className="ui-list is-inset">
+            {top.map(s => (
+              <Link key={s.id} to={`/works/${s.id}?tab=revenue`} className="ui-row">
+                <span className="min-0">
+                  <span className="ui-row-title">{s.title}</span>
+                  <Meter parts={[{ value: s.net }]} total={max} label={`${s.title} 저작권료`} />
+                </span>
+                <b className="aq-pub-amount"><Money value={s.net} /></b>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
       <p className="ui-field-help">확정된 저작권료는 <Link to="/settlement?type=publishing" className="aq-inline-link">정산·지급</Link> 잔액에 배급 정산금과 함께 쌓여요.</p>
       <RoyaltyTable rows={rows ?? []} emptyText="관리 단체가 사용료를 나눠 주면 여기서 곡별로 보여 드려요. 보통 사용된 달부터 3~6개월 걸려요." />
     </>
@@ -166,8 +222,8 @@ export function Publishing() {
   };
   const go = (t: Tab) => set({ tab: t === 'overview' ? null : t, wf: null });
   const { data: works } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
-  const { data: contracts } = useAsync(() => pubApi.listContracts(), [], { key: 'pub-contracts' });
-  const toSign = (contracts ?? []).filter(c => c.status === 'pending_sign').length;
+  // 계약은 배급과 같은 계약서 화면에서 — 예전 '계약' 탭 주소는 그리로
+  if (params.get('tab') === 'contracts') return <Navigate to={`/contracts${params.get('pub') ? `?pub=${encodeURIComponent(params.get('pub')!)}` : ''}`} replace />;
 
   return (
     <div className="view" id="view-publishing">
@@ -181,21 +237,11 @@ export function Publishing() {
       </div>
 
       <Tabs label="퍼블리싱 메뉴" value={tab} onChange={go}
-        items={TABS.map(t => ({ ...t, count: t.value === 'songs' ? works?.length ?? null : t.value === 'contracts' ? toSign || null : undefined }))} />
+        items={TABS.map(t => ({ ...t, count: t.value === 'songs' ? works?.length ?? null : undefined }))} />
 
       <div className="ui-tab-panel" key={tab}>
         {tab === 'overview' && <Overview go={go} />}
         {tab === 'songs' && <Songs filter={filter} setFilter={f => set({ wf: f === 'all' ? null : f })} />}
-        {tab === 'contracts' && (
-          <div className="aq-bundle-list aq-stagger">
-            <PublishingContracts all />
-            {contracts && !contracts.length && (
-              <EmptyState title="아직 저작권 관리 계약이 없어요" actions={<Link to="/publishing/apply" className="ui-btn is-primary">저작권 관리 신청</Link>}>
-                신청이 승인되면 계약서가 여기에 정리돼요. 서명·연장·종료 요청도 여기서 해요.
-              </EmptyState>
-            )}
-          </div>
-        )}
         {tab === 'royalties' && <RoyaltiesTab />}
         {tab === 'ar' && <OpenAr embedded />}
       </div>

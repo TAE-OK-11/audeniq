@@ -60,6 +60,7 @@ const WorkDetail = lazyPage(pageLoaders.WorkDetail, m => m.WorkDetail);
 const WorkEditor = lazyPage(pageLoaders.WorkEditor, m => m.WorkEditor);
 const PublishingApply = lazyPage(pageLoaders.PublishingApply, m => m.PublishingApply);
 const Publishing = lazyPage(pageLoaders.Publishing, m => m.Publishing);
+const AlbumPublishing = lazyPage(pageLoaders.AlbumPublishing, m => m.AlbumPublishing);
 const RightsDocument = lazyPage(pageLoaders.RightsDocument, m => m.RightsDocument);
 const Inquiries = lazyPage(pageLoaders.Inquiries, m => m.Inquiries);
 const Notifications = lazyPage(pageLoaders.Notifications, m => m.Notifications);
@@ -202,6 +203,7 @@ function PortalRoutes() {
             <Route path="/releases/bulk" element={<Navigate to="/releases" replace />} />
             <Route path="/releases/:id" element={<ReleaseDetailRoute />} />
             <Route path="/releases/:id/application" element={<Application />} />
+            <Route path="/releases/:id/publishing" element={<AlbumPublishing />} />
             <Route path="/upload" element={<UploadRoute />} />
             {/* 곡 — 음악 라이브러리의 '곡' 탭에서 들어온다 (저작권 관리) */}
             <Route path="/works" element={<Navigate to="/publishing?tab=songs" replace />} />

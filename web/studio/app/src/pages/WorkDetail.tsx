@@ -410,7 +410,7 @@ export function WorkDetail() {
                 {contract ? (
                   <>
                     <ContractManage contract={contract} canEdit={canEdit} />
-                    <div className="row-actions"><Link to={`/publishing?tab=contracts&pub=${contract.id}`} className="ui-btn is-text is-sm">계약서 보기</Link></div>
+                    <div className="row-actions"><Link to={`/contracts?pub=${contract.id}`} className="ui-btn is-text is-sm">계약서 보기</Link></div>
                   </>
                 ) : w.myRole === 'contributor' ? <p className="muted small">곡 소유자의 계약으로 관리되고 있어요.</p> : <SkeletonBlock height={64} />}
               </div>
