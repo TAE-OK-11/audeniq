@@ -494,7 +494,7 @@ export function SignatureModal({
                   aria-label="손가락이나 마우스로 서명을 그리는 공간"
                   onPointerDown={startDraw} onPointerMove={moveDraw}
                   onPointerUp={endDraw} onPointerCancel={endDraw}
-                  style={{ touchAction: 'none', width: '100%', height: 180 }}
+                  style={{ touchAction: 'none', width: '100%' }}
                 />
                 <span id="aqSignPlaceholder" className="aq-sign-placeholder" hidden={strokes > 0}>
                   여기에 손가락으로 서명해 주세요.

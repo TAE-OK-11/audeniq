@@ -1900,3 +1900,17 @@ html.aq-kbd :is(#root,#modal) :is(input:not([type=checkbox]):not([type=radio]):n
   #modal:not(.aq-sysdialog-mode):not(.aq-signature-mode) .modal-top{margin-bottom:clamp(12px,20px + (100svh - 860px) * .05,20px)}
   #modal .modal-inner #modalBody>form>p.small:first-child,#modal .modal-inner #modalBody>p.small:first-child{margin-bottom:clamp(12px,20px + (100svh - 860px) * .05,20px)}
 }
+
+/* 계약서 서명 — 서명 단계(이름·서명 칸·확인 체크·버튼)가 휴대폰 한 화면에 들어오게.
+   서명 칸이 180px 고정이라 갤럭시 S24·아이폰 15에서 칸 아래와 확인 체크가 버튼 줄 밑에 가렸다(69~128px 넘침).
+   PC·키 큰 폰은 그대로(180px), 보이는 높이가 860px보다 낮으면 그만큼 줄인다. 캔버스는 처음 그릴 때 이 높이를 읽는다 */
+#aqDrawCanvas{height:180px}
+@media (max-width:760px){
+  #aqDrawCanvas{height:clamp(116px,180px + min(0px,(100svh - 860px) * .32),180px)}
+  #modal.aq-signature-mode .modal-top{padding-top:max(clamp(8px,14px + min(0px,(100svh - 860px) * .04),14px),env(safe-area-inset-top))!important;padding-bottom:clamp(6px,12px + min(0px,(100svh - 860px) * .04),12px)!important}
+  #modal.aq-signature-mode .aq-sign-docinfo{margin-bottom:clamp(10px,20px + min(0px,(100svh - 860px) * .06),20px);padding-top:clamp(10px,16px + min(0px,(100svh - 860px) * .04),16px);padding-bottom:clamp(10px,16px + min(0px,(100svh - 860px) * .04),16px)}
+  #modal.aq-signature-mode .aq-stepbar{margin-bottom:clamp(8px,18px + min(0px,(100svh - 860px) * .06),18px)}
+  #modal.aq-signature-mode .aq-stepbar-label{margin-top:clamp(6px,10px + min(0px,(100svh - 860px) * .03),10px)}
+  #modal.aq-signature-mode .aq-sign-sheet{margin-top:clamp(4px,10px + min(0px,(100svh - 860px) * .04),10px)}
+  #modal.aq-signature-mode .aq-sign-foot{margin-top:clamp(10px,20px + min(0px,(100svh - 860px) * .06),20px)!important;padding-top:clamp(8px,14px + min(0px,(100svh - 860px) * .04),14px)!important;padding-bottom:calc(clamp(8px,16px + min(0px,(100svh - 860px) * .05),16px) + env(safe-area-inset-bottom,0px))!important}
+}

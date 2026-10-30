@@ -55,6 +55,14 @@
 .aq-connect-more[open] summary::after{transform:rotate(90deg)}
 .aq-connect-more .aq-connect-facts{margin-top:10px}
 /* 넓은 화면은 아래 막대에 '거절'이 있으니 글자 버튼은 휴대폰에서만 */
+/* 휴대폰: 두 번째 선택(거절·연결하지 않기·연결된 AI 앱)도 아래 고정 줄 안, 주 버튼 아래 글자 버튼으로 —
+   신청서처럼 #wizardBack을 숨기고 본문 맨 끝에 같은 버튼을 두었더니 짧은 폰에서는 끝까지 스크롤해야 거절할 수 있었다 */
+@media(max-width:759.98px){
+  #view-new.aq-connect-view .step-actions{grid-template-columns:minmax(0,1fr)!important;row-gap:2px!important}
+  #view-new.aq-connect-view .step-actions #wizardNext{order:1}
+  #view-new.aq-connect-view .step-actions #wizardBack{display:flex!important;order:2;width:100%!important;min-width:0!important;--btn-h:40px;background:transparent!important;box-shadow:none!important;color:var(--aq-text-3)!important;font-weight:var(--aq-fw-medium)}
+  .aq-connect-view .aq-connect-deny{display:none}
+}
 @media(min-width:760px){.aq-connect-deny{display:none}}
 
 /* 넓은 화면 — 동의 화면은 읽고 고르는 일이라 신청서보다 좁은 한 단, 아래 버튼 줄도 같은 폭 */
