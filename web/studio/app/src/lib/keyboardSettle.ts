@@ -16,16 +16,31 @@ export function settleViewport(win: Window = window) {
 
 const typing = (el: Element | null) => !!el && ((el as HTMLElement).isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
 
+/** 키보드가 떠 있는 동안 html에 붙는 표시 — 아래 고정 버튼 줄(.step-actions)을 그동안 숨긴다(design-align.css).
+ *  iOS 사파리는 키보드가 내려간 직전·직후 잠깐 그 줄을 화면 중간(키보드가 있던 자리 위)에 그렸다가 제자리로 돌린다.
+ *  키보드가 올라가면 숨기고, 내려간 뒤 화면을 다시 맞춘 다음(settleViewport) 부드럽게 다시 보인다 */
+export const KB_OPEN = 'is-kb-open';
+
 export function initKeyboardSettle() {
   if (!window.matchMedia?.('(pointer: coarse)').matches) return;
+  const root = document.documentElement;
   let timers: number[] = [];
-  // 키보드가 내려가는 움직임이 끝날 때까지 몇 번 다시 맞춘다
+  const keyboardUp = (vv: VisualViewport) => vv.height < window.innerHeight - 80;
+  // 키보드가 내려가는 움직임이 끝날 때까지 몇 번 다시 맞춘다. 두 번째로 맞춘 뒤 버튼 줄을 다시 보인다
   const run = () => {
     timers.forEach(t => window.clearTimeout(t));
-    timers = [0, 150, 400].map(t => window.setTimeout(() => { if (!typing(document.activeElement)) settleViewport(); }, t));
+    timers = [0, 150, 400].map(t => window.setTimeout(() => {
+      if (typing(document.activeElement)) return;
+      settleViewport();
+      if (t >= 150) root.classList.remove(KB_OPEN);
+    }, t));
   };
   // focusout 시점에는 다음 칸이 아직 정해지지 않았다 — 칸에서 칸으로 옮기는 중이면 그대로 둔다
   document.addEventListener('focusout', () => window.setTimeout(() => { if (!typing(document.activeElement)) run(); }, 0));
   const vv = window.visualViewport;
-  vv?.addEventListener('resize', () => { if (vv.height > window.innerHeight - 80 && !typing(document.activeElement)) run(); });
+  vv?.addEventListener('resize', () => {
+    if (keyboardUp(vv)) {
+      if (typing(document.activeElement)) { timers.forEach(t => window.clearTimeout(t)); root.classList.add(KB_OPEN); }
+    } else if (!typing(document.activeElement)) run();
+  });
 }
