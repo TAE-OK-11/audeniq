@@ -5,7 +5,7 @@ export function StepBar({ steps, current }: { steps: string[]; current: number }
       <div className="aq-stepbar-track" role="progressbar" aria-valuemin={1} aria-valuemax={steps.length} aria-valuenow={current + 1} aria-label={`${steps.length}단계 중 ${current + 1}단계`}>
         {steps.map((s, i) => <span key={s} className={i <= current ? 'is-on' : ''} />)}
       </div>
-      <p className="aq-stepbar-label"><b>{current + 1}단계</b> · {steps[current]}</p>
+      <p key={current} className="aq-stepbar-label"><b>{current + 1}단계</b> · {steps[current]}</p>
     </div>
   );
 }

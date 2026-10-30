@@ -226,8 +226,12 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 /* 단계 머리 — 칸 막대 + 'n단계 · 이름' (수익 받을 정보 등록 흐름과 같은 모양) */
 .aq-stepbar{margin:0 0 18px}
 .aq-stepbar-track{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:4px}
-.aq-stepbar-track span{height:4px;border-radius:var(--aq-r-pill);background:var(--aq-gray-150);transition:background-color var(--aq-motion-long) ease}
-.aq-stepbar-track span.is-on{background:var(--aq-blue-500)}
+.aq-stepbar-track span{position:relative;overflow:hidden;height:4px;border-radius:var(--aq-r-pill);background:var(--aq-gray-150)}
+/* 칸이 왼쪽부터 차오른다 (토스 Progress Stepper처럼 지금 어디까지 왔는지가 움직임으로 보이게) */
+.aq-stepbar-track span::after{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--aq-blue-500);transform:scaleX(0);transform-origin:0 50%;transition:transform .5s var(--aq-enter)}
+.aq-stepbar-track span.is-on::after{transform:none}
+.aq-stepbar-label{animation:aq-result-rise .32s var(--aq-enter) both}
+@media (prefers-reduced-motion:reduce){.aq-stepbar-track span::after{transition:none}.aq-stepbar-label{animation:none}}
 .aq-stepbar-label{margin:10px 0 0;font-size:13px;color:var(--aq-text-4)}
 .aq-stepbar-label b{font-weight:700;color:var(--aq-blue-500)}
 /* 권리 서류 작성 — 제목·안내, 입력은 '권리자 / 허락 내용' 두 묶음 */

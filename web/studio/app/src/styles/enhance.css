@@ -1819,3 +1819,34 @@ a.aq-inline-link{display:inline-block;max-width:100%}
 #view-home .aq-home-platforms .ui-row{gap:12px;padding-block:11px}
 #view-home .aq-home-promo .ui-btn.is-block{margin-top:20px}
 #view-home .aq-home-news .ui-row{gap:12px}
+
+/* ---------- 완료 화면 — 토스 Result 순서(그림 → 제목 → 설명 → 요약)로 차례로 나타난다 ----------
+   원이 통통 튀며 커지고(AUDENIQ 스프링) 체크가 그려진 뒤, 글이 아래에서 차례로 올라온다 */
+.aq-complete-check,.aq-cert-done-icon,.aq-doc-done-mark{position:relative;animation:aq-result-pop .55s cubic-bezier(.34,1.56,.64,1) both}
+:is(.aq-complete-check,.aq-cert-done-icon) .aq-check-icon path{stroke-dasharray:16;stroke-dashoffset:16;animation:aq-doc-draw .38s var(--aq-enter) .24s forwards}
+.aq-doc-done-mark path{animation-delay:.24s}
+.aq-complete-hero>:is(h3,p),.aq-cert-done>:is(strong,p){animation:aq-result-rise .42s var(--aq-enter) both}
+.aq-complete-hero>h3,.aq-cert-done>strong{animation-delay:.3s}
+.aq-complete-hero>p,.aq-cert-done>p{animation-delay:.38s}
+.aq-cert-done>p+p{animation-delay:.44s}
+#aqCompletePane .aq-complete-summary{animation:aq-result-rise .42s var(--aq-enter) .48s both}
+.aq-doc-done .min-0{animation:aq-result-rise .42s var(--aq-enter) .2s both}
+.aq-doc-next>li{animation:aq-result-rise .36s var(--aq-enter) both}
+.aq-doc-next>li:nth-child(1){animation-delay:.36s}.aq-doc-next>li:nth-child(2){animation-delay:.42s}
+.aq-doc-next>li:nth-child(3){animation-delay:.48s}.aq-doc-next>li:nth-child(4){animation-delay:.54s}
+@keyframes aq-result-pop{0%{scale:.4;opacity:0}60%{opacity:1}100%{scale:1;opacity:1}}
+@keyframes aq-result-rise{from{opacity:0;translate:0 10px}to{opacity:1;translate:0 0}}
+/* 축하 조각 (components/Burst) */
+.aq-burst{position:absolute;left:50%;top:50%;width:0;height:0;pointer-events:none}
+.aq-burst>i{position:absolute;left:calc(var(--s) / -2);top:calc(var(--s) / -2);width:var(--s);height:var(--s);border-radius:50%;background:var(--c);opacity:0;
+  rotate:var(--a);animation:aq-burst .8s cubic-bezier(.2,.7,.3,1) .28s forwards}
+.aq-burst>i.is-bar{width:calc(var(--s) * 1.8);border-radius:2px}
+@keyframes aq-burst{0%{opacity:1;transform:translateX(10px) scale(.6)}70%{opacity:1}100%{opacity:0;transform:translateX(var(--d)) scale(1)}}
+@media (prefers-reduced-motion:reduce){
+  .aq-burst{display:none}
+  .aq-complete-check,.aq-cert-done-icon,.aq-doc-done-mark,.aq-complete-hero>*,.aq-cert-done>*,#aqCompletePane .aq-complete-summary,.aq-doc-done .min-0,.aq-doc-next>li{animation:none!important}
+  :is(.aq-complete-check,.aq-cert-done-icon) .aq-check-icon path{animation:none;stroke-dashoffset:0}
+}
+/* 신청 완료 카드는 표시가 작다 — 조각도 작게 퍼지고 카드 밖으로 잘리지 않게 */
+.aq-doc-done{overflow:visible}
+.aq-doc-done-mark .aq-burst{scale:.62}
