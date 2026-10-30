@@ -29,7 +29,8 @@ function saveCsv(rows: readonly Royalty[]) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-export function RoyaltyTable({ rows, showWork = true, emptyText }: { rows: readonly Royalty[]; showWork?: boolean; emptyText?: string }) {
+/** summary=false: 합계 카드 없이 내역만 (퍼블리싱 '저작권료' 탭 — 합계는 '분석' 탭에) */
+export function RoyaltyTable({ rows, showWork = true, emptyText, summary = true }: { rows: readonly Royalty[]; showWork?: boolean; emptyText?: string; summary?: boolean }) {
   const [status, setStatus] = useState<'all' | RoyaltyStatus>('all');
   const [open, setOpen] = useState<Royalty | null>(null);
   const counts = useMemo(() => {
@@ -55,7 +56,7 @@ export function RoyaltyTable({ rows, showWork = true, emptyText }: { rows: reado
   return (
     <>
       {/* 정산·지급의 '받을 수 있는 금액'과 같은 카드 — 큰 금액 하나 + 한 막대로 나눈 몫 + 범례 */}
-      <section className="ui-card settle-hero" aria-label="저작권료 합계">
+      {summary && <section className="ui-card settle-hero" aria-label="저작권료 합계">
         <h2>확정된 저작권료</h2>
         <strong className="settle-hero-amount"><Money value={totals.confirmed + totals.paid} animate /></strong>
         <div className="settle-split">
@@ -70,7 +71,7 @@ export function RoyaltyTable({ rows, showWork = true, emptyText }: { rows: reado
             {totals.estimated > 0 && <li><i className="is-held" />확정 전 예상 <b><Money value={totals.estimated} /></b></li>}
           </ul>
         </div>
-      </section>
+      </section>}
       <div className="aq-list-tools">
         <ChipGroup size="sm" label="지급 상태" value={status} onChange={setStatus}
           options={[{ value: 'all', label: '전체', count: counts.all }, ...(['confirmed', 'estimated', 'paid'] as const).map(s => ({ value: s, label: ROYALTY_STATUS_LABEL[s], count: counts[s] ?? 0 }))]} />

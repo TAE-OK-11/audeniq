@@ -17,9 +17,11 @@ import { RoyaltyTable } from '../components/publishing/Royalties';
 import { OpenAr } from './OpenAr';
 import { Badge, EmptyState, IconTile, Meter, Tabs } from '../ui';
 
-type Tab = 'overview' | 'songs' | 'royalties' | 'ar';
+// 탭마다 한 가지 일만 — 분석은 숫자만, 할 일·앨범은 '앨범', 곡 목록은 '곡', 내역은 '저작권료'
+type Tab = 'overview' | 'albums' | 'songs' | 'royalties' | 'ar';
 const TABS: { value: Tab; label: string }[] = [
-  { value: 'overview', label: '분석' }, { value: 'songs', label: '곡' }, { value: 'royalties', label: '저작권료' }, { value: 'ar', label: 'Open A&R' },
+  { value: 'overview', label: '분석' }, { value: 'albums', label: '앨범' }, { value: 'songs', label: '곡' },
+  { value: 'royalties', label: '저작권료' }, { value: 'ar', label: 'Open A&R' },
 ];
 const SONG_FILTERS: [WorkFilter, string][] = [['all', '전체'], ['managed', '관리 중'], ['review', '심사 중'], ['fix', '보완 필요'], ['none', '미신청'], ['unreleased', '미발매']];
 const TASK_ICON: Record<PublishingTask['kind'], GlyphName> = { fix: 'alert', split: 'users', sign: 'sign', renew: 'repeat', ar: 'megaphone' };
@@ -48,7 +50,8 @@ function SongRow({ w }: { w: Work }) {
   );
 }
 
-function Overview({ go }: { go: (t: Tab) => void }) {
+/** 분석 — 숫자만: 관리 중인 곡 · 확정된 저작권료 · 곡별 저작권료 */
+function Overview() {
   const { data: s, loading } = useAsync(() => pubApi.summary(), [], { key: 'pub-summary' });
   if (loading && !s) return <SkeletonRows count={3} />;
   if (!s) return null;
@@ -79,26 +82,26 @@ function Overview({ go }: { go: (t: Tab) => void }) {
                 <li><i className="is-held" />맡기지 않음 <b>{s.works.unregistered}곡</b></li>
               </ul>
             </div>
-            <div className="ui-actions">
-              <button type="button" className="ui-btn is-white" onClick={() => go('songs')}>곡 보기</button>
-              <Link to="/publishing/apply" className="ui-btn is-primary">저작권 관리 신청</Link>
-            </div>
           </section>
           <section className="ui-card settle-hero" aria-labelledby="pubHeroMoney">
             <h2 id="pubHeroMoney">확정된 저작권료</h2>
             <strong className="settle-hero-amount"><Money value={pubMoney.confirmed} animate /></strong>
             <p className="settle-hero-sub">{pubMoney.estimated ? <>확정 전 예상 <Money value={pubMoney.estimated} />은 관리 단체가 확정하면 적립돼요. </> : ''}배급 정산금과 같은 잔액에 쌓여요.</p>
-            <div className="ui-actions">
-              <button type="button" className="ui-btn is-white" onClick={() => go('royalties')}>곡별 저작권료</button>
-              <Link to="/settlement?type=publishing" className="ui-btn is-white">정산·지급</Link>
-            </div>
           </section>
+          <SongRoyaltyBars />
         </>
       )}
+    </div>
+  );
+}
 
-      <AlbumList />
+/** 앨범 — 할 일과 앨범별 현황 (누르면 그 앨범의 퍼블리싱 설정), 처음 쓰는 사람을 위한 진행 순서 */
+function Albums() {
+  const { data: s } = useAsync(() => pubApi.summary(), [], { key: 'pub-summary' });
+  return (
+    <div className="aq-detail-stack">
 
-      {(s.tasks.length > 0 || s.suggestion) && (
+      {s && (s.tasks.length > 0 || s.suggestion) && (
         <section className="ui-card" aria-labelledby="pubTasks">
           <h2 id="pubTasks" className="subhead">확인할 일</h2>
           <div className="ui-list is-inset">
@@ -122,6 +125,8 @@ function Overview({ go }: { go: (t: Tab) => void }) {
           </div>
         </section>
       )}
+
+      <AlbumList />
 
       <section className="aq-doc-path-wrap" aria-labelledby="pubPath">
         <h2 id="pubPath">퍼블리싱은 이렇게 진행돼요</h2>
@@ -199,10 +204,9 @@ function Songs({ filter, setFilter }: { filter: WorkFilter; setFilter: (f: WorkF
   );
 }
 
-function RoyaltiesTab() {
-  const { data: rows, loading } = useAsync(() => pubApi.listRoyalties(), [], { key: 'royalties:all' });
-  if (loading && !rows) return <SkeletonRows count={3} pattern="amount" />;
-  // 곡별 합계 — 어느 곡이 저작권료를 가장 많이 벌었는지 (예상 제외)
+/** 곡별 저작권료 막대 — 어느 곡이 저작권료를 가장 많이 벌었는지 (예상 제외) */
+function SongRoyaltyBars() {
+  const { data: rows } = useAsync(() => pubApi.listRoyalties(), [], { key: 'royalties:all' });
   const bySong = new Map<string, { title: string; id: string; net: number }>();
   for (const r of rows ?? []) {
     if (r.status === 'estimated') continue;
@@ -211,27 +215,33 @@ function RoyaltiesTab() {
   }
   const top = [...bySong.values()].sort((a, b) => b.net - a.net);
   const max = top[0]?.net ?? 0;
-  // 합계 칸은 RoyaltyTable이 그린다 (확정·예상·지급 완료) — 정산 잔액과 합쳐진다는 안내만 더한다
+  if (!top.length) return null;
+  return (
+    <section className="ui-card aq-pub-songs" aria-labelledby="pubBySong">
+      <h2 id="pubBySong" className="subhead">곡별 저작권료</h2>
+      <div className="ui-list is-inset">
+        {top.map(s => (
+          <Link key={s.id} to={`/works/${s.id}?tab=revenue`} className="ui-row">
+            <span className="min-0">
+              <span className="ui-row-title">{s.title}</span>
+              <Meter parts={[{ value: s.net }]} total={max} label={`${s.title} 저작권료`} />
+            </span>
+            <b className="aq-pub-amount"><Money value={s.net} /></b>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** 저작권료 — 기간별 내역만 (합계·곡별 분석은 '분석' 탭) */
+function RoyaltiesTab() {
+  const { data: rows, loading } = useAsync(() => pubApi.listRoyalties(), [], { key: 'royalties:all' });
+  if (loading && !rows) return <SkeletonRows count={3} pattern="amount" />;
   return (
     <>
-      {top.length > 0 && (
-        <section className="ui-card aq-pub-songs" aria-labelledby="pubBySong">
-          <h2 id="pubBySong" className="subhead">곡별 저작권료</h2>
-          <div className="ui-list is-inset">
-            {top.map(s => (
-              <Link key={s.id} to={`/works/${s.id}?tab=revenue`} className="ui-row">
-                <span className="min-0">
-                  <span className="ui-row-title">{s.title}</span>
-                  <Meter parts={[{ value: s.net }]} total={max} label={`${s.title} 저작권료`} />
-                </span>
-                <b className="aq-pub-amount"><Money value={s.net} /></b>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
       <p className="ui-field-help">확정된 저작권료는 <Link to="/settlement?type=publishing" className="aq-inline-link">정산·지급</Link> 잔액에 배급 정산금과 함께 쌓여요.</p>
-      <RoyaltyTable rows={rows ?? []} emptyText="관리 단체가 사용료를 나눠 주면 여기서 곡별로 보여 드려요. 보통 사용된 달부터 3~6개월 걸려요." />
+      <RoyaltyTable summary={false} rows={rows ?? []} emptyText="관리 단체가 사용료를 나눠 주면 여기서 곡별로 보여 드려요. 보통 사용된 달부터 3~6개월 걸려요." />
     </>
   );
 }
@@ -267,7 +277,8 @@ export function Publishing() {
         items={TABS.map(t => ({ ...t, count: t.value === 'songs' ? works?.length ?? null : undefined }))} />
 
       <div className="ui-tab-panel" key={tab}>
-        {tab === 'overview' && <Overview go={go} />}
+        {tab === 'overview' && <Overview />}
+        {tab === 'albums' && <Albums />}
         {tab === 'songs' && <Songs filter={filter} setFilter={f => set({ wf: f === 'all' ? null : f })} />}
         {tab === 'royalties' && <RoyaltiesTab />}
         {tab === 'ar' && <OpenAr embedded />}
