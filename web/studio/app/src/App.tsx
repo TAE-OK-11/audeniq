@@ -56,6 +56,10 @@ const Settlement = lazyPage(pageLoaders.Settlement, m => m.Settlement);
 const Contracts = lazyPage(pageLoaders.Contracts, m => m.Contracts);
 const Agreement = lazyPage(pageLoaders.Agreement, m => m.Agreement);
 const Rights = lazyPage(pageLoaders.Rights, m => m.Rights);
+const WorkDetail = lazyPage(pageLoaders.WorkDetail, m => m.WorkDetail);
+const WorkEditor = lazyPage(pageLoaders.WorkEditor, m => m.WorkEditor);
+const PublishingApply = lazyPage(pageLoaders.PublishingApply, m => m.PublishingApply);
+const OpenAr = lazyPage(pageLoaders.OpenAr, m => m.OpenAr);
 const RightsDocument = lazyPage(pageLoaders.RightsDocument, m => m.RightsDocument);
 const Inquiries = lazyPage(pageLoaders.Inquiries, m => m.Inquiries);
 const Notifications = lazyPage(pageLoaders.Notifications, m => m.Notifications);
@@ -149,6 +153,17 @@ function MovedLink({ to }: { to: (slug: string) => string }) {
   return <Navigate to={`${to(slug)}${loc.search}${loc.hash ?? ''}`} replace />;
 }
 
+/** 다른 작품으로 바로 옮겨 가면 앞 작품의 탭·입력이 남지 않게 새로 그린다 */
+function WorkDetailRoute() {
+  const { id = '' } = useParams();
+  return <WorkDetail key={id} />;
+}
+function WorkEditorRoute() {
+  const { id = '' } = useParams();
+  const loc = useLocation();
+  return <WorkEditor key={id + loc.search} />;
+}
+
 function ReleaseDetailRoute() {
   const { id = '' } = useParams();
   return <ReleaseDetail key={id} />;
@@ -182,6 +197,13 @@ function PortalRoutes() {
             <Route path="/releases/:id" element={<ReleaseDetailRoute />} />
             <Route path="/releases/:id/application" element={<Application />} />
             <Route path="/upload" element={<UploadRoute />} />
+            {/* 저작물 — 음악 라이브러리의 '저작물' 탭에서 들어온다 (퍼블리싱) */}
+            <Route path="/works" element={<Navigate to="/releases?tab=tracks" replace />} />
+            <Route path="/works/new" element={<WorkEditorRoute />} />
+            <Route path="/works/:id" element={<WorkDetailRoute />} />
+            <Route path="/works/:id/edit" element={<WorkEditorRoute />} />
+            <Route path="/publishing/apply" element={<PublishingApply />} />
+            <Route path="/ar" element={<OpenAr />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/settlement" element={<Settlement />} />
             <Route path="/contracts" element={<Contracts />} />

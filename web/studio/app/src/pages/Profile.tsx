@@ -1,5 +1,7 @@
 // 계정 정보 — 본인 확인·아티스트·수익 받기 설정. 토스 설정 화면처럼 '줄 + ›' 목록. 줄을 누르면 그 항목 하나만 고치는 창이 열린다.
 import { Suspense, useEffect, useState, type ReactNode } from 'react';
+import { CreatorProfile } from '../components/publishing/CreatorProfile';
+import { SetRow } from '../components/SetRow';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { Modal, useModalClose } from '../components/Modal';
@@ -41,19 +43,6 @@ const FIELD_TITLE: Record<Field, string> = {
 const FIELD_ID: Record<Field, string> = {
   name: 'profileName', email: 'profileEmail', bio: 'profileBio', country: 'profileCountry',
 };
-
-/** 설정 목록의 한 줄 — 이름 · 오른쪽 값 · › */
-function SetRow({ id, label, value, empty, onClick, danger }: {
-  id?: string; label: string; value?: string; empty?: string; onClick: () => void; danger?: boolean;
-}) {
-  return (
-    <button type="button" id={id} className={`aq-set-row${danger ? ' is-danger' : ''}`} onClick={onClick}>
-      <span className="aq-set-label">{label}</span>
-      {value ? <span className="aq-set-value">{value}</span> : empty ? <span className="aq-set-value is-empty">{empty}</span> : null}
-      {!danger && <Glyph name="chevron-right" size={16} className="aq-set-chev" />}
-    </button>
-  );
-}
 
 const COUNTRY_OPTIONS: [string, string][] = [['KR', '대한민국'], ['US', '미국'], ['JP', '일본'], ['OTHER', '기타']];
 
@@ -300,6 +289,8 @@ export function Profile() {
         <SetRow id="profileRowEmail" label="연락 이메일" value={profile.email} empty="입력하기" onClick={() => setEditing('email')} />
         <SetRow id="profileRowBio" label="아티스트 소개" value={bioLine} empty="입력하기" onClick={() => setEditing('bio')} />
         <SetRow id="profileRowCountry" label="활동 국가" value={country} onClick={() => setEditing('country')} />
+        {/* 작곡·작사도 하는 아티스트 — 같은 계정·같은 묶음에서 저작권 정보까지 */}
+        <CreatorProfile />
       </section>
 
       <section className="aq-set-card" aria-labelledby="setPayout">

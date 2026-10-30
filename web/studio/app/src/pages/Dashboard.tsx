@@ -36,6 +36,7 @@ import { BrandMark } from '../components/BrandMark';
 import type { NewsItem } from '../lib/home';
 import { MOCK } from '../lib/mode';
 import type { Release } from '../api/types';
+import { pubApi } from '../api/publishing';
 import '../styles/split/Dashboard.css';
 
 type GridKey = 'releases' | 'reports' | 'settlement' | 'contracts';
@@ -73,6 +74,7 @@ const TASK_ICONS = {
   star: <Glyph name="star" size={20} />,
   users: <Glyph name="users" size={20} />,
   approval: <Glyph name="approval" size={20} />,
+  scale: <Glyph name="scale" size={20} />,
 };
 
 function greeting(): string {
@@ -119,8 +121,10 @@ function MiniTrend({ data }: { data: { period: string; value: number }[] }) {
 }
 
 /** 정산 — 받을 수 있는 금액과 다음 할 일(계좌 등록·지급 요청). 아직 돈이 하나도 없으면 숨긴다 */
-function MoneyCard({ payable, pending, held, minimum, registered }: {
+function MoneyCard({ payable, pending, held, minimum, registered, publishing = 0 }: {
   payable: number; pending: number; held: number; minimum: number; registered: boolean;
+  /** 받을 수 있는 금액 가운데 저작권료(퍼블리싱)로 들어온 몫 — 배급과 같은 잔액에 쌓인다 */
+  publishing?: number;
 }) {
   const navigate = useNavigate();
   // 체험 모드의 used는 지난 지급 요청 합계라 '처리 중'이 아니다
@@ -142,6 +146,7 @@ function MoneyCard({ payable, pending, held, minimum, registered }: {
       <div className="aq-report-total">
         <small>받을 수 있는 금액</small>
         <strong><Money value={payable} animate /></strong>
+        {publishing > 0 && <p className="ui-row-meta">저작권료 {money(publishing)}도 이 잔액에 함께 쌓였어요.</p>}
         {hint && <p className="ui-row-meta">{hint}</p>}
       </div>
       {action && <Link className="ui-btn is-white is-block" to={action.to} onPointerEnter={() => prefetchRoute(action.to)}>{action.label}</Link>}
@@ -321,6 +326,10 @@ export function Dashboard() {
   const signals = useHomeSignals(releases, loading);
   const upcoming = loading ? undefined : upcomingRelease(releases);
   const extra = useHomeCards(releases, loading, upcoming);
+  // 퍼블리싱 — 쓰는 사람에게는 작품 현황·처리할 일, 아직 안 쓰는 사람에게는 곡 하나 제안 (서버에 기능이 없으면 빈 요약)
+  const { data: pub } = useAsync(() => pubApi.summary(), [], { key: 'pub-summary' });
+  const pubActive = !!pub && (pub.enrolled || pub.works.total > 0);
+  const pubRevenue = pub?.revenue.publishing.confirmed ?? 0;
   // 나중에 불러온 카드도 같은 등장 연출로 — 카드가 생기면 다시 맡긴다
 
   const needs = releases.filter(r => r.status === 'needs').length;
@@ -365,6 +374,18 @@ export function Dashboard() {
       sub: one ? `‘${one.title}’ 공동작업자가 아직 수락하지 않았어요. 메일을 다시 보낼 수 있어요.` : '공동작업자가 수락하면 그분 몫이 바로 정산돼요.',
       btn: '확인', to: one ? `/releases/${one.releaseId}` : '/releases', tone: 'info',
     });
+  }
+  // 퍼블리싱에서 실제로 처리할 일 — 보완·지분 확인은 기한이 걸린 일, 서명·갱신은 안내
+  for (const t of pub?.tasks ?? []) {
+    tasks.push({
+      icon: t.kind === 'fix' ? 'alert' : t.kind === 'sign' ? 'pen' : t.kind === 'renew' ? 'doc' : 'scale', name: t.title, sub: t.sub,
+      btn: t.kind === 'fix' ? '보완' : t.kind === 'sign' ? '서명' : t.kind === 'renew' ? '갱신' : '확인', to: t.to, tone: t.kind === 'fix' ? 'warn' : 'info',
+    });
+  }
+  // 아직 퍼블리싱을 쓰지 않으면 작품이 없는 발매 곡 하나만 제안 — 할 일 목록의 한 줄로
+  if (!pubActive && pub?.suggestion) {
+    const sg = pub.suggestion;
+    tasks.push({ icon: 'scale', name: `‘${sg.title}’ 저작권도 관리할까요?`, sub: `‘${sg.releaseTitle}’ 곡의 작사·작곡 지분을 정리하면 저작권료까지 받을 수 있어요.`, btn: '시작', to: `/works/new?release=${encodeURIComponent(sg.releaseId)}&track=${encodeURIComponent(sg.trackId)}`, tone: 'info' });
   }
   if (drafts) tasks.push({ icon: 'draft', name: `작성 중인 발매 ${drafts}건`, sub: '이어서 작성하고 접수해 보세요.', btn: '보기', to: '/releases?status=draft', tone: 'info' });
   if (!profileName) tasks.push({ icon: 'user', name: '계정 정보 등록', sub: '활동명과 연락처를 입력해 주세요.', btn: '등록', to: '/profile', tone: 'info' });
@@ -546,7 +567,7 @@ export function Dashboard() {
             {!loading && upcoming && <UpcomingCard release={upcoming} />}
             {extra.delivery && <DeliveryCard d={extra.delivery} />}
             {signals.pitchActive && <PitchHomeCard p={signals.pitchActive} />}
-            {!loading && <MoneyCard payable={payable} pending={payoutPending} held={held} minimum={minimum} registered={isPaymentRegistered(payment)} />}
+            {!loading && <MoneyCard payable={payable} pending={payoutPending} held={held} minimum={minimum} registered={isPaymentRegistered(payment)} publishing={pubRevenue} />}
           {/* 리포트 — 제목은 짧게(기간은 보조 글자), 금액 옆에 전월 대비, 아래에 세 숫자. 모양은 Badge · KeyValue · EmptyState */}
           <section className="ui-card aq-report-card" aria-labelledby="reportTitle">
             <div className="ui-section-head aq-report-head">
