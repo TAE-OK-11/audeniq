@@ -139,3 +139,23 @@ describe('발매 신청서의 AI 답 → 곡의 AI 사용', () => {
     expect(releaseAiUse(null)).toBe('none');
   });
 });
+
+describe('녹음 수익과 예상 저작권료', () => {
+  const rec = [{ releaseId: 'r2', releaseTitle: '여름 EP', title: '파도' }];
+  it('곡별 행은 그대로, 발매 전체 행은 곡 수로 나눈다 · 최근 3개월', async () => {
+    const { recordedRevenue } = await import('./publishing');
+    const rows = [
+      { period: '2026-09', release: '여름 EP', track: '파도', revenue: 4000, releaseId: 'r2' },
+      { period: '2026-09', release: '여름 EP', track: '전체', revenue: 8000, releaseId: 'r2' },
+      { period: '2026-05', release: '여름 EP', track: '전체', revenue: 4000, releaseId: 'r2' },
+      { period: '2026-08', release: '첫 번째 싱글', track: '전체', revenue: 1, releaseId: 'r1' },
+      { period: '2026-07', release: '첫 번째 싱글', track: '전체', revenue: 1, releaseId: 'r1' },
+    ];
+    expect(recordedRevenue(rows, rec, { r2: 4 })).toEqual({ all: 7000, recent: 6000, split: true });
+  });
+  it('최근 녹음 수익 × 10~15% × 내 지분 × (1 − 수수료), 백 원 단위', async () => {
+    const { estimateRoyalty } = await import('./publishing');
+    expect(estimateRoyalty(100000, 60, 10)).toEqual([5400, 8100]);
+    expect(estimateRoyalty(0, 100, 10)).toEqual([0, 0]);
+  });
+});
