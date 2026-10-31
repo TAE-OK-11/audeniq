@@ -532,7 +532,8 @@ async fn work_to_application_to_review(pool: PgPool) {
     .await;
     assert_eq!(s, StatusCode::OK, "{c}");
     assert_eq!(c["status"], "active");
-    assert_eq!(c["signerName"], "서린");
+    // Signed under the verified legal name, not the name the screen sent (서린 is the artist name).
+    assert_eq!(c["signerName"], "테스트");
     assert!(c["contentHash"].as_str().is_some_and(|h| h.len() == 64));
     assert!(
         !c["startDate"].as_str().unwrap().is_empty() && !c["endDate"].as_str().unwrap().is_empty()
@@ -2005,7 +2006,7 @@ async fn prepare_reuses_known_co_writers(pool: PgPool) {
 }
 
 /// Pen names and evidence (0176): a song credited under the writer's pen name is the writer's own row, not a
-/// co-writer's; an application needs evidence on every work and the signer's verified identity; when and how the
+/// co-writer's; an application needs the signer's verified identity (signed under the legal name), not evidence; when and how the
 /// song was made is kept with it.
 #[sqlx::test]
 async fn pen_names_evidence_and_identity(pool: PgPool) {
@@ -2199,4 +2200,6 @@ async fn pen_names_evidence_and_identity(pool: PgPool) {
     )
     .await;
     assert_eq!(s, StatusCode::OK, "{a}");
+    // The application is signed under the verified legal name, not the pen or artist name sent.
+    assert_eq!(a["signerName"], "테스트", "{a}");
 }

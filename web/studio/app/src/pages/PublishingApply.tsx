@@ -9,9 +9,7 @@ import { Link, useNavigate, useSearchParams } from '../lib/router';
 import { pubApi, type Work, type WorkAttachment } from '../api/publishing';
 import { ApiError, errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
-import { useAuth } from '../api/auth';
 import { useAccount } from '../store/account';
-import { useProfile } from '../store/profile';
 import { compactSignature } from '../lib/application';
 import { readJSON, removeKey, writeJSON } from '../lib/storage';
 import { uid } from '../lib/store';
@@ -53,10 +51,9 @@ const DERIVED = ['arrangement', 'translation', 'medley'];
 export function PublishingApply() {
   const [params] = useSearchParams();
   const nav = useNavigate();
-  const { user } = useAuth();
   const account = useAccount();
-  const profile = useProfile();
-  const signerName = account.realName.trim() || profile.name.trim() || user?.email || '';
+  // 신청서는 본인인증한 실명으로만 — 활동명·필명은 곡의 참여자 이름에만 쓴다 (서버도 실명으로 기록한다)
+  const signerName = account.verified ? account.realName.trim() : '';
   const preset = params.get('work');
   // 앨범 퍼블리싱 탭에서 여러 곡을 골라 '신청 대상으로 묶기'로 왔으면 그 곡들만
   const bundled = params.get('works')?.split(',').filter(Boolean) ?? [];
@@ -343,7 +340,7 @@ export function PublishingApply() {
           <div className="ui-field">
             <label htmlFor="pubSignPad">서명 <span className="required">*</span></label>
             <SignaturePad ref={pad} id="pubSignPad" label="신청인 서명 입력" height={170} onChange={setDrawn} />
-            <small className="ui-field-help">신청인 <b>{signerName || '이름 없음'}</b>{account.realName.trim() ? ' (본인인증 실명)' : ' — 본인인증을 하면 실명으로 기록돼요'}</small>
+            <small className="ui-field-help">신청인 <b>{signerName || '본인인증 전'}</b>{signerName ? ' (본인인증 실명) · 활동명이나 필명으로는 신청할 수 없어요.' : ''}</small>
           </div>
           <div className="aq-agree-box">
             <label className="ui-check is-plain aq-agree-all-line">

@@ -150,6 +150,9 @@ society; split sheets as the strongest proof; KOMCA: project files, MIDI, versio
   staff continue that registration instead of registering it twice.
 - **Evidence.** Works keep `created_on` (not in the future) and `creation_note` (≤1000). Attachment kinds add
   `project` (DAW captures, versions, MIDI, or a written session log) and `split_sheet`.
+- **Legal name.** Applications and publishing contracts are signed under the verified legal name (opened from
+  `account_identities`); the name the screen sends is ignored, so artist and pen names cannot sign. Pen names stay on
+  the contributor rows only.
 - **Application gates.** The account must be identity-verified once (`APPLICATION_IDENTITY_REQUIRED`). Evidence is
   not required: the apply screen asks for it per work — a file, a written account of how it was made, a link to a
   release page showing the credits, or "I'll send it when staff ask" — and staff review flags works without any

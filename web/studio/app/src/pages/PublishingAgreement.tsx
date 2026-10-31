@@ -3,11 +3,10 @@
 // 보완은 여기서 하지 않는다 — 곡 화면에서 끝낸 뒤 승인되면 이 계약서가 나타난다.
 import { useRef, useState } from 'react';
 import { printWithStamp } from '../lib/printStamp';
-import { useNavigate, useParams } from '../lib/router';
+import { Link, useNavigate, useParams } from '../lib/router';
 import { pubApi } from '../api/publishing';
 import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
-import { useAuth } from '../api/auth';
 import { useAccount } from '../store/account';
 import { useProfile } from '../store/profile';
 import { compactSignature, hashLabel } from '../lib/application';
@@ -19,7 +18,7 @@ import { SkeletonBlock } from '../components/Skeleton';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
 import { SignaturePad, type SignaturePadHandle } from '../components/SignaturePad';
-import { Badge } from '../ui';
+import { Badge, Callout } from '../ui';
 import '../styles/split/Upload.css';
 import '../styles/split/Publishing.css';
 
@@ -27,10 +26,10 @@ export function PublishingAgreement() {
   const { id = '' } = useParams();
   const nav = useNavigate();
   const toast = useToast();
-  const { user } = useAuth();
   const account = useAccount();
   const profile = useProfile();
-  const signerName = account.realName.trim() || profile.name.trim() || user?.email || '';
+  // 저작권 관리 계약은 본인인증한 실명으로만 — 활동명·필명으로는 맺지 않는다 (서버도 실명으로 기록한다)
+  const signerName = account.verified ? account.realName.trim() : '';
   const { data: list, error, reload } = useAsync(() => pubApi.listContracts(), [], { key: 'pub-contracts' });
   const c = list?.find(x => x.id === id);
   const [ticked, setTicked] = useState<string[]>([]);
@@ -157,9 +156,11 @@ export function PublishingAgreement() {
               <div className="ui-field">
                 <label htmlFor="pubContractPad">서명 <span className="required">*</span></label>
                 <SignaturePad ref={pad} id="pubContractPad" label="계약자 서명 입력" height={170} onChange={setDrawn} />
-                <small className="ui-field-help">계약자 <b>{signerName || '이름 없음'}</b>{account.realName.trim() ? ' (본인인증 실명)' : ' — 본인인증을 하면 실명으로 기록돼요'}</small>
+                {signerName
+                  ? <small className="ui-field-help">계약자 <b>{signerName}</b> (본인인증 실명) · 활동명이나 필명으로는 계약할 수 없어요.</small>
+                  : <Callout tone="danger" action={<Link to="/profile?open=verify" className="ui-btn is-white is-sm">본인인증</Link>}>저작권 관리 계약은 본인인증한 실명으로만 맺을 수 있어요. 활동명이나 필명으로는 계약할 수 없어요.</Callout>}
               </div>
-              <button type="button" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={!all || !drawn || busy} onClick={() => void sign()}>
+              <button type="button" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={!all || !drawn || busy || !signerName} onClick={() => void sign()}>
                 {busy ? '서명하는 중' : '서명하고 계약 맺기'}
               </button>
             </div>

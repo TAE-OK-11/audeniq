@@ -849,7 +849,7 @@ const mockApi = {
       const app: PublishingApplication = {
         id: `a_${input.idempotencyKey}`, number: `PUB-${now.slice(0, 4)}-${String(n).padStart(4, '0')}`, status: 'submitted',
         workIds: works.map(w => w.id), workTitles: works.map(w => w.title), territories: input.territories, rights: input.rights,
-        submittedAt: now, contractId: null, history: [{ at: now, text: '제출 완료' }], signerName: input.signature.name, documentCode: null,
+        submittedAt: now, contractId: null, history: [{ at: now, text: '제출 완료' }], signerName: getAccountSnapshot().realName.trim() || input.signature.name, documentCode: null,
       };
       d.applications.unshift(app);
       for (const w of works) {
@@ -949,12 +949,15 @@ const mockApi = {
       if (!c) throw notFound();
       if (c.status !== 'pending_sign') throw new ApiError('이미 서명한 계약서예요.', 409, 'CONTRACT_ALREADY_SIGNED');
       if (!CONTRACT_CONFIRMATIONS.every(([k]) => input.confirmations.includes(k))) throw new ApiError('확인 항목을 모두 체크해 주세요.', 422, 'AGREEMENT_CONFIRMATION_REQUIRED');
+      // 서버와 같게 — 본인인증한 실명으로만 계약한다 (활동명·필명 불가)
+      const acct = getAccountSnapshot();
+      if (!acct.verified || !acct.realName.trim()) throw new ApiError('저작권 관리 계약은 본인인증한 실명으로만 맺을 수 있어요. 계정 정보에서 인증해 주세요.', 422, 'APPLICATION_IDENTITY_REQUIRED');
       const today = stampNow().slice(0, 10);
       const end = new Date(`${today}T00:00:00`);
       end.setMonth(end.getMonth() + c.termMonths);
       Object.assign(c, {
         status: 'active', signedAt: stampNow(), startDate: today, endDate: end.toISOString().slice(0, 10),
-        signerName: input.signerName, signature: input.signature, contentHash: 'demo'.padEnd(64, '0'), rowVersion: (c.rowVersion ?? 1) + 1,
+        signerName: acct.realName.trim(), signature: input.signature, contentHash: 'demo'.padEnd(64, '0'), rowVersion: (c.rowVersion ?? 1) + 1,
       });
       for (const w of d.works.filter(x => c.works.some(cw => cw.id === x.id))) w.contractId = c.id;
       return structuredClone(c);

@@ -352,6 +352,28 @@ fn creation_note(v: Option<&str>) -> Result<Option<String>> {
     }
 }
 
+/// The account's verified legal name (본인인증 실명), opened from its sealed form; None when not verified.
+async fn legal_name(c: &mut PgConnection, s: &AppState, user: Uuid) -> Result<Option<String>> {
+    let Some(r) = sqlx::query(
+        "SELECT real_name, real_name_cipher FROM portal.account_identities WHERE user_id=$1",
+    )
+    .bind(user)
+    .fetch_optional(&mut *c)
+    .await?
+    else {
+        return Ok(None);
+    };
+    Ok(crate::pii::open(
+        &s.payout_keys,
+        crate::payout_keys::Field::IdentityRealName,
+        user,
+        r.get("real_name"),
+        r.get::<Option<Vec<u8>>, _>("real_name_cipher").as_deref(),
+    )?
+    .map(|n| n.trim().to_string())
+    .filter(|n| !n.is_empty()))
+}
+
 /// A name compared as people write it: case and spaces do not matter.
 fn name_key(v: &str) -> String {
     v.chars()
@@ -3116,8 +3138,7 @@ pub async fn submit_application(
     {
         return Err(Error::InvalidCode("APPLICATION_AGREEMENT_REQUIRED"));
     }
-    let signer = clean(&i.signature.name, 120, "APPLICATION_SIGNATURE_INVALID")?;
-    if signer.is_empty() || i.signature.method != "drawn" {
+    if i.signature.method != "drawn" {
         return Err(Error::InvalidCode("APPLICATION_SIGNATURE_INVALID"));
     }
     // The same signature check (and AV scan) as 배급 신청서.
@@ -3215,6 +3236,10 @@ pub async fn submit_application(
     if identity["verified"] != true {
         return Err(Error::PolicyGate("APPLICATION_IDENTITY_REQUIRED"));
     }
+    // Signed under the verified legal name, never an artist or pen name: the society registers that person.
+    let signer = legal_name(&mut tx, s, a.user)
+        .await?
+        .ok_or(Error::PolicyGate("APPLICATION_IDENTITY_REQUIRED"))?;
     // The server's own copy of what was signed: every work as it stands now.
     let no = application_no()?;
     let submitted = Utc::now().to_rfc3339();
@@ -4145,6 +4170,8 @@ pub async fn list_contracts(s: &AppState, a: &Actor, org: Uuid) -> Result<Value>
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ContractSignIn {
+    /// Ignored: the verified legal name is used (kept so older screens still send it).
+    #[serde(default)]
     pub signer_name: String,
     /// The drawn signature (data URL), checked like 배급 계약서.
     pub signature: String,
@@ -4178,10 +4205,7 @@ pub async fn sign_contract(
     id: Uuid,
     i: ContractSignIn,
 ) -> Result<Value> {
-    let name = clean(&i.signer_name, 120, "CONTRACT_SIGNER_INVALID")?;
-    if name.is_empty() {
-        return Err(Error::InvalidCode("CONTRACT_SIGNER_INVALID"));
-    }
+    // A publishing contract is signed under the verified legal name, whatever name the screen sends (no pen names).
     if !CONTRACT_CONFIRMATIONS
         .iter()
         .all(|(k, _)| i.confirmations.iter().any(|x| x == k))
@@ -4194,6 +4218,9 @@ pub async fn sign_contract(
     let sig = crate::upload_safety::signature(s, &i.signature).await?;
     let mut tx = s.pool.begin().await?;
     auth::membership(&mut tx, a, org, true).await?;
+    let name = legal_name(&mut tx, s, a.user)
+        .await?
+        .ok_or(Error::PolicyGate("APPLICATION_IDENTITY_REQUIRED"))?;
     let (status, rv, months) = lock_contract(&mut tx, org, id).await?;
     if rv != i.row_version {
         return Err(Error::Conflict);
