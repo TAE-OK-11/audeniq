@@ -255,3 +255,11 @@
 /* 곡 등록 첫 화면 — 세 갈래 고르기 카드는 설명이 길어 한 줄에 하나씩 */
 .aq-pbl-origin-row{grid-template-columns:1fr}
 .aq-pbl-attach-card>.ui-field-help:first-child{margin:0 0 14px}
+
+/* 저작권 진행 단계는 다섯 칸이라 휴대폰에서 이름이 '내부 확…'처럼 잘렸다 — 좁은 화면에서는 두 줄로 */
+@media(max-width:560px){
+  .aq-pbl-work .aq-stage-label,.aq-pbl-sheet .aq-stage-label{white-space:normal;word-break:keep-all;align-items:flex-start;line-height:1.3}
+}
+/* 계약 기간 막대와 버튼 줄 사이 숨 쉴 틈 */
+.aq-pbl-contract-actions{margin-top:16px;flex-wrap:wrap}
+.aq-pbl-contract-actions .aq-danger-text{margin-left:auto}

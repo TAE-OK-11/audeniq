@@ -416,8 +416,17 @@ export function WorkDetail() {
           <div className="aq-detail-stack">
             <div className="aq-relinfo-card">
               <h2 className="subhead">저작권 등록 현황</h2>
-              <RegProgress status={w.registration} log={w.registrationLog} stage={regStep(w.registration) < 0 || w.registration === 'registered'} />
-              <p className="ui-field-help">신청이 승인돼도 관리 단체 등록은 따로 진행돼요. 등록이 끝나야 사용료를 받을 수 있어요.</p>
+              {/* 진행 단계는 머리 카드에 한 번만 — 여기서 같은 단계 판(카드 안 카드)과 같은 문장을 또 보여 주지 않는다.
+                  등록이 끝났으면 어디에 언제 등록됐는지만 */}
+              {w.registration === 'registered' ? (
+                <KeyValue cols={2} items={[
+                  ['관리 단체', [...w.registrationLog].reverse().find(l => l.society)?.society ?? <Empty>확인 중</Empty>],
+                  ['등록일', (() => { const at = [...w.registrationLog].reverse().find(l => l.status === 'registered')?.at; return at ? localStamp(at).replace(/ 오[전후].*$/, '') : <Empty>확인 중</Empty>; })()],
+                  ['ISWC', w.iswc ?? <Empty>{`발급 전 · ${w.internalCode}`}</Empty>],
+                ]} />
+              ) : regStep(w.registration) < 0 && <p className="ui-field-help">{REG_SENTENCE[w.registration]}</p>}
+              <RegProgress status={w.registration} log={w.registrationLog} head={false} />
+              {w.registration !== 'registered' && <p className="ui-field-help">신청이 승인돼도 관리 단체 등록은 따로 진행돼요. 등록이 끝나야 사용료를 받을 수 있어요.</p>}
             </div>
             <div className="aq-relinfo-card">
               <div className="ui-section-head"><h2 className="subhead">저작권 관리 신청</h2>{app && <Badge tone={APP_TONE[app.status]}>{APP_LABEL[app.status]}</Badge>}</div>
@@ -457,8 +466,7 @@ export function WorkDetail() {
                 <div className="ui-section-head"><h2 className="subhead">계약</h2>{contract && <Badge tone={CONTRACT_TONE[contract.status]}>{CONTRACT_LABEL[contract.status]}</Badge>}</div>
                 {contract ? (
                   <>
-                    <ContractManage contract={contract} canEdit={canEdit} />
-                    <div className="row-actions"><Link to={`/contracts/publishing/${contract.id}`} className="ui-btn is-text is-sm">계약서 보기</Link></div>
+                    <ContractManage contract={contract} canEdit={canEdit} doc={<Link to={`/contracts/publishing/${contract.id}`} className="ui-btn is-soft is-sm">계약서 보기</Link>} />
                   </>
                 ) : w.myRole === 'contributor' ? <p className="muted small">곡 소유자의 계약으로 관리되고 있어요.</p> : <SkeletonBlock height={64} />}
               </div>
@@ -512,8 +520,8 @@ export function WorkDetail() {
           <div className="aq-detail-stack">
             {/* 한 곡이 번 돈을 한 화면에 — 녹음 배급 수익과 저작권료는 다른 돈이라 나란히 두되 더하지 않는다 */}
             <StatGrid cols={2}>
-              <StatTile label="녹음 배급 수익" value={<Money value={distRevenue} />} hint={`연결된 녹음 ${w.recordings.length}개 · 스트리밍·다운로드 (리포트 기준)`} to={w.recordings[0] ? `/releases/${w.recordings[0].releaseId}?tab=stats` : '/reports'} />
-              <StatTile label="저작권료 (확정·지급)" value={<Money value={(royalties ?? []).filter(r => r.status !== 'estimated').reduce((n, r) => n + r.net, 0)} />} hint="작사·작곡 몫 · 관리 단체 정산" />
+              <StatTile label="녹음 배급 수익" value={<Money value={distRevenue} />} hint={`녹음 ${w.recordings.length}개 · 스트리밍·다운로드`} to={w.recordings[0] ? `/releases/${w.recordings[0].releaseId}?tab=stats` : '/reports'} />
+              <StatTile label="저작권료 (확정·지급)" value={<Money value={(royalties ?? []).filter(r => r.status !== 'estimated').reduce((n, r) => n + r.net, 0)} />} hint="작사·작곡 몫 · 관리 단체" />
             </StatGrid>
             <div className="aq-relinfo-card">
               <h2 className="subhead">저작권료 내역</h2>

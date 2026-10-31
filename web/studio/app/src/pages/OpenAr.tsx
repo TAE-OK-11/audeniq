@@ -94,8 +94,8 @@ function SubmitForm({ works, preset, busyIds, releasedPreset, onDone, onClose, o
         </select>
       </Field>
       {work && <KeyValue cols={1} items={[
-        ['데모 음원', demo?.name || '등록된 데모가 없어요'],
-        ['가사', lyrics?.name || '등록된 가사가 없어요. 없어도 보낼 수 있어요.'],
+        ['데모 음원', demo?.name || <span className="aq-empty-val">등록된 데모가 없어요</span>],
+        ['가사', lyrics?.name || <span className="aq-empty-val">없음 · 없어도 보낼 수 있어요</span>],
       ]} />}
       {work && !demo && <Callout tone="warn" action={<button type="button" className="ui-btn is-white is-sm" onClick={() => setAttaching(true)}>음원 올리기</button>}>곡에 데모 음원을 먼저 올려 주세요.</Callout>}
       {!works.length && <EmptyState compact title="제출할 곡이 없어요" actions={<Link to="/works/new?type=unreleased" className="ui-btn is-primary">발매 전 곡 등록</Link>}>발매 전 곡을 등록하고 데모 음원을 올려 주세요.</EmptyState>}

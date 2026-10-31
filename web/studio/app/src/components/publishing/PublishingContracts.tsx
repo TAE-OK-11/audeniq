@@ -1,7 +1,7 @@
 // 계약서 화면의 저작권 관리 계약 — 배급처럼 신청서(신청할 때 서명)와 계약서(담당자 승인 뒤 서명)가 따로다.
 // 배급 계약과 같은 '계약 묶음'(ContractBundle의 aq-bundle) 모양: 머리(이름·상태) + 번호 붙은 줄(신청서 → 계약서).
 // 곡 화면의 계약 관리(ContractManage)에서 기간·연장·종료 요청을 다룬다
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from '../../lib/router';
 import { pubApi, type PublishingContract } from '../../api/publishing';
 import { errorMessage } from '../../api/errors';
@@ -44,7 +44,7 @@ function RenewModal({ c, onClose, onDone }: { c: PublishingContract; onClose: ()
 }
 
 /** 곡 화면 '등록·계약' 탭의 계약 관리 — 기간·남은 날·연장·종료 요청 (계약서 화면은 서류만 본다) */
-export function ContractManage({ contract, canEdit }: { contract: PublishingContract; canEdit: boolean }) {
+export function ContractManage({ contract, canEdit, doc }: { contract: PublishingContract; canEdit: boolean; doc?: ReactNode }) {
   const toast = useToast();
   const confirm = useConfirm();
   const [c, setC] = useState(contract);
@@ -74,10 +74,12 @@ export function ContractManage({ contract, canEdit }: { contract: PublishingCont
       {!ended && <Meter total={total} parts={[{ value: total - Math.max(0, left), tone: left <= 45 ? 'amber' : 'primary' }]} label={`계약 기간 ${Math.max(0, left)}일 남음`} />}
       {c.renewal && <p className="ui-field-help">{termLabel(c.renewal.months)} 연장을 요청했어요 · {localStamp(c.renewal.requestedAt)}</p>}
       {c.terminationRequestedAt && <p className="ui-field-help is-warn">종료를 요청했어요 · {localStamp(c.terminationRequestedAt)}</p>}
-      {canEdit && !ended && !c.terminationRequestedAt && (
-        <div className="row-actions">
-          {!c.renewal && <button type="button" className={`ui-btn ${c.status === 'expiring' ? 'is-primary' : 'is-soft'} is-sm`} onClick={() => setRenewing(true)}>연장하기</button>}
-          <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => void terminate()}>계약 종료 요청</button>
+      {/* 버튼은 한 줄에 — 계약서 보기가 따로 아래 줄에 떨어져 있었다. 종료 요청은 위험한 일이라 맨 끝 글자 버튼으로 */}
+      {(doc || (canEdit && !ended && !c.terminationRequestedAt)) && (
+        <div className="row-actions aq-pbl-contract-actions">
+          {canEdit && !ended && !c.terminationRequestedAt && !c.renewal && <button type="button" className={`ui-btn ${c.status === 'expiring' ? 'is-primary' : 'is-soft'} is-sm`} onClick={() => setRenewing(true)}>연장하기</button>}
+          {doc}
+          {canEdit && !ended && !c.terminationRequestedAt && <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => void terminate()}>계약 종료 요청</button>}
         </div>
       )}
       {renewing && <RenewModal c={c} onClose={() => setRenewing(false)} onDone={setC} />}

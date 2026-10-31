@@ -36,6 +36,10 @@ const norm = (s: string) => s.toLowerCase().replace(/\s+/g, '');
 // 손이 가야 하는 곡이 먼저 — 보완 요청 → 맡기지 않음 → 심사 중 → 관리 중
 const urgency = (w: Work) => (matchFilter(w, 'fix') ? 0 : matchFilter(w, 'none') ? 1 : matchFilter(w, 'review') ? 2 : 3);
 
+/** 곡이 실린 발매 한 줄 — 내 발매는 발매 제목, 다른 아티스트 발매는 '이온 발매', 아니면 발매 전 (목록·리포트가 같은 말) */
+const releaseLine = (w?: Work) => !w ? '발매 정보 없음' : w.recordings[0]?.releaseTitle
+  ?? (workOrigin(w) === 'other_release' ? `${w.externalRelease?.artist ?? '다른 아티스트'} 발매` : '발매 전');
+
 function SongRow({ w, releaseId, ar }: { w: Work; releaseId?: string; ar?: ArSubmission }) {
   const rec = w.recordings[0];
   return (
@@ -43,7 +47,7 @@ function SongRow({ w, releaseId, ar }: { w: Work; releaseId?: string; ar?: ArSub
       <ReleaseCover id={rec?.releaseId ?? w.id} />
       <div className="min-0">
         <span className="ui-row-title">{w.title || '제목 없는 곡'}</span>
-        <span className="ui-row-meta">{rec ? rec.releaseTitle : workOrigin(w) === 'other_release' ? `${w.externalRelease?.artist ?? '다른 아티스트'} 발매` : '발매 전'} · {w.contributors.map(c => c.name).join(' · ') || '참여자 없음'}</span>
+        <span className="ui-row-meta">{releaseLine(w)} · {w.contributors.map(c => c.name).join(' · ') || '참여자 없음'}</span>
       </div>
       {/* 발매 전 곡은 저작권 관리 대상이 아니라 '미신청'이 아니다 — A&R 진행 상태나 '발매 전'으로 */}
       {workOrigin(w) === 'unreleased' && w.registration === 'none'
@@ -176,7 +180,7 @@ function SongRoyalties({ rows, works, label }: { rows: Royalty[] | null; works: 
             <ReleaseCover id={rec(s.id)?.releaseId ?? s.id} />
             <div className="min-0">
               <span className="ui-row-title">{s.title}</span>
-              <span className="ui-row-meta">{rec(s.id)?.releaseTitle ?? '미발매'} · 확정 {s.count}건</span>
+              <span className="ui-row-meta">{releaseLine(works?.find(w => w.id === s.id))} · 확정 {s.count}건</span>
               <Meter parts={[{ value: s.net }]} total={max} label={`${s.title} 저작권료`} />
             </div>
             <div className="ui-row-end"><b className="aq-pub-amount"><Money value={s.net} /></b></div>
