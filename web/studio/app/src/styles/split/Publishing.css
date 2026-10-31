@@ -216,3 +216,14 @@
 .aq-pbl-work .aq-bundle-docs textarea{margin-top:8px}
 .aq-pbl-work .aq-bundle.is-needs>.ui-callout{margin:8px 14px 4px}
 .aq-pbl-work .aq-bundle.is-needs>.row-actions{margin:8px 0 0;padding:0 14px 10px}
+
+/* ---------- 휴대폰 점검 ---------- */
+/* '이 곡 지우기'가 전역 .row-actions{grid-column:2} 때문에 '자료' 카드 옆 둘째 칸으로 밀려 카드가 좁아졌다 */
+.aq-pbl-work .aq-detail-stack>.row-actions{grid-column:1/-1;justify-content:center}
+/* 확인 요청 다시 보내기 — 이름 줄과 같은 왼쪽 선에서 시작 */
+.aq-pbl-person-actions{margin-top:-4px}
+.aq-pbl-person-actions .ui-btn.is-text{min-height:32px;padding-inline:0}
+@media(max-width:640px){
+  /* 지분 고치기 — 취소·저장을 화면 폭에 나눠 엄지로 누르기 쉽게 */
+  .aq-pbl-work .ui-actions>.ui-btn{flex:1 1 0}
+}

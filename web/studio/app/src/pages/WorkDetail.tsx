@@ -51,8 +51,7 @@ function nextAction(w: Work): { text: string; tab?: Tab; to?: string; btn: strin
   if (mine) return { text: `내 지분 ${pct(mine.share)}를 확인해 주세요. 맞으면 확인, 다르면 변경을 요청해요.`, tab: 'rights', btn: '확인하기', tone: 'warn' };
   if (!canEdit) return null;
   if (!splitReady(w.contributors)) return { text: splitIssues(w.contributors).find(i => i.level === 'error')?.text ?? '지분을 맞춰 주세요.', tab: 'rights', btn: '지분 고치기', tone: 'warn' };
-  if (w.registration === 'none' && (!w.application || w.application.status === 'withdrawn'))
-    return { text: '이 곡의 저작권도 관리할까요? 신청하면 AUDENIQ이 관리 단체 등록과 사용료 징수를 맡아요.', to: `/publishing/apply?work=${w.id}`, btn: '저작권 관리 시작', tone: 'info' };
+  // 맡기기 전 안내('저작권 관리 시작')는 두지 않는다 — 머리 카드의 '저작권 관리 신청' 버튼과 같은 일을 한 화면에 두 번 권했다
   return null;
 }
 

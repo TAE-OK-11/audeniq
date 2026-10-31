@@ -404,7 +404,7 @@ button.ui-avatar:hover{transform:scale(1.06);background:var(--aq-blue-200)}
   font-size:var(--aq-fs-md);line-height:1.65
 }
 .ui-callout b,.ui-callout strong{color:inherit}
-.ui-callout a{text-decoration:underline;text-underline-offset:2px}
+.ui-callout a:not(.ui-btn){text-decoration:underline;text-underline-offset:2px}
 .ui-callout.is-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .ui-callout.is-success{--tone-bg:#EAF8EF;--tone-fg:#25734B}
 .ui-callout.is-warn{--tone-bg:#FFF7EC;--tone-fg:#8F5A22}

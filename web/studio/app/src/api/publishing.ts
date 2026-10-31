@@ -23,6 +23,8 @@ import { clearAsyncCache } from '../lib/asyncCache';
 import { statementsStore } from '../store/settlement';
 import { api } from './client';
 import { draftTrackOf } from '../lib/albumPrep';
+import { STATUS_LABEL } from '../lib/format';
+import { uiStatus } from './remote';
 import { getProfileSnapshot } from '../store/profile';
 import { getAccountSnapshot } from '../store/account';
 
@@ -799,39 +801,47 @@ const EMPTY_SUMMARY: PublishingSummary = {
   revenue: { distribution: { confirmed: 0, estimated: 0 }, publishing: { confirmed: 0, estimated: 0 }, payable: 0 }, suggestion: null,
 };
 
+/** 연결된 녹음의 발매 상태 — 서버는 처리 단계를 그대로('stage1_correction') 보낸다. 화면 상태(보완 필요 등)로 바꿔
+ *  배지에 날것의 단계 이름이 보이지 않게 한다 */
+function normWork(w: Work): Work {
+  return { ...w, recordings: (w.recordings ?? []).map(r => (r.status && !(r.status in STATUS_LABEL) ? { ...r, status: uiStatus(r.status.toUpperCase(), false, null) } : r)) };
+}
+const work = (p: Promise<Work>) => p.then(normWork);
+const works = (p: Promise<{ items: Work[] }>) => p.then(r => r.items.map(normWork));
+
 const remoteApi = {
   policy: () => req<PublishingPolicy>(orgPath('/publishing/policy')),
   summary: () => orEmpty(req<PublishingSummary>(orgPath('/publishing/summary'), { quietServer: true }), EMPTY_SUMMARY),
-  listWorks: () => orEmpty(req<{ items: Work[] }>(orgPath('/works')).then(r => r.items), [] as Work[]),
-  getWork: (id: string) => req<Work>(orgPath(`/works/${enc(id)}`)),
-  workByTrack: (trackId: string) => orEmpty(req<{ items: Work[] }>(orgPath(`/works?track_id=${enc(trackId)}`), { quietServer: true }).then(r => r.items[0] ?? null), null),
-  createWork: (input: WorkInput) => req<Work>(orgPath('/works'), { method: 'POST', body: input }),
+  listWorks: () => orEmpty(works(req<{ items: Work[] }>(orgPath('/works'))), [] as Work[]),
+  getWork: (id: string) => work(req<Work>(orgPath(`/works/${enc(id)}`))),
+  workByTrack: (trackId: string) => orEmpty(works(req<{ items: Work[] }>(orgPath(`/works?track_id=${enc(trackId)}`), { quietServer: true })).then(l => l[0] ?? null), null),
+  createWork: (input: WorkInput) => work(req<Work>(orgPath('/works'), { method: 'POST', body: input })),
   prepareWorksFromRelease: (releaseId: string, enroll: boolean, skipTitles: string[] = []) =>
     req<PrepareResult>(orgPath(`/releases/${enc(releaseId)}/works`), { method: 'POST', body: { enroll, skip_titles: skipTitles } }),
   updateWork: async (id: string, patch: Partial<WorkInput>, rowVersion: number) => {
     // 지분은 권리 전용 경로로 — 서버가 변경 이력과 확인 요청을 따로 남긴다
     const { contributors, ...rest } = patch;
     let w: Work | null = null;
-    if (Object.keys(rest).length) w = await req<Work>(orgPath(`/works/${enc(id)}`), { method: 'PATCH', body: { ...rest, row_version: rowVersion } });
-    if (contributors) w = await req<Work>(orgPath(`/works/${enc(id)}/rights`), { method: 'PUT', body: { contributors, row_version: w?.rowVersion ?? rowVersion } });
-    return w ?? req<Work>(orgPath(`/works/${enc(id)}`));
+    if (Object.keys(rest).length) w = await work(req<Work>(orgPath(`/works/${enc(id)}`), { method: 'PATCH', body: { ...rest, row_version: rowVersion } }));
+    if (contributors) w = await work(req<Work>(orgPath(`/works/${enc(id)}/rights`), { method: 'PUT', body: { contributors, row_version: w?.rowVersion ?? rowVersion } }));
+    return w ?? work(req<Work>(orgPath(`/works/${enc(id)}`)));
   },
   deleteWork: (id: string) => req<void>(orgPath(`/works/${enc(id)}`), { method: 'DELETE' }),
-  linkRecording: (workId: string, rec: Omit<WorkRecording, 'id'>) => req<Work>(orgPath(`/works/${enc(workId)}/recordings`), { method: 'POST', body: { release_id: rec.releaseId, track_id: rec.trackId } }),
-  unlinkRecording: (workId: string, recordingId: string) => req<Work>(orgPath(`/works/${enc(workId)}/recordings/${enc(recordingId)}`), { method: 'DELETE' }),
-  requestSplitConfirm: (workId: string, contributorId: string) => req<Work>(orgPath(`/works/${enc(workId)}/rights/${enc(contributorId)}/confirmation`), { method: 'POST' }),
-  respondSplit: (workId: string, agree: boolean) => req<Work>(orgPath(`/works/${enc(workId)}/rights/confirmation`), { method: 'POST', body: { agree } }),
-  simulateConfirm: (workId: string) => req<Work>(orgPath(`/works/${enc(workId)}`)),
+  linkRecording: (workId: string, rec: Omit<WorkRecording, 'id'>) => work(req<Work>(orgPath(`/works/${enc(workId)}/recordings`), { method: 'POST', body: { release_id: rec.releaseId, track_id: rec.trackId } })),
+  unlinkRecording: (workId: string, recordingId: string) => work(req<Work>(orgPath(`/works/${enc(workId)}/recordings/${enc(recordingId)}`), { method: 'DELETE' })),
+  requestSplitConfirm: (workId: string, contributorId: string) => work(req<Work>(orgPath(`/works/${enc(workId)}/rights/${enc(contributorId)}/confirmation`), { method: 'POST' })),
+  respondSplit: (workId: string, agree: boolean) => work(req<Work>(orgPath(`/works/${enc(workId)}/rights/confirmation`), { method: 'POST', body: { agree } })),
+  simulateConfirm: (workId: string) => work(req<Work>(orgPath(`/works/${enc(workId)}`))),
   searchCreators: (q: string) => req<{ items: Creator[] }>(orgPath(`/creators?q=${enc(q)}`)).then(r => r.items),
   myCreator: () => req<Creator>('/api/me/creator'),
   saveMyCreator: (c: Creator) => req<Creator>('/api/me/creator', { method: 'PUT', body: c }),
   listApplications: () => orEmpty(req<{ items: PublishingApplication[] }>(orgPath('/publishing/applications')).then(r => r.items), [] as PublishingApplication[]),
   submitApplication: (input: ApplicationInput) => req<PublishingApplication>(orgPath('/publishing/applications'), { method: 'POST', body: input, timeoutMs: 30_000 }),
   withdrawApplication: (id: string) => req<PublishingApplication>(orgPath(`/publishing/applications/${enc(id)}/withdraw`), { method: 'POST' }),
-  resubmitFix: (workId: string, note: string, files: string[]) => req<Work>(orgPath(`/works/${enc(workId)}/registration/resubmit`), { method: 'POST', body: { note, files } }),
+  resubmitFix: (workId: string, note: string, files: string[]) => work(req<Work>(orgPath(`/works/${enc(workId)}/registration/resubmit`), { method: 'POST', body: { note, files } })),
   // 미리보기 주소는 서버가 올린 파일로 만든다 — 브라우저 임시 주소(blob:)는 보내지 않는다
   addAttachment: (workId: string, kind: WorkAttachment['kind'], name: string, size?: number, preview?: Pick<WorkAttachment, 'url' | 'text'> & { assetId?: string }) =>
-    req<Work>(orgPath(`/works/${enc(workId)}/attachments`), { method: 'POST', body: { kind, name, size, asset_id: preview?.assetId, text: preview?.text ?? undefined } }),
+    work(req<Work>(orgPath(`/works/${enc(workId)}/attachments`), { method: 'POST', body: { kind, name, size, asset_id: preview?.assetId, text: preview?.text ?? undefined } })),
   listContracts: () => orEmpty(req<{ items: PublishingContract[] }>(orgPath('/publishing/contracts')).then(r => r.items), [] as PublishingContract[]),
   renewContract: (id: string, months: number) => req<PublishingContract>(orgPath(`/publishing/contracts/${enc(id)}/renewal`), { method: 'POST', body: { months } }),
   requestTermination: (id: string) => req<PublishingContract>(orgPath(`/publishing/contracts/${enc(id)}/termination`), { method: 'POST' }),

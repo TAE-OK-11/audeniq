@@ -89,7 +89,7 @@ function SubmitForm({ works, preset, onDone, onClose, onWorkChanged }: { works: 
       </Field>
       {work && <KeyValue cols={1} items={[
         ['데모 음원', demo?.name || '등록된 데모가 없어요'],
-        ['가사', lyrics?.name || '등록된 가사가 없어요 (선택)'],
+        ['가사', lyrics?.name || '등록된 가사가 없어요. 없어도 보낼 수 있어요.'],
       ]} />}
       {work && !demo && <Callout tone="warn" action={<button type="button" className="ui-btn is-white is-sm" onClick={() => setAttaching(true)}>음원 올리기</button>}>곡에 데모 음원을 먼저 올려 주세요.</Callout>}
       {!works.length && <EmptyState compact title="제출할 곡이 없어요" actions={<Link to="/works/new" className="ui-btn is-primary">새 곡 등록</Link>}>곡을 등록하고 데모 음원을 올려 주세요.</EmptyState>}
@@ -109,7 +109,7 @@ function SubmitForm({ works, preset, onDone, onClose, onWorkChanged }: { works: 
             <Field label="곡 설명" htmlFor="arDesc" help="어떤 아티스트·프로젝트에 어울리는지 적으면 피칭에 도움이 돼요.">
               <textarea id="arDesc" className="ui-textarea" rows={3} value={desc} onChange={e => setDesc(e.target.value)} />
             </Field>
-            <Field label="참고 자료" htmlFor="arRefs" help="레퍼런스 곡 링크 등 (선택)">
+            <Field label={<>참고 자료 <span className="aq-optional">선택</span></>} htmlFor="arRefs" help="레퍼런스 곡 링크 등">
               <input id="arRefs" className={inputClass()} value={refs} onChange={e => setRefs(e.target.value)} placeholder="https://" />
             </Field>
       </>}

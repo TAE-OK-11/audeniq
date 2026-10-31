@@ -256,8 +256,10 @@ export function Layout({ children }: { children: ReactNode }) {
   // 다 받은 뒤 머리글이 사라지며 화면 전체가 위로 튀지 않게 한다 (Upload도 마운트될 때 같은 클래스를 단다)
   useLayoutEffect(() => {
     // 신청서 화면은 메뉴 없이 흰 바탕 한 단 — 배급 신청서와 같은 틀을 쓰는 퍼블리싱 신청서(곡 정보·저작권 관리 신청)도
-    document.body.classList.toggle('wizard-mode', loc.pathname === '/upload' || /^\/works\/(new|[^/]+\/edit)$/.test(loc.pathname) || loc.pathname === '/publishing/apply');
-  }, [loc.pathname]);
+    // Open A&R의 데모 제출(?work= · ?submit=1)도 같은 신청서 틀이다 — 머리글이 남으면 앱 머리글과 신청서 막대가 두 겹으로 쌓였다
+    const arWizard = loc.pathname === '/ar' && /[?&](work=|submit=1)/.test(loc.search);
+    document.body.classList.toggle('wizard-mode', loc.pathname === '/upload' || /^\/works\/(new|[^/]+\/edit)$/.test(loc.pathname) || loc.pathname === '/publishing/apply' || arWizard);
+  }, [loc.pathname, loc.search]);
 
   // 메뉴는 열 때마다 맨 위부터 (지난번에 내려 둔 자리에서 열리지 않게), 열려 있는 동안 뒤 화면은 멈춘다
   useLayoutEffect(() => {
