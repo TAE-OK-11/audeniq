@@ -5,7 +5,7 @@
 //  · 저작권료: 관리 단체 명세서(CSV)를 올려 곡별 저작권료로 — 먼저 확인(맞지 않는 줄은 이유와 함께), 그다음 올리기. 정산 담당만
 // 모양은 저작권 관리 신청 심사와 같다: 목록 줄(ui-row), 결정은 창(Modal) 하나, 사유는 반려·보완에만 필수
 import { useState, type ChangeEvent } from 'react';
-import { useSearchParams } from '../../lib/router';
+import { Link, useSearchParams } from '../../lib/router';
 import { Modal } from '../../components/Modal';
 import { useToast } from '../../components/Toast';
 import { errorMessage } from '../../api/errors';
@@ -207,6 +207,9 @@ function Royalties() {
   const [source, setSource] = useState('KOMCA');
   const [period, setPeriod] = useState(() => new Date(Date.now() - 31 * 86_400_000).toISOString().slice(0, 7));
   const [status, setStatus] = useState<'estimated' | 'confirmed'>('estimated');
+  // 해외 단체 명세서 — 그 통화 그대로 붙여 넣고 환율을 적으면 서버가 원으로 바꾼다 (내림)
+  const [currency, setCurrency] = useState('KRW');
+  const [fx, setFx] = useState('');
   const [text, setText] = useState('');
   const [fileName, setFileName] = useState<string | undefined>();
   const [check, setCheck] = useState<RoyaltyImportResult | null>(null);
@@ -217,21 +220,22 @@ function Royalties() {
     if (!head) return [];
     const col = (...names: string[]) => head.findIndex(h => names.includes(h.trim()));
     const [w, k, c, m] = [col('곡 코드', 'work', 'code'), col('종류', 'kind'), col('국가', 'country'), col('금액', 'collected', 'amount')];
-    return body.map(r => ({ work: (r[w] ?? '').trim(), kind: KIND[(r[k] ?? '').trim()] ?? (r[k] ?? '').trim(), country: (r[c] ?? '').trim().toUpperCase() || 'KR', collected: Math.round(Number((r[m] ?? '').replace(/[,\s원]/g, ''))) || 0 }));
+    return body.map(r => ({ work: (r[w] ?? '').trim(), kind: KIND[(r[k] ?? '').trim()] ?? (r[k] ?? '').trim(), country: (r[c] ?? '').trim().toUpperCase() || 'KR', collected: Number((r[m] ?? '').replace(/[,\s원$¥€£]/g, '')) || 0 }));
   };
   const run = async (preview: boolean) => {
     const list = rows();
     if (!list.length) { toast('표를 넣어 주세요. 첫 줄은 칸 이름(곡 코드, 종류, 국가, 금액)이에요.', 'error'); return; }
     setBusy(true);
     try {
-      const r = await staffApi.pubRoyaltyImport({ source, period, status, fileName, rows: list, preview });
+      if (currency !== 'KRW' && !(Number(fx) > 0)) { toast('원화가 아닌 명세서는 환율(1단위당 원)을 적어 주세요.', 'error'); return; }
+      const r = await staffApi.pubRoyaltyImport({ source, period, status, fileName, rows: list, preview, currency, fxRate: currency === 'KRW' ? undefined : Number(fx) });
       setCheck(r);
       if (!preview) { toast(`${list.length}줄을 올렸어요.`, 'success'); setText(''); setCheck(null); reload(); }
     } catch (e) { toast(errorMessage(e), 'error'); } finally { setBusy(false); }
   };
   const pick = async (e: ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) { setText(await f.text()); setFileName(f.name); setCheck(null); } };
-  const mark = async (sid: string, next: 'confirmed' | 'paid') => {
-    try { await staffApi.pubStatementStatus(sid, next); toast(next === 'paid' ? '지급 완료로 표시했어요.' : '확정했어요.', 'success'); reload(); } catch (e) { toast(errorMessage(e), 'error'); }
+  const mark = async (sid: string) => {
+    try { await staffApi.pubStatementStatus(sid, 'confirmed'); toast('확정했어요. 정산·지급 처리에서 잔액에 반영할 수 있어요.', 'success'); reload(); } catch (e) { toast(errorMessage(e), 'error'); }
   };
   const total = check?.rows.reduce((n, r) => n + (r.collected ?? 0), 0) ?? 0;
   return (
@@ -244,6 +248,9 @@ function Royalties() {
             <select id="rsSource" className="ui-select" value={source} onChange={e => setSource(e.target.value)}>{SOCIETIES.filter(s => s !== '없음').map(s => <option key={s} value={s}>{societyName(s)}</option>)}<option value="YouTube">YouTube</option></select></div>
           <div className="ui-field"><label htmlFor="rsPeriod">사용 기간 (월)</label><input id="rsPeriod" type="month" className="ui-input" value={period} onChange={e => setPeriod(e.target.value)} /></div>
           <div className="ui-field"><label>상태</label><Seg label="상태" value={status} onChange={setStatus} options={[['estimated', '예상'], ['confirmed', '확정']]} size="sm" /></div>
+          <div className="ui-field"><label htmlFor="rsCur">통화</label>
+            <select id="rsCur" className="ui-select" value={currency} onChange={e => { setCurrency(e.target.value); setCheck(null); }}>{['KRW', 'USD', 'JPY', 'EUR', 'GBP'].map(c => <option key={c}>{c}</option>)}</select></div>
+          {currency !== 'KRW' && <div className="ui-field"><label htmlFor="rsFx">환율 (1 {currency}당 원)</label><input id="rsFx" className="ui-input" inputMode="decimal" value={fx} onChange={e => { setFx(e.target.value); setCheck(null); }} placeholder={currency === 'JPY' ? '9.2' : '1350'} /></div>}
         </div>
         <div className="ui-field"><label htmlFor="rsText">표 붙여 넣기</label>
           <textarea id="rsText" className="ui-textarea" rows={6} spellCheck={false} value={text} onChange={e => { setText(e.target.value); setCheck(null); }} placeholder={'곡 코드,종류,국가,금액\nAQW-000004,전송,KR,178200\nT-345.246.800-1,공연,JP,34650'} /></div>
@@ -274,12 +281,13 @@ function Royalties() {
               <span className="ui-icon" aria-hidden="true"><Glyph name="won" size={18} /></span>
               <span className="adm-min">
                 <span className="ui-row-title">{societyName(st.source)} · {st.period}</span>
-                <span className="ui-row-meta"><span>{st.rowCount}줄</span><span>징수 {money(st.totalCollected)}</span>{st.fileName && <span>{st.fileName}</span>}<span>{ago(st.importedAt)}</span></span>
+                <span className="ui-row-meta"><span>{st.rowCount}줄</span><span>징수 {money(st.totalCollected)}</span>{st.currency && st.currency !== 'KRW' && <span>{st.currency} · 환율 {String(st.fxRate)}</span>}{st.fileName && <span>{st.fileName}</span>}<span>{ago(st.importedAt)}</span></span>
               </span>
               <span className="ui-row-end">
-                <StatusBadge value={st.status === 'paid' ? ['지급 완료', 'green'] : st.status === 'confirmed' ? ['확정', 'blue'] : ['예상', 'gray']} />
-                {st.status === 'estimated' && <button type="button" className="ui-btn is-soft is-sm" onClick={() => void mark(st.id, 'confirmed')}>확정</button>}
-                {st.status === 'confirmed' && <button type="button" className="ui-btn is-soft is-sm" onClick={() => void mark(st.id, 'paid')}>지급 완료</button>}
+                <StatusBadge value={st.status === 'paid' ? ['잔액 반영', 'green'] : st.status === 'confirmed' ? ['확정', 'blue'] : ['예상', 'gray']} />
+                {st.status === 'estimated' && <button type="button" className="ui-btn is-soft is-sm" onClick={() => void mark(st.id)}>확정</button>}
+                {/* 잔액 반영은 장부를 쓰는 일이라 운영 도구에서 인증 코드와 함께 */}
+                {st.status === 'confirmed' && <Link to="/admin/ops/finance?tab=publishing" className="ui-btn is-soft is-sm">정산 잔액 반영</Link>}
               </span>
             </div>
           ))}

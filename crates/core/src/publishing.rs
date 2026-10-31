@@ -1799,8 +1799,9 @@ pub struct RoyaltyRowIn {
     pub kind: String,
     #[serde(default)]
     pub country: String,
+    /// In the statement's currency (decimals allowed for foreign statements).
     #[serde(default)]
-    pub collected: i64,
+    pub collected: rust_decimal::Decimal,
 }
 
 #[derive(Deserialize)]
@@ -1814,6 +1815,11 @@ pub struct RoyaltyImportIn {
     pub status: String,
     #[serde(default)]
     pub file_name: Option<String>,
+    /// KRW unless given; another currency needs the rate to won (0174).
+    #[serde(default)]
+    pub currency: Option<String>,
+    #[serde(default)]
+    pub fx_rate: Option<rust_decimal::Decimal>,
     #[serde(default)]
     pub rows: Vec<RoyaltyRowIn>,
     /// Check only: what each row matches and how it splits, nothing stored.
@@ -1851,6 +1857,28 @@ pub async fn staff_royalty_import(
     if i.rows.is_empty() || i.rows.len() > MAX_ROYALTY_ROWS {
         return Err(Error::InvalidCode("ROYALTY_ROWS_INVALID"));
     }
+    let currency = i
+        .currency
+        .as_deref()
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+        .unwrap_or("KRW")
+        .to_ascii_uppercase();
+    if currency.len() != 3 || !currency.bytes().all(|b| b.is_ascii_uppercase()) {
+        return Err(Error::InvalidCode("ROYALTY_STATEMENT_INVALID"));
+    }
+    // Whole won: a foreign amount times the rate, rounded down.
+    let fx = match (currency.as_str(), i.fx_rate) {
+        ("KRW", _) => None,
+        (_, Some(r)) if r > rust_decimal::Decimal::ZERO => Some(r),
+        _ => return Err(Error::InvalidCode("ROYALTY_FX_REQUIRED")),
+    };
+    let won = |v: rust_decimal::Decimal| -> Option<i64> {
+        use rust_decimal::prelude::ToPrimitive;
+        (v * fx.unwrap_or(rust_decimal::Decimal::ONE))
+            .round_dp_with_strategy(0, rust_decimal::RoundingStrategy::ToZero)
+            .to_i64()
+    };
     let mut tx = s.pool.begin().await?;
     let mut out = Vec::with_capacity(i.rows.len());
     let mut planned = Vec::new();
@@ -1865,9 +1893,10 @@ pub async fn staff_royalty_import(
             || (country.len() == 2 && country.bytes().all(|b| b.is_ascii_uppercase())))
         {
             error = Some("국가 코드가 맞지 않아요");
-        } else if r.collected < 0 {
+        } else if r.collected < rust_decimal::Decimal::ZERO || won(r.collected).is_none() {
             error = Some("금액이 맞지 않아요");
         }
+        let collected = won(r.collected).unwrap_or(0);
         let work = if error.is_none() {
             sqlx::query(
                 "SELECT w.id, w.org_id, w.title, o.name AS org_name,
@@ -1892,15 +1921,15 @@ pub async fn staff_royalty_import(
                 let bps = w
                     .get::<Option<i32>, _>("commission_bps")
                     .unwrap_or(COMMISSION_BPS);
-                let fee = r.collected * i64::from(bps) / 10_000;
+                let fee = collected * i64::from(bps) / 10_000;
                 out.push(json!({"line": k + 1, "workTitle": w.get::<String, _>("title"), "orgName": w.get::<String, _>("org_name"),
-                                "collected": r.collected, "fee": fee, "net": r.collected - fee}));
+                                "collected": collected, "fee": fee, "net": collected - fee}));
                 planned.push((
                     w.get::<Uuid, _>("org_id"),
                     w.get::<Uuid, _>("id"),
                     r.kind.clone(),
                     country,
-                    r.collected,
+                    collected,
                     w.get::<i32, _>("share_bps").min(10_000),
                     fee,
                 ));
@@ -1920,7 +1949,7 @@ pub async fn staff_royalty_import(
     }
     let statement = Uuid::new_v4();
     let total: i64 = planned.iter().map(|p| p.4).sum();
-    sqlx::query("INSERT INTO portal.pub_royalty_statements(id,source,period,status,file_name,row_count,total_collected,imported_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
+    sqlx::query("INSERT INTO portal.pub_royalty_statements(id,source,period,status,file_name,row_count,total_collected,imported_by,currency,fx_rate) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
         .bind(statement)
         .bind(&source)
         .bind(&i.period)
@@ -1929,6 +1958,8 @@ pub async fn staff_royalty_import(
         .bind(planned.len() as i32)
         .bind(total)
         .bind(st.actor.user)
+        .bind(&currency)
+        .bind(fx)
         .execute(&mut *tx)
         .await?;
     for (org, work, kind, country, collected, share, fee) in &planned {
@@ -1970,13 +2001,15 @@ pub async fn staff_royalty_statements(s: &AppState, h: &HeaderMap) -> Result<Val
     let st = staff::staff(s, h, false).await?;
     staff::require(&st, Duty::Finance)?;
     let mut c = s.pool.acquire().await?;
-    let rows = sqlx::query("SELECT id, source, period, status, file_name, row_count, total_collected, created_at FROM portal.pub_royalty_statements ORDER BY created_at DESC LIMIT 200")
+    let rows = sqlx::query("SELECT id, source, period, status, file_name, row_count, total_collected, created_at, currency, fx_rate, posted_at FROM portal.pub_royalty_statements ORDER BY created_at DESC LIMIT 200")
         .fetch_all(&mut *c)
         .await?;
     Ok(json!({"items": rows.into_iter().map(|r| json!({
         "id": r.get::<Uuid, _>("id"), "source": r.get::<String, _>("source"), "period": r.get::<String, _>("period"),
         "status": r.get::<String, _>("status"), "fileName": r.get::<Option<String>, _>("file_name"),
         "rowCount": r.get::<i32, _>("row_count"), "totalCollected": r.get::<i64, _>("total_collected"), "importedAt": ts(r.get("created_at")),
+        "currency": r.get::<String, _>("currency"), "fxRate": r.get::<Option<rust_decimal::Decimal>, _>("fx_rate"),
+        "postedAt": r.get::<Option<DateTime<Utc>>, _>("posted_at").map(ts),
     })).collect::<Vec<_>>()}))
 }
 
@@ -2002,9 +2035,10 @@ pub async fn staff_royalty_status(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(Error::NotFound)?;
+    // Paid means credited to the balance: that is the staff console's posting (owner-level login, step-up), not this.
     let ok = matches!(
         (status.as_str(), i.status.as_str()),
-        ("estimated", "confirmed") | ("confirmed", "paid")
+        ("estimated", "confirmed")
     );
     if !ok {
         return Err(Error::PolicyGate("ROYALTY_STATE"));
@@ -2031,6 +2065,105 @@ pub async fn staff_royalty_status(
     .await?;
     tx.commit().await?;
     Ok(json!({"id": id, "status": i.status}))
+}
+
+/// Post a confirmed statement to the books (staff console `publishing post`, login audeniq_staff_ops, step-up).
+/// Per org: DEBIT ROYALTY_RECEIVED (collected), CREDIT AUDENIQ_FEE (fee) and ROYALTY_PAYABLE (net). Its rows become paid
+/// (the artist's balance has them); once only.
+pub async fn post_statement(pool: &sqlx::PgPool, actor: Uuid, statement: Uuid) -> Result<Value> {
+    use crate::finance::{EntrySide, LedgerEntryInput, PostTransaction};
+    use rust_decimal::Decimal;
+    let mut tx = pool.begin().await?;
+    let row = sqlx::query("SELECT source, period, status, posted_at FROM portal.pub_royalty_statements WHERE id=$1 FOR UPDATE")
+        .bind(statement)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(Error::NotFound)?;
+    if row.get::<Option<DateTime<Utc>>, _>("posted_at").is_some() {
+        return Err(Error::PolicyGate("ROYALTY_ALREADY_POSTED"));
+    }
+    if row.get::<String, _>("status") != "confirmed" {
+        return Err(Error::PolicyGate("ROYALTY_NOT_CONFIRMED"));
+    }
+    let (source, period): (String, String) = (row.get("source"), row.get("period"));
+    let description = format!("{source} {period} 저작권료");
+    let orgs = sqlx::query(
+        "SELECT org_id, sum(collected)::bigint AS collected, sum(fee)::bigint AS fee, sum(net)::bigint AS net
+           FROM portal.pub_royalties WHERE statement_id=$1 GROUP BY org_id ORDER BY org_id",
+    )
+    .bind(statement)
+    .fetch_all(&mut *tx)
+    .await?;
+    let mut posted = Vec::new();
+    for o in &orgs {
+        let org: Uuid = o.get("org_id");
+        let (collected, fee, net) = (
+            Decimal::from(o.get::<i64, _>("collected")),
+            Decimal::from(o.get::<i64, _>("fee")),
+            Decimal::from(o.get::<i64, _>("net")),
+        );
+        if collected == Decimal::ZERO {
+            continue;
+        }
+        let entry = |account, side, amount| LedgerEntryInput {
+            account,
+            side,
+            amount,
+            currency: None,
+            party_id: None,
+            isrc: None,
+            split_snapshot_id: None,
+        };
+        let mut entries = vec![entry("ROYALTY_RECEIVED", EntrySide::Debit, collected)];
+        if fee > Decimal::ZERO {
+            entries.push(entry("AUDENIQ_FEE", EntrySide::Credit, fee));
+        }
+        if net > Decimal::ZERO {
+            entries.push(entry("ROYALTY_PAYABLE", EntrySide::Credit, net));
+        }
+        let txn = crate::finance::post_transaction_in(
+            &mut tx,
+            org,
+            PostTransaction {
+                transaction_code: "PUBLISHING_ROYALTY",
+                currency: "KRW",
+                entries,
+                match_status: Some("AUTO"),
+                fx_rate: None,
+                fee_policy_version: Some("publishing-contract"),
+                contract_version: None,
+                tax_rule_version: None,
+                source_ref: json!({"publishing_statement": statement}),
+                description: &description,
+                created_by: Some(actor),
+            },
+        )
+        .await?;
+        posted.push(json!({"org_id": org, "transaction_id": txn, "net": net}));
+    }
+    sqlx::query(
+        "UPDATE portal.pub_royalties SET status='paid', paid_at=now() WHERE statement_id=$1",
+    )
+    .bind(statement)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("UPDATE portal.pub_royalty_statements SET status='paid', posted_at=now(), posted_by=$2 WHERE id=$1")
+        .bind(statement)
+        .bind(actor)
+        .execute(&mut *tx)
+        .await?;
+    operations::audit(
+        &mut tx,
+        Some(actor),
+        None,
+        Some(statement),
+        "publishing.royalties_posted",
+        "STAFF_CONSOLE",
+        Uuid::new_v4(),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"statement_id": statement, "posted": posted}))
 }
 
 /// The artist's royalties — all works of the org, or one work.

@@ -305,6 +305,12 @@ const pubAr: StaffArSubmission[] = [
 const pubStatements: PubStatement[] = [
   { id: 'ps-1', source: 'KOMCA', period: '2026-08', status: 'confirmed', fileName: 'komca_2026_08.csv', rowCount: 3, totalCollected: 412000, importedAt: iso(240) },
 ];
+/** 콘솔의 '정산 잔액에 반영'(opsMock) — 확정한 명세서를 지급 완료로 */
+export function markStatementPosted(sid: string) {
+  const st = pubStatements.find(x => x.id === sid) ?? fail('NOT_FOUND', 404);
+  if (st.status !== 'confirmed') fail('ROYALTY_NOT_CONFIRMED');
+  st.status = 'paid';
+}
 const AR_NEXT: Record<ArDecisionAction, [StaffArSubmission['status'][], StaffArSubmission['status'], string]> = {
   CLAIM: [['submitted'], 'in_review', '심사 시작'], FIX: [['in_review'], 'needs_fix', '보완 요청'], REVIEWED: [['in_review'], 'reviewed', '심사 완료'],
   PROPOSING: [['reviewed'], 'proposing', '제안 진행'], CLOSE: [['submitted', 'in_review', 'needs_fix', 'reviewed', 'proposing'], 'closed', '종료'],
@@ -341,16 +347,20 @@ export const mockStaff = {
   },
   pubStatements: () => wait({ items: pubStatements }),
   pubRoyaltyImport: (i: RoyaltyImportInput) => {
+    // 서버처럼 원화가 아니면 환율을 곱해 원으로 (내림)
+    const fx = i.currency && i.currency !== 'KRW' ? i.fxRate ?? 0 : 1;
+    if (!(fx > 0)) fail('ROYALTY_FX_REQUIRED', 400);
     const rows: RoyaltyImportResult['rows'] = i.rows.map((r, k) => {
       const title = KNOWN_CODES[r.work.trim().toUpperCase()];
       if (!title) return { line: k + 1, work: r.work, error: '곡 코드(AQW-… 또는 ISWC)를 찾지 못했어요' };
-      const fee = Math.floor(r.collected / 10);
-      return { line: k + 1, workTitle: title, orgName: '한결 뮤직', collected: r.collected, fee, net: r.collected - fee };
+      const won = Math.floor(r.collected * fx);
+      const fee = Math.floor(won / 10);
+      return { line: k + 1, workTitle: title, orgName: '한결 뮤직', collected: won, fee, net: won - fee };
     });
     const errors = rows.filter(r => r.error).length;
     if (!i.preview && errors) fail('ROYALTY_ROWS_INVALID');
     if (i.preview) return wait({ rows, errors });
-    const st: PubStatement = { id: uid(), source: i.source, period: i.period, status: i.status, fileName: i.fileName ?? null, rowCount: rows.length, totalCollected: i.rows.reduce((n, r) => n + r.collected, 0), importedAt: iso(0) };
+    const st: PubStatement = { id: uid(), source: i.source, period: i.period, status: i.status, fileName: i.fileName ?? null, rowCount: rows.length, totalCollected: rows.reduce((n, r) => n + (r.collected ?? 0), 0), importedAt: iso(0), currency: i.currency ?? 'KRW', fxRate: i.currency && i.currency !== 'KRW' ? fx : null };
     pubStatements.unshift(st);
     return wait({ id: st.id, rows, errors: 0 });
   },

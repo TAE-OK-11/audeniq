@@ -104,6 +104,15 @@ Admin › 심사 › 퍼블리싱 요청 (`/admin/publishing-ops`):
 
 Studio: `/reports/publishing/statement?q=YYYY-Qn` prints a quarterly royalty statement.
 
+## Notices and posting (migration 0174)
+
+- Notices (DB triggers via `portal.notify`): share change applied / rejected, contract renewal / termination answered,
+  Open A&R fix / reviewed / proposing, royalties imported (estimated or confirmed), royalties credited to the balance.
+- Statements may be in another currency (`currency`, `fxRate` won per unit): amounts become whole won at import.
+- Posting: staff console `POST /api/staff/ops/publishing/post` `{statement_id}` (Finance, step-up, login
+  `audeniq_staff_ops`) — per org DEBIT `ROYALTY_RECEIVED`, CREDIT `AUDENIQ_FEE` / `ROYALTY_PAYABLE`; rows become paid, once.
+  The API role only moves estimated → confirmed; paid means posted.
+
 ## Stage 2 — not yet
 
 - A contributor with an AUDENIQ account answering inside the studio (`rights/confirmation` answers 501); link invites cover it.

@@ -1631,7 +1631,8 @@ async fn staff_answer_artist_requests(pool: PgPool) {
         Some(&st),
     )
     .await;
-    call(
+    // Paid means credited to the balance — only the staff console's posting does it (tests/staff_ops.rs).
+    let (s, _) = call(
         &app,
         "POST",
         &format!("/api/staff/publishing/royalties/{sid}/status"),
@@ -1639,6 +1640,7 @@ async fn staff_answer_artist_requests(pool: PgPool) {
         Some(&st),
     )
     .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
     let (_, all) = call(
         &app,
         "GET",
@@ -1652,7 +1654,7 @@ async fn staff_answer_artist_requests(pool: PgPool) {
             .as_array()
             .unwrap()
             .iter()
-            .all(|r| r["status"] == "paid" && r["postedAt"].is_string())
+            .all(|r| r["status"] == "confirmed" && r["postedAt"].is_null())
     );
     let (_, sum) = call(
         &app,
@@ -1678,4 +1680,22 @@ async fn staff_answer_artist_requests(pool: PgPool) {
         ),
         (Some(2), Some(120000))
     );
+    // Each answer reached the artist as a notice.
+    let notices: Vec<String> =
+        sqlx::query_scalar("SELECT title FROM portal.notifications WHERE org_id=$1")
+            .bind(u.org)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    for t in [
+        "‘겨울 편지’ 지분 변경이 반려됐어요.",
+        "‘겨울 편지’ 지분 변경이 반영됐어요.",
+        "저작권 관리 계약이 연장됐어요.",
+        "저작권 관리 계약 종료 요청이 반려됐어요.",
+        "‘새벽 네 시’ A&R 보완 요청이 있어요.",
+        "‘새벽 네 시’ A&R 심사가 끝났어요.",
+        "새 저작권료 예상 내역이 들어왔어요.",
+    ] {
+        assert!(notices.iter().any(|n| n == t), "{t} in {notices:?}");
+    }
 }

@@ -53,9 +53,9 @@ export interface StaffArSubmission {
   fixReason: string | null; fixReply?: string | null; submittedAt: string; history: { at: string; text: string }[]; demoName: string | null; lyrics: string | null;
 }
 export type ArDecisionAction = 'CLAIM' | 'FIX' | 'REVIEWED' | 'PROPOSING' | 'CLOSE';
-export interface PubStatement { id: string; source: string; period: string; status: 'estimated' | 'confirmed' | 'paid'; fileName: string | null; rowCount: number; totalCollected: number; importedAt: string }
+export interface PubStatement { id: string; source: string; period: string; status: 'estimated' | 'confirmed' | 'paid'; fileName: string | null; rowCount: number; totalCollected: number; importedAt: string; currency?: string; fxRate?: string | number | null; postedAt?: string | null }
 export interface RoyaltyRowInput { work: string; kind: string; country: string; collected: number }
-export interface RoyaltyImportInput { source: string; period: string; status: 'estimated' | 'confirmed'; fileName?: string; rows: RoyaltyRowInput[]; preview?: boolean }
+export interface RoyaltyImportInput { source: string; period: string; status: 'estimated' | 'confirmed'; fileName?: string; currency?: string; fxRate?: number; rows: RoyaltyRowInput[]; preview?: boolean }
 export interface RoyaltyImportResult { id?: string; errors: number; rows: { line: number; work?: string; workTitle?: string; orgName?: string; collected?: number; fee?: number; net?: number; error?: string }[] }
 
 export interface QueueRelease {
@@ -404,7 +404,7 @@ const remote = {
   pubArDecide: (aid: string, body: { action: ArDecisionAction; reason?: string }) => req<StaffArSubmission>(`/api/staff/publishing/ar/${id(aid)}/decision`, { method: 'POST', body }),
   pubStatements: () => req<Page<PubStatement>>('/api/staff/publishing/royalties'),
   pubRoyaltyImport: (body: RoyaltyImportInput) => req<RoyaltyImportResult>('/api/staff/publishing/royalties', { method: 'POST', body, timeoutMs: 60_000 }),
-  pubStatementStatus: (sid: string, status: 'confirmed' | 'paid') => req<{ id: string; status: string }>(`/api/staff/publishing/royalties/${id(sid)}/status`, { method: 'POST', body: { status } }),
+  pubStatementStatus: (sid: string, status: 'confirmed') => req<{ id: string; status: string }>(`/api/staff/publishing/royalties/${id(sid)}/status`, { method: 'POST', body: { status } }),
   identityLookup: (email: string) => req<IdentityAccount>('/api/staff/identity/lookup', { method: 'POST', body: { email } }),
   identityVerify: (uid: string, body: IdentityVerifyInput) => req<IdentityAccount>(`/api/staff/identity/${id(uid)}/verify`, { method: 'POST', body }),
 };

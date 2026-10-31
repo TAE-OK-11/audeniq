@@ -290,7 +290,7 @@ async fn publishing_screens_work_under_the_api_role(pool: PgPool) {
     ok(s, &v, "staff apply change");
     // Royalties from a statement, seen by the artist.
     let code = v["internalCode"].as_str().unwrap();
-    let (s, v) = call(&app, "POST", "/api/staff/publishing/royalties", json!({"source": "KOMCA", "period": "2026-09", "status": "confirmed", "rows": [{"work": code, "kind": "digital", "country": "KR", "collected": 50000}]}), Some(&staff)).await;
+    let (s, v) = call(&app, "POST", "/api/staff/publishing/royalties", json!({"source": "KOMCA", "period": "2026-09", "status": "estimated", "rows": [{"work": code, "kind": "digital", "country": "KR", "collected": 50000}]}), Some(&staff)).await;
     ok(s, &v, "royalty import");
     let (s, v) = call(
         &app,
@@ -299,11 +299,11 @@ async fn publishing_screens_work_under_the_api_role(pool: PgPool) {
             "/api/staff/publishing/royalties/{}/status",
             v["id"].as_str().unwrap()
         ),
-        json!({"status": "paid"}),
+        json!({"status": "confirmed"}),
         Some(&staff),
     )
     .await;
-    ok(s, &v, "royalty paid");
+    ok(s, &v, "royalty confirmed");
     for path in [
         "/api/staff/publishing/royalties".to_string(),
         format!("{base}/publishing/royalties"),
