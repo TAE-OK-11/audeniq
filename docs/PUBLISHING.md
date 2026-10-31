@@ -137,6 +137,20 @@ Studio: `/reports/publishing/statement?q=YYYY-Qn` prints a quarterly royalty sta
 - **First royalties.** Work screens show when the first royalties are likely (registration date, or today + 2 months,
   plus 6–9 months).
 
+## Identity and evidence (migration 0176)
+
+Modeled on what publishing administrators ask for (Songtrust: verified identity, the name as registered with the
+society; split sheets as the strongest proof; KOMCA: project files, MIDI, versions as evidence of creation).
+
+- **Pen names.** `pub_creator_profiles.pen_names` (up to 5). Preparing works from credits treats a credited pen name
+  as the writer (one "me" row under the credited name, roles merged); the split editor offers "이 사람이 나예요" and
+  saves the name as a pen name. Contributor JSON carries `penName` (the writer's row under another name), shown to staff.
+- **Evidence.** Works keep `created_on` (not in the future) and `creation_note` (≤1000). Attachment kinds add
+  `project` (DAW captures, versions, MIDI, or a written session log) and `split_sheet`.
+- **Application gates.** Every work needs at least one attachment (`WORK_EVIDENCE_REQUIRED`), and the signer must have
+  verified their identity (`APPLICATION_IDENTITY_REQUIRED`). The apply screen shows a per-work checklist: blocking
+  (shares, evidence) and recommended (lyrics, creation date, split sheet when co-writers have not confirmed, IPIs).
+
 ## Stage 2 — not yet
 
 - A contributor with an AUDENIQ account answering inside the studio (`rights/confirmation` answers 501); link invites cover it.

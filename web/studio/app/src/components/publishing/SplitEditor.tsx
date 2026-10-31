@@ -10,6 +10,8 @@ import { Glyph } from '../Glyph';
 import { SplitBar, peopleLine, roleText } from './parts';
 import { reuseContributors } from '../../lib/publishingPrep';
 import { SocietyJoin } from './SocietyJoin';
+import { useAsync } from '../../hooks/useAsync';
+import { useToast } from '../Toast';
 import '../../styles/split/Publishing.css';
 
 const ROLES = Object.keys(ROLE_LABEL) as ContributorRole[];
@@ -121,6 +123,29 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
 }) {
   const total = sumShares(value);
   const issues = splitIssues(value);
+  const toast = useToast();
+  const { data: me } = useAsync(() => pubApi.myCreator(), [], { key: 'my-creator' });
+  const nameKey = (v: string) => v.replace(/\s+/g, '').toLowerCase();
+  const isPen = (name: string) => !!me?.penNames?.some(p => nameKey(p) === nameKey(name));
+  /** 필명으로 들어온 줄을 나로 — 내 줄이 이미 있으면 역할·지분을 합치고, 없으면 그 줄을 내 줄로. 이름은 필명으로 저장해 다음부터 알아본다 */
+  const markMe = (c: WorkContributor) => {
+    if (!me) return;
+    const mine = value.find(x => x.isMe);
+    if (mine) {
+      onChange(value.filter(x => x.id !== c.id).map(x => (x.id === mine.id ? {
+        ...x, roles: Array.from(new Set([...x.roles, ...c.roles])), share: Math.round((x.share + c.share) * 100) / 100,
+        publisherShare: Math.round((x.publisherShare + c.publisherShare) * 100) / 100,
+      } : x)));
+    } else {
+      set(c.id, { isMe: true, creatorId: me.id, external: false, confirm: 'confirmed', penName: nameKey(c.name) !== nameKey(me.name), society: c.society || me.society, ipi: c.ipi || me.ipi });
+    }
+    if (nameKey(c.name) !== nameKey(me.name) && !isPen(c.name) && (me.penNames?.length ?? 0) < 5) {
+      void pubApi.saveMyCreator({ ...me, penNames: [...(me.penNames ?? []), c.name.trim()] })
+        .then(() => toast(`‘${c.name.trim()}’을(를) 내 필명으로 저장했어요.`, { tone: 'success', sub: '다음 곡부터는 이 이름을 나로 알아봐요' }))
+        .catch(() => {});
+    }
+  };
+  const meLabel = (c: WorkContributor) => (!c.isMe ? '' : c.penName || (me && nameKey(c.name) !== nameKey(me.name)) ? ' (나 · 필명)' : ' (나)');
   const set = (id: string, patch: Partial<WorkContributor>) => onChange(value.map(c => (c.id === id ? { ...c, ...patch } : c)));
   const rest = Math.max(0, Math.round((100 - total) * 100) / 100);
   const fromCreator = (cr: Creator) => onChange([...value, {
@@ -171,7 +196,7 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
             <div key={c.id} className="aq-pbl-person-read">
               <IconTile size="sm" tone="gray"><Glyph name="user" size={17} /></IconTile>
               <div className="min-0">
-                <strong>{c.name || '이름 없는 참여자'}{c.isMe && ' (나)'}</strong>
+                <strong>{c.name || '이름 없는 참여자'}{meLabel(c)}</strong>
                 <span className="ui-row-meta">{roleText(c)}{c.society && ` · ${societyName(c.society)}`}{c.ipi && <> · <span className="aq-nowrap">IPI {c.ipi}</span></>}{c.publisher && ` · ${c.publisher}`}</span>
                 {/* 맡기기 전(0%)에는 줄을 두지 않는다 — 'AUDENIQ 관리 0%'가 참여자마다 되풀이됐다 */}
                 {c.publisherShare > 0 && <span className="ui-row-meta">AUDENIQ 관리 {pct(c.publisherShare)}</span>}
@@ -193,12 +218,20 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
               <legend className="sr-only">참여자 {i + 1}: {c.name || '이름 없음'}</legend>
               <div className="aq-pbl-person-head">
                 <IconTile size="sm" tone="gray"><Glyph name="user" size={17} /></IconTile>
-                <div className="min-0"><strong>{c.name || `참여자 ${i + 1}`}{c.isMe && ' (나)'}</strong><small>{c.external ? '외부 참여자' : 'AUDENIQ 작가'}</small></div>
+                <div className="min-0"><strong>{c.name || `참여자 ${i + 1}`}{meLabel(c)}</strong><small>{c.isMe ? '나' : c.external ? '외부 참여자' : 'AUDENIQ 작가'}</small></div>
                 <button type="button" className="ui-btn is-text is-sm aq-danger-text" aria-label={`${c.name || '참여자'} 삭제`} onClick={() => onChange(value.filter(x => x.id !== c.id))}>삭제</button>
               </div>
               {c.external && <Field label="이름·활동명" htmlFor={`${prefix}-name`}>
                 <input id={`${prefix}-name`} className="ui-input" maxLength={100} value={c.name} onChange={e => set(c.id, { name: e.target.value })} />
               </Field>}
+              {/* 필명으로 크레딧에 올라간 나 — 남처럼 지분 확인을 보내지 않게 내 줄로 */}
+              {!c.isMe && me && c.name.trim() && (isPen(c.name) ? (
+                <button type="button" className="aq-pbl-fill is-pen" onClick={() => markMe(c)}>
+                  <Glyph name="user" size={14} />‘{c.name.trim()}’은(는) 내 필명이에요<span>{value.some(x => x.isMe) ? '내 줄로 합치기' : '나로 표시'}</span>
+                </button>
+              ) : (
+                <button type="button" className="ui-btn is-text is-sm aq-pbl-me-btn" onClick={() => markMe(c)}>이 사람이 나예요 (필명·예명)</button>
+              ))}
               {(() => {
                 // 크레딧으로 들어온 참여자 — 지난 곡에서 이 사람의 관리 단체·IPI를 적은 적이 있으면 한 번에 채운다
                 const k = c.external && (!c.society || !c.ipi) ? known(c.name) : null;

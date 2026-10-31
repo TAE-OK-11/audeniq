@@ -740,8 +740,12 @@ export function Upload() {
           pushNotice({ id: uid('n'), kind: '발매', time: stampNow(), link: `/releases/${r.id}?tab=publishing`, title, detail });
           if (!MOCK) toast(title, tone);
         };
-        void applyAlongRelease(r.id, coverTitles, { name: signerName.trim(), data: signature }).then(({ applied, waiting }) => {
+        void applyAlongRelease(r.id, coverTitles, { name: signerName.trim(), data: signature }).then(({ applied, waiting, identity }) => {
           if (!applied && !waiting) return;
+          if (identity) {
+            tell(`${r.title} 곡 정보를 정리해 두었어요.`, '본인인증을 마치면 앨범 퍼블리싱 탭에서 같은 곡들의 저작권 관리를 바로 신청할 수 있어요.', 'info');
+            return;
+          }
           tell(
             applied ? `저작권 관리 신청서도 ${applied}곡 함께 접수했어요.` : `${r.title} 곡 정보를 확인하고 저작권 관리를 신청해 주세요.`,
             waiting ? `${waiting}곡은 참여자·지분을 확인한 뒤 앨범 퍼블리싱 탭에서 신청할 수 있어요.` : '담당자 확인이 끝나면 계약서를 보내 드려요.',

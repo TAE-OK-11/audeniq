@@ -7,7 +7,7 @@ import { uid } from './store';
 // ---------- 신청 전 준비 점검 ----------
 
 /** 곡 시트에서 고칠 자리 — 누르면 그 칸으로 내려가 연다 */
-export type PrepField = 'split' | 'confirm' | 'ipi' | 'fix';
+export type PrepField = 'split' | 'confirm' | 'ipi' | 'fix' | 'evidence';
 export interface WorkIssue { field: PrepField; text: string; blocking: boolean; contributorId?: string }
 
 export type WorkStage = 'ready' | 'blocked' | 'fix' | 'applied' | 'signing' | 'managed' | 'readonly';
@@ -30,6 +30,18 @@ export function workIssues(w: Work): WorkIssue[] {
   }
   for (const c of w.contributors) {
     if (!c.isMe && !c.ipi) out.push({ field: 'ipi', text: `${c.name || '이름 없는 참여자'}의 IPI 번호가 비어 있어요.`, blocking: false, contributorId: c.id });
+    // 관리 단체에 가입했으면 IPI가 있다 — 내 번호가 비면 단체 등록 때 다른 사람으로 잡힐 수 있다
+    if (c.isMe && c.society && !c.ipi) out.push({ field: 'ipi', text: '내 IPI 번호가 비어 있어요. 관리 단체 회원이면 꼭 적어 주세요.', blocking: false, contributorId: c.id });
+  }
+  // 내가 만들었다는 근거 (0176) — 서버도 곡마다 자료 1개 이상을 요구한다(WORK_EVIDENCE_REQUIRED)
+  if (!w.attachments.length) out.push({ field: 'evidence', text: '창작 증빙 자료가 없어요. 데모·작업 파일·악보·가사·합의서 중 하나를 올려 주세요.', blocking: true });
+  else {
+    if (w.workType !== 'instrumental' && !w.attachments.some(a => a.kind === 'lyrics')) out.push({ field: 'evidence', text: '가사가 없어요. 노래가 있는 곡이면 가사를 붙여 주세요.', blocking: false });
+    if (!w.createdOn) out.push({ field: 'evidence', text: '창작을 마친 날을 적어 두면 분쟁 때 근거가 돼요.', blocking: false });
+  }
+  // 공동 작가가 아직 확인하지 않았고 합의서도 없다 — 분쟁 때 가장 강한 근거는 모두가 서명한 합의서
+  if (w.contributors.some(c => !c.isMe && c.confirm !== 'confirmed') && !w.attachments.some(a => a.kind === 'split_sheet')) {
+    out.push({ field: 'evidence', text: '공동 작가가 아직 확인하지 않았어요. 서명한 공동 작곡 합의서가 있으면 올려 두세요.', blocking: false });
   }
   return out;
 }
@@ -69,6 +81,7 @@ export function albumReadiness(works: readonly Work[], missingTracks: number) {
   const disputed = open.filter(w => w.contributors.some(c => c.confirm === 'disputed'));
   const pending = open.filter(w => w.contributors.some(c => c.confirm === 'pending') && !disputed.includes(w));
   const ipi = by('ipi');
+  const evidence = by('evidence', true);
   const fix = mine.filter(w => !!w.fix);
   const groups: PrepGroup[] = [
     {
@@ -91,12 +104,16 @@ export function albumReadiness(works: readonly Work[], missingTracks: number) {
         : pending.length ? `${pending.length}곡이 참여자 확인을 기다리고 있어요` : '모든 참여자가 확인했어요',
     },
     {
+      key: 'evidence', label: '창작 증빙', works: evidence, state: evidence.length ? 'todo' : 'done',
+      sub: evidence.length ? `${evidence.length}곡에 창작 증빙 자료가 없어요. 데모·작업 파일·악보·가사 중 하나를 올려 주세요` : '모든 곡에 창작 증빙 자료가 있어요',
+    },
+    {
       key: 'ipi', label: 'IPI 번호', works: ipi, state: ipi.length ? 'todo' : 'done',
       sub: ipi.length ? `${ipi.length}곡에 IPI가 빈 참여자가 있어요 (없어도 신청할 수 있어요)` : '참여자 IPI를 모두 적었어요',
     },
   ];
   const blocked = open.filter(w => workStage(w) === 'blocked');
-  const parts = [ready.length && `신청 가능 ${ready.length}곡`, split.length && `지분 확인 필요 ${split.length}곡`,
+  const parts = [ready.length && `신청 가능 ${ready.length}곡`, split.length && `지분 확인 필요 ${split.length}곡`, evidence.length && `증빙 필요 ${evidence.length}곡`,
     disputed.length && `이의 제기 ${disputed.length}곡`, missingTracks && `정리 전 ${missingTracks}곡`].filter(Boolean) as string[];
   return { ready, blocked, groups, summary: parts.join(' · ') || (open.length ? '확인할 곡이 없어요' : '신청할 곡이 없어요') };
 }

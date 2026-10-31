@@ -10,7 +10,7 @@ const person = (p: Partial<WorkContributor>): WorkContributor => ({
 });
 const work = (p: Partial<Work>): Work => ({
   id: 'w', title: '곡', altTitles: [], workType: 'original', language: 'ko', genre: '', description: '', visibility: 'private', iswc: null,
-  internalCode: 'AQW-1', hasPriorPublisher: false, contributors: [person({ name: '서린', isMe: true })], attachments: [], recordings: [],
+  internalCode: 'AQW-1', hasPriorPublisher: false, contributors: [person({ name: '서린', isMe: true })], attachments: [{ id: 'f', kind: 'demo', name: '데모', at: '' }], recordings: [],
   registration: 'none', registrationLog: [], application: null, contractId: null, fix: null, myRole: 'owner', activity: [], rowVersion: 1,
   createdAt: '', updatedAt: '', ...p,
 });
@@ -39,6 +39,19 @@ describe('신청 전 준비 점검', () => {
     expect(g.confirm.state).toBe('wait');
     expect(g.ipi.works.map(w => w.id)).toEqual(['c']);
     expect(g.tracks.state).toBe('todo');
+  });
+
+  it('창작 증빙이 없으면 신청할 수 없고, 가사·창작일·합의서는 권하기만 한다', async () => {
+    const { workIssues } = await import('./publishingPrep');
+    const bare = work({ id: 'e', attachments: [] });
+    expect(workStage(bare)).toBe('blocked');
+    expect(workIssues(bare).find(i => i.field === 'evidence')?.blocking).toBe(true);
+    expect(albumReadiness([bare], 0).groups.find(g => g.key === 'evidence')?.works.map(w => w.id)).toEqual(['e']);
+    const soft = workIssues(waiting).filter(i => i.field === 'evidence');
+    expect(soft.every(i => !i.blocking)).toBe(true);
+    expect(soft.map(i => i.text.slice(0, 6))).toEqual(['가사가 없어', '창작을 마친', '공동 작가가']);
+    const done = work({ id: 'f', createdOn: '2026-03-02', attachments: [{ id: 'l', kind: 'lyrics', name: '가사', at: '' }] });
+    expect(workIssues(done).filter(i => i.field === 'evidence')).toEqual([]);
   });
 });
 

@@ -63,8 +63,11 @@ export function WorkSheet({ work, no, all, focus, onClose, onSaved, releaseId }:
   const [attaching, setAttaching] = useState(false);
   const splitRef = useRef<HTMLElement>(null);
   const statusRef = useRef<HTMLElement>(null);
+  const filesRef = useRef<HTMLElement>(null);
   useEffect(() => {
-    const el = focus?.field === 'fix' ? statusRef.current : focus ? splitRef.current : null;
+    // 창작 증빙이 없어서 왔으면 자료 칸으로 내려가 첨부 창을 바로 연다
+    if (focus?.field === 'evidence' && canEdit) setAttaching(true);
+    const el = focus?.field === 'fix' ? statusRef.current : focus?.field === 'evidence' ? filesRef.current : focus ? splitRef.current : null;
     const target = focus?.contributorId ? document.getElementById(`pbl-person-${focus.contributorId}`) : null;
     if (el) window.requestAnimationFrame(() => (target ?? el).scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }, [focus]);
@@ -158,7 +161,7 @@ export function WorkSheet({ work, no, all, focus, onClose, onSaved, releaseId }:
           <RegProgress status={w.registration} log={w.registrationLog} />
         </section>
 
-        <section className="aq-pbl-sheet-sec" aria-labelledby="wsFiles">
+        <section ref={filesRef} className="aq-pbl-sheet-sec" aria-labelledby="wsFiles">
           <div className="ui-section-head">
             <h3 id="wsFiles" className="aq-track-sheet-h">첨부 자료</h3>
             {canEdit && !draft && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setAttaching(true)}><Glyph name="clip" size={14} className="aq-glyph-lead" />자료 첨부</button>}

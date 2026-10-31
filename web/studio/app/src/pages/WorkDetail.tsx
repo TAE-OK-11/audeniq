@@ -390,11 +390,13 @@ export function WorkDetail() {
                 ...(w.originalWork ? [['원곡', `${w.originalWork.title}${w.originalWork.writers ? ` · ${w.originalWork.writers}` : ''}${w.originalWork.permission ? ' · 허락 받음' : ' · 허락 확인 전'}`] as [string, string]] : []),
                 ...(w.samples?.length ? [['샘플·인용', w.samples.map(x => `${x.title}${x.artist ? `(${x.artist})` : ''}`).join(', ')] as [string, string]] : []),
                 ...(w.hasPriorPublisher && w.priorPublisherUntil ? [['기존 계약 종료', w.priorPublisherUntil] as [string, string]] : []),
-                ['내 역할', me ? `${roleText(me)} · ${pct(me.share)}` : <Empty>참여하지 않음</Empty>],
+                ['내 역할', me ? `${roleText(me)} · ${pct(me.share)}${me.penName ? ` · 필명 ‘${me.name}’` : ''}` : <Empty>참여하지 않음</Empty>],
+                ['창작을 마친 날', w.createdOn ?? <Empty>입력 전</Empty>],
                 ['발매', origin === 'other_release' ? `${w.externalRelease?.artist ?? '다른 아티스트'} 발매` : w.recordings.length ? `녹음 ${w.recordings.length}개` : <Empty>발매 전</Empty>],
               ]} />
               {w.altTitles.length > 0 && <KeyValue items={[[ '대체 제목', w.altTitles.join(' · ') ]]} />}
               {w.description && <><h2 className="subhead">곡 설명</h2><p className="muted small break">{w.description}</p></>}
+              {w.creationNote && <><h2 className="subhead">만든 과정</h2><p className="muted small break" style={{ whiteSpace: 'pre-line' }}>{w.creationNote}</p></>}
             </div>
           </div>
         )}

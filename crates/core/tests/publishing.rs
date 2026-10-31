@@ -31,6 +31,30 @@ async fn admit_signature(pool: &PgPool) {
         .unwrap();
 }
 
+/// What an application needs besides the works (0176): the signer's identity verified (본인인증), and a piece of
+/// evidence on every work of the org (a short note here, as the screens attach files).
+async fn ready(pool: &PgPool, u: &User) {
+    sqlx::query(
+        "INSERT INTO portal.account_identities(user_id,real_name,birth_date,provider,method,transaction_id,ci_hash)
+         VALUES($1,'테스트','1990-01-01','test','PASS',$2,$3) ON CONFLICT (user_id) DO NOTHING",
+    )
+    .bind(u.user)
+    .bind(Uuid::new_v4().to_string())
+    .bind(audeniq_core::domain::sha256_hex(u.user.to_string()))
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO portal.pub_work_attachments(id,org_id,work_id,kind,name,text_body,created_by)
+         SELECT gen_random_uuid(), w.org_id, w.id, 'proof', '작업 메모', '처음 쓴 날의 메모', w.created_by FROM portal.pub_works w
+          WHERE w.org_id=$1 AND NOT EXISTS(SELECT 1 FROM portal.pub_work_attachments f WHERE f.work_id=w.id)",
+    )
+    .bind(u.org)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
 async fn track(app: &Router, pool: &PgPool, u: &User, release: Uuid, title: &str, no: i32) -> Uuid {
     let artist = create_artist(app, u).await;
     let rv = row_version(pool, release).await;
@@ -180,6 +204,7 @@ async fn work_to_application_to_review(pool: PgPool) {
     assert_eq!(w["attachments"][0]["text"], "밀려오는 파도처럼");
 
     // Submit (신청서 접수); the same key returns the same application.
+    ready(&pool, &u).await;
     let (s, a) = call(
         &app,
         "POST",
@@ -202,6 +227,7 @@ async fn work_to_application_to_review(pool: PgPool) {
     .unwrap();
     assert_eq!((form.as_str(), sealed), ("PUBLISHING", true));
     let app_id = a["id"].as_str().unwrap().to_string();
+    ready(&pool, &u).await;
     let (_, again) = call(
         &app,
         "POST",
@@ -218,6 +244,7 @@ async fn work_to_application_to_review(pool: PgPool) {
         .unwrap();
     assert_eq!(n, 1);
     // ...and a second application for the same work is refused.
+    ready(&pool, &u).await;
     let (s, e) = call(
         &app,
         "POST",
@@ -696,6 +723,7 @@ async fn prepare_from_credits_withdraw_and_isolation(pool: PgPool) {
 
     // Apply both, then withdraw: the works return to 'none'.
     let ids: Vec<&str> = items.iter().map(|w| w["id"].as_str().unwrap()).collect();
+    ready(&pool, &u).await;
     let (s, a) = call(
         &app,
         "POST",
@@ -734,6 +762,7 @@ async fn prepare_from_credits_withdraw_and_isolation(pool: PgPool) {
     // Policy and agreement checks.
     let mut bad = apply(&ids, "key-old-policy");
     bad["policyVersion"] = json!("2025-01");
+    ready(&pool, &u).await;
     let (s, e) = call(
         &app,
         "POST",
@@ -748,6 +777,7 @@ async fn prepare_from_credits_withdraw_and_isolation(pool: PgPool) {
     );
     let mut bad = apply(&ids, "key-no-agree");
     bad["agreed"] = json!(["accurate"]);
+    ready(&pool, &u).await;
     let (s, _) = call(
         &app,
         "POST",
@@ -874,6 +904,7 @@ async fn work_origin_decides_what_can_be_applied(pool: PgPool) {
     assert_eq!(demo["origin"], "unreleased");
     assert!(demo["externalRelease"].is_null());
     let demo_id = demo["id"].as_str().unwrap().to_string();
+    ready(&pool, &u).await;
     let (s, e) = call(
         &app,
         "POST",
@@ -909,6 +940,7 @@ async fn work_origin_decides_what_can_be_applied(pool: PgPool) {
     assert_eq!(other["externalRelease"]["artist"], "이온");
     assert_eq!(other["externalRelease"]["isrc"], "KRA262500011");
     let other_id = other["id"].as_str().unwrap().to_string();
+    ready(&pool, &u).await;
     let (s, a) = call(
         &app,
         "POST",
@@ -929,6 +961,7 @@ async fn work_origin_decides_what_can_be_applied(pool: PgPool) {
         "{ai}"
     );
     let ai_id = ai["id"].as_str().unwrap().to_string();
+    ready(&pool, &u).await;
     let (s, e) = call(
         &app,
         "POST",
@@ -982,6 +1015,7 @@ async fn work_origin_decides_what_can_be_applied(pool: PgPool) {
     .await;
     assert_eq!(s, StatusCode::OK, "{w}");
     assert_eq!(w["origin"], "own_release");
+    ready(&pool, &u).await;
     let (s, a) = call(
         &app,
         "POST",
@@ -1299,6 +1333,7 @@ async fn staff_answer_artist_requests(pool: PgPool) {
     }), Some(&u)).await;
     let id = w["id"].as_str().unwrap().to_string();
     let code = w["internalCode"].as_str().unwrap().to_string();
+    ready(&pool, &u).await;
     let (_, a) = call(
         &app,
         "POST",
@@ -1967,4 +2002,147 @@ async fn prepare_reuses_known_co_writers(pool: PgPool) {
         (society.as_deref(), ipi.as_deref()),
         (Some("KOMCA"), Some("00798765432"))
     );
+}
+
+/// Pen names and evidence (0176): a song credited under the writer's pen name is the writer's own row, not a
+/// co-writer's; an application needs evidence on every work and the signer's verified identity; when and how the
+/// song was made is kept with it.
+#[sqlx::test]
+async fn pen_names_evidence_and_identity(pool: PgPool) {
+    let (app, _store) = app(pool.clone()).await;
+    admit_signature(&pool).await;
+    let u = user(&app).await;
+    let base = format!("/api/orgs/{}", u.org);
+    let (s, me) = call(
+        &app,
+        "PUT",
+        "/api/me/creator",
+        json!({"roles": ["composer", "lyricist"], "penNames": ["하람", " 하 람 ", "HARAM", "haram"]}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{me}");
+    assert_eq!(me["penNames"], json!(["하람", "HARAM"]), "{me}");
+    // The release credits the writer twice: as themselves (composer) and as the pen name 하 람 (lyrics).
+    let release = create_release(&app, &u).await;
+    let t = track(&app, &pool, &u, release, "새벽", 1).await;
+    let (pen, co) = (Uuid::new_v4(), Uuid::new_v4());
+    for (id, name) in [(pen, "하 람"), (co, "박도윤")] {
+        sqlx::query(
+            "INSERT INTO identity.parties(id,org_id,kind,display_name) VALUES($1,$2,'PERSON',$3)",
+        )
+        .bind(id)
+        .bind(u.org)
+        .bind(name)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    for (p, r) in [(u.party, "COMPOSER"), (pen, "LYRICIST"), (co, "LYRICIST")] {
+        sqlx::query(
+            "INSERT INTO catalog.credits(track_id,org_id,party_id,role) VALUES($1,$2,$3,$4)",
+        )
+        .bind(t)
+        .bind(u.org)
+        .bind(p)
+        .bind(r)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let (s, r) = call(
+        &app,
+        "POST",
+        &format!("{base}/releases/{release}/works"),
+        json!({"enroll": true}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{r}");
+    let (_, list) = call(&app, "GET", &format!("{base}/works"), json!({}), Some(&u)).await;
+    let w = list["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|w| w["title"] == "새벽")
+        .unwrap()
+        .clone();
+    let people = w["contributors"].as_array().unwrap();
+    assert_eq!(people.len(), 2, "{w}");
+    let mine: Vec<&Value> = people.iter().filter(|c| c["isMe"] == true).collect();
+    assert_eq!(mine.len(), 1, "{w}");
+    assert_eq!(mine[0]["confirm"], "confirmed");
+    assert_eq!(mine[0]["roles"].as_array().unwrap().len(), 2, "{w}");
+    let id = w["id"].as_str().unwrap().to_string();
+
+    // No evidence yet, then no verified identity.
+    let (s, e) = call(
+        &app,
+        "POST",
+        &format!("{base}/publishing/applications"),
+        apply(&[&id], "key-pen-1"),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("WORK_EVIDENCE_REQUIRED")
+        ),
+        "{e}"
+    );
+    let (s, v) = call(&app, "POST", &format!("{base}/works/{id}/attachments"),
+        json!({"kind": "project", "name": "새벽 세션", "text": "Logic 프로젝트, 2026-03-02 첫 버전"}), Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (s, w2) = call(&app, "PATCH", &format!("{base}/works/{id}"),
+        json!({"createdOn": "2026-03-02", "creationNote": "피아노로 멜로디를 먼저 쓰고\n가사를 붙였어요.", "rowVersion": v["rowVersion"]}), Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{w2}");
+    assert_eq!(
+        (
+            w2["createdOn"].as_str(),
+            w2["attachments"][0]["kind"].as_str()
+        ),
+        (Some("2026-03-02"), Some("project"))
+    );
+    // A future day is not when a song was finished.
+    let (s, e) = call(
+        &app,
+        "PATCH",
+        &format!("{base}/works/{id}"),
+        json!({"createdOn": "2999-01-01", "rowVersion": w2["rowVersion"]}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("WORK_CREATED_ON_INVALID")),
+        "{e}"
+    );
+    let (s, e) = call(
+        &app,
+        "POST",
+        &format!("{base}/publishing/applications"),
+        apply(&[&id], "key-pen-2"),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("APPLICATION_IDENTITY_REQUIRED")
+        ),
+        "{e}"
+    );
+    ready(&pool, &u).await;
+    let (s, a) = call(
+        &app,
+        "POST",
+        &format!("{base}/publishing/applications"),
+        apply(&[&id], "key-pen-3"),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{a}");
 }

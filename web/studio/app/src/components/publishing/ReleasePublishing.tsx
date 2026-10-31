@@ -5,7 +5,8 @@
 //  · PublishingBundleStep: 공유하는 계약서 화면의 발매 계약 묶음 — 배급 계약 다음 줄에 같은 앨범의 저작권 관리 계약
 import { Link, useNavigate } from '../../lib/router';
 import { pubApi, type Work } from '../../api/publishing';
-import { signing } from '../../lib/publishingPrep';
+import { signing, workIssues } from '../../lib/publishingPrep';
+import { getAccountSnapshot, useAccount } from '../../store/account';
 import { APPLICATION_AGREE, isReleased, splitReady } from '../../lib/publishing';
 import { useAsync } from '../../hooks/useAsync';
 import { readJSON, removeKey } from '../../lib/storage';
@@ -32,6 +33,7 @@ export function PublishingAlongside({ on, onToggle, agreed, onAgree }: {
   on: boolean; onToggle: (v: boolean) => void; agreed: readonly string[]; onAgree: (v: string[]) => void;
 }) {
   const { data: policy } = useAsync(() => pubApi.policy(), [], { key: 'pub-policy' });
+  const account = useAccount();
   const all = APPLICATION_AGREE.every(([k]) => agreed.includes(k));
   return (
     <div className="aq-agree-box aq-pub-along">
@@ -46,6 +48,7 @@ export function PublishingAlongside({ on, onToggle, agreed, onAgree }: {
       </label>
       {on && (
         <>
+          {!account.verified && <p className="ui-field-help aq-pub-along-sub">저작권 관리 신청은 본인인증을 한 뒤에 접수돼요. 지금은 곡 정보만 정리해 두고, 인증하면 앨범 퍼블리싱 탭에서 바로 신청할 수 있어요.</p>}
           <label className="ui-check is-plain">
             <input type="checkbox" checked={all} onChange={e => onAgree(e.target.checked ? APPLICATION_AGREE.map(([k]) => k) : [])} />
             <span><strong>저작권 관리 신청 내용에 모두 동의해요</strong></span>
@@ -65,11 +68,13 @@ export function PublishingAlongside({ on, onToggle, agreed, onAgree }: {
 
 /** 발매 접수 직후 — 크레딧으로 곡 정보를 만들고, 신청할 수 있는 곡은 발매 신청서와 같은 서명으로 저작권 관리 신청서를 낸다.
  *  지분이 맞지 않는 곡 등은 남겨 두고(앨범 퍼블리싱 탭에서 이어서) 몇 곡을 냈는지 돌려준다 */
-export async function applyAlongRelease(releaseId: string, coverTitles: string[], signature: { name: string; data: string }): Promise<{ applied: number; waiting: number }> {
+export async function applyAlongRelease(releaseId: string, coverTitles: string[], signature: { name: string; data: string }): Promise<{ applied: number; waiting: number; identity?: boolean }> {
   await pubApi.prepareWorksFromRelease(releaseId, true, coverTitles);
   const [works, policy] = await Promise.all([pubApi.listWorks(), pubApi.policy()]);
   const mine = works.filter(w => w.recordings.some(r => r.releaseId === releaseId) && (w.myRole === 'owner' || w.myRole === 'editor'));
-  const ready = mine.filter(w => !w.application && isReleased(w) && w.aiUse !== 'generated' && splitReady(w.contributors));
+  // 서버와 같은 조건 — 지분이 맞고 창작 증빙이 있는 곡만 (발매 음원이 데모로 붙어 보통은 있다). 본인인증 전이면 곡 정보만 정리해 둔다
+  const ready = mine.filter(w => !w.application && isReleased(w) && w.aiUse !== 'generated' && splitReady(w.contributors) && !workIssues(w).some(i => i.blocking));
+  if (!getAccountSnapshot().verified) return { applied: 0, waiting: mine.filter(w => !w.application).length, identity: true };
   const scope = readJSON<{ territories: string[]; rights: string[] } | null>('publishing-apply-scope', null);
   const pick = <T,>(last: string[] | undefined, all: T[], key: (x: T) => string) => {
     const keep = (last ?? []).filter(c => all.some(x => key(x) === c));
