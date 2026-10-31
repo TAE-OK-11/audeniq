@@ -75,12 +75,9 @@ try {
   await sheet.getByRole('button', { name: '취소' }).click();
   await page.locator('#modal').getByRole('button', { name: '닫기' }).click();
   await sheet.waitFor({ state: 'detached' });
-  // Selecting songs keeps the same selection for prep check, bundling and download.
-  await page.locator('.aq-pbl-pick input').first().check();
-  await page.locator('.aq-pbl-selbar').waitFor();
-  assert.match(await page.locator('#pubPrepTitle').innerText(), /고른 1곡/);
-  await noOverflow(page, 'album selection');
-  await page.screenshot({ path: `${out}/album-select-390.png`, fullPage: true });
+  // Album tracks open directly; selection controls and the floating action bar are absent.
+  assert.equal(await page.locator('.aq-pbl-pick, .aq-pbl-selbar').count(), 0);
+  assert.equal(await page.getByRole('button', { name: '전체 선택', exact: true }).count(), 0);
   // Attach materials from a dialog, then preview them inside the song sheet.
   await page.getByRole('button', { name: '자료 첨부' }).first().click();
   await page.locator('#modal #attachWork').waitFor();
@@ -159,7 +156,7 @@ try {
   await page.locator('.ui-callout.is-success').waitFor();
   await page.locator('.adm-release-hero').getByText('보완 요청', { exact: true }).waitFor();
   assert.deepEqual(errors, []);
-  console.log('Publishing UI passed: 12 pages × 4 widths, album prep/sheet/selection/attach, split editing, return navigation, filters, album scope, and report amounts, admin review.');
+  console.log('Publishing UI passed: 12 pages × 4 widths, album prep/sheet/attach, split editing, return navigation, filters, album scope, and report amounts, admin review.');
 } finally {
   await browser.close();
   if (server && 'close' in server) await server.close();

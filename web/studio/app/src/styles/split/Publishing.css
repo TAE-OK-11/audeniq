@@ -90,34 +90,11 @@
 /* 앨범 퍼블리싱 탭 — '정보' 탭 트랙 목록(aq-tracklist)에 고르기 칸만 더했다 */
 .aq-pbl-track-tools{display:flex;align-items:center;gap:6px}
 .aq-pbl-track-list .aq-tracklist{margin-top:12px}
-.aq-pbl-trackline{display:grid;grid-template-columns:40px minmax(0,1fr);align-items:center}
 .aq-pbl-trackrow{min-width:0}
-.aq-pbl-track-list a.aq-pbl-trackrow{grid-template-columns:40px 28px minmax(0,1fr) auto;padding-left:0;text-decoration:none}
-.aq-pbl-pick{display:grid;place-items:center;width:40px;height:44px;cursor:pointer}
-.aq-pbl-pick.is-empty{cursor:default}
-.aq-pbl-pick>input{width:20px;height:20px;margin:0;accent-color:var(--aq-primary);cursor:pointer}
-.aq-tracklist li.is-picked{border-radius:var(--aq-r-lg);background:var(--aq-blue-25)}
 .aq-pbl-trackrow .aq-trackrow-side .ui-badge{white-space:nowrap}
 @media(max-width:760px){
-  .aq-pbl-trackline{grid-template-columns:34px minmax(0,1fr)}
-  .aq-pbl-pick{width:34px}
-  .aq-pbl-track-list a.aq-pbl-trackrow{grid-template-columns:34px 22px minmax(0,1fr) auto}
   .aq-pbl-trackrow .aq-trackrow-side .ui-badge{font-size:var(--aq-fs-2xs)}
 }
-/* 선택 작업도 Studio 공통 카드·버튼을 사용하고, 위치와 배치만 지정한다. */
-.aq-pbl-selbar{position:sticky;bottom:calc(12px + env(safe-area-inset-bottom));z-index:var(--aq-z-sticky);display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:16px;box-shadow:var(--aq-shadow-pop);animation:aq-pbl-rise var(--aq-motion-base) var(--aq-enter)}
-.aq-pbl-selbar-count{flex:1 1 auto;font-size:var(--aq-fs-sm);color:var(--aq-text-3)}
-.aq-pbl-selbar-count b{color:var(--aq-text);font-size:var(--aq-fs-md)}
-.aq-pbl-selbar-close{color:var(--aq-text-3)!important;min-width:36px;padding-inline:8px}
-@keyframes aq-pbl-rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
-@media(max-width:560px){
-  .aq-pbl-selbar{padding:10px 12px;gap:6px}
-  .aq-pbl-selbar-count{flex-basis:calc(100% - 48px)}
-  .aq-pbl-selbar>.ui-btn:not(.aq-pbl-selbar-close){flex:1 1 0;min-width:0;padding-inline:8px}
-  .aq-pbl-selbar-close{order:-1;margin-left:auto}
-  .aq-pbl-selbar-count{order:-2}
-}
-@media(prefers-reduced-motion:reduce){.aq-pbl-selbar{animation:none}}
 /* 참여자 확인 현황 */
 .aq-pbl-people-board{display:grid;gap:14px}
 .aq-pbl-people-board>*{margin:0}
