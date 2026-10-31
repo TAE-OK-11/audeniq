@@ -57,6 +57,7 @@ const Contracts = lazyPage(pageLoaders.Contracts, m => m.Contracts);
 const Agreement = lazyPage(pageLoaders.Agreement, m => m.Agreement);
 const PublishingAgreement = lazyPage(pageLoaders.PublishingAgreement, m => m.PublishingAgreement);
 const PublishingApplicationDoc = lazyPage(pageLoaders.PublishingApplicationDoc, m => m.PublishingApplicationDoc);
+const SplitSheet = lazyPage(pageLoaders.SplitSheet, m => m.SplitSheet);
 const Rights = lazyPage(pageLoaders.Rights, m => m.Rights);
 const WorkDetail = lazyPage(pageLoaders.WorkDetail, m => m.WorkDetail);
 const WorkEditor = lazyPage(pageLoaders.WorkEditor, m => m.WorkEditor);
@@ -212,6 +213,7 @@ function PortalRoutes() {
             <Route path="/works/new" element={<WorkEditorRoute />} />
             <Route path="/works/:id" element={<WorkDetailRoute />} />
             <Route path="/works/:id/edit" element={<WorkEditorRoute />} />
+            <Route path="/works/:id/split-sheet" element={<SplitSheet />} />
             <Route path="/publishing/apply" element={<PublishingApply />} />
             <Route path="/publishing/applications/:id" element={<PublishingApplicationDoc />} />
             <Route path="/publishing" element={<Publishing />} />

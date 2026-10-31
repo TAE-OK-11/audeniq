@@ -75,7 +75,7 @@ export function PublishingApplicationDoc() {
               <li className="is-done"><i aria-hidden="true"><CheckIcon size={10} /></i>{REG_STEPS[0]} — 신청서 서명, 방금 마쳤어요</li>
               <li><i aria-hidden="true">2</i>{REG_STEPS[1]} — 담당자가 참여자·지분을 확인해요. 보완이 필요하면 곡 화면에 보여요</li>
               <li><i aria-hidden="true">3</i>계약서 서명 — 승인되면 계약서 화면에서 해요</li>
-              <li><i aria-hidden="true">4</i>{REG_STEPS[3]} · {REG_STEPS[4]} — 관리 단체 등록이 끝나야 저작권료를 받아요</li>
+              <li><i aria-hidden="true">4</i>{REG_STEPS[3]} · {REG_STEPS[4]} — 관리 단체 등록이 끝나야 저작권료를 받아요. 첫 저작권료는 등록 뒤 보통 6~9개월</li>
             </ol>
           </div>
         </div>

@@ -9,6 +9,7 @@ import { Badge, Field, IconTile } from '../../ui';
 import { Glyph } from '../Glyph';
 import { SplitBar, peopleLine, roleText } from './parts';
 import { reuseContributors } from '../../lib/publishingPrep';
+import { SocietyJoin } from './SocietyJoin';
 import '../../styles/split/Publishing.css';
 
 const ROLES = Object.keys(ROLE_LABEL) as ContributorRole[];
@@ -229,6 +230,7 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
                   </Field>
                 </div>
               </details>
+              {c.isMe && !c.society && <SocietyJoin inline />}
               {invalid && errors.map(err => <small key={err.text} className="ui-field-help is-error" role="alert">{err.text}</small>)}
             </fieldset>
           );

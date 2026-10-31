@@ -7,7 +7,7 @@ import { useDeferredValue, useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from '../lib/router';
 import { pubApi, type ArSubmission, type Royalty, type Work } from '../api/publishing';
 import { useAsync } from '../hooks/useAsync';
-import { APP_LABEL, APP_TONE, AR_LABEL, AR_TONE, matchFilter, workOrigin, type WorkFilter } from '../lib/publishing';
+import { APP_LABEL, APP_TONE, AR_LABEL, AR_TONE, PAYOUT_STEPS, PAYOUT_TIMING, matchFilter, workOrigin, type WorkFilter } from '../lib/publishing';
 import { Glyph } from '../components/Glyph';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { SkeletonRows } from '../components/Skeleton';
@@ -132,11 +132,13 @@ function RoyaltyReport({ rows, label }: { rows: Royalty[] | null; label: string 
         {/* 고른 기간·조건을 그대로 들고 내역으로 */}
         <button className="aq-head-link" type="button" onClick={() => document.getElementById('pubRoyaltyList')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>내역 보기<Glyph name="chevron-right" size={14} /></button>
       </div>
-      {!rows ? <SkeletonRows count={2} pattern="amount" /> : !r ? (
+      {!rows ? <SkeletonRows count={2} pattern="amount" /> : !r ? (<>
         <EmptyState compact icon={<Glyph name="chart" size={22} />} title={label ? '이 조건에 맞는 저작권료가 없어요' : '아직 들어온 저작권료가 없어요'}>
-          {label ? `${label} 기준으로 들어온 내역이 없어요. 기간을 넓히거나 조건을 바꿔 보세요.` : '관리 단체가 사용료를 나눠 주면 여기서 달마다 얼마나 벌었는지 보여 드려요. 보통 사용된 달부터 3~6개월 걸려요.'}
+          {label ? `${label} 기준으로 들어온 내역이 없어요. 기간을 넓히거나 조건을 바꿔 보세요.` : '관리 단체가 사용료를 나눠 주면 여기서 달마다 얼마나 벌었는지 보여 드려요.'}
         </EmptyState>
-      ) : (<>
+        {/* 처음 기다리는 사람에게 — 저작권료가 어떤 순서로, 얼마나 걸려 들어오는지 */}
+        {!label && <ol className="aq-pbl-payout">{PAYOUT_STEPS.map(([t, d], k) => <li key={t}><span className="aq-bundle-no" aria-hidden="true">{k + 1}</span><span className="min-0"><strong>{t}</strong><small>{d}</small></span></li>)}</ol>}
+      </>) : (<>
         <div className="aq-report-total">
           <small>{r.hasConfirmed ? `최근 확정 · ${Number(r.period.slice(5))}월분 저작권료` : '확정 전 예상 내역만 있어요'}</small>
           <strong className={!r.hasConfirmed ? 'aq-pbl-report-pending' : undefined}>{r.hasConfirmed ? <Money value={r.amount} animate /> : '확정 내역을 기다리고 있어요'}</strong>
@@ -199,7 +201,7 @@ function RoyaltiesTab({ rows, label }: { rows: Royalty[] | null; label: string }
     <>
       <p className="ui-field-help">확정된 저작권료는 <Link to="/settlement?type=publishing" className="aq-inline-link">정산·지급</Link> 잔액에 배급 정산금과 함께 쌓여요.</p>
       <RoyaltyTable summary={false} rows={rows} csvLabel={label}
-        emptyText={label ? `${label} 기준으로 들어온 내역이 없어요. 기간을 넓히거나 조건을 바꿔 보세요.` : '관리 단체가 사용료를 나눠 주면 여기서 곡별로 보여 드려요. 보통 사용된 달부터 3~6개월 걸려요.'} />
+        emptyText={label ? `${label} 기준으로 들어온 내역이 없어요. 기간을 넓히거나 조건을 바꿔 보세요.` : `관리 단체가 사용료를 나눠 주면 여기서 곡별로 보여 드려요. ${PAYOUT_TIMING}`} />
     </>
   );
 }

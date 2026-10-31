@@ -3,7 +3,7 @@
 // 확정과 예상은 따로 더한다 — 예상은 아직 받을 수 있는 돈이 아니다
 import { useMemo, useState } from 'react';
 import type { Royalty, RoyaltyStatus } from '../../api/publishing';
-import { ROYALTY_KIND_LABEL, ROYALTY_STATUS_LABEL, ROYALTY_STATUS_TONE, pct } from '../../lib/publishing';
+import { ROYALTY_KIND_LABEL, ROYALTY_STATUS_LABEL, ROYALTY_STATUS_TONE, pct, PAYOUT_TIMING } from '../../lib/publishing';
 import { Money } from '../Money';
 import { Modal } from '../Modal';
 import { Link } from '../../lib/router';
@@ -53,7 +53,7 @@ export function RoyaltyTable({ rows, showWork = true, emptyText, summary = true,
   if (!rows.length) {
     return (
       <EmptyState compact icon={<Glyph name="receipt" size={22} />} title="아직 들어온 저작권료가 없어요">
-        {emptyText ?? '관리 단체가 사용료를 나눠 주면 여기서 곡별로 보여 드려요. 보통 사용된 달부터 3~6개월 걸려요.'}
+        {emptyText ?? `관리 단체가 사용료를 나눠 주면 여기서 곡별로 보여 드려요. ${PAYOUT_TIMING}`}
       </EmptyState>
     );
   }

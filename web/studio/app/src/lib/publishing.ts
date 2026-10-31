@@ -11,6 +11,25 @@ export const WORK_ORIGINS: readonly (readonly [WorkOrigin, string, string])[] = 
   ['other_release', '다른 아티스트가 발매한 곡', '내가 작사·작곡하고 다른 사람이 낸 곡이에요. 발매 정보를 적고 저작권 관리를 신청해요.'],
   ['unreleased', '아직 발매 전인 곡', '데모를 Open A&R에 보내 아티스트·레이블에 피칭해요. 발매되면 저작권 관리를 신청할 수 있어요.'],
 ];
+/** AI 사용 — [값, 짧은 이름, 설명]. 곡 등록과 곡 화면이 같은 말을 쓴다 */
+export const AI_USE_OPTIONS = [
+  ['none', 'AI 없음', ''],
+  ['assisted', 'AI 도움', '멜로디나 가사 일부에 AI 도움을 받았고 나머지는 직접 썼어요. 직접 쓴 부분을 관리해요.'],
+  ['generated', 'AI로 만듦', 'AI로만 만든 곡은 관리 단체가 저작물로 등록하지 않아 저작권 관리를 신청할 수 없어요.'],
+] as const;
+/** 국내 관리 단체 가입 안내 — 단체 회원이어야 작가 몫(공연·방송 등)을 받는다. 가입 전에도 신청은 되고 퍼블리셔 몫은 AUDENIQ이 받는다 */
+export const SOCIETY_JOIN = [
+  ['한국음악저작권협회(KOMCA)', 'https://www.komca.or.kr'],
+  ['함께하는음악저작인협회(KOSCAP)', 'https://www.koscap.or.kr'],
+] as const;
+/** 저작권료가 들어오는 때 — 리포트·곡 화면·신청 완료 화면이 같은 말 (DistroKid·Songtrust처럼 첫 지급까지의 기간을 먼저 알린다) */
+export const PAYOUT_TIMING = '등록이 끝난 뒤 첫 저작권료까지 보통 6~9개월 걸리고, 그 뒤로는 관리 단체가 나눠 줄 때마다(보통 분기마다) 정산 잔액에 쌓여요.';
+export const PAYOUT_STEPS = [
+  ['등록 완료', '관리 단체에 곡이 등록돼요'],
+  ['사용', '스트리밍·방송·공연에서 곡이 쓰여요'],
+  ['분배', '관리 단체가 사용료를 모아 나눠 줘요 · 보통 6~9개월'],
+  ['정산 잔액', '배급 수익과 같은 잔액에 쌓여 지급을 요청해요'],
+] as const;
 export const ORIGIN_LABEL: Record<WorkOrigin, string> = { own_release: '내가 발매한 곡', other_release: '다른 아티스트 발매', unreleased: '발매 전' };
 
 /** 곡이 들어온 갈래 — 저장된 값이 없는 예전 곡은 녹음·발매 정보로 읽는다.

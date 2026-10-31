@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from '../lib/router';
 import { api } from '../api/client';
-import { pubApi, type ExternalRelease, type Work, type WorkAttachment, type WorkContributor, type WorkInput, type WorkOrigin, type WorkRecording } from '../api/publishing';
+import { pubApi, releaseAiUse, type ExternalRelease, type Work, type WorkAttachment, type WorkContributor, type WorkInput, type WorkOrigin, type WorkRecording } from '../api/publishing';
 import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { readJSON, removeKey, writeJSON } from '../lib/storage';
@@ -18,7 +18,7 @@ import { stampNow } from '../lib/date';
 import { localStamp, fileSize } from '../lib/format';
 import { uid } from '../lib/store';
 import { draftTrackOf } from '../lib/albumPrep';
-import { LANGUAGES, ORIGIN_LABEL, canEditInfo, editMode, WORK_TYPES, pct, similarWorks, splitIssues, splitNames, splitReady, workOrigin } from '../lib/publishing';
+import { AI_USE_OPTIONS, LANGUAGES, ORIGIN_LABEL, canEditInfo, editMode, WORK_TYPES, pct, similarWorks, splitIssues, splitNames, splitReady, workOrigin } from '../lib/publishing';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { FilePicker } from '../components/FilePicker';
@@ -39,7 +39,7 @@ import { Reveal } from '../ui/Reveal';
 type Form = Omit<WorkInput, 'recording'>;
 const EMPTY: Form = {
   title: '', altTitles: [], workType: 'original', language: 'ko', genre: '', description: '', visibility: 'private',
-  iswc: null, hasPriorPublisher: false, priorPublisher: null, contributors: [], attachments: [], origin: 'unreleased', externalRelease: null,
+  iswc: null, hasPriorPublisher: false, priorPublisher: null, contributors: [], attachments: [], origin: 'unreleased', externalRelease: null, aiUse: 'none',
 };
 const NO_RELEASE: ExternalRelease = { artist: '', title: '', releaseDate: null, isrc: null, label: null };
 const ISRC_RE = /^[A-Z]{2}-?[A-Z0-9]{3}-?\d{2}-?\d{5}$/i;
@@ -105,7 +105,7 @@ export function WorkEditor() {
     let start: Form = EMPTY;
     if (existing) {
       const { title, altTitles, workType, language, genre, description, visibility, iswc, hasPriorPublisher, priorPublisher, contributors, attachments } = existing;
-      start = { title, altTitles, workType, language, genre, description, visibility, iswc, hasPriorPublisher, priorPublisher, contributors, attachments, origin: workOrigin(existing), externalRelease: existing.externalRelease ?? null };
+      start = { title, altTitles, workType, language, genre, description, visibility, iswc, hasPriorPublisher, priorPublisher, contributors, attachments, origin: workOrigin(existing), externalRelease: existing.externalRelease ?? null, aiUse: existing.aiUse ?? 'none' };
     } else if (track && release) {
       const d = draftTrackOf(track, release.draft);
       const people = new Map<string, WorkContributor>();
@@ -128,7 +128,8 @@ export function WorkEditor() {
         ...(d?.lyrics?.trim() && !d.instrumental ? [{ id: uid(), kind: 'lyrics' as const, name: `${track.title} 가사 (배급 신청서)`, at: stampNow(), text: d.lyrics }] : []),
       ];
       start = {
-        ...EMPTY, origin: 'own_release', title: track.title, genre: release.draft?.genreCustom?.trim() || release.draft?.genre || '', language: release.draft?.language ?? 'ko', attachments: fromRelease,
+        // 발매 신청서의 AI 답을 그대로 — 전체 AI 제작이면 '만들었어요', 작곡·작사 도움이면 '도움을 받았어요'
+        ...EMPTY, origin: 'own_release', aiUse: releaseAiUse(release.draft?.options), title: track.title, genre: release.draft?.genreCustom?.trim() || release.draft?.genre || '', language: release.draft?.language ?? 'ko', attachments: fromRelease,
         // 크레딧에 한 사람뿐이면 그 사람이 100% — 나눌 것이 없는데 0%에서 다시 치게 하지 않는다
         workType: d?.instrumental ? 'instrumental' : 'original', contributors: [...people.values()].map(c => ({ ...(c.isMe ? { ...c, confirm: 'confirmed' as const, external: false } : c), share: people.size === 1 ? 100 : 0 })),
       };
@@ -455,6 +456,11 @@ export function WorkEditor() {
             </select>
           </Field>
         </div>
+        {/* 신청 자격 — AI로만 만든 곡은 관리 단체가 등록하지 않는다 (DistroKid·TuneCore도 같은 기준) */}
+        <Field label="AI 사용" help={AI_USE_OPTIONS.find(x => x[0] === form.aiUse)?.[2] || '곡(멜로디·가사)을 쓸 때 AI를 썼는지 알려 주세요. 보컬·믹싱·커버에만 썼다면 ‘AI 없이’예요.'}>
+          <Segmented fill label="AI 사용" value={form.aiUse ?? 'none'} onChange={v => set('aiUse', v)}
+            options={AI_USE_OPTIONS.map(([value, label]) => ({ value, label }))} />
+        </Field>
         <Field label="곡 설명" htmlFor="workDesc" help={released ? '곡의 분위기·만든 배경.' : '곡의 분위기·만든 배경 — A&R 제출 때 그대로 가져가요.'}>
           <textarea id="workDesc" className="ui-textarea" rows={3} value={form.description} maxLength={2000} onChange={e => set('description', e.target.value)} />
         </Field>
@@ -552,7 +558,7 @@ export function WorkEditor() {
             {form.contributors.map(c => `${c.name} ${roleText(c)} ${pct(c.share)}`).join(' · ') || '참여자를 추가하면 저작권 관리를 신청할 수 있어요'}
           </ReviewCard>
           <ReviewCard head="권리·자료" onEdit={() => setStep(2)}>
-            {[form.iswc || 'ISWC 없음', form.hasPriorPublisher ? `기존 퍼블리셔 ${form.priorPublisher || '있음'}` : '기존 계약 없음', `첨부 ${form.attachments.length}개`].join(' · ')}
+            {[form.iswc || 'ISWC 없음', AI_USE_OPTIONS.find(x => x[0] === form.aiUse)?.[1], form.hasPriorPublisher ? `기존 퍼블리셔 ${form.priorPublisher || '있음'}` : '기존 계약 없음', `첨부 ${form.attachments.length}개`].join(' · ')}
           </ReviewCard>
         </div>
         <div className="ui-callout" style={{ marginTop: 24 }}>

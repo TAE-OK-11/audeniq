@@ -59,6 +59,8 @@ const KINDS: [&str; 4] = ["demo", "lyrics", "score", "proof"];
 /// Where a work comes from (migration 0169): not released yet (pitched through Open A&R), released by the
 /// artist through AUDENIQ (read from the catalog), or released by someone else (given by the artist).
 const ORIGINS: [&str; 3] = ["unreleased", "own_release", "other_release"];
+/// How AI was used in writing the work (migration 0170); a work made entirely by AI cannot be applied.
+const AI_USES: [&str; 3] = ["none", "assisted", "generated"];
 /// Every box of the application's agreement step.
 /// What the applicant confirms when signing the application (신청서). The contract has its own
 /// confirmations (CONTRACT_CONFIRMATIONS) — the application is not the contract, as in distribution.
@@ -186,6 +188,7 @@ pub struct WorkIn {
     pub contributors: Option<Vec<ContributorIn>>,
     pub recording: Option<RecordingIn>,
     pub origin: Option<String>,
+    pub ai_use: Option<String>,
     #[serde(default, deserialize_with = "nullable")]
     pub external_release: Option<Option<ExternalReleaseIn>>,
     #[serde(alias = "row_version")]
@@ -424,7 +427,7 @@ async fn works_json(
     let works = sqlx::query(
         "SELECT w.id, w.internal_code, w.title, w.alt_titles, w.work_type, w.language, w.genre, w.description, w.visibility,
                 w.iswc, w.has_prior_publisher, w.prior_publisher, w.registration, w.fix, w.pending_contributors, w.pending_at,
-                w.origin, w.external_release, w.row_version, w.created_at, w.updated_at,
+                w.origin, w.external_release, w.ai_use, w.row_version, w.created_at, w.updated_at,
                 -- The signed contract the work is under (a contract waiting for signature does not count yet).
                 (SELECT c.id FROM portal.pub_contracts c JOIN portal.pub_application_works aw ON aw.application_id=c.application_id
                   WHERE aw.work_id=w.id AND c.status <> 'pending_sign' ORDER BY c.created_at DESC LIMIT 1) AS contract_id
@@ -564,6 +567,7 @@ async fn works_json(
                 "priorPublisher": w.get::<Option<String>, _>("prior_publisher"),
                 "origin": w.get::<String, _>("origin"),
                 "externalRelease": w.get::<Option<Value>, _>("external_release"),
+                "aiUse": w.get::<String, _>("ai_use"),
                 "contributors": people.remove(&id).unwrap_or_default(),
                 "attachments": files.remove(&id).unwrap_or_default(),
                 "recordings": recordings.remove(&id).unwrap_or_default(),
@@ -787,6 +791,11 @@ fn check_meta(i: &WorkIn) -> Result<()> {
     {
         return Err(Error::InvalidCode("WORK_ORIGIN_INVALID"));
     }
+    if let Some(v) = &i.ai_use
+        && !AI_USES.contains(&v.as_str())
+    {
+        return Err(Error::InvalidCode("WORK_AI_USE_INVALID"));
+    }
     Ok(())
 }
 
@@ -899,8 +908,8 @@ pub async fn create_work(s: &AppState, a: &Actor, org: Uuid, i: WorkIn) -> Resul
     let role = auth::membership(&mut tx, a, org, true).await?;
     let id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO portal.pub_works(id,org_id,internal_code,title,alt_titles,work_type,language,genre,description,visibility,iswc,has_prior_publisher,prior_publisher,created_by,origin,external_release)
-         VALUES($1,$2,'AQW-'||lpad(nextval('portal.pub_work_code_seq')::text,6,'0'),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",
+        "INSERT INTO portal.pub_works(id,org_id,internal_code,title,alt_titles,work_type,language,genre,description,visibility,iswc,has_prior_publisher,prior_publisher,created_by,origin,external_release,ai_use)
+         VALUES($1,$2,'AQW-'||lpad(nextval('portal.pub_work_code_seq')::text,6,'0'),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)",
     )
     .bind(id)
     .bind(org)
@@ -917,6 +926,7 @@ pub async fn create_work(s: &AppState, a: &Actor, org: Uuid, i: WorkIn) -> Resul
     .bind(a.user)
     .bind(origin)
     .bind(external)
+    .bind(i.ai_use.as_deref().unwrap_or("none"))
     .execute(&mut *tx)
     .await?;
     write_contributors(&mut tx, org, id, a.party, a.user, plan).await?;
@@ -985,7 +995,8 @@ pub async fn update_work(s: &AppState, a: &Actor, org: Uuid, id: Uuid, i: WorkIn
            has_prior_publisher=COALESCE($12,has_prior_publisher),
            prior_publisher=CASE WHEN $13 THEN $14 ELSE prior_publisher END,
            origin=COALESCE($15,origin),
-           external_release=CASE WHEN $16 THEN $17 ELSE external_release END
+           external_release=CASE WHEN $16 THEN $17 ELSE external_release END,
+           ai_use=COALESCE($18,ai_use)
          WHERE org_id=$1 AND id=$2",
     )
     .bind(org)
@@ -1004,6 +1015,7 @@ pub async fn update_work(s: &AppState, a: &Actor, org: Uuid, id: Uuid, i: WorkIn
     .bind(i.origin.as_deref())
     .bind(external.is_some())
     .bind(external.flatten())
+    .bind(i.ai_use.as_deref())
     .execute(&mut *tx)
     .await?;
     if let Some(list) = i.contributors {
@@ -1301,8 +1313,9 @@ pub async fn prepare_from_release(
     .fetch_all(&mut *tx)
     .await?;
     // What the release form already has for the whole release — genre and language are not asked again.
-    let (genre, language): (Option<String>, Option<String>) = sqlx::query_as(
-        "SELECT COALESCE(NULLIF(draft->>'genreCustom',''), NULLIF(draft->>'genre','')), NULLIF(draft->>'language','')
+    let (genre, language, ai_uses): (Option<String>, Option<String>, Option<Value>) = sqlx::query_as(
+        "SELECT COALESCE(NULLIF(draft->>'genreCustom',''), NULLIF(draft->>'genre','')), NULLIF(draft->>'language',''),
+                CASE WHEN (draft->'options'->>'ai')::boolean THEN COALESCE(draft->'options'->'aiUses','[]'::jsonb) END
            FROM catalog.releases WHERE org_id=$1 AND id=$2",
     )
     .bind(org)
@@ -1313,6 +1326,21 @@ pub async fn prepare_from_release(
     let language = language
         .filter(|l| LANGUAGES.contains(&l.as_str()))
         .unwrap_or_else(|| "ko".into());
+    // The release form's AI answer: made entirely by AI, or AI helped with the melody or lyrics (the song itself).
+    // AI used only for vocals, mixing or the cover leaves the song as written.
+    let said = |needle: &str| {
+        ai_uses.as_ref().and_then(Value::as_array).is_some_and(|l| {
+            l.iter()
+                .any(|u| u.as_str().is_some_and(|u| u.contains(needle)))
+        })
+    };
+    let ai_use = if said("전체를 AI") {
+        "generated"
+    } else if said("작곡") || said("작사") {
+        "assisted"
+    } else {
+        "none"
+    };
     let (mut created, mut linked, mut skipped) = (0, 0, 0);
     for t in tracks {
         let track: Uuid = t.get("id");
@@ -1379,8 +1407,8 @@ pub async fn prepare_from_release(
             .unwrap_or(false);
         let id = Uuid::new_v4();
         sqlx::query(
-            "INSERT INTO portal.pub_works(id,org_id,internal_code,title,registration,created_by,origin,genre,language,work_type)
-             VALUES($1,$2,'AQW-'||lpad(nextval('portal.pub_work_code_seq')::text,6,'0'),$3,$4,$5,'own_release',$6,$7,$8)",
+            "INSERT INTO portal.pub_works(id,org_id,internal_code,title,registration,created_by,origin,genre,language,work_type,ai_use)
+             VALUES($1,$2,'AQW-'||lpad(nextval('portal.pub_work_code_seq')::text,6,'0'),$3,$4,$5,'own_release',$6,$7,$8,$9)",
         )
         .bind(id)
         .bind(org)
@@ -1390,6 +1418,7 @@ pub async fn prepare_from_release(
         .bind(&genre)
         .bind(&language)
         .bind(if instrumental { "instrumental" } else { "original" })
+        .bind(ai_use)
         .execute(&mut *tx)
         .await?;
         write_contributors(&mut tx, org, id, a.party, a.user, plan).await?;
@@ -1666,6 +1695,16 @@ pub async fn submit_application(
     .await?;
     if unreleased {
         return Err(Error::PolicyGate("WORK_NOT_RELEASED"));
+    }
+    // Societies register what a person wrote: a song made entirely by AI is not administered.
+    let generated: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM portal.pub_works WHERE id = ANY($1) AND ai_use='generated')",
+    )
+    .bind(&works)
+    .fetch_one(&mut *tx)
+    .await?;
+    if generated {
+        return Err(Error::PolicyGate("WORK_NOT_ELIGIBLE"));
     }
     let busy: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM portal.pub_application_works aw JOIN portal.pub_applications x ON x.id=aw.application_id

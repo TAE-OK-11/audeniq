@@ -128,3 +128,14 @@ describe('관리 단체 이름', () => {
     expect(societyName(null)).toBe('');
   });
 });
+
+describe('발매 신청서의 AI 답 → 곡의 AI 사용', () => {
+  it('전체 AI 제작은 만듦, 작곡·작사 도움은 도움, 보컬·믹싱·커버만은 없음', async () => {
+    const { releaseAiUse } = await import('../api/publishing');
+    expect(releaseAiUse({ ai: true, aiUses: ['전체를 AI로 제작했어요'] })).toBe('generated');
+    expect(releaseAiUse({ ai: true, aiUses: ['작사에 AI 도움을 받았어요'] })).toBe('assisted');
+    expect(releaseAiUse({ ai: true, aiUses: ['믹싱·마스터링에 AI 도구를 썼어요', '커버아트를 AI로 만들었어요'] })).toBe('none');
+    expect(releaseAiUse({ ai: false, aiUses: ['전체를 AI로 제작했어요'] })).toBe('none');
+    expect(releaseAiUse(null)).toBe('none');
+  });
+});

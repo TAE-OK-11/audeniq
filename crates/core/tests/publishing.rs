@@ -919,6 +919,29 @@ async fn work_origin_decides_what_can_be_applied(pool: PgPool) {
     .await;
     assert_eq!(s, StatusCode::OK, "{a}");
 
+    // A song made entirely by AI is kept but cannot be applied.
+    let (s, ai) = call(&app, "POST", &format!("{base}/works"), new_work("인공 노래", json!({
+        "origin": "other_release", "aiUse": "generated", "externalRelease": {"artist": "하람", "title": "인공 노래"}
+    })), Some(&u)).await;
+    assert_eq!(
+        (s, ai["aiUse"].as_str()),
+        (StatusCode::OK, Some("generated")),
+        "{ai}"
+    );
+    let ai_id = ai["id"].as_str().unwrap().to_string();
+    let (s, e) = call(
+        &app,
+        "POST",
+        &format!("{base}/publishing/applications"),
+        apply(&[&ai_id], "key-ai-generated"),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (StatusCode::UNPROCESSABLE_ENTITY, Some("WORK_NOT_ELIGIBLE"))
+    );
+
     // The pitched song was released by another artist: it moves to other_release with that release.
     let rv = demo["rowVersion"].as_i64().unwrap();
     let (s, e) = call(

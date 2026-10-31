@@ -60,6 +60,8 @@ Rules:
 - The writer's own society and IPI are typed once: an empty one on the writer's row is filled from the profile
   (`portal.pub_creator_profiles`), and one first typed on a work fills an empty profile (never overwrites it).
   Past co-writers come back in creator search (an empty query lists them, most works first).
+- `ai_use` (migration 0170): none · assisted · generated. The release form's AI answer seeds it on prepare; a work made
+  entirely by AI is refused by applications (`WORK_NOT_ELIGIBLE`).
 - Attachments are not part of the work body: the client posts each new one to `/works/{id}/attachments` after create/update
   (asset id or lyrics text), so uploaded and imported files are kept.
 

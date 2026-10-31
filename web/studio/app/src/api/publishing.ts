@@ -45,6 +45,8 @@ export type ArStatus = 'submitted' | 'in_review' | 'needs_fix' | 'reviewed' | 'p
  *  · other_release: 내가 쓰고 다른 아티스트가 발매한 곡 — 발매가 카탈로그에 없으니 발매 정보를 직접 받는다 */
 export type WorkOrigin = 'unreleased' | 'own_release' | 'other_release';
 /** 다른 아티스트가 낸 발매 — 아티스트·제목은 꼭, 나머지는 아는 만큼 */
+/** 곡을 쓸 때 AI를 어떻게 썼는지 — AI로만 만든 곡은 저작권 관리 대상이 아니다 (서버 WORK_NOT_ELIGIBLE) */
+export type AiUse = 'none' | 'assisted' | 'generated';
 export interface ExternalRelease { artist: string; title: string; releaseDate?: string | null; isrc?: string | null; label?: string | null }
 /** 내가 이 곡에서 할 수 있는 일 — 서버가 정한다. 화면은 버튼을 숨길 뿐 보안은 서버 몫 (기획안 11.3) */
 export type WorkRole = 'owner' | 'editor' | 'contributor' | 'viewer';
@@ -116,6 +118,7 @@ export interface Work {
   origin?: WorkOrigin;
   /** other_release일 때 그 발매 */
   externalRelease?: ExternalRelease | null;
+  aiUse?: AiUse;
   contributors: WorkContributor[];
   attachments: WorkAttachment[];
   recordings: WorkRecording[];
@@ -136,7 +139,7 @@ export interface Work {
 /** 발매 신청에서 곡 크레딧으로 곡을 만들 때 — enroll이면 저작권 관리 신청 준비까지 (기획안 4.2, 15) */
 export interface PrepareResult { created: number; linked: number; skipped: number }
 
-export type WorkInput = Pick<Work, 'title' | 'altTitles' | 'workType' | 'language' | 'genre' | 'description' | 'visibility' | 'iswc' | 'hasPriorPublisher' | 'priorPublisher' | 'contributors' | 'attachments' | 'origin' | 'externalRelease'> & {
+export type WorkInput = Pick<Work, 'title' | 'altTitles' | 'workType' | 'language' | 'genre' | 'description' | 'visibility' | 'iswc' | 'hasPriorPublisher' | 'priorPublisher' | 'contributors' | 'attachments' | 'origin' | 'externalRelease' | 'aiUse'> & {
   /** 발매 곡에서 만들 때 바로 연결할 녹음물 */
   recording?: Omit<WorkRecording, 'id'> | null;
 };
@@ -251,12 +254,14 @@ export interface ArSubmission {
   description: string;
   references: string;
   scope: 'internal' | 'partners';
+  /** 영상·광고·게임(싱크) 쪽에도 소개해도 되는지 — 사용 허락은 제안이 오면 따로 정한다 */
+  sync?: boolean;
   status: ArStatus;
   submittedAt: string;
   fixReason?: string | null;
   history: { at: string; text: string }[];
 }
-export type ArInput = Pick<ArSubmission, 'workId' | 'genre' | 'mood' | 'description' | 'references' | 'scope'> & { demoName?: string; lyrics?: string; consent: boolean; idempotencyKey: string };
+export type ArInput = Pick<ArSubmission, 'workId' | 'genre' | 'mood' | 'description' | 'references' | 'scope' | 'sync'> & { demoName?: string; lyrics?: string; consent: boolean; idempotencyKey: string };
 
 // ---------- 체험 모드 데이터 ----------
 
@@ -465,6 +470,14 @@ function mutate<T>(fn: (d: PubDb) => T): T {
   db.set(next);
   clearAsyncCache();
   return out;
+}
+
+/** 발매 신청서의 AI 답 → 곡의 AI 사용 (서버 prepare_from_release와 같은 규칙): 전체 AI 제작 → generated, 작곡·작사 도움 → assisted */
+export function releaseAiUse(o?: { ai?: boolean; aiUses?: string[] } | null): AiUse {
+  if (!o?.ai) return 'none';
+  const uses = o.aiUses ?? [];
+  if (uses.some(u => u.includes('전체를 AI'))) return 'generated';
+  return uses.some(u => u.includes('작곡') || u.includes('작사')) ? 'assisted' : 'none';
 }
 
 /** 서버 write_contributors와 같게 — 내 줄의 빈 관리 단체·IPI는 작가 프로필로 채우고, 곡에서 처음 적은 값은 빈 프로필에 남긴다 */
@@ -715,7 +728,7 @@ const mockApi = {
         const each = Math.floor((100 / list.length) * 100) / 100;
         list.forEach((c, i) => { c.share = i === list.length - 1 ? Math.round((100 - each * (list.length - 1)) * 100) / 100 : each; c.publisherShare = enroll && c.isMe ? c.share : 0; });
         d.works.unshift({
-          id: `w_${uid()}`, title: t.title, altTitles: [], origin: 'own_release', externalRelease: null, workType: dt?.instrumental ? 'instrumental' : 'original', language: rel.draft?.language ?? 'ko',
+          id: `w_${uid()}`, title: t.title, altTitles: [], origin: 'own_release', externalRelease: null, aiUse: releaseAiUse(rel.draft?.options), workType: dt?.instrumental ? 'instrumental' : 'original', language: rel.draft?.language ?? 'ko',
           genre: rel.draft?.genreCustom?.trim() || rel.draft?.genre || '', description: '', visibility: 'private', iswc: null, internalCode: nextCode(d), hasPriorPublisher: false, priorPublisher: null,
           // 서버와 같게 — 배급 신청서의 음원(같은 파일)·가사(본문)를 곡 자료로 붙인다. 다시 올리지 않게
           contributors: list, attachments: [
@@ -743,6 +756,8 @@ const mockApi = {
       if (!works.length) throw new ApiError('신청할 곡을 골라 주세요.', 400, 'VALIDATION');
       const busy = works.find(w => w.application && ['submitted', 'in_review', 'needs_fix', 'approved'].includes(w.application.status));
       if (busy) throw new ApiError(`‘${busy.title}’은(는) 이미 신청했어요. 진행 상황은 곡 화면에서 볼 수 있어요.`, 409, 'DUPLICATE_APPLICATION');
+      const ai = works.find(w => w.aiUse === 'generated');
+      if (ai) throw new ApiError(`‘${ai.title}’은(는) AI로만 만든 곡이라 저작권 관리를 신청할 수 없어요.`, 422, 'WORK_NOT_ELIGIBLE');
       const demo = works.find(w => workOrigin(w) === 'unreleased');
       if (demo) throw new ApiError(`‘${demo.title}’은(는) 아직 발매 전이에요. 발매 전 곡은 Open A&R로 피칭하고, 발매되면 신청해 주세요.`, 422, 'WORK_NOT_RELEASED');
       if (input.policyVersion !== POLICY.version) throw new ApiError('계약 조건이 바뀌었어요. 새 조건을 확인하고 다시 신청해 주세요.', 409, 'POLICY_CHANGED');
@@ -903,7 +918,7 @@ const mockApi = {
       const now = stampNow();
       const s: ArSubmission = {
         id: `ar_${input.idempotencyKey}`, workId: w.id, workTitle: w.title, genre: input.genre, mood: input.mood, description: input.description,
-        references: input.references, scope: input.scope, status: 'submitted', submittedAt: now, history: [{ at: now, text: '제출 완료' }],
+        references: input.references, scope: input.scope, sync: !!input.sync, status: 'submitted', submittedAt: now, history: [{ at: now, text: '제출 완료' }],
       };
       d.ar.unshift(s);
       w.activity.unshift({ at: now, text: 'Open A&R에 제출했어요.', kind: 'apply', who: d.me.name });

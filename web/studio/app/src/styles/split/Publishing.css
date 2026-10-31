@@ -275,3 +275,18 @@
 .aq-pbl-lyrics-paste{display:grid;gap:8px;margin-top:4px}
 .aq-pbl-lyrics-paste>summary{cursor:pointer;font-size:var(--aq-fs-sm);font-weight:700;color:var(--aq-primary-text)}
 .aq-pbl-remind-all{justify-self:start;margin:4px 0 8px}
+
+/* 공동 작곡 합의서 — 참여자마다 서명 칸 */
+.aq-split-signs{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:24px 32px;margin-top:20px}
+.aq-split-sign{display:grid;gap:6px}
+.aq-split-sign>span{font-weight:700}
+.aq-split-sign>i{display:block;height:40px;border-bottom:1px solid var(--aq-gray-400)}
+.aq-split-sign>small{color:var(--aq-text-4);text-align:right}
+/* 관리 단체 가입 안내 — 카드 안 도움말 한 줄 */
+.aq-pbl-join{margin:2px 0 8px}
+.aq-set-card .aq-pbl-join{padding:0 4px}
+/* 저작권료가 들어오는 순서 — 리포트가 비어 있을 때 */
+.aq-pbl-payout{display:grid;gap:10px;margin:14px 0 0;padding:0;list-style:none;text-align:left}
+.aq-pbl-payout li{display:flex;gap:10px;align-items:flex-start}
+.aq-pbl-payout strong{display:block;font-size:var(--aq-fs-sm);color:var(--aq-text)}
+.aq-pbl-payout small{display:block;font-size:var(--aq-fs-xs);color:var(--aq-text-3)}
