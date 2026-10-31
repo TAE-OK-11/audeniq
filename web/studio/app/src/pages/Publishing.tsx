@@ -7,7 +7,9 @@ import { useDeferredValue, useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from '../lib/router';
 import { pubApi, type ArSubmission, type Royalty, type Work } from '../api/publishing';
 import { useAsync } from '../hooks/useAsync';
-import { APP_LABEL, APP_TONE, AR_LABEL, AR_TONE, PAYOUT_STEPS, PAYOUT_TIMING, matchFilter, workOrigin, type WorkFilter } from '../lib/publishing';
+import { APP_LABEL, APP_TONE, AR_LABEL, AR_TONE, PAYOUT_STEPS, PAYOUT_TIMING, matchFilter, missedRoyalties, workOrigin, type WorkFilter } from '../lib/publishing';
+import { api } from '../api/client';
+import { useReportRows } from '../hooks/useReportRows';
 import { Glyph } from '../components/Glyph';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { SkeletonRows } from '../components/Skeleton';
@@ -289,6 +291,34 @@ const setter = (params: URLSearchParams, setParams: (p: URLSearchParams, o?: { r
 };
 
 /** '발매·곡 관리' › '곡 저작권' 탭 — 발매한 곡과 아직 발매하지 않은 곡의 작사·작곡 저작권을 한 목록에 */
+/** 놓치고 있는 저작권료 — 배급 수익이 나는데 저작권 관리가 안 된 곡이 있는 앨범과 맡기면 받을 예상 금액 (홈 '확인할 작업'과 같은 계산) */
+function MissedRoyalties({ works }: { works: Work[] }) {
+  const { data: releases } = useAsync(() => api.listReleases(), [], { key: 'releases' });
+  const { data: policy } = useAsync(() => pubApi.policy(), [], { key: 'pub-policy' });
+  const { rows } = useReportRows();
+  if (!releases || !policy) return null;
+  const missed = missedRoyalties(releases, works, rows, policy.commissionRate);
+  if (!missed.items.length) return null;
+  return (
+    <section className="ui-card aq-pbl-missed" aria-labelledby="pubMissed">
+      <div className="ui-section-head"><h2 id="pubMissed">저작권료를 놓치고 있는 곡 {missed.songs}곡</h2></div>
+      <p className="ui-field-help">배급 수익은 나는데 작사·작곡 저작권은 아직 맡기지 않았어요. 맡기면 분기마다 약 {money(missed.low)}~{money(missed.high)}을 더 받을 수 있어요 (최근 3개월 수익 기준 추정).</p>
+      <div className="ui-list">
+        {missed.items.map(m => (
+          <Link key={m.releaseId} to={`/releases/${encodeURIComponent(m.releaseId)}?tab=publishing`} className="ui-row">
+            <ReleaseCover id={m.releaseId} />
+            <span className="min-0">
+              <span className="ui-row-title">{m.title}</span>
+              <span className="ui-row-meta"><span>{m.songs}곡 · 분기 약 {money(m.low)}~{money(m.high)}</span></span>
+            </span>
+            <Glyph name="chevron-right" size={16} />
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function PublishingSongs() {
   const nav = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -300,6 +330,7 @@ export function PublishingSongs() {
   return (
     <>
       <AlbumScope works={works ?? null} value={releaseId} onChange={id => set({ release: id })} />
+      {!releaseId && works && <MissedRoyalties works={works} />}
       <Songs scope={scope} filter={songFilter} setFilter={f => set({ wf: f === 'all' ? null : f })}
         onApply={() => nav(`/publishing/apply${releaseId ? `?release=${encodeURIComponent(releaseId)}` : ''}`)} />
     </>

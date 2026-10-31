@@ -1,7 +1,7 @@
 /*  Upload 화면 조각에서만 쓰는 규칙 — 전역 스타일(App.tsx가 불러오는 9개 파일)에서 원래 순서대로 옮겼다.
    이 조각을 받을 때 전역 스타일 뒤에 붙고, 원래 자리보다 뒤에 있던 같은 우선순위 규칙과 겹치지 않는 것만 옮겼다.
    아래 클래스를 쓰는 파일은 이 파일을 import해야 한다 (splitCss.test.ts가 확인).
-   anchors: aq-addon-lines aq-addon-summary aq-agree-box aq-autofill-text aq-dsp aq-dsp-name aq-fix-list aq-invalid aq-review-body aq-review-card aq-review-cover aq-review-tracks aq-review-value aq-submit-error aq-vt-fix aq-wiz-layout aq-wiz-rail aq-wiz-rail-progress aq-wiz-step-no aq-wiz-steps is-collapsed is-unavailable minor-actions step-section track-detail-toggle track-editor track-title-field trackEditors wizard-progress wizard-progress-seg wizardBody wizardError wizardSaveNow  */
+   anchors: aq-addon-lines aq-addon-summary aq-agree-box aq-pub-along aq-pub-along-sub aq-autofill-text aq-dsp aq-dsp-name aq-fix-list aq-invalid aq-review-body aq-review-card aq-review-cover aq-review-tracks aq-review-value aq-submit-error aq-vt-fix aq-wiz-layout aq-wiz-rail aq-wiz-rail-progress aq-wiz-step-no aq-wiz-steps is-collapsed is-unavailable minor-actions step-section track-detail-toggle track-editor track-title-field trackEditors wizard-progress wizard-progress-seg wizardBody wizardError wizardSaveNow  */
 /* ── live.css */
 #view-new .step-section details>summary{transition:color var(--aq-motion-fast) var(--aq-motion-ease)}
 #view-new .track-editor{background:var(--aq-final-soft)!important;border:0!important;box-shadow:none!important;border-radius:var(--aq-r-2xl)!important;padding:18px!important}
@@ -81,3 +81,6 @@ html.aq-vt-fix #view-new .aq-fix-note,html.aq-vt-fix #view-new .aq-fix-list li{a
 @media (max-width:760px){
   .aq-addon-summary{padding:16px}
 }
+/* ── 발매 신청서 서명 아래 '작사·작곡 저작권도 함께 맡기기' (components/publishing/ReleasePublishing) */
+.aq-pub-along{margin-top:12px}
+.aq-pub-along-sub{display:block;margin-top:4px;font-size:13px;line-height:1.5;color:var(--aq-gray-600);font-weight:400}

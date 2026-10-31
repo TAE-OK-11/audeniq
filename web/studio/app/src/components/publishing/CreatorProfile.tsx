@@ -2,7 +2,7 @@
 // 따로 만든 모양 없이 계정 정보와 같은 줄(SetRow)·같은 창(한 항목만 고치는 창, 고를 것이 적으면 목록을 바로)을 쓴다.
 // 활동명·활동 국가는 위 '아티스트', 법적 이름은 '본인 확인'의 실명을 그대로 쓴다 — 같은 정보를 두 번 받지 않는다.
 // 관리 단체·IPI는 곡을 만들 때 참여자 칸에 자동으로 들어간다
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { pubApi, type Creator, type CreatorRole } from '../../api/publishing';
 import { errorMessage } from '../../api/errors';
 import { useAsync } from '../../hooks/useAsync';
@@ -89,12 +89,18 @@ function CreatorFieldEditor({ field, c, onSave }: { field: Field; c: Creator; on
 }
 
 /** 퍼블리싱 카드 — 줄마다 한 항목만 고치는 창. 곡에서 처음 적은 관리 단체·IPI도 여기 저장돼 다음 곡에 채워진다 */
-export function CreatorProfile() {
+export function CreatorProfile({ openEmpty = false, onOpened }: { openEmpty?: boolean; onOpened?: () => void } = {}) {
   const toast = useToast();
   const { data, error } = useAsync(() => pubApi.myCreator(), [], { key: 'my-creator' });
   const [local, setLocal] = useState<Creator | null>(null);
   const [editing, setEditing] = useState<Field | null>(null);
   const c = local ?? data;
+  // 홈 '작가 정보 채우기'에서 왔으면 첫 빈 칸(역할 → IPI)을 바로 연다
+  useEffect(() => {
+    if (!openEmpty || !c) return;
+    setEditing(!c.roles.length ? 'roles' : c.society && !c.ipi ? 'ipi' : 'society');
+    onOpened?.();
+  }, [openEmpty, c]); // eslint-disable-line react-hooks/exhaustive-deps
   // 저작권 관리 API가 없는 서버는 이 묶음을 그리지 않는다
   if (error || !c) return null;
   const roleText = c.roles.map(r => ROLES.find(x => x[0] === r)?.[1]).filter(Boolean).join(' · ');

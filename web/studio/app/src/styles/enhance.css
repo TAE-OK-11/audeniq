@@ -1890,6 +1890,7 @@ a.aq-inline-link{display:inline-block;max-width:100%}
 .aq-splits-pct.aq-affix{display:block}
 .aq-splits-pct.aq-affix>input{padding-right:28px!important}
 .aq-splits-pct.aq-affix::after{right:12px}
+.aq-splits-fill{display:inline-flex;margin:2px 0 14px}
 .studio-amount-field .aq-amount-unit{flex:none;margin:0 10px 0 -4px;font-size:18px;font-weight:700;color:var(--aq-text-2)}
 .studio-amount-field:has(input:placeholder-shown) .aq-amount-unit{color:var(--aq-text-disabled)}
 

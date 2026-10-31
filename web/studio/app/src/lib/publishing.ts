@@ -212,7 +212,7 @@ export function splitIssues(list: readonly WorkContributor[]): SplitIssue[] {
     if (c.confirm === 'disputed') out.push({ level: 'error', text: `${who}이(가) 지분에 이의를 제기했어요. 지분을 다시 맞춰 주세요.`, contributorId: c.id });
     else if (c.confirm === 'pending') out.push({ level: 'warn', text: `${who}의 지분 확인을 기다리고 있어요.`, contributorId: c.id });
   }
-  if (list.every(c => !c.roles.includes('composer'))) out.push({ level: 'warn', text: '작곡가가 없어요. 연주곡이라도 작곡가는 꼭 있어야 해요.' });
+  if (list.every(c => !c.roles.includes('composer'))) out.push({ level: 'error', text: '작곡가가 없어요. 연주곡이라도 작곡가는 꼭 있어야 해요.' });
   return out;
 }
 
@@ -338,3 +338,58 @@ export function estimateRoyalty(recentRecorded: number, sharePct: number, commis
 }
 
 export const pct = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(2).replace(/0$/, '')}%`;
+
+/** 놓치고 있는 저작권료 — 배급 수익이 나는 발매에서 저작권 관리가 안 된 곡 몫.
+ *  발매 수익(리포트 최근 3개월)을 곡 수로 나눠, 관리 중이 아닌 곡마다 내 창작 지분(곡 정보가 없으면 100%)만큼 더해 예상 저작권료로 바꾼다.
+ *  관리 중 = 등록 완료 · 계약 · 진행 중인 신청 */
+export function missedRoyalties(
+  releases: readonly { id: string; title: string; track_count: number }[],
+  works: readonly Pick<Work, 'registration' | 'contractId' | 'application' | 'recordings' | 'contributors'>[],
+  rows: readonly { period: string; release: string; revenue: number; releaseId?: string }[],
+  commissionPct: number,
+): { items: { releaseId: string; title: string; songs: number; low: number; high: number }[]; songs: number; low: number; high: number } {
+  const months = Array.from(new Set(rows.map(r => r.period.slice(0, 7)))).sort().slice(-3);
+  const managed = (w: (typeof works)[number]) => w.registration === 'registered' || !!w.contractId
+    || (!!w.application && ['submitted', 'in_review', 'needs_fix', 'approved'].includes(w.application.status));
+  const items: { releaseId: string; title: string; songs: number; low: number; high: number }[] = [];
+  for (const rel of releases) {
+    const tracks = Math.max(0, rel.track_count);
+    if (!tracks) continue;
+    const recent = rows.filter(r => months.includes(r.period.slice(0, 7)) && (r.releaseId ? r.releaseId === rel.id : r.release === rel.title))
+      .reduce((n, r) => n + r.revenue, 0);
+    if (recent <= 0) continue;
+    const linked = works.flatMap(w => w.recordings.filter(r => r.releaseId === rel.id).map(() => w));
+    const open = linked.filter(w => !managed(w));
+    const unlinked = Math.max(0, tracks - linked.length);
+    const songs = open.length + unlinked;
+    if (!songs) continue;
+    const myShare = (w: (typeof works)[number]) => w.contributors.find(c => c.isMe)?.share ?? 0;
+    const weight = (unlinked * 100 + open.reduce((n, w) => n + myShare(w), 0)) / 100;
+    const [low, high] = estimateRoyalty((recent / tracks) * weight, 100, commissionPct);
+    if (high < 100) continue;
+    items.push({ releaseId: rel.id, title: rel.title, songs, low, high });
+  }
+  items.sort((a, b) => b.high - a.high);
+  return { items, songs: items.reduce((n, i) => n + i.songs, 0), low: items.reduce((n, i) => n + i.low, 0), high: items.reduce((n, i) => n + i.high, 0) };
+}
+
+/** 작사·작곡 지분대로 수익 분배 채우기 — 곡 정보가 있으면 그 지분, 없으면 발매 크레딧의 작사·작곡·편곡자를 고르게(곡 정보 만들 때와 같은 규칙).
+ *  나는 분배에 넣지 않는다(남는 몫이 내 몫) */
+export function writerSplit(
+  work: Pick<Work, 'contributors'> | undefined,
+  credits: { composers?: string | null; lyricists?: string | null; arrangers?: string | null },
+  meNames: readonly string[],
+): { name: string; pct: number }[] {
+  const key = (s: string) => s.toLowerCase().replace(/\s+/g, '');
+  const me = new Set(meNames.filter(Boolean).map(key));
+  if (work?.contributors.length) {
+    return work.contributors.filter(c => !c.isMe && !me.has(key(c.name)) && c.share > 0).map(c => ({ name: c.name, pct: c.share }));
+  }
+  const names: string[] = [];
+  for (const v of [credits.composers, credits.lyricists, credits.arrangers]) {
+    for (const n of String(v ?? '').split(/[,/·&]/).map(x => x.trim()).filter(Boolean)) if (!names.some(x => key(x) === key(n))) names.push(n);
+  }
+  if (!names.length) return [];
+  const each = evenSplit(names.length);
+  return names.map((name, i) => ({ name, pct: each[i] })).filter(p => !me.has(key(p.name)));
+}
