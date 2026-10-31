@@ -111,3 +111,11 @@ describe('계약 연장 종료일', () => {
     expect(addMonths('2027-11-30', 3)).toBe('2028-02-29');
   });
 });
+
+describe('곡 목록 필터', () => {
+  it('미신청은 발매된 곡만 — 발매 전 곡은 발매 전으로', () => {
+    expect(matchFilter(work({ origin: 'unreleased' }), 'none')).toBe(false);
+    expect(matchFilter(work({ origin: 'unreleased' }), 'unreleased')).toBe(true);
+    expect(matchFilter(work({ origin: 'other_release', externalRelease: { artist: '이온', title: '겨울 편지' } }), 'none')).toBe(true);
+  });
+});

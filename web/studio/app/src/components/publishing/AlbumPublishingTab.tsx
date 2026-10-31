@@ -174,7 +174,9 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
   // 숫자는 트랙 기준으로 — 한 곡이 원곡·Inst.처럼 두 트랙에 실리면 '2곡 중 1곡'으로 어긋났다
   const trackCount = (list: Work[]) => rel.tracks.filter(t => { const w = byTrack.get(t.id); return !!w && list.includes(w); }).length;
   const managedTracks = trackCount(a.managed);
-  const applyingTracks = trackCount(a.applying);
+  // 보완 요청은 심사 중과 따로 센다 — 이용자가 할 일이 있는 곡이라 막대·이름표에서도 구분한다
+  const fixTracks = trackCount(a.applying.filter(w => !!w.fix || w.application?.status === 'needs_fix'));
+  const applyingTracks = trackCount(a.applying) - fixTracks;
   const signingTracks = trackCount(a.toSign);
   // 승인돼 계약서가 만들어졌는데 아직 서명 전 — 배급처럼 계약서 화면에서 서명한다
   const toSign = (contracts ?? []).find(c => c.status === 'pending_sign' && c.releaseIds?.includes(rel.id));
@@ -184,9 +186,9 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
     : prep.ready.length ? `${prep.ready.length}곡을 바로 신청할 수 있어요. 신청하면 담당자가 참여자와 지분을 확인해요.`
     : '이 앨범 곡의 작사·작곡 저작권도 맡기면 방송·스트리밍 저작권료까지 받아 드려요. 맡기지 않아도 배급은 그대로예요.';
   // 앨범 곡이 지금 어디에 있는지 한 막대로 — 정산 화면의 '쌓인 정산금' 막대와 같은 읽는 법(큰 숫자 · 막대 · 이름표)
-  const preparedTracks = rel.tracks.length - managedTracks - applyingTracks - signingTracks - missing;
+  const preparedTracks = rel.tracks.length - managedTracks - applyingTracks - fixTracks - signingTracks - missing;
   const cover = ([
-    ['managed', '관리 중', managedTracks], ['signing', '서명 필요', signingTracks], ['applying', '심사 중', applyingTracks],
+    ['managed', '관리 중', managedTracks], ['signing', '서명 필요', signingTracks], ['fix', '보완 필요', fixTracks], ['applying', '심사 중', applyingTracks],
     ['prepared', '정리함', preparedTracks], ['missing', '정리 전', missing],
   ] as const).filter(([, , n]) => n > 0);
   const editable = a.mine.filter(w => w.myRole === 'owner' || w.myRole === 'editor');
@@ -269,7 +271,7 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
             )}
             <div className="aq-pbl-cover" role="group" aria-label={`${rel.tracks.length}곡 중 ${cover.map(([, l, n]) => `${l} ${n}곡`).join(', ')}`}>
               <p className="aq-pbl-cover-cap" aria-hidden="true">저작권을 맡긴 곡</p>
-              <strong className="aq-pbl-cover-num" aria-hidden="true"><b>{managedTracks + signingTracks + applyingTracks}</b><small>/ {rel.tracks.length}곡</small></strong>
+              <strong className="aq-pbl-cover-num" aria-hidden="true"><b>{managedTracks + signingTracks + applyingTracks + fixTracks}</b><small>/ {rel.tracks.length}곡</small></strong>
               <div className="aq-pbl-cover-bar" aria-hidden="true">
                 {cover.map(([k, , n]) => <i key={k} className={`is-${k}`} style={{ flexGrow: n }} />)}
               </div>

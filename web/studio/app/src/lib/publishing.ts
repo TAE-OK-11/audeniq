@@ -236,7 +236,8 @@ export function matchFilter(w: Work, f: WorkFilter): boolean {
     case 'mine': return w.contributors.some(c => c.isMe);
     case 'owned': return w.myRole === 'owner' || w.myRole === 'editor';
     case 'managed': return isManaged(w) && w.registration !== 'needs_fix';
-    case 'none': return w.registration === 'none' || w.registration === 'preparing';
+    // 미신청은 신청할 수 있는(발매된) 곡만 — 발매 전 곡은 '발매 전'에서 본다
+    case 'none': return (w.registration === 'none' || w.registration === 'preparing') && isReleased(w);
     case 'review': return w.registration === 'internal_review' || w.application?.status === 'in_review' || w.application?.status === 'submitted';
     case 'fix': return w.registration === 'needs_fix' || w.application?.status === 'needs_fix';
     case 'unreleased': return workOrigin(w) === 'unreleased';

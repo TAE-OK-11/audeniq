@@ -97,7 +97,9 @@ export function PublishingApply() {
   const [reached, setReached] = useState(step);
   useEffect(() => { setReached(r => Math.max(r, step)); window.scrollTo({ top: 0, behavior: 'smooth' }); }, [step]);
 
-  const mine = useMemo(() => (works ?? []).filter(w => w.myRole === 'owner' || w.myRole === 'editor'), [works]);
+  // 고를 수 있는 곡이 먼저 — 신청할 수 없는(발매 전·진행 중) 곡이 위에 쌓여 고를 곡을 찾기 어려웠다
+  const mine = useMemo(() => (works ?? []).filter(w => w.myRole === 'owner' || w.myRole === 'editor')
+    .sort((a, b) => Number(!canPick(a)) - Number(!canPick(b)) || Number(!isReleased(b)) - Number(!isReleased(a))), [works]);
   const chosen = mine.filter(w => picked.includes(w.id) && canPick(w));
   const blocked = chosen.filter(w => !splitReady(w.contributors));
   const conflicts = chosen.filter(w => w.hasPriorPublisher);

@@ -93,7 +93,7 @@ function FixPanel({ work, onDone, goRights }: { work: Work; onDone: (w: Work) =>
                   <span className="ui-icon" aria-hidden="true"><Glyph name="pencil" size={18} /></span>
                   <span className="aq-task-text">
                     <strong>{FIX_FIELDS[f]}</strong>
-                    <small>{f.startsWith('contributors.') ? '참여자·지분에서 고쳐요 · 원래 정보는 담당자 확인 전까지 그대로 남아요' : '곡 정보 고치기에서 고쳐요'}</small>
+                    <small>{f.startsWith('contributors.') ? '참여자·지분에서 고쳐요' : '곡 정보 고치기에서 고쳐요'}</small>
                   </span>
                   <span className="aq-task-go">고치러 가기<i aria-hidden="true"><Glyph name="chevron-right" size={14} /></i></span>
                 </button>
@@ -470,7 +470,7 @@ export function WorkDetail() {
           <div className="aq-relinfo-card" id="workRecordings">
             <div className="ui-section-head">
               <h2 className="subhead">{origin === 'other_release' ? '발매 정보' : '연결된 녹음·발매'}</h2>
-              {canEdit && origin !== 'other_release' && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setLinking(true)}>녹음 연결</button>}
+              {canEdit && origin !== 'other_release' && w.recordings.length > 0 && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setLinking(true)}>녹음 연결</button>}
             </div>
             {/* 다른 아티스트가 낸 발매는 AUDENIQ 카탈로그에 없다 — 곡을 등록할 때 적은 발매 정보를 그대로 보여 준다 */}
             {origin === 'other_release' && w.externalRelease && (
@@ -500,7 +500,7 @@ export function WorkDetail() {
               </div>
             ) : origin !== 'other_release' && (
               <div className="empty-note">
-                아직 발매되지 않은 곡이에요.<br />직접 발매했으면 그 녹음을 연결하고, 다른 아티스트가 발매했으면 ‘정보 고치기’에서 발매 정보를 적어 주세요. 발매되면 저작권 관리를 신청할 수 있어요.<br />
+                아직 발매 전이에요. 발매되면 저작권 관리를 신청할 수 있어요.<br />다른 아티스트가 냈다면 ‘정보 고치기’에서 발매 정보를 적어 주세요.<br />
                 {canEdit && <button type="button" className="ui-btn is-white is-sm" onClick={() => setLinking(true)}>발매 곡 연결 <Glyph name="chevron-right" size={13} /></button>}
               </div>
             )}

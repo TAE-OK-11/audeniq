@@ -173,8 +173,8 @@ export function WorkEditor() {
       </div>
     );
   }
-  // 새 곡인데 갈래를 아직 고르지 않았으면 갈래부터 — 내가 발매한 곡은 그 화면에서 발매 곡을 골라 바로 가져온다
-  if (!editing && !releaseId && !pickedType) return <WorkOriginStart works={works ?? null} onPick={t => setParams(new URLSearchParams({ type: t }), { replace: true })} />;
+  // 새 곡인데 발매 상태를 아직 고르지 않았으면 그것부터 (고른 뒤 '나가기'는 이 화면으로 돌아와 다시 고를 수 있다) — 내가 발매한 곡은 그 화면에서 발매 곡을 골라 바로 가져온다
+  if (!editing && !releaseId && !pickedType) return <WorkOriginStart works={works ?? null} onPick={t => setParams(new URLSearchParams({ type: t }))} />;
   if (!form) return <div className="view"><SkeletonBlock height={120} /><SkeletonBlock height={320} /></div>;
   if (existing && existing.myRole !== 'owner' && existing.myRole !== 'editor') {
     return (
@@ -296,7 +296,11 @@ export function WorkEditor() {
     nav(-1);
   };
 
-  const steps = fromTrack ? TRACK_STEPS : STEPS;
+  // 첫 단계 제목은 고른 발매 상태대로 — 앞 화면 '이 곡은 지금 어떤 상태인가요?' 다음에 같은 질문을 또 하지 않게
+  const steps = fromTrack ? TRACK_STEPS : editing ? STEPS : STEPS.map((x, i) => (i ? x : {
+    ...x, title: origin === 'other_release' ? '다른 아티스트가 낸\n곡을 알려 주세요.' : '발매 전 곡을\n알려 주세요.',
+    sub: origin === 'other_release' ? '곡 제목과 발매 정보를 적어 주세요. 별표(*) 칸만 채우면 돼요.' : '곡 제목만 적어도 다음으로 넘어가요. 데모는 ‘권리·자료’에서 올려요.',
+  }));
   return (
     <WizardShell
       className="aq-pbl-wizard"
@@ -371,7 +375,8 @@ export function WorkEditor() {
           </Field>
           {/* 발매 전 ↔ 다른 아티스트 발매 — 피칭하던 곡을 다른 아티스트가 내면 여기서 바꾸고 발매 정보를 적는다.
               내가 발매한 곡은 발매 곡을 연결하면 저절로 바뀐다 (곡 화면 '녹음 연결') */}
-          {origin !== 'own_release' && (
+          {/* 새 곡은 앞 화면에서 이미 골랐다 — 고칠 때만 (피칭하던 곡을 다른 아티스트가 냈을 때) */}
+          {editing && origin !== 'own_release' && (
             <Field label="발매">
               <Segmented fill label="발매" value={origin} onChange={v => setForm(f => (f ? { ...f, origin: v, externalRelease: v === 'other_release' ? (f.externalRelease ?? NO_RELEASE) : f.externalRelease } : f))}
                 options={[{ value: 'unreleased', label: '아직 발매 전' }, { value: 'other_release', label: '다른 아티스트가 발매' }]} />

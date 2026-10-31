@@ -171,6 +171,7 @@
 .aq-pbl-cover .is-applying{background:var(--aq-violet-500)}
 .aq-pbl-cover .is-prepared{background:var(--aq-blue-300)}
 .aq-pbl-cover .is-missing{background:var(--aq-gray-200)}
+.aq-pbl-cover .is-fix{background:var(--aq-amber-500)}
 .aq-pbl-cover-legend{display:flex;flex-wrap:wrap;gap:8px 20px;margin:12px 0 0;padding:0;list-style:none;font-size:var(--aq-fs-sm);color:var(--aq-text-3)}
 .aq-pbl-cover-legend li{display:flex;align-items:center;gap:6px}
 .aq-pbl-cover-legend i{width:8px;height:8px;border-radius:var(--aq-r-pill)}

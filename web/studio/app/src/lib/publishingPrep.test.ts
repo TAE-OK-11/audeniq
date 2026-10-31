@@ -27,6 +27,8 @@ describe('신청 전 준비 점검', () => {
     expect(workStage(waiting)).toBe('ready');
     expect(workStage(managed)).toBe('managed');
     expect(workStage(work({ myRole: 'contributor' }))).toBe('readonly');
+    // 보완 요청은 '확인 필요'가 아니라 '보완 요청' — 앨범 머리 카드와 같은 말
+    expect(workStage(work({ registration: 'needs_fix', application: { id: 'a', number: 'n', status: 'needs_fix' }, fix: { reason: 'IPI', fields: [], requestedAt: '' } }))).toBe('fix');
   });
 
   it('앨범 한 줄 요약과 항목별 할 일', () => {

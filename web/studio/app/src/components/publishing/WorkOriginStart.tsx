@@ -32,9 +32,9 @@ export function WorkOriginStart({ works, onPick }: { works: Work[] | null; onPic
     <WizardShell
       className="aq-pbl-wizard"
       label="곡 정보 등록" title="새 곡 정보"
-      steps={[{ short: '곡 갈래', title: '어떤 곡을\n등록할까요?', sub: '곡마다 할 수 있는 일이 달라요. 고른 갈래에 맞게 필요한 것만 물어요.' }]}
+      steps={[{ short: '발매 상태', title: '이 곡은 지금\n어떤 상태인가요?', sub: '발매 상태에 따라 할 수 있는 일이 달라요. 고른 상태에 맞는 것만 물어요.' }]}
       step={0} reached={0} onStep={() => {}} onBack={() => nav(-1)}
-      summary={{ title: origin ? WORK_ORIGINS.find(x => x[0] === origin)![1] : '갈래를 골라 주세요', lines: ['저작권 관리 · Open A&R'] }}
+      summary={{ title: origin ? WORK_ORIGINS.find(x => x[0] === origin)![1] : '발매 상태를 골라 주세요', lines: ['저작권 관리 · Open A&R'] }}
       actions={<>
         <button type="button" id="wizardBack" className="ui-btn is-soft" onClick={() => nav(-1)}>나가기</button>
         {/* 내가 발매한 곡은 아래 목록에서 곡을 누르면 바로 넘어간다 */}
@@ -43,7 +43,7 @@ export function WorkOriginStart({ works, onPick }: { works: Work[] | null; onPic
         )}
       </>}
     >
-      <div className="aq-choice-row aq-pbl-origin-row" role="radiogroup" aria-label="곡 갈래">
+      <div className="aq-choice-row aq-pbl-origin-row" role="radiogroup" aria-label="발매 상태">
         {WORK_ORIGINS.map(([v, name, desc]) => (
           <label key={v} className={`aq-choice${origin === v ? ' is-on' : ''}`}>
             <input type="radio" name="workOrigin" value={v} checked={origin === v} onChange={() => setOrigin(v)} />
