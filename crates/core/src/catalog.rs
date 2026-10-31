@@ -405,7 +405,7 @@ pub async fn list_body(
 /// Distribution agreement status per release (REVIEW, APPROVED, NEEDS,
 /// SIGNED, ...). Delivery waits for SIGNED; Studio shows 검토 중 until staff
 /// approve it, 배급 승인 after, and 보완 필요 when staff asked for documents.
-async fn agreement_statuses(
+pub(crate) async fn agreement_statuses(
     tx: &mut sqlx::PgConnection,
     org: Uuid,
     releases: &[Uuid],

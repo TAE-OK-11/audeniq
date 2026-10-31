@@ -35,7 +35,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sqlx::{PgConnection, Row};
+use sqlx::{Connection, PgConnection, Row};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use uuid::Uuid;
 
@@ -326,6 +326,27 @@ fn ts(v: DateTime<Utc>) -> String {
     v.to_rfc3339()
 }
 
+/// Studio's release status chip (draft, review, needs, scheduled, live, ...) for a release pipeline status.
+/// Mirrors `uiStatus` in web/studio/app/src/api/remote.ts so a linked recording reads like its release
+/// instead of a raw stage name such as `stage1_correction`.
+fn release_chip(pipeline: &str, live: bool, agreement: Option<&str>) -> &'static str {
+    if agreement == Some("NEEDS") {
+        return "needs";
+    }
+    if live && agreement == Some("SIGNED") {
+        return "live";
+    }
+    match pipeline {
+        "DRAFT" => "draft",
+        "WITHDRAWN" if agreement == Some("CANCELLED") => "cancelled",
+        "WITHDRAWN" => "rejected",
+        "SUPERSEDED" => "closed",
+        s if s.ends_with("CORRECTION") || s == "ON_HOLD_RIGHTS" => "needs",
+        "READY_FOR_DELIVERY" if matches!(agreement, Some("APPROVED" | "SIGNED")) => "scheduled",
+        _ => "review",
+    }
+}
+
 /// The works of `org` as the screens read them (`Work` in api/publishing.ts).
 async fn works_json(
     c: &mut PgConnection,
@@ -393,8 +414,8 @@ async fn works_json(
         }));
     }
     let mut recordings: HashMap<Uuid, Vec<Value>> = HashMap::new();
-    for r in sqlx::query(
-        "SELECT x.id, x.work_id, x.release_id, x.track_id, t.title, r.title AS release_title, t.isrc, lower(r.status) AS status
+    let rows = sqlx::query(
+        "SELECT x.id, x.work_id, x.release_id, x.track_id, t.title, r.title AS release_title, t.isrc, r.status
            FROM portal.pub_work_recordings x
            JOIN catalog.tracks t ON t.id=x.track_id
            JOIN catalog.releases r ON r.id=x.release_id
@@ -402,12 +423,40 @@ async fn works_json(
     )
     .bind(&ids)
     .fetch_all(&mut *c)
-    .await?
-    {
+    .await?;
+    // Same chip as the release list: the agreement and live delivery decide it, not the pipeline stage alone.
+    // Live bindings are org-scoped (RLS), so read them in a transaction that sets app.org_id.
+    let releases: Vec<Uuid> = rows
+        .iter()
+        .map(|r| r.get::<Uuid, _>("release_id"))
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    let (agreements, mut axes) = if releases.is_empty() {
+        (HashMap::new(), HashMap::new())
+    } else {
+        let mut tx = c.begin().await?;
+        let agreements = crate::catalog::agreement_statuses(&mut tx, org, &releases).await?;
+        let axes = crate::catalog::delivery_axes(&mut tx, org, &releases).await?;
+        tx.commit().await?;
+        (agreements, axes)
+    };
+    let live: HashSet<Uuid> = axes
+        .drain()
+        .filter(|(_, (_, live))| live.iter().any(|l| l["live_status"] == "LIVE"))
+        .map(|(id, _)| id)
+        .collect();
+    for r in rows {
+        let release: Uuid = r.get("release_id");
+        let status = release_chip(
+            &r.get::<String, _>("status"),
+            live.contains(&release),
+            agreements.get(&release).map(String::as_str),
+        );
         recordings.entry(r.get("work_id")).or_default().push(json!({
-            "id": r.get::<Uuid, _>("id"), "releaseId": r.get::<Uuid, _>("release_id"), "trackId": r.get::<Uuid, _>("track_id"),
+            "id": r.get::<Uuid, _>("id"), "releaseId": release, "trackId": r.get::<Uuid, _>("track_id"),
             "title": r.get::<String, _>("title"), "releaseTitle": r.get::<String, _>("release_title"), "version": Value::Null,
-            "isrc": r.get::<Option<String>, _>("isrc"), "status": r.get::<String, _>("status"),
+            "isrc": r.get::<Option<String>, _>("isrc"), "status": status,
         }));
     }
     let mut log: HashMap<Uuid, Vec<Value>> = HashMap::new();
@@ -2300,6 +2349,39 @@ pub fn routes() -> Router<AppState> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recording_status_reads_like_the_release() {
+        assert_eq!(
+            release_chip("STAGE1_CORRECTION", false, Some("REVIEW")),
+            "needs"
+        );
+        assert_eq!(release_chip("ON_HOLD_RIGHTS", false, None), "needs");
+        assert_eq!(release_chip("STAGE2_REVIEW", false, None), "review");
+        assert_eq!(
+            release_chip("READY_FOR_DELIVERY", false, Some("REVIEW")),
+            "review"
+        );
+        assert_eq!(
+            release_chip("READY_FOR_DELIVERY", false, Some("APPROVED")),
+            "scheduled"
+        );
+        assert_eq!(
+            release_chip("READY_FOR_DELIVERY", true, Some("SIGNED")),
+            "live"
+        );
+        assert_eq!(
+            release_chip("READY_FOR_DELIVERY", true, Some("NEEDS")),
+            "needs"
+        );
+        assert_eq!(
+            release_chip("WITHDRAWN", false, Some("CANCELLED")),
+            "cancelled"
+        );
+        assert_eq!(release_chip("WITHDRAWN", false, None), "rejected");
+        assert_eq!(release_chip("SUPERSEDED", false, None), "closed");
+        assert_eq!(release_chip("DRAFT", false, None), "draft");
+    }
 
     fn person(name: &str, roles: &[&str], share: f64) -> ContributorIn {
         ContributorIn {

@@ -298,10 +298,13 @@ export function WorkDetail() {
         <div className="aq-detail-actions is-narrow">{buttons}</div>
       </div>
 
-      <div className="aq-detail-tabs" style={{ top: 'var(--aq-header-h)' }}>
-        <Tabs label="곡 상세 메뉴" value={view} onChange={setTab} className="is-fill"
-          items={shownTabs.map(t => ({ ...t, count: t.value === 'register' && w.fix ? 1 : undefined }))} />
-      </div>
+      {/* 고를 탭이 '정보' 하나뿐이면(맡기기 전 · 미발매) 탭 줄을 그리지 않는다 — 혼자 화면 폭을 차지한 탭은 누를 일이 없다 */}
+      {shownTabs.length > 1 && (
+        <div className="aq-detail-tabs" style={{ top: 'var(--aq-header-h)' }}>
+          <Tabs label="곡 상세 메뉴" value={view} onChange={setTab} className="is-fill"
+            items={shownTabs.map(t => ({ ...t, count: t.value === 'register' && w.fix ? 1 : undefined }))} />
+        </div>
+      )}
 
       <div className="ui-tab-panel" key={view}>
         {view === 'overview' && (
