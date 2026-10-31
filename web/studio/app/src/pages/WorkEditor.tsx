@@ -5,10 +5,12 @@
 // 배급 신청서처럼 단계별로 한 화면에 한 가지만: 기본 정보 → 참여자·지분 → 권리·자료 → 확인.
 // 발매 곡에서 왔으면 배급 신청서를 이미 다 쓴 것으로 본다: 제목·언어·장르·ISRC·크레딧·음원·가사는 다시 묻지 않고 가져와 보여 주기만 하고,
 // 퍼블리싱에만 필요한 것(곡 유형·지분·관리 단체·ISWC·기존 계약)만 받는다. 배급 정보를 고치는 건 발매 상세에서
+// 새 곡은 먼저 갈래를 고른다(WorkOriginStart): 내가 발매한 곡(발매 곡을 골라 가져오기) · 다른 아티스트가 발매한 곡(발매 정보를 적는다)
+// · 발매 전 곡(데모를 붙여 Open A&R로). 마지막 버튼도 갈래를 따른다 — 발매된 곡은 '저장하고 신청', 발매 전 곡은 '저장하고 A&R 제출'
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from '../lib/router';
 import { api } from '../api/client';
-import { pubApi, type Work, type WorkAttachment, type WorkContributor, type WorkInput, type WorkRecording } from '../api/publishing';
+import { pubApi, type ExternalRelease, type Work, type WorkAttachment, type WorkContributor, type WorkInput, type WorkOrigin, type WorkRecording } from '../api/publishing';
 import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { readJSON, removeKey, writeJSON } from '../lib/storage';
@@ -16,7 +18,7 @@ import { stampNow } from '../lib/date';
 import { localStamp, fileSize } from '../lib/format';
 import { uid } from '../lib/store';
 import { draftTrackOf } from '../lib/albumPrep';
-import { LANGUAGES, WORK_TYPES, pct, similarWorks, splitIssues, splitNames, splitReady } from '../lib/publishing';
+import { LANGUAGES, ORIGIN_LABEL, WORK_TYPES, pct, similarWorks, splitIssues, splitNames, splitReady, workOrigin } from '../lib/publishing';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { FilePicker } from '../components/FilePicker';
@@ -28,7 +30,8 @@ import { Glyph } from '../components/Glyph';
 import { SplitEditor } from '../components/publishing/SplitEditor';
 import { reusableWorks } from '../lib/publishingPrep';
 import { WorkRow } from '../components/publishing/parts';
-import { Badge, Button, Callout, Field, KeyValue, inputClass, selectClass } from '../ui';
+import { Badge, Button, Callout, Field, KeyValue, Segmented, inputClass, selectClass } from '../ui';
+import { WorkOriginStart } from '../components/publishing/WorkOriginStart';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { roleText } from '../components/publishing/parts';
 import { Reveal } from '../ui/Reveal';
@@ -36,8 +39,11 @@ import { Reveal } from '../ui/Reveal';
 type Form = Omit<WorkInput, 'recording'>;
 const EMPTY: Form = {
   title: '', altTitles: [], workType: 'original', language: 'ko', genre: '', description: '', visibility: 'private',
-  iswc: null, hasPriorPublisher: false, priorPublisher: null, contributors: [], attachments: [],
+  iswc: null, hasPriorPublisher: false, priorPublisher: null, contributors: [], attachments: [], origin: 'unreleased', externalRelease: null,
 };
+const NO_RELEASE: ExternalRelease = { artist: '', title: '', releaseDate: null, isrc: null, label: null };
+const ISRC_RE = /^[A-Z]{2}-?[A-Z0-9]{3}-?\d{2}-?\d{5}$/i;
+const ORIGIN_TYPES: readonly WorkOrigin[] = ['unreleased', 'other_release'];
 const ATTACH_KINDS: [WorkAttachment['kind'], string, string][] = [
   ['demo', '데모 음원', 'audio/*'], ['lyrics', '가사', '.txt,.pdf,.doc,.docx'], ['score', '악보', '.pdf,image/*'], ['proof', '권리 증빙 자료', '.pdf,image/*'],
 ];
@@ -59,13 +65,16 @@ interface Saved { form: Form; at: string; splitChecked: boolean; step?: number }
 export function WorkEditor() {
   const { id } = useParams();
   const editing = !!id;
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const releaseId = params.get('release');
   const trackId = params.get('track');
+  // 고른 갈래 — 내가 발매한 곡은 발매 곡(?release=&track=)으로 오니 여기는 다른 아티스트 발매 · 발매 전만
+  const typeParam = params.get('type') as WorkOrigin | null;
+  const pickedType = typeParam && ORIGIN_TYPES.includes(typeParam) ? typeParam : null;
   const nav = useNavigate();
   const toast = useToast();
   const confirm = useConfirm();
-  const draftKey = `work-draft:${id ?? (trackId ? `track-${trackId}` : 'new')}`;
+  const draftKey = `work-draft:${id ?? (trackId ? `track-${trackId}` : `new-${pickedType ?? ''}`)}`;
 
   const { data: existing, error: loadError } = useAsync(() => (id ? pubApi.getWork(id) : Promise.resolve(null)), [id], { key: id ? `work:${id}` : undefined });
   const { data: works } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
@@ -88,11 +97,12 @@ export function WorkEditor() {
   useEffect(() => {
     if (form) return;
     if (editing && !existing) return;
+    if (!editing && !releaseId && !pickedType) return; // 갈래를 고른 뒤에 채운다
     if (releaseId && !release) return;
     let start: Form = EMPTY;
     if (existing) {
       const { title, altTitles, workType, language, genre, description, visibility, iswc, hasPriorPublisher, priorPublisher, contributors, attachments } = existing;
-      start = { title, altTitles, workType, language, genre, description, visibility, iswc, hasPriorPublisher, priorPublisher, contributors, attachments };
+      start = { title, altTitles, workType, language, genre, description, visibility, iswc, hasPriorPublisher, priorPublisher, contributors, attachments, origin: workOrigin(existing), externalRelease: existing.externalRelease ?? null };
     } else if (track && release) {
       const d = draftTrackOf(track, release.draft);
       const people = new Map<string, WorkContributor>();
@@ -107,21 +117,24 @@ export function WorkEditor() {
       add(splitNames(track.composers ?? d?.composers), 'composer');
       if (!d?.instrumental) add(splitNames(track.lyricists ?? d?.lyricists), 'lyricist');
       add(splitNames(d?.arrangers), 'arranger');
-      // 배급 신청서에 올린 음원·가사는 첨부 자료로 미리 붙인다 — 같은 파일을 다시 올리지 않게
+      // 배급 신청서에 올린 음원·가사는 첨부 자료로 미리 붙인다 — 같은 파일(asset)과 가사 본문 그대로, 다시 올리지 않게
+      const audioName = track.audioName || d?.audioName;
       const fromRelease: WorkAttachment[] = [
-        ...(d?.audioName ? [{ id: uid(), kind: 'demo' as const, name: d.audioName, size: d.audioSize || undefined, at: stampNow() }] : []),
-        ...(d?.lyrics?.trim() && !d.instrumental ? [{ id: uid(), kind: 'lyrics' as const, name: `${track.title} 가사 (배급 신청서)`, at: stampNow() }] : []),
+        ...(audioName ? [{ id: uid(), kind: 'demo' as const, name: audioName, size: d?.audioSize || undefined, at: stampNow(), assetId: track.assetId ?? d?.assetId ?? null }] : []),
+        ...(d?.lyrics?.trim() && !d.instrumental ? [{ id: uid(), kind: 'lyrics' as const, name: `${track.title} 가사 (배급 신청서)`, at: stampNow(), text: d.lyrics }] : []),
       ];
       start = {
-        ...EMPTY, title: track.title, genre: release.draft?.genre ?? '', language: release.draft?.language ?? 'ko', attachments: fromRelease,
+        ...EMPTY, origin: 'own_release', title: track.title, genre: release.draft?.genre ?? '', language: release.draft?.language ?? 'ko', attachments: fromRelease,
         workType: d?.instrumental ? 'instrumental' : 'original', contributors: [...people.values()].map(c => (c.isMe ? { ...c, confirm: 'confirmed', external: false } : c)),
       };
+    } else if (pickedType) {
+      start = { ...EMPTY, origin: pickedType, externalRelease: pickedType === 'other_release' ? NO_RELEASE : null };
     }
     base.current = JSON.stringify(start);
     const saved = readJSON<Saved | null>(draftKey, null);
     if (saved && JSON.stringify(saved.form) !== base.current) setRestored(saved);
     setForm(start);
-  }, [existing, release, track]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [existing, release, track, pickedType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 자동 저장 — 손을 멈추고 0.8초 뒤 이 브라우저에
   useEffect(() => {
@@ -160,6 +173,8 @@ export function WorkEditor() {
       </div>
     );
   }
+  // 새 곡인데 갈래를 아직 고르지 않았으면 갈래부터 — 내가 발매한 곡은 그 화면에서 발매 곡을 골라 바로 가져온다
+  if (!editing && !releaseId && !pickedType) return <WorkOriginStart works={works ?? null} onPick={t => setParams(new URLSearchParams({ type: t }), { replace: true })} />;
   if (!form) return <div className="view"><SkeletonBlock height={120} /><SkeletonBlock height={320} /></div>;
   if (existing && existing.myRole !== 'owner' && existing.myRole !== 'editor') {
     return (
@@ -177,9 +192,17 @@ export function WorkEditor() {
   const fromDraft = track && release ? draftTrackOf(track, release.draft) : undefined;
   const needsSplitCheck = fromTrack && !splitChecked && form.contributors.length > 0;
   const locked = existing && existing.application && ['submitted', 'in_review', 'approved'].includes(existing.application.status);
+  const origin = form.origin ?? 'unreleased';
+  const released = origin !== 'unreleased';
+  const ext = form.externalRelease ?? NO_RELEASE;
+  const setExt = (patch: Partial<ExternalRelease>) => set('externalRelease', { ...ext, ...patch });
+  const artistErr = tried && origin === 'other_release' && !ext.artist.trim() ? '발매한 아티스트를 적어 주세요.' : '';
+  const isrcErr = ext.isrc && !ISRC_RE.test(ext.isrc) ? 'KR-A26-25-00011 모양이에요. 모르면 비워 두세요.' : '';
+  const hasDemo = form.attachments.some(a => a.kind === 'demo');
   // 다음 단계로 — 이 단계에서 꼭 필요한 것만 막는다 (지분이 덜 맞아도 저장은 된다)
   const next = () => {
     if (step === 0 && !form.title.trim()) { setTried(true); document.getElementById('workTitle')?.focus(); return; }
+    if (step === 0 && origin === 'other_release' && !ext.artist.trim()) { setTried(true); document.getElementById('extArtist')?.focus(); return; }
     if (step === 1 && needsSplitCheck) { setTried(true); document.getElementById('splitCheck')?.focus(); return; }
     setStep(s => Math.min(LAST, s + 1));
   };
@@ -191,20 +214,30 @@ export function WorkEditor() {
     if (!file) return;
     setUploading(kind);
     try {
-      await api.uploadFile(file, kind === 'demo' ? 'AUDIO' : 'DOCUMENT');
-      set('attachments', [...form.attachments, { id: uid(), kind, name: file.name, size: file.size, at: stampNow() }]);
+      // 올린 파일을 기억해 두었다가 곡을 저장할 때 그 파일로 붙인다 (전에는 이름만 남아 서버에 붙지 않았다)
+      const { assetId } = await api.uploadFile(file, kind === 'demo' ? 'AUDIO' : 'DOCUMENT');
+      set('attachments', [...form.attachments, { id: uid(), kind, name: file.name, size: file.size, at: stampNow(), assetId }]);
     } catch (err) {
       toast(errorMessage(err, '파일을 올리지 못했어요.'), 'error');
     } finally { setUploading(null); }
   };
 
-  const save = async (then?: 'apply') => {
+  const save = async (then?: 'apply' | 'ar') => {
     setTried(true);
     if (!form.title.trim()) { setStep(0); return; }
+    if (origin === 'other_release' && !ext.artist.trim()) { setStep(0); return; }
     if (needsSplitCheck) { setStep(1); toast('가져온 크레딧의 지분을 확인해 주세요.', 'error'); return; }
     if (busy) return;
     setBusy(true);
-    const clean: Form = { ...form, title: form.title.trim(), altTitles: form.altTitles.map(t => t.trim()).filter(Boolean) };
+    const clean: Form = {
+      ...form, title: form.title.trim(), altTitles: form.altTitles.map(t => t.trim()).filter(Boolean),
+      // 다른 아티스트 발매만 발매 정보를 둔다 — 발매 제목을 비우면 곡 제목과 같은 것으로 (싱글이 대부분)
+      externalRelease: origin === 'other_release'
+        ? { artist: ext.artist.trim(), title: ext.title.trim() || form.title.trim(), releaseDate: ext.releaseDate || null, isrc: ext.isrc?.trim() || null, label: ext.label?.trim() || null }
+        : null,
+      // 내가 발매한 곡은 발매 곡 연결로만 정해진다 — 고칠 때 보내지 않는다
+      origin: origin === 'own_release' ? undefined : origin,
+    };
     try {
       let w: Work;
       if (existing) {
@@ -218,8 +251,10 @@ export function WorkEditor() {
       removeKey(draftKey);
       base.current = JSON.stringify(form);
       const ok = splitReady(form.contributors);
-      toast(editing ? '곡 정보를 저장했어요.' : '곡을 만들었어요.', { tone: 'success', sub: ok ? undefined : '지분을 맞추면 저작권 관리를 신청할 수 있어요.' });
-      nav(then === 'apply' && ok ? `/publishing/apply?work=${encodeURIComponent(w.id)}` : `/works/${w.id}${releaseId ? `?release=${encodeURIComponent(releaseId)}` : ''}`, { replace: true });
+      toast(editing ? '곡 정보를 저장했어요.' : '곡을 만들었어요.', { tone: 'success', sub: !released ? (hasDemo ? undefined : '데모 음원을 올리면 Open A&R에 제출할 수 있어요.') : ok ? undefined : '지분을 맞추면 저작권 관리를 신청할 수 있어요.' });
+      nav(then === 'apply' && ok ? `/publishing/apply?work=${encodeURIComponent(w.id)}`
+        : then === 'ar' ? `/ar?work=${encodeURIComponent(w.id)}`
+        : `/works/${w.id}${releaseId ? `?release=${encodeURIComponent(releaseId)}` : ''}`, { replace: true });
     } catch (err) {
       toast(errorMessage(err, '저장하지 못했어요. 입력한 내용은 이 브라우저에 남아 있어요.'), { tone: 'error', action: { label: '다시 시도', onClick: h => { h.close(); void save(then); } } });
     } finally { setBusy(false); }
@@ -253,7 +288,7 @@ export function WorkEditor() {
       summary={{
         cover: release ? <ReleaseCover id={release.id} src={release.coverData} /> : undefined,
         title: form.title.trim() || '제목 없는 곡',
-        lines: [fromTrack ? `${release?.title} · ${release?.artist}` : '발매 전 곡', `참여자 ${form.contributors.length}명`],
+        lines: [fromTrack ? `${release?.title} · ${release?.artist}` : origin === 'other_release' && ext.artist.trim() ? `${ext.artist.trim()} 발매` : ORIGIN_LABEL[origin], `참여자 ${form.contributors.length}명`],
       }}
       railNote="입력 내용은 이 브라우저에 자동으로 임시 저장돼요."
       notice={<>
@@ -274,9 +309,12 @@ export function WorkEditor() {
         <button type="button" id="wizardBack" className="ui-btn is-soft" onClick={back} disabled={busy}>{step ? '이전' : '나가기'}</button>
         {step < LAST ? (
           <button type="button" id="wizardNext" className="ui-btn is-primary" onClick={next}>다음으로</button>
-        ) : !editing && splitReady(form.contributors) ? (<>
+        ) : !editing && released && splitReady(form.contributors) ? (<>
           <button type="button" id="wizardSaveNow" className="ui-btn is-soft" onClick={() => void save()} disabled={busy}>곡만 저장</button>
           <button type="button" id="wizardNext" className={`ui-btn is-primary${busy ? ' is-busy' : ''}`} onClick={() => void save('apply')} disabled={busy}>{busy ? '저장하는 중' : '저장하고 신청'}</button>
+        </>) : !editing && !released && hasDemo ? (<>
+          <button type="button" id="wizardSaveNow" className="ui-btn is-soft" onClick={() => void save()} disabled={busy}>곡만 저장</button>
+          <button type="button" id="wizardNext" className={`ui-btn is-primary${busy ? ' is-busy' : ''}`} onClick={() => void save('ar')} disabled={busy}>{busy ? '저장하는 중' : '저장하고 A&R 제출'}</button>
         </>) : (
           <button type="button" id="wizardNext" className={`ui-btn is-primary${busy ? ' is-busy' : ''}`} onClick={() => void save()} disabled={busy}>{busy ? '저장하는 중' : editing ? '저장' : '곡 저장'}</button>
         )}
@@ -301,18 +339,48 @@ export function WorkEditor() {
                 ['버전', track.version || '원곡'],
                 ['작곡', fromDraft?.composers || track.composers || '—'],
                 ['작사', fromDraft?.instrumental ? '연주곡' : fromDraft?.lyricists || track.lyricists || '—'],
-                ['음원', fromDraft?.audioName || '—'],
+                ['음원', track.audioName || fromDraft?.audioName || '—'],
                 ['가사', fromDraft?.instrumental ? '없음 (연주곡)' : fromDraft?.lyrics?.trim() ? '있음' : '없음'],
               ]} />
             </div>
             <Link to={`/releases/${encodeURIComponent(release.id)}`} className="ui-btn is-text is-sm">발매 정보는 발매 상세에서 고쳐요<Glyph name="chevron-right" size={14} /></Link>
             <h2 className="subhead">퍼블리싱 정보</h2>
           </>
-        ) : (
+        ) : (<>
           <Field label="곡 제목" htmlFor="workTitle" required error={titleErr}>
             <input id="workTitle" className={inputClass('lg')} value={form.title} maxLength={200} onChange={e => set('title', e.target.value)} placeholder="예: 새벽 네 시" autoComplete="off" />
           </Field>
-        )}
+          {/* 발매 전 ↔ 다른 아티스트 발매 — 피칭하던 곡을 다른 아티스트가 내면 여기서 바꾸고 발매 정보를 적는다.
+              내가 발매한 곡은 발매 곡을 연결하면 저절로 바뀐다 (곡 화면 '녹음 연결') */}
+          {origin !== 'own_release' && (
+            <Field label="발매">
+              <Segmented fill label="발매" value={origin} onChange={v => setForm(f => (f ? { ...f, origin: v, externalRelease: v === 'other_release' ? (f.externalRelease ?? NO_RELEASE) : f.externalRelease } : f))}
+                options={[{ value: 'unreleased', label: '아직 발매 전' }, { value: 'other_release', label: '다른 아티스트가 발매' }]} />
+            </Field>
+          )}
+          <Reveal open={origin === 'other_release'}>
+            <section className="track-editor aq-pbl-attach-card" aria-label="발매 정보">
+              <p className="ui-field-help">AUDENIQ 밖에서 나온 발매라 직접 적어 주세요. 담당자가 관리 단체에 등록할 때 이 정보로 녹음을 찾아요.</p>
+              <div className="form-grid">
+                <Field label="발매 아티스트" htmlFor="extArtist" required error={artistErr}>
+                  <input id="extArtist" className={inputClass()} value={ext.artist} maxLength={200} onChange={e => setExt({ artist: e.target.value })} placeholder="예: 이온" autoComplete="off" />
+                </Field>
+                <Field label="발매 제목" htmlFor="extTitle" help="앨범·싱글 이름. 비우면 곡 제목과 같아요.">
+                  <input id="extTitle" className={inputClass()} value={ext.title} maxLength={300} onChange={e => setExt({ title: e.target.value })} placeholder={form.title || '예: 겨울 편지'} autoComplete="off" />
+                </Field>
+                <Field label="발매일" htmlFor="extDate">
+                  <input id="extDate" type="date" className={inputClass()} value={ext.releaseDate ?? ''} onChange={e => setExt({ releaseDate: e.target.value || null })} />
+                </Field>
+                <Field label="ISRC" htmlFor="extIsrc" warn={isrcErr} help={!isrcErr ? '음원 사이트·유통사에서 볼 수 있어요. 모르면 비워 두세요.' : undefined}>
+                  <input id="extIsrc" className={inputClass()} value={ext.isrc ?? ''} maxLength={15} onChange={e => setExt({ isrc: e.target.value.trim() || null })} placeholder="KR-A26-25-00011" />
+                </Field>
+                <Field label="레이블·유통사" htmlFor="extLabel">
+                  <input id="extLabel" className={inputClass()} value={ext.label ?? ''} maxLength={200} onChange={e => setExt({ label: e.target.value || null })} />
+                </Field>
+              </div>
+            </section>
+          </Reveal>
+        </>)}
         {dupes.length > 0 && (
           <Reveal open>
             <Callout tone="warn">
@@ -351,7 +419,7 @@ export function WorkEditor() {
             </select>
           </Field>
         </div>
-        <Field label="곡 설명" htmlFor="workDesc" help="곡의 분위기·만든 배경 — A&R 제출 때도 다시 쓸 수 있어요.">
+        <Field label="곡 설명" htmlFor="workDesc" help={released ? '곡의 분위기·만든 배경.' : '곡의 분위기·만든 배경 — A&R 제출 때 그대로 가져가요.'}>
           <textarea id="workDesc" className="ui-textarea" rows={3} value={form.description} maxLength={2000} onChange={e => set('description', e.target.value)} />
         </Field>
         <button type="button" className="ui-btn is-text is-sm" aria-expanded={moreOpen} onClick={() => setMoreOpen(v => !v)}>
@@ -398,7 +466,8 @@ export function WorkEditor() {
         <h2 className="subhead">첨부 자료</h2>
         <p className="ui-field-help">{fromTrack && form.attachments.length
           ? '배급 신청서의 음원·가사를 미리 붙여 두었어요. 악보나 권리 증빙이 있으면 더해 주세요.'
-          : '없어도 저장돼요. 데모 음원은 Open A&R 제출 때, 증빙 자료는 심사 때 써요.'}</p>
+          : released ? '없어도 저장돼요. 권리 증빙·악보가 있으면 저작권 관리 심사가 빨라요.'
+          : '데모 음원이 있어야 Open A&R에 제출할 수 있어요. 가사·악보는 있으면 더해 주세요.'}</p>
         {/* 배급 신청서의 곡 카드(track-editor)처럼 자료 칸을 카드 한 장으로 감싼다 */}
         <section className="track-editor aq-pbl-attach-card" aria-label="첨부 자료">
         <div className="form-grid">
@@ -411,7 +480,10 @@ export function WorkEditor() {
                 {mine.map(a => (
                   <small key={a.id} className="ui-field-help">
                     {a.name}{a.size ? ` · ${fileSize(a.size)}` : ''}{' '}
-                    <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => set('attachments', form.attachments.filter(x => x.id !== a.id))}>빼기</button>
+                    {/* 이미 곡에 붙은 자료는 여기서 빼지 않는다(서버는 더하기만) — 이번에 더한 것만 */}
+                    {!existing?.attachments.some(x => x.id === a.id) && (
+                      <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => set('attachments', form.attachments.filter(x => x.id !== a.id))}>빼기</button>
+                    )}
                   </small>
                 ))}
               </div>
@@ -426,6 +498,7 @@ export function WorkEditor() {
         <div className="aq-catalog-cards aq-stagger">
           <ReviewCard head={fromTrack ? '곡 확인' : '기본 정보'} missing={!form.title.trim()} onEdit={() => setStep(0)}>
             {form.title.trim() || '제목 없음'} · {[WORK_TYPES.find(x => x[0] === form.workType)?.[1], LANGUAGES.find(x => x[0] === form.language)?.[1], form.genre].filter(Boolean).join(' · ')}
+            {origin === 'other_release' && <><br />{[`${ext.artist.trim() || '아티스트 입력 전'} 발매`, ext.title.trim() || form.title.trim(), ext.releaseDate, ext.isrc].filter(Boolean).join(' · ')}</>}
           </ReviewCard>
           <ReviewCard head="참여자·지분" missing={!form.contributors.length} onEdit={() => setStep(1)}>
             {form.contributors.map(c => `${c.name} ${roleText(c)} ${pct(c.share)}`).join(' · ') || '참여자를 추가하면 저작권 관리를 신청할 수 있어요'}
@@ -435,7 +508,9 @@ export function WorkEditor() {
           </ReviewCard>
         </div>
         <div className="ui-callout" style={{ marginTop: 24 }}>
-          {issues.some(i => i.level === 'error')
+          {!released
+            ? (hasDemo && !editing ? '‘저장하고 A&R 제출’을 누르면 바로 Open A&R 제출로 이어져요. 발매되면 저작권 관리를 신청할 수 있어요.' : '발매 전 곡은 데모를 Open A&R에 보내 피칭해요. 발매되면 저작권 관리를 신청할 수 있어요.')
+            : issues.some(i => i.level === 'error')
             ? '지분이 아직 맞지 않아요. 저장은 되고, 저작권 관리 신청은 지분을 맞춘 뒤에 할 수 있어요.'
             : form.contributors.length && !editing ? '지분이 맞아요. ‘저장하고 신청’을 누르면 바로 저작권 관리 신청으로 이어져요.' : '저장하면 곡 화면에서 언제든 다시 고칠 수 있어요.'}
         </div>

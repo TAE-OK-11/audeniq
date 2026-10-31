@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { Link } from '../../lib/router';
 import type { RegistrationStatus, RegistrationStep, Work, WorkContributor } from '../../api/publishing';
-import { APP_LABEL, APP_TONE, REG_LABEL, REG_SENTENCE, REG_STEPS, REG_TONE, ROLE_LABEL, pct, regStep, sumShares } from '../../lib/publishing';
+import { APP_LABEL, APP_TONE, REG_LABEL, REG_SENTENCE, REG_STEPS, REG_TONE, ORIGIN_LABEL, ROLE_LABEL, pct, regStep, sumShares, workOrigin } from '../../lib/publishing';
 import { localStamp } from '../../lib/format';
 import { Badge, IconTile, Meter } from '../../ui';
 import { StageCard } from '../StageCard';
@@ -88,7 +88,7 @@ export function WorkRow({ work: w, to, onClick, end }: { work: Work; to?: string
         <span className="ui-row-title">{w.title || '제목 없는 곡'}</span>
         <span className="ui-row-meta">
           <span>{peopleLine(w.contributors)}</span>
-          <span>{w.recordings.length ? `녹음 ${w.recordings.length}개` : '미공개 곡'}</span>
+          <span>{w.recordings.length ? `녹음 ${w.recordings.length}개` : ORIGIN_LABEL[workOrigin(w)]}</span>
           <span>{w.iswc ?? w.internalCode}</span>
         </span>
       </span>

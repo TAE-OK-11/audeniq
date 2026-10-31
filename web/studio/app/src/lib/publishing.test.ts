@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Work, WorkContributor } from '../api/publishing';
-import { evenSplit, matchFilter, regStep, similarWorks, splitIssues, splitNames, splitReady, sumShares } from './publishing';
+import { evenSplit, isReleased, matchFilter, workOrigin, regStep, similarWorks, splitIssues, splitNames, splitReady, sumShares } from './publishing';
 
 const person = (p: Partial<WorkContributor>): WorkContributor => ({
   id: p.name ?? 'x', creatorId: null, name: '서린', roles: ['composer'], share: 100, publisherShare: 0, confirm: 'confirmed', external: false, ...p,
@@ -62,5 +62,26 @@ describe('작품 거르기·찾기', () => {
     expect(regStep('none')).toBe(-1);
     expect(regStep('needs_fix')).toBe(1);
     expect(regStep('registered')).toBe(5);
+  });
+});
+
+describe('곡 갈래 (퍼블리싱 접수 세 갈래)', () => {
+  const rec = { id: 'r', releaseId: 'r1', trackId: 't1', title: '파도', releaseTitle: 'EP' };
+  it('저장된 갈래를 그대로 읽는다', () => {
+    expect(workOrigin(work({ origin: 'unreleased' }))).toBe('unreleased');
+    expect(workOrigin(work({ origin: 'other_release', externalRelease: { artist: '이온', title: '겨울 편지' } }))).toBe('other_release');
+  });
+  it('갈래가 없는 예전 곡은 녹음·발매 정보로 읽는다', () => {
+    expect(workOrigin(work({}))).toBe('unreleased');
+    expect(workOrigin(work({ recordings: [rec] }))).toBe('own_release');
+    expect(workOrigin(work({ externalRelease: { artist: '이온', title: '겨울 편지' } }))).toBe('other_release');
+  });
+  it('발매 전 곡에 내 발매 녹음이 붙으면 내가 발매한 곡이다', () => {
+    expect(workOrigin(work({ origin: 'unreleased', recordings: [rec] }))).toBe('own_release');
+  });
+  it('저작권 관리는 발매된 곡만, 피칭은 발매 전 곡만', () => {
+    expect(isReleased(work({ origin: 'unreleased' }))).toBe(false);
+    expect(isReleased(work({ origin: 'other_release', externalRelease: { artist: '이온', title: '겨울 편지' } }))).toBe(true);
+    expect(matchFilter(work({ origin: 'other_release', externalRelease: { artist: '이온', title: '겨울 편지' } }), 'unreleased')).toBe(false);
   });
 });

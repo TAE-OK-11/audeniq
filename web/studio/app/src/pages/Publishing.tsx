@@ -7,7 +7,7 @@ import { useDeferredValue, useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from '../lib/router';
 import { pubApi, type Royalty, type Work } from '../api/publishing';
 import { useAsync } from '../hooks/useAsync';
-import { APP_LABEL, APP_TONE, matchFilter, type WorkFilter } from '../lib/publishing';
+import { APP_LABEL, APP_TONE, matchFilter, workOrigin, type WorkFilter } from '../lib/publishing';
 import { Glyph } from '../components/Glyph';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { SkeletonRows } from '../components/Skeleton';
@@ -30,7 +30,7 @@ import '../styles/split/Publishing.css';
 /** 앨범 하나만 볼 때 — 그 앨범에 실린 곡과 그 곡들의 저작권료만 */
 interface Scope { releaseId: string; title: string }
 const inScope = (w: Work, scope: Scope | null) => !scope || w.recordings.some(r => r.releaseId === scope.releaseId);
-const SONG_FILTERS: [WorkFilter, string][] = [['all', '전체'], ['managed', '관리 중'], ['review', '심사 중'], ['fix', '보완 필요'], ['none', '미신청'], ['unreleased', '미발매']];
+const SONG_FILTERS: [WorkFilter, string][] = [['all', '전체'], ['managed', '관리 중'], ['review', '심사 중'], ['fix', '보완 필요'], ['none', '미신청'], ['unreleased', '발매 전']];
 const shortWon = (n: number) => (n >= 10000 ? `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}만` : num(n));
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, '');
 // 손이 가야 하는 곡이 먼저 — 보완 요청 → 맡기지 않음 → 심사 중 → 관리 중
@@ -43,7 +43,7 @@ function SongRow({ w, releaseId }: { w: Work; releaseId?: string }) {
       <ReleaseCover id={rec?.releaseId ?? w.id} />
       <div className="min-0">
         <span className="ui-row-title">{w.title || '제목 없는 곡'}</span>
-        <span className="ui-row-meta">{rec ? rec.releaseTitle : '미발매'} · {w.contributors.map(c => c.name).join(' · ') || '참여자 없음'}</span>
+        <span className="ui-row-meta">{rec ? rec.releaseTitle : workOrigin(w) === 'other_release' ? `${w.externalRelease?.artist ?? '다른 아티스트'} 발매` : '발매 전'} · {w.contributors.map(c => c.name).join(' · ') || '참여자 없음'}</span>
       </div>
       {w.application && !['approved', 'withdrawn'].includes(w.application.status)
         ? <Badge tone={APP_TONE[w.application.status]}>{APP_LABEL[w.application.status]}</Badge>

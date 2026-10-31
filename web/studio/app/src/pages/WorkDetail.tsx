@@ -9,7 +9,7 @@ import { pubApi, type Work, type WorkContributor } from '../api/publishing';
 import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { MOCK } from '../lib/mode';
-import { APP_LABEL, APP_TONE, CONTRACT_LABEL, CONTRACT_TONE, FIX_FIELDS, LANGUAGES, fixNote, isFixField, type FixField, REG_LABEL, REG_SENTENCE, REG_STEPS, WORK_TYPES, pct, regStep, splitIssues, splitReady } from '../lib/publishing';
+import { APP_LABEL, APP_TONE, AR_LABEL, AR_TONE, CONTRACT_LABEL, CONTRACT_TONE, FIX_FIELDS, LANGUAGES, ORIGIN_LABEL, fixNote, isFixField, type FixField, REG_LABEL, REG_SENTENCE, REG_STEPS, WORK_TYPES, pct, regStep, splitIssues, splitReady, workOrigin } from '../lib/publishing';
 import { StageCard } from '../components/StageCard';
 import { STATUS_LABEL, localStamp, statusTone } from '../lib/format';
 import { useToast } from '../components/Toast';
@@ -193,6 +193,8 @@ export function WorkDetail() {
   const [attaching, setAttaching] = useState(false);
   const [splitView, setSplitView] = useState<'now' | 'pending'>('pending');
   const { data: allWorks } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
+  // 발매 전 곡의 A&R 제출 — 진행 중이면 '제출' 대신 진행 상황으로 (같은 곡을 두 번 내지 않게)
+  const { data: arList } = useAsync(() => pubApi.listAr(), [], { key: 'ar-submissions' });
 
   if (loading && !w) return <div id="view-release" className="view"><SkeletonBlock height={220} /><SkeletonBlock height={280} /></div>;
   if (error || !w) {
@@ -220,7 +222,11 @@ export function WorkDetail() {
   const contract = contracts?.find(c => c.id === w.contractId) ?? null;
   const application = apps?.find(a => a.id === app?.id) ?? null;
   const update = (nw: Work) => setWork(nw);
-  const canApply = canEdit && w.registration === 'none' && (!app || app.status === 'withdrawn');
+  // 세 갈래(lib/publishing WORK_ORIGINS): 발매 전 곡은 A&R 피칭, 발매된 곡(내 발매·다른 아티스트 발매)은 저작권 관리 신청
+  const origin = workOrigin(w);
+  const released = origin !== 'unreleased';
+  const canApply = canEdit && released && w.registration === 'none' && (!app || app.status === 'withdrawn');
+  const ar = arList?.find(a => a.workId === w.id && a.status !== 'closed') ?? null;
   const me = w.contributors.find(c => c.isMe);
 
   const saveSplit = async () => {
@@ -269,12 +275,16 @@ export function WorkDetail() {
   const backToAlbum = !!fromRelease && w.recordings.some(r => r.releaseId === fromRelease);
   const backTo = backToAlbum ? `/releases/${encodeURIComponent(fromRelease!)}?tab=publishing` : '/releases?tab=works';
 
+  // 정보 고치기 옆 버튼은 갈래마다 하나 — 발매된 곡은 피칭할 일이 없으니 A&R을 두지 않고, 발매 전 곡은 신청 대신 A&R.
+  // 이미 신청·관리 중인 곡에는 옆 버튼이 없다 (진행은 아래 단계와 '저작권·계약' 탭)
   const buttons = canEdit && (
     <>
       <Link to={`/works/${w.id}/edit${backToAlbum ? `?release=${encodeURIComponent(fromRelease!)}` : ''}`} className="ui-btn is-soft">정보 고치기</Link>
       {/* 지분이 맞지 않으면 신청이 막힌다 — 그때는 진한 버튼을 신청에 두지 않는다 (위 안내의 '지분 고치기'가 할 일) */}
-      {canApply ? <Link to={`/publishing/apply?work=${w.id}`} className={`ui-btn ${splitReady(w.contributors) ? 'is-primary' : 'is-soft'}`}>저작권 관리 신청</Link>
-        : <Link to={`/ar?work=${w.id}`} className="ui-btn is-soft">A&R 제출</Link>}
+      {canApply && <Link to={`/publishing/apply?work=${w.id}`} className={`ui-btn ${splitReady(w.contributors) ? 'is-primary' : 'is-soft'}`}>저작권 관리 신청</Link>}
+      {!released && (ar
+        ? <Link to="/ar" className="ui-btn is-soft">A&R 진행 보기</Link>
+        : <Link to={`/ar?work=${w.id}`} className="ui-btn is-primary">A&R 제출</Link>)}
     </>
   );
 
@@ -288,8 +298,8 @@ export function WorkDetail() {
         <ReleaseCover id={w.recordings[0]?.releaseId ?? w.id} className="cover aq-detail-cover" />
         <div className="aq-detail-info">
           <div className="aq-detail-top">
-            <span className="eyebrow">곡{w.recordings.length === 0 && ' · 미발매'}</span>
-            <RegBadge status={w.registration} />
+            <span className="eyebrow">곡 · {ORIGIN_LABEL[origin]}</span>
+            {released ? <RegBadge status={w.registration} /> : ar && <Badge tone={AR_TONE[ar.status]}>A&R {AR_LABEL[ar.status]}</Badge>}
           </div>
           <h1>{w.title}</h1>
           {/* 발매 상세처럼 이름만 — 지분은 정보 탭의 참여자·지분에서 */}
@@ -339,7 +349,7 @@ export function WorkDetail() {
                 ['ISWC', w.iswc ?? <Empty>{`발급 전 · ${w.internalCode}`}</Empty>],
                 ['기존 퍼블리셔', w.hasPriorPublisher ? (w.priorPublisher || '있음') : '없음'],
                 ['내 역할', me ? `${roleText(me)} · ${pct(me.share)}` : <Empty>참여하지 않음</Empty>],
-                ['연결된 녹음', w.recordings.length ? `${w.recordings.length}개` : <Empty>미발매</Empty>],
+                ['발매', origin === 'other_release' ? `${w.externalRelease?.artist ?? '다른 아티스트'} 발매` : w.recordings.length ? `녹음 ${w.recordings.length}개` : <Empty>발매 전</Empty>],
               ]} />
               {w.altTitles.length > 0 && <KeyValue items={[[ '대체 제목', w.altTitles.join(' · ') ]]} />}
               {w.description && <><h2 className="subhead">곡 설명</h2><p className="muted small break">{w.description}</p></>}
@@ -429,7 +439,7 @@ export function WorkDetail() {
               ) : (
                 <div className="empty-note">
                   {app?.status === 'withdrawn' ? '신청을 철회했어요.' : '아직 신청하지 않았어요.'}<br />저작권 관리를 쓰지 않아도 곡 정보는 계속 관리할 수 있어요.<br />
-                  {canEdit && <Link to={`/publishing/apply?work=${w.id}`} className="ui-btn is-white is-sm">저작권 관리 시작 <Glyph name="chevron-right" size={13} /></Link>}
+                  {canApply && <Link to={`/publishing/apply?work=${w.id}`} className="ui-btn is-white is-sm">저작권 관리 시작 <Glyph name="chevron-right" size={13} /></Link>}
                 </div>
               )}
             </div>
@@ -450,9 +460,19 @@ export function WorkDetail() {
         {view === 'overview' && (
           <div className="aq-relinfo-card" id="workRecordings">
             <div className="ui-section-head">
-              <h2 className="subhead">연결된 녹음·발매</h2>
-              {canEdit && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setLinking(true)}>녹음 연결</button>}
+              <h2 className="subhead">{origin === 'other_release' ? '발매 정보' : '연결된 녹음·발매'}</h2>
+              {canEdit && origin !== 'other_release' && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setLinking(true)}>녹음 연결</button>}
             </div>
+            {/* 다른 아티스트가 낸 발매는 AUDENIQ 카탈로그에 없다 — 곡을 등록할 때 적은 발매 정보를 그대로 보여 준다 */}
+            {origin === 'other_release' && w.externalRelease && (
+              <KeyValue cols={2} items={[
+                ['발매 아티스트', w.externalRelease.artist],
+                ['발매 제목', w.externalRelease.title],
+                ['발매일', w.externalRelease.releaseDate || <Empty>모름</Empty>],
+                ['ISRC', w.externalRelease.isrc || <Empty>모름</Empty>],
+                ['레이블·유통사', w.externalRelease.label || <Empty>모름</Empty>],
+              ]} />
+            )}
             {w.recordings.length ? (
               <div className="ui-list aq-stagger">
                 {w.recordings.map(r => (
@@ -469,9 +489,9 @@ export function WorkDetail() {
                   </div>
                 ))}
               </div>
-            ) : (
+            ) : origin !== 'other_release' && (
               <div className="empty-note">
-                아직 발매되지 않은 곡이에요.<br />녹음해서 발매하면 그 녹음을 이 곡에 연결해 주세요. 한 곡에 여러 버전을 연결할 수 있어요.<br />
+                아직 발매되지 않은 곡이에요.<br />직접 발매했으면 그 녹음을 연결하고, 다른 아티스트가 발매했으면 ‘정보 고치기’에서 발매 정보를 적어 주세요. 발매되면 저작권 관리를 신청할 수 있어요.<br />
                 {canEdit && <button type="button" className="ui-btn is-white is-sm" onClick={() => setLinking(true)}>발매 곡 연결 <Glyph name="chevron-right" size={13} /></button>}
               </div>
             )}

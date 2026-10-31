@@ -2,8 +2,26 @@
 // 서버 응답 모양은 api/publishing.ts, 여기는 계산과 글자만 (테스트: publishing.test.ts)
 import type { Tone } from '../ui/tone';
 import type {
-  ApplicationStatus, ArStatus, ContractStatus, ContributorRole, RegistrationStatus, RoyaltyKind, RoyaltyStatus, Work, WorkContributor, WorkFix,
+  ApplicationStatus, ArStatus, ContractStatus, ContributorRole, RegistrationStatus, RoyaltyKind, RoyaltyStatus, Work, WorkContributor, WorkFix, WorkOrigin,
 } from '../api/publishing';
+
+/** 퍼블리싱 접수 세 갈래 — [값, 이름, 한 줄 설명]. 곡 등록 첫 화면과 곡 화면이 같은 말을 쓴다 */
+export const WORK_ORIGINS: readonly (readonly [WorkOrigin, string, string])[] = [
+  ['own_release', '내가 발매한 곡', 'AUDENIQ으로 낸 발매에서 곡 정보·크레딧·음원·가사·커버를 가져와요. 저작권 관리를 신청할 수 있어요.'],
+  ['other_release', '다른 아티스트가 발매한 곡', '내가 작사·작곡하고 다른 사람이 낸 곡이에요. 발매 정보를 적고 저작권 관리를 신청해요.'],
+  ['unreleased', '아직 발매 전인 곡', '데모를 Open A&R에 보내 아티스트·레이블에 피칭해요. 발매되면 저작권 관리를 신청할 수 있어요.'],
+];
+export const ORIGIN_LABEL: Record<WorkOrigin, string> = { own_release: '내가 발매한 곡', other_release: '다른 아티스트 발매', unreleased: '발매 전' };
+
+/** 곡이 들어온 갈래 — 저장된 값이 없는 예전 곡은 녹음·발매 정보로 읽는다.
+ *  발매 전 곡에 내 발매 녹음이 붙으면(직접 발매했으면) 내가 발매한 곡으로 본다 */
+export function workOrigin(w: Pick<Work, 'recordings'> & Partial<Pick<Work, 'origin' | 'externalRelease'>>): WorkOrigin {
+  if (w.origin === 'other_release' || (!w.origin && w.externalRelease)) return 'other_release';
+  if (w.recordings.length || w.origin === 'own_release') return 'own_release';
+  return 'unreleased';
+}
+/** 발매된 곡(내 발매·다른 아티스트 발매) — 저작권 관리 신청 대상. 발매 전 곡은 A&R 피칭 대상 */
+export const isReleased = (w: Parameters<typeof workOrigin>[0]) => workOrigin(w) !== 'unreleased';
 
 /** 곡 등록(권리 관리) 진행 — 기획안 7.1
  *  색은 발매 상태와 같은 규칙(DESIGN_SYSTEM 규칙 5): 확인·심사가 진행 중이면 보라, 보완 주황, 완료 초록, 불가 빨강 */
@@ -206,7 +224,7 @@ export function matchFilter(w: Work, f: WorkFilter): boolean {
     case 'none': return w.registration === 'none' || w.registration === 'preparing';
     case 'review': return w.registration === 'internal_review' || w.application?.status === 'in_review' || w.application?.status === 'submitted';
     case 'fix': return w.registration === 'needs_fix' || w.application?.status === 'needs_fix';
-    case 'unreleased': return w.recordings.length === 0;
+    case 'unreleased': return workOrigin(w) === 'unreleased';
   }
 }
 

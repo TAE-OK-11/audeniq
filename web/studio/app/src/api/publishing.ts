@@ -24,7 +24,7 @@ import { statementsStore } from '../store/settlement';
 import { api } from './client';
 import { draftTrackOf } from '../lib/albumPrep';
 import { STATUS_LABEL } from '../lib/format';
-import { CONTRACT_CONFIRMATIONS, contractBody } from '../lib/publishing';
+import { CONTRACT_CONFIRMATIONS, contractBody, workOrigin } from '../lib/publishing';
 import { uiStatus } from './remote';
 import { getProfileSnapshot } from '../store/profile';
 import { getAccountSnapshot } from '../store/account';
@@ -39,6 +39,13 @@ export type CreatorRole = 'artist' | 'composer' | 'lyricist' | 'arranger' | 'pro
 export type RoyaltyKind = 'performance' | 'mechanical' | 'digital' | 'sync' | 'print' | 'other';
 export type RoyaltyStatus = 'estimated' | 'confirmed' | 'paid';
 export type ArStatus = 'submitted' | 'in_review' | 'needs_fix' | 'reviewed' | 'proposing' | 'closed';
+/** 퍼블리싱은 곡을 세 갈래로 받는다 — 화면도 갈래마다 다르다
+ *  · unreleased: 아직 발매 전 — Open A&R로 피칭한다. 저작권 관리 신청은 발매된 뒤에
+ *  · own_release: 내가 AUDENIQ으로 발매한 곡 — 발매 정보(제목·크레딧·음원·가사·커버)를 가져와 다시 적지 않는다
+ *  · other_release: 내가 쓰고 다른 아티스트가 발매한 곡 — 발매가 카탈로그에 없으니 발매 정보를 직접 받는다 */
+export type WorkOrigin = 'unreleased' | 'own_release' | 'other_release';
+/** 다른 아티스트가 낸 발매 — 아티스트·제목은 꼭, 나머지는 아는 만큼 */
+export interface ExternalRelease { artist: string; title: string; releaseDate?: string | null; isrc?: string | null; label?: string | null }
 /** 내가 이 곡에서 할 수 있는 일 — 서버가 정한다. 화면은 버튼을 숨길 뿐 보안은 서버 몫 (기획안 11.3) */
 export type WorkRole = 'owner' | 'editor' | 'contributor' | 'viewer';
 
@@ -80,6 +87,8 @@ export interface WorkAttachment {
   url?: string | null;
   /** 가사처럼 글자로 된 자료는 본문을 그대로 보여 준다 */
   text?: string | null;
+  /** 올린 파일(catalog asset) — 곡을 저장할 때 서버에 이 파일로 붙인다 (발매 음원을 가져올 때도 같은 파일) */
+  assetId?: string | null;
 }
 export interface WorkRecording { id: string; releaseId: string; trackId: string; title: string; releaseTitle: string; version?: string | null; isrc?: string | null; status?: string }
 export interface WorkEvent { at: string; text: string; who?: string; kind?: 'edit' | 'rights' | 'apply' | 'review' | 'register' | 'file' | 'link' }
@@ -103,6 +112,10 @@ export interface Work {
   internalCode: string;
   hasPriorPublisher: boolean;
   priorPublisher?: string | null;
+  /** 곡이 들어온 갈래 — 예전 곡에는 없을 수 있어 화면은 workOrigin()으로 읽는다 */
+  origin?: WorkOrigin;
+  /** other_release일 때 그 발매 */
+  externalRelease?: ExternalRelease | null;
   contributors: WorkContributor[];
   attachments: WorkAttachment[];
   recordings: WorkRecording[];
@@ -123,7 +136,7 @@ export interface Work {
 /** 발매 신청에서 곡 크레딧으로 곡을 만들 때 — enroll이면 저작권 관리 신청 준비까지 (기획안 4.2, 15) */
 export interface PrepareResult { created: number; linked: number; skipped: number }
 
-export type WorkInput = Pick<Work, 'title' | 'altTitles' | 'workType' | 'language' | 'genre' | 'description' | 'visibility' | 'iswc' | 'hasPriorPublisher' | 'priorPublisher' | 'contributors' | 'attachments'> & {
+export type WorkInput = Pick<Work, 'title' | 'altTitles' | 'workType' | 'language' | 'genre' | 'description' | 'visibility' | 'iswc' | 'hasPriorPublisher' | 'priorPublisher' | 'contributors' | 'attachments' | 'origin' | 'externalRelease'> & {
   /** 발매 곡에서 만들 때 바로 연결할 녹음물 */
   recording?: Omit<WorkRecording, 'id'> | null;
 };
@@ -268,7 +281,7 @@ const me = (share: number, roles: ContributorRole[], publisherShare = 0, confirm
   ({ id: uid(), creatorId: ME, name: '서린', roles, society: 'KOMCA', ipi: '00712345678', share, publisherShare, confirm, external: false, isMe: true });
 
 function seedWorks(): Work[] {
-  const base = { altTitles: [], language: 'ko', genre: 'Indie Pop', description: '', visibility: 'private' as const, hasPriorPublisher: false, priorPublisher: null, attachments: [], fix: null, rowVersion: 1 };
+  const base = { altTitles: [], language: 'ko', genre: 'Indie Pop', description: '', visibility: 'private' as const, hasPriorPublisher: false, priorPublisher: null, attachments: [], fix: null, rowVersion: 1, origin: 'own_release' as WorkOrigin, externalRelease: null };
   return [
     {
       ...base, id: 'w1', title: '첫 번째 싱글', workType: 'original', iswc: 'T-345.246.800-1', internalCode: 'AQW-000101',
@@ -324,7 +337,7 @@ function seedWorks(): Work[] {
       createdAt: '2026-10-26 22:00', updatedAt: '2026-10-27 10:00',
     },
     {
-      ...base, id: 'w4', title: '새벽 네 시', workType: 'original', iswc: null, internalCode: 'AQW-000104', genre: 'R&B',
+      ...base, id: 'w4', title: '새벽 네 시', workType: 'original', iswc: null, internalCode: 'AQW-000104', genre: 'R&B', origin: 'unreleased',
       description: '아직 녹음 전인 데모. 피아노 한 대로 시작해서 후렴에서 드럼이 들어와요.',
       contributors: [
         me(50, ['composer']),
@@ -337,6 +350,8 @@ function seedWorks(): Work[] {
     },
     {
       ...base, id: 'w5', title: '겨울 편지', workType: 'original', iswc: 'T-345.246.811-4', internalCode: 'AQW-000088', genre: 'Ballad',
+      // 내가 작사하고 다른 아티스트(이온)가 낸 곡 — 발매가 AUDENIQ 카탈로그에 없다
+      origin: 'other_release', externalRelease: { artist: '이온', title: '겨울 편지', releaseDate: '2025-11-20', isrc: 'KRA262500011', label: '루미 엔터테인먼트' },
       contributors: [
         { id: uid(), creatorId: 'cr_3', name: '이온', roles: ['composer'], society: 'KOMCA', ipi: '00755511122', share: 70, publisherShare: 70, confirm: 'confirmed', external: false },
         me(30, ['lyricist'], 30),
@@ -346,6 +361,16 @@ function seedWorks(): Work[] {
       application: { id: 'a0', number: 'PUB-2025-0042', status: 'approved' }, contractId: 'c0', myRole: 'contributor',
       activity: [{ at: '2025-12-10 10:00', text: 'KOMCA 등록이 끝났어요.', kind: 'register' }],
       createdAt: '2025-11-30 12:00', updatedAt: '2025-12-10 10:00',
+    },
+    {
+      // 발매 전 데모 — 아직 A&R에 내지 않은 곡
+      ...base, id: 'w6', title: '여름밤 산책', workType: 'original', iswc: null, internalCode: 'AQW-000105', genre: 'City Pop', origin: 'unreleased',
+      description: '청량한 신스와 베이스 위에 가벼운 보컬. 여름 시즌 싱글로 어울려요.',
+      contributors: [me(100, ['lyricist', 'composer'])],
+      attachments: [{ id: 'f3', kind: 'demo', name: 'summer_walk_demo.mp3', size: 3_610_000, at: '2026-10-29 23:40' }],
+      recordings: [], registration: 'none', registrationLog: [], application: null, contractId: null, myRole: 'owner',
+      activity: [{ at: '2026-10-29 23:40', text: '데모 음원을 올렸어요.', kind: 'file', who: '서린' }],
+      createdAt: '2026-10-29 23:30', updatedAt: '2026-10-29 23:40',
     },
   ];
 }
@@ -510,8 +535,12 @@ const mockApi = {
     return mutate(d => {
       const now = stampNow();
       const { recording, ...rest } = input;
+      // 서버와 같게 — 내 발매 녹음이 있으면 내가 발매한 곡, 다른 아티스트 발매는 그 발매 정보가 있어야 한다
+      const origin: WorkOrigin = recording ? 'own_release' : rest.origin ?? 'unreleased';
+      if (origin === 'other_release' && !(rest.externalRelease?.artist.trim() && rest.externalRelease.title.trim())) throw new ApiError('발매한 아티스트와 발매 제목을 적어 주세요.', 400, 'WORK_RELEASE_INFO_REQUIRED');
       const w: Work = {
-        ...rest, id: `w_${uid()}`, internalCode: nextCode(d), recordings: recording ? [{ ...recording, id: uid() }] : [],
+        ...rest, origin, externalRelease: origin === 'other_release' ? rest.externalRelease : null,
+        id: `w_${uid()}`, internalCode: nextCode(d), recordings: recording ? [{ ...recording, id: uid() }] : [],
         registration: 'none', registrationLog: [], application: null, contractId: null, fix: null, myRole: 'owner', rowVersion: 1,
         activity: [{ at: now, text: recording ? `‘${recording.releaseTitle}’ 발매 곡에서 곡을 만들었어요.` : '곡을 만들었어요.', kind: 'edit', who: d.me.name }],
         createdAt: now, updatedAt: now,
@@ -529,8 +558,12 @@ const mockApi = {
       if (w.rowVersion !== rowVersion) throw new ApiError('다른 곳에서 먼저 고쳤어요. 새로 불러온 뒤 다시 저장해 주세요.', 409, 'CONFLICT');
       const key = (list: WorkContributor[]) => JSON.stringify(list.map(c => [c.name, c.share, c.publisherShare, c.roles, c.society, c.ipi]));
       const before = key(w.contributors);
-      const { recording: _r, contributors, ...rest } = patch;
+      const { recording: _r, contributors, attachments, ...rest } = patch;
+      if (rest.origin === 'own_release') throw new ApiError('내가 발매한 곡은 발매 곡을 연결하면 정해져요.', 400, 'WORK_ORIGIN_INVALID');
+      if (rest.origin === 'other_release' && !(rest.externalRelease ?? w.externalRelease)) throw new ApiError('발매한 아티스트와 발매 제목을 적어 주세요.', 400, 'WORK_RELEASE_INFO_REQUIRED');
       Object.assign(w, rest);
+      // 서버처럼 첨부는 더하기만 — 이미 붙은 자료는 곡 화면에서 관리한다
+      if (attachments) w.attachments.push(...attachments.filter(a => !w.attachments.some(x => x.id === a.id)));
       const now = stampNow();
       const rightsChanged = !!contributors && before !== key(contributors);
       // 관리 중인 곡은 바로 바꾸지 않는다 — 참여자 확인과 담당자 검토가 끝나면 반영 (그동안 지금 값이 적용된다)
@@ -558,6 +591,8 @@ const mockApi = {
       if (!w) throw notFound();
       if (!w.recordings.some(r => r.trackId === rec.trackId)) {
         w.recordings.push({ ...rec, id: uid() });
+        // 발매 전 곡에 내 발매 녹음이 붙으면 내가 발매한 곡이 된다 (서버와 같다)
+        if ((w.origin ?? 'unreleased') === 'unreleased') w.origin = 'own_release';
         w.activity.unshift({ at: stampNow(), text: `‘${rec.releaseTitle}’의 ‘${rec.title}’ 녹음을 연결했어요.`, kind: 'link', who: d.me.name });
         w.rowVersion += 1;
         w.updatedAt = stampNow();
@@ -660,7 +695,7 @@ const mockApi = {
         const each = Math.floor((100 / list.length) * 100) / 100;
         list.forEach((c, i) => { c.share = i === list.length - 1 ? Math.round((100 - each * (list.length - 1)) * 100) / 100 : each; c.publisherShare = enroll && c.isMe ? c.share : 0; });
         d.works.unshift({
-          id: `w_${uid()}`, title: t.title, altTitles: [], workType: dt?.instrumental ? 'instrumental' : 'original', language: rel.draft?.language ?? 'ko',
+          id: `w_${uid()}`, title: t.title, altTitles: [], origin: 'own_release', externalRelease: null, workType: dt?.instrumental ? 'instrumental' : 'original', language: rel.draft?.language ?? 'ko',
           genre: rel.draft?.genre ?? '', description: '', visibility: 'private', iswc: null, internalCode: nextCode(d), hasPriorPublisher: false, priorPublisher: null,
           contributors: list, attachments: [], recordings: [{ id: uid(), releaseId: rel.id, trackId: t.id, title: t.title, releaseTitle: rel.title, version: t.version, isrc: t.isrc, status: rel.status }],
           registration: enroll ? 'preparing' : 'none', registrationLog: enroll ? [{ status: 'preparing', at: now, note: '발매 신청에서 함께 신청' }] : [],
@@ -684,6 +719,8 @@ const mockApi = {
       if (!works.length) throw new ApiError('신청할 곡을 골라 주세요.', 400, 'VALIDATION');
       const busy = works.find(w => w.application && ['submitted', 'in_review', 'needs_fix', 'approved'].includes(w.application.status));
       if (busy) throw new ApiError(`‘${busy.title}’은(는) 이미 신청했어요. 진행 상황은 곡 화면에서 볼 수 있어요.`, 409, 'DUPLICATE_APPLICATION');
+      const demo = works.find(w => workOrigin(w) === 'unreleased');
+      if (demo) throw new ApiError(`‘${demo.title}’은(는) 아직 발매 전이에요. 발매 전 곡은 Open A&R로 피칭하고, 발매되면 신청해 주세요.`, 422, 'WORK_NOT_RELEASED');
       if (input.policyVersion !== POLICY.version) throw new ApiError('계약 조건이 바뀌었어요. 새 조건을 확인하고 다시 신청해 주세요.', 409, 'POLICY_CHANGED');
       const now = stampNow();
       const n = d.applications.length + 20;
@@ -837,6 +874,7 @@ const mockApi = {
       const w = d.works.find(x => x.id === input.workId);
       if (!w) throw notFound();
       if (!input.consent) throw new ApiError('피칭 동의가 필요해요.', 400, 'VALIDATION');
+      if (workOrigin(w) !== 'unreleased') throw new ApiError('이미 발매된 곡은 A&R 피칭 대상이 아니에요. 저작권 관리를 신청해 주세요.', 422, 'WORK_RELEASED');
       if (d.ar.some(a => a.workId === w.id && a.status !== 'closed')) throw new ApiError('이 곡은 이미 심사 중이에요.', 409, 'DUPLICATE_SUBMISSION');
       const now = stampNow();
       const s: ArSubmission = {
@@ -881,13 +919,23 @@ function normWork(w: Work): Work {
 const work = (p: Promise<Work>) => p.then(normWork);
 const works = (p: Promise<{ items: Work[] }>) => p.then(r => r.items.map(normWork));
 
+/** 곡에 아직 없는 첨부를 붙인다 — 첨부 경로가 받는 모양(asset_id · 가사 본문)으로 */
+async function addAttachments(w: Work, list: readonly WorkAttachment[] = []): Promise<Work> {
+  for (const a of list) {
+    if (w.attachments.some(x => x.id === a.id)) continue;
+    w = await work(req<Work>(orgPath(`/works/${enc(w.id)}/attachments`), { method: 'POST', body: { kind: a.kind, name: a.name, size: a.size, asset_id: a.assetId ?? undefined, text: a.text ?? undefined } }));
+  }
+  return w;
+}
+
 const remoteApi = {
   policy: () => req<PublishingPolicy>(orgPath('/publishing/policy')),
   summary: () => orEmpty(req<PublishingSummary>(orgPath('/publishing/summary'), { quietServer: true }), EMPTY_SUMMARY),
   listWorks: () => orEmpty(works(req<{ items: Work[] }>(orgPath('/works'))), [] as Work[]),
   getWork: (id: string) => work(req<Work>(orgPath(`/works/${enc(id)}`))),
   workByTrack: (trackId: string) => orEmpty(works(req<{ items: Work[] }>(orgPath(`/works?track_id=${enc(trackId)}`), { quietServer: true })).then(l => l[0] ?? null), null),
-  createWork: (input: WorkInput) => work(req<Work>(orgPath('/works'), { method: 'POST', body: input })),
+  // 서버는 곡을 만들 때 첨부를 받지 않는다 — 만든 뒤 하나씩 붙인다 (올린 파일·발매에서 가져온 음원·가사가 사라지지 않게)
+  createWork: async (input: WorkInput) => addAttachments(await work(req<Work>(orgPath('/works'), { method: 'POST', body: input })), input.attachments),
   prepareWorksFromRelease: (releaseId: string, enroll: boolean, skipTitles: string[] = []) =>
     req<PrepareResult>(orgPath(`/releases/${enc(releaseId)}/works`), { method: 'POST', body: { enroll, skip_titles: skipTitles } }),
   updateWork: async (id: string, patch: Partial<WorkInput>, rowVersion: number) => {
@@ -896,7 +944,8 @@ const remoteApi = {
     let w: Work | null = null;
     if (Object.keys(rest).length) w = await work(req<Work>(orgPath(`/works/${enc(id)}`), { method: 'PATCH', body: { ...rest, row_version: rowVersion } }));
     if (contributors) w = await work(req<Work>(orgPath(`/works/${enc(id)}/rights`), { method: 'PUT', body: { contributors, row_version: w?.rowVersion ?? rowVersion } }));
-    return w ?? work(req<Work>(orgPath(`/works/${enc(id)}`)));
+    w ??= await work(req<Work>(orgPath(`/works/${enc(id)}`)));
+    return patch.attachments ? addAttachments(w, patch.attachments) : w;
   },
   deleteWork: (id: string) => req<void>(orgPath(`/works/${enc(id)}`), { method: 'DELETE' }),
   linkRecording: (workId: string, rec: Omit<WorkRecording, 'id'>) => work(req<Work>(orgPath(`/works/${enc(workId)}/recordings`), { method: 'POST', body: { release_id: rec.releaseId, track_id: rec.trackId } })),

@@ -15,7 +15,7 @@ import { useProfile } from '../store/profile';
 import { compactSignature } from '../lib/application';
 import { readJSON, removeKey, writeJSON } from '../lib/storage';
 import { uid } from '../lib/store';
-import { APPLICATION_AGREE, APP_LABEL, APP_TONE, pct, splitIssues, splitReady, termLabel } from '../lib/publishing';
+import { APPLICATION_AGREE, APP_LABEL, APP_TONE, isReleased, pct, splitIssues, splitReady, termLabel } from '../lib/publishing';
 import { money } from '../lib/format';
 import { ReviewCard, WizardShell, type WizardStep } from '../components/WizardShell';
 import { SkeletonBlock } from '../components/Skeleton';
@@ -39,6 +39,8 @@ const AGREE = APPLICATION_AGREE;
 interface Saved { step: number; workIds: string[]; territories: string[]; rights: string[]; key: string }
 const SAVE_KEY = 'publishing-apply';
 const activeApp = (w: Work) => !!w.application && ['submitted', 'in_review', 'needs_fix', 'approved'].includes(w.application.status);
+// 저작권 관리는 발매된 곡(내 발매 · 다른 아티스트 발매)만 — 발매 전 곡은 Open A&R로 피칭한다 (서버도 WORK_NOT_RELEASED로 막는다)
+const canPick = (w: Work) => !activeApp(w) && isReleased(w);
 
 export function PublishingApply() {
   const [params] = useSearchParams();
@@ -94,7 +96,7 @@ export function PublishingApply() {
   useEffect(() => { setReached(r => Math.max(r, step)); window.scrollTo({ top: 0, behavior: 'smooth' }); }, [step]);
 
   const mine = useMemo(() => (works ?? []).filter(w => w.myRole === 'owner' || w.myRole === 'editor'), [works]);
-  const chosen = mine.filter(w => picked.includes(w.id) && !activeApp(w));
+  const chosen = mine.filter(w => picked.includes(w.id) && canPick(w));
   const blocked = chosen.filter(w => !splitReady(w.contributors));
   const conflicts = chosen.filter(w => w.hasPriorPublisher);
   const pendingPeople = chosen.flatMap(w => w.contributors.filter(c => !c.isMe && c.confirm !== 'confirmed').map(c => ({ w, c })));
@@ -153,7 +155,7 @@ export function PublishingApply() {
     >
       {step === 0 && (
         <>
-          <p className="ui-field-help">{releaseTitle ? `‘${releaseTitle}’ 발매 곡을 골라 두었어요. ` : ''}지분이 맞지 않는 곡은 먼저 고쳐 주세요.</p>
+          <p className="ui-field-help">{releaseTitle ? `‘${releaseTitle}’ 발매 곡을 골라 두었어요. ` : ''}발매된 곡만 신청할 수 있어요. 지분이 맞지 않는 곡은 먼저 고쳐 주세요.</p>
           {fromRelease && (
             <Callout tone="neutral" action={
               <button type="button" className={`ui-btn is-white is-sm${preparing ? ' is-busy' : ''}`} disabled={preparing}
@@ -168,9 +170,10 @@ export function PublishingApply() {
             <div className="aq-agree-box aq-pbl-song-picker">
               {mine.map(w => {
                 const busyApp = activeApp(w);
+                const demo = !isReleased(w);
                 return (
                   <label key={w.id} className="ui-check is-plain">
-                    <input type="checkbox" checked={picked.includes(w.id)} disabled={busyApp} onChange={() => toggle(picked, setPicked, w.id)} />
+                    <input type="checkbox" checked={picked.includes(w.id) && !demo} disabled={busyApp || demo} onChange={() => toggle(picked, setPicked, w.id)} />
                     {/* 상태 색은 앱 전체 규칙 그대로 — 심사 중 보라, 보완 주황, 승인 초록. 고를 수 있는 곡은 '신청 가능'만 파랑 */}
                     <span className="aq-pbl-song-pick">
                       <span className="min-0">
@@ -178,6 +181,7 @@ export function PublishingApply() {
                         <small>{w.contributors.map(c => `${c.name} ${pct(c.share)}`).join(' · ') || '참여자 없음'}</small>
                       </span>
                       {busyApp ? <Badge tone={APP_TONE[w.application!.status]}>{APP_LABEL[w.application!.status]}</Badge>
+                        : demo ? <Badge tone="gray">발매 전 · A&R 대상</Badge>
                         : splitReady(w.contributors) ? <Badge tone="blue">신청 가능</Badge> : <Badge tone="amber">지분 확인 필요</Badge>}
                     </span>
                   </label>

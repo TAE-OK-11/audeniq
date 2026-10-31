@@ -805,3 +805,128 @@ async fn prepare_from_credits_withdraw_and_isolation(pool: PgPool) {
         (StatusCode::OK, Some(0))
     );
 }
+
+/// Publishing takes a song three ways (migration 0169): not released yet (Open A&R), released by the
+/// artist (read from the catalog), released by someone else (the artist gives the release).
+#[sqlx::test]
+async fn work_origin_decides_what_can_be_applied(pool: PgPool) {
+    let (app, _store) = app(pool.clone()).await;
+    admit_signature(&pool).await;
+    let u = user(&app).await;
+    let base = format!("/api/orgs/{}", u.org);
+    let new_work = |title: &str, extra: Value| {
+        let mut body = json!({"title": title, "contributors": people(&u, 60.0, 40.0)});
+        for (k, v) in extra.as_object().unwrap() {
+            body[k] = v.clone();
+        }
+        body
+    };
+
+    // Not released yet: kept, but administration waits for a release.
+    let (s, demo) = call(
+        &app,
+        "POST",
+        &format!("{base}/works"),
+        new_work("새벽 네 시", json!({})),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{demo}");
+    assert_eq!(demo["origin"], "unreleased");
+    assert!(demo["externalRelease"].is_null());
+    let demo_id = demo["id"].as_str().unwrap().to_string();
+    let (s, e) = call(
+        &app,
+        "POST",
+        &format!("{base}/publishing/applications"),
+        apply(&[&demo_id], "key-unreleased"),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (StatusCode::UNPROCESSABLE_ENTITY, Some("WORK_NOT_RELEASED"))
+    );
+
+    // Released by someone else: the release is needed and kept as given.
+    let (s, e) = call(
+        &app,
+        "POST",
+        &format!("{base}/works"),
+        new_work("겨울 편지", json!({"origin": "other_release"})),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("WORK_RELEASE_INFO_REQUIRED"))
+    );
+    let (s, other) = call(&app, "POST", &format!("{base}/works"), new_work("겨울 편지", json!({
+        "origin": "other_release",
+        "externalRelease": {"artist": "이온", "title": "겨울 편지", "releaseDate": "2025-11-20", "isrc": "kr-a26-25-00011", "label": null}
+    })), Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{other}");
+    assert_eq!(other["origin"], "other_release");
+    assert_eq!(other["externalRelease"]["artist"], "이온");
+    assert_eq!(other["externalRelease"]["isrc"], "KRA262500011");
+    let other_id = other["id"].as_str().unwrap().to_string();
+    let (s, a) = call(
+        &app,
+        "POST",
+        &format!("{base}/publishing/applications"),
+        apply(&[&other_id], "key-other-release"),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{a}");
+
+    // The pitched song was released by another artist: it moves to other_release with that release.
+    let rv = demo["rowVersion"].as_i64().unwrap();
+    let (s, e) = call(
+        &app,
+        "PATCH",
+        &format!("{base}/works/{demo_id}"),
+        json!({"origin": "own_release", "row_version": rv}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("WORK_ORIGIN_INVALID"))
+    );
+    let (s, e) = call(
+        &app,
+        "PATCH",
+        &format!("{base}/works/{demo_id}"),
+        json!({"origin": "other_release", "row_version": rv}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("WORK_RELEASE_INFO_REQUIRED"))
+    );
+
+    // Released by the artist: linking a recording of the org's own release makes it own_release.
+    let release = create_release(&app, &u).await;
+    let t = track(&app, &pool, &u, release, "새벽 네 시", 1).await;
+    let (s, w) = call(
+        &app,
+        "POST",
+        &format!("{base}/works/{demo_id}/recordings"),
+        json!({"release_id": release, "track_id": t}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{w}");
+    assert_eq!(w["origin"], "own_release");
+    let (s, a) = call(
+        &app,
+        "POST",
+        &format!("{base}/publishing/applications"),
+        apply(&[&demo_id], "key-own-release"),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{a}");
+}

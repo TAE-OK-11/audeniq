@@ -56,6 +56,9 @@ const WORK_TYPES: [&str; 5] = [
 ];
 const LANGUAGES: [&str; 7] = ["ko", "en", "ja", "zh", "es", "zxx", "other"];
 const KINDS: [&str; 4] = ["demo", "lyrics", "score", "proof"];
+/// Where a work comes from (migration 0169): not released yet (pitched through Open A&R), released by the
+/// artist through AUDENIQ (read from the catalog), or released by someone else (given by the artist).
+const ORIGINS: [&str; 3] = ["unreleased", "own_release", "other_release"];
 /// Every box of the application's agreement step.
 /// What the applicant confirms when signing the application (신청서). The contract has its own
 /// confirmations (CONTRACT_CONFIRMATIONS) — the application is not the contract, as in distribution.
@@ -137,10 +140,29 @@ pub struct ContributorIn {
     pub is_me: Option<bool>,
 }
 
+/// A release of the work that is not in the catalog (someone else released it).
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalReleaseIn {
+    #[serde(default)]
+    pub artist: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub release_date: Option<String>,
+    #[serde(default)]
+    pub isrc: Option<String>,
+    #[serde(default)]
+    pub label: Option<String>,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecordingIn {
+    // The link screen sends snake_case (`release_id`), the work create body camelCase.
+    #[serde(alias = "release_id")]
     pub release_id: Uuid,
+    #[serde(alias = "track_id")]
     pub track_id: Uuid,
 }
 
@@ -163,15 +185,18 @@ pub struct WorkIn {
     pub prior_publisher: Option<Option<String>>,
     pub contributors: Option<Vec<ContributorIn>>,
     pub recording: Option<RecordingIn>,
+    pub origin: Option<String>,
+    #[serde(default, deserialize_with = "nullable")]
+    pub external_release: Option<Option<ExternalReleaseIn>>,
     #[serde(alias = "row_version")]
     pub row_version: Option<i64>,
 }
 
 /// `Some(None)` for an explicit null, `None` when the field is absent.
-fn nullable<'de, D: serde::Deserializer<'de>>(
+fn nullable<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
     d: D,
-) -> std::result::Result<Option<Option<String>>, D::Error> {
-    Ok(Some(Option::<String>::deserialize(d)?))
+) -> std::result::Result<Option<Option<T>>, D::Error> {
+    Ok(Some(Option::<T>::deserialize(d)?))
 }
 
 #[derive(Deserialize)]
@@ -399,7 +424,7 @@ async fn works_json(
     let works = sqlx::query(
         "SELECT w.id, w.internal_code, w.title, w.alt_titles, w.work_type, w.language, w.genre, w.description, w.visibility,
                 w.iswc, w.has_prior_publisher, w.prior_publisher, w.registration, w.fix, w.pending_contributors, w.pending_at,
-                w.row_version, w.created_at, w.updated_at,
+                w.origin, w.external_release, w.row_version, w.created_at, w.updated_at,
                 -- The signed contract the work is under (a contract waiting for signature does not count yet).
                 (SELECT c.id FROM portal.pub_contracts c JOIN portal.pub_application_works aw ON aw.application_id=c.application_id
                   WHERE aw.work_id=w.id AND c.status <> 'pending_sign' ORDER BY c.created_at DESC LIMIT 1) AS contract_id
@@ -537,6 +562,8 @@ async fn works_json(
                 "visibility": w.get::<String, _>("visibility"), "iswc": w.get::<Option<String>, _>("iswc"),
                 "internalCode": w.get::<String, _>("internal_code"), "hasPriorPublisher": w.get::<bool, _>("has_prior_publisher"),
                 "priorPublisher": w.get::<Option<String>, _>("prior_publisher"),
+                "origin": w.get::<String, _>("origin"),
+                "externalRelease": w.get::<Option<Value>, _>("external_release"),
                 "contributors": people.remove(&id).unwrap_or_default(),
                 "attachments": files.remove(&id).unwrap_or_default(),
                 "recordings": recordings.remove(&id).unwrap_or_default(),
@@ -723,7 +750,39 @@ fn check_meta(i: &WorkIn) -> Result<()> {
     {
         return Err(Error::Invalid);
     }
+    if let Some(v) = &i.origin
+        && !ORIGINS.contains(&v.as_str())
+    {
+        return Err(Error::InvalidCode("WORK_ORIGIN_INVALID"));
+    }
     Ok(())
+}
+
+/// The release someone else made, as stored: artist and title are needed, the rest is optional.
+fn external_release(v: &ExternalReleaseIn) -> Result<Value> {
+    let artist = clean(&v.artist, 200, "WORK_RELEASE_INFO_INVALID")?;
+    let title = clean(&v.title, 300, "WORK_RELEASE_INFO_INVALID")?;
+    if artist.is_empty() || title.is_empty() {
+        return Err(Error::InvalidCode("WORK_RELEASE_INFO_REQUIRED"));
+    }
+    let date = opt_clean(v.release_date.as_deref(), 10, "WORK_RELEASE_INFO_INVALID")?
+        .filter(|d| !d.is_empty());
+    if let Some(d) = &date
+        && chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").is_err()
+    {
+        return Err(Error::InvalidCode("WORK_RELEASE_INFO_INVALID"));
+    }
+    let isrc = opt_clean(v.isrc.as_deref(), 20, "WORK_RELEASE_INFO_INVALID")?
+        .map(|x| x.replace('-', "").to_uppercase())
+        .filter(|x| !x.is_empty());
+    if let Some(x) = &isrc
+        && (x.len() != 12 || !x.chars().all(|c| c.is_ascii_alphanumeric()))
+    {
+        return Err(Error::InvalidCode("WORK_RELEASE_INFO_INVALID"));
+    }
+    let label =
+        opt_clean(v.label.as_deref(), 200, "WORK_RELEASE_INFO_INVALID")?.filter(|x| !x.is_empty());
+    Ok(json!({"artist": artist, "title": title, "releaseDate": date, "isrc": isrc, "label": label}))
 }
 
 /// "T3452468001" or "T-345.246.800-1" → "T-345.246.800-1".
@@ -759,6 +818,13 @@ async fn link_recording(
         .bind(track)
         .execute(&mut *c)
         .await?;
+    // A song not released yet that now has a recording of the org's own release is released by the artist.
+    sqlx::query(
+        "UPDATE portal.pub_works SET origin='own_release' WHERE id=$1 AND origin='unreleased'",
+    )
+    .bind(work)
+    .execute(&mut *c)
+    .await?;
     Ok(())
 }
 
@@ -786,12 +852,23 @@ pub async fn create_work(s: &AppState, a: &Actor, org: Uuid, i: WorkIn) -> Resul
         return Err(Error::InvalidCode("WORK_TITLE_INVALID"));
     }
     let plan = plan_contributors(i.contributors.as_deref().unwrap_or_default(), a.party)?;
+    // A recording of the org's own release decides it; otherwise what the artist picked.
+    let origin = if i.recording.is_some() {
+        "own_release"
+    } else {
+        i.origin.as_deref().unwrap_or("unreleased")
+    };
+    let external = match (origin, i.external_release.clone().flatten()) {
+        ("other_release", Some(v)) => Some(external_release(&v)?),
+        ("other_release", None) => return Err(Error::InvalidCode("WORK_RELEASE_INFO_REQUIRED")),
+        _ => None,
+    };
     let mut tx = s.pool.begin().await?;
     let role = auth::membership(&mut tx, a, org, true).await?;
     let id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO portal.pub_works(id,org_id,internal_code,title,alt_titles,work_type,language,genre,description,visibility,iswc,has_prior_publisher,prior_publisher,created_by)
-         VALUES($1,$2,'AQW-'||lpad(nextval('portal.pub_work_code_seq')::text,6,'0'),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
+        "INSERT INTO portal.pub_works(id,org_id,internal_code,title,alt_titles,work_type,language,genre,description,visibility,iswc,has_prior_publisher,prior_publisher,created_by,origin,external_release)
+         VALUES($1,$2,'AQW-'||lpad(nextval('portal.pub_work_code_seq')::text,6,'0'),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",
     )
     .bind(id)
     .bind(org)
@@ -806,6 +883,8 @@ pub async fn create_work(s: &AppState, a: &Actor, org: Uuid, i: WorkIn) -> Resul
     .bind(i.has_prior_publisher.unwrap_or(false))
     .bind(opt_clean(i.prior_publisher.flatten().as_deref(), 200, "WORK_PUBLISHER_INVALID")?)
     .bind(a.user)
+    .bind(origin)
+    .bind(external)
     .execute(&mut *tx)
     .await?;
     write_contributors(&mut tx, org, id, a.party, plan).await?;
@@ -839,6 +918,32 @@ pub async fn update_work(s: &AppState, a: &Actor, org: Uuid, id: Uuid, i: WorkIn
     if !EDITABLE.contains(&registration.as_str()) && registration != "registered" {
         return Err(Error::PolicyGate("WORK_UNDER_REVIEW"));
     }
+    // A pitched song released by someone else moves to other_release with that release; own_release comes only
+    // from a linked recording, so the screen cannot claim it.
+    if i.origin.as_deref() == Some("own_release") {
+        return Err(Error::InvalidCode("WORK_ORIGIN_INVALID"));
+    }
+    let external = match i.external_release.clone() {
+        Some(Some(v)) => Some(Some(external_release(&v)?)),
+        Some(None) => Some(None),
+        None => None,
+    };
+    if i.origin.as_deref() == Some("other_release") {
+        let given = match &external {
+            Some(v) => v.is_some(),
+            None => {
+                sqlx::query_scalar(
+                    "SELECT external_release IS NOT NULL FROM portal.pub_works WHERE id=$1",
+                )
+                .bind(id)
+                .fetch_one(&mut *tx)
+                .await?
+            }
+        };
+        if !given {
+            return Err(Error::InvalidCode("WORK_RELEASE_INFO_REQUIRED"));
+        }
+    }
     sqlx::query(
         "UPDATE portal.pub_works SET
            title=COALESCE($3,title), alt_titles=COALESCE($4,alt_titles), work_type=COALESCE($5,work_type),
@@ -846,7 +951,9 @@ pub async fn update_work(s: &AppState, a: &Actor, org: Uuid, id: Uuid, i: WorkIn
            visibility=COALESCE($9,visibility),
            iswc=CASE WHEN $10 THEN $11 ELSE iswc END,
            has_prior_publisher=COALESCE($12,has_prior_publisher),
-           prior_publisher=CASE WHEN $13 THEN $14 ELSE prior_publisher END
+           prior_publisher=CASE WHEN $13 THEN $14 ELSE prior_publisher END,
+           origin=COALESCE($15,origin),
+           external_release=CASE WHEN $16 THEN $17 ELSE external_release END
          WHERE org_id=$1 AND id=$2",
     )
     .bind(org)
@@ -862,6 +969,9 @@ pub async fn update_work(s: &AppState, a: &Actor, org: Uuid, id: Uuid, i: WorkIn
     .bind(i.iswc.clone().flatten().as_deref().and_then(iswc))
     .bind(i.prior_publisher.is_some())
     .bind(opt_clean(i.prior_publisher.clone().flatten().as_deref(), 200, "WORK_PUBLISHER_INVALID")?)
+    .bind(i.origin.as_deref())
+    .bind(external.is_some())
+    .bind(external.flatten())
     .execute(&mut *tx)
     .await?;
     if let Some(list) = i.contributors {
@@ -1178,8 +1288,8 @@ pub async fn prepare_from_release(
             .collect();
         let id = Uuid::new_v4();
         sqlx::query(
-            "INSERT INTO portal.pub_works(id,org_id,internal_code,title,registration,created_by)
-             VALUES($1,$2,'AQW-'||lpad(nextval('portal.pub_work_code_seq')::text,6,'0'),$3,$4,$5)",
+            "INSERT INTO portal.pub_works(id,org_id,internal_code,title,registration,created_by,origin)
+             VALUES($1,$2,'AQW-'||lpad(nextval('portal.pub_work_code_seq')::text,6,'0'),$3,$4,$5,'own_release')",
         )
         .bind(id)
         .bind(org)
@@ -1403,6 +1513,17 @@ pub async fn submit_application(
         !["none", "preparing", "rejected"].contains(&r.get::<String, _>("registration").as_str())
     }) {
         return Err(Error::PolicyGate("WORK_ALREADY_APPLIED"));
+    }
+    // Administration is for released songs (own or someone else's); a song not released yet goes to Open A&R.
+    let unreleased: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM portal.pub_works w WHERE w.id = ANY($1) AND w.origin='unreleased'
+                        AND NOT EXISTS(SELECT 1 FROM portal.pub_work_recordings r WHERE r.work_id=w.id))",
+    )
+    .bind(&works)
+    .fetch_one(&mut *tx)
+    .await?;
+    if unreleased {
+        return Err(Error::PolicyGate("WORK_NOT_RELEASED"));
     }
     let busy: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM portal.pub_application_works aw JOIN portal.pub_applications x ON x.id=aw.application_id
