@@ -337,3 +337,19 @@
 .aq-pbl-missed{display:grid;gap:10px}
 .aq-pbl-missed .ui-field-help{margin:0}
 .aq-pbl-missed .ui-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px}
+/* 수익 명세서 — 배급 수익 표 (정산일 · 내용 · 플랫폼·기간 · 금액) */
+@media (min-width:601px), print{
+  .aq-paper-grid.aq-statement-grid.is-dist thead th:nth-child(1){width:18%}
+  .aq-paper-grid.aq-statement-grid.is-dist thead th:nth-child(2){width:38%}
+  .aq-paper-grid.aq-statement-grid.is-dist thead th:nth-child(3){width:26%;text-align:left}
+  .aq-paper-grid.aq-statement-grid.is-dist thead th:nth-child(4){width:18%;text-align:right}
+}
+/* 수익 명세서 — 휴대폰: 공통 서류 표는 첫 칸을 번호 칸(28px)으로 두는데, 명세서는 첫 칸이 곡 이름·정산일이라 한 줄씩 쌓는다.
+   소계 줄은 이름과 받을 금액만 양 끝에 */
+@media (max-width:600px){
+  .aq-paper-grid.aq-statement-grid tr{grid-template-columns:minmax(0,1fr)}
+  .aq-paper-grid.aq-statement-grid td[data-label]::before{flex:0 0 76px}
+  .aq-paper-grid.aq-statement-grid tr.aq-statement-sub{display:flex;justify-content:space-between;gap:12px;padding:10px 8px;background:var(--aq-gray-50)}
+  .aq-paper-grid.aq-statement-grid tr.aq-statement-sub td{background:none}
+  .aq-paper-grid.aq-statement-grid tr.aq-statement-sub .is-minor{display:none}
+}

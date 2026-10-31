@@ -190,3 +190,13 @@ describe('놓치는 저작권료 · 지분대로 수익 분배', () => {
     expect(writerSplit(undefined, { composers: '' }, ['서린'])).toEqual([]);
   });
 });
+
+describe('첫 저작권료 예상 시점', () => {
+  it('등록일에서 6~9개월 — 진행 중이면 오늘 + 2개월부터, 보완 중이면 없음', async () => {
+    const { firstRoyaltyWindow } = await import('./publishing');
+    expect(firstRoyaltyWindow({ registration: 'registered', registrationLog: [{ status: 'registered', at: '2026-11-10 10:00' }] } as never, '2026-12-01')).toBe('2027년 5~8월쯤');
+    expect(firstRoyaltyWindow({ registration: 'internal_review', registrationLog: [] } as never, '2026-10-31')).toBe('2027년 6~9월쯤');
+    expect(firstRoyaltyWindow({ registration: 'internal_review', registrationLog: [] } as never, '2026-03-15')).toBe('2026년 11월~2027년 2월쯤');
+    expect(firstRoyaltyWindow({ registration: 'needs_fix', registrationLog: [] } as never, '2026-10-31')).toBeNull();
+  });
+});

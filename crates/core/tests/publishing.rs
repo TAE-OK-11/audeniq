@@ -1903,3 +1903,68 @@ async fn split_invite_also_confirms_writer_shares(pool: PgPool) {
         "{gone}"
     );
 }
+
+/// The people written on earlier songs are remembered: preparing a new release from its credits fills a co-writer's
+/// society and IPI from their earlier songs (matched by name, ignoring spaces).
+#[sqlx::test]
+async fn prepare_reuses_known_co_writers(pool: PgPool) {
+    let (app, _store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let base = format!("/api/orgs/{}", u.org);
+    let co = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO identity.parties(id,org_id,kind,display_name) VALUES($1,$2,'PERSON','박도윤')",
+    )
+    .bind(co)
+    .bind(u.org)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let mut titles = Vec::new();
+    for (k, title) in ["한낮", "밤바다"].into_iter().enumerate() {
+        let release = create_release(&app, &u).await;
+        let t = track(&app, &pool, &u, release, title, 1).await;
+        for (p, r) in [(u.party, "COMPOSER"), (co, "LYRICIST")] {
+            sqlx::query(
+                "INSERT INTO catalog.credits(track_id,org_id,party_id,role) VALUES($1,$2,$3,$4)",
+            )
+            .bind(t)
+            .bind(u.org)
+            .bind(p)
+            .bind(r)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        let (s, r) = call(
+            &app,
+            "POST",
+            &format!("{base}/releases/{release}/works"),
+            json!({"enroll": false}),
+            Some(&u),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK, "{r}");
+        if k == 0 {
+            // The artist fills the co-writer's details on the first song.
+            sqlx::query("UPDATE portal.pub_work_contributors SET society='KOMCA', ipi='00798765432' WHERE name='박도윤'")
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        titles.push(title);
+    }
+    let (society, ipi): (Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT c.society, c.ipi FROM portal.pub_work_contributors c JOIN portal.pub_works w ON w.id=c.work_id
+          WHERE w.org_id=$1 AND w.title=$2 AND c.name='박도윤'",
+    )
+    .bind(u.org)
+    .bind(titles[1])
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        (society.as_deref(), ipi.as_deref()),
+        (Some("KOMCA"), Some("00798765432"))
+    );
+}

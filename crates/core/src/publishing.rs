@@ -2712,6 +2712,29 @@ pub async fn prepare_from_release(
         "none"
     };
     let (mut created, mut linked, mut skipped) = (0, 0, 0);
+    // People written on earlier songs (by name, ignoring spaces): their society and IPI are filled in again.
+    let known: HashMap<String, (Option<String>, Option<String>)> = sqlx::query(
+        "SELECT lower(regexp_replace(c.name, '\\s', '', 'g')) AS k,
+                (array_agg(c.society ORDER BY w.updated_at DESC) FILTER (WHERE c.society IS NOT NULL))[1] AS society,
+                (array_agg(c.ipi ORDER BY w.updated_at DESC) FILTER (WHERE c.ipi IS NOT NULL))[1] AS ipi
+           FROM portal.pub_work_contributors c JOIN portal.pub_works w ON w.id=c.work_id
+          WHERE w.org_id=$1 AND (c.society IS NOT NULL OR c.ipi IS NOT NULL)
+          GROUP BY 1",
+    )
+    .bind(org)
+    .fetch_all(&mut *tx)
+    .await?
+    .into_iter()
+    .map(|r| (r.get("k"), (r.get("society"), r.get("ipi"))))
+    .collect();
+    let past = |name: &str| {
+        let k: String = name
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>()
+            .to_lowercase();
+        known.get(&k).cloned().unwrap_or((None, None))
+    };
     for t in tracks {
         let track: Uuid = t.get("id");
         let title: String = t.get("title");
@@ -2758,13 +2781,18 @@ pub async fn prepare_from_release(
                 } else {
                     10_000 / n
                 };
+                let (society, ipi) = if pid == a.party {
+                    (None, None)
+                } else {
+                    past(&name)
+                };
                 Planned {
                     keep: None,
                     me: pid == a.party,
                     name: name.chars().take(100).collect(),
                     roles,
-                    society: None,
-                    ipi: None,
+                    society,
+                    ipi,
                     share,
                     publisher: 0,
                     publisher_name: None,
