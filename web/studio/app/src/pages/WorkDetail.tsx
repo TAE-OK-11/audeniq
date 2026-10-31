@@ -318,9 +318,10 @@ export function WorkDetail() {
 
   // 정보 고치기 옆 버튼은 갈래마다 하나 — 발매된 곡은 피칭할 일이 없으니 A&R을 두지 않고, 발매 전 곡은 신청 대신 A&R.
   // 이미 신청·관리 중인 곡에는 옆 버튼이 없다 (진행은 아래 단계와 '저작권·계약' 탭)
-  const buttons = canEdit && (
+  // 정보 고치기는 '곡 정보' 카드 안 줄로 — 머리에는 지금 할 일(서명·신청·A&R) 하나만
+  const editTo = canEditInfo(w) ? `/works/${w.id}/edit${backToAlbum ? `?release=${encodeURIComponent(fromRelease!)}` : ''}` : null;
+  const buttons = canEdit && (toSign || canApply || !released) && (
     <>
-      {canEditInfo(w) && <Link to={`/works/${w.id}/edit${backToAlbum ? `?release=${encodeURIComponent(fromRelease!)}` : ''}`} className="ui-btn is-soft">정보 고치기</Link>}
       {/* 승인됐는데 계약서 서명 전 — 이 곡에서 이용자가 할 일은 서명 하나 */}
       {toSign && <Link to={`/contracts/publishing/${encodeURIComponent(toSign.id)}`} className="ui-btn is-primary">계약서 서명</Link>}
       {/* 지분이 맞지 않으면 신청이 막힌다 — 그때는 진한 버튼을 신청에 두지 않는다 (위 안내의 '지분 고치기'가 할 일) */}
@@ -345,10 +346,10 @@ export function WorkDetail() {
           {/* 발매 상세처럼 이름만 — 지분은 정보 탭의 참여자·지분에서 */}
           <p className="aq-detail-artist">{w.contributors.map(c => c.name).join(' · ') || '참여자 없음'}</p>
           {/* 항목 단위로만 줄을 바꾼다 — ISWC 번호가 'T-' / '345…'로 쪼개지지 않게 */}
-          <p className="aq-detail-meta">{[label(WORK_TYPES, w.workType), w.genre && genreLabel(w.genre), w.iswc && `ISWC ${w.iswc}`, w.myRole === 'contributor' && '공동 참여 곡'].filter(Boolean)
+          <p className="aq-detail-meta">{[label(WORK_TYPES, w.workType), w.genre && genreLabel(w.genre), w.myRole === 'contributor' && '공동 참여 곡'].filter(Boolean)
             .map((x, i) => <span key={i}>{i > 0 && ' · '}<span className="aq-nowrap">{x}</span></span>)}</p>
         </div>
-        <div className="aq-detail-actions is-wide">{buttons}</div>
+        {buttons && <div className="aq-detail-actions is-wide">{buttons}</div>}
         {/* 진행 단계는 발매 상세처럼 머리 카드 안 아래쪽 흰 판으로 — 맡기기 전과 등록이 끝난 뒤에는 배지만 */}
         {regStep(w.registration) >= 0 && w.registration !== 'registered' && (
           <StageCard steps={REG_STEPS.map((x, i) => (i === regStep(w.registration) && (w.registration === 'needs_fix' || w.registration === 'rejected') ? REG_LABEL[w.registration] : i === 2 && signing(w) ? '계약서 서명' : x))} current={Math.min(regStep(w.registration), REG_STEPS.length - 1)}
@@ -356,7 +357,7 @@ export function WorkDetail() {
             // 승인 뒤 '등록 준비'는 이용자 차례 — 계약서에 서명해야 관리 단체 등록이 시작된다 (전에는 AUDENIQ이 준비 중인 것처럼 보였다)
             note={`${signing(w) ? '담당자가 승인했어요. 계약서에 서명하면 관리 단체 등록이 시작돼요.' : REG_SENTENCE[w.registration]}${firstPay ? ` 첫 저작권료는 ${firstPay} 예상이에요.` : ''}`} label="저작권 등록 진행 단계" />
         )}
-        <div className="aq-detail-actions is-narrow">{buttons}</div>
+        {buttons && <div className="aq-detail-actions is-narrow">{buttons}</div>}
       </div>
 
       {/* 보완 요청은 발매 상세처럼 머리 카드와 탭 사이 — 어느 탭을 보고 있어도 먼저 보인다 */}
@@ -387,40 +388,20 @@ export function WorkDetail() {
                 {next.text}
               </Callout>
             )}
-            {/* 예상 저작권료 — 맡기기 전에 얼마쯤 받을 수 있는지 (최근 3개월 녹음 수익으로 추정) */}
+            {/* 예상 저작권료 — 맡기기 전에 얼마쯤 받을 수 있는지 (최근 3개월 녹음 수익으로 추정). 다른 카드와 같은 틀 */}
             {canApply && me && policy && (() => {
               const [low, high] = estimateRoyalty(recorded.recent, me.share, policy.commissionRate);
               return high > 0 && (
-                <Callout tone="info" action={<Link to={`/publishing/apply?work=${w.id}`} className="ui-btn is-primary is-sm">저작권 관리 신청</Link>}>
-                  <b>맡기면 분기마다 약 {money(low)}~{money(high)}의 저작권료를 기대할 수 있어요.</b> 내 지분 {pct(me.share)} · 최근 3개월 재생 기준 추정이에요. 실제 금액은 관리 단체 분배에 따라 달라요.
-                </Callout>
+                <section className="aq-relinfo-card aq-pbl-ccard" aria-labelledby="wiEst">
+                  <p className="aq-pbl-ccard-cap" id="wiEst">예상 저작권료</p>
+                  <h2 className="aq-pbl-ccard-title">맡기면 분기마다<br /><b className="aq-nowrap">약 {money(low)}~{money(high)}</b>을 받을 수 있어요</h2>
+                  <p className="aq-pbl-ccard-lead">내 지분 {pct(me.share)} · 최근 3개월 재생으로 본 추정이에요. 실제 금액은 관리 단체 분배에 따라 달라요.</p>
+                  <ul className="aq-pbl-kvs">
+                    <li><Link to={`/publishing/apply?work=${w.id}`} className="aq-pbl-kv is-link is-strong"><span>저작권 관리 신청하기</span><b className="aq-pbl-ccard-go">신청<Glyph name="chevron-right" size={15} /></b></Link></li>
+                  </ul>
+                </section>
               );
             })()}
-            {/* 곡 정보 — 다른 카드·탭에 있는 것(ISWC·내 역할·발매)은 빼고, 이 곡이 어떤 곡인지만 한 줄씩 */}
-            <section className="aq-relinfo-card aq-pbl-ccard" aria-labelledby="wiInfo">
-              <p className="aq-pbl-ccard-cap" id="wiInfo">곡 정보</p>
-              <h2 className="aq-pbl-ccard-title">{[label(WORK_TYPES, w.workType), w.genre && genreLabel(w.genre), label(LANGUAGES, w.language)].filter(Boolean).join(' · ')}</h2>
-              {w.description && <p className="aq-pbl-ccard-lead break">{w.description}</p>}
-              <ul className="aq-pbl-kvs">
-                {w.altTitles.length > 0 && <InfoRow k="다른 제목" v={w.altTitles.join(' · ')} />}
-                <InfoRow k="공개 범위" v={w.visibility === 'shared' ? '참여자에게 공개' : '비공개'} />
-                <InfoRow k="기존 퍼블리셔" v={w.hasPriorPublisher ? `${w.priorPublisher || '있음'}${w.priorPublisherUntil ? ` · ${w.priorPublisherUntil}까지` : ''}` : '없음'} />
-                {w.originalWork && <InfoRow k="원곡" v={`${w.originalWork.title}${w.originalWork.permission ? ' · 허락 받음' : ' · 허락 확인 전'}`} />}
-                {!!w.samples?.length && <InfoRow k="샘플·인용" v={w.samples.map(x => x.title).join(', ')} />}
-              </ul>
-            </section>
-            {/* 창작 기록 — 언제·어떻게 만들었는지 (내가 만든 곡이라는 근거) */}
-            <section className="aq-relinfo-card aq-pbl-ccard" aria-labelledby="wiMade">
-              <p className="aq-pbl-ccard-cap" id="wiMade">창작 기록</p>
-              <h2 className="aq-pbl-ccard-title">{w.createdOn ? `${w.createdOn.slice(0, 4)}년 ${Number(w.createdOn.slice(5, 7))}월에 만들었어요` : '언제 만들었는지 적어 두세요'}</h2>
-              {w.creationNote ? <p className="aq-pbl-ccard-lead" style={{ whiteSpace: 'pre-line' }}>{w.creationNote}</p>
-                : <p className="aq-pbl-ccard-lead">만든 날과 과정을 남겨 두면 다른 사람이 같은 곡을 주장할 때 근거가 돼요.</p>}
-              <ul className="aq-pbl-kvs">
-                <InfoRow k="창작을 마친 날" v={w.createdOn ?? <Empty>입력 전</Empty>} />
-                <InfoRow k="AI 사용" v={AI_USE_OPTIONS.find(x => x[0] === (w.aiUse ?? 'none'))?.[1] ?? 'AI 없음'} />
-                {canEdit && <li><Link to={`/works/${encodeURIComponent(w.id)}/edit`} className="aq-pbl-kv is-link"><span>창작 기록 고치기</span><b className="aq-pbl-ccard-go">고치기<Glyph name="chevron-right" size={15} /></b></Link></li>}
-              </ul>
-            </section>
           </div>
         )}
 
@@ -579,6 +560,37 @@ export function WorkDetail() {
                 <p className="ui-field-help">두 수익 모두 같은 정산 잔액에 쌓여 한 번에 받아요. <Link to="/settlement" className="aq-inline-link">정산·지급 보기</Link></p>
               </div>
             )}
+          </div>
+        )}
+
+        {view === 'overview' && (
+          <div className="aq-detail-stack">
+            {/* 곡 정보 — 다른 카드·탭에 있는 것(ISWC·내 역할·발매)은 빼고, 이 곡이 어떤 곡인지만 한 줄씩 */}
+            <section className="aq-relinfo-card aq-pbl-ccard" aria-labelledby="wiInfo">
+              <p className="aq-pbl-ccard-cap" id="wiInfo">곡 정보</p>
+              <h2 className="aq-pbl-ccard-title">{[label(WORK_TYPES, w.workType), w.genre && genreLabel(w.genre), label(LANGUAGES, w.language)].filter(Boolean).join(' · ')}</h2>
+              {w.description && <p className="aq-pbl-ccard-lead break">{w.description}</p>}
+              <ul className="aq-pbl-kvs">
+                {w.altTitles.length > 0 && <InfoRow k="다른 제목" v={w.altTitles.join(' · ')} />}
+                <InfoRow k="공개 범위" v={w.visibility === 'shared' ? '참여자에게 공개' : '비공개'} />
+                <InfoRow k="기존 퍼블리셔" v={w.hasPriorPublisher ? `${w.priorPublisher || '있음'}${w.priorPublisherUntil ? ` · ${w.priorPublisherUntil}까지` : ''}` : '없음'} />
+                {w.originalWork && <InfoRow k="원곡" v={`${w.originalWork.title}${w.originalWork.permission ? ' · 허락 받음' : ' · 허락 확인 전'}`} />}
+                {!!w.samples?.length && <InfoRow k="샘플·인용" v={w.samples.map(x => x.title).join(', ')} />}
+                {canEdit && editTo && <li><Link to={editTo} className="aq-pbl-kv is-link"><span>곡 정보 고치기</span><b className="aq-pbl-ccard-go">고치기<Glyph name="chevron-right" size={15} /></b></Link></li>}
+              </ul>
+            </section>
+            {/* 창작 기록 — 언제·어떻게 만들었는지 (내가 만든 곡이라는 근거) */}
+            <section className="aq-relinfo-card aq-pbl-ccard" aria-labelledby="wiMade">
+              <p className="aq-pbl-ccard-cap" id="wiMade">창작 기록</p>
+              <h2 className="aq-pbl-ccard-title">{w.createdOn ? `${w.createdOn.slice(0, 4)}년 ${Number(w.createdOn.slice(5, 7))}월에 만들었어요` : '언제 만들었는지 적어 두세요'}</h2>
+              {w.creationNote ? <p className="aq-pbl-ccard-lead" style={{ whiteSpace: 'pre-line' }}>{w.creationNote}</p>
+                : <p className="aq-pbl-ccard-lead">만든 날과 과정을 남겨 두면 다른 사람이 같은 곡을 주장할 때 근거가 돼요.</p>}
+              <ul className="aq-pbl-kvs">
+                <InfoRow k="창작을 마친 날" v={w.createdOn ?? <Empty>입력 전</Empty>} />
+                <InfoRow k="AI 사용" v={AI_USE_OPTIONS.find(x => x[0] === (w.aiUse ?? 'none'))?.[1] ?? 'AI 없음'} />
+                {canEdit && editTo && <li><Link to={editTo} className="aq-pbl-kv is-link"><span>창작 기록 고치기</span><b className="aq-pbl-ccard-go">고치기<Glyph name="chevron-right" size={15} /></b></Link></li>}
+              </ul>
+            </section>
           </div>
         )}
 

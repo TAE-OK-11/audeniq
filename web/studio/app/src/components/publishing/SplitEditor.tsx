@@ -183,13 +183,13 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
           </button>
         );
       })()}
-      <div className="aq-pbl-people">
+      <div className={`aq-pbl-people${quiet && readOnly ? ' is-quiet' : ''}`}>
         {value.map((c, i) => {
           const errors = issues.filter(x => x.contributorId === c.id && x.level === 'error');
           const prefix = `pbl-person-${c.id}`;
           return readOnly ? (
             <div key={c.id} className="aq-pbl-person-read">
-              <IconTile size="sm" tone="gray"><Glyph name="user" size={17} /></IconTile>
+              {!quiet && <IconTile size="sm" tone="gray"><Glyph name="user" size={17} /></IconTile>}
               <div className="min-0">
                 <strong>{c.name || '이름 없는 참여자'}{meLabel(c)}</strong>
                 <span className="ui-row-meta">{roleText(c)}{c.society && ` · ${societyName(c.society)}`}{c.ipi && <> · <span className="aq-nowrap">IPI {c.ipi}</span></>}{c.publisher && ` · ${c.publisher}`}</span>
@@ -201,7 +201,9 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
               </div>
               <div className="aq-pbl-person-end">
                 <b>{pct(c.share)}</b>
-                <Badge tone={c.confirm === 'confirmed' ? 'green' : c.confirm === 'disputed' ? 'red' : 'amber'}>{c.confirm === 'confirmed' ? '확인 완료' : c.confirm === 'disputed' ? '이의 제기' : '확인 대기'}</Badge>
+                {quiet
+                  ? <small className={`aq-pbl-confirm is-${c.confirm}`}>{c.confirm === 'confirmed' ? '확인함' : c.confirm === 'disputed' ? '다르대요' : '확인 전'}</small>
+                  : <Badge tone={c.confirm === 'confirmed' ? 'green' : c.confirm === 'disputed' ? 'red' : 'amber'}>{c.confirm === 'confirmed' ? '확인 완료' : c.confirm === 'disputed' ? '이의 제기' : '확인 대기'}</Badge>}
               </div>
               {(onRequestConfirm || onSimulate) && !c.isMe && c.confirm !== 'confirmed' && <div className="aq-pbl-person-actions">
                 {onRequestConfirm && <button type="button" className="ui-btn is-text is-sm" onClick={() => onRequestConfirm([c])}>{c.invited ? '확인 링크 다시 보내기' : '확인 링크 보내기'}</button>}
