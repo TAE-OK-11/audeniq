@@ -172,7 +172,7 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
               <IconTile size="sm" tone="gray"><Glyph name="user" size={17} /></IconTile>
               <div className="min-0">
                 <strong>{c.name || '이름 없는 참여자'}{c.isMe && ' (나)'}</strong>
-                <span className="ui-row-meta">{roleText(c)}{c.society && ` · ${societyName(c.society)}`}{c.ipi && <> · <span className="aq-nowrap">IPI {c.ipi}</span></>}</span>
+                <span className="ui-row-meta">{roleText(c)}{c.society && ` · ${societyName(c.society)}`}{c.ipi && <> · <span className="aq-nowrap">IPI {c.ipi}</span></>}{c.publisher && ` · ${c.publisher}`}</span>
                 {/* 맡기기 전(0%)에는 줄을 두지 않는다 — 'AUDENIQ 관리 0%'가 참여자마다 되풀이됐다 */}
                 {c.publisherShare > 0 && <span className="ui-row-meta">AUDENIQ 관리 {pct(c.publisherShare)}</span>}
                 {/* 이의를 남겼으면 그 말을 그대로 — 무엇이 다른지 알아야 다시 나눈다 */}
@@ -229,6 +229,11 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
                   <Field label="저작권 관리 단체" htmlFor={`${prefix}-society`}>
                     <select id={`${prefix}-society`} className="ui-select" value={c.society ?? ''} onChange={e => set(c.id, { society: e.target.value || null })}><option value="">모름·입력 전</option>{SOCIETIES.map(s => <option key={s} value={s}>{societyName(s)}</option>)}</select>
                   </Field>
+                  {!c.isMe && (
+                    <Field label="소속 퍼블리셔" htmlFor={`${prefix}-pub`} help="이 사람이 다른 퍼블리셔와 계약했다면. 없으면 비워 두세요.">
+                      <input id={`${prefix}-pub`} className="ui-input" maxLength={200} value={c.publisher ?? ''} placeholder="예: 뮤직 퍼블리싱 A" onChange={e => set(c.id, { publisher: e.target.value || null })} />
+                    </Field>
+                  )}
                   <Field label="IPI/CAE 번호" htmlFor={`${prefix}-ipi`} help={c.isMe ? '한 번 적으면 계정 정보에 저장돼 다음 곡부터 자동으로 채워져요.' : '모르면 비워 두세요.'}>
                     <input id={`${prefix}-ipi`} className="ui-input" inputMode="numeric" placeholder="작가 식별 번호" value={c.ipi ?? ''} readOnly={!c.external && !c.isMe} onChange={e => set(c.id, { ipi: e.target.value.replace(/\D/g, '').slice(0, 11) || null })} />
                   </Field>

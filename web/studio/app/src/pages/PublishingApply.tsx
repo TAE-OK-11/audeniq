@@ -220,7 +220,9 @@ export function PublishingApply() {
           {blocked.length > 0 && <Callout tone="danger"><b>지분이 맞지 않는 곡이 있어 신청할 수 없어요.</b> 지분은 저장돼 있으니 고친 뒤 이어서 신청해요.</Callout>}
           {conflicts.length > 0 && <Callout tone="warn"><b>기존 저작권 관리 계약과 겹칠 수 있어요.</b> {conflicts.map(w => `‘${w.title}’(${w.priorPublisher || '기존 퍼블리셔'})`).join(', ')} — 신청은 되고, 담당자가 먼저 검토해요.</Callout>}
           {chosen.some(w => w.contributors.some(c => c.isMe && !c.society)) && <SocietyJoin />}
-          {chosen.some(w => DERIVED.includes(w.workType)) && <Callout tone="warn"><b>원곡이 따로 있는 곡이 있어요.</b> {chosen.filter(w => DERIVED.includes(w.workType)).map(w => `‘${w.title}’`).join(', ')} — 편곡·번안·메들리는 원곡 권리자의 허락이 있어야 관리할 수 있어요. 허락받은 서류가 있으면 곡 자료에 올려 두세요.</Callout>}
+          {/* 원곡 허락을 확인했다고 적은 곡은 빼고 — 남은 곡만 짚는다 */}
+          {chosen.some(w => DERIVED.includes(w.workType) && !w.originalWork?.permission) && <Callout tone="warn"><b>원곡 허락을 확인하지 않은 곡이 있어요.</b> {chosen.filter(w => DERIVED.includes(w.workType) && !w.originalWork?.permission).map(w => `‘${w.title}’`).join(', ')} — 편곡·번안·메들리는 원곡 권리자의 허락이 있어야 관리할 수 있어요. 곡 정보에 원곡과 허락 여부를 적고, 허락서를 자료로 올려 두세요.</Callout>}
+          {chosen.some(w => w.samples?.length) && <Callout tone="neutral"><b>샘플·인용이 있는 곡이 있어요.</b> {chosen.filter(w => w.samples?.length).map(w => `‘${w.title}’`).join(', ')} — 담당자가 원곡 권리자 몫을 함께 확인해요.</Callout>}
           {pendingPeople.length > 0 && <Callout tone="neutral">공동 참여자 {pendingPeople.length}명이 아직 지분을 확인하지 않았어요. 확인 전에는 ‘확인 필요’ 상태로 심사해요.</Callout>}
           {chosen.map(w => {
             const issues = splitIssues(w.contributors).filter(i => i.level === 'error');

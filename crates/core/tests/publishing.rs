@@ -1146,3 +1146,137 @@ async fn co_writer_confirms_from_a_link(pool: PgPool) {
         .fetch_one(&pool).await.unwrap();
     assert!(erased, "address and link are erased with the answer");
 }
+
+/// Open A&R on the server (0172), and the work details societies need.
+#[sqlx::test]
+async fn open_ar_and_work_details(pool: PgPool) {
+    let (app, _store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let base = format!("/api/orgs/{}", u.org);
+    let mut co = people(&u, 60.0, 40.0);
+    co[1]["publisher"] = json!("뮤직 퍼블리싱 A");
+    let (s, w) = call(&app, "POST", &format!("{base}/works"), json!({
+        "title": "새벽 네 시 (Remix)", "workType": "arrangement", "contributors": co,
+        "originalWork": {"title": "새벽 네 시", "writers": "서린, 박도윤", "publisher": null, "permission": true},
+        "samples": [{"kind": "sample", "title": "Old Song", "artist": "Old Band", "owners": "Old Records"}],
+        "priorPublisherUntil": "2026-12-31"
+    }), Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{w}");
+    assert_eq!(w["contributors"][1]["publisher"], "뮤직 퍼블리싱 A");
+    assert_eq!(w["originalWork"]["title"], "새벽 네 시");
+    assert_eq!(w["originalWork"]["permission"], true);
+    assert_eq!(w["samples"][0]["kind"], "sample");
+    assert_eq!(w["priorPublisherUntil"], "2026-12-31");
+    let id = w["id"].as_str().unwrap().to_string();
+    let (s, e) = call(
+        &app,
+        "PATCH",
+        &format!("{base}/works/{id}"),
+        json!({"samples": [{"kind": "cover", "title": "x"}], "row_version": w["rowVersion"]}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("WORK_SAMPLES_INVALID"))
+    );
+
+    // A&R: a demo is needed; then one open submission per work; the same key returns the first.
+    let ar = |key: &str| json!({"workId": id, "genre": "R&B", "mood": ["잔잔한"], "description": "", "references": "", "scope": "partners", "sync": true, "consent": true, "idempotencyKey": key});
+    let (s, e) = call(
+        &app,
+        "POST",
+        &format!("{base}/ar/submissions"),
+        ar("key-ar-nodemo"),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (StatusCode::UNPROCESSABLE_ENTITY, Some("AR_DEMO_REQUIRED"))
+    );
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("{base}/works/{id}/attachments"),
+        json!({"kind": "demo", "name": "demo.mp3", "size": 10}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (s, a) = call(
+        &app,
+        "POST",
+        &format!("{base}/ar/submissions"),
+        ar("key-ar-first"),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{a}");
+    assert_eq!(
+        (
+            a["status"].as_str(),
+            a["sync"].as_bool(),
+            a["workTitle"].as_str()
+        ),
+        (Some("submitted"), Some(true), Some("새벽 네 시 (Remix)"))
+    );
+    assert_eq!(a["history"][0]["text"], "제출 완료");
+    let (_, again) = call(
+        &app,
+        "POST",
+        &format!("{base}/ar/submissions"),
+        ar("key-ar-first"),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(again["id"], a["id"]);
+    let (s, e) = call(
+        &app,
+        "POST",
+        &format!("{base}/ar/submissions"),
+        ar("key-ar-second"),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("DUPLICATE_SUBMISSION")
+        )
+    );
+    let (s, list) = call(
+        &app,
+        "GET",
+        &format!("{base}/ar/submissions"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, list["items"].as_array().map(Vec::len)),
+        (StatusCode::OK, Some(1))
+    );
+    let aid = a["id"].as_str().unwrap();
+    let (s, closed) = call(
+        &app,
+        "POST",
+        &format!("{base}/ar/submissions/{aid}/withdraw"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, closed["status"].as_str()),
+        (StatusCode::OK, Some("closed"))
+    );
+    // A released song is administered, not pitched.
+    let (_, rel) = call(&app, "POST", &format!("{base}/works"), json!({"title": "발매곡", "origin": "other_release", "externalRelease": {"artist": "이온", "title": "발매곡"}, "contributors": people(&u, 60.0, 40.0)}), Some(&u)).await;
+    let rid = rel["id"].as_str().unwrap();
+    let (s, e) = call(&app, "POST", &format!("{base}/ar/submissions"), json!({"workId": rid, "genre": "R&B", "mood": ["잔잔한"], "scope": "internal", "consent": true, "idempotencyKey": "key-ar-released"}), Some(&u)).await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (StatusCode::UNPROCESSABLE_ENTITY, Some("WORK_RELEASED"))
+    );
+}

@@ -40,7 +40,10 @@ type Form = Omit<WorkInput, 'recording'>;
 const EMPTY: Form = {
   title: '', altTitles: [], workType: 'original', language: 'ko', genre: '', description: '', visibility: 'private',
   iswc: null, hasPriorPublisher: false, priorPublisher: null, contributors: [], attachments: [], origin: 'unreleased', externalRelease: null, aiUse: 'none',
+  originalWork: null, samples: [], priorPublisherUntil: null,
 };
+// 원곡이 따로 있는 곡 — 원곡 정보와 허락 여부를 받는다
+const DERIVED = ['arrangement', 'translation', 'medley'];
 const NO_RELEASE: ExternalRelease = { artist: '', title: '', releaseDate: null, isrc: null, label: null };
 const ISRC_RE = /^[A-Z]{2}-?[A-Z0-9]{3}-?\d{2}-?\d{5}$/i;
 const ORIGIN_TYPES: readonly WorkOrigin[] = ['unreleased', 'other_release'];
@@ -105,7 +108,8 @@ export function WorkEditor() {
     let start: Form = EMPTY;
     if (existing) {
       const { title, altTitles, workType, language, genre, description, visibility, iswc, hasPriorPublisher, priorPublisher, contributors, attachments } = existing;
-      start = { title, altTitles, workType, language, genre, description, visibility, iswc, hasPriorPublisher, priorPublisher, contributors, attachments, origin: workOrigin(existing), externalRelease: existing.externalRelease ?? null, aiUse: existing.aiUse ?? 'none' };
+      start = { title, altTitles, workType, language, genre, description, visibility, iswc, hasPriorPublisher, priorPublisher, contributors, attachments, origin: workOrigin(existing), externalRelease: existing.externalRelease ?? null, aiUse: existing.aiUse ?? 'none',
+        originalWork: existing.originalWork ?? null, samples: existing.samples ?? [], priorPublisherUntil: existing.priorPublisherUntil ?? null };
     } else if (track && release) {
       const d = draftTrackOf(track, release.draft);
       const people = new Map<string, WorkContributor>();
@@ -266,6 +270,10 @@ export function WorkEditor() {
         : null,
       // 내가 발매한 곡은 발매 곡 연결로만 정해진다 — 고칠 때 보내지 않는다
       origin: origin === 'own_release' ? undefined : origin,
+      // 원곡 정보는 2차 저작물일 때만, 샘플은 제목을 적은 줄만, 종료일은 기존 계약이 있을 때만
+      originalWork: DERIVED.includes(form.workType) && form.originalWork?.title.trim() ? { ...form.originalWork, title: form.originalWork.title.trim(), writers: form.originalWork.writers.trim() } : null,
+      samples: (form.samples ?? []).filter(x => x.title.trim()),
+      priorPublisherUntil: form.hasPriorPublisher ? form.priorPublisherUntil || null : null,
     };
     try {
       let w: Work;
@@ -503,6 +511,58 @@ export function WorkEditor() {
             <input id="workPriorName" className={inputClass()} value={form.priorPublisher ?? ''} onChange={e => set('priorPublisher', e.target.value || null)} placeholder="퍼블리셔 이름" />
           </Field>
         </Reveal>
+        <Reveal open={form.hasPriorPublisher}>
+          <Field label="기존 계약 종료일" htmlFor="workPriorUntil" help="이 날 다음부터 AUDENIQ이 저작권료를 받아요. 모르면 비워 두세요 — 담당자가 확인해요.">
+            <input id="workPriorUntil" type="date" className={inputClass()} value={form.priorPublisherUntil ?? ''} onChange={e => set('priorPublisherUntil', e.target.value || null)} />
+          </Field>
+        </Reveal>
+
+        {/* 편곡·번안·메들리 — 원곡 권리자 허락이 있어야 관리 단체가 등록한다 */}
+        <Reveal open={DERIVED.includes(form.workType)}>
+          <h2 className="subhead">원곡 정보</h2>
+          <div className="form-grid">
+            <Field label="원곡 제목" htmlFor="origTitle" required>
+              <input id="origTitle" className={inputClass()} maxLength={300} value={form.originalWork?.title ?? ''} onChange={e => set('originalWork', { writers: '', permission: false, ...form.originalWork, title: e.target.value })} />
+            </Field>
+            <Field label="원곡 작사·작곡가" htmlFor="origWriters">
+              <input id="origWriters" className={inputClass()} maxLength={300} value={form.originalWork?.writers ?? ''} placeholder="쉼표로 나눠 적어요" onChange={e => set('originalWork', { title: '', permission: false, ...form.originalWork, writers: e.target.value })} />
+            </Field>
+            <Field label="원곡 퍼블리셔" htmlFor="origPub" help="알면 적어 주세요.">
+              <input id="origPub" className={inputClass()} maxLength={200} value={form.originalWork?.publisher ?? ''} onChange={e => set('originalWork', { title: '', writers: '', permission: false, ...form.originalWork, publisher: e.target.value || null })} />
+            </Field>
+          </div>
+          <label className="ui-check is-plain">
+            <input type="checkbox" checked={!!form.originalWork?.permission} onChange={e => set('originalWork', { title: '', writers: '', ...form.originalWork, permission: e.target.checked })} />
+            <span><b>원곡 권리자에게 허락을 받았어요</b><br /><small className="muted">허락서가 있으면 아래 ‘권리 증빙 자료’로 올려 주세요.</small></span>
+          </label>
+        </Reveal>
+
+        {/* 샘플·인용 — 다른 곡의 녹음이나 멜로디를 쓰면 원곡 권리자 몫이 생긴다 */}
+        <label className="ui-check is-plain">
+          <input type="checkbox" checked={(form.samples ?? []).length > 0} onChange={e => set('samples', e.target.checked ? [{ kind: 'sample', title: '', artist: '', owners: null }] : [])} />
+          <span><b>다른 곡을 샘플링하거나 멜로디를 인용했어요</b><br /><small className="muted">원곡 권리자의 몫이 지분에 들어가야 할 수 있어요. 담당자가 함께 확인해요.</small></span>
+        </label>
+        {(form.samples ?? []).map((x, k) => {
+          const put = (patch: Partial<typeof x>) => set('samples', (form.samples ?? []).map((y, j) => (j === k ? { ...y, ...patch } : y)));
+          return (
+            <section key={k} className="track-editor aq-pbl-attach-card" aria-label={`샘플 ${k + 1}`}>
+              <div className="form-grid">
+                <Field label="종류" htmlFor={`smpKind${k}`}>
+                  <select id={`smpKind${k}`} className={selectClass()} value={x.kind} onChange={e => put({ kind: e.target.value as typeof x.kind })}>
+                    <option value="sample">녹음을 샘플링</option><option value="interpolation">멜로디를 인용</option>
+                  </select>
+                </Field>
+                <Field label="원곡 제목" htmlFor={`smpTitle${k}`}><input id={`smpTitle${k}`} className={inputClass()} maxLength={300} value={x.title} onChange={e => put({ title: e.target.value })} /></Field>
+                <Field label="원곡 아티스트" htmlFor={`smpArtist${k}`}><input id={`smpArtist${k}`} className={inputClass()} maxLength={200} value={x.artist} onChange={e => put({ artist: e.target.value })} /></Field>
+                <Field label="권리자 (알면)" htmlFor={`smpOwners${k}`}><input id={`smpOwners${k}`} className={inputClass()} maxLength={300} value={x.owners ?? ''} placeholder="레이블·퍼블리셔" onChange={e => put({ owners: e.target.value || null })} /></Field>
+              </div>
+              <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => set('samples', (form.samples ?? []).filter((_, j) => j !== k))}>빼기</button>
+            </section>
+          );
+        })}
+        {(form.samples ?? []).length > 0 && (form.samples ?? []).length < 10 && (
+          <button type="button" className="ui-btn is-soft is-sm" onClick={() => set('samples', [...(form.samples ?? []), { kind: 'sample', title: '', artist: '', owners: null }])}>샘플 더하기</button>
+        )}
         <p className="ui-field-help">관리 단체·IPI 번호는 ‘참여자·지분’의 ‘관리 범위·작가 정보’에서 입력할 수 있어요.</p>
 
         <h2 className="subhead">첨부 자료</h2>
@@ -558,7 +618,9 @@ export function WorkEditor() {
             {form.contributors.map(c => `${c.name} ${roleText(c)} ${pct(c.share)}`).join(' · ') || '참여자를 추가하면 저작권 관리를 신청할 수 있어요'}
           </ReviewCard>
           <ReviewCard head="권리·자료" onEdit={() => setStep(2)}>
-            {[form.iswc || 'ISWC 없음', AI_USE_OPTIONS.find(x => x[0] === form.aiUse)?.[1], form.hasPriorPublisher ? `기존 퍼블리셔 ${form.priorPublisher || '있음'}` : '기존 계약 없음', `첨부 ${form.attachments.length}개`].join(' · ')}
+            {[form.iswc || 'ISWC 없음', AI_USE_OPTIONS.find(x => x[0] === form.aiUse)?.[1],
+              DERIVED.includes(form.workType) && (form.originalWork?.title.trim() ? `원곡 ‘${form.originalWork.title.trim()}’${form.originalWork.permission ? ' · 허락 받음' : ''}` : '원곡 정보 입력 전'),
+              (form.samples ?? []).filter(x => x.title.trim()).length > 0 && `샘플 ${(form.samples ?? []).filter(x => x.title.trim()).length}곡`, form.hasPriorPublisher ? `기존 퍼블리셔 ${form.priorPublisher || '있음'}` : '기존 계약 없음', `첨부 ${form.attachments.length}개`].filter(Boolean).join(' · ')}
           </ReviewCard>
         </div>
         <div className="ui-callout" style={{ marginTop: 24 }}>

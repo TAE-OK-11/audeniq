@@ -146,6 +146,75 @@ pub struct ContributorIn {
     pub publisher_share: f64,
     #[serde(default)]
     pub is_me: Option<bool>,
+    /// The co-writer's own publisher (0172), if any.
+    #[serde(default)]
+    pub publisher: Option<String>,
+}
+
+/// The original of an arrangement / translation / medley (0172).
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct OriginalWorkIn {
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub writers: String,
+    #[serde(default)]
+    pub publisher: Option<String>,
+    #[serde(default)]
+    pub permission: bool,
+}
+
+/// A recording sampled or a melody interpolated from another song (0172).
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SampleIn {
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub artist: String,
+    #[serde(default)]
+    pub owners: Option<String>,
+}
+
+fn original_work(v: &OriginalWorkIn) -> Result<Value> {
+    let title = clean(&v.title, 300, "WORK_ORIGINAL_INVALID")?;
+    if title.is_empty() {
+        return Err(Error::InvalidCode("WORK_ORIGINAL_REQUIRED"));
+    }
+    Ok(
+        json!({"title": title, "writers": clean(&v.writers, 300, "WORK_ORIGINAL_INVALID")?,
+              "publisher": opt_clean(v.publisher.as_deref(), 200, "WORK_ORIGINAL_INVALID")?.filter(|p| !p.is_empty()),
+              "permission": v.permission}),
+    )
+}
+
+fn samples(list: &[SampleIn]) -> Result<Value> {
+    if list.len() > 10 {
+        return Err(Error::InvalidCode("WORK_SAMPLES_INVALID"));
+    }
+    list.iter()
+        .map(|x| {
+            let title = clean(&x.title, 300, "WORK_SAMPLES_INVALID")?;
+            if title.is_empty() || !["sample", "interpolation"].contains(&x.kind.as_str()) {
+                return Err(Error::InvalidCode("WORK_SAMPLES_INVALID"));
+            }
+            Ok(json!({"kind": x.kind, "title": title, "artist": clean(&x.artist, 200, "WORK_SAMPLES_INVALID")?,
+                      "owners": opt_clean(x.owners.as_deref(), 300, "WORK_SAMPLES_INVALID")?.filter(|o| !o.is_empty())}))
+        })
+        .collect::<Result<Vec<_>>>()
+        .map(Value::Array)
+}
+
+fn day(v: Option<&str>) -> Result<Option<chrono::NaiveDate>> {
+    match v.map(str::trim).filter(|d| !d.is_empty()) {
+        Some(d) => chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d")
+            .map(Some)
+            .map_err(|_| Error::InvalidCode("WORK_DATE_INVALID")),
+        None => Ok(None),
+    }
 }
 
 /// A release of the work that is not in the catalog (someone else released it).
@@ -195,6 +264,11 @@ pub struct WorkIn {
     pub recording: Option<RecordingIn>,
     pub origin: Option<String>,
     pub ai_use: Option<String>,
+    #[serde(default, deserialize_with = "nullable")]
+    pub original_work: Option<Option<OriginalWorkIn>>,
+    pub samples: Option<Vec<SampleIn>>,
+    #[serde(default, deserialize_with = "nullable")]
+    pub prior_publisher_until: Option<Option<String>>,
     #[serde(default, deserialize_with = "nullable")]
     pub external_release: Option<Option<ExternalReleaseIn>>,
     #[serde(alias = "row_version")]
@@ -275,6 +349,7 @@ struct Planned {
     ipi: Option<String>,
     share: i32,
     publisher: i32,
+    publisher_name: Option<String>,
 }
 
 fn plan_contributors(list: &[ContributorIn], party: Uuid) -> Result<Vec<Planned>> {
@@ -325,6 +400,8 @@ fn plan_contributors(list: &[ContributorIn], party: Uuid) -> Result<Vec<Planned>
             ipi,
             share,
             publisher,
+            publisher_name: opt_clean(c.publisher.as_deref(), 200, "WORK_PUBLISHER_INVALID")?
+                .filter(|v| !v.is_empty()),
         });
     }
     // Drafts may be under 100% while being split; never over.
@@ -433,7 +510,7 @@ async fn works_json(
     let works = sqlx::query(
         "SELECT w.id, w.internal_code, w.title, w.alt_titles, w.work_type, w.language, w.genre, w.description, w.visibility,
                 w.iswc, w.has_prior_publisher, w.prior_publisher, w.registration, w.fix, w.pending_contributors, w.pending_at,
-                w.origin, w.external_release, w.ai_use, w.row_version, w.created_at, w.updated_at,
+                w.origin, w.external_release, w.ai_use, w.original_work, w.samples, w.prior_publisher_until, w.row_version, w.created_at, w.updated_at,
                 -- The signed contract the work is under (a contract waiting for signature does not count yet).
                 (SELECT c.id FROM portal.pub_contracts c JOIN portal.pub_application_works aw ON aw.application_id=c.application_id
                   WHERE aw.work_id=w.id AND c.status <> 'pending_sign' ORDER BY c.created_at DESC LIMIT 1) AS contract_id
@@ -454,7 +531,7 @@ async fn works_json(
     let ids: Vec<Uuid> = works.iter().map(|w| w.get("id")).collect();
     let mut people: HashMap<Uuid, Vec<Value>> = HashMap::new();
     for r in sqlx::query(
-        "SELECT c.id, c.work_id, c.party_id, c.name, c.roles, c.society, c.ipi, c.share_bps, c.publisher_share_bps, c.confirm, c.external,
+        "SELECT c.id, c.work_id, c.party_id, c.name, c.roles, c.society, c.ipi, c.share_bps, c.publisher_share_bps, c.confirm, c.external, c.publisher_name,
                 i.note AS invite_note, (i.id IS NOT NULL AND i.answer IS NULL) AS invited, i.invite_status
            FROM portal.pub_work_contributors c
            LEFT JOIN portal.pub_split_invites i ON i.work_id=c.work_id AND i.contributor_id=c.id
@@ -472,6 +549,7 @@ async fn works_json(
             "publisherShare": pct(r.get("publisher_share_bps")), "confirm": r.get::<String, _>("confirm"),
             "external": r.get::<bool, _>("external"), "isMe": party_id == Some(party),
             // Co-writer invite (0171): a link is out, mailed or not, and what they wrote when disputing.
+            "publisher": r.get::<Option<String>, _>("publisher_name"),
             "invited": r.get::<bool, _>("invited"), "inviteNote": r.get::<Option<String>, _>("invite_note"),
             "inviteMail": r.get::<Option<String>, _>("invite_status").filter(|v| v != "NONE"),
         }));
@@ -580,6 +658,9 @@ async fn works_json(
                 "origin": w.get::<String, _>("origin"),
                 "externalRelease": w.get::<Option<Value>, _>("external_release"),
                 "aiUse": w.get::<String, _>("ai_use"),
+                "originalWork": w.get::<Option<Value>, _>("original_work"),
+                "samples": w.get::<Value, _>("samples"),
+                "priorPublisherUntil": w.get::<Option<chrono::NaiveDate>, _>("prior_publisher_until").map(|d| d.to_string()),
                 "contributors": people.remove(&id).unwrap_or_default(),
                 "attachments": files.remove(&id).unwrap_or_default(),
                 "recordings": recordings.remove(&id).unwrap_or_default(),
@@ -736,8 +817,8 @@ async fn write_contributors(
             }
         };
         sqlx::query(
-            "INSERT INTO portal.pub_work_contributors(id,org_id,work_id,position,party_id,name,roles,society,ipi,share_bps,publisher_share_bps,confirm,external)
-             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
+            "INSERT INTO portal.pub_work_contributors(id,org_id,work_id,position,party_id,name,roles,society,ipi,share_bps,publisher_share_bps,confirm,external,publisher_name)
+             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)",
         )
         .bind(prev.map_or_else(Uuid::new_v4, |(id, _)| id))
         .bind(org)
@@ -752,6 +833,7 @@ async fn write_contributors(
         .bind(p.publisher)
         .bind(confirm)
         .bind(!p.me)
+        .bind(&p.publisher_name)
         .execute(&mut *c)
         .await?;
     }
@@ -765,7 +847,7 @@ fn pending_json(plan: &[Planned], party: Uuid) -> Value {
             .map(|p| {
                 json!({"id": p.keep.unwrap_or_else(Uuid::new_v4), "creatorId": p.me.then_some(party), "name": p.name, "roles": p.roles,
                        "society": p.society, "ipi": p.ipi, "share": pct(p.share), "publisherShare": pct(p.publisher),
-                       "confirm": if p.me { "confirmed" } else { "pending" }, "external": !p.me, "isMe": p.me})
+                       "confirm": if p.me { "confirmed" } else { "pending" }, "external": !p.me, "isMe": p.me, "publisher": p.publisher_name})
             })
             .collect(),
     )
@@ -920,8 +1002,8 @@ pub async fn create_work(s: &AppState, a: &Actor, org: Uuid, i: WorkIn) -> Resul
     let role = auth::membership(&mut tx, a, org, true).await?;
     let id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO portal.pub_works(id,org_id,internal_code,title,alt_titles,work_type,language,genre,description,visibility,iswc,has_prior_publisher,prior_publisher,created_by,origin,external_release,ai_use)
-         VALUES($1,$2,'AQW-'||lpad(nextval('portal.pub_work_code_seq')::text,6,'0'),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)",
+        "INSERT INTO portal.pub_works(id,org_id,internal_code,title,alt_titles,work_type,language,genre,description,visibility,iswc,has_prior_publisher,prior_publisher,created_by,origin,external_release,ai_use,original_work,samples,prior_publisher_until)
+         VALUES($1,$2,'AQW-'||lpad(nextval('portal.pub_work_code_seq')::text,6,'0'),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)",
     )
     .bind(id)
     .bind(org)
@@ -939,6 +1021,9 @@ pub async fn create_work(s: &AppState, a: &Actor, org: Uuid, i: WorkIn) -> Resul
     .bind(origin)
     .bind(external)
     .bind(i.ai_use.as_deref().unwrap_or("none"))
+    .bind(i.original_work.clone().flatten().map(|o| original_work(&o)).transpose()?)
+    .bind(samples(i.samples.as_deref().unwrap_or_default())?)
+    .bind(day(i.prior_publisher_until.clone().flatten().as_deref())?)
     .execute(&mut *tx)
     .await?;
     write_contributors(&mut tx, org, id, a.party, a.user, plan).await?;
@@ -1008,7 +1093,10 @@ pub async fn update_work(s: &AppState, a: &Actor, org: Uuid, id: Uuid, i: WorkIn
            prior_publisher=CASE WHEN $13 THEN $14 ELSE prior_publisher END,
            origin=COALESCE($15,origin),
            external_release=CASE WHEN $16 THEN $17 ELSE external_release END,
-           ai_use=COALESCE($18,ai_use)
+           ai_use=COALESCE($18,ai_use),
+           original_work=CASE WHEN $19 THEN $20 ELSE original_work END,
+           samples=COALESCE($21,samples),
+           prior_publisher_until=CASE WHEN $22 THEN $23 ELSE prior_publisher_until END
          WHERE org_id=$1 AND id=$2",
     )
     .bind(org)
@@ -1022,12 +1110,19 @@ pub async fn update_work(s: &AppState, a: &Actor, org: Uuid, id: Uuid, i: WorkIn
     .bind(i.visibility)
     .bind(i.iswc.is_some())
     .bind(i.iswc.clone().flatten().as_deref().and_then(iswc))
+    // $12 — was missing since 0167, so every later value landed one place off and each edit failed (42804)
+    .bind(i.has_prior_publisher)
     .bind(i.prior_publisher.is_some())
     .bind(opt_clean(i.prior_publisher.clone().flatten().as_deref(), 200, "WORK_PUBLISHER_INVALID")?)
     .bind(i.origin.as_deref())
     .bind(external.is_some())
     .bind(external.flatten())
     .bind(i.ai_use.as_deref())
+    .bind(i.original_work.is_some())
+    .bind(i.original_work.clone().flatten().map(|o| original_work(&o)).transpose()?)
+    .bind(i.samples.as_deref().map(samples).transpose()?)
+    .bind(i.prior_publisher_until.is_some())
+    .bind(day(i.prior_publisher_until.clone().flatten().as_deref())?)
     .execute(&mut *tx)
     .await?;
     if let Some(list) = i.contributors {
@@ -1184,6 +1279,183 @@ pub async fn request_confirm(
     }
     audit(&mut tx, a, org, id, "publishing.confirm_requested").await?;
     let out = one(&mut tx, org, a, &role, id).await?;
+    tx.commit().await?;
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// Open A&R (migration 0172)
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArIn {
+    pub work_id: Uuid,
+    #[serde(default)]
+    pub genre: String,
+    #[serde(default)]
+    pub mood: Vec<String>,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub references: String,
+    #[serde(default)]
+    pub scope: String,
+    #[serde(default)]
+    pub sync: bool,
+    #[serde(default)]
+    pub consent: bool,
+    #[serde(default)]
+    pub idempotency_key: String,
+}
+
+/// What happened to a submission, from the audit trail (as applications).
+const AR_HISTORY: &str = "COALESCE((SELECT jsonb_agg(jsonb_build_object('at',e.occurred_at,'text',
+      CASE e.action WHEN 'publishing.ar_submitted' THEN '제출 완료' WHEN 'publishing.ar_withdrawn' THEN '제출 취소'
+        WHEN 'publishing.ar_review' THEN '심사 시작' WHEN 'publishing.ar_fix' THEN '보완 요청' WHEN 'publishing.ar_reviewed' THEN '심사 완료'
+        WHEN 'publishing.ar_proposing' THEN '제안 진행' END) ORDER BY e.occurred_at, e.id)
+    FROM operations.audit_events e WHERE e.resource_id=s.id AND e.action LIKE 'publishing.ar_%'),'[]')";
+
+async fn ar_json(c: &mut PgConnection, org: Uuid, id: Option<Uuid>) -> Result<Vec<Value>> {
+    // Only constant text is formatted in (AR_HISTORY); every value is bound.
+    let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "SELECT s.id, s.work_id, w.title, s.genre, s.mood, s.description, s.refs, s.scope, s.sync, s.status, s.fix_reason, s.submitted_at,
+                {AR_HISTORY} AS history
+           FROM portal.pub_ar_submissions s JOIN portal.pub_works w ON w.id=s.work_id
+          WHERE s.org_id=$1 AND ($2::uuid IS NULL OR s.id=$2) ORDER BY s.submitted_at DESC, s.id"
+    )))
+    .bind(org)
+    .bind(id)
+    .fetch_all(&mut *c)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            json!({"id": r.get::<Uuid, _>("id"), "workId": r.get::<Uuid, _>("work_id"), "workTitle": r.get::<String, _>("title"),
+                   "genre": r.get::<String, _>("genre"), "mood": r.get::<Vec<String>, _>("mood"), "description": r.get::<String, _>("description"),
+                   "references": r.get::<String, _>("refs"), "scope": r.get::<String, _>("scope"), "sync": r.get::<bool, _>("sync"),
+                   "status": r.get::<String, _>("status"), "fixReason": r.get::<Option<String>, _>("fix_reason"),
+                   "submittedAt": ts(r.get("submitted_at")), "history": r.get::<Value, _>("history")})
+        })
+        .collect())
+}
+
+pub async fn list_ar(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
+    let mut c = s.pool.acquire().await?;
+    auth::membership_read(&mut c, a, org).await?;
+    Ok(json!({"items": ar_json(&mut c, org, None).await?}))
+}
+
+/// Send a demo of a song not released yet to A&R. Released songs are administered, not pitched.
+pub async fn submit_ar(s: &AppState, a: &Actor, org: Uuid, i: ArIn) -> Result<Value> {
+    if !i.consent {
+        return Err(Error::InvalidCode("AR_CONSENT_REQUIRED"));
+    }
+    let key = i.idempotency_key.trim().to_string();
+    if !(8..=120).contains(&key.len()) {
+        return Err(Error::Invalid);
+    }
+    let genre = clean(&i.genre, 60, "AR_GENRE_INVALID")?;
+    if genre.is_empty() {
+        return Err(Error::InvalidCode("AR_GENRE_INVALID"));
+    }
+    let mut mood: Vec<String> = Vec::new();
+    for m in &i.mood {
+        let m = clean(m, 20, "AR_MOOD_INVALID")?;
+        if !m.is_empty() && !mood.contains(&m) {
+            mood.push(m);
+        }
+    }
+    if mood.is_empty() || mood.len() > 9 {
+        return Err(Error::InvalidCode("AR_MOOD_INVALID"));
+    }
+    if !["internal", "partners"].contains(&i.scope.as_str()) {
+        return Err(Error::Invalid);
+    }
+    let description = clean(&i.description, 2000, "AR_DESCRIPTION_INVALID")?;
+    let refs = clean(&i.references, 500, "AR_REFERENCES_INVALID")?;
+    let mut tx = s.pool.begin().await?;
+    auth::membership(&mut tx, a, org, true).await?;
+    if let Some(prev) = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM portal.pub_ar_submissions WHERE org_id=$1 AND idempotency_key=$2",
+    )
+    .bind(org)
+    .bind(&key)
+    .fetch_optional(&mut *tx)
+    .await?
+    {
+        let out = ar_json(&mut tx, org, Some(prev))
+            .await?
+            .pop()
+            .ok_or(Error::NotFound)?;
+        tx.rollback().await?;
+        return Ok(out);
+    }
+    lock_work(&mut tx, org, i.work_id).await?;
+    let (released, demo, open): (bool, bool, bool) = sqlx::query_as(
+        "SELECT w.origin <> 'unreleased' OR EXISTS(SELECT 1 FROM portal.pub_work_recordings r WHERE r.work_id=w.id),
+                EXISTS(SELECT 1 FROM portal.pub_work_attachments f WHERE f.work_id=w.id AND f.kind='demo'),
+                EXISTS(SELECT 1 FROM portal.pub_ar_submissions x WHERE x.work_id=w.id AND x.status <> 'closed')
+           FROM portal.pub_works w WHERE w.org_id=$1 AND w.id=$2",
+    )
+    .bind(org)
+    .bind(i.work_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if released {
+        return Err(Error::PolicyGate("WORK_RELEASED"));
+    }
+    if !demo {
+        return Err(Error::PolicyGate("AR_DEMO_REQUIRED"));
+    }
+    if open {
+        return Err(Error::PolicyGate("DUPLICATE_SUBMISSION"));
+    }
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO portal.pub_ar_submissions(id,org_id,work_id,genre,mood,description,refs,scope,sync,idempotency_key,created_by)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+    )
+    .bind(id)
+    .bind(org)
+    .bind(i.work_id)
+    .bind(&genre)
+    .bind(&mood)
+    .bind(&description)
+    .bind(&refs)
+    .bind(&i.scope)
+    .bind(i.sync)
+    .bind(&key)
+    .bind(a.user)
+    .execute(&mut *tx)
+    .await?;
+    audit(&mut tx, a, org, id, "publishing.ar_submitted").await?;
+    touch(&mut tx, i.work_id).await?;
+    let out = ar_json(&mut tx, org, Some(id))
+        .await?
+        .pop()
+        .ok_or(Error::NotFound)?;
+    tx.commit().await?;
+    Ok(out)
+}
+
+pub async fn withdraw_ar(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
+    let mut tx = s.pool.begin().await?;
+    auth::membership(&mut tx, a, org, true).await?;
+    let n = sqlx::query("UPDATE portal.pub_ar_submissions SET status='closed' WHERE org_id=$1 AND id=$2 AND status <> 'closed'")
+        .bind(org)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    if n != 1 {
+        return Err(Error::NotFound);
+    }
+    audit(&mut tx, a, org, id, "publishing.ar_withdrawn").await?;
+    let out = ar_json(&mut tx, org, Some(id))
+        .await?
+        .pop()
+        .ok_or(Error::NotFound)?;
     tx.commit().await?;
     Ok(out)
 }
@@ -1691,6 +1963,7 @@ pub async fn prepare_from_release(
                     ipi: None,
                     share,
                     publisher: 0,
+                    publisher_name: None,
                 }
             })
             .collect();
@@ -3168,6 +3441,30 @@ async fn h_invite_contributor(
         invite_contributor(&s, &writer(&s, &h).await?, org, id, cid, i).await?,
     ))
 }
+async fn h_ar_list(
+    State(s): State<AppState>,
+    Path(org): Path<Uuid>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    Ok(Json(list_ar(&s, &reader(&s, &h).await?, org).await?))
+}
+async fn h_ar_submit(
+    State(s): State<AppState>,
+    Path(org): Path<Uuid>,
+    h: HeaderMap,
+    Json(i): Json<ArIn>,
+) -> Result<Json<Value>> {
+    Ok(Json(submit_ar(&s, &writer(&s, &h).await?, org, i).await?))
+}
+async fn h_ar_withdraw(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    Ok(Json(
+        withdraw_ar(&s, &writer(&s, &h).await?, org, id).await?,
+    ))
+}
 async fn h_split_invite(
     State(s): State<AppState>,
     Path(token): Path<String>,
@@ -3420,6 +3717,14 @@ pub fn routes() -> Router<AppState> {
             "/api/orgs/{org}/works/{id}/rights/{contributor}/invite",
             post(h_invite_contributor),
         )
+        .route(
+            "/api/orgs/{org}/ar/submissions",
+            get(h_ar_list).post(h_ar_submit),
+        )
+        .route(
+            "/api/orgs/{org}/ar/submissions/{id}/withdraw",
+            post(h_ar_withdraw),
+        )
         // The co-writer's side — no account, the link is the secret (as /api/split-invites).
         .route("/api/pub-invites/{token}", get(h_split_invite))
         .route("/api/pub-invites/{token}/answer", post(h_split_answer))
@@ -3518,6 +3823,7 @@ mod tests {
             share,
             publisher_share: 0.0,
             is_me: None,
+            publisher: None,
         }
     }
 

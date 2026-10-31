@@ -47,6 +47,8 @@ export type WorkOrigin = 'unreleased' | 'own_release' | 'other_release';
 /** 다른 아티스트가 낸 발매 — 아티스트·제목은 꼭, 나머지는 아는 만큼 */
 /** 곡을 쓸 때 AI를 어떻게 썼는지 — AI로만 만든 곡은 저작권 관리 대상이 아니다 (서버 WORK_NOT_ELIGIBLE) */
 export type AiUse = 'none' | 'assisted' | 'generated';
+export interface OriginalWork { title: string; writers: string; publisher?: string | null; permission: boolean }
+export interface SampleUse { kind: 'sample' | 'interpolation'; title: string; artist: string; owners?: string | null }
 export interface ExternalRelease { artist: string; title: string; releaseDate?: string | null; isrc?: string | null; label?: string | null }
 /** 내가 이 곡에서 할 수 있는 일 — 서버가 정한다. 화면은 버튼을 숨길 뿐 보안은 서버 몫 (기획안 11.3) */
 export type WorkRole = 'owner' | 'editor' | 'contributor' | 'viewer';
@@ -81,6 +83,8 @@ export interface WorkContributor {
   confirm: 'confirmed' | 'pending' | 'disputed';
   external: boolean;
   isMe?: boolean;
+  /** 공동 작가의 소속 퍼블리셔 (0172) — 관리 단체 등록 때 함께 적는다 */
+  publisher?: string | null;
   /** 확인 링크를 보냈고 아직 답이 없다 (0171) */
   invited?: boolean;
   /** 이의를 남기며 적은 말 */
@@ -127,6 +131,12 @@ export interface Work {
   /** other_release일 때 그 발매 */
   externalRelease?: ExternalRelease | null;
   aiUse?: AiUse;
+  /** 편곡·번안·메들리의 원곡 (0172) */
+  originalWork?: OriginalWork | null;
+  /** 다른 곡에서 가져온 샘플·인용 멜로디 */
+  samples?: SampleUse[];
+  /** 기존 퍼블리셔 계약이 끝나는 날 — 그 다음부터 AUDENIQ이 징수한다 */
+  priorPublisherUntil?: string | null;
   contributors: WorkContributor[];
   attachments: WorkAttachment[];
   recordings: WorkRecording[];
@@ -147,7 +157,7 @@ export interface Work {
 /** 발매 신청에서 곡 크레딧으로 곡을 만들 때 — enroll이면 저작권 관리 신청 준비까지 (기획안 4.2, 15) */
 export interface PrepareResult { created: number; linked: number; skipped: number }
 
-export type WorkInput = Pick<Work, 'title' | 'altTitles' | 'workType' | 'language' | 'genre' | 'description' | 'visibility' | 'iswc' | 'hasPriorPublisher' | 'priorPublisher' | 'contributors' | 'attachments' | 'origin' | 'externalRelease' | 'aiUse'> & {
+export type WorkInput = Pick<Work, 'title' | 'altTitles' | 'workType' | 'language' | 'genre' | 'description' | 'visibility' | 'iswc' | 'hasPriorPublisher' | 'priorPublisher' | 'contributors' | 'attachments' | 'origin' | 'externalRelease' | 'aiUse' | 'originalWork' | 'samples' | 'priorPublisherUntil'> & {
   /** 발매 곡에서 만들 때 바로 연결할 녹음물 */
   recording?: Omit<WorkRecording, 'id'> | null;
 };
