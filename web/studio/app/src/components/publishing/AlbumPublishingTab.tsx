@@ -218,6 +218,40 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
 
   return (
     <div className="aq-detail-stack aq-album-pub">
+      {/* 먼저 할 일은 큰 카드 밖, 탭 맨 위에 따로 — 카드 안 카드로 들어가 모바일에서 답답했다 (곡 상세의 보완 카드처럼) */}
+      {/* 보완 요청이 있으면 그 일이 이 탭의 판단 하나 — 홈 '먼저 할 일'과 같은 주황 면 */}
+      {!fresh && !a.fix && toSign && (
+        <div className="aq-pbl-hero-fix is-sign">
+          <span className="min-0">
+            <small>먼저 할 일</small>
+            <strong>저작권 관리 계약서에 서명해 주세요</strong>
+            <span>담당자가 {toSign.works.map(w => `‘${w.title}’`).join(', ')} 신청을 승인했어요. 서명하면 계약이 맺어지고 관리 단체 등록이 시작돼요.</span>
+          </span>
+          <Link to={`/contracts/publishing/${encodeURIComponent(toSign.id)}`} className="ui-btn is-primary aq-hero-cta">
+            확인하고 서명
+            <span className="aq-cta-arrow" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4" /></svg>
+            </span>
+          </Link>
+        </div>
+      )}
+      {!fresh && a.fix && (
+        <div className="aq-pbl-hero-fix ui-tone-warn">
+          <span className="min-0">
+            <small>먼저 할 일</small>
+            <strong>{fixWork ? `‘${fixWork.title}’에 보완 요청이 왔어요` : '보완 요청이 왔어요'}</strong>
+            <span>{fixWork?.fix?.reason ?? '아래 곡을 눌러 고쳐 주세요. 고쳐서 다시 내면 심사가 이어져요.'}</span>
+          </span>
+          {fixWork && (
+            <button type="button" className="ui-btn is-primary aq-hero-cta" onClick={() => setSheet({ work: fixWork, no: trackNo.get(fixWork.id), focus: { field: 'fix' } })}>
+              보완하기
+              <span className="aq-cta-arrow" aria-hidden="true">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4" /></svg>
+              </span>
+            </button>
+          )}
+        </div>
+      )}
       <section className="ui-card aq-manage-card aq-pbl-hero" aria-labelledby="albumPubHead">
         <ManageHead id="albumPubHead" icon="scale" title="작사·작곡 저작권 관리" status={a.status} />
         {fresh ? (
@@ -236,39 +270,6 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
           </>
         ) : (
           <>
-            {/* 보완 요청이 있으면 그 일이 이 탭의 판단 하나 — 홈 '먼저 할 일'과 같은 주황 면을 카드 맨 위에 */}
-            {!a.fix && toSign && (
-              <div className="aq-pbl-hero-fix is-sign">
-                <span className="min-0">
-                  <small>먼저 할 일</small>
-                  <strong>저작권 관리 계약서에 서명해 주세요</strong>
-                  <span>담당자가 {toSign.works.map(w => `‘${w.title}’`).join(', ')} 신청을 승인했어요. 서명하면 계약이 맺어지고 관리 단체 등록이 시작돼요.</span>
-                </span>
-                <Link to={`/contracts/publishing/${encodeURIComponent(toSign.id)}`} className="ui-btn is-primary aq-hero-cta">
-                  확인하고 서명
-                  <span className="aq-cta-arrow" aria-hidden="true">
-                    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4" /></svg>
-                  </span>
-                </Link>
-              </div>
-            )}
-            {a.fix && (
-              <div className="aq-pbl-hero-fix ui-tone-warn">
-                <span className="min-0">
-                  <small>먼저 할 일</small>
-                  <strong>{fixWork ? `‘${fixWork.title}’에 보완 요청이 왔어요` : '보완 요청이 왔어요'}</strong>
-                  <span>{fixWork?.fix?.reason ?? '아래 곡을 눌러 고쳐 주세요. 고쳐서 다시 내면 심사가 이어져요.'}</span>
-                </span>
-                {fixWork && (
-                  <button type="button" className="ui-btn is-primary aq-hero-cta" onClick={() => setSheet({ work: fixWork, no: trackNo.get(fixWork.id), focus: { field: 'fix' } })}>
-                    보완하기
-                    <span className="aq-cta-arrow" aria-hidden="true">
-                      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4" /></svg>
-                    </span>
-                  </button>
-                )}
-              </div>
-            )}
             <div className="aq-pbl-cover" role="group" aria-label={`${rel.tracks.length}곡 중 ${cover.map(([, l, n]) => `${l} ${n}곡`).join(', ')}`}>
               <p className="aq-pbl-cover-cap" aria-hidden="true">저작권을 맡긴 곡</p>
               <strong className="aq-pbl-cover-num" aria-hidden="true"><b>{managedTracks + signingTracks + applyingTracks + fixTracks}</b><small>/ {rel.tracks.length}곡</small></strong>
