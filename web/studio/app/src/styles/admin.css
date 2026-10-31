@@ -852,3 +852,9 @@
   .adm-ops-split { grid-template-columns: 1fr; }
   .adm-ops-item-actions { margin-left: 0; }
 }
+
+/* 저작권 관리 신청 결정 창 — 발매 결정 창과 같은 칸 간격 */
+.adm-pub-form{display:grid;gap:16px}
+.adm-pub-form>*{margin:0}
+.adm-pub-form fieldset.ui-field{display:grid;gap:8px;border:0;padding:0;min-width:0}
+.adm-pub-form legend{margin-bottom:6px;font-size:var(--aq-fs-sm);font-weight:600;color:var(--aq-text-2)}

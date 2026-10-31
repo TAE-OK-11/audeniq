@@ -5,6 +5,7 @@ import type { StudioDraft } from './application';
 import { ApiError, messageForCode } from '../api/errors';
 import { req } from '../api/http';
 import { MOCK } from '../lib/mode';
+import type { Work } from '../api/publishing';
 
 // 레벨: 고객 지원 1 < 심사 담당·배급 운영 2 < 관리자 3 < 최고 관리자 4 (위 레벨은 아래 레벨 일을 모두 해요)
 export type StaffRole = 'OWNER' | 'ADMIN' | 'REVIEWER' | 'OPERATOR' | 'SUPPORT';
@@ -24,6 +25,21 @@ export interface Overview {
 }
 
 export interface Page<T> { items: T[]; limit?: number; offset?: number }
+
+/** 저작권 관리 신청 (퍼블리싱) — `/api/staff/publishing/applications` (crates/core/src/publishing.rs) */
+export type PubAppStatus = 'submitted' | 'in_review' | 'needs_fix' | 'approved' | 'rejected' | 'withdrawn';
+export interface PubApplication {
+  id: string; orgId: string; orgName: string; number: string; status: PubAppStatus;
+  workIds: string[]; workTitles: string[]; territories: string[]; rights: string[];
+  submittedAt: string; fixReason: string | null; replyNote: string | null;
+  /** 서명한 신청서 원본의 서버 해시 — 배급 신청서와 같은 문서 확인 코드 */
+  documentCode: string | null;
+  history: { at: string; text: string }[];
+  /** 상세에서만 — 곡마다 참여자·지분·녹음 */
+  works?: Work[];
+}
+export type PubDecisionAction = 'APPROVE' | 'REQUEST_CORRECTION' | 'REJECT' | 'REGISTER';
+export interface PubDecisionInput { action: PubDecisionAction; reason?: string; work_ids?: string[]; fields?: string[]; documents?: string[]; society?: string }
 
 export interface QueueRelease {
   id: string; org_id: string; org_name: string; title: string; release_type: string; status: string;
@@ -358,6 +374,10 @@ const remote = {
   markTakenDown: (pkg: string, partner: string, note: string) =>
     req<{ job_id: string }>(`/api/staff/deliveries/${id(pkg)}/${id(partner)}/taken-down`, { method: 'POST', body: { note } }),
   payouts: (status: string) => req<Page<PayoutItem>>(`/api/staff/payouts${qs({ status, limit: 100 })}`),
+  pubApplications: (status: PubAppStatus) => req<Page<PubApplication>>(`/api/staff/publishing/applications${qs({ status })}`),
+  pubApplication: (aid: string) => req<PubApplication>(`/api/staff/publishing/applications/${id(aid)}`),
+  pubClaim: (aid: string) => req<PubApplication>(`/api/staff/publishing/applications/${id(aid)}/claim`, { method: 'POST' }),
+  pubDecide: (aid: string, body: PubDecisionInput) => req<PubApplication>(`/api/staff/publishing/applications/${id(aid)}/decision`, { method: 'POST', body }),
   identityLookup: (email: string) => req<IdentityAccount>('/api/staff/identity/lookup', { method: 'POST', body: { email } }),
   identityVerify: (uid: string, body: IdentityVerifyInput) => req<IdentityAccount>(`/api/staff/identity/${id(uid)}/verify`, { method: 'POST', body }),
 };

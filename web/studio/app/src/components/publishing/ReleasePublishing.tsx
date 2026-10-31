@@ -5,6 +5,7 @@
 import { Link, useNavigate } from '../../lib/router';
 import { pubApi, type Work } from '../../api/publishing';
 import { useAsync } from '../../hooks/useAsync';
+import { usePublishingUse } from '../../hooks/usePublishingUse';
 import { readJSON, removeKey } from '../../lib/storage';
 import { Glyph } from '../Glyph';
 import { IconTile } from '../../ui';
@@ -48,7 +49,9 @@ export function PublishingLinkRow({ releaseId, trackId }: { releaseId?: string; 
 export function PublishingBundleStep({ releaseId }: { releaseId: string }) {
   const nav = useNavigate();
   const { data: works } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
-  if (!works || !releaseId) return null;
+  // 퍼블리싱을 쓰지 않는 사람의 계약 묶음에는 저작권 줄을 붙이지 않는다 — 입구는 계약서 목록 아래 한 줄로
+  const use = usePublishingUse();
+  if (!works || !releaseId || !use.started) return null;
   const mine = works.filter(w => w.recordings.some(r => r.releaseId === releaseId) && w.myRole !== 'contributor');
   const managed = mine.filter(w => w.contractId);
   const applying = mine.filter(w => w.application && ['submitted', 'in_review', 'needs_fix'].includes(w.application.status));
@@ -78,10 +81,13 @@ export function albumPublishing(works: readonly Work[], releaseId: string, track
   const managed = mine.filter(w => w.registration === 'registered' || !!w.contractId);
   const applying = mine.filter(w => w.application && ['submitted', 'in_review', 'needs_fix'].includes(w.application.status));
   const fix = applying.some(w => w.application!.status === 'needs_fix') || mine.some(w => w.registration === 'needs_fix');
+  // 트랙 기준으로 센다 — 한 곡이 원곡·Inst.처럼 두 트랙에 실리면 곡 수로는 '1곡 관리 중'이 됐다
+  const tracksOf = (list: Work[]) => list.reduce((n, w) => n + w.recordings.filter(r => r.releaseId === releaseId).length, 0);
+  const managedTracks = tracksOf(managed);
   const status = fix ? { tone: 'amber' as const, label: '보완 필요' }
-    : managed.length && managed.length >= trackCount ? { tone: 'green' as const, label: '관리 중' }
+    : managedTracks && managedTracks >= trackCount ? { tone: 'green' as const, label: '관리 중' }
     : applying.length ? { tone: 'violet' as const, label: '심사 중' }
-    : managed.length ? { tone: 'blue' as const, label: `${managed.length}곡 관리 중` }
+    : managedTracks ? { tone: 'blue' as const, label: `${managedTracks}곡 관리 중` }
     : null;
   return { mine, managed, applying, fix, status };
 }

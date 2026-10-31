@@ -5,8 +5,9 @@ import { applicationPending, needsSecond } from './labels';
 import type {
   ApprovalItem, DecisionInput, DecisionResult, DeliveryDecisionInput, DeliveryItem, DspItem, InquiryMessage, InquiryItem,
   Overview, PayoutItem, QueueRelease, ReleaseSheet, ReleaseTimelineItem, StagingRow, StaffDocument, StaffMe, AgreementTerms, AgreementTermsInput, TakedownItem, CorrectionItem, InfringementClaim, PitchItem,
-  IdentityAccount, IdentityVerifyInput
+  IdentityAccount, IdentityVerifyInput, PubApplication, PubAppStatus, PubDecisionInput
 } from './api';
+import type { Work, WorkContributor } from '../api/publishing';
 import { applicationHash, type StudioDraft } from './application';
 
 // 체험용 손글씨 서명 (작은 SVG)
@@ -241,6 +242,45 @@ const find = (rid: string) => releases.find(r => r.q.id === rid) ?? fail('NOT_FO
 const setStatus = (r: MockRelease, status: string) => { r.q.status = status; r.sheet.release.status = status; };
 const audit = (r: MockRelease, action: string, reason: string) =>
   r.sheet.timeline.unshift({ action, reason, actor_user_id: ME, actor_service: null, at: new Date().toISOString() });
+
+// ---------- 저작권 관리 신청 (퍼블리싱) ----------
+const person = (name: string, roles: WorkContributor['roles'], share: number, managed: number, ipi: string | null, confirm: WorkContributor['confirm'] = 'confirmed', me = false): WorkContributor =>
+  ({ id: uid(), creatorId: me ? 'party-applicant' : null, name, roles, society: 'KOMCA', ipi, share, publisherShare: managed, confirm, external: !me, isMe: false });
+const pubWork = (id: string, title: string, people: WorkContributor[], release: string, registration: Work['registration']): Work => ({
+  id, title, altTitles: [], workType: 'original', language: 'ko', genre: 'Indie Pop', description: '', visibility: 'private', iswc: null,
+  internalCode: `AQW-${id.replace(/\D/g, '').padStart(6, '0')}`, hasPriorPublisher: false, priorPublisher: null, contributors: people, attachments: [],
+  recordings: [{ id: uid(), releaseId: 'rel-pub', trackId: uid(), title, releaseTitle: release, isrc: null, status: 'live' }],
+  registration, registrationLog: [], application: null, contractId: null, fix: null, myRole: 'viewer', activity: [], rowVersion: 1, createdAt: iso(80), updatedAt: iso(30),
+});
+const pubApps: PubApplication[] = [
+  {
+    id: 'pa-1', orgId: 'org-2', orgName: '한결 뮤직', number: 'AUD-20261028-K7Q2MX', status: 'submitted',
+    workIds: ['pw-1', 'pw-2'], workTitles: ['파도', '노을'], territories: ['KR', 'WORLD'], rights: ['performance', 'mechanical', 'digital'],
+    submittedAt: iso(26), fixReason: null, replyNote: null, documentCode: 'b1f0c4a7e2d94c1aa0d35c6e8f2b7a91c4d0e3f5a6b7c8d9e0f1a2b3c4d5e6f7',
+    history: [{ at: iso(26), text: '제출 완료' }],
+    works: [
+      pubWork('pw-1', '파도', [person('김한결', ['lyricist', 'composer'], 60, 60, '00712345678', 'confirmed', true), person('김하늘', ['composer'], 40, 0, null, 'pending')], '여름 EP', 'internal_review'),
+      pubWork('pw-2', '노을', [person('김한결', ['lyricist', 'composer'], 100, 100, '00712345678', 'confirmed', true)], '여름 EP', 'internal_review'),
+    ],
+  },
+  {
+    id: 'pa-2', orgId: 'org-3', orgName: '새벽 레코즈', number: 'AUD-20261027-P3ND8W', status: 'needs_fix',
+    workIds: ['pw-3'], workTitles: ['새벽 네 시'], territories: ['KR'], rights: ['performance', 'digital'],
+    submittedAt: iso(70), fixReason: '공동 작사가 박도윤 님의 IPI 번호가 비어 있어요.', replyNote: null, documentCode: null,
+    history: [{ at: iso(70), text: '제출 완료' }, { at: iso(50), text: '심사 시작' }, { at: iso(48), text: '보완 요청' }],
+    works: [pubWork('pw-3', '새벽 네 시', [person('서린', ['composer'], 60, 60, '00799911122', 'confirmed', true), person('박도윤', ['lyricist'], 40, 0, null)], '새벽', 'needs_fix')],
+  },
+  {
+    id: 'pa-3', orgId: 'org-2', orgName: '한결 뮤직', number: 'AUD-20261012-ZR4TQ9', status: 'approved',
+    workIds: ['pw-4'], workTitles: ['첫 번째 싱글'], territories: ['KR', 'JP', 'US', 'WORLD'], rights: ['performance', 'mechanical', 'digital'],
+    submittedAt: iso(400), fixReason: null, replyNote: null, documentCode: null,
+    history: [{ at: iso(400), text: '제출 완료' }, { at: iso(380), text: '심사 시작' }, { at: iso(370), text: '승인' }],
+    works: [pubWork('pw-4', '첫 번째 싱글', [person('김한결', ['lyricist', 'composer'], 100, 100, '00712345678', 'confirmed', true)], '첫 번째 싱글', 'ready')],
+  },
+];
+const pubFind = (aid: string) => pubApps.find(a => a.id === aid) ?? fail('NOT_FOUND', 404);
+const pubList = (a: PubApplication) => { const { works: _w, ...rest } = a; return rest; };
+const pubRegistration = (a: PubApplication, reg: Work['registration'], ids = a.workIds) => { for (const w of a.works ?? []) if (ids.includes(w.id)) w.registration = reg; };
 
 export const mockStaff = {
   me: () => wait<StaffMe>({ user_id: ME, role: 'OWNER', level: 4, duties: ['REVIEW', 'DOCUMENTS', 'INQUIRIES', 'DELIVERY', 'IDENTITY', 'FINANCE'], dual_approval: false }),
@@ -530,6 +570,32 @@ export const mockStaff = {
   restage: (_pkg: string) => wait({ job_id: uid() }),
   dsps: () => wait({ items: dsps }),
   payouts: (status: string) => wait({ items: payouts.filter(p => p.status === status) }),
+  pubApplications: (status: PubAppStatus) => wait({ items: pubApps.filter(a => a.status === status).map(pubList) }),
+  pubApplication: (aid: string) => wait(pubFind(aid)),
+  pubClaim: (aid: string) => {
+    const a = pubFind(aid);
+    if (a.status !== 'submitted') fail('APPLICATION_STATE');
+    a.status = 'in_review';
+    a.history.push({ at: iso(0), text: '심사 시작' });
+    return wait(pubList(a));
+  },
+  pubDecide: (aid: string, i: PubDecisionInput) => {
+    const a = pubFind(aid);
+    const open = a.status === 'submitted' || a.status === 'in_review';
+    const reason = (i.reason ?? '').trim();
+    if ((i.action === 'REQUEST_CORRECTION' || i.action === 'REJECT') && !reason) fail('APPLICATION_REASON_REQUIRED', 400);
+    if (i.action === 'APPROVE' && open) { a.status = 'approved'; pubRegistration(a, 'ready'); a.history.push({ at: iso(0), text: '승인' }); }
+    else if (i.action === 'REQUEST_CORRECTION' && open) {
+      a.status = 'needs_fix'; a.fixReason = reason;
+      const ids = i.work_ids?.length ? i.work_ids : a.workIds;
+      pubRegistration(a, 'needs_fix', ids);
+      for (const w of a.works ?? []) if (ids.includes(w.id)) w.fix = { reason, fields: i.fields ?? [], documents: i.documents ?? [], requestedAt: iso(0) };
+      a.history.push({ at: iso(0), text: '보완 요청' });
+    } else if (i.action === 'REJECT' && (open || a.status === 'needs_fix')) { a.status = 'rejected'; a.fixReason = reason; pubRegistration(a, 'rejected'); a.history.push({ at: iso(0), text: '반려' }); }
+    else if (i.action === 'REGISTER' && a.status === 'approved') { pubRegistration(a, 'registered'); a.history.push({ at: iso(0), text: '관리 단체 등록 완료' }); }
+    else fail('APPLICATION_STATE');
+    return wait(pubList(a));
+  },
   identityLookup: (email: string) => (email.toLowerCase().endsWith('@example.com') ? wait(identityAccount) : fail('NOT_FOUND', 404)),
   identityVerify: (_uid: string, b: IdentityVerifyInput) => {
     identityAccount.identity = {

@@ -14,6 +14,8 @@ export interface DocRecord {
   title: string;
   releaseId?: string;
   releaseTitle: string;
+  /** 곡(작사·작곡 저작권)에 요청된 서류면 그 곡 — 발매 대신 곡에 묶인다 */
+  workId?: string;
   version: string;
   created: string;
   content: string;
@@ -83,6 +85,9 @@ const agreementContent = () => [
   ...AGREEMENT_BOXES.map(b => `□ (필수) ${b.text}`),
 ].join('\n');
 
+// 체험용 손글씨 서명 (작은 SVG)
+const DEMO_SIGNATURE = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 60"><path d="M10 42c14-20 22-30 28-24s-10 26 2 22 18-30 26-28-6 26 6 24 16-18 24-20 4 16 14 14 20-14 30-16" fill="none" stroke="#1d2433" stroke-width="3" stroke-linecap="round"/></svg>');
+
 const initialDocs = (): DocRecord[] => [
   {
     id: 'doc1', kind: 'agreements',
@@ -90,8 +95,9 @@ const initialDocs = (): DocRecord[] => [
     releaseId: 'r1', releaseTitle: '첫 번째 싱글', version: '2.0', created: '2026-09-20',
     content: agreementContent(), agreementTerms: AGREEMENT_TERMS, fileName: '', checked: true, checkedAt: '2026-09-20 14:32',
     consentHistory: [{ time: '2026-09-20 14:32', action: '내용 확인', version: '1.0' }],
-    reviewHistory: [{ status: '검토 완료', time: '2026-09-21 10:05', detail: 'AUDENIQ 담당자 검토 완료' }],
-    reviewStatus: 'approved', reviewNote: '', signerName: '', localSignatureData: '', localSignatureAt: '',
+    reviewHistory: [{ status: '검토 완료', time: '2026-09-21 10:05', detail: 'AUDENIQ 담당자 검토 완료' }, { status: '서명 완료', time: '2026-09-21 18:40', detail: '계약이 체결됐어요.' }],
+    // 이미 발매된 앨범 — 체험 데이터도 배급 계약서는 서명을 마친 상태여야 한다 (발매 완료인데 '서명 필요'로 보였다)
+    reviewStatus: 'approved', reviewNote: '', signerName: '서린', localSignatureData: DEMO_SIGNATURE, localSignatureAt: '2026-09-21 18:40',
   },
   {
     id: 'doc2', kind: 'agreements',

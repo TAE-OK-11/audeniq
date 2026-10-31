@@ -1,6 +1,7 @@
 // 계정 정보 — 본인 확인·아티스트·수익 받기 설정. 토스 설정 화면처럼 '줄 + ›' 목록. 줄을 누르면 그 항목 하나만 고치는 창이 열린다.
 import { Suspense, useEffect, useState, type ReactNode } from 'react';
 import { CreatorProfile } from '../components/publishing/CreatorProfile';
+import { usePublishingUse } from '../hooks/usePublishingUse';
 import { SetRow } from '../components/SetRow';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
@@ -182,6 +183,8 @@ function TaxEditor({ current, onSaved }: { current: TaxResidency | null; onSaved
 }
 
 export function Profile() {
+  // 작가 정보(IPI·관리 단체)는 퍼블리싱을 쓰는 사람에게만
+  const pubUse = usePublishingUse();
   const toast = useToast();
   const confirm = useConfirm();
   const nav = useNavigate();
@@ -290,7 +293,7 @@ export function Profile() {
         <SetRow id="profileRowBio" label="아티스트 소개" value={bioLine} empty="입력하기" onClick={() => setEditing('bio')} />
         <SetRow id="profileRowCountry" label="활동 국가" value={country} onClick={() => setEditing('country')} />
         {/* 작곡·작사도 하는 아티스트 — 같은 계정·같은 묶음에서 저작권 정보까지 */}
-        <CreatorProfile />
+        {pubUse.started && <CreatorProfile />}
       </section>
 
       <section className="aq-set-card" aria-labelledby="setPayout">

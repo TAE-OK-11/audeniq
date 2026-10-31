@@ -3,7 +3,7 @@ import { Link, useSearchParams } from '../../lib/router';
 import { errorMessage } from '../../api/errors';
 import { staffApi, type QueueRelease } from '../api';
 import { QUEUE_FILTERS, RELEASE_STATUS, RELEASE_TYPE, ago, applicationPending, day, dspLabel, pick } from '../labels';
-import { Badge, EmptyState, ErrorBox, ChipGroup, Cover, PageHeader, SkeletonList, StatusBadge, Seg, SubTabs, useDualApproval, useStaff } from '../ui';
+import { Badge, EmptyState, ErrorBox, ChipGroup, Cover, PageHeader, SkeletonList, StatusBadge, Seg, ReviewTabs, useStaff } from '../ui';
 
 const PAGE = 50;
 /** 심사 상세의 ‘다음 건’이 이 목록 순서를 따른다 */
@@ -29,8 +29,7 @@ export function ReviewQueue() {
   const [sort, setSort] = useState<'wait' | 'date'>('wait');
   // 담당 필터: 전체 · 내 담당 · 담당자 없음
   const [who, setWho] = useState<'all' | 'mine' | 'free'>('all');
-  const { counts, me } = useStaff();
-  const dual = useDualApproval();
+  const { me } = useStaff();
 
   useEffect(() => {
     let alive = true;
@@ -75,7 +74,7 @@ export function ReviewQueue() {
         sub="새 발매 신청과 담당자 판단이 필요한 발매예요. 오래 기다린 순서로 보여요."
         actions={<button type="button" className="ui-btn is-soft is-sm" onClick={() => setTick(t => t + 1)}>새로고침</button>}
       />
-      {dual && <SubTabs tabs={[{ to: '/admin/reviews', label: '심사 목록', count: counts?.review }, { to: '/admin/approvals', label: '2차 승인', count: counts?.second_approvals }]} />}
+      <ReviewTabs />
       <ChipGroup
         label="발매 상태"
         value={status}

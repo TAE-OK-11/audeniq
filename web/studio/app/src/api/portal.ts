@@ -214,7 +214,7 @@ export async function markNotifications(ids: string[] | 'all'): Promise<void> {
 // 서류 (계약서 서명, 권리 증빙 제출)
 // ---------------------------------------------------------------------------
 interface ServerDocument {
-  id: string; kind: 'AGREEMENT' | 'RIGHTS_PROOF'; release_id: string | null; release_title: string | null; title: string; version: string;
+  id: string; kind: 'AGREEMENT' | 'RIGHTS_PROOF'; release_id: string | null; release_title: string | null; work_id?: string | null; title: string; version: string;
   body: string; status: string; review_note: string; asset_id: string | null; file_name: string; checked_at: string | null;
   signer_name: string; signature: string; signed_at: string | null; row_version: number; created_at: string; updated_at: string;
   electronic_record?: import('../lib/rightsDocument').ElectronicRightsRecord | null;
@@ -231,7 +231,7 @@ function toDoc(d: ServerDocument): DocRecord {
   if (d.status === 'APPROVED' || d.status === 'SIGNED') history.push({ status: '검토 완료', time: stamp(d.updated_at), detail: 'AUDENIQ 검토가 끝났어요.' });
   return {
     id: d.id, kind: d.kind === 'AGREEMENT' ? 'agreements' : 'rights', title: d.title, releaseId: d.release_id ?? undefined,
-    releaseTitle: d.release_title ?? '', version: d.version, created: stamp(d.created_at).slice(0, 10), content: d.body,
+    releaseTitle: d.release_title ?? '', workId: d.work_id ?? undefined, version: d.version, created: stamp(d.created_at).slice(0, 10), content: d.body,
     fileName: d.file_name, fileBlob: null, uploadedAt: d.asset_id ? stamp(d.updated_at) : undefined,
     approvedAt: d.status === 'APPROVED' || d.status === 'SIGNED' ? stamp(d.updated_at) : undefined,
     checked: !!d.checked_at, checkedAt: stamp(d.checked_at),

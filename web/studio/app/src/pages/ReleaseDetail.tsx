@@ -526,7 +526,11 @@ export function ReleaseDetail() {
               {rel.tracks.length ? (
                 <ol className="aq-tracklist">
                   {rel.tracks.map((t, i) => {
-                    const credit = creditParts(t.composers, t.lyricists).join(' · ');
+                    // 연주곡은 작사가 없다 — '작사 입력 전'이라고 하면 빠뜨린 것처럼 읽혔다
+                    const dt = draftTrackOf(t, d);
+                    const credit = dt?.instrumental || /\binst\.?(?=\W|$)|instrumental/i.test(`${t.version ?? ''} ${t.title}`)
+                      ? [`작곡 ${(t.composers ?? dt?.composers ?? '').trim() || '입력 전'}`, '연주곡'].join(' · ')
+                      : creditParts(t.composers ?? dt?.composers, t.lyricists ?? dt?.lyricists).join(' · ');
                     return (
                       <li key={t.id}>
                         <button type="button" className="aq-trackrow" onClick={() => setOpenTrack(i)} aria-label={`${i + 1}번 곡 ${t.title || '곡명 없음'} 자세히 보기`}>

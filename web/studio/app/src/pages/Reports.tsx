@@ -1,7 +1,6 @@
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from '../lib/router';
-import { useAsync } from '../hooks/useAsync';
-import { pubApi } from '../api/publishing';
+import { usePublishingUse } from '../hooks/usePublishingUse';
 import { SkeletonRows } from '../components/Skeleton';
 import { lazyComponent } from '../lib/lazyComponent';
 
@@ -270,7 +269,8 @@ function DistributionReport() {
           <strong className="aq-report-amount"><Money value={totalRevenue} animate /></strong>
           {insight?.revenueChange != null && (
             <span className={`aq-report-change ${insight.revenueChange >= 0 ? 'is-up' : 'is-down'}`}>
-              지난달보다 {pctText(insight.revenueChange)}
+              {/* 합계(여러 달) 아래의 증감은 최근 달 기준 — 어느 달인지 말하지 않으면 12개월 합계가 133% 늘어난 것처럼 읽혔다 */}
+              {period === 'month' ? '지난달보다' : `${monthShort(thisMonth)} 수익이 지난달보다`} {pctText(insight.revenueChange)}
             </span>
           )}
           <p className="aq-report-sub">
@@ -444,8 +444,9 @@ export function Reports() {
   const [params, setParams] = useSearchParams();
   const type = params.get('type') === 'publishing' ? 'publishing' : 'distribution';
   // 저작권료를 한 번도 다루지 않은 계정에는 전환을 보이지 않는다 — 배급만 쓰는 사람에게 낯선 칸이 늘지 않게
-  const { data: pub } = useAsync(() => pubApi.summary(), [], { key: 'pub-summary' });
-  const showSwitch = type === 'publishing' || !!pub && (pub.enrolled || pub.works.total > 0);
+  // 저작권료 분석은 저작권 관리를 신청한 사람에게만
+  const pubUse = usePublishingUse();
+  const showSwitch = type === 'publishing' || pubUse.enrolled;
   const setType = (v: 'distribution' | 'publishing') => {
     const p = new URLSearchParams();
     if (v === 'publishing') p.set('type', 'publishing');

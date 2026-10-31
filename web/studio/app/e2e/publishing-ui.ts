@@ -8,7 +8,7 @@ import { createServer, preview } from 'vite';
 
 const out = 'test-results/publishing-ui';
 const routes = [
-  ['analysis', '/reports?type=publishing', '.aq-pbl-dashboard'],
+  ['analysis', '/reports?type=publishing', '.aq-report-card'],
   ['songs', '/releases?tab=works', '.aq-track-row'],
   ['legacy-redirect', '/publishing?tab=royalties', '.settle-entry'],
   ['album', '/releases/r2?tab=publishing', '.aq-album-pub'],
@@ -120,7 +120,7 @@ try {
   // Analysis separates estimates; the album filter survives tab navigation and application entry.
   await page.goto(base + '/publishing');
   await page.waitForURL('**/reports?type=publishing');
-  await page.locator('.aq-pbl-dashboard').waitFor();
+  await page.locator('.aq-report-card').waitFor();
   assert.match(await page.locator('.aq-report-total').innerText(), /337,860/);
   // Period/condition filter narrows the report and is carried into the royalty list (and its CSV).
   await page.getByLabel('징수 단체').selectOption('JASRAC');
@@ -131,7 +131,7 @@ try {
   assert.equal(await page.locator('#pubRoyaltyList .settle-entry').count(), 1);
   await page.screenshot({ path: `${out}/royalties-filtered-1440.png`, fullPage: true });
   await page.goto(base + '/reports?type=publishing');
-  await page.locator('.aq-pbl-dashboard').waitFor();
+  await page.locator('.aq-report-card').waitFor();
   await page.getByLabel('볼 앨범').selectOption('r2');
   assert.equal(new URL(page.url()).searchParams.get('release'), 'r2');
   // Songs live in 발매·곡 관리; the menu no longer has a separate 퍼블리싱 entry.
@@ -139,8 +139,27 @@ try {
   assert.equal(await page.locator('a[href="/publishing"]').count(), 0);
   await page.getByRole('button', { name: '저작권 관리 신청', exact: true }).click();
   await page.waitForURL('**/publishing/apply?release=r2');
+  // Staff review lives under 발매 심사 as a sub-tab: claim, then ask for a fix with a document.
+  for (const width of [390, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(base + '/admin/publishing');
+    await page.locator('.ui-list .ui-row').first().waitFor();
+    await noOverflow(page, `${width} admin publishing list`);
+    await page.locator('.ui-list .ui-row').first().click();
+    await page.locator('.adm-decide').waitFor({ state: 'attached' });
+    await noOverflow(page, `${width} admin publishing detail`);
+    await page.screenshot({ path: `${out}/admin-publishing-${width}.png`, fullPage: true });
+  }
+  const side = page.locator('.adm-detail-side');
+  await side.getByRole('button', { name: '담당하기' }).click();
+  await side.getByRole('button', { name: '보완 요청' }).click();
+  await page.locator('#pubReason').fill('김하늘 님 IPI를 적어 주세요.');
+  await page.getByRole('button', { name: '공동 작곡 합의서' }).click();
+  await page.locator('#modal .adm-form-actions .ui-btn').click();
+  await page.locator('.ui-callout.is-success').waitFor();
+  await page.locator('.adm-release-hero').getByText('보완 요청', { exact: true }).waitFor();
   assert.deepEqual(errors, []);
-  console.log('Publishing UI passed: 12 pages × 4 widths, album prep/sheet/selection/attach, split editing, return navigation, filters, album scope, and report amounts.');
+  console.log('Publishing UI passed: 12 pages × 4 widths, album prep/sheet/selection/attach, split editing, return navigation, filters, album scope, and report amounts, admin review.');
 } finally {
   await browser.close();
   if (server && 'close' in server) await server.close();

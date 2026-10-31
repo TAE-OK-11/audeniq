@@ -19,7 +19,7 @@ export function DocRow({ c, onOpen }: { c: DocRecord; onOpen: (id: string) => vo
       </span>
       <span className="min-0 aq-doc-copy">
         <span className="ui-row-title">{name}</span>
-        <span className="aq-doc-meta">{c.releaseTitle || '공통 문서'} · {niceDate(c.created)}{c.fileName ? ` · ${c.fileName}` : ''}</span>
+        <span className="aq-doc-meta">{c.releaseTitle || (c.workId ? '곡 저작권' : '공통 문서')} · {niceDate(c.created)}{c.fileName ? ` · ${c.fileName}` : ''}</span>
         {needs && c.reviewNote && <span className="aq-doc-note">{c.reviewNote}</span>}
       </span>
       <Badge tone={docBadgeTone(c)} className="aq-doc-state">{docState(c)}</Badge>
