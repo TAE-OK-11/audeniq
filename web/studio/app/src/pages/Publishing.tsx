@@ -156,7 +156,7 @@ function RoyaltyReport({ rows, label }: { rows: Royalty[] | null; label: string 
           ['이달의 주요 곡', <span className="aq-report-top"><IconTile size="sm"><Glyph name="music" size={16} /></IconTile><span>{r.topSong || '—'}</span></span>],
           ['이달의 주요 징수 단체', <span className="aq-report-top"><IconTile size="sm"><Glyph name="globe" size={16} /></IconTile><span>{r.topSource || '—'}</span></span>],
         ]} />
-        <p className="ui-row-meta aq-report-foot">관리 단체가 확정한 저작권료는 <Link to="/settlement?type=publishing" className="aq-inline-link">정산·지급</Link> 잔액에 배급 정산금과 함께 쌓여요.</p>
+        {/* 잔액 안내는 아래 저작권료 내역에 한 번만 — 같은 문장이 두 번 보였다 */}
       </>)}
     </section>
   );

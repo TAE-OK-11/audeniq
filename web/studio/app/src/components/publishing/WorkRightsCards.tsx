@@ -26,7 +26,7 @@ const Empty = ({ children }: { children: string }) => <span className="aq-empty-
 const day = (at?: string | null) => (at ? localStamp(at).replace(/ 오[전후].*$/, '') : '');
 
 /** 이름 왼쪽 · 값 오른쪽 한 줄 — 카드 안 정보는 모두 이 모양 (표처럼 두 칸으로 나누지 않는다) */
-function Row({ k, v }: { k: string; v: ReactNode }) {
+export function InfoRow({ k, v }: { k: string; v: ReactNode }) {
   return <li className="aq-pbl-kv"><span>{k}</span><b>{v}</b></li>;
 }
 
@@ -43,11 +43,11 @@ export function RightsInfoCard({ w }: { w: Work }) {
       <h2 className="aq-pbl-ccard-title">{title}</h2>
       {w.registration !== 'registered' && w.registration !== 'none' && <p className="aq-pbl-ccard-lead">{REG_SENTENCE[w.registration]}</p>}
       <ul className="aq-pbl-kvs">
-        <Row k="ISWC" v={w.iswc ?? <Empty>발급 전</Empty>} />
-        <Row k="AUDENIQ 곡 코드" v={w.internalCode} />
-        {w.societyCode && <Row k="관리 단체 작품 코드" v={w.societyCode} />}
-        {done && <Row k="등록일" v={day(done.at)} />}
-        {me && <Row k="내 IPI" v={me.ipi ?? <Empty>입력 전</Empty>} />}
+        <InfoRow k="ISWC" v={w.iswc ?? <Empty>발급 전</Empty>} />
+        <InfoRow k="AUDENIQ 곡 코드" v={w.internalCode} />
+        {w.societyCode && <InfoRow k="관리 단체 작품 코드" v={w.societyCode} />}
+        {done && <InfoRow k="등록일" v={day(done.at)} />}
+        {me && <InfoRow k="내 IPI" v={me.ipi ?? <Empty>입력 전</Empty>} />}
       </ul>
     </section>
   );
@@ -136,8 +136,8 @@ export function ApplicationCard({ app, submittedAt, signTo, canWithdraw, onWithd
       {signTo && <p className="aq-pbl-ccard-lead">계약서에 서명하면 계약이 맺어지고 관리 단체 등록이 시작돼요.</p>}
       <ul className="aq-pbl-kvs">
         {signTo && <li><Link to={signTo} className="aq-pbl-kv is-link is-strong"><span>계약서 확인하고 서명</span><b className="aq-pbl-ccard-go">서명<Glyph name="chevron-right" size={15} /></b></Link></li>}
-        <Row k="신청 번호" v={app.number} />
-        {submittedAt && <Row k="제출" v={day(submittedAt)} />}
+        <InfoRow k="신청 번호" v={app.number} />
+        {submittedAt && <InfoRow k="제출" v={day(submittedAt)} />}
         <li><Link to={`/publishing/applications/${encodeURIComponent(app.id)}`} className="aq-pbl-kv is-link"><span>신청서</span><b className="aq-pbl-ccard-go">보기<Glyph name="chevron-right" size={15} /></b></Link></li>
       </ul>
       {canWithdraw && <button type="button" className="ui-btn is-text is-sm aq-pbl-end" onClick={onWithdraw}>신청 철회</button>}

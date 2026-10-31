@@ -454,3 +454,19 @@
 .aq-pbl-ccard-rows .ui-row{padding:12px 0!important;background:none!important}
 .aq-pbl-ccard-rows .ui-row.is-soon .ui-row-title,.aq-pbl-ccard-rows .ui-row.is-soon .aq-pbl-ccard-go{color:var(--aq-amber-700)}
 .aq-pbl-ccard-rows>li+li{border-top:1px solid var(--aq-line)}
+/* 곡 '정보' — 연결된 녹음 한 줄: 커버 · 제목(발매·상태·ISRC) · 풀기 */
+.aq-pbl-rec{display:grid!important;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px}
+.aq-pbl-rec .ui-row-title{white-space:normal}
+.aq-pbl-rec-off{color:var(--aq-text-4)!important}
+button.aq-pbl-kv{width:100%;border:0;background:none;font:inherit;text-align:left;cursor:pointer}
+/* 곡 '정보' 참여자·지분 — 사람 줄도 이름·값 판 위에 (아이콘·배지 없이 이름 왼쪽 · 지분 오른쪽) */
+.aq-pbl-people.is-quiet{display:block;padding:4px 16px;border-radius:var(--aq-r-lg);background:var(--aq-bg)}
+.aq-pbl-people.is-quiet>.aq-pbl-person-read{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:12px 0;border:0;background:none;box-shadow:none;border-radius:0}
+.aq-pbl-people.is-quiet>.aq-pbl-person-read+.aq-pbl-person-read{border-top:1px solid var(--aq-line)}
+.aq-pbl-people.is-quiet .aq-pbl-person-end{display:grid;justify-items:end;gap:2px}
+.aq-pbl-people.is-quiet .aq-pbl-person-end b{font-size:var(--aq-fs-lg, 17px)}
+.aq-pbl-people.is-quiet .aq-pbl-person-actions{grid-column:1 / -1}
+.aq-pbl-confirm{font-size:var(--aq-fs-xs);font-weight:700}
+.aq-pbl-confirm.is-confirmed{color:var(--aq-green-700, #15803d)}
+.aq-pbl-confirm.is-pending{color:var(--aq-amber-700)}
+.aq-pbl-confirm.is-disputed{color:var(--aq-red-600)}
