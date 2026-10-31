@@ -65,14 +65,14 @@ try {
   await page.getByRole('button', { name: '데모 제출', exact: true }).click();
   await page.locator('#arWork').selectOption('w6');
   await page.locator('#wizardNext').click();
-  await page.locator('#arGenre').fill('R&B');
+  await page.locator('#arGenre').selectOption('R&B / Soul');
   await page.getByRole('button', { name: '잔잔한', exact: true }).click();
   await page.locator('#wizardNext').click();
   assert.equal(await page.locator('#wizardNext').isDisabled(), true);
   await page.getByRole('checkbox').check();
   assert.equal(await page.locator('#wizardNext').isEnabled(), true);
   await page.getByRole('button', { name: '곡 소개 수정', exact: true }).click();
-  assert.equal(await page.locator('#arGenre').inputValue(), 'R&B');
+  assert.equal(await page.locator('#arGenre').inputValue(), 'R&B / Soul');
   await page.getByRole('button', { name: '이전으로 돌아가기', exact: true }).click();
   await page.getByRole('button', { name: '이전으로 돌아가기', exact: true }).click();
   await page.locator('#view-ar').waitFor();

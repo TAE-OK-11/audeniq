@@ -16,6 +16,8 @@ import { useAsync } from '../hooks/useAsync';
 import { readJSON, removeKey, writeJSON } from '../lib/storage';
 import { stampNow, todayStr } from '../lib/date';
 import { DateField } from '../components/Picker';
+import { GenreSelect } from '../components/GenreSelect';
+import { genreLabel } from '../lib/catalog';
 import { localStamp, fileSize } from '../lib/format';
 import { uid } from '../lib/store';
 import { draftTrackOf } from '../lib/albumPrep';
@@ -383,7 +385,7 @@ export function WorkEditor() {
                 </span>
               </div>
               <KeyValue cols={2} items={[
-                ['장르', form.genre || '—'],
+                ['장르', form.genre ? genreLabel(form.genre) : '—'],
                 ['언어', LANGUAGES.find(x => x[0] === form.language)?.[1] ?? form.language],
                 ['ISRC', track.isrc || '발매 때 발급'],
                 ['버전', track.version || '원곡'],
@@ -460,7 +462,7 @@ export function WorkEditor() {
               </select>
             </Field>
             <Field label="장르" htmlFor="workGenre">
-              <input id="workGenre" className={inputClass()} value={form.genre} onChange={e => set('genre', e.target.value)} placeholder="예: Indie Pop" />
+              <GenreSelect id="workGenre" value={form.genre} onChange={v => set('genre', v)} />
             </Field>
           </>}
           <Field label="공개 범위" htmlFor="workVis" help={form.visibility === 'shared' ? '참여자와 담당자가 볼 수 있어요.' : '나와 작업 공간 멤버만 볼 수 있어요.'}>
@@ -634,7 +636,7 @@ export function WorkEditor() {
       {step === LAST && (<>
         <div className="aq-catalog-cards aq-stagger">
           <ReviewCard head={fromTrack ? '곡 확인' : '기본 정보'} missing={!form.title.trim()} onEdit={() => setStep(0)}>
-            {form.title.trim() || '제목 없음'} · {[WORK_TYPES.find(x => x[0] === form.workType)?.[1], LANGUAGES.find(x => x[0] === form.language)?.[1], form.genre].filter(Boolean).join(' · ')}
+            {form.title.trim() || '제목 없음'} · {[WORK_TYPES.find(x => x[0] === form.workType)?.[1], LANGUAGES.find(x => x[0] === form.language)?.[1], form.genre && genreLabel(form.genre)].filter(Boolean).join(' · ')}
             {origin === 'other_release' && <><br />{[`${ext.artist.trim() || '아티스트 입력 전'} 발매`, ext.title.trim() || form.title.trim(), ext.releaseDate, ext.isrc].filter(Boolean).join(' · ')}</>}
           </ReviewCard>
           <ReviewCard head="참여자·지분" missing={!form.contributors.length} onEdit={() => setStep(1)}>

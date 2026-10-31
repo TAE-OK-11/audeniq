@@ -4,6 +4,7 @@
 // 곡 상세 → 권리 확인 → 저작권 관리 신청 → 계약 → 진행 상태까지 다른 화면을 거의 거치지 않고 이어진다 (기획안 10.2)
 import { useEffect, useState } from 'react';
 import { todayStr } from '../lib/date';
+import { genreLabel } from '../lib/catalog';
 import { Link, useNavigate, useParams, useSearchParams } from '../lib/router';
 import { api } from '../api/client';
 import { pubApi, type Work, type WorkContributor } from '../api/publishing';
@@ -344,7 +345,7 @@ export function WorkDetail() {
           {/* 발매 상세처럼 이름만 — 지분은 정보 탭의 참여자·지분에서 */}
           <p className="aq-detail-artist">{w.contributors.map(c => c.name).join(' · ') || '참여자 없음'}</p>
           {/* 항목 단위로만 줄을 바꾼다 — ISWC 번호가 'T-' / '345…'로 쪼개지지 않게 */}
-          <p className="aq-detail-meta">{[label(WORK_TYPES, w.workType), w.genre, w.iswc && `ISWC ${w.iswc}`, w.myRole === 'contributor' && '공동 참여 곡'].filter(Boolean)
+          <p className="aq-detail-meta">{[label(WORK_TYPES, w.workType), w.genre && genreLabel(w.genre), w.iswc && `ISWC ${w.iswc}`, w.myRole === 'contributor' && '공동 참여 곡'].filter(Boolean)
             .map((x, i) => <span key={i}>{i > 0 && ' · '}<span className="aq-nowrap">{x}</span></span>)}</p>
         </div>
         <div className="aq-detail-actions is-wide">{buttons}</div>
@@ -400,7 +401,7 @@ export function WorkDetail() {
               <KeyValue cols={2} items={[
                 ['곡 유형', label(WORK_TYPES, w.workType)],
                 ['주요 언어', label(LANGUAGES, w.language)],
-                ['장르', w.genre || <Empty>입력 전</Empty>],
+                ['장르', w.genre ? genreLabel(w.genre) : <Empty>입력 전</Empty>],
                 ['공개 범위', w.visibility === 'shared' ? '참여자에게 공개' : '비공개'],
                 ['ISWC', w.iswc ?? <Empty>{`발급 전 · ${w.internalCode}`}</Empty>],
                 ['기존 퍼블리셔', w.hasPriorPublisher ? (w.priorPublisher || '있음') : '없음'],
