@@ -150,7 +150,7 @@ export function PublishingApply() {
       <div className="view" ref={topRef}>
         <div className="ui-page-head">
           <div>
-            <p className="eyebrow">퍼블리싱</p>
+            <p className="eyebrow">작사·작곡 저작권</p>
             <h1>신청을 받았어요</h1>
             <p>심사가 끝나면 알림으로 알려 드려요.</p>
           </div>

@@ -34,10 +34,16 @@ import { PendingAddons } from '../components/ReleaseAddons';
 import { lazyComponent } from '../lib/lazyComponent';
 import { territorySummary } from '../lib/territories';
 import { DELIVERY_STAGE, DELIVERY_TONE } from '../lib/delivery';
+import { pubApi } from '../api/publishing';
+import { usePublishingUse } from '../hooks/usePublishingUse';
+import { STAGE_LABEL, workStage, type WorkStage } from '../lib/publishingPrep';
+
+const STAGE_TONE_TRACK: Record<WorkStage, 'green' | 'amber' | 'violet' | 'blue' | 'gray'> = { ready: 'green', blocked: 'amber', applied: 'violet', managed: 'blue', readonly: 'gray' };
 
 // '관리'·'통계' 탭은 열 때 받는다 — 처음 여는 '정보' 탭에는 필요 없는 카드들이다
 const ReleaseManageTab = lazyComponent(() => import('../components/ReleaseManageTab'), m => m.ReleaseManageTab);
 const AlbumPublishingTab = lazyComponent(() => import('../components/publishing/AlbumPublishingTab'), m => m.AlbumPublishingTab);
+const AlbumRoyaltyCard = lazyComponent(() => import('../components/publishing/AlbumPublishingTab'), m => m.AlbumRoyaltyCard);
 const ReleaseStats = lazyComponent(() => import('../components/ReleaseStats'), m => m.ReleaseStats);
 
 // 플랫폼 기준으로 고쳐야 하는 항목 안내
@@ -66,7 +72,6 @@ const DETAIL_TABS = [
   // 성과는 발매된 뒤에만 (플랫폼 리포트가 들어오는 때)
   { value: 'stats', label: '성과' },
   { value: 'delivery', label: '배급·계약' },
-  { value: 'publishing', label: '퍼블리싱' },
   { value: 'manage', label: '관리' },
 ];
 
@@ -119,9 +124,12 @@ export function ReleaseDetail() {
   const [params] = useSearchParams();
   const [tab, setTab] = useState(() => {
     // 부가서비스 알림(?addon=)은 관리 탭의 부가서비스 칸으로
-    const t = params.get('tab') ?? (params.get('addon') ? 'manage' : null);
+    const asked = params.get('tab') ?? (params.get('addon') ? 'manage' : null);
+    // 작사·작곡 저작권은 따로 탭을 두지 않고 '배급·계약' 탭의 한 칸 — 예전 ?tab=publishing 주소는 그 칸으로
+    const t = asked === 'publishing' ? 'delivery' : asked;
     return t && DETAIL_TABS.some(x => x.value === t) ? t : 'overview';
   });
+  const toPublishing = params.get('tab') === 'publishing';
   // 탭은 머리글 바로 아래에 붙는다 — 큰 머리(표지·버튼·진행 단계) 아래에 있어 내려 읽다 보면 화면 밖으로 사라졌고,
   // 바꾸려면 맨 위까지 올라가야 했다. 바꿀 때는 새 내용의 첫 줄이 탭 바로 아래에 오게(맨 위로 튀지 않게) 자리를 맞춘다
   const tabsAnchor = useRef<HTMLDivElement>(null);
@@ -154,6 +162,10 @@ export function ReleaseDetail() {
   const [openTrack, setOpenTrack] = useState<number | null>(null);
   const [wantTrack, setWantTrack] = useState(() => params.get('track'));
   const [withdrawing, setWithdrawing] = useState(false);
+  // 곡마다 작사·작곡 저작권 상태 — 트랙 목록 한 줄에 함께 (퍼블리싱을 쓰는 사람만)
+  const pubUse = usePublishingUse();
+  const { data: pubWorks } = useAsync(() => (pubUse.started ? pubApi.listWorks() : Promise.resolve(null)), [pubUse.started], { key: pubUse.started ? 'works' : undefined });
+  const workOfTrack = (trackId: string) => pubWorks?.find(w => w.recordings.some(r => r.trackId === trackId && r.releaseId === id));
   const { data: rel, error, loading, reload } = useAsync(
     // 없는 발매(404)는 오류가 아니라 '찾을 수 없음' — 다시 시도해도 소용없으니 목록으로 안내한다
     () => api.getRelease(id).catch(e => { if (e instanceof ApiError && e.status === 404) return null; throw e; }),
@@ -546,6 +558,8 @@ export function ReleaseDetail() {
                             </span>
                           </span>
                           <span className="aq-trackrow-side">
+                            {/* 작사·작곡 저작권 상태 — 퍼블리싱을 쓰는 사람에게만, 같은 줄에 */}
+                            {(() => { const w = workOfTrack(t.id); if (!w) return null; const st = workStage(w); return <Badge tone={w.fix ? 'amber' : STAGE_TONE_TRACK[st]}>{w.fix ? '보완 요청' : STAGE_LABEL[st]}</Badge>; })()}
                             <span className="aq-trackrow-isrc">{t.isrc ? t.isrc : 'ISRC 발급 전'}</span>
                             <span className="aq-trackrow-time">{t.duration_ms ? durationLabel(t.duration_ms) : '—'}</span>
                             <Glyph name="chevron-right" size={16} className="aq-track-chev" />
@@ -576,7 +590,13 @@ export function ReleaseDetail() {
         )}
 
         {activeTab === 'stats' && released && (
-          <Suspense fallback={<SkeletonBlock height={240} />}><ReleaseStats releaseId={rel.id} title={rel.title} /></Suspense>
+          <Suspense fallback={<SkeletonBlock height={240} />}>
+            <div className="aq-detail-stack">
+              <ReleaseStats releaseId={rel.id} title={rel.title} />
+              {/* 배급 수익 옆에 작사·작곡 저작권료 — 받은 게 있을 때만 */}
+              <AlbumRoyaltyCard releaseId={rel.id} />
+            </div>
+          </Suspense>
         )}
 
         {activeTab === 'delivery' && (
@@ -652,13 +672,13 @@ export function ReleaseDetail() {
                 </ul>
               </section>
             )}
+            {/* 작사·작곡 저작권 — 배급 계약과 같은 자리에서 신청·준비·곡별 상태까지 (따로 탭을 두지 않는다) */}
+            {!isDraft && rel.tracks.length > 0 && (
+              <Suspense fallback={<SkeletonBlock height={200} />}>
+                <AlbumPublishingTab rel={rel} focus={toPublishing} />
+              </Suspense>
+            )}
           </div>
-        )}
-
-        {activeTab === 'publishing' && (
-          <Suspense fallback={<SkeletonBlock height={240} />}>
-            <AlbumPublishingTab rel={rel} />
-          </Suspense>
         )}
 
         {activeTab === 'manage' && (

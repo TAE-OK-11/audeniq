@@ -1,5 +1,5 @@
-// 앨범 퍼블리싱 탭에서 곡을 누르면 열리는 곡 시트 — 발매 상세 '정보' 탭의 곡 시트(TrackSheet)와 같은 창.
-// 참여자·지분·관리 상태를 보고 그 자리에서 고친다. 저장하면 창이 닫히고 앨범 목록에서 이어서 작업한다 (곡 상세로 건너가지 않는다).
+// 곡 시트 안의 '작사·작곡 저작권' 칸 — 발매 상세 '정보' 탭에서 곡을 누르면 뜨는 곡 시트(TrackSheet)에 크레딧 바로 아래로 들어간다.
+// 같은 곡에 시트가 둘(곡 정보 · 저작권)이던 것을 하나로 — 참여자·지분·관리 상태·첨부 자료를 그 자리에서 보고 고친다.
 // 지분을 고칠 때는 바뀌는 내용을 '서린 60% → 50%'로 먼저 보여 주고, 관리 중인 곡은 지금 적용값과 검토 중인 변경값을 나눠 보여 준다
 import { useEffect, useRef, useState } from 'react';
 import { Link } from '../../lib/router';
@@ -9,7 +9,6 @@ import { MOCK } from '../../lib/mode';
 import { splitReady } from '../../lib/publishing';
 import { STAGE_LABEL, changeNeedsReview, reusableWorks, splitDiff, workIssues, workStage, type PrepField, type SplitChange } from '../../lib/publishingPrep';
 import { localStamp } from '../../lib/format';
-import { Modal } from '../Modal';
 import { Glyph } from '../Glyph';
 import { useToast } from '../Toast';
 import { Badge, Callout, Segmented } from '../../ui';
@@ -39,16 +38,15 @@ export function SplitDiffList({ changes, title }: { changes: SplitChange[]; titl
   );
 }
 
-export function WorkSheet({ work, no, all, focus, onClose, onSaved, releaseId }: {
+export function WorkRights({ work, all, focus, onSaved, onDone, releaseId }: {
   work: Work;
-  /** 앨범 트랙 순서 — 제목 앞 번호 */
-  no?: number;
   /** 참여자를 가져올 이전 곡 · 자료 첨부 창 */
   all: readonly Work[];
   /** 준비 점검에서 눌러 들어온 자리 — 그 칸을 열고 내려간다 */
   focus?: { field: PrepField; contributorId?: string } | null;
-  onClose: () => void;
   onSaved: (w: Work) => void;
+  /** 지분을 저장한 뒤 — 시트를 닫고 목록으로 돌아가 다음 곡을 이어서 */
+  onDone?: () => void;
   releaseId?: string;
 }) {
   const toast = useToast();
@@ -89,7 +87,7 @@ export function WorkSheet({ work, no, all, focus, onClose, onSaved, releaseId }:
         sub: nw.pendingChange ? '참여자 확인과 담당자 검토가 끝날 때까지 지금 값으로 관리돼요.' : splitReady(nw.contributors) ? '바뀐 지분은 참여자에게 확인을 요청해요.' : '합계가 100%가 아니에요. 신청 전에 맞춰 주세요.',
       });
       onSaved(nw);
-      onClose();  // 저장하면 앨범 목록으로 돌아가 다음 곡을 이어서
+      onDone?.();
     } catch (err) {
       toast(errorMessage(err, '저장하지 못했어요. 다시 시도해 주세요.'), 'error');
     } finally { setSaving(false); }
@@ -101,12 +99,14 @@ export function WorkSheet({ work, no, all, focus, onClose, onSaved, releaseId }:
   const simulate = (c: WorkContributor) => void pubApi.simulateConfirm(w.id, c.id).then(nw => { setW(nw); onSaved(nw); });
 
   return (
-    <Modal title={`${no ? `${no}. ` : ''}${w.title || '제목 없는 곡'}`} onClose={onClose} dismissible={!draft}>
-      <div className="aq-track-sheet aq-pbl-sheet">
-        <div className="aq-track-sheet-tags">
+    <section className="aq-pbl-sheet" id="trackRights" aria-labelledby="wsRights">
+        <div className="ui-section-head">
+          <h3 id="wsRights" className="aq-track-sheet-h">작사·작곡 저작권</h3>
           {/* 상태는 한 개만 — 보완 요청이 있으면 그것이 가장 먼저 할 일 */}
-          {w.fix ? <Badge tone="amber">보완 요청</Badge> : <Badge tone={STAGE_TONE[stage]}>{STAGE_LABEL[stage]}</Badge>}
-          {!w.fix && stage === 'managed' && <RegBadge status={w.registration} />}
+          <span className="aq-track-sheet-tags">
+            {w.fix ? <Badge tone="amber">보완 요청</Badge> : <Badge tone={STAGE_TONE[stage]}>{STAGE_LABEL[stage]}</Badge>}
+            {!w.fix && stage === 'managed' && <RegBadge status={w.registration} />}
+          </span>
         </div>
 
         {!draft && blocking.length > 0 && stage === 'blocked' && (
@@ -115,7 +115,7 @@ export function WorkSheet({ work, no, all, focus, onClose, onSaved, releaseId }:
 
         <section ref={splitRef} className="aq-pbl-sheet-sec" aria-labelledby="wsSplit">
           <div className="ui-section-head">
-            <h3 id="wsSplit" className="aq-track-sheet-h">참여자·지분</h3>
+            <h4 id="wsSplit" className="aq-pbl-sheet-h">참여자·지분</h4>
             {canEdit && !draft && (
               <button type="button" className="ui-btn is-soft is-sm" onClick={() => setDraft(structuredClone(base))}>
                 <Glyph name="pencil" size={14} className="aq-glyph-lead" />{w.pendingChange ? '변경값 고치기' : '수정'}
@@ -148,7 +148,7 @@ export function WorkSheet({ work, no, all, focus, onClose, onSaved, releaseId }:
         </section>
 
         <section ref={statusRef} className="aq-pbl-sheet-sec" aria-labelledby="wsStatus">
-          <h3 id="wsStatus" className="aq-track-sheet-h">관리 상태</h3>
+          <h4 id="wsStatus" className="aq-pbl-sheet-h">관리 상태</h4>
           {w.fix && (
             <Callout tone="warn" action={canEdit && <Link to={`/works/${w.id}?tab=register${back && `&${back.slice(1)}`}`} className="ui-btn is-white is-sm">보완하기</Link>}>{w.fix.reason}</Callout>
           )}
@@ -157,7 +157,7 @@ export function WorkSheet({ work, no, all, focus, onClose, onSaved, releaseId }:
 
         <section className="aq-pbl-sheet-sec" aria-labelledby="wsFiles">
           <div className="ui-section-head">
-            <h3 id="wsFiles" className="aq-track-sheet-h">첨부 자료</h3>
+            <h4 id="wsFiles" className="aq-pbl-sheet-h">첨부 자료</h4>
             {canEdit && !draft && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setAttaching(true)}><Glyph name="clip" size={14} className="aq-glyph-lead" />자료 첨부</button>}
           </div>
           <AttachmentList items={w.attachments} />
@@ -171,10 +171,9 @@ export function WorkSheet({ work, no, all, focus, onClose, onSaved, releaseId }:
             </button>
           </div>
         ) : (
-          <Link to={`/works/${w.id}${back}`} className="ui-btn is-soft is-block">곡 전체 정보 보기<Glyph name="chevron-right" size={14} /></Link>
+          <Link to={`/works/${w.id}${back}`} className="ui-btn is-text is-sm aq-pbl-sheet-more">저작권 자세히 보기<Glyph name="chevron-right" size={14} /></Link>
         )}
-      </div>
       {attaching && <AttachmentModal works={[w]} workId={w.id} onClose={() => setAttaching(false)} onAdded={nw => { setW(nw); onSaved(nw); }} />}
-    </Modal>
+    </section>
   );
 }

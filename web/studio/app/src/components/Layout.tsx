@@ -255,9 +255,11 @@ export function Layout({ children }: { children: ReactNode }) {
   // 발매 신청 화면은 머리글 없는 전용 레이아웃 — 화면 청크(가장 큼)를 받는 동안의 뼈대부터 같은 레이아웃으로 그려
   // 다 받은 뒤 머리글이 사라지며 화면 전체가 위로 튀지 않게 한다 (Upload도 마운트될 때 같은 클래스를 단다)
   useLayoutEffect(() => {
-    // 신청서 화면은 메뉴 없이 흰 바탕 한 단 — 배급 신청서와 같은 틀을 쓰는 퍼블리싱 신청서(곡 정보·저작권 관리 신청)도
-    document.body.classList.toggle('wizard-mode', loc.pathname === '/upload' || /^\/works\/(new|[^/]+\/edit)$/.test(loc.pathname) || loc.pathname === '/publishing/apply');
-  }, [loc.pathname]);
+    // 신청서 화면은 메뉴 없이 흰 바탕 한 단 — 배급 신청서와 같은 틀을 쓰는 곡 정보·저작권 관리 신청·A&R 데모 제출도.
+    // A&R 데모 제출은 /ar?submit=1(또는 ?work=)에서 같은 신청서 틀로 열린다 — 메뉴가 있는 채로 열면 아래 고정 버튼 줄(100vw)이 옆으로 넘쳤다
+    const arSubmit = loc.pathname === '/ar' && /[?&](submit=1|work=)/.test(loc.search);
+    document.body.classList.toggle('wizard-mode', loc.pathname === '/upload' || /^\/works\/(new|[^/]+\/edit)$/.test(loc.pathname) || loc.pathname === '/publishing/apply' || arSubmit);
+  }, [loc.pathname, loc.search]);
 
   // 메뉴는 열 때마다 맨 위부터 (지난번에 내려 둔 자리에서 열리지 않게), 열려 있는 동안 뒤 화면은 멈춘다
   useLayoutEffect(() => {

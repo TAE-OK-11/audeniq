@@ -51,7 +51,7 @@ const REST: WizardStep[] = [
 ];
 const STEPS: WizardStep[] = [{ short: '기본 정보', title: '어떤 곡을\n등록할까요?', sub: '별표(*) 칸만 채우면 다음 단계로 넘어갈 수 있어요.' }, ...REST];
 // 발매 곡에서 오면 첫 단계는 입력이 아니라 '배급 신청서에서 가져온 곡 확인'
-const TRACK_STEPS: WizardStep[] = [{ short: '곡 확인', title: '배급 신청서에서\n가져왔어요.', sub: '발매 정보는 다시 적지 않아요. 퍼블리싱에 필요한 것만 더해 주세요.' }, ...REST];
+const TRACK_STEPS: WizardStep[] = [{ short: '곡 확인', title: '배급 신청서에서\n가져왔어요.', sub: '발매 정보는 다시 적지 않아요. 저작권 관리에 필요한 것만 더해 주세요.' }, ...REST];
 const LAST = STEPS.length - 1;
 
 interface Saved { form: Form; at: string; splitChecked: boolean; step?: number }
@@ -306,7 +306,7 @@ export function WorkEditor() {
               ]} />
             </div>
             <Link to={`/releases/${encodeURIComponent(release.id)}`} className="ui-btn is-text is-sm">발매 정보는 발매 상세에서 고쳐요<Glyph name="chevron-right" size={14} /></Link>
-            <h2 className="subhead">퍼블리싱 정보</h2>
+            <h2 className="subhead">저작권 정보</h2>
           </>
         ) : (
           <Field label="곡 제목" htmlFor="workTitle" required error={titleErr}>

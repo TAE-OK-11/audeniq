@@ -6,8 +6,7 @@ export function releaseDetailVisibility(status: string, tracks: number, hasDocum
     stats: status === 'live' || status === 'closed',
     delivery: !draft || hasDocuments,
     // 수익 분배는 접수 전에만 수정할 수 있어 작성 단계에서도 필요하다.
-    // 퍼블리싱(작사·작곡 저작권)은 접수한 앨범의 곡이 있을 때부터
-    publishing: !draft && tracks > 0,
+    // 작사·작곡 저작권은 따로 탭이 아니라 '배급·계약' 탭 안의 한 칸 (접수한 앨범의 곡이 있을 때부터)
     manage: !draft || tracks > 0,
   };
 }

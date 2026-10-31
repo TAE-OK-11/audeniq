@@ -1,23 +1,48 @@
-// 발매 상세 '정보' 탭에서 곡을 누르면 열리는 곡 상세 — 서버 트랙 + 신청서의 곡 정보(크레딧·가사·음원 규격).
+// 발매 상세에서 곡을 누르면 열리는 곡 시트 하나 — 서버 트랙 + 신청서의 곡 정보(크레딧·가사·음원 규격),
+// 그리고 크레딧 바로 아래 작사·작곡 저작권(참여자·지분·관리 상태·첨부 자료). 배급 정보와 저작권을 다른 창으로 나누지 않는다.
 // ISRC는 바로 복사하고, 고칠 일은 상태에 맞는 곳(신청서 수정 · 정보 수정 요청)으로 보낸다.
+import { Suspense, useEffect } from 'react';
 import type { DraftTrack, Track } from '../api/types';
 import { durationLabel } from '../lib/catalog';
-import { Badge } from '../ui';
 import { CopyButton } from './CopyButton';
 import { Modal } from './Modal';
-import { PublishingLinkRow } from './publishing/ReleasePublishing';
+import { Link } from '../lib/router';
+import { pubApi, type Work } from '../api/publishing';
+import { useAsync } from '../hooks/useAsync';
+import { usePublishingUse } from '../hooks/usePublishingUse';
+import type { PrepField } from '../lib/publishingPrep';
+import { lazyComponent } from '../lib/lazyComponent';
+import { Badge, IconTile } from '../ui';
+import { Glyph } from './Glyph';
 import '../styles/split/ReleaseDetail.css';
+
+// 저작권 칸은 곡이 저작권 정보를 가졌을 때만 받는다 — 배급만 쓰는 사람의 곡 시트는 가볍게
+const WorkRights = lazyComponent(() => import('./publishing/WorkSheet'), m => m.WorkRights);
 
 const Empty = ({ children }: { children: string }) => <span className="aq-empty-val">{children}</span>;
 
-export function TrackSheet({ track, draft, no, onClose, edit, releaseId }: {
+export function TrackSheet({ track, draft, no, onClose, edit, releaseId, rightsFocus, onRightsSaved, toRights }: {
   track: Track; draft?: DraftTrack; no: number; onClose: () => void;
-  /** 있으면 크레딧 아래에 이 곡 저작권(퍼블리싱)으로 가는 한 줄 */
+  /** 있으면 크레딧 아래에 이 곡의 작사·작곡 저작권 */
   releaseId?: string;
+  /** 저작권 칸의 이 자리로 바로 (준비 점검에서 눌러 들어왔을 때) */
+  rightsFocus?: { field: PrepField; contributorId?: string } | null;
+  onRightsSaved?: (w: Work) => void;
+  /** 저작권 칸이 보이게 내려서 연다 (저작권 관리 신청 칸에서 곡을 눌렀을 때) */
+  toRights?: boolean;
   /** 고칠 곳 — 없으면 버튼을 그리지 않는다 */
   edit?: { label: string; go: () => void } | null;
 }) {
   const t = track;
+  const { data: works, reload } = useAsync(() => (releaseId ? pubApi.listWorks() : Promise.resolve(null)), [releaseId], { key: releaseId ? 'works' : undefined });
+  const pub = usePublishingUse();
+  const work = works?.find(w => w.recordings.some(r => r.trackId === t.id && (!releaseId || r.releaseId === releaseId)));
+  const hasWork = !!work;
+  useEffect(() => {
+    if (!toRights || !hasWork || rightsFocus) return;
+    const id = window.setTimeout(() => document.getElementById('trackRights')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 250);
+    return () => window.clearTimeout(id);
+  }, [toRights, hasWork, rightsFocus]);
   const composers = t.composers ?? draft?.composers ?? '';
   const lyricists = t.lyricists ?? draft?.lyricists ?? '';
   const lyrics = draft?.lyrics?.trim() ?? '';
@@ -54,7 +79,17 @@ export function TrackSheet({ track, draft, no, onClose, edit, releaseId }: {
             <div key={k}><dt>{k}</dt><dd>{v || <Empty>입력 전</Empty>}</dd></div>
           ))}
         </dl>
-        {releaseId && <PublishingLinkRow releaseId={releaseId} trackId={t.id} />}
+        {work ? (
+          <Suspense fallback={null}><WorkRights work={work} all={works ?? []} focus={rightsFocus} releaseId={releaseId}
+            onSaved={w => { reload(); onRightsSaved?.(w); }} onDone={onClose} /></Suspense>
+        ) : releaseId && pub.started ? (
+          // 저작권을 쓰는 사람에게만 — 아직 정리하지 않은 곡은 여기서 바로
+          <Link to={`/works/new?release=${encodeURIComponent(releaseId)}&track=${encodeURIComponent(t.id)}`} className="ui-row">
+            <IconTile size="sm"><Glyph name="scale" size={16} /></IconTile>
+            <span className="min-0"><span className="ui-row-title">작사·작곡 저작권 정리</span><span className="ui-row-meta"><span>참여자와 지분을 적어 두면 저작권 관리를 신청할 수 있어요</span></span></span>
+            <Glyph name="chevron-right" size={16} />
+          </Link>
+        ) : null}
         {!draft?.instrumental && (
           <>
             <h3 className="aq-track-sheet-h">가사</h3>

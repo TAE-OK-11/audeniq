@@ -1571,7 +1571,7 @@ export function Upload() {
             )}
             <div id="aqSpecialOptions" className="aq-fix-zone"><Later h={160}><OptionsSection form={form} set={set} group="rights" onDocument={attachOptionDocument} uploads={uploads} onElectronic={kind => void openElectronic(kind)} onOpenDoc={setOpenDocId} releaseId={draftIdRef.current ?? undefined} onGuardian={() => void openGuardian()} /></Later></div>
             {/* 곡의 작사·작곡 저작권은 퍼블리싱 메뉴에서 — 신청서에는 한 줄 안내만 (적은 크레딧으로 곡 정보는 미리 정리해 둔다) */}
-            <p className="ui-field-help">작사·작곡 저작권은 발매 뒤 <b>퍼블리싱</b> 메뉴에서 맡길 수 있어요. 여기 적은 크레딧으로 곡 정보를 미리 정리해 둘게요.</p>
+            <p className="ui-field-help">작사·작곡 저작권은 접수한 뒤 발매 상세 <b>배급·계약</b> 탭에서 맡길 수 있어요. 여기 적은 크레딧으로 곡 정보를 미리 정리해 둘게요.</p>
             <h2 className="subhead">필수 확인 항목</h2>
             <div className="field-group">
               {RIGHTS_CHECKS.map(([k, label]) => (

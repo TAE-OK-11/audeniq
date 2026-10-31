@@ -4,7 +4,7 @@
 //  · 참여자 확인 현황: 확인 완료·대기·이의 제기 — 미확인 참여자와 관련 곡만 모아 본다
 //  · 자료 첨부: 창에서 곡·종류·파일을 골라 올린다
 // 번 돈은 한 장으로만 — 월별 추이·곡별·자세한 내역은 퍼블리싱 메뉴에서 이 앨범을 골라 본다
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from '../../lib/router';
 import type { ReleaseDetail } from '../../api/types';
 import { pubApi, type Work } from '../../api/publishing';
@@ -17,16 +17,16 @@ import {
 } from '../../lib/publishingPrep';
 import { Glyph, type GlyphName } from '../Glyph';
 import { SkeletonBlock } from '../Skeleton';
-import { ManageHead } from '../ManageHead';
 import { useToast } from '../Toast';
 import { peopleLine } from './parts';
 import { royaltyTotals } from './Royalties';
 import { Money } from '../Money';
 import { albumPublishing } from './ReleasePublishing';
 import { Modal } from '../Modal';
-import { WorkSheet } from './WorkSheet';
+import { TrackSheet } from '../TrackSheet';
+import { draftTrackOf } from '../../lib/albumPrep';
 import { AttachmentModal } from './Attachments';
-import { Badge, Callout, ChipGroup, IconTile, StatGrid, StatTile } from '../../ui';
+import { Badge, Callout, ChipGroup, StatGrid, StatTile } from '../../ui';
 
 import '../../styles/split/ReleaseDetail.css';
 import '../../styles/split/Publishing.css';
@@ -34,11 +34,6 @@ import '../../styles/split/Publishing.css';
 const PREP_ICON: Record<PrepGroup['key'], GlyphName> = { tracks: 'music', fix: 'warning', split: 'scale', confirm: 'users', ipi: 'user' };
 const STAGE_TONE: Record<WorkStage, 'green' | 'amber' | 'violet' | 'blue' | 'gray'> = { ready: 'green', blocked: 'amber', applied: 'violet', managed: 'blue', readonly: 'gray' };
 type PeopleFilter = 'open' | ConfirmState;
-const START_STEPS = [
-  ['곡 정리', '발매할 때 적은 크레딧으로 작사·작곡가를 채워 둬요'],
-  ['지분 확인', '참여자마다 몫(%)을 맞추고 함께 확인해요'],
-  ['신청·서명', '맡길 곡을 골라 신청하면 담당자가 등록까지 맡아요'],
-] as const;
 
 interface Sheet { work: Work; no?: number; focus?: { field: PrepField; contributorId?: string } | null }
 
@@ -149,14 +144,20 @@ function PeopleModal({ works, onOpen, onClose }: { works: Work[]; onOpen: (w: Wo
   );
 }
 
-export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
+export function AlbumPublishingTab({ rel, focus = false }: { rel: ReleaseDetail; focus?: boolean }) {
   const toast = useToast();
   const { data: works, reload } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
-  const { data: royalties } = useAsync(() => pubApi.listRoyalties(), [], { key: 'royalties:all' });
   const [busy, setBusy] = useState(false);
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const [attaching, setAttaching] = useState(false);
   const [peopleOpen, setPeopleOpen] = useState(false);
+  // 예전 '퍼블리싱' 탭 주소(?tab=publishing)로 오면 이 칸으로 내려간다
+  const ready = !!works;
+  useEffect(() => {
+    if (!focus || !ready) return;
+    const id = window.setTimeout(() => document.getElementById('albumPub')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
+    return () => window.clearTimeout(id);
+  }, [focus, ready]);
   if (!works) return <SkeletonBlock height={240} />;
 
   const a = albumPublishing(works, rel.id, rel.tracks.length);
@@ -166,9 +167,6 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
   const missing = rel.tracks.filter(t => !byTrack.has(t.id)).length;
   const prep = albumReadiness(a.mine, missing);
   const applyTo = (list: Work[]) => `/publishing/apply?release=${encodeURIComponent(rel.id)}&works=${list.map(w => encodeURIComponent(w.id)).join(',')}`;
-  const workIds = new Set(a.mine.map(w => w.id));
-  const albumRoyalties = (royalties ?? []).filter(r => workIds.has(r.workId));
-  const totals = royaltyTotals(albumRoyalties);
   const fixWork = a.mine.find(w => w.registration === 'needs_fix' || w.application?.status === 'needs_fix');
   // 숫자는 트랙 기준으로 — 한 곡이 원곡·Inst.처럼 두 트랙에 실리면 '2곡 중 1곡'으로 어긋났다
   const trackCount = (list: Work[]) => rel.tracks.filter(t => { const w = byTrack.get(t.id); return !!w && list.includes(w); }).length;
@@ -182,7 +180,7 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
   // 숫자는 둘 이상이 의미 있을 때만 — 0곡이 줄지은 칸은 아무것도 알려 주지 않는다
   const stats = ([['관리 중', managedTracks], ['심사 중', applyingTracks], ['정리 전', missing]] as const).filter(([, n]) => n > 0);
   const editable = a.mine.filter(w => w.myRole === 'owner' || w.myRole === 'editor');
-  const contractId = a.managed.find(w => w.contractId)?.contractId ?? null;
+  const sheetTrack = sheet ? rel.tracks[(sheet.no ?? 0) - 1] ?? rel.tracks.find(t => sheet.work.recordings.some(r => r.trackId === t.id)) : undefined;
   // 이 앨범에서 아직 아무 곡도 정리하지 않았으면 처음 시작하는 화면
   const fresh = a.mine.length === 0 && missing > 0;
   const openPrep = !fresh && (prep.groups.some(g => g.state !== 'done') || prep.ready.length > 0);
@@ -204,19 +202,18 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
   const saved = () => reload();
 
   return (
-    <div className="aq-detail-stack aq-album-pub">
-      <section className="ui-card aq-manage-card" aria-labelledby="albumPubHead">
-        <ManageHead id="albumPubHead" icon="scale" title="작사·작곡 저작권 관리" status={a.status} />
+    <div className="aq-detail-stack aq-album-pub" id="albumPub">
+      {/* '배급·계약' 탭의 다른 카드와 같은 모양 — 제목 · 상태 · 한 문장. 계약은 위 계약 묶음의 '저작권 관리 계약' 줄, 저작권료는 '성과' 탭에 */}
+      <section className="aq-relinfo-card aq-pbl-head" aria-labelledby="albumPubHead">
+        <div className="ui-section-head">
+          <h2 id="albumPubHead" className="subhead">작사·작곡 저작권{fresh && <small> (선택)</small>}</h2>
+          {a.status && <Badge tone={a.status.tone}>{a.status.label}</Badge>}
+        </div>
         {fresh ? (
           <>
-            {/* 처음 여는 사람에게는 숫자 0 세 개 대신 무엇을 하면 되는지 — 세 단계와 버튼 하나 */}
-            <p className="aq-pbl-start-lead">이 앨범 곡의 <b>작사·작곡 저작권료</b>도 받아 보세요. 방송·스트리밍에서 생기는 저작권료를 AUDENIQ이 받아 배급 정산금과 같은 잔액에 쌓아 드려요.</p>
-            <ol className="aq-pbl-start-steps">
-              {START_STEPS.map(([t, d], i) => (
-                <li key={t}><span className="aq-bundle-no" aria-hidden="true">{i + 1}</span><span className="min-0"><strong>{t}</strong><small>{d}</small></span></li>
-              ))}
-            </ol>
-            <button type="button" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={busy} onClick={() => void prepare()}>
+            {/* 아직 아무 곡도 정리하지 않았으면 입구 하나 — 버튼 하나와 안심 문구 */}
+            <p className="ui-field-help">이 앨범 곡의 작사·작곡 저작권도 맡기면 방송·스트리밍 저작권료를 배급 정산금과 같은 잔액으로 받아요.</p>
+            <button type="button" className={`ui-btn is-soft is-block${busy ? ' is-busy' : ''}`} disabled={busy} onClick={() => void prepare()}>
               {busy ? '정리하는 중' : `크레딧으로 ${missing}곡 정리하고 시작하기`}
             </button>
             <p className="ui-field-help aq-pbl-start-note">정리만 해 두면 아무것도 신청되지 않아요. 지분을 확인한 뒤 원할 때 신청하면 돼요.</p>
@@ -228,28 +225,6 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
               <StatGrid cols={stats.length as 2 | 3} className="aq-pbl-album-stats">
                 {stats.map(([label, n]) => <StatTile key={label} compact label={label} value={n} unit="곡" />)}
               </StatGrid>
-            )}
-            {/* 계약·저작권료는 한 줄씩 — 따로 카드를 두면 탭이 길어지기만 했다. 자세한 건 계약서·리포트에서 */}
-            {(contractId || albumRoyalties.length > 0) && (
-              <div className="ui-list is-inset aq-pbl-head-rows">
-                {contractId && (
-                  <Link to={`/contracts?pub=${encodeURIComponent(contractId)}`} className="ui-row">
-                    <IconTile size="sm"><Glyph name="sign" size={16} /></IconTile>
-                    <span className="min-0"><span className="ui-row-title">저작권 관리 계약</span><span className="ui-row-meta"><span>{managedTracks}곡 관리 중</span></span></span>
-                    <Glyph name="chevron-right" size={16} />
-                  </Link>
-                )}
-                {albumRoyalties.length > 0 && (
-                  <Link to={`/reports?type=publishing&release=${encodeURIComponent(rel.id)}`} className="ui-row">
-                    <IconTile size="sm"><Glyph name="won" size={16} /></IconTile>
-                    <span className="min-0">
-                      <span className="ui-row-title">누적 저작권료 <Money value={totals.confirmed + totals.paid} /></span>
-                      {totals.estimated > 0 && <span className="ui-row-meta"><span>확정 전 예상 <Money value={totals.estimated} /></span></span>}
-                    </span>
-                    <Glyph name="chevron-right" size={16} />
-                  </Link>
-                )}
-              </div>
             )}
           </>
         )}
@@ -270,7 +245,7 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
         />
       )}
 
-      <div className="aq-relinfo-card aq-pbl-track-list">
+      {!fresh && <div className="aq-relinfo-card aq-pbl-track-list">
         <div className="aq-tracklist-head">
           <h2 className="subhead">곡별 저작권</h2>
           <span className="aq-pbl-track-tools">
@@ -322,11 +297,12 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
             </button>
           </div>
         )}
-      </div>
+      </div>}
 
-      {sheet && (
-        <WorkSheet work={works.find(x => x.id === sheet.work.id) ?? sheet.work} no={sheet.no} all={works} focus={sheet.focus} releaseId={rel.id}
-          onClose={() => setSheet(null)} onSaved={saved} />
+      {sheet && sheetTrack && (
+        // 정보 탭과 같은 곡 시트 하나 — 크레딧 아래 저작권 칸으로 바로 내려간다
+        <TrackSheet track={sheetTrack} no={rel.tracks.indexOf(sheetTrack) + 1} draft={draftTrackOf(sheetTrack, rel.draft)} releaseId={rel.id}
+          rightsFocus={sheet.focus} toRights onClose={() => setSheet(null)} onRightsSaved={saved} />
       )}
       {attaching && <AttachmentModal works={editable} onClose={() => setAttaching(false)} onAdded={saved} />}
       {peopleOpen && (
@@ -334,5 +310,28 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
           onOpen={(w, cid) => { setPeopleOpen(false); setSheet({ work: w, no: trackNo.get(w.id), focus: { field: 'confirm', contributorId: cid } }); }} />
       )}
     </div>
+  );
+}
+
+/** '성과' 탭의 작사·작곡 저작권료 — 배급 수익 아래 한 장. 받은 저작권료가 있을 때만 */
+export function AlbumRoyaltyCard({ releaseId }: { releaseId: string }) {
+  const { data: works } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
+  const { data: royalties } = useAsync(() => pubApi.listRoyalties(), [], { key: 'royalties:all' });
+  const ids = new Set((works ?? []).filter(w => w.recordings.some(r => r.releaseId === releaseId)).map(w => w.id));
+  const rows = (royalties ?? []).filter(r => ids.has(r.workId));
+  if (!rows.length) return null;
+  const t = royaltyTotals(rows);
+  return (
+    <section className="aq-relinfo-card" aria-labelledby="albumRoyalty">
+      <div className="ui-section-head">
+        <h2 id="albumRoyalty" className="subhead">작사·작곡 저작권료</h2>
+        <Link to={`/reports?type=publishing&release=${encodeURIComponent(releaseId)}`} className="aq-head-link">리포트에서 보기<Glyph name="chevron-right" size={14} /></Link>
+      </div>
+      <dl className="ui-kv is-2">
+        <div><dt>누적 확정</dt><dd><b className="aq-pub-amount"><Money value={t.confirmed + t.paid} /></b></dd></div>
+        <div><dt>확정 전 예상</dt><dd>{t.estimated ? <Money value={t.estimated} /> : '—'}</dd></div>
+      </dl>
+      <p className="ui-field-help">배급 수익과 같은 정산 잔액에 쌓여요.</p>
+    </section>
   );
 }

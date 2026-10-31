@@ -103,7 +103,7 @@ try {
   // A song's full page still returns to the same album tab.
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.locator('.aq-pbl-trackrow', { hasText: '파도' }).click();
-  await page.locator('#modal').getByRole('link', { name: /곡 전체 정보 보기/ }).click();
+  await page.locator('#modal').getByRole('link', { name: /저작권 자세히 보기/ }).click();
   await page.getByRole('button', { name: '앨범으로 돌아가기' }).click();
   await page.waitForURL('**/releases/r2?tab=publishing');
   // Lyrics attached to a song open inside the song page.
