@@ -3,7 +3,7 @@
 // 보완은 여기서 하지 않는다 — 곡 화면에서 끝낸 뒤 승인되면 이 계약서가 나타난다.
 import { useRef, useState } from 'react';
 import { printWithStamp } from '../lib/printStamp';
-import { Link, useNavigate, useParams } from '../lib/router';
+import { useNavigate, useParams } from '../lib/router';
 import { pubApi } from '../api/publishing';
 import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
@@ -18,7 +18,8 @@ import { SkeletonBlock } from '../components/Skeleton';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
 import { SignaturePad, type SignaturePadHandle } from '../components/SignaturePad';
-import { Badge, Callout } from '../ui';
+import { Badge } from '../ui';
+import { VerifyGate } from '../components/publishing/VerifyGate';
 import '../styles/split/Upload.css';
 import '../styles/split/Publishing.css';
 
@@ -153,16 +154,17 @@ export function PublishingAgreement() {
                   </label>
                 ))}
               </div>
-              <div className="ui-field">
-                <label htmlFor="pubContractPad">서명 <span className="required">*</span></label>
-                <SignaturePad ref={pad} id="pubContractPad" label="계약자 서명 입력" height={170} onChange={setDrawn} />
-                {signerName
-                  ? <small className="ui-field-help">계약자 <b>{signerName}</b> (본인인증 실명) · 활동명이나 필명으로는 계약할 수 없어요.</small>
-                  : <Callout tone="danger" action={<Link to="/profile?open=verify" className="ui-btn is-white is-sm">본인인증</Link>}>저작권 관리 계약은 본인인증한 실명으로만 맺을 수 있어요. 활동명이나 필명으로는 계약할 수 없어요.</Callout>}
-              </div>
-              <button type="button" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={!all || !drawn || busy || !signerName} onClick={() => void sign()}>
-                {busy ? '서명하는 중' : '서명하고 계약 맺기'}
-              </button>
+              {/* 본인인증 전에는 서명 대신 인증이 먼저 할 일 — 큰 버튼 하나만 */}
+              {!signerName ? <VerifyGate what="계약" /> : <>
+                <div className="ui-field">
+                  <label htmlFor="pubContractPad">서명 <span className="required">*</span></label>
+                  <SignaturePad ref={pad} id="pubContractPad" label="계약자 서명 입력" height={170} onChange={setDrawn} />
+                  <small className="ui-field-help">계약자 <b>{signerName}</b> (본인인증 실명) · 활동명이나 필명으로는 계약할 수 없어요.</small>
+                </div>
+                <button type="button" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={!all || !drawn || busy} onClick={() => void sign()}>
+                  {busy ? '서명하는 중' : '서명하고 계약 맺기'}
+                </button>
+              </>}
             </div>
           )}
         </section>

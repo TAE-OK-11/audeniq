@@ -10,7 +10,7 @@ import { pubApi, type Work, type WorkContributor } from '../api/publishing';
 import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { MOCK } from '../lib/mode';
-import { APP_LABEL, APP_TONE, AR_LABEL, AR_TONE, CONTRACT_LABEL, CONTRACT_TONE, FIX_FIELDS, LANGUAGES, ORIGIN_LABEL, fixNote, isFixField, type FixField, REG_LABEL, REG_SENTENCE, REG_STEPS, WORK_TYPES, AI_USE_OPTIONS, APPLICABLE_REG, PAYOUT_TIMING, estimateRoyalty, firstRoyaltyWindow, recordedRevenue, canEditInfo, editMode, pct, societyName, regStep, splitIssues, splitReady, workOrigin } from '../lib/publishing';
+import { APP_LABEL, APP_TONE, CONTRACT_LABEL, CONTRACT_TONE, FIX_FIELDS, LANGUAGES, fixNote, isFixField, type FixField, REG_LABEL, REG_SENTENCE, REG_STEPS, WORK_TYPES, AI_USE_OPTIONS, APPLICABLE_REG, PAYOUT_TIMING, estimateRoyalty, firstRoyaltyWindow, recordedRevenue, canEditInfo, editMode, pct, societyName, regStep, splitIssues, splitReady, workOrigin } from '../lib/publishing';
 import { StageCard } from '../components/StageCard';
 import { STATUS_LABEL, localStamp, money, statusTone } from '../lib/format';
 import { useToast } from '../components/Toast';
@@ -20,7 +20,7 @@ import { SkeletonBlock } from '../components/Skeleton';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { ReviewNote } from '../components/CorrectionList';
 import { Glyph } from '../components/Glyph';
-import { RegBadge, RegProgress, roleText } from '../components/publishing/parts';
+import { RegProgress, roleText } from '../components/publishing/parts';
 import { SplitEditor } from '../components/publishing/SplitEditor';
 import { RoyaltyTable } from '../components/publishing/Royalties';
 import { ContractManage } from '../components/publishing/PublishingContracts';
@@ -63,7 +63,7 @@ function nextAction(w: Work): { text: string; tab?: Tab; to?: string; btn: strin
  *  맨 아래 다시 심사받기 하나. 담당자가 따로 의견을 남겼을 때만 검토팀 말풍선을 보인다 (발매의 REVIEW_NOTE와 같다).
  *  아티스트가 담당자에게 적는 칸은 두지 않는다 — 고친 내용이 곧 답이다.
  *  요청한 서류는 발매 보완과 같은 '권리·보완 서류'에서 낸다 — 같은 제출 화면·알림·담당자 확인을 쓴다 */
-function FixPanel({ work, onDone, goRights }: { work: Work; onDone: (w: Work) => void; goRights: () => void }) {
+function FixPanel({ work, onDone, goRights }: { work: Work; onDone: (w: Work) => void; goRights: (f: FixField) => void }) {
   const toast = useToast();
   const nav = useNavigate();
   const [busy, setBusy] = useState(false);
@@ -72,7 +72,7 @@ function FixPanel({ work, onDone, goRights }: { work: Work; onDone: (w: Work) =>
   const docs = fix.documents ?? [];
   const note = fixNote(fix);
   const open = fields.length + docs.length;
-  const goField = (f: FixField) => (f.startsWith('contributors.') ? goRights() : nav(`/works/${work.id}/edit`));
+  const goField = (f: FixField) => (f.startsWith('contributors.') ? goRights(f) : nav(`/works/${work.id}/edit`));
   const send = async () => {
     if (busy) return;
     setBusy(true);
@@ -200,6 +200,17 @@ export function WorkDetail() {
   }, [data?.recordings.map(r => r.releaseId).join(',')]);
   const { data: policy } = useAsync(() => pubApi.policy(), [], { key: 'pub-policy' });
   const [splitDraft, setSplitDraft] = useState<WorkContributor[] | null>(null);
+  // 보완 요청에서 눌러 왔으면 고칠 참여자 줄 — 배급 보완처럼 그 칸을 펼치고 바로 입력하게
+  const [splitFocus, setSplitFocus] = useState<{ id: string; field: FixField } | null>(null);
+  useEffect(() => {
+    if (!splitFocus || !splitDraft) return;
+    const t = window.setTimeout(() => {
+      const input = document.getElementById(`pbl-person-${splitFocus.id}-${splitFocus.field === 'contributors.ipi' ? 'ipi' : splitFocus.field === 'contributors.society' ? 'society' : 'share'}`) as HTMLElement | null;
+      (input ?? document.getElementById(`pbl-person-${splitFocus.id}`))?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      input?.focus({ preventScroll: true });
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [splitFocus, splitDraft]);
   const [savingSplit, setSavingSplit] = useState(false);
   const [linking, setLinking] = useState(false);
   const [attaching, setAttaching] = useState(false);
@@ -264,6 +275,7 @@ export function WorkDetail() {
       const nw = await pubApi.updateWork(w.id, { contributors: splitDraft }, w.rowVersion);
       update(nw);
       setSplitDraft(null);
+      setSplitFocus(null);
       toast(nw.pendingChange ? '변경을 요청했어요.' : '지분을 저장했어요.', { tone: 'success', sub: nw.pendingChange ? '참여자 확인과 담당자 검토가 끝날 때까지 지금 값으로 관리돼요.' : splitReady(nw.contributors) ? '바뀐 지분은 참여자에게 확인을 요청해요.' : '합계가 100%가 아니에요. 신청 전에 맞춰 주세요.' });
     } catch (err) {
       toast(errorMessage(err, '지분을 저장하지 못했어요.'), { tone: 'error', action: { label: '다시 시도', onClick: h => { h.close(); void saveSplit(); } } });
@@ -327,10 +339,7 @@ export function WorkDetail() {
       <div className="aq-detail-hero" aria-label="곡 정보">
         <ReleaseCover id={w.recordings[0]?.releaseId ?? w.id} className="cover aq-detail-cover" />
         <div className="aq-detail-info">
-          <div className="aq-detail-top">
-            <span className="eyebrow">곡 · {ORIGIN_LABEL[origin]}</span>
-            {signing(w) ? <Badge tone="amber">계약서 서명 필요</Badge> : released ? <RegBadge status={w.registration} /> : ar && <Badge tone={AR_TONE[ar.status]}>A&R {AR_LABEL[ar.status]}</Badge>}
-          </div>
+          {/* 머리에는 제목·참여자만 — 갈래·상태 배지는 아래 진행 단계 카드와 정보 탭이 말한다 (겹쳐 보여 지저분했다) */}
           <h1>{w.title}</h1>
           {/* 발매 상세처럼 이름만 — 지분은 정보 탭의 참여자·지분에서 */}
           <p className="aq-detail-artist">{w.contributors.map(c => c.name).join(' · ') || '참여자 없음'}</p>
@@ -350,7 +359,14 @@ export function WorkDetail() {
       </div>
 
       {/* 보완 요청은 발매 상세처럼 머리 카드와 탭 사이 — 어느 탭을 보고 있어도 먼저 보인다 */}
-      {w.fix && canEdit && <FixPanel work={w} onDone={update} goRights={() => setTab('rights')} />}
+      {w.fix && canEdit && <FixPanel work={w} onDone={update} goRights={f => {
+        // 배급 보완처럼 — 지분 편집을 열고 고칠 사람(IPI·단체가 빈 첫 사람, 아니면 첫 줄)의 칸으로 바로
+        setTab('rights');
+        const list = structuredClone(w.contributors);
+        const target = (f === 'contributors.ipi' ? list.find(c => !c.ipi) : f === 'contributors.society' ? list.find(c => !c.society) : undefined) ?? list[0];
+        if (mode !== 'locked') setSplitDraft(d => d ?? list);
+        setSplitFocus(target ? { id: target.id, field: f } : null);
+      }} />}
 
       {/* 고를 탭이 '정보' 하나뿐이면(맡기기 전 · 미발매) 탭 줄을 그리지 않는다 — 혼자 화면 폭을 차지한 탭은 누를 일이 없다 */}
       {shownTabs.length > 1 && (
@@ -432,7 +448,7 @@ export function WorkDetail() {
               {canEdit && mode === 'locked' && <p className="ui-field-help">{signing(w) ? '계약서 서명을 기다리는 곡이라 지금은 지분을 바꿀 수 없어요. 서명한 뒤에는 변경을 요청할 수 있어요.' : '담당자가 심사하는 동안에는 지분을 바꿀 수 없어요. 보완 요청이 오면 고칠 수 있고, 급하면 신청을 철회한 뒤 고쳐요.'}</p>}
               {splitDraft ? (
                 <>
-                  <SplitEditor value={splitDraft} onChange={setSplitDraft} reuse={reusableWorks(allWorks ?? [], w.id)} />
+                  <SplitEditor value={splitDraft} onChange={setSplitDraft} reuse={reusableWorks(allWorks ?? [], w.id)} focusId={splitFocus?.id} />
                   <SplitDiffList title="바뀌는 내용" changes={splitDiff(w.pendingChange?.contributors ?? w.contributors, splitDraft)} />
                   {changeNeedsReview(w) && <p className="ui-field-help">관리 중인 곡이라 지금 적용값은 그대로 두고, 모든 참여자가 확인하고 담당자가 검토한 뒤 바뀐 값으로 관리해요.</p>}
                   <div className="ui-actions">

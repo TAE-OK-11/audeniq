@@ -383,3 +383,5 @@
 .aq-pbl-evidence{display:grid;gap:8px;padding-top:8px;border-top:1px solid var(--aq-line)}
 .aq-pbl-evidence-head{margin:0;font-size:var(--aq-fs-sm);font-weight:700}
 .aq-pbl-evidence-opts{display:flex;flex-wrap:wrap;gap:6px}
+/* 저작권 관리 신청·계약 — 본인인증 전 안내와 큰 버튼 */
+.aq-pbl-verify{display:grid;gap:12px}

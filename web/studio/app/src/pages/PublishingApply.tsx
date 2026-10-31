@@ -22,6 +22,7 @@ import { SignaturePad, type SignaturePadHandle } from '../components/SignaturePa
 import { SplitBar, roleText } from '../components/publishing/parts';
 import { SocietyJoin } from '../components/publishing/SocietyJoin';
 import { AttachmentModal } from '../components/publishing/Attachments';
+import { VerifyGate } from '../components/publishing/VerifyGate';
 import { penAsOthers, workIssues } from '../lib/publishingPrep';
 import { Badge, Callout, EmptyState, StatGrid, StatTile } from '../ui';
 import '../styles/split/Upload.css';
@@ -172,7 +173,8 @@ export function PublishingApply() {
         <button type="button" id="wizardBack" className="ui-btn is-soft" onClick={back} disabled={busy}>{step ? '이전' : '나가기'}</button>
         {step < 3
           ? <button type="button" id="wizardNext" className="ui-btn is-primary" disabled={!canNext} onClick={() => setStep(step + 1)}>다음으로</button>
-          : <button type="button" id="wizardNext" className={`ui-btn is-primary${busy ? ' is-busy' : ''}`} disabled={!canNext || busy} onClick={() => void submit()}>{busy ? '신청하는 중' : '신청서 서명하고 제출'}</button>}
+          // 본인인증 전에는 잠긴 제출 버튼 대신 화면 안의 '본인인증하기'가 할 일이다
+          : account.verified && <button type="button" id="wizardNext" className={`ui-btn is-primary${busy ? ' is-busy' : ''}`} disabled={!canNext || busy} onClick={() => void submit()}>{busy ? '신청하는 중' : '신청서 서명하고 제출'}</button>}
       </>}
     >
       {step === 0 && (
@@ -332,28 +334,27 @@ export function PublishingApply() {
           <ReviewCard head="조건" onEdit={() => setStep(2)}>관리 수수료 {policy.commissionRate}% · 최초 계약 기간 {termLabel(policy.initialTermMonths)}</ReviewCard>
           <Callout tone="neutral">신청서에 서명해도 바로 계약되지 않아요. 담당자가 참여자·지분을 확인하고 승인하면, 확정된 조건으로 만든 저작권 관리 계약서를 계약서 화면에서 확인하고 서명해요.</Callout>
           {/* 관리 단체는 실제 사람으로 등록한다 — 필명으로 올라간 곡도 본인인증한 실명과 함께 접수한다 (서버 APPLICATION_IDENTITY_REQUIRED) */}
-          {!account.verified ? (
-            <Callout tone="danger" action={<Link to="/profile?open=verify" className="ui-btn is-white is-sm">본인인증</Link>}>
-              저작권 관리 신청서에 서명하려면 본인인증이 필요해요. 관리 단체에는 필명이 아니라 인증한 실명으로 등록돼요.
-            </Callout>
-          ) : <p className="ui-field-help">관리 단체에는 본인인증한 실명으로 등록하고, 필명은 곡에 적은 이름 그대로 함께 올려요. 정산 계좌는 배급과 같아 저작권료도 같은 잔액에 쌓여요.</p>}
-          <div className="ui-field">
-            <label htmlFor="pubSignPad">서명 <span className="required">*</span></label>
-            <SignaturePad ref={pad} id="pubSignPad" label="신청인 서명 입력" height={170} onChange={setDrawn} />
-            <small className="ui-field-help">신청인 <b>{signerName || '본인인증 전'}</b>{signerName ? ' (본인인증 실명) · 활동명이나 필명으로는 신청할 수 없어요.' : ''}</small>
-          </div>
-          <div className="aq-agree-box">
-            <label className="ui-check is-plain aq-agree-all-line">
-              <input type="checkbox" checked={agreed.length === AGREE.length} onChange={e => setAgreed(e.target.checked ? AGREE.map(a => a[0]) : [])} />
-              <span><strong>아래 내용에 모두 동의해요</strong></span>
-            </label>
-            {AGREE.map(([k, t]) => (
-              <label key={k} className="ui-check is-plain">
-                <input type="checkbox" checked={agreed.includes(k)} onChange={() => toggle(agreed, setAgreed, k)} />
-                <span>{t}</span>
+          {/* 본인인증 전에는 서명 대신 인증이 먼저 할 일 — 카드 아래 큰 버튼 하나만 (아래 고정 버튼은 잠긴다) */}
+          {!account.verified ? <VerifyGate what="신청서" /> : <>
+            <p className="ui-field-help">관리 단체에는 본인인증한 실명으로 등록하고, 필명은 곡에 적은 이름 그대로 함께 올려요. 정산 계좌는 배급과 같아 저작권료도 같은 잔액에 쌓여요.</p>
+            <div className="ui-field">
+              <label htmlFor="pubSignPad">서명 <span className="required">*</span></label>
+              <SignaturePad ref={pad} id="pubSignPad" label="신청인 서명 입력" height={170} onChange={setDrawn} />
+              <small className="ui-field-help">신청인 <b>{signerName}</b> (본인인증 실명) · 활동명이나 필명으로는 신청할 수 없어요.</small>
+            </div>
+            <div className="aq-agree-box">
+              <label className="ui-check is-plain aq-agree-all-line">
+                <input type="checkbox" checked={agreed.length === AGREE.length} onChange={e => setAgreed(e.target.checked ? AGREE.map(a => a[0]) : [])} />
+                <span><strong>아래 내용에 모두 동의해요</strong></span>
               </label>
-            ))}
-          </div>
+              {AGREE.map(([k, t]) => (
+                <label key={k} className="ui-check is-plain">
+                  <input type="checkbox" checked={agreed.includes(k)} onChange={() => toggle(agreed, setAgreed, k)} />
+                  <span>{t}</span>
+                </label>
+              ))}
+            </div>
+          </>}
           {failure && (
             <Callout tone="danger" action={<button type="button" className="ui-btn is-white is-sm" onClick={() => void submit()}>다시 시도</button>}>{failure}</Callout>
           )}

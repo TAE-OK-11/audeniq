@@ -15,6 +15,7 @@ import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { readJSON, removeKey, writeJSON } from '../lib/storage';
 import { stampNow, todayStr } from '../lib/date';
+import { DateField } from '../components/Picker';
 import { localStamp, fileSize } from '../lib/format';
 import { uid } from '../lib/store';
 import { draftTrackOf } from '../lib/albumPrep';
@@ -419,7 +420,7 @@ export function WorkEditor() {
                   <input id="extTitle" className={inputClass()} value={ext.title} maxLength={300} onChange={e => setExt({ title: e.target.value })} placeholder={form.title || '예: 겨울 편지'} autoComplete="off" />
                 </Field>
                 <Field label="발매일" htmlFor="extDate">
-                  <input id="extDate" type="date" className={inputClass()} value={ext.releaseDate ?? ''} onChange={e => setExt({ releaseDate: e.target.value || null })} />
+                  <DateField id="extDate" value={ext.releaseDate ?? ''} max={todayStr()} placeholder="발매일을 골라 주세요" onChange={v => setExt({ releaseDate: v || null })} />
                 </Field>
                 <Field label="ISRC" htmlFor="extIsrc" warn={isrcErr} help={!isrcErr ? '음원 사이트·유통사에서 볼 수 있어요. 모르면 비워 두세요.' : undefined}>
                   <input id="extIsrc" className={inputClass()} value={ext.isrc ?? ''} maxLength={15} onChange={e => setExt({ isrc: e.target.value.trim() || null })} placeholder="KR-A26-25-00011" />
@@ -522,7 +523,7 @@ export function WorkEditor() {
         </Reveal>
         <Reveal open={form.hasPriorPublisher}>
           <Field label="기존 계약 종료일" htmlFor="workPriorUntil" help="이 날 다음부터 AUDENIQ이 저작권료를 받아요. 모르면 비워 두세요 — 담당자가 확인해요.">
-            <input id="workPriorUntil" type="date" className={inputClass()} value={form.priorPublisherUntil ?? ''} onChange={e => set('priorPublisherUntil', e.target.value || null)} />
+            <DateField id="workPriorUntil" value={form.priorPublisherUntil ?? ''} placeholder="종료일을 골라 주세요" onChange={v => set('priorPublisherUntil', v || null)} />
           </Field>
         </Reveal>
 
@@ -579,7 +580,7 @@ export function WorkEditor() {
         <p className="ui-field-help">언제, 어떻게 만들었는지 남겨 두면 다른 사람이 같은 곡을 주장할 때 내 곡이라는 근거가 돼요.</p>
         <div className="form-grid">
           <Field label="창작을 마친 날" htmlFor="workCreatedOn" help="정확하지 않으면 대략적인 날이라도 괜찮아요.">
-            <input id="workCreatedOn" type="date" className={inputClass()} max={todayStr()} value={form.createdOn ?? ''} onChange={e => set('createdOn', e.target.value || null)} />
+            <DateField id="workCreatedOn" value={form.createdOn ?? ''} max={todayStr()} placeholder="창작을 마친 날을 골라 주세요" onChange={v => set('createdOn', v || null)} />
           </Field>
         </div>
         <Field label="만든 과정" htmlFor="workCreationNote" help="예) 어떤 프로그램·악기로, 누가 어느 부분을 맡았는지, 버전별 날짜">
