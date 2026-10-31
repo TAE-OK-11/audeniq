@@ -82,7 +82,7 @@
 .adm-doc-props dd{margin:0;min-width:0}
 .adm-doc-cards{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
 .adm-doc-cards a{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;padding:8px 10px;border-radius:var(--aq-r-sm);background:#fff;color:var(--adm-ink);text-decoration:none;font-size:13px}
-.adm-doc-cards a:hover{box-shadow:inset 0 0 0 2px var(--aq-blue-200)}
+.adm-doc-cards a:hover{background:var(--aq-blue-100)}
 .adm-doc-cards small{color:var(--adm-muted);width:100%}
 .adm-doc-comments,.adm-doc-versions{list-style:none;margin:0 0 12px;padding:0;display:flex;flex-direction:column;gap:8px}
 .adm-doc-comment{padding:10px 12px;border-radius:var(--aq-r-md);background:#fff}
@@ -92,7 +92,7 @@
 .adm-doc-comment-actions{display:flex;gap:10px;align-items:center;margin-top:6px}
 .adm-doc-replying{font-size:12px;color:var(--adm-muted);margin:0 0 6px}
 .adm-doc-versions button{width:100%;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:baseline;border:0;background:#fff;border-radius:var(--aq-r-sm);padding:9px 12px;font:inherit;font-size:13px;text-align:left;cursor:pointer}
-.adm-doc-versions li.is-open button{box-shadow:inset 0 0 0 2px var(--adm-blue)}
+.adm-doc-versions li.is-open button{background:var(--aq-primary-soft)}
 .adm-doc-versions small{width:100%;color:var(--adm-muted)}
 .adm-doc-version-view h4{margin:0;font-size:14px}
 .adm-doc-diff{max-height:360px;overflow:auto;margin:8px 0;padding:10px;border-radius:var(--aq-r-sm);background:#fff;font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-word}
@@ -171,17 +171,17 @@
 .adm-doc-file{margin:.5em 0}
 .adm-doc-file>a,.adm-doc-file>span{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:var(--aq-r-sm);background:var(--adm-soft);color:var(--adm-ink);text-decoration:none;font-size:14px}
 .adm-doc-file small{color:var(--adm-muted)}
-.adm-doc-file>a:hover{box-shadow:inset 0 0 0 2px var(--aq-blue-200)}
+.adm-doc-file>a:hover{background:var(--aq-blue-100)}
 .adm-doc-linkcard{margin:.6em 0}
-.adm-doc-linkcard a{display:flex;flex-direction:column;gap:3px;padding:12px 14px;border-radius:var(--aq-r-md);box-shadow:inset 0 0 0 1px var(--adm-line);color:var(--adm-ink);text-decoration:none}
-.adm-doc-linkcard a:hover{box-shadow:inset 0 0 0 2px var(--aq-blue-200)}
+.adm-doc-linkcard a{display:flex;flex-direction:column;gap:3px;padding:12px 14px;border-radius:var(--aq-r-md);background:var(--adm-soft);color:var(--adm-ink);text-decoration:none}
+.adm-doc-linkcard a:hover{background:var(--aq-blue-100)}
 .adm-doc-linkcard span{font-size:13px;color:var(--aq-text-2)}
 .adm-doc-linkcard small{display:inline-flex;gap:4px;align-items:center;font-size:12px;color:var(--adm-muted)}
-.is-selected>.adm-doc-file,.adm-doc-file.is-selected>a,.adm-doc-linkcard.is-selected a{box-shadow:inset 0 0 0 2px var(--adm-blue)}
+.is-selected>.adm-doc-file,.adm-doc-file.is-selected>a,.adm-doc-linkcard.is-selected a{background:var(--aq-primary-soft)}
 
 /* AUDENIQ 블록 */
 .adm-doc-embed{margin:.7em 0;padding:12px 14px;border-radius:var(--aq-r-md);background:var(--adm-soft);font-size:14px;line-height:1.5;user-select:none}
-.adm-doc-embed.is-selected{box-shadow:inset 0 0 0 2px var(--adm-blue)}
+.adm-doc-embed.is-selected{background:var(--aq-primary-soft)}
 .adm-doc-embed header{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-bottom:8px}
 .adm-doc-embed-kind{font-size:12px;font-weight:700;color:var(--aq-text-3);padding:2px 8px;border-radius:var(--aq-r-xs);background:#fff}
 .adm-doc-embed-title{flex:1;min-width:0;font-size:15px;font-weight:800;color:var(--adm-ink);text-decoration:none}

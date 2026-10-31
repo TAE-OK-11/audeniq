@@ -4,8 +4,8 @@
 //  · PublishingBundleStep: 공유하는 계약서 화면의 발매 계약 묶음 — 배급 계약 다음 줄에 같은 앨범의 저작권 관리 계약
 import { Link, useNavigate } from '../../lib/router';
 import { pubApi, type Work } from '../../api/publishing';
+import { signing } from '../../lib/publishingPrep';
 import { useAsync } from '../../hooks/useAsync';
-import { usePublishingUse } from '../../hooks/usePublishingUse';
 import { readJSON, removeKey } from '../../lib/storage';
 import { Glyph } from '../Glyph';
 import { IconTile } from '../../ui';
@@ -45,32 +45,28 @@ export function PublishingLinkRow({ releaseId, trackId }: { releaseId?: string; 
   );
 }
 
-/** 계약 묶음의 세 번째 줄 — 배급 신청서 · 배급 계약서 다음에 같은 발매의 저작권 관리 계약 */
+/** 계약 묶음의 세 번째 줄 — 배급 신청서 · 배급 계약서 다음에 같은 발매의 저작권 관리 계약서.
+ *  배급 계약서처럼 담당자가 신청을 승인해 계약서가 만들어진 뒤에만 보인다. 신청·보완은 곡 화면에서 끝내고,
+ *  여기에는 '확인하고 서명' 또는 '계약서 보기'만 둔다 */
 export function PublishingBundleStep({ releaseId }: { releaseId: string }) {
   const nav = useNavigate();
-  const { data: works } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
-  // 퍼블리싱을 쓰지 않는 사람의 계약 묶음에는 저작권 줄을 붙이지 않는다 — 입구는 계약서 목록 아래 한 줄로
-  const use = usePublishingUse();
-  if (!works || !releaseId || !use.started) return null;
-  const mine = works.filter(w => w.recordings.some(r => r.releaseId === releaseId) && w.myRole !== 'contributor');
-  const managed = mine.filter(w => w.contractId);
-  const applying = mine.filter(w => w.application && ['submitted', 'in_review', 'needs_fix'].includes(w.application.status));
-  const fix = applying.find(w => w.application!.status === 'needs_fix');
-  const done = managed.length > 0 && !applying.length;
-  const state = done ? `${managed.length}곡 저작권 관리 중`
-    : fix ? '저작권 관리 신청 보완 요청'
-    : applying.length ? `${applying.length}곡 저작권 관리 심사 중`
-    : '곡 저작권도 함께 맡길 수 있어요 (선택)';
+  const { data: contracts } = useAsync(() => pubApi.listContracts(), [], { key: 'pub-contracts' });
+  if (!contracts || !releaseId) return null;
+  const mine = contracts.filter(c => c.releaseIds?.includes(releaseId));
+  if (!mine.length) return null;
+  const toSign = mine.find(c => c.status === 'pending_sign');
+  const c = toSign ?? mine[0];
+  const songs = c.works.length > 1 ? `‘${c.works[0].title}’ 외 ${c.works.length - 1}곡` : `‘${c.works[0]?.title ?? '곡'}’`;
   return (
-    <li className={done ? 'is-done' : fix ? 'is-current' : ''}>
-      <span className="aq-bundle-no" aria-hidden="true">{done ? <CheckIcon size={14} /> : 3}</span>
+    <li className={toSign ? 'is-current' : 'is-done'}>
+      <span className="aq-bundle-no" aria-hidden="true">{toSign ? 3 : <CheckIcon size={14} />}</span>
       <div className="min-0">
-        <strong>저작권 관리 계약</strong>
-        <span>{state}</span>
+        <strong>저작권 관리 계약서</strong>
+        <span>{toSign ? `${songs} · 담당자 승인 완료, 서명 필요` : `${songs} · 서명 완료`}</span>
       </div>
-      {done ? <button type="button" className="ui-btn is-soft is-sm" onClick={() => nav(`/contracts?pub=${managed[0].contractId}`)}>계약 보기</button>
-        : applying.length ? <button type="button" className={fix ? 'ui-btn is-primary aq-bundle-sign' : 'ui-btn is-soft is-sm'} onClick={() => nav(`/works/${(fix ?? applying[0]).id}?tab=register`)}>{fix ? '보완하기' : '진행 보기'}</button>
-        : <button type="button" className="ui-btn is-soft is-sm" onClick={() => nav(`/releases/${encodeURIComponent(releaseId)}?tab=publishing`)}>함께 신청</button>}
+      <button type="button" className={toSign ? 'ui-btn is-primary aq-bundle-sign' : 'ui-btn is-soft is-sm'} onClick={() => nav(`/contracts/publishing/${encodeURIComponent(c.id)}`)}>
+        {toSign ? '확인하고 서명' : '계약서 보기'}
+      </button>
     </li>
   );
 }
@@ -79,15 +75,17 @@ export function PublishingBundleStep({ releaseId }: { releaseId: string }) {
 export function albumPublishing(works: readonly Work[], releaseId: string, trackCount: number) {
   const mine = works.filter(w => w.recordings.some(r => r.releaseId === releaseId));
   const managed = mine.filter(w => w.registration === 'registered' || !!w.contractId);
+  const toSign = mine.filter(signing);
   const applying = mine.filter(w => w.application && ['submitted', 'in_review', 'needs_fix'].includes(w.application.status));
   const fix = applying.some(w => w.application!.status === 'needs_fix') || mine.some(w => w.registration === 'needs_fix');
   // 트랙 기준으로 센다 — 한 곡이 원곡·Inst.처럼 두 트랙에 실리면 곡 수로는 '1곡 관리 중'이 됐다
   const tracksOf = (list: Work[]) => list.reduce((n, w) => n + w.recordings.filter(r => r.releaseId === releaseId).length, 0);
   const managedTracks = tracksOf(managed);
   const status = fix ? { tone: 'amber' as const, label: '보완 필요' }
+    : toSign.length ? { tone: 'blue' as const, label: '계약서 서명' }
     : managedTracks && managedTracks >= trackCount ? { tone: 'green' as const, label: '관리 중' }
     : applying.length ? { tone: 'violet' as const, label: '심사 중' }
     : managedTracks ? { tone: 'blue' as const, label: `${managedTracks}곡 관리 중` }
     : null;
-  return { mine, managed, applying, fix, status };
+  return { mine, managed, applying, toSign, fix, status };
 }

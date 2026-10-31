@@ -110,7 +110,7 @@
 /* 고칠 칸으로 데려온 참여자 — 테두리 대신 면 색으로 (켜짐 표시는 진한 면, 디자인 시스템 규칙 4) */
 .aq-pbl-person.is-focus{background:var(--aq-primary-soft)}
 /* 변경 전후 — 바뀌는 줄만 '60% → 50%' */
-.aq-pbl-diff{padding:14px 16px;border-radius:var(--aq-r-lg);background:var(--aq-blue-25);box-shadow:inset 0 0 0 1px var(--aq-blue-100)}
+.aq-pbl-diff{padding:14px 16px;border-radius:var(--aq-r-lg);background:var(--aq-primary-soft)}
 .aq-pbl-diff h4{margin:0 0 8px;font-size:var(--aq-fs-sm);color:var(--aq-blue-700)}
 .aq-pbl-diff ul{display:grid;gap:8px;margin:0;padding:0;list-style:none}
 .aq-pbl-diff li{display:grid;gap:2px;font-size:var(--aq-fs-sm);color:var(--aq-text-2);font-variant-numeric:tabular-nums}
@@ -231,3 +231,22 @@
 /* 참여 역할 칩 아래 여백 — 가로 스크롤 칩 줄의 아래 여백(14px)이 '창작 지분'과의 사이를 벌렸다 */
 .aq-pbl-person .ui-chips{padding-bottom:2px}
 .aq-pbl-sheet .aq-pbl-sheet-sec>.ui-btn.is-text{justify-self:start}
+
+/* 저작권 관리 신청 완료 — 발매 신청 완료 카드(aq-doc-done) 아래 버튼 한 줄 */
+.aq-pbl-done .aq-doc-done{margin-bottom:16px}
+.aq-pbl-done-actions{margin:0}
+/* 곡 상세 '저작권 관리 신청' — 신청 번호는 끊지 않고, 이력은 항목/값과 띄운다. 이력 펼치기는 글 줄 왼쪽 선에 */
+.aq-pbl-work .ui-kv+.ui-timeline{margin-top:16px}
+.aq-pbl-work .aq-relinfo-card>.ui-btn.is-text{justify-self:start;padding-inline:0}
+/* 계약서 서명이 남았을 때 — 보완(주황)이 아니라 할 일이므로 옅은 파랑 면 */
+.aq-pbl-hero-fix.is-sign{background:var(--aq-primary-soft)}
+.aq-pbl-hero-fix.is-sign small{color:var(--aq-primary-text)}
+.aq-pbl-cover .is-signing{background:var(--aq-blue-400)}
+/* 신청서·계약서 화면 */
+.aq-pbl-demo-note{margin:0 0 14px}
+.aq-pbl-sign{display:grid;gap:16px}
+.aq-pbl-sign .ui-field{margin:0}
+.aq-pbl-company{margin-top:14px}
+/* 곡 정보 — 첨부 자료 카드 (배급 신청서 곡 카드와 같은 면) */
+#view-new .aq-pbl-attach-card>.form-grid{margin:0;gap:18px;align-items:start}
+#view-new .aq-pbl-attach-card .ui-field{margin:0}

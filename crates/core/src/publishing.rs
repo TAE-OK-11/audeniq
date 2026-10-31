@@ -57,7 +57,9 @@ const WORK_TYPES: [&str; 5] = [
 const LANGUAGES: [&str; 7] = ["ko", "en", "ja", "zh", "es", "zxx", "other"];
 const KINDS: [&str; 4] = ["demo", "lyrics", "score", "proof"];
 /// Every box of the application's agreement step.
-const AGREEMENTS: [&str; 4] = ["terms", "rights", "exclusive", "share"];
+/// What the applicant confirms when signing the application (신청서). The contract has its own
+/// confirmations (CONTRACT_CONFIRMATIONS) — the application is not the contract, as in distribution.
+const AGREEMENTS: [&str; 4] = ["accurate", "rights", "prior", "share"];
 /// An application in one of these keeps its works from another application.
 const ACTIVE: [&str; 4] = ["submitted", "in_review", "needs_fix", "approved"];
 /// Shares can be edited directly only before review or when asked to fix.
@@ -67,7 +69,10 @@ const EDITABLE: [&str; 4] = ["none", "preparing", "needs_fix", "rejected"];
 // Policy
 // ---------------------------------------------------------------------------
 
-pub const POLICY_VERSION: &str = "2026-10";
+pub const POLICY_VERSION: &str = "2026-11";
+const COMMISSION_BPS: i32 = 1000;
+const INITIAL_TERM_MONTHS: i32 = 12;
+const RENEWAL_OPTIONS: [i32; 3] = [6, 12, 36];
 const TERRITORIES: [(&str, &str); 4] = [
     ("KR", "대한민국"),
     ("JP", "일본"),
@@ -95,7 +100,7 @@ const RIGHTS: [(&str, &str, &str); 4] = [
 
 pub fn policy() -> Value {
     json!({
-        "commissionRate": 10, "initialTermMonths": 12, "renewalOptions": [6, 12, 36],
+        "commissionRate": COMMISSION_BPS / 100, "initialTermMonths": INITIAL_TERM_MONTHS, "renewalOptions": RENEWAL_OPTIONS,
         "territories": TERRITORIES.iter().map(|(c, l)| json!({"code": c, "label": l})).collect::<Vec<_>>(),
         "rights": RIGHTS.iter().map(|(k, l, d)| json!({"key": k, "label": l, "desc": d})).collect::<Vec<_>>(),
         "version": POLICY_VERSION,
@@ -394,7 +399,10 @@ async fn works_json(
     let works = sqlx::query(
         "SELECT w.id, w.internal_code, w.title, w.alt_titles, w.work_type, w.language, w.genre, w.description, w.visibility,
                 w.iswc, w.has_prior_publisher, w.prior_publisher, w.registration, w.fix, w.pending_contributors, w.pending_at,
-                w.row_version, w.created_at, w.updated_at
+                w.row_version, w.created_at, w.updated_at,
+                -- The signed contract the work is under (a contract waiting for signature does not count yet).
+                (SELECT c.id FROM portal.pub_contracts c JOIN portal.pub_application_works aw ON aw.application_id=c.application_id
+                  WHERE aw.work_id=w.id AND c.status <> 'pending_sign' ORDER BY c.created_at DESC LIMIT 1) AS contract_id
            FROM portal.pub_works w
           WHERE w.org_id=$1 AND w.archived_at IS NULL
             AND ($2::uuid[] IS NULL OR w.id = ANY($2))
@@ -535,7 +543,7 @@ async fn works_json(
                 "registration": w.get::<String, _>("registration"),
                 "registrationLog": log.remove(&id).unwrap_or_default(),
                 "application": apps.remove(&id),
-                "contractId": Value::Null,
+                "contractId": w.get::<Option<Uuid>, _>("contract_id"),
                 "fix": w.get::<Option<Value>, _>("fix"),
                 "pendingChange": pending,
                 "myRole": my_role, "activity": [],
@@ -1210,7 +1218,8 @@ async fn applications_json(
 ) -> Result<Vec<Value>> {
     let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
         "SELECT a.id, a.org_id, o.name AS org_name, ra.application_no, a.status, a.territories, a.rights, a.submitted_at, a.fix_reason, a.reply_note,
-                ra.server_hash,
+                ra.server_hash, ra.signer_name,
+                (SELECT c.id FROM portal.pub_contracts c WHERE c.application_id=a.id) AS contract_id,
                 COALESCE((SELECT jsonb_agg(jsonb_build_object('id',w.id,'title',w.title) ORDER BY w.title)
                             FROM portal.pub_application_works aw JOIN portal.pub_works w ON w.id=aw.work_id WHERE aw.application_id=a.id),'[]') AS works,
                 {HISTORY} AS history
@@ -1235,7 +1244,8 @@ async fn applications_json(
                 "workIds": list.iter().map(|w| w["id"].clone()).collect::<Vec<_>>(),
                 "workTitles": list.iter().map(|w| w["title"].clone()).collect::<Vec<_>>(),
                 "territories": r.get::<Vec<String>, _>("territories"), "rights": r.get::<Vec<String>, _>("rights"),
-                "submittedAt": ts(r.get("submitted_at")), "contractId": Value::Null,
+                "submittedAt": ts(r.get("submitted_at")), "contractId": r.get::<Option<Uuid>, _>("contract_id"),
+                "signerName": r.get::<String, _>("signer_name"),
                 "fixReason": r.get::<Option<String>, _>("fix_reason"), "replyNote": r.get::<Option<String>, _>("reply_note"),
                 // The confirmation code of the signed original, as on 배급 신청서.
                 "documentCode": r.get::<Option<String>, _>("server_hash"),
@@ -1274,6 +1284,10 @@ async fn set_registration(
 /// The same number format as 배급 신청서 (`AUD-20261030-K7Q2MX`), made on the
 /// server since the publishing screen does not number its own.
 fn application_no() -> Result<String> {
+    document_no("AUD")
+}
+
+fn document_no(prefix: &str) -> Result<String> {
     use rand::{TryRng, rngs::SysRng};
     const ALPHABET: &[u8; 32] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     let mut raw = [0u8; 6];
@@ -1285,7 +1299,7 @@ fn application_no() -> Result<String> {
         .iter()
         .map(|b| ALPHABET[usize::from(b % 32)] as char)
         .collect();
-    Ok(format!("AUD-{day}-{tail}"))
+    Ok(format!("{prefix}-{day}-{tail}"))
 }
 
 /// Submit an application (신청서 접수). What was signed is recorded like a
@@ -1663,6 +1677,19 @@ pub async fn summary(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
                 "sub": format!("{} 님의 확인이 필요해요.", pending.join(", ")), "to": format!("/works/{id}?tab=rights")}));
         }
     }
+    // An approved application's contract waiting for the artist's signature (계약서).
+    for (cid, titles) in sqlx::query_as::<_, (Uuid, Vec<String>)>(
+        "SELECT c.id, COALESCE((SELECT array_agg(w.title ORDER BY w.title) FROM portal.pub_application_works aw
+                                  JOIN portal.pub_works w ON w.id=aw.work_id WHERE aw.application_id=c.application_id),'{}')
+           FROM portal.pub_contracts c WHERE c.org_id=$1 AND c.status='pending_sign' ORDER BY c.created_at",
+    )
+    .bind(org)
+    .fetch_all(&mut *c)
+    .await?
+    {
+        tasks.push(json!({"id": format!("sign-{cid}"), "kind": "sign", "title": "저작권 관리 계약서 서명",
+            "sub": titles.join(", "), "to": format!("/contracts/publishing/{cid}")}));
+    }
     // A released track of this org with no work yet: "이 곡의 저작권도 관리할까요?"
     let suggestion = sqlx::query(
         "SELECT t.id, t.title, r.id AS release_id, r.title AS release_title FROM catalog.tracks t JOIN catalog.releases r ON r.id=t.release_id
@@ -1936,6 +1963,8 @@ pub async fn staff_decide(s: &AppState, h: &HeaderMap, id: Uuid, i: DecisionIn) 
                 Some("권리 정보 확인 완료"),
             )
             .await?;
+            // The contract is made now, with the confirmed terms; the artist signs it on 계약서.
+            create_contract(&mut tx, org, id).await?;
         }
         "REQUEST_CORRECTION" if open => {
             // What to fix is picked (fields · documents); `reason` is the reviewer's own comment and may be
@@ -2016,6 +2045,15 @@ pub async fn staff_decide(s: &AppState, h: &HeaderMap, id: Uuid, i: DecisionIn) 
             set_registration(&mut tx, org, &works, "rejected", None, Some(&reason)).await?;
         }
         "REGISTER" if status == "approved" => {
+            let signed: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM portal.pub_contracts WHERE application_id=$1 AND status <> 'pending_sign')",
+            )
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await?;
+            if !signed {
+                return Err(Error::PolicyGate("CONTRACT_NOT_SIGNED"));
+            }
             let society = opt_clean(i.society.as_deref(), 60, "WORK_SOCIETY_INVALID")?
                 .ok_or(Error::Invalid)?;
             for w in &works {
@@ -2057,6 +2095,359 @@ pub async fn staff_decide(s: &AppState, h: &HeaderMap, id: Uuid, i: DecisionIn) 
         .await?
         .pop()
         .ok_or(Error::Internal)?;
+    tx.commit().await?;
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// Contracts (저작권 관리 계약서, migration 0168)
+// ---------------------------------------------------------------------------
+
+/// What the artist ticks before signing the contract; every box is required.
+const CONTRACT_CONFIRMATIONS: [(&str, &str); 3] = [
+    ("read", "저작권 관리 계약서의 내용을 모두 읽고 이해했어요."),
+    (
+        "rights",
+        "계약한 곡에 대해 신고한 지분만큼 권리를 가지고 있어요.",
+    ),
+    (
+        "exclusive",
+        "계약 기간 동안 같은 권리를 다른 퍼블리셔에게 맡기지 않아요.",
+    ),
+];
+
+fn territory_label(code: &str) -> &str {
+    TERRITORIES
+        .iter()
+        .find(|(c, _)| *c == code)
+        .map_or(code, |(_, l)| l)
+}
+fn right_label(key: &str) -> &str {
+    RIGHTS
+        .iter()
+        .find(|(k, _, _)| *k == key)
+        .map_or(key, |(_, l, _)| l)
+}
+fn term_label(months: i32) -> String {
+    if months % 12 == 0 {
+        format!("{}년", months / 12)
+    } else {
+        format!("{months}개월")
+    }
+}
+
+/// The contract text as it is made at approval (one paragraph per line). Kept with the contract so a later
+/// policy change does not alter what was offered or signed.
+fn contract_body(
+    works: &[(String, String)],
+    territories: &[String],
+    rights: &[String],
+    commission_bps: i32,
+    term_months: i32,
+) -> String {
+    let list = works
+        .iter()
+        .map(|(t, code)| format!("‘{t}’({code})"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let terr = territories
+        .iter()
+        .map(|t| territory_label(t))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let rts = rights
+        .iter()
+        .map(|r| right_label(r))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let renew = RENEWAL_OPTIONS
+        .iter()
+        .map(|m| term_label(*m))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let rate = f64::from(commission_bps) / 100.0;
+    [
+        "제1조 (목적) 이 계약은 작가가 아래 곡의 저작권 관리를 주식회사 AUDENIQ(이하 ‘회사’)에 맡기고, 회사가 이를 관리하는 데 필요한 사항을 정한다.".to_string(),
+        format!("제2조 (대상 곡) {list}. 작가는 각 곡에 신고한 지분만큼의 권리를 가진다."),
+        format!("제3조 (관리 범위) 회사는 {terr}에서 {rts}을(를) 관리한다. 관리 단체 등록, 사용료 징수, 이용 허락 협의를 포함한다."),
+        format!("제4조 (수수료) 회사는 실제 징수한 사용료의 {rate}%를 관리 수수료로 공제하고 나머지를 작가에게 지급한다. 예상 금액은 지급 대상이 아니다."),
+        format!("제5조 (기간) 계약 기간은 작가가 서명한 날부터 {}로 하며, 작가가 요청하면 {renew} 단위로 연장한다.", term_label(term_months)),
+        "제6조 (공동 저작) 공동 참여자의 지분은 각 참여자의 확인을 거쳐 반영한다. 확인되지 않은 지분은 확인될 때까지 사용료 지급을 보류할 수 있다.".to_string(),
+        "제7조 (종료) 어느 한쪽이 종료를 요청하면 관리 단체 절차에 따라 관리를 마친다. 종료 전 발생한 사용료는 종료 후에도 정산한다.".to_string(),
+        "제8조 (기존 계약) 작가는 다른 퍼블리셔와의 계약을 신고해야 하며, 충돌이 있으면 회사가 검토한 뒤 관리 범위를 조정할 수 있다.".to_string(),
+        "제9조 (전자계약) 이 계약은 전자문서로 작성하고 전자서명으로 체결한다. 체결일은 작가가 서명한 날이며, 서명·확인 항목·문서 확인 코드는 함께 보관한다.".to_string(),
+    ]
+    .join("\n")
+}
+
+/// Make the contract for an approved application (once; approving again finds it).
+async fn create_contract(c: &mut PgConnection, org: Uuid, application: Uuid) -> Result<Uuid> {
+    if let Some(id) =
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM portal.pub_contracts WHERE application_id=$1")
+            .bind(application)
+            .fetch_optional(&mut *c)
+            .await?
+    {
+        return Ok(id);
+    }
+    let (territories, rights): (Vec<String>, Vec<String>) =
+        sqlx::query_as("SELECT territories, rights FROM portal.pub_applications WHERE id=$1")
+            .bind(application)
+            .fetch_one(&mut *c)
+            .await?;
+    let works: Vec<(String, String)> = sqlx::query_as(
+        "SELECT w.title, COALESCE(w.iswc, w.internal_code) FROM portal.pub_application_works aw
+           JOIN portal.pub_works w ON w.id=aw.work_id WHERE aw.application_id=$1 ORDER BY w.title",
+    )
+    .bind(application)
+    .fetch_all(&mut *c)
+    .await?;
+    let body = contract_body(
+        &works,
+        &territories,
+        &rights,
+        COMMISSION_BPS,
+        INITIAL_TERM_MONTHS,
+    );
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO portal.pub_contracts(id,org_id,application_id,contract_no,commission_bps,term_months,territories,rights,body)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+    )
+    .bind(id)
+    .bind(org)
+    .bind(application)
+    .bind(document_no("AQP")?)
+    .bind(COMMISSION_BPS)
+    .bind(INITIAL_TERM_MONTHS)
+    .bind(&territories)
+    .bind(&rights)
+    .bind(&body)
+    .execute(&mut *c)
+    .await?;
+    Ok(id)
+}
+
+/// Contracts as the screens read them (`PublishingContract` in api/publishing.ts), with the releases their
+/// works are on so 계약서 can show each one in that release's bundle.
+async fn contracts_json(
+    c: &mut PgConnection,
+    org: Uuid,
+    ids: Option<Vec<Uuid>>,
+) -> Result<Vec<Value>> {
+    let rows = sqlx::query(
+        "SELECT c.id, c.contract_no, c.status, c.commission_bps, c.term_months, c.territories, c.rights, c.body,
+                c.signer_name, c.signature, c.confirmations, c.content_hash, c.signed_at, c.start_date, c.end_date,
+                c.renewal_months, c.renewal_requested_at, c.termination_requested_at, c.row_version, c.created_at,
+                a.id AS application_id, ra.application_no,
+                COALESCE((SELECT jsonb_agg(jsonb_build_object('id',w.id,'title',w.title) ORDER BY w.title)
+                            FROM portal.pub_application_works aw JOIN portal.pub_works w ON w.id=aw.work_id
+                           WHERE aw.application_id=a.id),'[]') AS works,
+                COALESCE((SELECT array_agg(DISTINCT x.release_id) FROM portal.pub_application_works aw
+                            JOIN portal.pub_work_recordings x ON x.work_id=aw.work_id WHERE aw.application_id=a.id),'{}') AS releases
+           FROM portal.pub_contracts c
+           JOIN portal.pub_applications a ON a.id=c.application_id
+           JOIN portal.release_applications ra ON ra.id=a.record_id
+          WHERE c.org_id=$1 AND ($2::uuid[] IS NULL OR c.id = ANY($2))
+          ORDER BY c.created_at DESC, c.id
+          LIMIT 200",
+    )
+    .bind(org)
+    .bind(ids)
+    .fetch_all(&mut *c)
+    .await?;
+    let date = |d: Option<chrono::NaiveDate>| {
+        d.map(|d| d.format("%Y-%m-%d").to_string())
+            .unwrap_or_default()
+    };
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            let renewal = r.get::<Option<i32>, _>("renewal_months").map(|m| {
+                json!({"months": m, "requestedAt": r.get::<Option<DateTime<Utc>>, _>("renewal_requested_at").map(ts)})
+            });
+            json!({
+                "id": r.get::<Uuid, _>("id"), "number": r.get::<String, _>("contract_no"), "status": r.get::<String, _>("status"),
+                "startDate": date(r.get("start_date")), "endDate": date(r.get("end_date")),
+                "commissionRate": f64::from(r.get::<i32, _>("commission_bps")) / 100.0, "termMonths": r.get::<i32, _>("term_months"),
+                "works": r.get::<Value, _>("works"), "territories": r.get::<Vec<String>, _>("territories"),
+                "rights": r.get::<Vec<String>, _>("rights"), "renewal": renewal,
+                "terminationRequestedAt": r.get::<Option<DateTime<Utc>>, _>("termination_requested_at").map(ts),
+                "signedAt": r.get::<Option<DateTime<Utc>>, _>("signed_at").map(ts),
+                "body": r.get::<String, _>("body"),
+                "confirmations": CONTRACT_CONFIRMATIONS.iter().map(|(k, t)| json!({"id": k, "text": t})).collect::<Vec<_>>(),
+                "ticked": r.get::<Option<Value>, _>("confirmations"),
+                "signerName": r.get::<Option<String>, _>("signer_name"),
+                "signature": r.get::<Option<String>, _>("signature"),
+                "contentHash": r.get::<Option<String>, _>("content_hash"),
+                "applicationId": r.get::<Uuid, _>("application_id"),
+                "applicationNumber": r.get::<String, _>("application_no"),
+                "releaseIds": r.get::<Vec<Uuid>, _>("releases"),
+                "createdAt": ts(r.get("created_at")),
+                "rowVersion": r.get::<i64, _>("row_version"),
+            })
+        })
+        .collect())
+}
+
+pub async fn list_contracts(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
+    let mut c = s.pool.acquire().await?;
+    auth::membership_read(&mut c, a, org).await?;
+    Ok(json!({"items": contracts_json(&mut c, org, None).await?}))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ContractSignIn {
+    pub signer_name: String,
+    /// The drawn signature (data URL), checked like 배급 계약서.
+    pub signature: String,
+    #[serde(default)]
+    pub confirmations: Vec<String>,
+    pub row_version: i64,
+}
+
+async fn lock_contract(c: &mut PgConnection, org: Uuid, id: Uuid) -> Result<(String, i64, i32)> {
+    sqlx::query_as("SELECT status, row_version, term_months FROM portal.pub_contracts WHERE org_id=$1 AND id=$2 FOR UPDATE")
+        .bind(org)
+        .bind(id)
+        .fetch_optional(&mut *c)
+        .await?
+        .ok_or(Error::NotFound)
+}
+
+async fn contract_out(c: &mut PgConnection, org: Uuid, id: Uuid) -> Result<Value> {
+    contracts_json(c, org, Some(vec![id]))
+        .await?
+        .pop()
+        .ok_or(Error::Internal)
+}
+
+/// Sign the contract (계약 체결): every confirmation ticked, the drawn signature checked like 배급 계약서,
+/// a hash over body + terms + ticks + signature kept with it. The term starts on the day of signing (KST).
+pub async fn sign_contract(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    id: Uuid,
+    i: ContractSignIn,
+) -> Result<Value> {
+    let name = clean(&i.signer_name, 120, "CONTRACT_SIGNER_INVALID")?;
+    if name.is_empty() {
+        return Err(Error::InvalidCode("CONTRACT_SIGNER_INVALID"));
+    }
+    if !CONTRACT_CONFIRMATIONS
+        .iter()
+        .all(|(k, _)| i.confirmations.iter().any(|x| x == k))
+        || i.confirmations
+            .iter()
+            .any(|x| !CONTRACT_CONFIRMATIONS.iter().any(|(k, _)| k == x))
+    {
+        return Err(Error::PolicyGate("AGREEMENT_CONFIRMATION_REQUIRED"));
+    }
+    let sig = crate::upload_safety::signature(s, &i.signature).await?;
+    let mut tx = s.pool.begin().await?;
+    auth::membership(&mut tx, a, org, true).await?;
+    let (status, rv, months) = lock_contract(&mut tx, org, id).await?;
+    if rv != i.row_version {
+        return Err(Error::Conflict);
+    }
+    if status != "pending_sign" {
+        return Err(Error::PolicyGate("CONTRACT_ALREADY_SIGNED"));
+    }
+    let (body, commission, territories, rights): (String, i32, Vec<String>, Vec<String>) = sqlx::query_as(
+        "SELECT body, commission_bps, territories, rights FROM portal.pub_contracts WHERE id=$1",
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+    let ticks = json!({"items": CONTRACT_CONFIRMATIONS.iter().map(|(k, t)| json!({"id": k, "text": t, "checked": true})).collect::<Vec<_>>()});
+    let hash = crate::domain::sha256_json(&json!({
+        "body": body,
+        "terms": {"commission_bps": commission, "term_months": months, "territories": territories, "rights": rights},
+        "ticks": ticks["items"], "signature_sha256": crate::domain::sha256_hex(&sig),
+    }));
+    let start = (Utc::now() + chrono::Duration::hours(9)).date_naive();
+    let end = start
+        .checked_add_months(chrono::Months::new(
+            u32::try_from(months).map_err(|_| Error::Internal)?,
+        ))
+        .ok_or(Error::Internal)?;
+    sqlx::query(
+        "UPDATE portal.pub_contracts SET status='active', signer_name=$2, signature=$3, confirmations=$4, content_hash=$5,
+                signed_by=$6, signed_at=now(), start_date=$7, end_date=$8, row_version=row_version+1 WHERE id=$1",
+    )
+    .bind(id)
+    .bind(&name)
+    .bind(&sig)
+    .bind(&ticks)
+    .bind(&hash)
+    .bind(a.user)
+    .bind(start)
+    .bind(end)
+    .execute(&mut *tx)
+    .await?;
+    audit(&mut tx, a, org, id, "publishing.contract_signed").await?;
+    let out = contract_out(&mut tx, org, id).await?;
+    tx.commit().await?;
+    Ok(out)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RenewIn {
+    pub months: i32,
+}
+
+/// Ask to extend a signed contract (staff apply the new term).
+pub async fn renew_contract(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    id: Uuid,
+    i: RenewIn,
+) -> Result<Value> {
+    if !RENEWAL_OPTIONS.contains(&i.months) {
+        return Err(Error::Invalid);
+    }
+    let mut tx = s.pool.begin().await?;
+    auth::membership(&mut tx, a, org, true).await?;
+    let (status, _, _) = lock_contract(&mut tx, org, id).await?;
+    if !["active", "expiring"].contains(&status.as_str()) {
+        return Err(Error::PolicyGate("CONTRACT_STATE"));
+    }
+    sqlx::query("UPDATE portal.pub_contracts SET renewal_months=$2, renewal_requested_at=now(), row_version=row_version+1 WHERE id=$1")
+        .bind(id)
+        .bind(i.months)
+        .execute(&mut *tx)
+        .await?;
+    audit(&mut tx, a, org, id, "publishing.contract_renewal_requested").await?;
+    let out = contract_out(&mut tx, org, id).await?;
+    tx.commit().await?;
+    Ok(out)
+}
+
+/// Ask to end a signed contract (staff follow the society procedure).
+pub async fn request_termination(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
+    let mut tx = s.pool.begin().await?;
+    auth::membership(&mut tx, a, org, true).await?;
+    let (status, _, _) = lock_contract(&mut tx, org, id).await?;
+    if !["active", "expiring"].contains(&status.as_str()) {
+        return Err(Error::PolicyGate("CONTRACT_STATE"));
+    }
+    sqlx::query("UPDATE portal.pub_contracts SET status='terminating', termination_requested_at=now(), row_version=row_version+1 WHERE id=$1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    audit(
+        &mut tx,
+        a,
+        org,
+        id,
+        "publishing.contract_termination_requested",
+    )
+    .await?;
+    let out = contract_out(&mut tx, org, id).await?;
     tx.commit().await?;
     Ok(out)
 }
@@ -2268,7 +2659,43 @@ async fn h_withdraw(
         withdraw_application(&s, &writer(&s, &h).await?, org, id).await?,
     ))
 }
-/// Stage 2 lists (contracts, royalties) answer empty so the screens show
+async fn h_contracts(
+    State(s): State<AppState>,
+    Path(org): Path<Uuid>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    Ok(Json(list_contracts(&s, &reader(&s, &h).await?, org).await?))
+}
+async fn h_contract_sign(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+    Json(i): Json<ContractSignIn>,
+) -> Result<Json<Value>> {
+    Ok(Json(
+        sign_contract(&s, &writer(&s, &h).await?, org, id, i).await?,
+    ))
+}
+async fn h_contract_renew(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+    Json(i): Json<RenewIn>,
+) -> Result<Json<Value>> {
+    Ok(Json(
+        renew_contract(&s, &writer(&s, &h).await?, org, id, i).await?,
+    ))
+}
+async fn h_contract_end(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    Ok(Json(
+        request_termination(&s, &writer(&s, &h).await?, org, id).await?,
+    ))
+}
+/// Stage 2 lists (royalties) answer empty so the screens show
 /// their empty state instead of an error.
 async fn h_empty(
     State(s): State<AppState>,
@@ -2341,7 +2768,19 @@ pub fn routes() -> Router<AppState> {
             "/api/orgs/{org}/publishing/applications/{id}/withdraw",
             post(h_withdraw),
         )
-        .route("/api/orgs/{org}/publishing/contracts", get(h_empty))
+        .route("/api/orgs/{org}/publishing/contracts", get(h_contracts))
+        .route(
+            "/api/orgs/{org}/publishing/contracts/{id}/sign",
+            post(h_contract_sign),
+        )
+        .route(
+            "/api/orgs/{org}/publishing/contracts/{id}/renewal",
+            post(h_contract_renew),
+        )
+        .route(
+            "/api/orgs/{org}/publishing/contracts/{id}/termination",
+            post(h_contract_end),
+        )
         .route("/api/orgs/{org}/publishing/royalties", get(h_empty))
         .route("/api/orgs/{org}/works", get(h_works).post(h_create))
         .route(

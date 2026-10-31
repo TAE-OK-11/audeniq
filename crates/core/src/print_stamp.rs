@@ -200,13 +200,20 @@ async fn subject(s: &AppState, h: &HeaderMap, i: &StampInput) -> Result<Subject>
             let a = auth::actor(&s.pool, h, &s.config, true).await?;
             let id = Uuid::parse_str(i.doc_ref.trim()).map_err(|_| Error::Invalid)?;
             let row = if i.kind == "APPLICATION" {
+                // A release application, or a publishing application (저작권 관리 신청서, migration 0167).
                 sqlx::query(
-                    "SELECT org_id, title || ' 발매 신청서' AS title, 'APP' AS tag FROM catalog.releases WHERE id=$1",
+                    "SELECT org_id, title || ' 발매 신청서' AS title, 'APP' AS tag FROM catalog.releases WHERE id=$1
+                     UNION ALL
+                     SELECT a.org_id, '저작권 관리 신청서 ' || ra.application_no, 'APP' FROM portal.pub_applications a
+                       JOIN portal.release_applications ra ON ra.id=a.record_id WHERE a.id=$1",
                 )
             } else {
+                // A portal document, or a publishing contract (저작권 관리 계약서, migration 0168).
                 sqlx::query(
                     "SELECT org_id, title, CASE kind WHEN 'AGREEMENT' THEN 'AGR' ELSE 'RTS' END AS tag
-                       FROM portal.documents WHERE id=$1",
+                       FROM portal.documents WHERE id=$1
+                     UNION ALL
+                     SELECT org_id, '저작권 관리 계약서 ' || contract_no, 'AGR' FROM portal.pub_contracts WHERE id=$1",
                 )
             }
             .bind(id)

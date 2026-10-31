@@ -143,13 +143,13 @@ Every step is an append-only `portal.signing_events` row (`CREATED`, `LINK_REISS
 
 `GET .../submission` also returns `effective_status` per check (a reviewer override replaces the recorded status; `severity` follows it) and `review_notes[]` (`{check_code|null, decision, note, at}`) written by staff.
 
-## Publishing stage 1 (works · 저작권 관리 신청, migration `0167`)
+## Publishing (works · 저작권 관리 신청 · 계약서, migrations `0167`, `0168`)
 
 Org member reads; VIEWER cannot write. Shapes are camelCase and match `web/studio/app/src/api/publishing.ts`. Shares are percentages on the wire (two decimals) and basis points in the database. See [PUBLISHING.md](PUBLISHING.md).
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/orgs/{org}/publishing/policy` | Commission, term, territories, rights, `version` (`2026-10`) |
+| GET | `/api/orgs/{org}/publishing/policy` | Commission, term, territories, rights, `version` (`2026-11`) |
 | GET | `/api/orgs/{org}/publishing/summary` | Work counts, tasks, suggestion (revenue zeros until stage 2) |
 | GET/POST | `/api/orgs/{org}/works` (`?track_id=`) | List / create (optional `recording`) |
 | GET/PATCH/DELETE | `/api/orgs/{org}/works/{id}` | PATCH takes `row_version`; DELETE archives, `WORK_IN_USE` once applied |
@@ -161,12 +161,15 @@ Org member reads; VIEWER cannot write. Shapes are camelCase and match `web/studi
 | POST | `/api/orgs/{org}/releases/{id}/works` | Make works from track credits `{enroll,skip_titles}` |
 | GET | `/api/orgs/{org}/creators?q=` | Me + names used on this org's works |
 | GET/PUT | `/api/me/creator` | The writer's roles, society, IPI |
-| GET/POST | `/api/orgs/{org}/publishing/applications` | Submit needs 100%, roles, a composer, no dispute, every agreement, current `policyVersion` (`POLICY_CHANGED`), `idempotencyKey`; recorded as a `release_applications` row (form `PUBLISHING`), sealed |
+| GET/POST | `/api/orgs/{org}/publishing/applications` | The application (신청서), not the contract. Submit needs 100%, roles, a composer, no dispute, every application confirmation (`accurate`, `rights`, `prior`, `share`), current `policyVersion` (`POLICY_CHANGED`), `idempotencyKey`; recorded as a `release_applications` row (form `PUBLISHING`), sealed. Items carry `contractId` once approved and `signerName` |
 | POST | `/api/orgs/{org}/publishing/applications/{id}/withdraw` | From submitted / in_review / needs_fix |
-| GET | `/api/orgs/{org}/publishing/contracts`, `/royalties`, `/works/{id}/royalties` | Empty until stage 2 |
+| GET | `/api/orgs/{org}/publishing/contracts` | Contracts (계약서) made when staff approve an application: number `AQP-…`, terms, body, `confirmations`, `releaseIds` (releases of its works), signature when signed |
+| POST | `/api/orgs/{org}/publishing/contracts/{id}/sign` | `{signerName,signature,confirmations,rowVersion}`: every confirmation (`read`, `rights`, `exclusive`, else `AGREEMENT_CONFIRMATION_REQUIRED`), drawn signature checked like 배급 계약서, hash over body + terms + ticks + signature; the term starts that day (KST) |
+| POST | `/api/orgs/{org}/publishing/contracts/{id}/renewal`, `/termination` | `{months}` (6 · 12 · 36) / none, on a signed contract |
+| GET | `/api/orgs/{org}/publishing/royalties`, `/works/{id}/royalties` | Empty until stage 2 |
 | GET | `/api/staff/publishing/applications[?status=]`, `/{id}` | Staff queue and one application with its works |
 | POST | `/api/staff/publishing/applications/{id}/claim` | Review duty: take into review (as release `claim`) |
-| POST | `/api/staff/publishing/applications/{id}/decision` | Review duty, release decision shape: `action` APPROVE, REQUEST_CORRECTION (`reason`, `work_ids`, `fields`, `documents` → RIGHTS_PROOF rows on 권리·보완 서류), REJECT (`reason`), REGISTER (`society`) |
+| POST | `/api/staff/publishing/applications/{id}/decision` | Review duty, release decision shape: `action` APPROVE, REQUEST_CORRECTION (`reason`, `work_ids`, `fields`, `documents` → RIGHTS_PROOF rows on 권리·보완 서류), REJECT (`reason`), REGISTER (`society`, only once the contract is signed, else `CONTRACT_NOT_SIGNED`). APPROVE makes the contract |
 
 ## Staff portal (`/api/staff/*`)
 

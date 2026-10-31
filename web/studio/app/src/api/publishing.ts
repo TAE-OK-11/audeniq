@@ -24,6 +24,7 @@ import { statementsStore } from '../store/settlement';
 import { api } from './client';
 import { draftTrackOf } from '../lib/albumPrep';
 import { STATUS_LABEL } from '../lib/format';
+import { CONTRACT_CONFIRMATIONS, contractBody } from '../lib/publishing';
 import { uiStatus } from './remote';
 import { getProfileSnapshot } from '../store/profile';
 import { getAccountSnapshot } from '../store/account';
@@ -148,6 +149,9 @@ export interface PublishingApplication {
   contractId: string | null;
   fixReason?: string | null;
   history: { at: string; text: string }[];
+  /** 신청서에 서명한 사람 · 서명한 원본의 문서 확인 코드 */
+  signerName?: string;
+  documentCode?: string | null;
 }
 
 export interface ApplicationInput {
@@ -175,7 +179,21 @@ export interface PublishingContract {
   renewal: { months: number; requestedAt: string } | null;
   terminationRequestedAt: string | null;
   signedAt: string | null;
+  /** 계약서 본문(한 줄에 한 조) — 승인할 때 확정된 조건으로 만든다 */
+  body?: string;
+  /** 서명 전에 체크하는 확인 항목(모두 필수) */
+  confirmations?: { id: string; text: string }[];
+  signerName?: string | null;
+  signature?: string | null;
+  contentHash?: string | null;
+  applicationId?: string;
+  applicationNumber?: string;
+  /** 계약한 곡이 실린 발매 — 계약서 화면에서 그 발매 묶음에 보인다 */
+  releaseIds?: string[];
+  rowVersion?: number;
 }
+
+export interface ContractSignInput { signerName: string; signature: string; confirmations: string[]; rowVersion: number }
 
 export interface Royalty {
   id: string;
@@ -243,7 +261,7 @@ const POLICY: PublishingPolicy = {
     { key: 'digital', label: '전송권', desc: '스트리밍 서비스에서 생기는 사용료' },
     { key: 'sync', label: '싱크 라이선스', desc: '영상·광고·게임에 쓰일 때의 이용 허락' },
   ],
-  version: '2026-10',
+  version: '2026-11',
 };
 
 const me = (share: number, roles: ContributorRole[], publisherShare = 0, confirm: WorkContributor['confirm'] = 'confirmed'): WorkContributor =>
@@ -345,6 +363,9 @@ function seedContracts(): PublishingContract[] {
     id: 'c1', number: 'AQP-2026-0003', status: 'expiring', startDate: '2026-03-03', endDate: '2026-11-28', commissionRate: 10, termMonths: 12,
     works: [{ id: 'w1', title: '첫 번째 싱글' }], territories: ['KR', 'JP', 'US', 'WORLD'], rights: ['performance', 'mechanical', 'digital'],
     renewal: null, terminationRequestedAt: null, signedAt: '2026-03-03 09:00',
+    body: contractBody([['첫 번째 싱글', 'T-345.246.800-1']], ['KR', 'JP', 'US', 'WORLD'], ['performance', 'mechanical', 'digital'], 10, 12, [6, 12, 36]),
+    confirmations: CONTRACT_CONFIRMATIONS.map(([id, text]) => ({ id, text })), signerName: '서린', contentHash: '7f3a'.padEnd(64, '0'),
+    applicationId: 'a1', applicationNumber: 'PUB-2026-0001', releaseIds: ['r1'], rowVersion: 2,
   }];
 }
 
@@ -447,7 +468,7 @@ function mockSummary(d: PubDb): PublishingSummary {
     else if (pending.length && !w.fix) tasks.push({ id: `split-${w.id}`, kind: 'split', title: `‘${w.title}’ 지분 확인을 기다리는 중`, sub: `${pending.map(p => p.name).join(', ')} 님의 확인이 필요해요.`, to: `/works/${w.id}?tab=rights` });
   }
   for (const c of d.contracts) {
-    if (c.status === 'pending_sign') tasks.push({ id: `sign-${c.id}`, kind: 'sign', title: '저작권 관리 계약 서명 요청', sub: c.works.map(w => w.title).join(', '), to: `/contracts?pub=${c.id}` });
+    if (c.status === 'pending_sign') tasks.push({ id: `sign-${c.id}`, kind: 'sign', title: '저작권 관리 계약서 서명', sub: c.works.map(w => w.title).join(', '), to: `/contracts/publishing/${c.id}` });
     // 연장은 계약서(서류) 화면이 아니라 곡 화면의 계약 관리에서
     if (c.status === 'expiring' && !c.renewal && c.works[0]) tasks.push({ id: `renew-${c.id}`, kind: 'renew', title: '저작권 관리 계약 갱신 요청', sub: `${c.endDate}에 끝나요. 연장하면 관리가 끊기지 않아요.`, to: `/works/${c.works[0].id}?tab=register` });
   }
@@ -669,7 +690,7 @@ const mockApi = {
       const app: PublishingApplication = {
         id: `a_${input.idempotencyKey}`, number: `PUB-${now.slice(0, 4)}-${String(n).padStart(4, '0')}`, status: 'submitted',
         workIds: works.map(w => w.id), workTitles: works.map(w => w.title), territories: input.territories, rights: input.rights,
-        submittedAt: now, contractId: null, history: [{ at: now, text: '전자계약 서명 · 제출 완료' }],
+        submittedAt: now, contractId: null, history: [{ at: now, text: '제출 완료' }], signerName: input.signature.name, documentCode: null,
       };
       d.applications.unshift(app);
       for (const w of works) {
@@ -731,6 +752,55 @@ const mockApi = {
   },
 
   async listContracts() { await wait(); return structuredClone(db.get().contracts); },
+  /** 체험: 담당자가 신청을 승인하면 확정된 조건으로 계약서가 만들어진다 (실서버는 담당자 화면의 '승인') */
+  async simulateApprove(applicationId: string) {
+    await wait(400);
+    return mutate(d => {
+      const a = d.applications.find(x => x.id === applicationId);
+      if (!a) throw notFound();
+      if (!['submitted', 'in_review'].includes(a.status)) throw new ApiError('이미 처리된 신청이에요.', 409, 'APPLICATION_STATE');
+      const now = stampNow();
+      a.status = 'approved';
+      a.history.push({ at: now, text: '승인' });
+      const works = d.works.filter(w => a.workIds.includes(w.id));
+      for (const w of works) {
+        w.application = { id: a.id, number: a.number, status: 'approved' };
+        w.registration = 'ready';
+        w.registrationLog.push({ status: 'ready', at: now, note: '권리 정보 확인 완료' });
+      }
+      const c: PublishingContract = {
+        id: `c_${a.id}`, number: `AQP-${now.slice(0, 10).replace(/-/g, '')}-${a.id.slice(-6).toUpperCase().padStart(6, 'X')}`,
+        status: 'pending_sign', startDate: '', endDate: '', commissionRate: POLICY.commissionRate, termMonths: POLICY.initialTermMonths,
+        works: works.map(w => ({ id: w.id, title: w.title })), territories: a.territories, rights: a.rights,
+        renewal: null, terminationRequestedAt: null, signedAt: null,
+        body: contractBody(works.map(w => [w.title, w.iswc ?? w.internalCode]), a.territories, a.rights, POLICY.commissionRate, POLICY.initialTermMonths, POLICY.renewalOptions),
+        confirmations: CONTRACT_CONFIRMATIONS.map(([id, text]) => ({ id, text })),
+        applicationId: a.id, applicationNumber: a.number,
+        releaseIds: [...new Set(works.flatMap(w => w.recordings.map(r => r.releaseId)))], rowVersion: 1,
+      };
+      d.contracts.unshift(c);
+      a.contractId = c.id;
+      return structuredClone(c);
+    });
+  },
+  async signContract(id: string, input: ContractSignInput) {
+    await wait(600);
+    return mutate(d => {
+      const c = d.contracts.find(x => x.id === id);
+      if (!c) throw notFound();
+      if (c.status !== 'pending_sign') throw new ApiError('이미 서명한 계약서예요.', 409, 'CONTRACT_ALREADY_SIGNED');
+      if (!CONTRACT_CONFIRMATIONS.every(([k]) => input.confirmations.includes(k))) throw new ApiError('확인 항목을 모두 체크해 주세요.', 422, 'AGREEMENT_CONFIRMATION_REQUIRED');
+      const today = stampNow().slice(0, 10);
+      const end = new Date(`${today}T00:00:00`);
+      end.setMonth(end.getMonth() + c.termMonths);
+      Object.assign(c, {
+        status: 'active', signedAt: stampNow(), startDate: today, endDate: end.toISOString().slice(0, 10),
+        signerName: input.signerName, signature: input.signature, contentHash: 'demo'.padEnd(64, '0'), rowVersion: (c.rowVersion ?? 1) + 1,
+      });
+      for (const w of d.works.filter(x => c.works.some(cw => cw.id === x.id))) w.contractId = c.id;
+      return structuredClone(c);
+    });
+  },
   async renewContract(id: string, months: number) {
     await wait(500);
     return mutate(d => {
@@ -845,6 +915,9 @@ const remoteApi = {
   addAttachment: (workId: string, kind: WorkAttachment['kind'], name: string, size?: number, preview?: Pick<WorkAttachment, 'url' | 'text'> & { assetId?: string }) =>
     work(req<Work>(orgPath(`/works/${enc(workId)}/attachments`), { method: 'POST', body: { kind, name, size, asset_id: preview?.assetId, text: preview?.text ?? undefined } })),
   listContracts: () => orEmpty(req<{ items: PublishingContract[] }>(orgPath('/publishing/contracts')).then(r => r.items), [] as PublishingContract[]),
+  signContract: (id: string, input: ContractSignInput) => req<PublishingContract>(orgPath(`/publishing/contracts/${enc(id)}/sign`), { method: 'POST', body: input }),
+  // 체험 전용 — 실서버에서는 담당자가 승인한다
+  simulateApprove: (_id: string) => Promise.reject(new ApiError('담당자 승인을 기다려 주세요.', 400, 'NOT_DEMO')) as Promise<PublishingContract>,
   renewContract: (id: string, months: number) => req<PublishingContract>(orgPath(`/publishing/contracts/${enc(id)}/renewal`), { method: 'POST', body: { months } }),
   requestTermination: (id: string) => req<PublishingContract>(orgPath(`/publishing/contracts/${enc(id)}/termination`), { method: 'POST' }),
   listRoyalties: (workId?: string) => orEmpty(req<{ items: Royalty[] }>(orgPath(workId ? `/works/${enc(workId)}/royalties` : '/publishing/royalties')).then(r => r.items), [] as Royalty[]),

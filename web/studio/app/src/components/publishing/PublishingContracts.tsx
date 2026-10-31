@@ -1,40 +1,22 @@
-// 계약서 화면의 저작권 관리 계약 — 계약에 든 곡, 기간, 관리 범위, 갱신(연장)·종료 요청·내려받기 (기획안 6.4).
-// 배급 계약과 같은 '계약 묶음'(ContractBundle의 aq-bundle) 모양: 머리(이름·상태) + 번호 붙은 줄(신청 → 계약 → 연장).
-// 연장 기간과 수수료는 서버 계약 정책에서 받는다. 신청 중인 건(심사 중·보완 요청)도 같은 묶음으로 보여 준다
+// 계약서 화면의 저작권 관리 계약 — 배급처럼 신청서(신청할 때 서명)와 계약서(담당자 승인 뒤 서명)가 따로다.
+// 배급 계약과 같은 '계약 묶음'(ContractBundle의 aq-bundle) 모양: 머리(이름·상태) + 번호 붙은 줄(신청서 → 계약서).
+// 곡 화면의 계약 관리(ContractManage)에서 기간·연장·종료 요청을 다룬다
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from '../../lib/router';
-import { pubApi, type PublishingApplication, type PublishingContract } from '../../api/publishing';
+import { pubApi, type PublishingContract } from '../../api/publishing';
 import { errorMessage } from '../../api/errors';
 import { useAsync } from '../../hooks/useAsync';
-import { APP_LABEL, APP_TONE, CONTRACT_LABEL, CONTRACT_TONE, daysLeft, termLabel } from '../../lib/publishing';
+import { CONTRACT_LABEL, CONTRACT_TONE, daysLeft, rightName, termLabel, territoryName } from '../../lib/publishing';
 import { localStamp, niceDate } from '../../lib/format';
 import { useToast } from '../Toast';
 import { useConfirm } from '../Confirm';
 import { Modal } from '../Modal';
 import { CheckIcon } from '../Check';
-import { Badge, KeyValue, Meter, Segmented } from '../../ui';
+import { Badge, Meter, Segmented } from '../../ui';
 
+import '../../styles/split/ReleaseDetail.css';
 import '../../styles/split/Publishing.css';
 
-const RIGHT_NAME: Record<string, string> = { performance: '공연권', mechanical: '복제권', digital: '전송권', sync: '싱크' };
-const TERR_NAME: Record<string, string> = { KR: '대한민국', JP: '일본', US: '미국', WORLD: '그 밖의 국가' };
-
-function download(c: PublishingContract) {
-  const text = [
-    `AUDENIQ 저작권 관리 계약서 ${c.number}`, '',
-    `기간: ${c.startDate} ~ ${c.endDate} (${termLabel(c.termMonths)})`,
-    `수수료: 징수한 사용료의 ${c.commissionRate}%`,
-    `관리 대상 국가: ${c.territories.map(t => TERR_NAME[t] ?? t).join(', ')}`,
-    `관리할 권리: ${c.rights.map(r => RIGHT_NAME[r] ?? r).join(', ')}`,
-    `대상 곡: ${c.works.map(w => w.title).join(', ')}`,
-    c.signedAt ? `서명: ${c.signedAt}` : '서명 전',
-  ].join('\n');
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
-  a.download = `${c.number}.txt`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-}
 
 function RenewModal({ c, onClose, onDone }: { c: PublishingContract; onClose: () => void; onDone: (c: PublishingContract) => void }) {
   const toast = useToast();
@@ -66,35 +48,6 @@ function RenewModal({ c, onClose, onDone }: { c: PublishingContract; onClose: ()
   );
 }
 
-function ApplicationBundle({ a }: { a: PublishingApplication }) {
-  const nav = useNavigate();
-  const fix = a.status === 'needs_fix';
-  return (
-    <article className={`aq-bundle aq-pbl-contract is-${fix ? 'needs' : 'review'}`} aria-label={`${a.workTitles.join(', ')} 저작권 관리 신청`}>
-      <header className="aq-bundle-head">
-        <div className="min-0">
-          <strong>{a.workTitles.join(', ')}</strong>
-          {a.submittedAt && <span>{niceDate(a.submittedAt)} 신청 · {a.number}</span>}
-        </div>
-        <Badge tone={APP_TONE[a.status]} className="aq-bundle-state">{APP_LABEL[a.status]}</Badge>
-      </header>
-      <ol className="aq-bundle-docs">
-        <li className="is-done">
-          <span className="aq-bundle-no" aria-hidden="true"><CheckIcon size={14} /></span>
-          <div className="min-0"><strong>저작권 관리 신청서·전자계약</strong><span>신청할 때 서명했어요</span></div>
-        </li>
-        <li className={fix ? 'is-current' : ''}>
-          <span className="aq-bundle-no" aria-hidden="true">2</span>
-          <div className="min-0"><strong>담당자 심사</strong><span>{fix ? (a.fixReason || '보완할 내용을 확인해 주세요') : '권리 정보를 확인하고 있어요'}</span></div>
-          <button type="button" className={fix ? 'ui-btn is-primary aq-bundle-sign' : 'ui-btn is-soft is-sm'} onClick={() => nav(`/works/${a.workIds[0]}?tab=register`)}>
-            {fix ? '보완하기' : '진행 보기'}
-          </button>
-        </li>
-      </ol>
-    </article>
-  );
-}
-
 /** 곡 화면 '등록·계약' 탭의 계약 관리 — 기간·남은 날·연장·종료 요청 (계약서 화면은 서류만 본다) */
 export function ContractManage({ contract, canEdit }: { contract: PublishingContract; canEdit: boolean }) {
   const toast = useToast();
@@ -118,10 +71,10 @@ export function ContractManage({ contract, canEdit }: { contract: PublishingCont
   return (
     <>
       <dl className="ui-kv is-2">
-        <div><dt>계약 기간</dt><dd>{c.startDate} ~ {c.endDate}</dd></div>
+        <div className="aq-kv-code"><dt>계약 기간</dt><dd>{c.startDate} ~ {c.endDate}</dd></div>
         <div><dt>남은 기간</dt><dd>{ended ? '종료' : `${Math.max(0, left)}일`}</dd></div>
         <div><dt>수수료</dt><dd>{c.commissionRate}%</dd></div>
-        <div><dt>관리 범위</dt><dd>{c.territories.map(t => TERR_NAME[t] ?? t).join(', ')} · {c.rights.map(r => RIGHT_NAME[r] ?? r).join(', ')}</dd></div>
+        <div className="aq-kv-code"><dt>관리 범위</dt><dd>{c.territories.map(territoryName).join(', ')} · {c.rights.map(rightName).join(', ')}</dd></div>
       </dl>
       {!ended && <Meter total={total} parts={[{ value: total - Math.max(0, left), tone: left <= 45 ? 'amber' : 'primary' }]} label={`계약 기간 ${Math.max(0, left)}일 남음`} />}
       {c.renewal && <p className="ui-field-help">{termLabel(c.renewal.months)} 연장을 요청했어요 · {localStamp(c.renewal.requestedAt)}</p>}
@@ -137,32 +90,23 @@ export function ContractManage({ contract, canEdit }: { contract: PublishingCont
   );
 }
 
-/** 계약서 목록 안의 저작권 관리 계약 카드 — 배급 계약 묶음과 같은 목록에 섞여 들어간다. 서류만 본다 */
-/** all: 퍼블리싱 메뉴의 '계약' 탭 — 발매한 곡의 계약까지 모두 */
+/** 계약서 목록의 저작권 관리 계약 — 발매에 실리지 않은 곡의 계약만 따로 묶는다(발매 곡은 그 발매 계약 묶음 안에).
+ *  배급 계약처럼 담당자가 승인해 계약서가 생긴 뒤에만 보이고, 신청 중·보완 중인 건은 곡 화면에서 다룬다.
+ *  all: 모든 계약 (발매 곡까지) */
 export function PublishingContracts({ all = false }: { all?: boolean }) {
+  const nav = useNavigate();
   const [params] = useSearchParams();
   const focus = params.get('pub');
   const { data: contracts } = useAsync(() => pubApi.listContracts(), [], { key: 'pub-contracts' });
-  const { data: apps } = useAsync(() => pubApi.listApplications(), [], { key: 'pub-applications' });
-  const { data: works } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
-  // 발매 곡의 신청은 위 발매 계약 묶음에 이미 보인다 — 여기서는 발매 전 곡의 신청만
-  const releasedWork = new Set((works ?? []).filter(w => w.recordings.length).map(w => w.id));
   const focused = useRef<HTMLElement | null>(null);
   useEffect(() => { if (focus && contracts) focused.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, [focus, contracts]);
-
-  // 발매한 곡의 서명 끝난 계약은 그 발매 계약 묶음의 '저작권 관리 계약' 줄에 있다 — 같은 계약을 두 번 보이지 않게.
-  // 서명할 계약, 발매 전 곡이 든 계약, 그 줄에서 '계약 보기'로 찾아온 계약만 따로 보여 준다
-  const list = (contracts ?? []).filter(c => all || c.status === 'pending_sign' || c.id === focus || c.works.some(w => !releasedWork.has(w.id)));
-  const pending = (apps ?? []).filter(a => ['submitted', 'in_review', 'needs_fix'].includes(a.status) && (all || !a.workIds.every(id => releasedWork.has(id))));
-  if (!list.length && !pending.length) return null;
-  const app = (c: PublishingContract) => (apps ?? []).find(a => a.contractId === c.id);
+  const list = (contracts ?? []).filter(c => all || c.id === focus || !c.releaseIds?.length);
+  if (!list.length) return null;
 
   return (
     <>
-      {pending.map(a => <ApplicationBundle key={a.id} a={a} />)}
       {list.map(c => {
         const signed = c.status !== 'pending_sign';
-        const a = app(c);
         return (
           <article key={c.id} ref={c.id === focus ? el => { focused.current = el; } : undefined}
             className={`aq-bundle aq-pbl-contract is-${signed ? 'signed' : 'to-sign'}`} aria-label={`저작권 관리 계약 ${c.number}`}>
@@ -173,19 +117,18 @@ export function PublishingContracts({ all = false }: { all?: boolean }) {
               </div>
               <Badge tone={CONTRACT_TONE[c.status]} className="aq-bundle-state">{CONTRACT_LABEL[c.status]}</Badge>
             </header>
-            <KeyValue cols={2} className="aq-pbl-contract-summary" items={[
-              ['계약 기간', `${c.startDate} ~ ${c.endDate}`],
-              ['관리 수수료', `${c.commissionRate}%`],
-            ]} />
             <ol className="aq-bundle-docs">
               <li className="is-done">
                 <span className="aq-bundle-no" aria-hidden="true"><CheckIcon size={14} /></span>
-                <div className="min-0"><strong>저작권 관리 신청서</strong><span>{a?.submittedAt ? `${niceDate(a.submittedAt)} 신청할 때 서명했어요` : '신청할 때 서명했어요'}</span></div>
+                <div className="min-0"><strong>저작권 관리 신청서</strong><span>신청할 때 서명했어요</span></div>
+                {c.applicationId && <button type="button" className="ui-btn is-soft is-sm" onClick={() => nav(`/publishing/applications/${encodeURIComponent(c.applicationId!)}`)}>신청서 보기</button>}
               </li>
               <li className={signed ? 'is-done' : 'is-current'}>
                 <span className="aq-bundle-no" aria-hidden="true">{signed ? <CheckIcon size={14} /> : 2}</span>
-                <div className="min-0"><strong>저작권 관리 계약서</strong><span>{signed ? '서명 완료' : '서명 필요'}</span></div>
-                <button type="button" className="ui-btn is-soft is-sm" onClick={() => download(c)}>계약서 받기</button>
+                <div className="min-0"><strong>저작권 관리 계약서</strong><span>{signed ? `${c.startDate} ~ ${c.endDate} · 수수료 ${c.commissionRate}%` : '담당자 승인 완료, 서명 필요'}</span></div>
+                <button type="button" className={signed ? 'ui-btn is-soft is-sm' : 'ui-btn is-primary aq-bundle-sign'} onClick={() => nav(`/contracts/publishing/${encodeURIComponent(c.id)}`)}>
+                  {signed ? '계약서 보기' : '확인하고 서명'}
+                </button>
               </li>
             </ol>
           </article>

@@ -55,6 +55,8 @@ const Reports = lazyPage(pageLoaders.Reports, m => m.Reports);
 const Settlement = lazyPage(pageLoaders.Settlement, m => m.Settlement);
 const Contracts = lazyPage(pageLoaders.Contracts, m => m.Contracts);
 const Agreement = lazyPage(pageLoaders.Agreement, m => m.Agreement);
+const PublishingAgreement = lazyPage(pageLoaders.PublishingAgreement, m => m.PublishingAgreement);
+const PublishingApplicationDoc = lazyPage(pageLoaders.PublishingApplicationDoc, m => m.PublishingApplicationDoc);
 const Rights = lazyPage(pageLoaders.Rights, m => m.Rights);
 const WorkDetail = lazyPage(pageLoaders.WorkDetail, m => m.WorkDetail);
 const WorkEditor = lazyPage(pageLoaders.WorkEditor, m => m.WorkEditor);
@@ -211,11 +213,13 @@ function PortalRoutes() {
             <Route path="/works/:id" element={<WorkDetailRoute />} />
             <Route path="/works/:id/edit" element={<WorkEditorRoute />} />
             <Route path="/publishing/apply" element={<PublishingApply />} />
+            <Route path="/publishing/applications/:id" element={<PublishingApplicationDoc />} />
             <Route path="/publishing" element={<Publishing />} />
             <Route path="/ar" element={<OpenAr />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/settlement" element={<Settlement />} />
             <Route path="/contracts" element={<Contracts />} />
+            <Route path="/contracts/publishing/:id" element={<PublishingAgreement />} />
             <Route path="/contracts/:id" element={<Agreement />} />
             <Route path="/rights" element={<Rights />} />
             <Route path="/rights/:id" element={<RightsDocument />} />

@@ -21,7 +21,7 @@ const DOC_PATH = [
   ['배급 신청서 서명', '발매를 접수할 때'],
   ['담당자 검토', '수수료·배급 조건 확정'],
   ['배급 계약서 서명', '권리를 확인하고 서명하면 배급 시작'],
-  ['저작권 관리 계약 (선택)', '곡 저작권도 맡기면 저작권료까지 같은 잔액으로'],
+  ['저작권 관리 계약', '맡길 때만 · 저작권료까지 같은 잔액으로'],
 ] as const;
 
 export function Contracts() {
@@ -93,7 +93,7 @@ export function Contracts() {
             <Link to={`/releases/${encodeURIComponent(entryRelease)}?tab=publishing`} className="ui-row">
               <IconTile size="sm"><Glyph name="scale" size={16} /></IconTile>
               <span className="min-0">
-                <span className="ui-row-title">곡 저작권도 맡기기 (선택)</span>
+                <span className="ui-row-title">곡 저작권도 맡기기 <span className="aq-optional">선택</span></span>
                 <span className="ui-row-meta"><span>작사·작곡 저작권료까지 배급 정산금과 같은 잔액으로 받아요</span></span>
               </span>
               <Glyph name="chevron-right" size={16} />
