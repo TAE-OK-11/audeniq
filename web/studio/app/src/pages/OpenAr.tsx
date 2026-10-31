@@ -42,6 +42,7 @@ function SubmitForm({ works, preset, busyIds, releasedPreset, onDone, onClose, o
   const [desc, setDesc] = useState('');
   const [refs, setRefs] = useState('');
   const [scope, setScope] = useState<'internal' | 'partners'>('partners');
+  const [sync, setSync] = useState(false);
   const [consent, setConsent] = useState(false);
   useEffect(() => setConsent(false), [workId, scope]);
   const [busy, setBusy] = useState(false);
@@ -56,7 +57,7 @@ function SubmitForm({ works, preset, busyIds, releasedPreset, onDone, onClose, o
     if (!ready || !work || busy) return;
     setBusy(true);
     try {
-      const s = await pubApi.submitAr({ workId: work.id, genre: genre.trim(), mood, description: desc.trim(), references: refs.trim(), scope, consent, demoName: demo?.name, lyrics: lyrics?.name, idempotencyKey: key });
+      const s = await pubApi.submitAr({ workId: work.id, genre: genre.trim(), mood, description: desc.trim(), references: refs.trim(), scope, sync, consent, demoName: demo?.name, lyrics: lyrics?.name, idempotencyKey: key });
       toast('A&R에 제출했어요. 심사가 시작되면 알려 드려요.', 'success');
       setKey(uid('ar'));
       setWorkId(''); setMood([]); setConsent(false); setRefs('');
@@ -115,6 +116,10 @@ function SubmitForm({ works, preset, busyIds, releasedPreset, onDone, onClose, o
             <Field label="곡 설명" htmlFor="arDesc" help="어떤 아티스트·프로젝트에 어울리는지 적으면 피칭에 도움이 돼요.">
               <textarea id="arDesc" className="ui-textarea" rows={3} value={desc} onChange={e => setDesc(e.target.value)} />
             </Field>
+            <label className="ui-check is-plain">
+              <input type="checkbox" checked={sync} onChange={e => setSync(e.target.checked)} />
+              <span><b>영상·광고·게임에도 소개해 주세요 (싱크)</b><br /><small className="muted">드라마·광고·게임 음악 담당자에게도 소개해요. 쓰고 싶다는 제안이 오면 조건을 알려 드리고, 허락할지는 그때 정해요.</small></span>
+            </label>
             <Field label={<>참고 자료 <span className="aq-optional">선택</span></>} htmlFor="arRefs" help="레퍼런스 곡 링크 등">
               <input id="arRefs" className={inputClass()} value={refs} onChange={e => setRefs(e.target.value)} placeholder="https://" />
             </Field>
@@ -122,7 +127,7 @@ function SubmitForm({ works, preset, busyIds, releasedPreset, onDone, onClose, o
       {step === 2 && <>
         <ReviewCard head="곡·음원" onEdit={() => go(0)}>{work?.title}<br />{demo?.name}</ReviewCard>
         <ReviewCard head="곡 소개" onEdit={() => go(1)}>{genre} · {mood.join(' · ')}{desc && <p>{desc}</p>}{refs && <p>{refs}</p>}</ReviewCard>
-        <ReviewCard head="공개 범위" onEdit={() => go(1)}>{scope === 'partners' ? '승인 파트너까지' : 'AUDENIQ 내부만'}</ReviewCard>
+        <ReviewCard head="공개 범위" onEdit={() => go(1)}>{scope === 'partners' ? '승인 파트너까지' : 'AUDENIQ 내부만'}{sync && ' · 영상·광고·게임(싱크)에도 소개'}</ReviewCard>
             <label className="ui-check">
               <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />
               <span><b>(필수) 피칭에 동의해요.</b> {scope === 'partners' ? '승인된 곡만 지정된 외부 관계자(레이블·기획사·A&R)에게 비공개로 공개돼요.' : 'AUDENIQ 내부 A&R만 들어요.'} 언제든 제출을 취소할 수 있어요.</span>
@@ -181,7 +186,7 @@ export function OpenAr() {
                     <IconTile><Glyph name="music" size={20} /></IconTile>
                     <div className="min-0">
                       <span className="ui-row-title">{s.genre} · {s.mood.join(' · ')}</span>
-                      <span className="ui-row-meta">{localStamp(s.submittedAt)} 제출 · {s.scope === 'partners' ? '승인 파트너까지 공개' : 'AUDENIQ 내부만'}</span>
+                      <span className="ui-row-meta">{localStamp(s.submittedAt)} 제출 · {s.scope === 'partners' ? '승인 파트너까지 공개' : 'AUDENIQ 내부만'}{s.sync && ' · 싱크 소개'}</span>
                     </div>
                     <Glyph name="chevron-right" size={16} />
                   </Link>

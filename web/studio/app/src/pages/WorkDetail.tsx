@@ -9,7 +9,7 @@ import { pubApi, type Work, type WorkContributor } from '../api/publishing';
 import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { MOCK } from '../lib/mode';
-import { APP_LABEL, APP_TONE, AR_LABEL, AR_TONE, CONTRACT_LABEL, CONTRACT_TONE, FIX_FIELDS, LANGUAGES, ORIGIN_LABEL, fixNote, isFixField, type FixField, REG_LABEL, REG_SENTENCE, REG_STEPS, WORK_TYPES, APPLICABLE_REG, canEditInfo, editMode, pct, societyName, regStep, splitIssues, splitReady, workOrigin } from '../lib/publishing';
+import { APP_LABEL, APP_TONE, AR_LABEL, AR_TONE, CONTRACT_LABEL, CONTRACT_TONE, FIX_FIELDS, LANGUAGES, ORIGIN_LABEL, fixNote, isFixField, type FixField, REG_LABEL, REG_SENTENCE, REG_STEPS, WORK_TYPES, AI_USE_OPTIONS, APPLICABLE_REG, PAYOUT_TIMING, canEditInfo, editMode, pct, societyName, regStep, splitIssues, splitReady, workOrigin } from '../lib/publishing';
 import { StageCard } from '../components/StageCard';
 import { STATUS_LABEL, localStamp, statusTone } from '../lib/format';
 import { useToast } from '../components/Toast';
@@ -24,6 +24,7 @@ import { SplitEditor } from '../components/publishing/SplitEditor';
 import { RoyaltyTable } from '../components/publishing/Royalties';
 import { ContractManage } from '../components/publishing/PublishingContracts';
 import { AttachmentList, AttachmentModal } from '../components/publishing/Attachments';
+import { InviteModal } from '../components/publishing/InviteModal';
 import { Badge, Callout, EmptyState, KeyValue, Segmented, StatGrid, StatTile, Tabs } from '../ui';
 import { SplitDiffList } from '../components/publishing/WorkSheet';
 import { changeNeedsReview, reusableWorks, signing, splitDiff } from '../lib/publishingPrep';
@@ -52,6 +53,7 @@ function nextAction(w: Work): { text: string; tab?: Tab; to?: string; btn: strin
   if (mine) return { text: `내 지분 ${pct(mine.share)}를 확인해 주세요. 맞으면 확인, 다르면 변경을 요청해요.`, tab: 'rights', btn: '확인하기', tone: 'warn' };
   if (!canEdit) return null;
   if (editMode(w) === 'direct' && !splitReady(w.contributors)) return { text: splitIssues(w.contributors).find(i => i.level === 'error')?.text ?? '지분을 맞춰 주세요.', tab: 'rights', btn: '지분 고치기', tone: 'warn' };
+  if (w.aiUse === 'generated' && w.registration === 'none') return { text: 'AI로만 만든 곡이라 저작권 관리를 신청할 수 없어요. 직접 쓴 부분이 있으면 곡 정보에서 AI 사용을 고쳐 주세요.', to: `/works/${w.id}/edit`, btn: '정보 고치기', tone: 'info' };
   // 맡기기 전 안내('저작권 관리 시작')는 두지 않는다 — 머리 카드의 '저작권 관리 신청' 버튼과 같은 일을 한 화면에 두 번 권했다
   return null;
 }
@@ -101,10 +103,10 @@ function FixPanel({ work, onDone, goRights }: { work: Work; onDone: (w: Work) =>
             ))}
             {docs.map(d => (
               <li key={d}>
-                <button type="button" className="aq-task is-warn" onClick={() => nav('/rights')}>
+                <button type="button" className="aq-task is-warn" onClick={() => nav(/합의서/.test(d) ? `/works/${work.id}/split-sheet` : '/rights')}>
                   <span className="ui-icon" aria-hidden="true"><Glyph name="doc" size={18} /></span>
-                  <span className="aq-task-text"><strong>{d}</strong><small>권리·보완 서류에서 파일을 올려 주세요</small></span>
-                  <span className="aq-task-go">서류 첨부하기<i aria-hidden="true"><Glyph name="chevron-right" size={14} /></i></span>
+                  <span className="aq-task-text"><strong>{d}</strong><small>{/합의서/.test(d) ? '곡 정보로 합의서를 만들어 서명한 뒤 올려 주세요' : '권리·보완 서류에서 파일을 올려 주세요'}</small></span>
+                  <span className="aq-task-go">{/합의서/.test(d) ? '합의서 만들기' : '서류 첨부하기'}<i aria-hidden="true"><Glyph name="chevron-right" size={14} /></i></span>
                 </button>
               </li>
             ))}
@@ -193,6 +195,7 @@ export function WorkDetail() {
   const [linking, setLinking] = useState(false);
   const [attaching, setAttaching] = useState(false);
   const [splitView, setSplitView] = useState<'now' | 'pending'>('pending');
+  const [inviting, setInviting] = useState<WorkContributor[] | null>(null);
   const { data: allWorks } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
   // 발매 전 곡의 A&R 제출 — 진행 중이면 '제출' 대신 진행 상황으로 (같은 곡을 두 번 내지 않게)
   const { data: arList } = useAsync(() => pubApi.listAr(), [], { key: 'ar-submissions' });
@@ -227,7 +230,7 @@ export function WorkDetail() {
   const origin = workOrigin(w);
   const released = origin !== 'unreleased';
   // 서버(submit_application)와 같은 조건 — 발매 신청에서 함께 고른 곡('preparing')과 반려된 곡도 (다시) 신청할 수 있다
-  const canApply = canEdit && released && APPLICABLE_REG.includes(w.registration) && (!app || app.status === 'withdrawn' || app.status === 'rejected');
+  const canApply = canEdit && released && w.aiUse !== 'generated' && APPLICABLE_REG.includes(w.registration) && (!app || app.status === 'withdrawn' || app.status === 'rejected');
   // 지분·곡 정보를 고칠 수 있는지 — 심사 중·계약서 서명 대기 중에는 서버가 받지 않는다
   const mode = editMode(w);
   const toSign = signing(w) ? contracts?.find(c => c.status === 'pending_sign' && c.works.some(x => x.id === w.id)) ?? null : null;
@@ -356,6 +359,7 @@ export function WorkDetail() {
                 ['공개 범위', w.visibility === 'shared' ? '참여자에게 공개' : '비공개'],
                 ['ISWC', w.iswc ?? <Empty>{`발급 전 · ${w.internalCode}`}</Empty>],
                 ['기존 퍼블리셔', w.hasPriorPublisher ? (w.priorPublisher || '있음') : '없음'],
+                ['AI 사용', AI_USE_OPTIONS.find(x => x[0] === (w.aiUse ?? 'none'))?.[1] ?? 'AI 없음'],
                 ['내 역할', me ? `${roleText(me)} · ${pct(me.share)}` : <Empty>참여하지 않음</Empty>],
                 ['발매', origin === 'other_release' ? `${w.externalRelease?.artist ?? '다른 아티스트'} 발매` : w.recordings.length ? `녹음 ${w.recordings.length}개` : <Empty>발매 전</Empty>],
               ]} />
@@ -380,6 +384,8 @@ export function WorkDetail() {
             <div className="aq-relinfo-card">
               <div className="ui-section-head">
                 <h2 className="subhead">참여자·지분</h2>
+                {/* 함께 쓴 곡이면 지분으로 공동 작곡 합의서를 바로 — 따로 서류를 만들지 않게 */}
+                {w.contributors.length > 1 && !splitDraft && <Link to={`/works/${w.id}/split-sheet`} className="ui-btn is-text is-sm">합의서 만들기</Link>}
                 {canEdit && !splitDraft && mode !== 'locked' && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setSplitDraft(structuredClone(w.pendingChange?.contributors ?? w.contributors))}>{w.pendingChange ? '변경값 고치기' : '지분 고치기'}</button>}
               </div>
               {canEdit && mode === 'locked' && <p className="ui-field-help">{signing(w) ? '계약서 서명을 기다리는 곡이라 지금은 지분을 바꿀 수 없어요. 서명한 뒤에는 변경을 요청할 수 있어요.' : '담당자가 심사하는 동안에는 지분을 바꿀 수 없어요. 보완 요청이 오면 고칠 수 있고, 급하면 신청을 철회한 뒤 고쳐요.'}</p>}
@@ -403,7 +409,7 @@ export function WorkDetail() {
                   </>
                 )}
                 <SplitEditor value={w.pendingChange && splitView === 'pending' ? w.pendingChange.contributors : w.contributors} onChange={() => {}} readOnly
-                  onRequestConfirm={canEdit ? c => void pubApi.requestSplitConfirm(w.id, c.id).then(nw => { update(nw); toast(`${c.name} 님에게 확인을 요청했어요.`, 'success'); }).catch(err => toast(errorMessage(err), 'error')) : undefined}
+                  onRequestConfirm={canEdit ? list => setInviting(list) : undefined}
                   onSimulate={MOCK && canEdit ? c => void pubApi.simulateConfirm(w.id, c.id).then(update) : undefined} />
                 </>
               )}
@@ -512,6 +518,7 @@ export function WorkDetail() {
                 {canEdit && <button type="button" className="ui-btn is-white is-sm" onClick={() => setLinking(true)}>발매 곡 연결 <Glyph name="chevron-right" size={13} /></button>}
               </div>
             )}
+            {inviting && <InviteModal work={w} people={inviting} onClose={() => setInviting(null)} onDone={reload} />}
             {linking && <LinkRecordingModal work={w} onClose={() => setLinking(false)} onLinked={update} />}
           </div>
         )}
@@ -525,7 +532,7 @@ export function WorkDetail() {
             </StatGrid>
             <div className="aq-relinfo-card">
               <h2 className="subhead">저작권료 내역</h2>
-              {royalties ? <RoyaltyTable rows={royalties} showWork={false} summary={false} emptyText={w.registration === 'registered' ? undefined : '저작권 등록이 끝나면 관리 단체가 나눠 주는 사용료가 여기에 들어와요.'} /> : <SkeletonBlock height={160} />}
+              {royalties ? <RoyaltyTable rows={royalties} showWork={false} summary={false} emptyText={w.registration === 'registered' ? `아직 들어온 저작권료가 없어요. ${PAYOUT_TIMING}` : `저작권 등록이 끝나면 관리 단체가 나눠 주는 사용료가 여기에 들어와요. ${PAYOUT_TIMING}`} /> : <SkeletonBlock height={160} />}
             </div>
             {distRows.length > 0 && (
               <div className="aq-relinfo-card">

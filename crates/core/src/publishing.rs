@@ -59,6 +59,8 @@ const KINDS: [&str; 4] = ["demo", "lyrics", "score", "proof"];
 /// Where a work comes from (migration 0169): not released yet (pitched through Open A&R), released by the
 /// artist through AUDENIQ (read from the catalog), or released by someone else (given by the artist).
 const ORIGINS: [&str; 3] = ["unreleased", "own_release", "other_release"];
+/// How AI was used in writing the work (migration 0170); a work made entirely by AI cannot be applied.
+const AI_USES: [&str; 3] = ["none", "assisted", "generated"];
 /// Every box of the application's agreement step.
 /// What the applicant confirms when signing the application (신청서). The contract has its own
 /// confirmations (CONTRACT_CONFIRMATIONS) — the application is not the contract, as in distribution.
@@ -82,7 +84,7 @@ const TERRITORIES: [(&str, &str); 4] = [
     ("US", "미국"),
     ("WORLD", "전 세계(그 밖의 국가)"),
 ];
-const RIGHTS: [(&str, &str, &str); 4] = [
+const RIGHTS: [(&str, &str, &str); 5] = [
     (
         "performance",
         "공연권",
@@ -98,6 +100,12 @@ const RIGHTS: [(&str, &str, &str); 4] = [
         "sync",
         "싱크 라이선스",
         "영상·광고·게임에 쓰일 때의 이용 허락",
+    ),
+    // The composition side of YouTube: Content ID claims on videos that use the song (user uploads, covers, shorts).
+    (
+        "youtube",
+        "유튜브 작곡 권리",
+        "유튜브 영상(커버·쇼츠 포함)에 쓰인 곡의 작곡 사용료",
     ),
 ];
 
@@ -186,6 +194,7 @@ pub struct WorkIn {
     pub contributors: Option<Vec<ContributorIn>>,
     pub recording: Option<RecordingIn>,
     pub origin: Option<String>,
+    pub ai_use: Option<String>,
     #[serde(default, deserialize_with = "nullable")]
     pub external_release: Option<Option<ExternalReleaseIn>>,
     #[serde(alias = "row_version")]
@@ -424,7 +433,7 @@ async fn works_json(
     let works = sqlx::query(
         "SELECT w.id, w.internal_code, w.title, w.alt_titles, w.work_type, w.language, w.genre, w.description, w.visibility,
                 w.iswc, w.has_prior_publisher, w.prior_publisher, w.registration, w.fix, w.pending_contributors, w.pending_at,
-                w.origin, w.external_release, w.row_version, w.created_at, w.updated_at,
+                w.origin, w.external_release, w.ai_use, w.row_version, w.created_at, w.updated_at,
                 -- The signed contract the work is under (a contract waiting for signature does not count yet).
                 (SELECT c.id FROM portal.pub_contracts c JOIN portal.pub_application_works aw ON aw.application_id=c.application_id
                   WHERE aw.work_id=w.id AND c.status <> 'pending_sign' ORDER BY c.created_at DESC LIMIT 1) AS contract_id
@@ -445,8 +454,11 @@ async fn works_json(
     let ids: Vec<Uuid> = works.iter().map(|w| w.get("id")).collect();
     let mut people: HashMap<Uuid, Vec<Value>> = HashMap::new();
     for r in sqlx::query(
-        "SELECT id, work_id, party_id, name, roles, society, ipi, share_bps, publisher_share_bps, confirm, external
-           FROM portal.pub_work_contributors WHERE work_id = ANY($1) ORDER BY work_id, position",
+        "SELECT c.id, c.work_id, c.party_id, c.name, c.roles, c.society, c.ipi, c.share_bps, c.publisher_share_bps, c.confirm, c.external,
+                i.note AS invite_note, (i.id IS NOT NULL AND i.answer IS NULL) AS invited, i.invite_status
+           FROM portal.pub_work_contributors c
+           LEFT JOIN portal.pub_split_invites i ON i.work_id=c.work_id AND i.contributor_id=c.id
+          WHERE c.work_id = ANY($1) ORDER BY c.work_id, c.position",
     )
     .bind(&ids)
     .fetch_all(&mut *c)
@@ -459,6 +471,9 @@ async fn works_json(
             "ipi": r.get::<Option<String>, _>("ipi"), "share": pct(r.get("share_bps")),
             "publisherShare": pct(r.get("publisher_share_bps")), "confirm": r.get::<String, _>("confirm"),
             "external": r.get::<bool, _>("external"), "isMe": party_id == Some(party),
+            // Co-writer invite (0171): a link is out, mailed or not, and what they wrote when disputing.
+            "invited": r.get::<bool, _>("invited"), "inviteNote": r.get::<Option<String>, _>("invite_note"),
+            "inviteMail": r.get::<Option<String>, _>("invite_status").filter(|v| v != "NONE"),
         }));
     }
     let mut files: HashMap<Uuid, Vec<Value>> = HashMap::new();
@@ -564,6 +579,7 @@ async fn works_json(
                 "priorPublisher": w.get::<Option<String>, _>("prior_publisher"),
                 "origin": w.get::<String, _>("origin"),
                 "externalRelease": w.get::<Option<Value>, _>("external_release"),
+                "aiUse": w.get::<String, _>("ai_use"),
                 "contributors": people.remove(&id).unwrap_or_default(),
                 "attachments": files.remove(&id).unwrap_or_default(),
                 "recordings": recordings.remove(&id).unwrap_or_default(),
@@ -787,6 +803,11 @@ fn check_meta(i: &WorkIn) -> Result<()> {
     {
         return Err(Error::InvalidCode("WORK_ORIGIN_INVALID"));
     }
+    if let Some(v) = &i.ai_use
+        && !AI_USES.contains(&v.as_str())
+    {
+        return Err(Error::InvalidCode("WORK_AI_USE_INVALID"));
+    }
     Ok(())
 }
 
@@ -899,8 +920,8 @@ pub async fn create_work(s: &AppState, a: &Actor, org: Uuid, i: WorkIn) -> Resul
     let role = auth::membership(&mut tx, a, org, true).await?;
     let id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO portal.pub_works(id,org_id,internal_code,title,alt_titles,work_type,language,genre,description,visibility,iswc,has_prior_publisher,prior_publisher,created_by,origin,external_release)
-         VALUES($1,$2,'AQW-'||lpad(nextval('portal.pub_work_code_seq')::text,6,'0'),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",
+        "INSERT INTO portal.pub_works(id,org_id,internal_code,title,alt_titles,work_type,language,genre,description,visibility,iswc,has_prior_publisher,prior_publisher,created_by,origin,external_release,ai_use)
+         VALUES($1,$2,'AQW-'||lpad(nextval('portal.pub_work_code_seq')::text,6,'0'),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)",
     )
     .bind(id)
     .bind(org)
@@ -917,6 +938,7 @@ pub async fn create_work(s: &AppState, a: &Actor, org: Uuid, i: WorkIn) -> Resul
     .bind(a.user)
     .bind(origin)
     .bind(external)
+    .bind(i.ai_use.as_deref().unwrap_or("none"))
     .execute(&mut *tx)
     .await?;
     write_contributors(&mut tx, org, id, a.party, a.user, plan).await?;
@@ -985,7 +1007,8 @@ pub async fn update_work(s: &AppState, a: &Actor, org: Uuid, id: Uuid, i: WorkIn
            has_prior_publisher=COALESCE($12,has_prior_publisher),
            prior_publisher=CASE WHEN $13 THEN $14 ELSE prior_publisher END,
            origin=COALESCE($15,origin),
-           external_release=CASE WHEN $16 THEN $17 ELSE external_release END
+           external_release=CASE WHEN $16 THEN $17 ELSE external_release END,
+           ai_use=COALESCE($18,ai_use)
          WHERE org_id=$1 AND id=$2",
     )
     .bind(org)
@@ -1004,6 +1027,7 @@ pub async fn update_work(s: &AppState, a: &Actor, org: Uuid, id: Uuid, i: WorkIn
     .bind(i.origin.as_deref())
     .bind(external.is_some())
     .bind(external.flatten())
+    .bind(i.ai_use.as_deref())
     .execute(&mut *tx)
     .await?;
     if let Some(list) = i.contributors {
@@ -1164,6 +1188,288 @@ pub async fn request_confirm(
     Ok(out)
 }
 
+// ---------------------------------------------------------------------------
+// Co-writer invites (migration 0171)
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize, Default)]
+pub struct InviteIn {
+    #[serde(default)]
+    pub email: Option<String>,
+}
+
+/// A link for a co-writer to confirm their share — copied by the applicant and/or mailed. Asking again makes a
+/// new link (the old one stops working). Answers set the contributor's confirm.
+pub async fn invite_contributor(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    id: Uuid,
+    contributor: Uuid,
+    i: InviteIn,
+) -> Result<Value> {
+    let email = match i.email.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        Some(v) => Some(
+            crate::email::normalize_address(v)
+                .ok_or(Error::InvalidCode("WORK_INVITE_EMAIL_INVALID"))?,
+        ),
+        None => None,
+    };
+    auth::rate(&s.pool, &format!("pub-invite:{contributor}"), 5).await?;
+    let mut tx = s.pool.begin().await?;
+    auth::membership(&mut tx, a, org, true).await?;
+    lock_work(&mut tx, org, id).await?;
+    let row: Option<(Option<Uuid>, String)> = sqlx::query_as(
+        "SELECT party_id, confirm FROM portal.pub_work_contributors WHERE work_id=$1 AND id=$2",
+    )
+    .bind(id)
+    .bind(contributor)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some((party, confirm)) = row else {
+        return Err(Error::NotFound);
+    };
+    if party == Some(a.party) {
+        return Err(Error::PolicyGate("WORK_INVITE_SELF"));
+    }
+    if confirm == "confirmed" {
+        return Err(Error::PolicyGate("WORK_ALREADY_CONFIRMED"));
+    }
+    let token = auth::random_token();
+    let invite: Uuid = sqlx::query_scalar(
+        "INSERT INTO portal.pub_split_invites(id,org_id,work_id,contributor_id,token_hash,created_by) VALUES($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (work_id, contributor_id) DO UPDATE SET token_hash=EXCLUDED.token_hash, email_cipher=NULL, token_cipher=NULL,
+           invite_status='NONE', invite_attempts=0, answer=NULL, note=NULL, answered_at=NULL, created_by=EXCLUDED.created_by, created_at=now()
+         RETURNING id",
+    )
+    .bind(Uuid::new_v4())
+    .bind(org)
+    .bind(id)
+    .bind(contributor)
+    .bind(crate::domain::sha256_hex(&token))
+    .bind(a.user)
+    .fetch_one(&mut *tx)
+    .await?;
+    if let Some(to) = &email {
+        let keys = &s.payout_keys;
+        sqlx::query("UPDATE portal.pub_split_invites SET email_cipher=$2, token_cipher=$3, invite_status='PENDING', invite_next_at=now() WHERE id=$1")
+            .bind(invite)
+            .bind(keys.seal_field(crate::payout_keys::Field::PubInviteEmail, invite, to)?)
+            .bind(keys.seal_field(crate::payout_keys::Field::PubInviteToken, invite, &token)?)
+            .execute(&mut *tx)
+            .await?;
+    }
+    sqlx::query("UPDATE portal.pub_work_contributors SET confirm='pending', confirm_requested_at=now() WHERE work_id=$1 AND id=$2")
+        .bind(id)
+        .bind(contributor)
+        .execute(&mut *tx)
+        .await?;
+    audit(&mut tx, a, org, id, "publishing.confirm_invited").await?;
+    tx.commit().await?;
+    Ok(json!({"token": token, "emailed": email.is_some()}))
+}
+
+async fn invite_by_token(c: &mut PgConnection, token: &str) -> Result<sqlx::postgres::PgRow> {
+    if token.len() != 64 || !token.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(Error::NotFound);
+    }
+    sqlx::query(
+        "SELECT i.id, i.org_id, i.work_id, i.contributor_id, i.answer, w.title, o.name AS org_name
+           FROM portal.pub_split_invites i
+           JOIN portal.pub_works w ON w.id=i.work_id AND w.archived_at IS NULL
+           JOIN identity.orgs o ON o.id=i.org_id
+           JOIN portal.pub_work_contributors c ON c.work_id=i.work_id AND c.id=i.contributor_id
+          WHERE i.token_hash=$1 FOR UPDATE OF i",
+    )
+    .bind(crate::domain::sha256_hex(token.to_ascii_lowercase()))
+    .fetch_optional(&mut *c)
+    .await?
+    .ok_or(Error::NotFound)
+}
+
+/// What the co-writer is asked to confirm (no account: the link is the secret).
+pub async fn split_invite(s: &AppState, token: &str) -> Result<Value> {
+    let mut tx = s.pool.begin().await?;
+    let r = invite_by_token(&mut tx, token).await?;
+    let me: Uuid = r.get("contributor_id");
+    let people: Vec<Value> = sqlx::query(
+        "SELECT id, name, roles, share_bps FROM portal.pub_work_contributors WHERE work_id=$1 ORDER BY position",
+    )
+    .bind(r.get::<Uuid, _>("work_id"))
+    .fetch_all(&mut *tx)
+    .await?
+    .into_iter()
+    .map(|p| {
+        json!({"name": p.get::<String, _>("name"), "roles": p.get::<Vec<String>, _>("roles"),
+               "share": pct(p.get("share_bps")), "you": p.get::<Uuid, _>("id") == me})
+    })
+    .collect();
+    tx.rollback().await?;
+    Ok(json!({
+        "title": r.get::<String, _>("title"), "from": r.get::<String, _>("org_name"),
+        "people": people, "answer": r.get::<Option<String>, _>("answer"),
+    }))
+}
+
+#[derive(Deserialize)]
+pub struct InviteAnswerIn {
+    pub agree: bool,
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+/// Confirm or dispute. The link works once; the address is erased with the answer.
+pub async fn answer_split_invite(s: &AppState, token: &str, i: InviteAnswerIn) -> Result<Value> {
+    let note =
+        opt_clean(i.note.as_deref(), 1000, "WORK_INVITE_NOTE_INVALID")?.filter(|n| !n.is_empty());
+    if let Some(n) = &note {
+        crate::text_policy::check_multiline(n)?;
+    }
+    let mut tx = s.pool.begin().await?;
+    let r = invite_by_token(&mut tx, token).await?;
+    if r.get::<Option<String>, _>("answer").is_some() {
+        return Err(Error::PolicyGate("WORK_INVITE_ANSWERED"));
+    }
+    let answer = if i.agree { "confirmed" } else { "disputed" };
+    let (work, contributor): (Uuid, Uuid) = (r.get("work_id"), r.get("contributor_id"));
+    sqlx::query("UPDATE portal.pub_work_contributors SET confirm=$3 WHERE work_id=$1 AND id=$2")
+        .bind(work)
+        .bind(contributor)
+        .bind(answer)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "UPDATE portal.pub_split_invites SET answer=$2, note=$3, answered_at=now(), email_cipher=NULL, token_cipher=NULL, token_hash=$4,
+                invite_status=CASE WHEN invite_status='PENDING' THEN 'SKIPPED' ELSE invite_status END
+          WHERE id=$1",
+    )
+    .bind(r.get::<Uuid, _>("id"))
+    .bind(answer)
+    .bind(note.filter(|_| !i.agree))
+    .bind(crate::domain::sha256_hex(auth::random_token()))
+    .execute(&mut *tx)
+    .await?;
+    touch(&mut tx, work).await?;
+    tx.commit().await?;
+    Ok(json!({"answer": answer}))
+}
+
+/// Invites sent per round.
+pub const INVITE_BATCH: i64 = 20;
+
+fn invite_mail(
+    origin: &str,
+    token: &str,
+    from: &str,
+    title: &str,
+    name: &str,
+    share: &str,
+) -> crate::email::Rendered {
+    use crate::email::{escape_html, one_line};
+    let (from, title, name) = (one_line(from), one_line(title), one_line(name));
+    let url = format!("{origin}/split-confirm/{token}");
+    let headline = format!("{from}에서 '{title}'의 지분 확인을 요청했어요");
+    let body = format!(
+        "'{title}'의 공동 작곡 참여자로 {name} 님의 창작 지분이 {share}로 적혀 있어요. \
+         링크에서 맞는지 확인하거나, 다르면 의견을 남겨 주세요. AUDENIQ 계정이 없어도 돼요."
+    );
+    let footer =
+        "이 링크는 받으신 분만 쓸 수 있고 한 번 답하면 끝나요. 모르는 내용이면 무시해 주세요.";
+    let text = format!("{headline}\n\n{body}\n\n확인하기: {url}\n\n--\n{footer}\n");
+    let html = format!(
+        "<!doctype html><html lang=\"ko\"><body style=\"margin:0;padding:24px;background:#f5f6f8;font-family:'Pretendard Variable',Pretendard,-apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif\">\
+<div style=\"max-width:520px;margin:0 auto;background:#ffffff;border-radius:16px;padding:28px\">\
+<p style=\"margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:.08em;color:#3b63f6\">AUDENIQ</p>\
+<h1 style=\"margin:0 0 14px;font-size:20px;line-height:1.4;color:#111827\">{headline}</h1>\
+<p style=\"margin:0 0 20px;line-height:1.6;color:#374151\">{body}</p>\
+<a href=\"{url}\" style=\"display:inline-block;padding:12px 20px;border-radius:10px;background:#3b63f6;color:#ffffff;text-decoration:none;font-weight:700\">지분 확인하기</a>\
+<p style=\"margin:24px 0 0;font-size:12px;line-height:1.6;color:#6b7280\">{footer}</p>\
+</div></body></html>",
+        headline = escape_html(&headline),
+        body = escape_html(&body),
+        url = escape_html(&url),
+    );
+    crate::email::Rendered {
+        subject: format!("[AUDENIQ] {headline}"),
+        text,
+        html,
+    }
+}
+
+/// Mail waiting co-writer invites (the notification loop calls this).
+pub async fn dispatch_invites(
+    pool: &sqlx::PgPool,
+    keys: &crate::payout_keys::KeyRing,
+    mailer: &crate::email::Mailer,
+) -> Result<usize> {
+    use crate::email::{Attempt, attempt};
+    use crate::payout_keys::Field;
+    let rows = sqlx::query(
+        "UPDATE portal.pub_split_invites i
+            SET invite_attempts=i.invite_attempts+1, invite_next_at=now() + interval '10 minutes'
+          WHERE i.id IN (SELECT id FROM portal.pub_split_invites WHERE invite_status='PENDING' AND invite_next_at <= now()
+                          ORDER BY invite_next_at LIMIT $1 FOR UPDATE SKIP LOCKED)
+          RETURNING i.id, i.invite_attempts, i.email_cipher, i.token_cipher, i.answer,
+            (SELECT o.name FROM identity.orgs o WHERE o.id=i.org_id) AS org_name,
+            (SELECT w.title FROM portal.pub_works w WHERE w.id=i.work_id) AS title,
+            (SELECT c.name FROM portal.pub_work_contributors c WHERE c.work_id=i.work_id AND c.id=i.contributor_id) AS name,
+            (SELECT c.share_bps FROM portal.pub_work_contributors c WHERE c.work_id=i.work_id AND c.id=i.contributor_id) AS share_bps",
+    )
+    .bind(INVITE_BATCH)
+    .fetch_all(pool)
+    .await?;
+    for row in &rows {
+        let id: Uuid = row.get("id");
+        let attempts: i32 = row.get("invite_attempts");
+        let done = |status: &'static str| async move {
+            sqlx::query("UPDATE portal.pub_split_invites SET invite_status=$2, token_cipher=CASE WHEN $2='SENT' THEN NULL ELSE token_cipher END WHERE id=$1 AND invite_attempts=$3 AND invite_status='PENDING'")
+                .bind(id)
+                .bind(status)
+                .bind(attempts)
+                .execute(pool)
+                .await
+                .map(|_| ())
+        };
+        let opened = |f: Field, col: &str| {
+            row.get::<Option<Vec<u8>>, _>(col)
+                .and_then(|c| keys.open_field(f, id, &c).ok())
+        };
+        let (Some(to), Some(token), None, Some(name)) = (
+            opened(Field::PubInviteEmail, "email_cipher"),
+            opened(Field::PubInviteToken, "token_cipher"),
+            row.get::<Option<String>, _>("answer"),
+            row.get::<Option<String>, _>("name"),
+        ) else {
+            done("SKIPPED").await?;
+            continue;
+        };
+        let mail = invite_mail(
+            &mailer.origin,
+            &token,
+            &row.get::<String, _>("org_name"),
+            &row.get::<Option<String>, _>("title").unwrap_or_default(),
+            &name,
+            &format!(
+                "{}%",
+                pct(row.get::<Option<i32>, _>("share_bps").unwrap_or(0))
+            ),
+        );
+        match attempt(mailer.send(Uuid::new_v4(), &to, &mail).await, attempts) {
+            Attempt::Sent(_) => done("SENT").await?,
+            Attempt::Failed(_) => done("FAILED").await?,
+            Attempt::Retry(after) => {
+                sqlx::query("UPDATE portal.pub_split_invites SET invite_next_at=now() + make_interval(secs => $2) WHERE id=$1 AND invite_attempts=$3")
+                    .bind(id)
+                    .bind(after)
+                    .bind(attempts)
+                    .execute(pool)
+                    .await?;
+            }
+        }
+    }
+    Ok(rows.len())
+}
+
 #[derive(Deserialize)]
 pub struct AttachmentIn {
     pub kind: String,
@@ -1301,8 +1607,9 @@ pub async fn prepare_from_release(
     .fetch_all(&mut *tx)
     .await?;
     // What the release form already has for the whole release — genre and language are not asked again.
-    let (genre, language): (Option<String>, Option<String>) = sqlx::query_as(
-        "SELECT COALESCE(NULLIF(draft->>'genreCustom',''), NULLIF(draft->>'genre','')), NULLIF(draft->>'language','')
+    let (genre, language, ai_uses): (Option<String>, Option<String>, Option<Value>) = sqlx::query_as(
+        "SELECT COALESCE(NULLIF(draft->>'genreCustom',''), NULLIF(draft->>'genre','')), NULLIF(draft->>'language',''),
+                CASE WHEN (draft->'options'->>'ai')::boolean THEN COALESCE(draft->'options'->'aiUses','[]'::jsonb) END
            FROM catalog.releases WHERE org_id=$1 AND id=$2",
     )
     .bind(org)
@@ -1313,6 +1620,21 @@ pub async fn prepare_from_release(
     let language = language
         .filter(|l| LANGUAGES.contains(&l.as_str()))
         .unwrap_or_else(|| "ko".into());
+    // The release form's AI answer: made entirely by AI, or AI helped with the melody or lyrics (the song itself).
+    // AI used only for vocals, mixing or the cover leaves the song as written.
+    let said = |needle: &str| {
+        ai_uses.as_ref().and_then(Value::as_array).is_some_and(|l| {
+            l.iter()
+                .any(|u| u.as_str().is_some_and(|u| u.contains(needle)))
+        })
+    };
+    let ai_use = if said("전체를 AI") {
+        "generated"
+    } else if said("작곡") || said("작사") {
+        "assisted"
+    } else {
+        "none"
+    };
     let (mut created, mut linked, mut skipped) = (0, 0, 0);
     for t in tracks {
         let track: Uuid = t.get("id");
@@ -1379,8 +1701,8 @@ pub async fn prepare_from_release(
             .unwrap_or(false);
         let id = Uuid::new_v4();
         sqlx::query(
-            "INSERT INTO portal.pub_works(id,org_id,internal_code,title,registration,created_by,origin,genre,language,work_type)
-             VALUES($1,$2,'AQW-'||lpad(nextval('portal.pub_work_code_seq')::text,6,'0'),$3,$4,$5,'own_release',$6,$7,$8)",
+            "INSERT INTO portal.pub_works(id,org_id,internal_code,title,registration,created_by,origin,genre,language,work_type,ai_use)
+             VALUES($1,$2,'AQW-'||lpad(nextval('portal.pub_work_code_seq')::text,6,'0'),$3,$4,$5,'own_release',$6,$7,$8,$9)",
         )
         .bind(id)
         .bind(org)
@@ -1390,6 +1712,7 @@ pub async fn prepare_from_release(
         .bind(&genre)
         .bind(&language)
         .bind(if instrumental { "instrumental" } else { "original" })
+        .bind(ai_use)
         .execute(&mut *tx)
         .await?;
         write_contributors(&mut tx, org, id, a.party, a.user, plan).await?;
@@ -1666,6 +1989,16 @@ pub async fn submit_application(
     .await?;
     if unreleased {
         return Err(Error::PolicyGate("WORK_NOT_RELEASED"));
+    }
+    // Societies register what a person wrote: a song made entirely by AI is not administered.
+    let generated: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM portal.pub_works WHERE id = ANY($1) AND ai_use='generated')",
+    )
+    .bind(&works)
+    .fetch_one(&mut *tx)
+    .await?;
+    if generated {
+        return Err(Error::PolicyGate("WORK_NOT_ELIGIBLE"));
     }
     let busy: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM portal.pub_application_works aw JOIN portal.pub_applications x ON x.id=aw.application_id
@@ -2824,6 +3157,30 @@ async fn h_confirm(
         request_confirm(&s, &writer(&s, &h).await?, org, id, cid).await?,
     ))
 }
+async fn h_invite_contributor(
+    State(s): State<AppState>,
+    Path((org, id, cid)): Path<(Uuid, Uuid, Uuid)>,
+    h: HeaderMap,
+    body: Option<Json<InviteIn>>,
+) -> Result<Json<Value>> {
+    let i = body.map(|Json(b)| b).unwrap_or_default();
+    Ok(Json(
+        invite_contributor(&s, &writer(&s, &h).await?, org, id, cid, i).await?,
+    ))
+}
+async fn h_split_invite(
+    State(s): State<AppState>,
+    Path(token): Path<String>,
+) -> Result<Json<Value>> {
+    Ok(Json(split_invite(&s, &token).await?))
+}
+async fn h_split_answer(
+    State(s): State<AppState>,
+    Path(token): Path<String>,
+    Json(i): Json<InviteAnswerIn>,
+) -> Result<Json<Value>> {
+    Ok(Json(answer_split_invite(&s, &token, i).await?))
+}
 /// A contributor answering for themselves needs their own account linked to
 /// the work — stage 2 (contributor invites).
 async fn h_respond(
@@ -3059,6 +3416,13 @@ pub fn routes() -> Router<AppState> {
             "/api/orgs/{org}/works/{id}/rights/{contributor}/confirmation",
             post(h_confirm),
         )
+        .route(
+            "/api/orgs/{org}/works/{id}/rights/{contributor}/invite",
+            post(h_invite_contributor),
+        )
+        // The co-writer's side — no account, the link is the secret (as /api/split-invites).
+        .route("/api/pub-invites/{token}", get(h_split_invite))
+        .route("/api/pub-invites/{token}/answer", post(h_split_answer))
         .route("/api/orgs/{org}/works/{id}/recordings", post(h_link))
         .route(
             "/api/orgs/{org}/works/{id}/recordings/{rec}",

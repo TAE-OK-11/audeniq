@@ -11,6 +11,7 @@ import { useToast } from '../Toast';
 import { Modal, useModalClose } from '../Modal';
 import { Glyph } from '../Glyph';
 import { SetRow } from '../SetRow';
+import { SocietyJoin } from './SocietyJoin';
 
 const ROLES: [CreatorRole, string][] = [['artist', '아티스트'], ['composer', '작곡가'], ['lyricist', '작사가'], ['arranger', '편곡가'], ['producer', '프로듀서'], ['label', '레이블 담당자']];
 type Field = 'roles' | 'society' | 'ipi' | 'org';
@@ -106,6 +107,7 @@ export function CreatorProfile() {
       <h2 id="setPublishing">퍼블리싱</h2>
       <SetRow label="역할 (작곡·작사 등)" value={roleText} empty="고르기" onClick={() => setEditing('roles')} />
       <SetRow label="저작권 관리 단체" value={societyName(c.society) || undefined} empty="가입하지 않음" onClick={() => setEditing('society')} />
+      {!c.society && <SocietyJoin inline />}
       <SetRow label="IPI/CAE 번호" value={c.ipi ?? undefined} empty="입력하기" onClick={() => setEditing('ipi')} />
       <SetRow label="소속 조직" value={c.org ?? undefined} empty="없음" onClick={() => setEditing('org')} />
       {editing && (

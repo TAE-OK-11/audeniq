@@ -36,7 +36,7 @@ export type ApplicationStatus = 'draft' | 'submitted' | 'in_review' | 'needs_fix
 export type ContractStatus = 'pending_sign' | 'active' | 'expiring' | 'terminating' | 'ended';
 export type ContributorRole = 'lyricist' | 'composer' | 'arranger' | 'other';
 export type CreatorRole = 'artist' | 'composer' | 'lyricist' | 'arranger' | 'producer' | 'label';
-export type RoyaltyKind = 'performance' | 'mechanical' | 'digital' | 'sync' | 'print' | 'other';
+export type RoyaltyKind = 'performance' | 'mechanical' | 'digital' | 'sync' | 'youtube' | 'print' | 'other';
 export type RoyaltyStatus = 'estimated' | 'confirmed' | 'paid';
 export type ArStatus = 'submitted' | 'in_review' | 'needs_fix' | 'reviewed' | 'proposing' | 'closed';
 /** 퍼블리싱은 곡을 세 갈래로 받는다 — 화면도 갈래마다 다르다
@@ -45,6 +45,8 @@ export type ArStatus = 'submitted' | 'in_review' | 'needs_fix' | 'reviewed' | 'p
  *  · other_release: 내가 쓰고 다른 아티스트가 발매한 곡 — 발매가 카탈로그에 없으니 발매 정보를 직접 받는다 */
 export type WorkOrigin = 'unreleased' | 'own_release' | 'other_release';
 /** 다른 아티스트가 낸 발매 — 아티스트·제목은 꼭, 나머지는 아는 만큼 */
+/** 곡을 쓸 때 AI를 어떻게 썼는지 — AI로만 만든 곡은 저작권 관리 대상이 아니다 (서버 WORK_NOT_ELIGIBLE) */
+export type AiUse = 'none' | 'assisted' | 'generated';
 export interface ExternalRelease { artist: string; title: string; releaseDate?: string | null; isrc?: string | null; label?: string | null }
 /** 내가 이 곡에서 할 수 있는 일 — 서버가 정한다. 화면은 버튼을 숨길 뿐 보안은 서버 몫 (기획안 11.3) */
 export type WorkRole = 'owner' | 'editor' | 'contributor' | 'viewer';
@@ -79,7 +81,15 @@ export interface WorkContributor {
   confirm: 'confirmed' | 'pending' | 'disputed';
   external: boolean;
   isMe?: boolean;
+  /** 확인 링크를 보냈고 아직 답이 없다 (0171) */
+  invited?: boolean;
+  /** 이의를 남기며 적은 말 */
+  inviteNote?: string | null;
+  /** 메일로 보냈으면 그 상태 (PENDING · SENT · FAILED) */
+  inviteMail?: string | null;
 }
+/** 공동 작가가 링크로 여는 확인 화면 — 계정 없이 (링크가 열쇠) */
+export interface SplitInvite { title: string; from: string; people: { name: string; roles: string[]; share: number; you: boolean }[]; answer: 'confirmed' | 'disputed' | null }
 
 export interface WorkAttachment {
   id: string; kind: 'demo' | 'lyrics' | 'score' | 'proof'; name: string; size?: number; at: string;
@@ -116,6 +126,7 @@ export interface Work {
   origin?: WorkOrigin;
   /** other_release일 때 그 발매 */
   externalRelease?: ExternalRelease | null;
+  aiUse?: AiUse;
   contributors: WorkContributor[];
   attachments: WorkAttachment[];
   recordings: WorkRecording[];
@@ -136,7 +147,7 @@ export interface Work {
 /** 발매 신청에서 곡 크레딧으로 곡을 만들 때 — enroll이면 저작권 관리 신청 준비까지 (기획안 4.2, 15) */
 export interface PrepareResult { created: number; linked: number; skipped: number }
 
-export type WorkInput = Pick<Work, 'title' | 'altTitles' | 'workType' | 'language' | 'genre' | 'description' | 'visibility' | 'iswc' | 'hasPriorPublisher' | 'priorPublisher' | 'contributors' | 'attachments' | 'origin' | 'externalRelease'> & {
+export type WorkInput = Pick<Work, 'title' | 'altTitles' | 'workType' | 'language' | 'genre' | 'description' | 'visibility' | 'iswc' | 'hasPriorPublisher' | 'priorPublisher' | 'contributors' | 'attachments' | 'origin' | 'externalRelease' | 'aiUse'> & {
   /** 발매 곡에서 만들 때 바로 연결할 녹음물 */
   recording?: Omit<WorkRecording, 'id'> | null;
 };
@@ -251,12 +262,14 @@ export interface ArSubmission {
   description: string;
   references: string;
   scope: 'internal' | 'partners';
+  /** 영상·광고·게임(싱크) 쪽에도 소개해도 되는지 — 사용 허락은 제안이 오면 따로 정한다 */
+  sync?: boolean;
   status: ArStatus;
   submittedAt: string;
   fixReason?: string | null;
   history: { at: string; text: string }[];
 }
-export type ArInput = Pick<ArSubmission, 'workId' | 'genre' | 'mood' | 'description' | 'references' | 'scope'> & { demoName?: string; lyrics?: string; consent: boolean; idempotencyKey: string };
+export type ArInput = Pick<ArSubmission, 'workId' | 'genre' | 'mood' | 'description' | 'references' | 'scope' | 'sync'> & { demoName?: string; lyrics?: string; consent: boolean; idempotencyKey: string };
 
 // ---------- 체험 모드 데이터 ----------
 
@@ -273,6 +286,7 @@ const POLICY: PublishingPolicy = {
     { key: 'mechanical', label: '복제권', desc: '음반·다운로드 등 복제에서 생기는 사용료' },
     { key: 'digital', label: '전송권', desc: '스트리밍 서비스에서 생기는 사용료' },
     { key: 'sync', label: '싱크 라이선스', desc: '영상·광고·게임에 쓰일 때의 이용 허락' },
+    { key: 'youtube', label: '유튜브 작곡 권리', desc: '유튜브 영상(커버·쇼츠 포함)에 쓰인 곡의 작곡 사용료' },
   ],
   version: '2026-11',
 };
@@ -430,7 +444,7 @@ function seedAr(): ArSubmission[] {
   }];
 }
 
-interface PubDb { works: Work[]; contracts: PublishingContract[]; applications: PublishingApplication[]; royalties: Royalty[]; ar: ArSubmission[]; me: Creator; sentKeys: string[] }
+interface PubDb { invites?: Record<string, { workId: string; contributorId: string }>; works: Work[]; contracts: PublishingContract[]; applications: PublishingApplication[]; royalties: Royalty[]; ar: ArSubmission[]; me: Creator; sentKeys: string[] }
 const seed = (): PubDb => ({ works: seedWorks(), contracts: seedContracts(), applications: seedApplications(), royalties: seedRoyalties(), ar: seedAr(), me: CREATORS[0], sentKeys: [] });
 const db = /* @__PURE__ */ createStore<PubDb>(seed, {
   persist: MOCK ? 'publishing.v2' : undefined,
@@ -465,6 +479,14 @@ function mutate<T>(fn: (d: PubDb) => T): T {
   db.set(next);
   clearAsyncCache();
   return out;
+}
+
+/** 발매 신청서의 AI 답 → 곡의 AI 사용 (서버 prepare_from_release와 같은 규칙): 전체 AI 제작 → generated, 작곡·작사 도움 → assisted */
+export function releaseAiUse(o?: { ai?: boolean; aiUses?: string[] } | null): AiUse {
+  if (!o?.ai) return 'none';
+  const uses = o.aiUses ?? [];
+  if (uses.some(u => u.includes('전체를 AI'))) return 'generated';
+  return uses.some(u => u.includes('작곡') || u.includes('작사')) ? 'assisted' : 'none';
 }
 
 /** 서버 write_contributors와 같게 — 내 줄의 빈 관리 단체·IPI는 작가 프로필로 채우고, 곡에서 처음 적은 값은 빈 프로필에 남긴다 */
@@ -635,6 +657,42 @@ const mockApi = {
     });
   },
   /** 체험 모드: 상대가 확인한 것처럼 */
+  /** 공동 작가 확인 링크 — 체험 모드는 링크를 이 브라우저에 기억해 확인 화면을 열 수 있게 */
+  async inviteContributor(workId: string, contributorId: string, email?: string) {
+    await wait(200);
+    return mutate(d => {
+      const w = d.works.find(x => x.id === workId);
+      const c = w?.contributors.find(x => x.id === contributorId);
+      if (!w || !c) throw notFound();
+      if (c.isMe) throw new ApiError('내 줄은 확인을 요청하지 않아요.', 422, 'WORK_INVITE_SELF');
+      if (c.confirm === 'confirmed') throw new ApiError('이미 확인한 참여자예요.', 422, 'WORK_ALREADY_CONFIRMED');
+      const token = Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2, '0')).join('');
+      d.invites = { ...(d.invites ?? {}), [token]: { workId, contributorId } };
+      for (const [k, v] of Object.entries(d.invites)) if (k !== token && v.workId === workId && v.contributorId === contributorId) delete d.invites[k];
+      w.contributors = w.contributors.map(x => (x.id === contributorId ? { ...x, confirm: 'pending', invited: true, inviteNote: null, inviteMail: email ? 'SENT' : null } : x));
+      return { token, emailed: !!email };
+    });
+  },
+  async splitInvite(token: string): Promise<SplitInvite> {
+    await wait(120);
+    const inv = db.get().invites?.[token];
+    const w = inv && db.get().works.find(x => x.id === inv.workId);
+    const me = w?.contributors.find(c => c.id === inv!.contributorId);
+    if (!w || !me) throw notFound();
+    return { title: w.title, from: db.get().me.name, answer: me.invited === false ? me.confirm as 'confirmed' | 'disputed' : null,
+      people: w.contributors.map(c => ({ name: c.name, roles: c.roles, share: c.share, you: c.id === me.id })) };
+  },
+  async answerSplitInvite(token: string, agree: boolean, note?: string) {
+    await wait(200);
+    return mutate(d => {
+      const inv = d.invites?.[token];
+      const w = inv && d.works.find(x => x.id === inv.workId);
+      if (!inv || !w) throw notFound();
+      w.contributors = w.contributors.map(c => (c.id === inv.contributorId ? { ...c, confirm: agree ? 'confirmed' : 'disputed', invited: false, inviteNote: agree ? null : note?.trim() || null } : c));
+      delete d.invites![token];
+      return { answer: agree ? 'confirmed' : 'disputed' };
+    });
+  },
   async simulateConfirm(workId: string, contributorId: string) {
     await wait(120);
     return mutate(d => {
@@ -715,7 +773,7 @@ const mockApi = {
         const each = Math.floor((100 / list.length) * 100) / 100;
         list.forEach((c, i) => { c.share = i === list.length - 1 ? Math.round((100 - each * (list.length - 1)) * 100) / 100 : each; c.publisherShare = enroll && c.isMe ? c.share : 0; });
         d.works.unshift({
-          id: `w_${uid()}`, title: t.title, altTitles: [], origin: 'own_release', externalRelease: null, workType: dt?.instrumental ? 'instrumental' : 'original', language: rel.draft?.language ?? 'ko',
+          id: `w_${uid()}`, title: t.title, altTitles: [], origin: 'own_release', externalRelease: null, aiUse: releaseAiUse(rel.draft?.options), workType: dt?.instrumental ? 'instrumental' : 'original', language: rel.draft?.language ?? 'ko',
           genre: rel.draft?.genreCustom?.trim() || rel.draft?.genre || '', description: '', visibility: 'private', iswc: null, internalCode: nextCode(d), hasPriorPublisher: false, priorPublisher: null,
           // 서버와 같게 — 배급 신청서의 음원(같은 파일)·가사(본문)를 곡 자료로 붙인다. 다시 올리지 않게
           contributors: list, attachments: [
@@ -743,6 +801,8 @@ const mockApi = {
       if (!works.length) throw new ApiError('신청할 곡을 골라 주세요.', 400, 'VALIDATION');
       const busy = works.find(w => w.application && ['submitted', 'in_review', 'needs_fix', 'approved'].includes(w.application.status));
       if (busy) throw new ApiError(`‘${busy.title}’은(는) 이미 신청했어요. 진행 상황은 곡 화면에서 볼 수 있어요.`, 409, 'DUPLICATE_APPLICATION');
+      const ai = works.find(w => w.aiUse === 'generated');
+      if (ai) throw new ApiError(`‘${ai.title}’은(는) AI로만 만든 곡이라 저작권 관리를 신청할 수 없어요.`, 422, 'WORK_NOT_ELIGIBLE');
       const demo = works.find(w => workOrigin(w) === 'unreleased');
       if (demo) throw new ApiError(`‘${demo.title}’은(는) 아직 발매 전이에요. 발매 전 곡은 Open A&R로 피칭하고, 발매되면 신청해 주세요.`, 422, 'WORK_NOT_RELEASED');
       if (input.policyVersion !== POLICY.version) throw new ApiError('계약 조건이 바뀌었어요. 새 조건을 확인하고 다시 신청해 주세요.', 409, 'POLICY_CHANGED');
@@ -903,7 +963,7 @@ const mockApi = {
       const now = stampNow();
       const s: ArSubmission = {
         id: `ar_${input.idempotencyKey}`, workId: w.id, workTitle: w.title, genre: input.genre, mood: input.mood, description: input.description,
-        references: input.references, scope: input.scope, status: 'submitted', submittedAt: now, history: [{ at: now, text: '제출 완료' }],
+        references: input.references, scope: input.scope, sync: !!input.sync, status: 'submitted', submittedAt: now, history: [{ at: now, text: '제출 완료' }],
       };
       d.ar.unshift(s);
       w.activity.unshift({ at: now, text: 'Open A&R에 제출했어요.', kind: 'apply', who: d.me.name });
@@ -977,6 +1037,10 @@ const remoteApi = {
   requestSplitConfirm: (workId: string, contributorId: string) => work(req<Work>(orgPath(`/works/${enc(workId)}/rights/${enc(contributorId)}/confirmation`), { method: 'POST' })),
   respondSplit: (workId: string, agree: boolean) => work(req<Work>(orgPath(`/works/${enc(workId)}/rights/confirmation`), { method: 'POST', body: { agree } })),
   simulateConfirm: (workId: string) => work(req<Work>(orgPath(`/works/${enc(workId)}`))),
+  inviteContributor: (workId: string, contributorId: string, email?: string) =>
+    req<{ token: string; emailed: boolean }>(orgPath(`/works/${enc(workId)}/rights/${enc(contributorId)}/invite`), { method: 'POST', body: email ? { email } : {} }),
+  splitInvite: (token: string) => req<SplitInvite>(`/api/pub-invites/${enc(token)}`, { quiet401: true }),
+  answerSplitInvite: (token: string, agree: boolean, note?: string) => req<{ answer: string }>(`/api/pub-invites/${enc(token)}/answer`, { method: 'POST', body: { agree, note } }),
   searchCreators: (q: string) => req<{ items: Creator[] }>(orgPath(`/creators?q=${enc(q)}`)).then(r => r.items),
   myCreator: () => req<Creator>('/api/me/creator'),
   saveMyCreator: (c: Creator) => req<Creator>('/api/me/creator', { method: 'PUT', body: c }),

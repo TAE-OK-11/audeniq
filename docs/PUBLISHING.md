@@ -60,11 +60,28 @@ Rules:
 - The writer's own society and IPI are typed once: an empty one on the writer's row is filled from the profile
   (`portal.pub_creator_profiles`), and one first typed on a work fills an empty profile (never overwrites it).
   Past co-writers come back in creator search (an empty query lists them, most works first).
+- `ai_use` (migration 0170): none · assisted · generated. The release form's AI answer seeds it on prepare; a work made
+  entirely by AI is refused by applications (`WORK_NOT_ELIGIBLE`).
 - Attachments are not part of the work body: the client posts each new one to `/works/{id}/attachments` after create/update
   (asset id or lyrics text), so uploaded and imported files are kept.
 
+## Co-writer invites (migration 0171)
+
+- `POST /works/{id}/rights/{contributor}/invite` (`{email?}`) makes a link `/split-confirm/{token}` (only the hash is kept;
+  asking again replaces it). The writer copies it and/or gives an address: address and link are sealed
+  (`Field::PubInviteEmail` / `PubInviteToken`), mailed by the notification loop (`publishing::dispatch_invites`) and erased
+  on the answer.
+- The co-writer opens it without an account (`GET /api/pub-invites/{token}`) and answers once
+  (`POST …/answer` `{agree, note?}`): the contributor becomes confirmed or disputed, a dispute keeps the note (`inviteNote`).
+
+## Other additions
+
+- Rights include `youtube` (유튜브 작곡 권리: Content ID on videos using the song).
+- `/works/import`: songs released by others from a CSV (one row per song, the writer's own details from the profile).
+- `/works/{id}/split-sheet`: a printable 공동 작곡 합의서 from the work's splits.
+
 ## Stage 2 — not yet
 
-- Contributor invites and their own confirmation (`rights/confirmation` answers 501 `NOT_IMPLEMENTED`), mail.
+- A contributor with an AUDENIQ account answering inside the studio (`rights/confirmation` answers 501); link invites cover it.
 - Society registration feeds, royalties (statements, posting to the shared balance), CSV from the server.
 - Attachment preview links (signed URLs for demo/score/proof); Open A&R submissions.

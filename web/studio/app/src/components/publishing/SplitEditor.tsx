@@ -9,6 +9,7 @@ import { Badge, Field, IconTile } from '../../ui';
 import { Glyph } from '../Glyph';
 import { SplitBar, peopleLine, roleText } from './parts';
 import { reuseContributors } from '../../lib/publishingPrep';
+import { SocietyJoin } from './SocietyJoin';
 import '../../styles/split/Publishing.css';
 
 const ROLES = Object.keys(ROLE_LABEL) as ContributorRole[];
@@ -109,7 +110,8 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
   value: WorkContributor[];
   onChange: (next: WorkContributor[]) => void;
   readOnly?: boolean;
-  onRequestConfirm?: (c: WorkContributor) => void;
+  /** 확인 링크 보내기 — 한 사람 또는 확인 대기 모두 (부모가 InviteModal을 연다) */
+  onRequestConfirm?: (people: WorkContributor[]) => void;
   onSimulate?: (c: WorkContributor) => void;
   showErrors?: boolean;
   /** 참여자를 가져올 수 있는 이전 곡 */
@@ -156,8 +158,8 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
       {readOnly && onRequestConfirm && (() => {
         const waiting = value.filter(c => !c.isMe && c.confirm === 'pending');
         return waiting.length > 1 && (
-          <button type="button" className="ui-btn is-soft is-sm aq-pbl-remind-all" onClick={() => waiting.forEach(onRequestConfirm)}>
-            <Glyph name="mail" size={14} className="aq-glyph-lead" />{waiting.length}명에게 확인 요청 모두 보내기
+          <button type="button" className="ui-btn is-soft is-sm aq-pbl-remind-all" onClick={() => onRequestConfirm(waiting)}>
+            <Glyph name="link" size={14} className="aq-glyph-lead" />{waiting.length}명에게 확인 링크 보내기
           </button>
         );
       })()}
@@ -173,13 +175,16 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
                 <span className="ui-row-meta">{roleText(c)}{c.society && ` · ${societyName(c.society)}`}{c.ipi && <> · <span className="aq-nowrap">IPI {c.ipi}</span></>}</span>
                 {/* 맡기기 전(0%)에는 줄을 두지 않는다 — 'AUDENIQ 관리 0%'가 참여자마다 되풀이됐다 */}
                 {c.publisherShare > 0 && <span className="ui-row-meta">AUDENIQ 관리 {pct(c.publisherShare)}</span>}
+                {/* 이의를 남겼으면 그 말을 그대로 — 무엇이 다른지 알아야 다시 나눈다 */}
+                {c.confirm === 'disputed' && c.inviteNote && <span className="ui-row-meta aq-pbl-dispute">“{c.inviteNote}”</span>}
+                {c.confirm === 'pending' && c.invited && <span className="ui-row-meta">{c.inviteMail === 'SENT' ? '메일로 확인 링크를 보냈어요' : c.inviteMail === 'FAILED' ? '메일을 보내지 못했어요 · 링크를 복사해 보내 주세요' : '확인 링크를 보냈어요'}</span>}
               </div>
               <div className="aq-pbl-person-end">
                 <b>{pct(c.share)}</b>
                 <Badge tone={c.confirm === 'confirmed' ? 'green' : c.confirm === 'disputed' ? 'red' : 'amber'}>{c.confirm === 'confirmed' ? '확인 완료' : c.confirm === 'disputed' ? '이의 제기' : '확인 대기'}</Badge>
               </div>
               {(onRequestConfirm || onSimulate) && !c.isMe && c.confirm !== 'confirmed' && <div className="aq-pbl-person-actions">
-                {onRequestConfirm && <button type="button" className="ui-btn is-text is-sm" onClick={() => onRequestConfirm(c)}>확인 요청 다시 보내기</button>}
+                {onRequestConfirm && <button type="button" className="ui-btn is-text is-sm" onClick={() => onRequestConfirm([c])}>{c.invited ? '확인 링크 다시 보내기' : '확인 링크 보내기'}</button>}
                 {onSimulate && <button type="button" className="ui-btn is-text is-sm" onClick={() => onSimulate(c)}>체험: 상대가 확인함</button>}
               </div>}
             </div>
@@ -229,6 +234,7 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
                   </Field>
                 </div>
               </details>
+              {c.isMe && !c.society && <SocietyJoin inline />}
               {invalid && errors.map(err => <small key={err.text} className="ui-field-help is-error" role="alert">{err.text}</small>)}
             </fieldset>
           );

@@ -18,6 +18,8 @@ export const pageLoaders = {
   Agreement: () => import('./pages/Agreement'),
   PublishingAgreement: () => import('./pages/PublishingAgreement'),
   PublishingApplicationDoc: () => import('./pages/PublishingApplicationDoc'),
+  SplitSheet: () => import('./pages/SplitSheet'),
+  WorkImport: () => import('./pages/WorkImport'),
   Rights: () => import('./pages/Rights'),
   WorkDetail: () => import('./pages/WorkDetail'),
   WorkEditor: () => import('./pages/WorkEditor'),
@@ -46,6 +48,7 @@ export const pageLoaders = {
   ArtistDiscography: () => import('./pages/ArtistDiscography'),
   ArtistStudio: () => import('./pages/ArtistStudio'),
   SplitInvite: () => import('./pages/SplitInvite'),
+  SplitConfirm: () => import('./pages/SplitConfirm'),
   Admin: () => import('./admin/AdminApp'),
   Layout: () => import('./components/Layout'),
 };
@@ -59,7 +62,9 @@ const ROUTE_PAGES: [RegExp, PageName[]][] = [
   [/^\/releases\/[^/]+\/application/, ['Application']],
   [/^\/releases\/.+/, ['ReleaseDetail']],
   [/^\/upload/, ['Upload']],
+  [/^\/works\/import/, ['WorkImport']],
   [/^\/works\/(new|[^/]+\/edit)/, ['WorkEditor']],
+  [/^\/works\/[^/]+\/split-sheet/, ['SplitSheet']],
   [/^\/works\/[^/]+/, ['WorkDetail']],
   [/^\/publishing\/apply/, ['PublishingApply']],
   [/^\/publishing\/?$/, ['Reports']],
@@ -126,6 +131,6 @@ export function prefetchInitialRoute() {
 
 /** 머리글·메뉴가 있는 포털 화면인지 (로그인·공개·관리·AI 연결 화면이 아닌 곳) */
 export function isPortalPath(path: string): boolean {
-  return !/^\/(login|signup|find-account|passkey-setup|phone-setup|sign\/|terms|privacy|verify|rights-report|link\/|l\/|a\/|splits\/|admin|ai\/|content-admin)/.test(path);
+  return !/^\/(login|signup|find-account|passkey-setup|phone-setup|sign\/|terms|privacy|verify|rights-report|link\/|l\/|a\/|splits\/|split-confirm\/|admin|ai\/|content-admin)/.test(path);
 }
 

@@ -226,6 +226,17 @@ const TARGETS: &[Target] = &[
         subject: "id",
         columns: &[sealed_only(Field::SplitEmail, "email_cipher")],
     },
+    // Co-writer split invites (0171): address and link, sealed until mailed / answered.
+    Target {
+        name: "portal.pub_split_invites",
+        table: "portal.pub_split_invites",
+        id: "id",
+        subject: "id",
+        columns: &[
+            sealed_only(Field::PubInviteEmail, "email_cipher"),
+            sealed_only(Field::PubInviteToken, "token_cipher"),
+        ],
+    },
     Target {
         name: "identity.users",
         table: "identity.users",

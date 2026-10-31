@@ -16,6 +16,7 @@ import { Badge, Callout, Segmented } from '../../ui';
 import { RegBadge, RegProgress } from './parts';
 import { SplitEditor } from './SplitEditor';
 import { AttachmentList, AttachmentModal } from './Attachments';
+import { InviteModal } from './InviteModal';
 import '../../styles/split/ReleaseDetail.css';
 import '../../styles/split/Publishing.css';
 
@@ -95,9 +96,8 @@ export function WorkSheet({ work, no, all, focus, onClose, onSaved, releaseId }:
     } finally { setSaving(false); }
   };
 
-  const remind = (c: WorkContributor) => void pubApi.requestSplitConfirm(w.id, c.id)
-    .then(nw => { setW(nw); onSaved(nw); toast(`${c.name} 님에게 확인을 요청했어요.`, 'success'); })
-    .catch(err => toast(errorMessage(err), 'error'));
+  const [inviting, setInviting] = useState<WorkContributor[] | null>(null);
+  const refresh = () => void pubApi.getWork(w.id).then(nw => { setW(nw); onSaved(nw); }).catch(() => {});
   const simulate = (c: WorkContributor) => void pubApi.simulateConfirm(w.id, c.id).then(nw => { setW(nw); onSaved(nw); });
 
   return (
@@ -148,7 +148,7 @@ export function WorkSheet({ work, no, all, focus, onClose, onSaved, releaseId }:
                 </>
               )}
               <SplitEditor value={shown} onChange={() => {}} readOnly
-                onRequestConfirm={canEdit ? remind : undefined} onSimulate={MOCK && canEdit ? simulate : undefined} />
+                onRequestConfirm={canEdit ? setInviting : undefined} onSimulate={MOCK && canEdit ? simulate : undefined} />
             </>
           )}
         </section>
@@ -177,6 +177,7 @@ export function WorkSheet({ work, no, all, focus, onClose, onSaved, releaseId }:
           <Link to={`/works/${w.id}${back}`} className="ui-btn is-soft is-block">곡 전체 정보 보기<Glyph name="chevron-right" size={14} /></Link>
         )}
       </div>
+      {inviting && <InviteModal work={w} people={inviting} onClose={() => setInviting(null)} onDone={refresh} />}
       {attaching && <AttachmentModal works={[w]} workId={w.id} onClose={() => setAttaching(false)} onAdded={nw => { setW(nw); onSaved(nw); }} />}
     </Modal>
   );

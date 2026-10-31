@@ -26,6 +26,7 @@ import { albumPublishing } from './ReleasePublishing';
 import { Modal } from '../Modal';
 import { WorkSheet } from './WorkSheet';
 import { AttachmentModal } from './Attachments';
+import { InviteModal } from './InviteModal';
 import { Badge, ChipGroup, IconTile } from '../../ui';
 
 import '../../styles/split/Dashboard.css';
@@ -106,20 +107,12 @@ function ApplyPrep({ title, summary, groups, readyCount, total, onGo, applyTo }:
 /** 참여자 확인 현황 — 준비 점검의 '참여자 확인'을 누르면 뜨는 창. 사람마다 한 줄, 그 사람이 들어간 곡을 아래에.
  *  탭에 카드로 두면 준비 점검과 같은 이야기를 한 번 더 했다 */
 function PeopleModal({ works, onOpen, onClose, onSent }: { works: Work[]; onOpen: (w: Work, contributorId: string) => void; onClose: () => void; onSent: () => void }) {
-  const toast = useToast();
-  const [sending, setSending] = useState(false);
+  const [inviteWork, setInviteWork] = useState<Work | null>(null);
   const board = useMemo(() => confirmationBoard(works), [works]);
   // 확인 대기인 사람·곡 모두에게 한 번에 — 앨범이면 같은 사람에게 곡마다 따로 누를 일이 많았다
   const pendingEntries = board.people.filter(p => !p.isMe).flatMap(p => p.entries.filter(e => e.contributor.confirm === 'pending' && (e.work.myRole === 'owner' || e.work.myRole === 'editor')));
-  const remindAll = async () => {
-    setSending(true);
-    try {
-      for (const e of pendingEntries) await pubApi.requestSplitConfirm(e.work.id, e.contributor.id);
-      toast(`${new Set(pendingEntries.map(e => e.contributor.creatorId ?? e.contributor.name)).size}명에게 확인을 요청했어요.`, 'success');
-      onSent();
-    } catch (err) { toast(errorMessage(err, '일부를 보내지 못했어요. 다시 시도해 주세요.'), 'error'); }
-    finally { setSending(false); }
-  };
+  // 곡마다 한 창에서 그 곡의 확인 대기 모두에게 링크를 — 곡별로 묶는다
+  const pendingWorks = Array.from(new Map(pendingEntries.map(e => [e.work.id, e.work])).values());
   const open = board.counts.pending + board.counts.disputed;
   const [filter, setFilter] = useState<PeopleFilter>('open');
   const shown = board.people.filter(p => (filter === 'open' ? p.state !== 'confirmed' : p.state === filter));
@@ -132,11 +125,18 @@ function PeopleModal({ works, onOpen, onClose, onSent }: { works: Work[]; onOpen
         { value: 'disputed', label: CONFIRM_LABEL.disputed, count: board.counts.disputed, hidden: !board.counts.disputed },
         { value: 'confirmed', label: CONFIRM_LABEL.confirmed, count: board.counts.confirmed, hidden: !board.counts.confirmed },
       ]} />
-      {pendingEntries.length > 1 && (
-        <button type="button" className={`ui-btn is-primary is-block${sending ? ' is-busy' : ''}`} disabled={sending} onClick={() => void remindAll()}>
-          {sending ? '보내는 중' : `확인 대기 ${pendingEntries.length}건 모두 다시 요청`}
-        </button>
+      {pendingWorks.length > 0 && (
+        <div className="ui-list is-inset" aria-label="곡별 확인 링크 보내기">
+          {pendingWorks.map(w => (
+            <button key={w.id} type="button" className="ui-row" onClick={() => setInviteWork(w)}>
+              <Glyph name="link" size={16} />
+              <span className="min-0"><span className="ui-row-title">‘{w.title}’ 확인 링크 보내기</span><span className="ui-row-meta"><span>{w.contributors.filter(c => !c.isMe && c.confirm === 'pending').map(c => c.name).join(' · ')}</span></span></span>
+              <Glyph name="chevron-right" size={16} />
+            </button>
+          ))}
+        </div>
       )}
+      {inviteWork && <InviteModal work={inviteWork} people={inviteWork.contributors.filter(c => !c.isMe && c.confirm === 'pending')} onClose={() => setInviteWork(null)} onDone={onSent} />}
       {shown.length ? (
         <ul className="aq-pbl-people-list">
           {shown.map(p => (

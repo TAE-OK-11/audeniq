@@ -48,6 +48,8 @@ pub enum Field {
     ReleaseAlertEmail,
     SplitEmail,
     PresaveToken,
+    PubInviteEmail,
+    PubInviteToken,
 }
 impl Field {
     fn aad_prefix(self) -> &'static [u8] {
@@ -71,6 +73,8 @@ impl Field {
             Self::ReleaseAlertEmail => b"audeniq:portal.release_alerts:email:",
             Self::SplitEmail => b"audeniq:portal.split_shares:email:",
             Self::PresaveToken => b"audeniq:portal.presaves:token:",
+            Self::PubInviteEmail => b"audeniq:portal.pub_split_invites:email:",
+            Self::PubInviteToken => b"audeniq:portal.pub_split_invites:token:",
         }
     }
 }

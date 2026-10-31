@@ -22,6 +22,7 @@ import { SkeletonBlock } from '../components/Skeleton';
 import { Glyph } from '../components/Glyph';
 import { SignaturePad, type SignaturePadHandle } from '../components/SignaturePad';
 import { SplitBar, roleText } from '../components/publishing/parts';
+import { SocietyJoin } from '../components/publishing/SocietyJoin';
 import { Badge, Callout, EmptyState, StatGrid, StatTile } from '../ui';
 import '../styles/split/Upload.css';
 import '../styles/split/Publishing.css';
@@ -43,7 +44,9 @@ const SCOPE_KEY = 'publishing-apply-scope';
 interface Scope { territories: string[]; rights: string[] }
 const activeApp = (w: Work) => !!w.application && ['submitted', 'in_review', 'needs_fix', 'approved'].includes(w.application.status);
 // 저작권 관리는 발매된 곡(내 발매 · 다른 아티스트 발매)만 — 발매 전 곡은 Open A&R로 피칭한다 (서버도 WORK_NOT_RELEASED로 막는다)
-const canPick = (w: Work) => !activeApp(w) && isReleased(w);
+const canPick = (w: Work) => !activeApp(w) && isReleased(w) && w.aiUse !== 'generated';
+// 원곡이 따로 있는 곡(편곡·번안·메들리) — 원곡 권리자 허락이 있어야 관리할 수 있다
+const DERIVED = ['arrangement', 'translation', 'medley'];
 
 export function PublishingApply() {
   const [params] = useSearchParams();
@@ -184,9 +187,10 @@ export function PublishingApply() {
               {mine.map(w => {
                 const busyApp = activeApp(w);
                 const demo = !isReleased(w);
+                const aiOnly = w.aiUse === 'generated';
                 return (
                   <label key={w.id} className="ui-check is-plain">
-                    <input type="checkbox" checked={picked.includes(w.id) && !demo} disabled={busyApp || demo} onChange={() => toggle(picked, setPicked, w.id)} />
+                    <input type="checkbox" checked={picked.includes(w.id) && !demo && !aiOnly} disabled={busyApp || demo || aiOnly} onChange={() => toggle(picked, setPicked, w.id)} />
                     {/* 상태 색은 앱 전체 규칙 그대로 — 심사 중 보라, 보완 주황, 승인 초록. 고를 수 있는 곡은 '신청 가능'만 파랑 */}
                     <span className="aq-pbl-song-pick">
                       <span className="min-0">
@@ -195,6 +199,7 @@ export function PublishingApply() {
                       </span>
                       {busyApp ? <Badge tone={APP_TONE[w.application!.status]}>{APP_LABEL[w.application!.status]}</Badge>
                         : demo ? <Badge tone="gray">발매 전 · A&R 대상</Badge>
+                        : aiOnly ? <Badge tone="gray">AI 생성 · 신청 불가</Badge>
                         : splitReady(w.contributors) ? <Badge tone="blue">신청 가능</Badge> : <Badge tone="amber">지분 확인 필요</Badge>}
                     </span>
                   </label>
@@ -214,6 +219,8 @@ export function PublishingApply() {
         <>
           {blocked.length > 0 && <Callout tone="danger"><b>지분이 맞지 않는 곡이 있어 신청할 수 없어요.</b> 지분은 저장돼 있으니 고친 뒤 이어서 신청해요.</Callout>}
           {conflicts.length > 0 && <Callout tone="warn"><b>기존 저작권 관리 계약과 겹칠 수 있어요.</b> {conflicts.map(w => `‘${w.title}’(${w.priorPublisher || '기존 퍼블리셔'})`).join(', ')} — 신청은 되고, 담당자가 먼저 검토해요.</Callout>}
+          {chosen.some(w => w.contributors.some(c => c.isMe && !c.society)) && <SocietyJoin />}
+          {chosen.some(w => DERIVED.includes(w.workType)) && <Callout tone="warn"><b>원곡이 따로 있는 곡이 있어요.</b> {chosen.filter(w => DERIVED.includes(w.workType)).map(w => `‘${w.title}’`).join(', ')} — 편곡·번안·메들리는 원곡 권리자의 허락이 있어야 관리할 수 있어요. 허락받은 서류가 있으면 곡 자료에 올려 두세요.</Callout>}
           {pendingPeople.length > 0 && <Callout tone="neutral">공동 참여자 {pendingPeople.length}명이 아직 지분을 확인하지 않았어요. 확인 전에는 ‘확인 필요’ 상태로 심사해요.</Callout>}
           {chosen.map(w => {
             const issues = splitIssues(w.contributors).filter(i => i.level === 'error');
