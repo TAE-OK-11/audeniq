@@ -55,7 +55,7 @@ const WORK_TYPES: [&str; 5] = [
     "medley",
 ];
 const LANGUAGES: [&str; 7] = ["ko", "en", "ja", "zh", "es", "zxx", "other"];
-const KINDS: [&str; 4] = ["demo", "lyrics", "score", "proof"];
+const KINDS: [&str; 6] = ["demo", "lyrics", "score", "proof", "project", "split_sheet"];
 /// Where a work comes from (migration 0169): not released yet (pitched through Open A&R), released by the
 /// artist through AUDENIQ (read from the catalog), or released by someone else (given by the artist).
 const ORIGINS: [&str; 3] = ["unreleased", "own_release", "other_release"];
@@ -271,6 +271,14 @@ pub struct WorkIn {
     pub prior_publisher_until: Option<Option<String>>,
     #[serde(default, deserialize_with = "nullable")]
     pub external_release: Option<Option<ExternalReleaseIn>>,
+    /// When the work was finished and how it was made (0176): evidence of authorship.
+    #[serde(default, deserialize_with = "nullable")]
+    pub created_on: Option<Option<String>>,
+    #[serde(default, deserialize_with = "nullable")]
+    pub creation_note: Option<Option<String>>,
+    /// The society's work code, when the work is registered already (0176).
+    #[serde(default, deserialize_with = "nullable")]
+    pub society_code: Option<Option<String>>,
     #[serde(alias = "row_version")]
     pub row_version: Option<i64>,
 }
@@ -318,6 +326,38 @@ fn clean(v: &str, max: usize, code: &'static str) -> Result<String> {
         crate::text_policy::check(&v)?;
     }
     Ok(v)
+}
+
+/// The day a work was finished: a date, not in the future.
+fn created_on(v: Option<&str>) -> Result<Option<chrono::NaiveDate>> {
+    let Some(d) = day(v)? else { return Ok(None) };
+    if d > Utc::now().date_naive() + chrono::Duration::days(1) {
+        return Err(Error::InvalidCode("WORK_CREATED_ON_INVALID"));
+    }
+    Ok(Some(d))
+}
+
+/// How the work was made, in the writer's words (several lines).
+fn creation_note(v: Option<&str>) -> Result<Option<String>> {
+    let v = v.map(str::trim).filter(|v| !v.is_empty());
+    match v {
+        Some(t) if t.chars().count() > 1000 => {
+            Err(Error::InvalidCode("WORK_CREATION_NOTE_INVALID"))
+        }
+        Some(t) => {
+            crate::text_policy::check_multiline(t)?;
+            Ok(Some(t.to_string()))
+        }
+        None => Ok(None),
+    }
+}
+
+/// A name compared as people write it: case and spaces do not matter.
+fn name_key(v: &str) -> String {
+    v.chars()
+        .filter(|c| !c.is_whitespace())
+        .collect::<String>()
+        .to_lowercase()
 }
 
 fn opt_clean(v: Option<&str>, max: usize, code: &'static str) -> Result<Option<String>> {
@@ -511,7 +551,7 @@ async fn works_json(
         "SELECT w.id, w.internal_code, w.title, w.alt_titles, w.work_type, w.language, w.genre, w.description, w.visibility,
                 w.iswc, w.has_prior_publisher, w.prior_publisher, w.registration, w.fix, w.pending_contributors, w.pending_at,
                 w.origin, w.external_release, w.ai_use, w.original_work, w.samples, w.prior_publisher_until,
-                w.change_outcome, w.change_note, w.change_decided_at, w.row_version, w.created_at, w.updated_at,
+                w.created_on, w.creation_note, w.society_code, w.change_outcome, w.change_note, w.change_decided_at, w.row_version, w.created_at, w.updated_at,
                 -- The signed contract the work is under (a contract waiting for signature does not count yet).
                 (SELECT c.id FROM portal.pub_contracts c JOIN portal.pub_application_works aw ON aw.application_id=c.application_id
                   WHERE aw.work_id=w.id AND c.status <> 'pending_sign' ORDER BY c.created_at DESC LIMIT 1) AS contract_id
@@ -533,9 +573,12 @@ async fn works_json(
     let mut people: HashMap<Uuid, Vec<Value>> = HashMap::new();
     for r in sqlx::query(
         "SELECT c.id, c.work_id, c.party_id, c.name, c.roles, c.society, c.ipi, c.share_bps, c.publisher_share_bps, c.confirm, c.external, c.publisher_name,
-                i.note AS invite_note, (i.id IS NOT NULL AND i.answer IS NULL) AS invited, i.invite_status
+                i.note AS invite_note, (i.id IS NOT NULL AND i.answer IS NULL) AS invited, i.invite_status,
+                -- The writer's own row under another name than their artist name: a pen name (0176).
+                (c.party_id IS NOT NULL AND lower(regexp_replace(c.name, '\\s', '', 'g')) <> lower(regexp_replace(p.display_name, '\\s', '', 'g'))) AS pen_name
            FROM portal.pub_work_contributors c
            LEFT JOIN portal.pub_split_invites i ON i.work_id=c.work_id AND i.contributor_id=c.id
+           LEFT JOIN identity.parties p ON p.id=c.party_id
           WHERE c.work_id = ANY($1) ORDER BY c.work_id, c.position",
     )
     .bind(&ids)
@@ -549,6 +592,7 @@ async fn works_json(
             "ipi": r.get::<Option<String>, _>("ipi"), "share": pct(r.get("share_bps")),
             "publisherShare": pct(r.get("publisher_share_bps")), "confirm": r.get::<String, _>("confirm"),
             "external": r.get::<bool, _>("external"), "isMe": party_id == Some(party),
+            "penName": r.get::<Option<bool>, _>("pen_name").unwrap_or(false),
             // Co-writer invite (0171): a link is out, mailed or not, and what they wrote when disputing.
             "publisher": r.get::<Option<String>, _>("publisher_name"),
             "invited": r.get::<bool, _>("invited"), "inviteNote": r.get::<Option<String>, _>("invite_note"),
@@ -662,6 +706,9 @@ async fn works_json(
                 "originalWork": w.get::<Option<Value>, _>("original_work"),
                 "samples": w.get::<Value, _>("samples"),
                 "priorPublisherUntil": w.get::<Option<chrono::NaiveDate>, _>("prior_publisher_until").map(|d| d.to_string()),
+                "createdOn": w.get::<Option<chrono::NaiveDate>, _>("created_on").map(|d| d.to_string()),
+                "creationNote": w.get::<Option<String>, _>("creation_note"),
+                "societyCode": w.get::<Option<String>, _>("society_code"),
                 // Staff answer to the last share change (0173).
                 "changeDecision": w.get::<Option<String>, _>("change_outcome").map(|o| json!({
                     "outcome": o, "note": w.get::<Option<String>, _>("change_note"),
@@ -1007,8 +1054,8 @@ pub async fn create_work(s: &AppState, a: &Actor, org: Uuid, i: WorkIn) -> Resul
     let role = auth::membership(&mut tx, a, org, true).await?;
     let id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO portal.pub_works(id,org_id,internal_code,title,alt_titles,work_type,language,genre,description,visibility,iswc,has_prior_publisher,prior_publisher,created_by,origin,external_release,ai_use,original_work,samples,prior_publisher_until)
-         VALUES($1,$2,'AQW-'||lpad(nextval('portal.pub_work_code_seq')::text,6,'0'),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)",
+        "INSERT INTO portal.pub_works(id,org_id,internal_code,title,alt_titles,work_type,language,genre,description,visibility,iswc,has_prior_publisher,prior_publisher,created_by,origin,external_release,ai_use,original_work,samples,prior_publisher_until,created_on,creation_note,society_code)
+         VALUES($1,$2,'AQW-'||lpad(nextval('portal.pub_work_code_seq')::text,6,'0'),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)",
     )
     .bind(id)
     .bind(org)
@@ -1029,6 +1076,9 @@ pub async fn create_work(s: &AppState, a: &Actor, org: Uuid, i: WorkIn) -> Resul
     .bind(i.original_work.clone().flatten().map(|o| original_work(&o)).transpose()?)
     .bind(samples(i.samples.as_deref().unwrap_or_default())?)
     .bind(day(i.prior_publisher_until.clone().flatten().as_deref())?)
+    .bind(created_on(i.created_on.clone().flatten().as_deref())?)
+    .bind(creation_note(i.creation_note.clone().flatten().as_deref())?)
+    .bind(opt_clean(i.society_code.clone().flatten().as_deref(), 40, "WORK_SOCIETY_CODE_INVALID")?)
     .execute(&mut *tx)
     .await?;
     write_contributors(&mut tx, org, id, a.party, a.user, plan).await?;
@@ -1101,7 +1151,10 @@ pub async fn update_work(s: &AppState, a: &Actor, org: Uuid, id: Uuid, i: WorkIn
            ai_use=COALESCE($18,ai_use),
            original_work=CASE WHEN $19 THEN $20 ELSE original_work END,
            samples=COALESCE($21,samples),
-           prior_publisher_until=CASE WHEN $22 THEN $23 ELSE prior_publisher_until END
+           prior_publisher_until=CASE WHEN $22 THEN $23 ELSE prior_publisher_until END,
+           created_on=CASE WHEN $24 THEN $25 ELSE created_on END,
+           creation_note=CASE WHEN $26 THEN $27 ELSE creation_note END,
+           society_code=CASE WHEN $28 THEN $29 ELSE society_code END
          WHERE org_id=$1 AND id=$2",
     )
     .bind(org)
@@ -1128,6 +1181,12 @@ pub async fn update_work(s: &AppState, a: &Actor, org: Uuid, id: Uuid, i: WorkIn
     .bind(i.samples.as_deref().map(samples).transpose()?)
     .bind(i.prior_publisher_until.is_some())
     .bind(day(i.prior_publisher_until.clone().flatten().as_deref())?)
+    .bind(i.created_on.is_some())
+    .bind(created_on(i.created_on.clone().flatten().as_deref())?)
+    .bind(i.creation_note.is_some())
+    .bind(creation_note(i.creation_note.clone().flatten().as_deref())?)
+    .bind(i.society_code.is_some())
+    .bind(opt_clean(i.society_code.clone().flatten().as_deref(), 40, "WORK_SOCIETY_CODE_INVALID")?)
     .execute(&mut *tx)
     .await?;
     if let Some(list) = i.contributors {
@@ -2727,14 +2786,19 @@ pub async fn prepare_from_release(
     .into_iter()
     .map(|r| (r.get("k"), (r.get("society"), r.get("ipi"))))
     .collect();
-    let past = |name: &str| {
-        let k: String = name
-            .chars()
-            .filter(|c| !c.is_whitespace())
-            .collect::<String>()
-            .to_lowercase();
-        known.get(&k).cloned().unwrap_or((None, None))
-    };
+    let past = |name: &str| known.get(&name_key(name)).cloned().unwrap_or((None, None));
+    // Names the writer is credited under (pen names, 0176) are the writer: their row is "me", not a co-writer.
+    let pen: HashMap<String, Option<String>> = sqlx::query_scalar::<_, Value>(
+        "SELECT pen_names FROM portal.pub_creator_profiles WHERE user_id=$1",
+    )
+    .bind(a.user)
+    .fetch_optional(&mut *tx)
+    .await?
+    .and_then(|v| serde_json::from_value::<Vec<PenName>>(v).ok())
+    .unwrap_or_default()
+    .into_iter()
+    .map(|p| (name_key(&p.name), p.ipi))
+    .collect();
     for t in tracks {
         let track: Uuid = t.get("id");
         let title: String = t.get("title");
@@ -2766,7 +2830,20 @@ pub async fn prepare_from_release(
         .fetch_all(&mut *tx)
         .await?
         {
-            people.entry((r.get("display_name"), r.get("party_id"))).or_default().push(r.get("role"));
+            let pid: Uuid = r.get("party_id");
+            let name: String = r.get("display_name");
+            // Credited under a pen name: the same person as the writer — one row, under the credited name.
+            let pid = if pid != a.party && pen.contains_key(&name_key(&name)) { a.party } else { pid };
+            let key = people
+                .keys()
+                .find(|(_, p)| *p == pid && pid == a.party)
+                .cloned()
+                .unwrap_or((name, pid));
+            let roles = people.entry(key).or_default();
+            let role: String = r.get("role");
+            if !roles.contains(&role) {
+                roles.push(role);
+            }
         }
         let n = people.len() as i32;
         let plan: Vec<Planned> = people
@@ -2781,8 +2858,9 @@ pub async fn prepare_from_release(
                 } else {
                     10_000 / n
                 };
+                // My row under a pen name takes that pen name's own IPI, when it has one; otherwise the profile's.
                 let (society, ipi) = if pid == a.party {
-                    (None, None)
+                    (None, pen.get(&name_key(&name)).cloned().flatten())
                 } else {
                     past(&name)
                 };
@@ -3130,6 +3208,23 @@ pub async fn submit_application(
     {
         return Err(Error::PolicyGate("WORK_SPLIT_INCOMPLETE"));
     }
+    // Evidence of authorship (0176): at least one file or text per work — demo, project files, score, lyrics,
+    // split sheet or other proof (a release's audio is attached when works are prepared from it).
+    let bare: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM unnest($1::uuid[]) w(id)
+                        WHERE NOT EXISTS(SELECT 1 FROM portal.pub_work_attachments f WHERE f.work_id=w.id))",
+    )
+    .bind(&works)
+    .fetch_one(&mut *tx)
+    .await?;
+    if bare {
+        return Err(Error::PolicyGate("WORK_EVIDENCE_REQUIRED"));
+    }
+    // Societies register a real person: the signer's identity is verified (본인인증), as for payouts.
+    let identity = crate::consents::signer_identity(&mut tx, a.user).await?;
+    if identity["verified"] != true {
+        return Err(Error::PolicyGate("APPLICATION_IDENTITY_REQUIRED"));
+    }
     // The server's own copy of what was signed: every work as it stands now.
     let no = application_no()?;
     let submitted = Utc::now().to_rfc3339();
@@ -3141,7 +3236,6 @@ pub async fn submit_application(
                    "signature_sha256": crate::domain::sha256_hex(&sig)},
     });
     let server_hash = crate::domain::sha256_json(&content);
-    let identity = crate::consents::signer_identity(&mut tx, a.user).await?;
     let record = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO portal.release_applications(id,org_id,release_id,application_no,form,content_hash,signer_name,signer_role,agreements,signature,client_submitted_at,submitted_by,content,server_hash,signer_identity)
@@ -3474,7 +3568,7 @@ pub async fn search_creators(s: &AppState, a: &Actor, org: Uuid, q: &str) -> Res
 
 async fn my_creator_row(c: &mut PgConnection, a: &Actor) -> Result<Value> {
     let r = sqlx::query(
-        "SELECT p.display_name, cp.roles, cp.society, cp.ipi FROM identity.parties p
+        "SELECT p.display_name, cp.roles, cp.society, cp.ipi, cp.pen_names FROM identity.parties p
            LEFT JOIN portal.pub_creator_profiles cp ON cp.user_id=$2 WHERE p.id=$1",
     )
     .bind(a.party)
@@ -3485,7 +3579,8 @@ async fn my_creator_row(c: &mut PgConnection, a: &Actor) -> Result<Value> {
     Ok(
         json!({"id": a.party, "name": r.get::<String, _>("display_name"), "legalName": Value::Null,
         "roles": r.get::<Option<Vec<String>>, _>("roles").unwrap_or_default(), "society": r.get::<Option<String>, _>("society"),
-        "ipi": r.get::<Option<String>, _>("ipi"), "country": Value::Null, "linked": true, "isMe": true}),
+        "ipi": r.get::<Option<String>, _>("ipi"), "country": Value::Null, "linked": true, "isMe": true,
+        "penNames": r.get::<Option<Value>, _>("pen_names").unwrap_or_else(|| json!([]))}),
     )
 }
 
@@ -3502,6 +3597,25 @@ pub struct CreatorIn {
     pub society: Option<String>,
     #[serde(default)]
     pub ipi: Option<String>,
+    /// Other names the writer is credited under (0176). Left out, the saved list stays.
+    #[serde(default, alias = "penNames")]
+    pub pen_names: Option<Vec<PenNameIn>>,
+}
+
+/// A pen name as saved: the name and, when the society gave it one, its own IPI.
+#[derive(Deserialize, serde::Serialize, Clone)]
+pub struct PenName {
+    pub name: String,
+    #[serde(default)]
+    pub ipi: Option<String>,
+}
+
+/// A pen name as sent: `{name, ipi}`, or just the name.
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub enum PenNameIn {
+    Name(String),
+    Full(PenName),
 }
 
 /// Save the writer's IPI, society and roles. The name stays the account's
@@ -3518,15 +3632,44 @@ pub async fn save_my_creator(s: &AppState, a: &Actor, i: CreatorIn) -> Result<Va
     let society = opt_clean(i.society.as_deref(), 60, "WORK_SOCIETY_INVALID")?;
     let mut roles = i.roles;
     roles.dedup();
+    let pen_names = match &i.pen_names {
+        Some(list) => {
+            let mut out: Vec<PenName> = Vec::new();
+            for p in list {
+                let (n, ipi) = match p {
+                    PenNameIn::Name(n) => (n.as_str(), None),
+                    PenNameIn::Full(p) => (p.name.as_str(), p.ipi.as_deref()),
+                };
+                let n = clean(n, 100, "WORK_PEN_NAME_INVALID")?;
+                let ipi = match ipi.map(str::trim).filter(|v| !v.is_empty()) {
+                    Some(v) if v.len() <= 11 && v.bytes().all(|b| b.is_ascii_digit()) => {
+                        Some(v.to_string())
+                    }
+                    Some(_) => return Err(Error::InvalidCode("WORK_IPI_INVALID")),
+                    None => None,
+                };
+                if !n.is_empty() && !out.iter().any(|x| name_key(&x.name) == name_key(&n)) {
+                    out.push(PenName { name: n, ipi });
+                }
+            }
+            if out.len() > 5 {
+                return Err(Error::InvalidCode("WORK_PEN_NAME_TOO_MANY"));
+            }
+            Some(serde_json::to_value(out).map_err(|_| Error::Internal)?)
+        }
+        None => None,
+    };
     let mut tx = s.pool.begin().await?;
     sqlx::query(
-        "INSERT INTO portal.pub_creator_profiles(user_id,roles,society,ipi) VALUES($1,$2,$3,$4)
-         ON CONFLICT (user_id) DO UPDATE SET roles=EXCLUDED.roles, society=EXCLUDED.society, ipi=EXCLUDED.ipi, updated_at=now()",
+        "INSERT INTO portal.pub_creator_profiles(user_id,roles,society,ipi,pen_names) VALUES($1,$2,$3,$4,COALESCE($5,'[]'::jsonb))
+         ON CONFLICT (user_id) DO UPDATE SET roles=EXCLUDED.roles, society=EXCLUDED.society, ipi=EXCLUDED.ipi,
+           pen_names=COALESCE($5, portal.pub_creator_profiles.pen_names), updated_at=now()",
     )
     .bind(a.user)
     .bind(&roles)
     .bind(society)
     .bind(ipi)
+    .bind(pen_names)
     .execute(&mut *tx)
     .await?;
     operations::audit(

@@ -36,7 +36,7 @@ import '../../styles/split/Dashboard.css';
 import '../../styles/split/ReleaseDetail.css';
 import '../../styles/split/Publishing.css';
 
-const PREP_ICON: Record<PrepGroup['key'], GlyphName> = { tracks: 'music', fix: 'warning', split: 'scale', confirm: 'users', ipi: 'user' };
+const PREP_ICON: Record<PrepGroup['key'], GlyphName> = { tracks: 'music', fix: 'warning', split: 'scale', confirm: 'users', ipi: 'user', evidence: 'layers' };
 type PeopleFilter = 'open' | ConfirmState;
 const START_STEPS = [
   ['곡 정리', '발매할 때 적은 크레딧으로 작사·작곡가를 채워 둬요'],

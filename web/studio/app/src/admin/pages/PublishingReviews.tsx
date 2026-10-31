@@ -11,6 +11,7 @@ import { useAsync } from '../../hooks/useAsync';
 import { Glyph } from '../../components/Glyph';
 import { SplitEditor } from '../../components/publishing/SplitEditor';
 import { RegBadge } from '../../components/publishing/parts';
+import { AttachmentList, KIND_LABEL } from '../../components/publishing/Attachments';
 import { FIX_FIELDS, SOCIETIES, societyName, fixNote, pct, splitReady, sumShares, type FixField } from '../../lib/publishing';
 import { staffApi, type PubAppStatus, type PubApplication, type PubDecisionAction } from '../api';
 import { ago, when } from '../labels';
@@ -178,6 +179,8 @@ export function PublishingReviewDetail() {
   const works = app.works ?? [];
   const problems = works.filter(w => !splitReady(w.contributors));
   const missingIpi = works.flatMap(w => w.contributors.filter(c => !c.ipi).map(c => `${w.title} · ${c.name}`));
+  // 신청인 본인이 필명으로 올라간 곡 — 관리 단체에는 서명한 실명과 묶어 등록한다 (0176)
+  const penNames = Array.from(new Set(works.flatMap(w => w.contributors.filter(c => c.penName).map(c => c.name))));
   const statusLine = app.status === 'submitted' ? '담당하면 심사를 시작할 수 있어요.'
     : app.status === 'in_review' ? (app.replyNote ? '아티스트가 보완해서 다시 냈어요.' : '참여자·지분·권리 정보를 확인하고 결정해 주세요.')
     : app.status === 'needs_fix' ? '아티스트의 보완을 기다리고 있어요.'
@@ -220,6 +223,9 @@ export function PublishingReviewDetail() {
           {done && <div className="ui-callout is-success" role="status">{done}</div>}
           {app.replyNote && <div className="ui-callout is-row"><span><b>아티스트 답변</b> · {app.replyNote}</span></div>}
           {app.fixReason && app.status !== 'in_review' && <div className={`ui-callout ${app.status === 'rejected' ? 'is-danger' : 'is-warn'}`}>{app.status === 'rejected' ? '반려 사유' : '보낸 보완 요청'} · {app.fixReason}</div>}
+          {penNames.length > 0 && (
+            <div className="ui-callout is-row"><span><b>필명</b> · {penNames.map(n => `‘${n}’`).join(', ')}은(는) 신청인 본인이에요{app.signerName ? ` (본인인증 실명 서명: ${app.signerName})` : ''}. 관리 단체에는 실명으로 등록하고 필명을 함께 올려 주세요.</span></div>
+          )}
           {open && (problems.length > 0 || missingIpi.length > 0) && (
             <div className="ui-callout is-warn">
               {problems.length > 0 && <p><b>지분 확인 필요</b> · {problems.map(w => `${w.title} (합계 ${pct(sumShares(w.contributors))})`).join(', ')}</p>}
@@ -242,6 +248,14 @@ export function PublishingReviewDetail() {
               action={<RegBadge status={w.registration} />}>
               {w.fix && <div className="ui-callout is-warn">{w.fix.reason}{fixNote(w.fix) && fixNote(w.fix) !== w.fix.reason ? ` — ${fixNote(w.fix)}` : ''}</div>}
               <SplitEditor value={w.contributors} onChange={() => {}} readOnly />
+              {/* 창작 증빙 — 언제·어떻게 만들었는지와 올린 자료 (0176) */}
+              <dl className="ui-kv is-2" style={{ marginTop: 12 }}>
+                <div><dt>창작을 마친 날</dt><dd>{w.createdOn ?? '적지 않음'}</dd></div>
+                {w.societyCode && <div><dt>기존 작품 코드</dt><dd className="is-mono">{w.societyCode} · 새로 등록하지 말고 이어서 관리</dd></div>}
+                <div><dt>증빙 자료</dt><dd>{w.attachments.length ? Array.from(new Set(w.attachments.map(a => KIND_LABEL[a.kind]))).join(' · ') : '없음'}</dd></div>
+                {w.creationNote && <div className="is-wide"><dt>만든 과정</dt><dd style={{ whiteSpace: 'pre-line' }}>{w.creationNote}</dd></div>}
+              </dl>
+              <AttachmentList items={w.attachments} empty="올린 자료가 없어요." />
             </Section>
           ))}
 

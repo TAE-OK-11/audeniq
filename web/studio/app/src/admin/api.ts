@@ -35,6 +35,8 @@ export interface PubApplication {
   /** 서명한 신청서 원본의 서버 해시 — 배급 신청서와 같은 문서 확인 코드 */
   documentCode: string | null;
   history: { at: string; text: string }[];
+  /** 신청서에 서명한 이름 — 본인인증한 실명 (0176부터 인증 필수) */
+  signerName?: string | null;
   /** 상세에서만 — 곡마다 참여자·지분·녹음 */
   works?: Work[];
 }

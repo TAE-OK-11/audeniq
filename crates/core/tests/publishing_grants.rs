@@ -166,6 +166,18 @@ async fn publishing_screens_work_under_the_api_role(pool: PgPool) {
     .await;
     ok(s, &v, "invite answer");
 
+    // Evidence of authorship (0176) as the API role writes it, and the signer's verified identity.
+    let (s, v) = call(&app, "POST", &format!("{base}/works/{id}/attachments"),
+        json!({"kind": "project", "name": "겨울 편지 세션 메모", "text": "Logic 프로젝트 2026-03-02"}), Some(&u)).await;
+    ok(s, &v, "attach project");
+    sqlx::query(
+        "INSERT INTO portal.account_identities(user_id,real_name,birth_date,provider,method,transaction_id,ci_hash)
+         VALUES($1,'서린','1990-01-01','test','PASS','tx-grants',repeat('b',64))",
+    )
+    .bind(u.user)
+    .execute(&pool)
+    .await
+    .unwrap();
     // Application, staff approval (makes the contract), signing.
     let (s, a) = call(&app, "POST", &format!("{base}/publishing/applications"), json!({
         "workIds": [id], "territories": ["KR"], "rights": ["performance", "youtube"], "policyVersion": "2026-11",

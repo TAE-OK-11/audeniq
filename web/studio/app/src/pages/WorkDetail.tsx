@@ -28,7 +28,7 @@ import { AttachmentList, AttachmentModal } from '../components/publishing/Attach
 import { InviteModal } from '../components/publishing/InviteModal';
 import { Badge, Callout, EmptyState, KeyValue, Segmented, StatGrid, StatTile, Tabs } from '../ui';
 import { SplitDiffList } from '../components/publishing/WorkSheet';
-import { changeNeedsReview, reusableWorks, signing, splitDiff } from '../lib/publishingPrep';
+import { changeNeedsReview, mergeIntoMe, penAsOthers, reusableWorks, signing, splitDiff } from '../lib/publishingPrep';
 import { Money } from '../components/Money';
 import { useReportRows } from '../hooks/useReportRows';
 import '../styles/split/ReleaseDetail.css';
@@ -208,6 +208,8 @@ export function WorkDetail() {
   const { data: allWorks } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
   // 발매 전 곡의 A&R 제출 — 진행 중이면 '제출' 대신 진행 상황으로 (같은 곡을 두 번 내지 않게)
   const { data: arList } = useAsync(() => pubApi.listAr(), [], { key: 'ar-submissions' });
+  // 내 필명 — 다른 사람으로 들어간 필명 줄을 알아보고 합친다 (0176)
+  const { data: myCreator } = useAsync(() => pubApi.myCreator(), [], { key: 'my-creator' });
 
   if (loading && !w) return <div id="view-release" className="view"><SkeletonBlock height={220} /><SkeletonBlock height={280} /></div>;
   if (error || !w) {
@@ -390,11 +392,14 @@ export function WorkDetail() {
                 ...(w.originalWork ? [['원곡', `${w.originalWork.title}${w.originalWork.writers ? ` · ${w.originalWork.writers}` : ''}${w.originalWork.permission ? ' · 허락 받음' : ' · 허락 확인 전'}`] as [string, string]] : []),
                 ...(w.samples?.length ? [['샘플·인용', w.samples.map(x => `${x.title}${x.artist ? `(${x.artist})` : ''}`).join(', ')] as [string, string]] : []),
                 ...(w.hasPriorPublisher && w.priorPublisherUntil ? [['기존 계약 종료', w.priorPublisherUntil] as [string, string]] : []),
-                ['내 역할', me ? `${roleText(me)} · ${pct(me.share)}` : <Empty>참여하지 않음</Empty>],
+                ['내 역할', me ? `${roleText(me)} · ${pct(me.share)}${me.penName ? ` · 필명 ‘${me.name}’` : ''}` : <Empty>참여하지 않음</Empty>],
+                ['창작을 마친 날', w.createdOn ?? <Empty>입력 전</Empty>],
+                ...(w.societyCode ? [['관리 단체 작품 코드', w.societyCode] as [string, string]] : []),
                 ['발매', origin === 'other_release' ? `${w.externalRelease?.artist ?? '다른 아티스트'} 발매` : w.recordings.length ? `녹음 ${w.recordings.length}개` : <Empty>발매 전</Empty>],
               ]} />
               {w.altTitles.length > 0 && <KeyValue items={[[ '대체 제목', w.altTitles.join(' · ') ]]} />}
               {w.description && <><h2 className="subhead">곡 설명</h2><p className="muted small break">{w.description}</p></>}
+              {w.creationNote && <><h2 className="subhead">만든 과정</h2><p className="muted small break" style={{ whiteSpace: 'pre-line' }}>{w.creationNote}</p></>}
             </div>
           </div>
         )}
@@ -444,6 +449,12 @@ export function WorkDetail() {
                     {splitView === 'pending' && <SplitDiffList title={`${localStamp(w.pendingChange.requestedAt)} 요청 · 검토 중`} changes={splitDiff(w.contributors, w.pendingChange.contributors)} />}
                   </>
                 )}
+                {/* 내 필명이 다른 사람으로 들어가 있으면 — 눌러서 합친 지분을 확인하고 저장한다 */}
+                {canEdit && mode !== 'locked' && myCreator && penAsOthers(w.pendingChange?.contributors ?? w.contributors, myCreator).map(c => (
+                  <Callout key={c.id} tone="neutral" action={<button type="button" className="ui-btn is-white is-sm" onClick={() => setSplitDraft(mergeIntoMe(structuredClone(w.pendingChange?.contributors ?? w.contributors), c.id, myCreator))}>나로 합치기</button>}>
+                    ‘{c.name}’은(는) 내 필명이에요. 다른 사람으로 들어가 있어 지분 확인을 기다리고 있어요.
+                  </Callout>
+                ))}
                 <SplitEditor value={w.pendingChange && splitView === 'pending' ? w.pendingChange.contributors : w.contributors} onChange={() => {}} readOnly
                   onRequestConfirm={canEdit ? list => setInviting(list) : undefined}
                   onSimulate={MOCK && canEdit ? c => void pubApi.simulateConfirm(w.id, c.id).then(update) : undefined} />

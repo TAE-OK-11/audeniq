@@ -14,7 +14,7 @@ import { pubApi, releaseAiUse, type ExternalRelease, type Work, type WorkAttachm
 import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { readJSON, removeKey, writeJSON } from '../lib/storage';
-import { stampNow } from '../lib/date';
+import { stampNow, todayStr } from '../lib/date';
 import { localStamp, fileSize } from '../lib/format';
 import { uid } from '../lib/store';
 import { draftTrackOf } from '../lib/albumPrep';
@@ -40,7 +40,7 @@ type Form = Omit<WorkInput, 'recording'>;
 const EMPTY: Form = {
   title: '', altTitles: [], workType: 'original', language: 'ko', genre: '', description: '', visibility: 'private',
   iswc: null, hasPriorPublisher: false, priorPublisher: null, contributors: [], attachments: [], origin: 'unreleased', externalRelease: null, aiUse: 'none',
-  originalWork: null, samples: [], priorPublisherUntil: null,
+  originalWork: null, samples: [], priorPublisherUntil: null, createdOn: null, creationNote: null, societyCode: null,
 };
 // 원곡이 따로 있는 곡 — 원곡 정보와 허락 여부를 받는다
 const DERIVED = ['arrangement', 'translation', 'medley'];
@@ -48,7 +48,8 @@ const NO_RELEASE: ExternalRelease = { artist: '', title: '', releaseDate: null, 
 const ISRC_RE = /^[A-Z]{2}-?[A-Z0-9]{3}-?\d{2}-?\d{5}$/i;
 const ORIGIN_TYPES: readonly WorkOrigin[] = ['unreleased', 'other_release'];
 const ATTACH_KINDS: [WorkAttachment['kind'], string, string][] = [
-  ['demo', '데모 음원', 'audio/*'], ['lyrics', '가사', '.txt,.pdf,.doc,.docx'], ['score', '악보', '.pdf,image/*'], ['proof', '권리 증빙 자료', '.pdf,image/*'],
+  ['demo', '데모 음원', 'audio/*'], ['lyrics', '가사', '.txt,.pdf,.doc,.docx'], ['score', '악보', '.pdf,image/*'],
+  ['project', '작업 파일 (DAW 캡처·버전별 음원·MIDI)', 'audio/*,image/*,.pdf,.mid,.midi'], ['split_sheet', '공동 작곡 합의서', '.pdf,image/*'], ['proof', '기타 증빙 자료', '.pdf,image/*'],
 ];
 const ISWC_RE = /^T-?\d{3}\.?\d{3}\.?\d{3}-?\d$/i;
 
@@ -109,7 +110,8 @@ export function WorkEditor() {
     if (existing) {
       const { title, altTitles, workType, language, genre, description, visibility, iswc, hasPriorPublisher, priorPublisher, contributors, attachments } = existing;
       start = { title, altTitles, workType, language, genre, description, visibility, iswc, hasPriorPublisher, priorPublisher, contributors, attachments, origin: workOrigin(existing), externalRelease: existing.externalRelease ?? null, aiUse: existing.aiUse ?? 'none',
-        originalWork: existing.originalWork ?? null, samples: existing.samples ?? [], priorPublisherUntil: existing.priorPublisherUntil ?? null };
+        originalWork: existing.originalWork ?? null, samples: existing.samples ?? [], priorPublisherUntil: existing.priorPublisherUntil ?? null,
+        createdOn: existing.createdOn ?? null, creationNote: existing.creationNote ?? null, societyCode: existing.societyCode ?? null };
     } else if (track && release) {
       const d = draftTrackOf(track, release.draft);
       const people = new Map<string, WorkContributor>();
@@ -274,6 +276,9 @@ export function WorkEditor() {
       originalWork: DERIVED.includes(form.workType) && form.originalWork?.title.trim() ? { ...form.originalWork, title: form.originalWork.title.trim(), writers: form.originalWork.writers.trim() } : null,
       samples: (form.samples ?? []).filter(x => x.title.trim()),
       priorPublisherUntil: form.hasPriorPublisher ? form.priorPublisherUntil || null : null,
+      createdOn: form.createdOn || null,
+      creationNote: form.creationNote?.trim() || null,
+      societyCode: form.societyCode?.trim() || null,
     };
     try {
       let w: Work;
@@ -499,6 +504,10 @@ export function WorkEditor() {
           <Field label="ISWC" htmlFor="workIswc" warn={iswcErr} help={!iswcErr ? (existing ? `없으면 내부 번호 ${existing.internalCode}로 관리해요.` : '발급받은 경우에만. 없으면 내부 번호로 관리해요.') : undefined}>
             <input id="workIswc" className={inputClass()} value={form.iswc ?? ''} placeholder="T-123.456.789-0" onChange={e => set('iswc', e.target.value.trim() || null)} />
           </Field>
+          {/* 이미 관리 단체에 등록한 곡을 다시 등록하면 같은 곡이 둘이 되어 정산이 멈춘다 — 작품 코드를 받아 이어서 관리한다 (0176) */}
+          <Field label="관리 단체 작품 코드" htmlFor="workSocietyCode" help="이미 한국음악저작권협회(KOMCA) 등에 등록한 곡이면 적어 주세요. 다시 등록하지 않고 그 등록을 이어서 관리해요.">
+            <input id="workSocietyCode" className={inputClass()} maxLength={40} value={form.societyCode ?? ''} placeholder="등록하지 않았으면 비워 두세요" onChange={e => set('societyCode', e.target.value || null)} />
+          </Field>
           <Field label="기존 저작권 관리 계약" htmlFor="workPrior">
             <select id="workPrior" className={selectClass()} value={form.hasPriorPublisher ? 'yes' : 'no'} onChange={e => set('hasPriorPublisher', e.target.value === 'yes')}>
               <option value="no">없어요</option>
@@ -565,10 +574,23 @@ export function WorkEditor() {
         )}
         <p className="ui-field-help">관리 단체·IPI 번호는 ‘참여자·지분’의 ‘관리 범위·작가 정보’에서 입력할 수 있어요.</p>
 
+        {/* 내가 만들었다는 근거 (0176) — 관리 단체가 창작 과정을 물으면 이 기록과 작업 파일로 답한다 */}
+        <h2 className="subhead">창작 기록</h2>
+        <p className="ui-field-help">언제, 어떻게 만들었는지 남겨 두면 다른 사람이 같은 곡을 주장할 때 내 곡이라는 근거가 돼요.</p>
+        <div className="form-grid">
+          <Field label="창작을 마친 날" htmlFor="workCreatedOn" help="정확하지 않으면 대략적인 날이라도 괜찮아요.">
+            <input id="workCreatedOn" type="date" className={inputClass()} max={todayStr()} value={form.createdOn ?? ''} onChange={e => set('createdOn', e.target.value || null)} />
+          </Field>
+        </div>
+        <Field label="만든 과정" htmlFor="workCreationNote" help="예) 어떤 프로그램·악기로, 누가 어느 부분을 맡았는지, 버전별 날짜">
+          <textarea id="workCreationNote" className="ui-textarea" rows={4} maxLength={1000} value={form.creationNote ?? ''} onChange={e => set('creationNote', e.target.value || null)}
+            placeholder={'2026-03-02 피아노로 멜로디 스케치\n2026-03-10 가사 붙이고 Logic에서 편곡'} />
+        </Field>
+
         <h2 className="subhead">첨부 자료</h2>
         <p className="ui-field-help">{fromTrack && form.attachments.length
           ? '배급 신청서의 음원·가사를 미리 붙여 두었어요. 악보나 권리 증빙이 있으면 더해 주세요.'
-          : released ? '없어도 저장돼요. 권리 증빙·악보가 있으면 저작권 관리 심사가 빨라요.'
+          : released ? '저장은 자료 없이도 돼요. 저작권 관리를 신청하려면 창작 증빙 자료(데모·작업 파일·악보·가사·합의서)가 하나 이상 있어야 해요.'
           : '데모 음원이 있어야 Open A&R에 제출할 수 있어요. 가사·악보는 있으면 더해 주세요.'}</p>
         {/* 배급 신청서의 곡 카드(track-editor)처럼 자료 칸을 카드 한 장으로 감싼다 */}
         <section className="track-editor aq-pbl-attach-card" aria-label="첨부 자료">
@@ -618,9 +640,9 @@ export function WorkEditor() {
             {form.contributors.map(c => `${c.name} ${roleText(c)} ${pct(c.share)}`).join(' · ') || '참여자를 추가하면 저작권 관리를 신청할 수 있어요'}
           </ReviewCard>
           <ReviewCard head="권리·자료" onEdit={() => setStep(2)}>
-            {[form.iswc || 'ISWC 없음', AI_USE_OPTIONS.find(x => x[0] === form.aiUse)?.[1],
+            {[form.iswc || 'ISWC 없음', form.societyCode?.trim() && `작품 코드 ${form.societyCode.trim()}`, AI_USE_OPTIONS.find(x => x[0] === form.aiUse)?.[1],
               DERIVED.includes(form.workType) && (form.originalWork?.title.trim() ? `원곡 ‘${form.originalWork.title.trim()}’${form.originalWork.permission ? ' · 허락 받음' : ''}` : '원곡 정보 입력 전'),
-              (form.samples ?? []).filter(x => x.title.trim()).length > 0 && `샘플 ${(form.samples ?? []).filter(x => x.title.trim()).length}곡`, form.hasPriorPublisher ? `기존 퍼블리셔 ${form.priorPublisher || '있음'}` : '기존 계약 없음', `첨부 ${form.attachments.length}개`].filter(Boolean).join(' · ')}
+              (form.samples ?? []).filter(x => x.title.trim()).length > 0 && `샘플 ${(form.samples ?? []).filter(x => x.title.trim()).length}곡`, form.hasPriorPublisher ? `기존 퍼블리셔 ${form.priorPublisher || '있음'}` : '기존 계약 없음', form.createdOn && `창작 ${form.createdOn}`, `첨부 ${form.attachments.length}개`].filter(Boolean).join(' · ')}
           </ReviewCard>
         </div>
         <div className="ui-callout" style={{ marginTop: 24 }}>

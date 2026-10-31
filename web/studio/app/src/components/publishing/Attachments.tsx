@@ -11,14 +11,31 @@ import { Glyph, type GlyphName } from '../Glyph';
 import { Modal } from '../Modal';
 import { FilePicker } from '../FilePicker';
 import { useToast } from '../Toast';
-import { Field, IconTile, Reveal, Segmented } from '../../ui';
+import { Field, IconTile, Reveal } from '../../ui';
 import '../../styles/split/ReleaseDetail.css';
 import '../../styles/split/Publishing.css';
 
-export const KIND_LABEL: Record<WorkAttachment['kind'], string> = { demo: '데모 음원', lyrics: '가사', score: '악보', proof: '권리 증빙' };
-const KIND_ICON: Record<WorkAttachment['kind'], GlyphName> = { demo: 'music', lyrics: 'quote', score: 'doc', proof: 'sign' };
+// 작업 파일(DAW 프로젝트·MIDI·스템·버전별 음원)과 공동 작곡 합의서는 '내가 만들었다'는 근거 (0176) — 관리 단체가 창작 과정을 물을 때 낸다
+export const KIND_LABEL: Record<WorkAttachment['kind'], string> = {
+  demo: '데모 음원', lyrics: '가사', score: '악보', project: '작업 파일', split_sheet: '공동 작곡 합의서', proof: '기타 증빙',
+};
+const KIND_HELP: Record<WorkAttachment['kind'], string> = {
+  demo: 'MP3·WAV·M4A — 곡 화면에서 바로 들을 수 있어요.',
+  lyrics: 'TXT로 올리면 곡 화면에서 바로 읽을 수 있어요.',
+  score: 'PDF·이미지 — 곡 화면에서 바로 열어 볼 수 있어요.',
+  project: 'DAW 화면 캡처, 버전별 음원, MIDI·스템 — 날짜가 보이면 더 좋아요. 파일이 없으면 작업 기록을 글로 남겨도 돼요.',
+  split_sheet: '공동 작가 모두가 서명한 지분 합의서(PDF·사진) — 분쟁 때 가장 강한 근거예요.',
+  proof: '계약서·기존 등록 확인서 등 그 밖의 근거 — PDF·이미지.',
+};
+const KIND_ICON: Record<WorkAttachment['kind'], GlyphName> = { demo: 'music', lyrics: 'quote', score: 'doc', project: 'layers', split_sheet: 'users', proof: 'sign' };
 const KIND_ACCEPT: Record<WorkAttachment['kind'], string> = {
-  demo: 'audio/*,.mp3,.wav,.m4a,.flac', lyrics: '.txt,.pdf,.doc,.docx,text/plain', score: '.pdf,image/*', proof: '.pdf,image/*',
+  demo: 'audio/*,.mp3,.wav,.m4a,.flac', lyrics: '.txt,.pdf,.doc,.docx,text/plain', score: '.pdf,image/*',
+  project: 'audio/*,image/*,.pdf,.mid,.midi', split_sheet: '.pdf,image/*', proof: '.pdf,image/*',
+};
+/** 파일 대신 글로 남길 수 있는 자료 — 가사 본문, 작업 기록 */
+const TEXT_KINDS: Partial<Record<WorkAttachment['kind'], { label: string; help: string; placeholder: string; name: string }>> = {
+  lyrics: { label: '가사 붙여 넣기', help: '여기에 붙여 넣으면 곡 화면에서 바로 읽을 수 있어요. 파일이 있으면 아래에서 올려도 돼요.', placeholder: '1절\n…\n\n후렴\n…', name: '가사' },
+  project: { label: '작업 기록 남기기', help: '언제, 어떤 프로그램으로, 어떻게 만들었는지 — 버전별 날짜가 있으면 함께 적어 주세요.', placeholder: '2026-03-02 Logic에서 피아노 스케치\n2026-03-10 가사 붙이고 1차 편곡\n2026-04-01 최종 믹스', name: '작업 기록' },
 };
 const KINDS = Object.keys(KIND_LABEL) as WorkAttachment['kind'][];
 const isImage = (n: string) => /\.(png|jpe?g|gif|webp|heic)$/i.test(n);
@@ -38,7 +55,7 @@ function Preview({ a }: { a: WorkAttachment }) {
 }
 
 /** 자료 목록 — 누르면 그 줄 아래에서 재생·열람 */
-export function AttachmentList({ items, empty = '아직 올린 자료가 없어요. 데모·가사·악보·권리 증빙을 모아 둘 수 있어요.' }: { items: readonly WorkAttachment[]; empty?: string }) {
+export function AttachmentList({ items, empty = '아직 올린 자료가 없어요. 데모·가사·악보·작업 파일·합의서를 모아 둘 수 있어요.' }: { items: readonly WorkAttachment[]; empty?: string }) {
   const [open, setOpen] = useState<string | null>(null);
   if (!items.length) return <p className="ui-field-help aq-pbl-files-empty">{empty}</p>;
   return (
@@ -78,21 +95,22 @@ export function AttachmentModal({ works, workId, onClose, onAdded }: {
   const [target, setTarget] = useState(workId ?? editable[0]?.id ?? '');
   const [kind, setKind] = useState<WorkAttachment['kind']>('demo');
   const [busy, setBusy] = useState(false);
-  const [lyrics, setLyrics] = useState('');
+  const [text, setText] = useState('');
   const work = works.find(w => w.id === target);
 
-  // 가사는 붙여 넣어도 된다 — 메모장에 저장해 파일로 올리는 수고 없이, 곡 화면에서 바로 읽히는 본문으로
-  const saveLyrics = async () => {
-    const text = lyrics.trim();
-    if (!text || !work || busy) return;
+  // 가사·작업 기록은 붙여 넣어도 된다 — 메모장에 저장해 파일로 올리는 수고 없이, 곡 화면에서 바로 읽히는 본문으로
+  const textKind = TEXT_KINDS[kind];
+  const saveText = async () => {
+    const body = text.trim();
+    if (!body || !work || busy || !textKind) return;
     setBusy(true);
     try {
-      const w = await pubApi.addAttachment(work.id, 'lyrics', `${work.title || '곡'} 가사`, new Blob([text]).size, { text });
-      toast(`‘${work.title}’에 가사를 붙였어요.`, 'success');
+      const w = await pubApi.addAttachment(work.id, kind, `${work.title || '곡'} ${textKind.name}`, new Blob([body]).size, { text: body });
+      toast(`‘${work.title}’에 ${textKind.name}을(를) 남겼어요.`, 'success');
       onAdded(w);
       onClose();
     } catch (err) {
-      toast(errorMessage(err, '가사를 저장하지 못했어요. 다시 시도해 주세요.'), 'error');
+      toast(errorMessage(err, '저장하지 못했어요. 다시 시도해 주세요.'), 'error');
     } finally { setBusy(false); }
   };
 
@@ -117,7 +135,7 @@ export function AttachmentModal({ works, workId, onClose, onAdded }: {
   return (
     <Modal title="자료 첨부" onClose={onClose} dismissible={!busy} closeDisabled={busy}>
       <div className="aq-track-sheet">
-        <p className="ui-field-help">데모·가사·악보·권리 증빙을 곡에 붙여 두면, 신청할 때와 담당자 확인 때 다시 내지 않아도 돼요.</p>
+        <p className="ui-field-help">데모·가사·악보·작업 파일·합의서를 곡에 붙여 두면 내가 만든 곡이라는 근거가 돼요. 신청할 때와 담당자 확인 때 다시 내지 않아도 돼요.</p>
         {!workId && (
           <Field label="곡" htmlFor="attachWork">
             <select id="attachWork" className="ui-select" value={target} onChange={e => setTarget(e.target.value)} disabled={busy}>
@@ -125,16 +143,19 @@ export function AttachmentModal({ works, workId, onClose, onAdded }: {
             </select>
           </Field>
         )}
-        <Field label="자료 종류">
-          <Segmented label="자료 종류" value={kind} onChange={setKind} fill size="sm" options={KINDS.map(k => ({ value: k, label: KIND_LABEL[k] }))} />
+        {/* 종류가 여섯 가지라 버튼 줄은 휴대폰에서 넘친다 — 고르기 칸으로 */}
+        <Field label="자료 종류" htmlFor="attachKind">
+          <select id="attachKind" className="ui-select" value={kind} onChange={e => { setKind(e.target.value as WorkAttachment['kind']); setText(''); }} disabled={busy}>
+            {KINDS.map(k => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
+          </select>
         </Field>
-        {kind === 'lyrics' && (
-          <Field label="가사 붙여 넣기" htmlFor="attachLyrics" help="여기에 붙여 넣으면 곡 화면에서 바로 읽을 수 있어요. 파일이 있으면 아래에서 올려도 돼요.">
-            <textarea id="attachLyrics" className="ui-textarea" rows={8} maxLength={20000} value={lyrics} onChange={e => setLyrics(e.target.value)} disabled={busy} placeholder={'1절\n…\n\n후렴\n…'} />
-            <button type="button" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={!lyrics.trim() || !work || busy} onClick={() => void saveLyrics()}>가사 저장</button>
+        {textKind && (
+          <Field label={textKind.label} htmlFor="attachText" help={textKind.help}>
+            <textarea id="attachText" className="ui-textarea" rows={kind === 'lyrics' ? 8 : 5} maxLength={20000} value={text} onChange={e => setText(e.target.value)} disabled={busy} placeholder={textKind.placeholder} />
+            <button type="button" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={!text.trim() || !work || busy} onClick={() => void saveText()}>{textKind.name} 저장</button>
           </Field>
         )}
-        <Field label="파일" htmlFor="attachFile" help={kind === 'demo' ? 'MP3·WAV·M4A — 곡 화면에서 바로 들을 수 있어요.' : kind === 'lyrics' ? 'TXT로 올리면 곡 화면에서 바로 읽을 수 있어요.' : 'PDF·이미지 — 곡 화면에서 바로 열어 볼 수 있어요.'}>
+        <Field label="파일" htmlFor="attachFile" help={KIND_HELP[kind]}>
           <FilePicker id="attachFile" accept={KIND_ACCEPT[kind]} busy={busy} disabled={!work} onChange={e => void pick(e)} />
         </Field>
         {work && work.attachments.length > 0 && (

@@ -10,7 +10,7 @@ const person = (p: Partial<WorkContributor>): WorkContributor => ({
 });
 const work = (p: Partial<Work>): Work => ({
   id: 'w', title: '곡', altTitles: [], workType: 'original', language: 'ko', genre: '', description: '', visibility: 'private', iswc: null,
-  internalCode: 'AQW-1', hasPriorPublisher: false, contributors: [person({ name: '서린', isMe: true })], attachments: [], recordings: [],
+  internalCode: 'AQW-1', hasPriorPublisher: false, contributors: [person({ name: '서린', isMe: true })], attachments: [{ id: 'f', kind: 'demo', name: '데모', at: '' }], recordings: [],
   registration: 'none', registrationLog: [], application: null, contractId: null, fix: null, myRole: 'owner', activity: [], rowVersion: 1,
   createdAt: '', updatedAt: '', ...p,
 });
@@ -39,6 +39,19 @@ describe('신청 전 준비 점검', () => {
     expect(g.confirm.state).toBe('wait');
     expect(g.ipi.works.map(w => w.id)).toEqual(['c']);
     expect(g.tracks.state).toBe('todo');
+  });
+
+  it('창작 증빙이 없으면 신청할 수 없고, 가사·창작일·합의서는 권하기만 한다', async () => {
+    const { workIssues } = await import('./publishingPrep');
+    const bare = work({ id: 'e', attachments: [] });
+    expect(workStage(bare)).toBe('blocked');
+    expect(workIssues(bare).find(i => i.field === 'evidence')?.blocking).toBe(true);
+    expect(albumReadiness([bare], 0).groups.find(g => g.key === 'evidence')?.works.map(w => w.id)).toEqual(['e']);
+    const soft = workIssues(waiting).filter(i => i.field === 'evidence');
+    expect(soft.every(i => !i.blocking)).toBe(true);
+    expect(soft.map(i => i.text.slice(0, 6))).toEqual(['가사가 없어', '창작을 마친', '공동 작가가']);
+    const done = work({ id: 'f', createdOn: '2026-03-02', attachments: [{ id: 'l', kind: 'lyrics', name: '가사', at: '' }] });
+    expect(workIssues(done).filter(i => i.field === 'evidence')).toEqual([]);
   });
 });
 
@@ -106,5 +119,18 @@ describe('발매 크레딧 ↔ 곡 참여자', () => {
     expect(creditGaps(w, { composers: '서린, 이온', lyricists: '김하늘' })).toEqual({ missing: ['이온'], extra: ['박도윤'] });
     expect(creditGaps(w, { composers: '서린', lyricists: '없는사람', instrumental: true, arrangers: '박도윤' })).toEqual({ missing: [], extra: ['김 하늘'] });
     expect(creditGaps(w, {})).toEqual({ missing: [], extra: [] });
+  });
+});
+
+describe('필명', () => {
+  it('다른 사람으로 들어간 필명을 찾아 나로 — 내 줄이 있으면 합치고, 없으면 필명 IPI로 내 줄을 만든다', async () => {
+    const { penAsOthers, mergeIntoMe } = await import('./publishingPrep');
+    const me = { id: 'me', name: '서린', society: 'KOMCA', ipi: '00700000001', penNames: [{ name: '하람', ipi: '00755500011' }] };
+    const both = [person({ id: '1', name: '서린', isMe: true, share: 40, roles: ['composer'] }), person({ id: '2', name: '하 람', share: 30, roles: ['lyricist'], confirm: 'pending' }), person({ id: '3', name: '김하늘', share: 30 })];
+    expect(penAsOthers(both, me).map(c => c.id)).toEqual(['2']);
+    const merged = mergeIntoMe(both, '2', me);
+    expect(merged.map(c => [c.name, c.share, c.roles.join('/')])).toEqual([['서린', 70, 'composer/lyricist'], ['김하늘', 30, 'composer']]);
+    const alone = mergeIntoMe([person({ id: '2', name: '하람', share: 100, ipi: null, confirm: 'pending' })], '2', me);
+    expect(alone[0]).toMatchObject({ isMe: true, penName: true, confirm: 'confirmed', ipi: '00755500011', name: '하람' });
   });
 });
