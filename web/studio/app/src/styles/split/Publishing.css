@@ -209,13 +209,6 @@
 /* 연결된 녹음 — 상태 배지와 '연결 풀기'를 한 줄에 */
 .aq-pbl-work #workRecordings .ui-row-end{flex-direction:row;align-items:center;gap:10px}
 
-/* 보완 요청 — '선택' 표시는 이름 옆에, 번호는 메모칸 위쪽에 맞춘다 */
-.aq-pbl-work .aq-bundle-docs strong>.aq-optional{display:inline-block;margin:0 0 0 6px;vertical-align:1px}
-.aq-pbl-work .aq-bundle-docs li:has(textarea){align-items:start}
-.aq-pbl-work .aq-bundle-docs li:has(textarea) .aq-bundle-no{margin-top:-2px}
-.aq-pbl-work .aq-bundle-docs textarea{margin-top:8px}
-.aq-pbl-work .aq-bundle.is-needs>.ui-callout{margin:8px 14px 4px}
-.aq-pbl-work .aq-bundle.is-needs>.row-actions{margin:8px 0 0;padding:0 14px 10px}
 
 /* ---------- 휴대폰 점검 ---------- */
 /* '이 곡 지우기'가 전역 .row-actions{grid-column:2} 때문에 '자료' 카드 옆 둘째 칸으로 밀려 카드가 좁아졌다 */

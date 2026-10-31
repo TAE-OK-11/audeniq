@@ -149,7 +149,7 @@ export function WorkSheet({ work, no, all, focus, onClose, onSaved, releaseId }:
         <section ref={statusRef} className="aq-pbl-sheet-sec" aria-labelledby="wsStatus">
           <h3 id="wsStatus" className="aq-track-sheet-h">관리 상태</h3>
           {w.fix && (
-            <Callout tone="warn" action={canEdit && <Link to={`/works/${w.id}?tab=register${back && `&${back.slice(1)}`}`} className="ui-btn is-white is-sm">보완하기</Link>}>{w.fix.reason}</Callout>
+            <Callout tone="warn" action={canEdit && <Link to={`/works/${w.id}${back}`} className="ui-btn is-white is-sm">보완하기</Link>}>{w.fix.reason}</Callout>
           )}
           <RegProgress status={w.registration} log={w.registrationLog} />
         </section>
