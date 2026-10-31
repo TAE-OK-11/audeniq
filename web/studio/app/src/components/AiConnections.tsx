@@ -174,7 +174,7 @@ function MadeToken({ made, onClose }: { made: NewConnectionToken; onClose: () =>
         <CopyButton text={made.token} label="키 복사" />
       </div>
       <details className="aq-token-exchange">
-        <summary>작업 토큰으로 바꿔 쓰기 (선택)</summary>
+        <summary>작업 토큰으로 바꿔 쓰기 <span className="aq-optional">선택</span></summary>
         <p>키를 그대로 쓰지 않고, 필요한 권한만 담은 1시간짜리 작업 토큰을 받아 쓸 수 있어요. 키에 있는 권한 안에서만 받을 수 있어요.</p>
         <pre><code>{exchangeExample(made)}</code></pre>
         <CopyButton text={exchangeExample(made)} label="예시 복사" />

@@ -178,7 +178,7 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
     : managedTracks ? `${managedTracks === rel.tracks.length ? `${rel.tracks.length}곡 모두` : `${rel.tracks.length}곡 중 ${managedTracks}곡의`} 저작권을 AUDENIQ이 관리하고 있어요. 저작권료는 정산 잔액에 함께 쌓여요.`
     : applyingTracks ? `${applyingTracks}곡을 심사하고 있어요. 끝나면 알림으로 알려 드려요.`
     : prep.ready.length ? `${prep.ready.length}곡을 바로 신청할 수 있어요. 신청하면 담당자가 참여자와 지분을 확인해요.`
-    : '이 앨범 곡의 작사·작곡 저작권도 맡기면 방송·스트리밍 저작권료까지 받아 드려요. (선택)';
+    : '이 앨범 곡의 작사·작곡 저작권도 맡기면 방송·스트리밍 저작권료까지 받아 드려요. 맡기지 않아도 배급은 그대로예요.';
   // 앨범 곡이 지금 어디에 있는지 한 막대로 — 정산 화면의 '쌓인 정산금' 막대와 같은 읽는 법(큰 숫자 · 막대 · 이름표)
   const preparedTracks = rel.tracks.length - managedTracks - applyingTracks - missing;
   const cover = ([

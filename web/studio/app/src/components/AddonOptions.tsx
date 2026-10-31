@@ -10,6 +10,7 @@ import { CheckIcon } from './Check';
 import { ChipPicker } from './ChipPicker';
 import { FileCard } from './FileCard';
 import { Glyph } from './Glyph';
+import { DateField } from './Picker';
 import { Segmented } from './Segmented';
 import { useToast } from './Toast';
 import { IconTile } from '../ui';
@@ -208,7 +209,8 @@ export function MvDetail({ o, set, tracks }: { o: AddonFields; set: (patch: Part
       </div>
       <div className="ui-field">
         <label htmlFor="aqMvDate">공개 희망일<span className="aq-optional">선택</span></label>
-        <input id="aqMvDate" type="date" value={o.mvDate} onChange={e => set({ mvDate: e.target.value })} />
+        {/* 기기 기본 달력 대신 AUDENIQ 달력 (디자인 시스템 규칙 11) */}
+        <DateField id="aqMvDate" value={o.mvDate} onChange={v => set({ mvDate: v })} />
         <p className="ui-field-help">{o.mvTier === 'BASIC' ? '보통 영업일 기준 5일 뒤부터 공개할 수 있어요.' : o.mvTier === 'REVIEW' ? '심의에 보통 1~2주 걸려요. 등급이 나오면 바로 보내요.' : '심의와 배급을 가장 먼저 처리해요.'}</p>
       </div>
     </div>

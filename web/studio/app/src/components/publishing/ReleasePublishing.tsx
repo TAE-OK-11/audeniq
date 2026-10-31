@@ -60,7 +60,7 @@ export function PublishingBundleStep({ releaseId }: { releaseId: string }) {
   const state = done ? `${managed.length}곡 저작권 관리 중`
     : fix ? '저작권 관리 신청 보완 요청'
     : applying.length ? `${applying.length}곡 저작권 관리 심사 중`
-    : '곡 저작권도 함께 맡길 수 있어요 (선택)';
+    : '곡 저작권도 함께 맡길 수 있어요. 맡기지 않아도 배급은 그대로예요.';
   return (
     <li className={done ? 'is-done' : fix ? 'is-current' : ''}>
       <span className="aq-bundle-no" aria-hidden="true">{done ? <CheckIcon size={14} /> : 3}</span>
@@ -69,7 +69,7 @@ export function PublishingBundleStep({ releaseId }: { releaseId: string }) {
         <span>{state}</span>
       </div>
       {done ? <button type="button" className="ui-btn is-soft is-sm" onClick={() => nav(`/contracts?pub=${managed[0].contractId}`)}>계약 보기</button>
-        : applying.length ? <button type="button" className={fix ? 'ui-btn is-primary aq-bundle-sign' : 'ui-btn is-soft is-sm'} onClick={() => nav(`/works/${(fix ?? applying[0]).id}?tab=register`)}>{fix ? '보완하기' : '진행 보기'}</button>
+        : applying.length ? <button type="button" className={fix ? 'ui-btn is-warn-solid aq-bundle-sign' : 'ui-btn is-soft is-sm'} onClick={() => nav(`/works/${(fix ?? applying[0]).id}?tab=register`)}>{fix ? '보완하기' : '진행 보기'}</button>
         : <button type="button" className="ui-btn is-soft is-sm" onClick={() => nav(`/releases/${encodeURIComponent(releaseId)}?tab=publishing`)}>함께 신청</button>}
     </li>
   );

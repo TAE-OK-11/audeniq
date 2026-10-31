@@ -1,5 +1,6 @@
 // 운영 도구 — 예전에 audeniq-admin CLI로만 하던 관리 작업 (admin/ops.ts, crates/core/src/staff_ops.rs).
 // 화면마다 내 레벨로 할 수 있는 것만 보여 주고, 서버도 레벨을 다시 확인한다. 위험한 작업은 인증 앱 코드를 한 번 더 받는다.
+import { DateField } from '../../components/Picker';
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 import { useAsync } from '../../hooks/useAsync';
 import { ApiError, errorMessage } from '../../api/errors';
@@ -1044,8 +1045,8 @@ function RoyaltyDesk({ index }: { index: OpsIndex | undefined }) {
         }}>
           <Field label="작업 공간 ID" htmlFor="ops-r-org"><input id="ops-r-org" className={inputClass('md', 'is-mono')} value={org} onChange={e => setOrg(e.target.value)} /></Field>
           <Field label="DSP" htmlFor="ops-r-dsp"><input id="ops-r-dsp" className={inputClass()} value={f.dsp} onChange={e => setF({ ...f, dsp: e.target.value })} placeholder="spotify" /></Field>
-          <Field label="기간 시작" htmlFor="ops-r-start"><input id="ops-r-start" type="date" className={inputClass()} value={f.start} onChange={e => setF({ ...f, start: e.target.value })} /></Field>
-          <Field label="기간 끝" htmlFor="ops-r-end"><input id="ops-r-end" type="date" className={inputClass()} value={f.end} onChange={e => setF({ ...f, end: e.target.value })} /></Field>
+          <Field label="기간 시작" htmlFor="ops-r-start"><DateField id="ops-r-start" value={f.start} onChange={v => setF({ ...f, start: v })} /></Field>
+          <Field label="기간 끝" htmlFor="ops-r-end"><DateField id="ops-r-end" value={f.end} onChange={v => setF({ ...f, end: v })} /></Field>
           <Field label="통화" htmlFor="ops-r-cur"><input id="ops-r-cur" className={inputClass('md', 'is-mono')} maxLength={3} value={f.currency} onChange={e => setF({ ...f, currency: e.target.value })} /></Field>
           <Field label="CSV 파일" htmlFor="ops-r-file"><input id="ops-r-file" type="file" accept=".csv,text/csv" onChange={e => setF({ ...f, file: e.target.files?.[0] ?? null })} /></Field>
           <button type="submit" className="ui-btn is-primary" disabled={busy || !org.trim() || !f.dsp.trim() || !f.start || !f.end || !f.file}>가져오기</button>

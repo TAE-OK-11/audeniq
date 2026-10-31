@@ -86,7 +86,7 @@ function ApplicationBundle({ a }: { a: PublishingApplication }) {
         <li className={fix ? 'is-current' : ''}>
           <span className="aq-bundle-no" aria-hidden="true">2</span>
           <div className="min-0"><strong>담당자 심사</strong><span>{fix ? (a.fixReason || '보완할 내용을 확인해 주세요') : '권리 정보를 확인하고 있어요'}</span></div>
-          <button type="button" className={fix ? 'ui-btn is-primary aq-bundle-sign' : 'ui-btn is-soft is-sm'} onClick={() => nav(`/works/${a.workIds[0]}?tab=register`)}>
+          <button type="button" className={fix ? 'ui-btn is-warn-solid aq-bundle-sign' : 'ui-btn is-soft is-sm'} onClick={() => nav(`/works/${a.workIds[0]}?tab=register`)}>
             {fix ? '보완하기' : '진행 보기'}
           </button>
         </li>
