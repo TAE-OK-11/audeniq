@@ -360,6 +360,9 @@ export function WorkDetail() {
                 ['ISWC', w.iswc ?? <Empty>{`발급 전 · ${w.internalCode}`}</Empty>],
                 ['기존 퍼블리셔', w.hasPriorPublisher ? (w.priorPublisher || '있음') : '없음'],
                 ['AI 사용', AI_USE_OPTIONS.find(x => x[0] === (w.aiUse ?? 'none'))?.[1] ?? 'AI 없음'],
+                ...(w.originalWork ? [['원곡', `${w.originalWork.title}${w.originalWork.writers ? ` · ${w.originalWork.writers}` : ''}${w.originalWork.permission ? ' · 허락 받음' : ' · 허락 확인 전'}`] as [string, string]] : []),
+                ...(w.samples?.length ? [['샘플·인용', w.samples.map(x => `${x.title}${x.artist ? `(${x.artist})` : ''}`).join(', ')] as [string, string]] : []),
+                ...(w.hasPriorPublisher && w.priorPublisherUntil ? [['기존 계약 종료', w.priorPublisherUntil] as [string, string]] : []),
                 ['내 역할', me ? `${roleText(me)} · ${pct(me.share)}` : <Empty>참여하지 않음</Empty>],
                 ['발매', origin === 'other_release' ? `${w.externalRelease?.artist ?? '다른 아티스트'} 발매` : w.recordings.length ? `녹음 ${w.recordings.length}개` : <Empty>발매 전</Empty>],
               ]} />

@@ -80,6 +80,14 @@ Rules:
 - `/works/import`: songs released by others from a CSV (one row per song, the writer's own details from the profile).
 - `/works/{id}/split-sheet`: a printable 공동 작곡 합의서 from the work's splits.
 
+## Work details and Open A&R (migration 0172)
+
+- Contributors carry their own publisher (`publisher`); works carry `originalWork` (arrangement / translation / medley:
+  title, writers, publisher, permission), `samples` (sample · interpolation, ≤10) and `priorPublisherUntil`.
+- Open A&R is on the server: `GET/POST /ar/submissions`, `POST /ar/submissions/{id}/withdraw`. Only songs not released
+  yet (`WORK_RELEASED`), with a demo (`AR_DEMO_REQUIRED`), one open submission per work (`DUPLICATE_SUBMISSION`), the same
+  idempotency key returns the first. History is the audit trail (`publishing.ar_*`). Staff review of submissions is next.
+
 ## Stage 2 — not yet
 
 - A contributor with an AUDENIQ account answering inside the studio (`rights/confirmation` answers 501); link invites cover it.
