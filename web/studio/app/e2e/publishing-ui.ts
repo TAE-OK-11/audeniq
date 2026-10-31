@@ -126,7 +126,8 @@ try {
   await person.locator('summary').click();
   assert.equal(await person.getByLabel('AUDENIQ 관리 지분').inputValue(), '75');
   await person.locator('summary').click();
-  await page.locator('#splitCheck').check();
+  // 크레딧이 한 사람뿐인 곡은 100%로 채워져 확인 칸이 없다
+  if (await page.locator('#splitCheck').count()) await page.locator('#splitCheck').check();
   await page.locator('#wizardNext').click();
   await page.locator('#workIswc').waitFor({ state: 'visible' });
   await page.getByRole('button', { name: '이전으로 돌아가기', exact: true }).click();

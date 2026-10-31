@@ -105,8 +105,21 @@ function ApplyPrep({ title, summary, groups, readyCount, total, onGo, applyTo }:
 
 /** 참여자 확인 현황 — 준비 점검의 '참여자 확인'을 누르면 뜨는 창. 사람마다 한 줄, 그 사람이 들어간 곡을 아래에.
  *  탭에 카드로 두면 준비 점검과 같은 이야기를 한 번 더 했다 */
-function PeopleModal({ works, onOpen, onClose }: { works: Work[]; onOpen: (w: Work, contributorId: string) => void; onClose: () => void }) {
+function PeopleModal({ works, onOpen, onClose, onSent }: { works: Work[]; onOpen: (w: Work, contributorId: string) => void; onClose: () => void; onSent: () => void }) {
+  const toast = useToast();
+  const [sending, setSending] = useState(false);
   const board = useMemo(() => confirmationBoard(works), [works]);
+  // 확인 대기인 사람·곡 모두에게 한 번에 — 앨범이면 같은 사람에게 곡마다 따로 누를 일이 많았다
+  const pendingEntries = board.people.filter(p => !p.isMe).flatMap(p => p.entries.filter(e => e.contributor.confirm === 'pending' && (e.work.myRole === 'owner' || e.work.myRole === 'editor')));
+  const remindAll = async () => {
+    setSending(true);
+    try {
+      for (const e of pendingEntries) await pubApi.requestSplitConfirm(e.work.id, e.contributor.id);
+      toast(`${new Set(pendingEntries.map(e => e.contributor.creatorId ?? e.contributor.name)).size}명에게 확인을 요청했어요.`, 'success');
+      onSent();
+    } catch (err) { toast(errorMessage(err, '일부를 보내지 못했어요. 다시 시도해 주세요.'), 'error'); }
+    finally { setSending(false); }
+  };
   const open = board.counts.pending + board.counts.disputed;
   const [filter, setFilter] = useState<PeopleFilter>('open');
   const shown = board.people.filter(p => (filter === 'open' ? p.state !== 'confirmed' : p.state === filter));
@@ -119,6 +132,11 @@ function PeopleModal({ works, onOpen, onClose }: { works: Work[]; onOpen: (w: Wo
         { value: 'disputed', label: CONFIRM_LABEL.disputed, count: board.counts.disputed, hidden: !board.counts.disputed },
         { value: 'confirmed', label: CONFIRM_LABEL.confirmed, count: board.counts.confirmed, hidden: !board.counts.confirmed },
       ]} />
+      {pendingEntries.length > 1 && (
+        <button type="button" className={`ui-btn is-primary is-block${sending ? ' is-busy' : ''}`} disabled={sending} onClick={() => void remindAll()}>
+          {sending ? '보내는 중' : `확인 대기 ${pendingEntries.length}건 모두 다시 요청`}
+        </button>
+      )}
       {shown.length ? (
         <ul className="aq-pbl-people-list">
           {shown.map(p => (
@@ -376,7 +394,7 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
       )}
       {attaching && <AttachmentModal works={editable} onClose={() => setAttaching(false)} onAdded={saved} />}
       {peopleOpen && (
-        <PeopleModal works={a.mine} onClose={() => setPeopleOpen(false)}
+        <PeopleModal works={a.mine} onClose={() => setPeopleOpen(false)} onSent={saved}
           onOpen={(w, cid) => { setPeopleOpen(false); setSheet({ work: w, no: trackNo.get(w.id), focus: { field: 'confirm', contributorId: cid } }); }} />
       )}
     </div>

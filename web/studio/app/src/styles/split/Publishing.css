@@ -271,3 +271,7 @@
 /* 지난 곡 정보 채우기 — 참여자 카드 안 한 줄 버튼 (면 색만, 테두리 없이) */
 .aq-pbl-fill{display:flex;align-items:center;gap:6px;width:100%;margin:2px 0 10px;padding:10px 12px;border:0;border-radius:var(--aq-r-lg);background:var(--aq-primary-soft);color:var(--aq-primary-text);font:inherit;font-size:var(--aq-fs-sm);font-weight:700;text-align:left;cursor:pointer}
 .aq-pbl-fill span{margin-left:auto;font-weight:600;color:var(--aq-text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 곡 등록 자료 칸 — 가사 붙여 넣기 */
+.aq-pbl-lyrics-paste{display:grid;gap:8px;margin-top:4px}
+.aq-pbl-lyrics-paste>summary{cursor:pointer;font-size:var(--aq-fs-sm);font-weight:700;color:var(--aq-primary-text)}
+.aq-pbl-remind-all{justify-self:start;margin:4px 0 8px}

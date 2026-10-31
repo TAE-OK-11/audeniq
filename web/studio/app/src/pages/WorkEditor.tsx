@@ -129,7 +129,8 @@ export function WorkEditor() {
       ];
       start = {
         ...EMPTY, origin: 'own_release', title: track.title, genre: release.draft?.genreCustom?.trim() || release.draft?.genre || '', language: release.draft?.language ?? 'ko', attachments: fromRelease,
-        workType: d?.instrumental ? 'instrumental' : 'original', contributors: [...people.values()].map(c => (c.isMe ? { ...c, confirm: 'confirmed', external: false } : c)),
+        // 크레딧에 한 사람뿐이면 그 사람이 100% — 나눌 것이 없는데 0%에서 다시 치게 하지 않는다
+        workType: d?.instrumental ? 'instrumental' : 'original', contributors: [...people.values()].map(c => ({ ...(c.isMe ? { ...c, confirm: 'confirmed' as const, external: false } : c), share: people.size === 1 ? 100 : 0 })),
       };
     } else if (pickedType) {
       // 직접 등록하는 새 곡은 나부터 넣어 둔다 — 혼자 쓴 곡이 많으니 100%, 역할·관리 단체·IPI는 작가 프로필 그대로
@@ -215,7 +216,8 @@ export function WorkEditor() {
   const issues = splitIssues(form.contributors);
   const fromTrack = !editing && !!track;
   const fromDraft = track && release ? draftTrackOf(track, release.draft) : undefined;
-  const needsSplitCheck = fromTrack && !splitChecked && form.contributors.length > 0;
+  // 여럿이 나누는 곡만 직접 확인을 받는다 — 혼자 쓴 곡은 100%라 확인할 것이 없다
+  const needsSplitCheck = fromTrack && !splitChecked && form.contributors.length > 1;
   // 등록이 끝난 곡 — 곡 정보는 바로 고치고, 지분은 변경 요청으로 남는다 (참여자 확인·담당자 검토 뒤 반영)
   const locked = !!existing && editMode(existing) === 'review';
   const origin = form.origin ?? 'unreleased';
@@ -467,9 +469,9 @@ export function WorkEditor() {
       </>}
 
       {step === 1 && <>
-        {fromTrack && <p className="ui-field-help aq-pbl-import-note"><Glyph name="check" size={16} />발매 크레딧을 가져왔어요. 각자의 지분만 입력해 주세요.</p>}
+        {fromTrack && <p className="ui-field-help aq-pbl-import-note"><Glyph name="check" size={16} />{form.contributors.length === 1 ? '발매 크레딧을 가져왔어요. 혼자 쓴 곡이라 100%로 채워 두었어요.' : '발매 크레딧을 가져왔어요. 각자의 지분만 입력해 주세요.'}</p>}
         <SplitEditor value={form.contributors} onChange={v => set('contributors', v)} showErrors={tried} reuse={reusableWorks(works ?? [], id)} />
-        {fromTrack && form.contributors.length > 0 && (
+        {fromTrack && form.contributors.length > 1 && (
           <label className={`ui-check aq-pbl-confirm${needsSplitCheck && tried ? ' aq-shake' : ''}`}>
             <input id="splitCheck" type="checkbox" checked={splitChecked} onChange={e => setSplitChecked(e.target.checked)} />
             <span><b>참여자와 지분을 직접 확인했어요.</b><small>크레딧은 가져오지만 지분은 자동으로 정하지 않아요.</small></span>
@@ -511,6 +513,18 @@ export function WorkEditor() {
               <div key={kind} className="ui-field">
                 <label htmlFor={`attach-${kind}`}>{label}</label>
                 <FilePicker id={`attach-${kind}`} accept={accept} busy={uploading === kind} onChange={e => void upload(kind, e)} />
+                {/* 가사는 붙여 넣어도 된다 — 파일 없이 본문으로 (곡 화면에서 바로 읽힌다) */}
+                {kind === 'lyrics' && !mine.some(a => a.text) && (
+                  <details className="aq-pbl-lyrics-paste">
+                    <summary>파일 없이 붙여 넣기</summary>
+                    <textarea className="ui-textarea" rows={6} maxLength={20000} aria-label="가사 붙여 넣기" placeholder={'1절\n…\n\n후렴\n…'}
+                      onBlur={e => {
+                        const text = e.target.value.trim();
+                        if (text) set('attachments', [...form.attachments, { id: uid(), kind: 'lyrics', name: `${form.title.trim() || '곡'} 가사`, size: new Blob([text]).size, at: stampNow(), text }]);
+                      }} />
+                    <small className="ui-field-help">칸을 벗어나면 가사로 붙어요.</small>
+                  </details>
+                )}
                 {mine.map(a => (
                   <small key={a.id} className="ui-field-help">
                     {a.name}{a.size ? ` · ${fileSize(a.size)}` : ''}{' '}
