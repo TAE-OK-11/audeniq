@@ -319,16 +319,11 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
       </section>
 
       {/* 퍼블리싱 수익 — 저작권료만 크게. 계약·곡별 상태는 아래 '곡별 저작권'에 있어 여기서 되풀이하지 않는다 */}
-      {(royaltyIn > 0 || totals.estimated > 0) && (
-        <Link to={`/reports?type=publishing&release=${encodeURIComponent(rel.id)}`} className="ui-card aq-pbl-income" aria-label="이 앨범의 퍼블리싱 수익 리포트 보기">
-          <span className="aq-pbl-income-cap"><Glyph name="won" size={15} />퍼블리싱 수익</span>
+      {royaltyIn > 0 && (
+        <Link to={`/reports?type=publishing&release=${encodeURIComponent(rel.id)}`} className="ui-card aq-pbl-income" aria-label={`퍼블리싱 수익 ${money(royaltyIn)} · 저작권료 리포트 보기`}>
+          <span className="aq-pbl-income-cap">퍼블리싱 수익</span>
           <strong className="aq-pbl-income-num"><Money value={royaltyIn} /></strong>
-          <span className="aq-pbl-income-meta">
-            {totals.paid > 0 && <span>잔액에 쌓임 <Money value={totals.paid} /></span>}
-            {totals.confirmed > 0 && <span>확정 <Money value={totals.confirmed} /></span>}
-            {totals.estimated > 0 && <span>확정 전 예상 <Money value={totals.estimated} /></span>}
-          </span>
-          <span className="aq-pbl-income-go">저작권료 리포트<Glyph name="chevron-right" size={14} /></span>
+          <Glyph name="chevron-right" size={18} className="aq-pbl-income-go" />
         </Link>
       )}
 
