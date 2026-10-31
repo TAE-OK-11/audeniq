@@ -140,6 +140,12 @@ GRANT SELECT,INSERT,UPDATE ON portal.pub_works, portal.pub_applications, portal.
 GRANT SELECT,INSERT,UPDATE,DELETE ON portal.pub_work_contributors, portal.pub_work_recordings TO audeniq_api;
 GRANT SELECT,INSERT ON portal.pub_work_attachments, portal.pub_work_status_log, portal.pub_application_works TO audeniq_api;
 GRANT USAGE ON SEQUENCE portal.pub_work_code_seq TO audeniq_api;
+-- 저작권 관리 계약서 (0168): 담당자 승인 때 만들고(INSERT), 아티스트 서명·연장·종료 요청이 고친다(UPDATE).
+GRANT SELECT,INSERT,UPDATE ON portal.pub_contracts TO audeniq_api;
+-- 공동 작가 지분 확인 링크 (0171): 작가가 만들고 공동 작가가 링크로 답한다. 주소·링크는 봉인, 알림 루프(API)가 메일을 보낸다.
+GRANT SELECT,INSERT,UPDATE ON portal.pub_split_invites TO audeniq_api;
+-- Open A&R 제출 (0172): 제출·목록·취소. 이력은 operations.audit_events.
+GRANT SELECT,INSERT,UPDATE ON portal.pub_ar_submissions TO audeniq_api;
 GRANT USAGE ON SCHEMA finance TO audeniq_api;
 GRANT SELECT ON finance.ledger_transactions,finance.ledger_entries,finance.payout_orders,finance.royalty_reports,finance.report_lines,finance.finance_holds TO audeniq_api;
 -- Held (disputed) royalties are not withdrawable (0124).

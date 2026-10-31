@@ -1110,6 +1110,8 @@ pub async fn update_work(s: &AppState, a: &Actor, org: Uuid, id: Uuid, i: WorkIn
     .bind(i.visibility)
     .bind(i.iswc.is_some())
     .bind(i.iswc.clone().flatten().as_deref().and_then(iswc))
+    // $12 — was missing since 0167, so every later value landed one place off and each edit failed (42804)
+    .bind(i.has_prior_publisher)
     .bind(i.prior_publisher.is_some())
     .bind(opt_clean(i.prior_publisher.clone().flatten().as_deref(), 200, "WORK_PUBLISHER_INVALID")?)
     .bind(i.origin.as_deref())
