@@ -342,9 +342,13 @@ export function Settlement() {
                 <ChipGroup size="sm" label="수익 유형" value={revType} onChange={setRevType} hideZero={false}
                   options={[{ value: 'all', label: '전체' }, { value: 'distribution', label: '배급' }, { value: 'publishing', label: '저작권료' }]} />
               ) : <span>{statementsNext ? `최근 ${orderedStatements.length}건` : `전체 ${orderedStatements.length}건`}</span>}
-              <button type="button" className="ui-btn is-soft is-sm" onClick={exportStatements} disabled={exporting}>
-                <Glyph name="download" size={14} className="aq-glyph-lead" />{exporting ? '내려받는 중…' : '전체 기간 CSV'}
-              </button>
+              <span className="row-actions">
+                {/* 세금·회계용 — 배급 수익과 저작권료를 분기 한 장으로 */}
+                <Link to="/reports/publishing/statement" className="ui-btn is-soft is-sm"><Glyph name="doc" size={14} className="aq-glyph-lead" />분기 명세서</Link>
+                <button type="button" className="ui-btn is-soft is-sm" onClick={exportStatements} disabled={exporting}>
+                  <Glyph name="download" size={14} className="aq-glyph-lead" />{exporting ? '내려받는 중…' : '전체 기간 CSV'}
+                </button>
+              </span>
             </div>
           )}
           {revType !== 'distribution' && estimated > 0 && (

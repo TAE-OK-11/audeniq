@@ -42,6 +42,9 @@ export function SplitsCard({ releaseId, embedded = false, registerSave }: {
   const profile = useProfile();
   const account = useAccount();
   const [filling, setFilling] = useState(false);
+  // 이름 칸 추천 — 곡 참여자로 적었던 '최근 함께한 사람' (이메일은 매번 확인해서 적는다)
+  const [people, setPeople] = useState<string[]>([]);
+  useEffect(() => { if (!MOCK) pubApi.searchCreators('').then(r => setPeople(r.filter(c => !c.isMe).map(c => c.name).slice(0, 30))).catch(() => {}); }, []);
   const [loadFailed, setLoadFailed] = useState(false);
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const [rows, setRows] = useState<Record<string, Row[]>>({});
@@ -192,7 +195,7 @@ export function SplitsCard({ releaseId, embedded = false, registerSave }: {
                 <div key={r.id ?? `new-${i}`} className="aq-splits-row">
                   {sheet.editable ? (
                     <>
-                      <input className="ui-input" aria-label="이름" maxLength={100} placeholder="이름·활동명" value={r.name}
+                      <input className="ui-input" aria-label="이름" maxLength={100} placeholder="이름·활동명" value={r.name} list={people.length ? 'splitsPeople' : undefined}
                         onChange={e => edit(t.track_id, l => l.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
                       <input className="ui-input" type="email" aria-label="이메일" maxLength={254}
                         placeholder={r.id ? (r.masked ?? (needsMail ? '다시 요청하려면 이메일' : '')) : '이메일'}
@@ -232,6 +235,7 @@ export function SplitsCard({ releaseId, embedded = false, registerSave }: {
           </fieldset>
         );
       })}
+      {sheet.editable && people.length > 0 && <datalist id="splitsPeople">{people.map(n => <option key={n} value={n} />)}</datalist>}
       {sheet.editable && (
         <div className="ui-actions">
           <button type="button" className="ui-btn is-primary" disabled={busy || !dirty} onClick={() => void save()}>{busy ? '저장 중' : '분배 저장'}</button>

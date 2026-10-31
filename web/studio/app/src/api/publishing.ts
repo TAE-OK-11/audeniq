@@ -777,7 +777,10 @@ const mockApi = {
             const cur = people.get(n);
             if (cur) { if (!cur.roles.includes(role)) cur.roles.push(role); continue; }
             const isMe = n === me.name || n === rel.artist;
-            people.set(n, { id: uid(), creatorId: isMe ? ME : null, name: isMe ? me.name : n, roles: [role], society: isMe ? me.society : null, ipi: isMe ? me.ipi : null, share: 0, publisherShare: 0, confirm: isMe ? 'confirmed' : 'pending', external: !isMe, isMe });
+            // 서버처럼 예전 곡에 적은 같은 사람(띄어쓰기 무시)의 관리 단체·IPI를 다시 채운다
+            const key = n.replace(/\s+/g, '').toLowerCase();
+            const past = isMe ? undefined : d.works.flatMap(w => w.contributors).find(c => c.name.replace(/\s+/g, '').toLowerCase() === key && (c.society || c.ipi));
+            people.set(n, { id: uid(), creatorId: isMe ? ME : null, name: isMe ? me.name : n, roles: [role], society: isMe ? me.society : past?.society ?? null, ipi: isMe ? me.ipi : past?.ipi ?? null, share: 0, publisherShare: 0, confirm: isMe ? 'confirmed' : 'pending', external: !isMe, isMe });
           }
         };
         const names = (v: string | null | undefined) => String(v ?? '').split(/[,/·&]/).map(x => x.trim()).filter(Boolean);

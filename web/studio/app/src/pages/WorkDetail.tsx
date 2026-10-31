@@ -3,13 +3,14 @@
 // 진행 단계(StageCard), 기록(ui-timeline), 보완은 계약 묶음과 같은 번호 줄. 저작권 관리만의 새 모양은 두지 않는다.
 // 곡 상세 → 권리 확인 → 저작권 관리 신청 → 계약 → 진행 상태까지 다른 화면을 거의 거치지 않고 이어진다 (기획안 10.2)
 import { useEffect, useState } from 'react';
+import { todayStr } from '../lib/date';
 import { Link, useNavigate, useParams, useSearchParams } from '../lib/router';
 import { api } from '../api/client';
 import { pubApi, type Work, type WorkContributor } from '../api/publishing';
 import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { MOCK } from '../lib/mode';
-import { APP_LABEL, APP_TONE, AR_LABEL, AR_TONE, CONTRACT_LABEL, CONTRACT_TONE, FIX_FIELDS, LANGUAGES, ORIGIN_LABEL, fixNote, isFixField, type FixField, REG_LABEL, REG_SENTENCE, REG_STEPS, WORK_TYPES, AI_USE_OPTIONS, APPLICABLE_REG, PAYOUT_TIMING, estimateRoyalty, recordedRevenue, canEditInfo, editMode, pct, societyName, regStep, splitIssues, splitReady, workOrigin } from '../lib/publishing';
+import { APP_LABEL, APP_TONE, AR_LABEL, AR_TONE, CONTRACT_LABEL, CONTRACT_TONE, FIX_FIELDS, LANGUAGES, ORIGIN_LABEL, fixNote, isFixField, type FixField, REG_LABEL, REG_SENTENCE, REG_STEPS, WORK_TYPES, AI_USE_OPTIONS, APPLICABLE_REG, PAYOUT_TIMING, estimateRoyalty, firstRoyaltyWindow, recordedRevenue, canEditInfo, editMode, pct, societyName, regStep, splitIssues, splitReady, workOrigin } from '../lib/publishing';
 import { StageCard } from '../components/StageCard';
 import { STATUS_LABEL, localStamp, money, statusTone } from '../lib/format';
 import { useToast } from '../components/Toast';
@@ -228,6 +229,8 @@ export function WorkDetail() {
   const view: Tab = shownTabs.some(t => t.value === tab) ? tab : 'overview';
   const canEdit = w.myRole === 'owner' || w.myRole === 'editor';
   const next = nextAction(w);
+  // 첫 저작권료 예상 시점 — 진행 단계 안내와 '아직 들어온 저작권료가 없어요'에 실제 달로
+  const firstPay = royalties?.length ? null : firstRoyaltyWindow(w, todayStr());
   // 곡별 행 또는 발매 전체 행(곡 수로 나눈 몫) — 실서버에서는 발매 전체 행만 와서 곡 행만 고르면 늘 0원이었다
   const rel = (r: { releaseId?: string; release: string }, rec: { releaseId: string; releaseTitle: string }) => (r.releaseId ? r.releaseId === rec.releaseId : r.release === rec.releaseTitle);
   const distRows = reportRows.filter(r => w.recordings.some(rec => rel(r, rec) && (r.track === rec.title || r.track === '전체')));
@@ -339,7 +342,7 @@ export function WorkDetail() {
           <StageCard steps={REG_STEPS.map((x, i) => (i === regStep(w.registration) && (w.registration === 'needs_fix' || w.registration === 'rejected') ? REG_LABEL[w.registration] : i === 2 && signing(w) ? '계약서 서명' : x))} current={Math.min(regStep(w.registration), REG_STEPS.length - 1)}
             tone={w.registration === 'rejected' ? 'error' : w.registration === 'needs_fix' || signing(w) ? 'warn' : undefined}
             // 승인 뒤 '등록 준비'는 이용자 차례 — 계약서에 서명해야 관리 단체 등록이 시작된다 (전에는 AUDENIQ이 준비 중인 것처럼 보였다)
-            note={signing(w) ? '담당자가 승인했어요. 계약서에 서명하면 관리 단체 등록이 시작돼요.' : REG_SENTENCE[w.registration]} label="저작권 등록 진행 단계" />
+            note={`${signing(w) ? '담당자가 승인했어요. 계약서에 서명하면 관리 단체 등록이 시작돼요.' : REG_SENTENCE[w.registration]}${firstPay ? ` 첫 저작권료는 ${firstPay} 예상이에요.` : ''}`} label="저작권 등록 진행 단계" />
         )}
         <div className="aq-detail-actions is-narrow">{buttons}</div>
       </div>
@@ -565,7 +568,7 @@ export function WorkDetail() {
             </StatGrid>
             <div className="aq-relinfo-card">
               <h2 className="subhead">저작권료 내역</h2>
-              {royalties ? <RoyaltyTable rows={royalties} showWork={false} summary={false} emptyText={w.registration === 'registered' ? `아직 들어온 저작권료가 없어요. ${PAYOUT_TIMING}` : `저작권 등록이 끝나면 관리 단체가 나눠 주는 사용료가 여기에 들어와요. ${PAYOUT_TIMING}`} /> : <SkeletonBlock height={160} />}
+              {royalties ? <RoyaltyTable rows={royalties} showWork={false} summary={false} emptyText={w.registration === 'registered' ? `아직 들어온 저작권료가 없어요. ${firstPay ? `첫 저작권료는 ${firstPay} 예상이에요. 그 뒤로는 관리 단체가 나눠 줄 때마다(보통 분기마다) 정산 잔액에 쌓여요.` : PAYOUT_TIMING}` : `저작권 등록이 끝나면 관리 단체가 나눠 주는 사용료가 여기에 들어와요. ${PAYOUT_TIMING}`} /> : <SkeletonBlock height={160} />}
             </div>
             {distRows.length > 0 && (
               <div className="aq-relinfo-card">

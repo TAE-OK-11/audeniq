@@ -393,3 +393,15 @@ export function writerSplit(
   const each = evenSplit(names.length);
   return names.map((name, i) => ({ name, pct: each[i] })).filter(p => !me.has(key(p.name)));
 }
+
+/** 첫 저작권료 예상 시점 — 등록이 끝난 날(아직이면 오늘 + 등록에 걸리는 2개월)에서 6~9개월 뒤. 보완·반려 중이면 null.
+ *  '2027년 5~8월쯤' · 해가 바뀌면 '2027년 11월~2028년 2월쯤' */
+export function firstRoyaltyWindow(w: Pick<Work, 'registration' | 'registrationLog'>, today: string): string | null {
+  if (['none', 'needs_fix', 'rejected'].includes(w.registration)) return null;
+  const done = w.registration === 'registered' ? [...w.registrationLog].reverse().find(x => x.status === 'registered')?.at.slice(0, 10) : undefined;
+  const base = done && /^\d{4}-\d{2}-\d{2}$/.test(done) ? done : addMonths(today, 2);
+  const [from, to] = [addMonths(base, 6), addMonths(base, 9)];
+  const [fy, fm] = [from.slice(0, 4), Number(from.slice(5, 7))];
+  const [ty, tm] = [to.slice(0, 4), Number(to.slice(5, 7))];
+  return fy === ty ? `${fy}년 ${fm}~${tm}월쯤` : `${fy}년 ${fm}월~${ty}년 ${tm}월쯤`;
+}

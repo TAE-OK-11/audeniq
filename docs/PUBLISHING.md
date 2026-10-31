@@ -130,6 +130,13 @@ Studio: `/reports/publishing/statement?q=YYYY-Qn` prints a quarterly royalty sta
   (or the release credits split evenly); the applicant adds emails and saves.
 - **Writer profile.** Home asks to fill the creator profile (roles, IPI) once publishing is in use; it opens the empty field.
 
+- **Known co-writers.** Preparing works from release credits fills a co-writer's society and IPI from their earlier
+  songs in the org (by name, ignoring spaces); the revenue split card suggests the same names.
+- **Revenue statement.** `/reports/publishing/statement` is one quarterly sheet of distribution income (ledger credits,
+  by the day credited; publishing credits left out so nothing counts twice) and royalties (by usage month).
+- **First royalties.** Work screens show when the first royalties are likely (registration date, or today + 2 months,
+  plus 6–9 months).
+
 ## Stage 2 — not yet
 
 - A contributor with an AUDENIQ account answering inside the studio (`rights/confirmation` answers 501); link invites cover it.
