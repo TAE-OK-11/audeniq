@@ -247,3 +247,6 @@
 .aq-pbl-sign{display:grid;gap:16px}
 .aq-pbl-sign .ui-field{margin:0}
 .aq-pbl-company{margin-top:14px}
+/* 곡 정보 — 첨부 자료 카드 (배급 신청서 곡 카드와 같은 면) */
+#view-new .aq-pbl-attach-card>.form-grid{margin:0;gap:18px;align-items:start}
+#view-new .aq-pbl-attach-card .ui-field{margin:0}

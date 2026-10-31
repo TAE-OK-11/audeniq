@@ -399,6 +399,8 @@ export function WorkEditor() {
         <p className="ui-field-help">{fromTrack && form.attachments.length
           ? '배급 신청서의 음원·가사를 미리 붙여 두었어요. 악보나 권리 증빙이 있으면 더해 주세요.'
           : '없어도 저장돼요. 데모 음원은 Open A&R 제출 때, 증빙 자료는 심사 때 써요.'}</p>
+        {/* 배급 신청서의 곡 카드(track-editor)처럼 자료 칸을 카드 한 장으로 감싼다 */}
+        <section className="track-editor aq-pbl-attach-card" aria-label="첨부 자료">
         <div className="form-grid">
           {ATTACH_KINDS.map(([kind, label, accept]) => {
             const mine = form.attachments.filter(a => a.kind === kind);
@@ -416,6 +418,7 @@ export function WorkEditor() {
             );
           })}
         </div>
+        </section>
       </>}
 
       {/* 최종 확인 — 배급 신청서 '최종 확인'과 같은 카드. 수정을 누르면 그 단계로 */}
