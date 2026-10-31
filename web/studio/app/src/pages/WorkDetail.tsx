@@ -2,7 +2,7 @@
 // 발매 상세와 같은 틀(#view-release): 뒤로 버튼, 커버·제목·버튼이 있는 머리 카드, 붙는 탭, 정보 카드(aq-relinfo-card),
 // 진행 단계(StageCard), 기록(ui-timeline), 보완은 계약 묶음과 같은 번호 줄. 저작권 관리만의 새 모양은 두지 않는다.
 // 곡 상세 → 권리 확인 → 저작권 관리 신청 → 계약 → 진행 상태까지 다른 화면을 거의 거치지 않고 이어진다 (기획안 10.2)
-import { useEffect, useState, type ChangeEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from '../lib/router';
 import { api } from '../api/client';
 import { pubApi, type Work, type WorkContributor } from '../api/publishing';
@@ -15,7 +15,6 @@ import { STATUS_LABEL, localStamp, statusTone } from '../lib/format';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { Modal } from '../components/Modal';
-import { FilePicker } from '../components/FilePicker';
 import { SkeletonBlock } from '../components/Skeleton';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { CheckIcon } from '../components/Check';
@@ -56,27 +55,19 @@ function nextAction(w: Work): { text: string; tab?: Tab; to?: string; btn: strin
   return null;
 }
 
-/** 보완 요청 — 계약 묶음(aq-bundle)과 같은 번호 줄로 할 일을 차례대로 (기획안 7.3) */
+/** 보완 요청 — 계약 묶음(aq-bundle)과 같은 번호 줄로 할 일을 차례대로 (기획안 7.3).
+ *  요청한 서류는 발매 보완과 같은 '권리·보완 서류'에서 낸다 — 같은 제출 화면·알림·담당자 확인을 쓴다 */
 function FixPanel({ work, onDone, goRights }: { work: Work; onDone: (w: Work) => void; goRights: () => void }) {
   const toast = useToast();
   const [note, setNote] = useState('');
-  const [files, setFiles] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  const [up, setUp] = useState(false);
   const fix = work.fix!;
   const needsDocs = (fix.documents?.length ?? 0) > 0;
   const infoOk = splitReady(work.contributors) && work.contributors.every(c => c.ipi || c.isMe);
-  const add = async (e: ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    e.target.value = '';
-    if (!f) return;
-    setUp(true);
-    try { await api.uploadFile(f, 'DOCUMENT'); setFiles(x => [...x, f.name]); } catch (err) { toast(errorMessage(err, '파일을 올리지 못했어요.'), 'error'); } finally { setUp(false); }
-  };
   const send = async () => {
     if (busy) return;
     setBusy(true);
-    try { const w = await pubApi.resubmitFix(work.id, note.trim(), files); toast('보완 자료를 냈어요. 담당자가 다시 확인해요.', 'success'); onDone(w); }
+    try { const w = await pubApi.resubmitFix(work.id, note.trim(), []); toast('보완했어요. 담당자가 다시 확인해요.', 'success'); onDone(w); }
     catch (err) { toast(errorMessage(err, '보내지 못했어요. 다시 시도해 주세요.'), 'error'); }
     finally { setBusy(false); }
   };
@@ -94,13 +85,10 @@ function FixPanel({ work, onDone, goRights }: { work: Work; onDone: (w: Work) =>
           <button type="button" className="ui-btn is-soft is-sm" onClick={goRights}>참여자·권리</button>
         </li>
         {needsDocs && (
-          <li className={files.length ? 'is-done' : 'is-current'}>
-            <span className="aq-bundle-no" aria-hidden="true">{files.length ? <CheckIcon size={14} /> : 2}</span>
-            <div className="min-0">
-              <strong>{fix.documents!.join(', ')}</strong>
-              <span>{files.length ? files.join(', ') : '요청한 서류를 올려 주세요'}</span>
-              <FilePicker id="fixFile" accept=".pdf,image/*" busy={up} onChange={e => void add(e)} />
-            </div>
+          <li className="is-current">
+            <span className="aq-bundle-no" aria-hidden="true">2</span>
+            <div className="min-0"><strong>{fix.documents!.join(', ')}</strong><span>권리·보완 서류에서 파일을 올려 주세요</span></div>
+            <Link to="/rights" className="ui-btn is-soft is-sm">서류 제출</Link>
           </li>
         )}
         <li>
@@ -112,8 +100,8 @@ function FixPanel({ work, onDone, goRights }: { work: Work; onDone: (w: Work) =>
         </li>
       </ol>
       <div className="row-actions">
-        <button type="button" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={busy || (needsDocs && !files.length)} onClick={() => void send()}>
-          {busy ? '보내는 중' : '보완 자료 다시 제출'}
+        <button type="button" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={busy} onClick={() => void send()}>
+          {busy ? '보내는 중' : '보완 완료하고 다시 심사받기'}
         </button>
       </div>
     </article>

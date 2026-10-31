@@ -556,7 +556,7 @@ pub async fn read_notifications(s: &AppState, a: &Actor, org: Uuid, i: ReadInput
 // ---------------------------------------------------------------------------
 // DOC_JSON / APP_JSON / the report `base` are compile-time SQL fragments
 // interpolated into queries (sqlx::AssertSqlSafe); every value is bound.
-const DOC_JSON: &str = "jsonb_build_object('id',d.id,'kind',d.kind,'release_id',d.release_id,'release_title',r.title,'title',d.title,'version',d.version,
+const DOC_JSON: &str = "jsonb_build_object('id',d.id,'kind',d.kind,'release_id',d.release_id,'release_title',r.title,'work_id',d.work_id,'title',d.title,'version',d.version,
   'body',d.body,'status',d.status,'review_note',d.review_note,'asset_id',d.asset_id,'file_name',d.file_name,'checked_at',d.checked_at,
   'signer_name',d.signer_name,'signature',d.signature,'signed_at',d.signed_at,'electronic_record',d.electronic_record,'agreement_terms',d.agreement_terms,'confirmations',d.confirmations,'row_version',d.row_version,'created_at',d.created_at,'updated_at',d.updated_at)";
 
