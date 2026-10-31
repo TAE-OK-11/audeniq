@@ -9,7 +9,7 @@ import { pubApi, type Work, type WorkContributor } from '../api/publishing';
 import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { MOCK } from '../lib/mode';
-import { APP_LABEL, APP_TONE, CONTRACT_LABEL, CONTRACT_TONE, LANGUAGES, REG_SENTENCE, REG_STEPS, WORK_TYPES, pct, regStep, splitIssues, splitReady } from '../lib/publishing';
+import { APP_LABEL, APP_TONE, CONTRACT_LABEL, CONTRACT_TONE, LANGUAGES, REG_LABEL, REG_SENTENCE, REG_STEPS, WORK_TYPES, pct, regStep, splitIssues, splitReady } from '../lib/publishing';
 import { StageCard } from '../components/StageCard';
 import { STATUS_LABEL, localStamp, statusTone } from '../lib/format';
 import { useToast } from '../components/Toast';
@@ -95,7 +95,7 @@ function FixPanel({ work, onDone, goRights }: { work: Work; onDone: (w: Work) =>
         <li>
           <span className="aq-bundle-no" aria-hidden="true">{needsDocs ? 3 : 2}</span>
           <div className="min-0">
-            <strong>담당자에게 한마디 (선택)</strong>
+            <strong>담당자에게 한마디 <span className="aq-optional">선택</span></strong>
             <textarea className="ui-textarea" rows={2} value={note} onChange={e => setNote(e.target.value)} placeholder="예: 김하늘 님 IPI 번호를 추가했어요." />
           </div>
         </li>
@@ -292,7 +292,7 @@ export function WorkDetail() {
         <div className="aq-detail-actions is-wide">{buttons}</div>
         {/* 진행 단계는 발매 상세처럼 머리 카드 안 아래쪽 흰 판으로 — 맡기기 전과 등록이 끝난 뒤에는 배지만 */}
         {regStep(w.registration) >= 0 && w.registration !== 'registered' && (
-          <StageCard steps={REG_STEPS} current={Math.min(regStep(w.registration), REG_STEPS.length - 1)}
+          <StageCard steps={REG_STEPS.map((x, i) => (i === regStep(w.registration) && (w.registration === 'needs_fix' || w.registration === 'rejected') ? REG_LABEL[w.registration] : x))} current={Math.min(regStep(w.registration), REG_STEPS.length - 1)}
             tone={w.registration === 'rejected' ? 'error' : w.registration === 'needs_fix' ? 'warn' : undefined}
             note={REG_SENTENCE[w.registration]} label="저작권 등록 진행 단계" />
         )}
@@ -383,7 +383,7 @@ export function WorkDetail() {
             {w.fix && canEdit && <FixPanel work={w} onDone={update} goRights={() => setTab('rights')} />}
             <div className="aq-relinfo-card">
               <h2 className="subhead">저작권 등록 현황</h2>
-              <RegProgress status={w.registration} log={w.registrationLog} />
+              <RegProgress status={w.registration} log={w.registrationLog} stage={regStep(w.registration) < 0 || w.registration === 'registered'} />
               <p className="ui-field-help">신청이 승인돼도 관리 단체 등록은 따로 진행돼요. 등록이 끝나야 사용료를 받을 수 있어요.</p>
             </div>
             <div className="aq-relinfo-card">
@@ -441,7 +441,7 @@ export function WorkDetail() {
                     </Link>
                     <span className="ui-row-end">
                       {r.status && <Badge tone={statusTone(r.status)}>{STATUS_LABEL[r.status] ?? r.status}</Badge>}
-                      {canEdit && <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => void unlink(r.id, r.title)}>연결 풀기</button>}
+                      {canEdit && <button type="button" className="ui-btn is-text is-sm" onClick={() => void unlink(r.id, r.title)}>연결 풀기</button>}
                     </span>
                   </div>
                 ))}

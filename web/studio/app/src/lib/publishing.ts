@@ -5,7 +5,8 @@ import type {
   ApplicationStatus, ArStatus, ContractStatus, ContributorRole, RegistrationStatus, RoyaltyKind, RoyaltyStatus, Work, WorkContributor,
 } from '../api/publishing';
 
-/** 곡 등록(권리 관리) 진행 — 기획안 7.1 */
+/** 곡 등록(권리 관리) 진행 — 기획안 7.1
+ *  색은 발매 상태와 같은 규칙(DESIGN_SYSTEM 규칙 5): 확인·심사가 진행 중이면 보라, 보완 주황, 완료 초록, 불가 빨강 */
 export const REG_LABEL: Record<RegistrationStatus, string> = {
   none: '미신청',
   preparing: '신청 준비 중',
@@ -23,17 +24,17 @@ export const REG_SENTENCE: Record<RegistrationStatus, string> = {
   none: '아직 저작권 관리를 신청하지 않았어요.',
   preparing: '신청서를 작성하고 있어요.',
   internal_review: '담당자가 권리 정보를 확인하고 있어요.',
-  needs_fix: '추가 서류가 필요합니다.',
-  ready: '권리 정보 확인 완료',
-  submitted: '저작권 등록 진행 중',
-  external_review: '저작권 등록 진행 중 · 관리 단체가 확인하고 있어요.',
+  needs_fix: '보완할 정보·서류가 있어요. 고쳐서 내면 확인이 이어져요.',
+  ready: '권리 정보 확인이 끝났어요. 관리 단체 등록을 준비하고 있어요.',
+  submitted: '관리 단체에 등록을 신청했어요.',
+  external_review: '관리 단체가 등록 내용을 확인하고 있어요.',
   registered: '저작권 등록이 끝났어요.',
   rejected: '이 곡은 등록할 수 없어요. 사유를 확인해 주세요.',
 };
 
 export const REG_TONE: Record<RegistrationStatus, Tone> = {
-  none: 'gray', preparing: 'gray', internal_review: 'blue', needs_fix: 'amber', ready: 'violet',
-  submitted: 'blue', external_review: 'blue', registered: 'green', rejected: 'red',
+  none: 'gray', preparing: 'gray', internal_review: 'violet', needs_fix: 'amber', ready: 'violet',
+  submitted: 'violet', external_review: 'violet', registered: 'green', rejected: 'red',
 };
 
 /** 진행 막대에 쓰는 단계 — 보완 필요·등록 불가는 단계가 아니라 그 자리의 막힘 */
@@ -53,7 +54,7 @@ export const APP_LABEL: Record<ApplicationStatus, string> = {
   draft: '작성 중', submitted: '제출 완료', in_review: '심사 중', needs_fix: '보완 요청', approved: '승인', rejected: '반려', withdrawn: '철회',
 };
 export const APP_TONE: Record<ApplicationStatus, Tone> = {
-  draft: 'gray', submitted: 'blue', in_review: 'blue', needs_fix: 'amber', approved: 'green', rejected: 'red', withdrawn: 'gray',
+  draft: 'gray', submitted: 'violet', in_review: 'violet', needs_fix: 'amber', approved: 'green', rejected: 'red', withdrawn: 'gray',
 };
 
 export const CONTRACT_LABEL: Record<ContractStatus, string> = {
@@ -77,7 +78,7 @@ export const AR_LABEL: Record<ArStatus, string> = {
   submitted: '제출 완료', in_review: '심사 중', needs_fix: '보완 요청', reviewed: '심사 완료', proposing: '제안 진행 중', closed: '종료',
 };
 export const AR_TONE: Record<ArStatus, Tone> = {
-  submitted: 'blue', in_review: 'blue', needs_fix: 'amber', reviewed: 'violet', proposing: 'green', closed: 'gray',
+  submitted: 'violet', in_review: 'violet', needs_fix: 'amber', reviewed: 'blue', proposing: 'green', closed: 'gray',
 };
 
 export const WORK_TYPES = [

@@ -17,14 +17,15 @@ export function RegBadge({ status }: { status: RegistrationStatus }) {
 
 const TIMELINE_TONE: Partial<Record<RegistrationStatus, string>> = { needs_fix: 'is-warn', rejected: 'is-bad' };
 
-/** 등록 진행 — 발매 진행 단계와 같은 카드. 처리 이력은 눌러서 펼친다 (기획안 7.2) */
-export function RegProgress({ status, log }: { status: RegistrationStatus; log: RegistrationStep[] }) {
+/** 등록 진행 — 발매 진행 단계와 같은 카드. 처리 이력은 눌러서 펼친다 (기획안 7.2).
+ *  stage={false}: 곡 상세처럼 머리 카드가 이미 진행 막대를 보여 주면 여기서는 한 문장과 이력만 — 같은 막대를 두 번 그리지 않는다 */
+export function RegProgress({ status, log, stage: showStage = true }: { status: RegistrationStatus; log: RegistrationStep[]; stage?: boolean }) {
   const [open, setOpen] = useState(false);
   const step = regStep(status);
   const warn = status === 'needs_fix';
   return (
     <>
-      {step < 0 ? (
+      {step < 0 || !showStage ? (
         <p className="ui-row-meta">{REG_SENTENCE[status]}</p>
       ) : (
         <StageCard

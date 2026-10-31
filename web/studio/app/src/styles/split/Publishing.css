@@ -150,3 +150,69 @@
 .aq-pbl-album-stats.ui-stats.is-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}
 .aq-pbl-head-rows{margin-top:14px}
 .aq-pbl-head-rows .ui-row-title .aq-money,.aq-pbl-head-rows .ui-row-title b{font-variant-numeric:tabular-nums}
+
+/* ---------- 앨범 퍼블리싱 머리 카드 — 정산 화면 '받을 수 있는 금액'과 같은 읽는 법: 이름표 → 큰 숫자 → 막대 → 이름표 줄 ---------- */
+#view-release .aq-pbl-hero{gap:18px}
+.aq-pbl-hero-fix{display:flex;align-items:center;gap:16px;padding:20px 20px 20px 22px;border-radius:var(--aq-r-xl);background:var(--aq-amber-50)}
+.aq-pbl-hero-fix>.min-0{flex:1;display:grid;gap:4px}
+.aq-pbl-hero-fix small{font-size:var(--aq-fs-xs);font-weight:700;color:var(--aq-amber-700)}
+.aq-pbl-hero-fix strong{font-size:var(--aq-fs-title);font-weight:700;letter-spacing:-.02em;color:var(--aq-text);overflow-wrap:anywhere}
+.aq-pbl-hero-fix strong+span{font-size:var(--aq-fs-sm);line-height:1.55;color:var(--aq-text-2);overflow-wrap:anywhere}
+.aq-pbl-hero-fix>.ui-btn{flex:none;min-width:140px}
+.aq-pbl-cover{display:grid;gap:0;min-width:0}
+.aq-pbl-cover-cap{margin:0;font-size:var(--aq-fs-sm);font-weight:600;color:var(--aq-text-3)}
+.aq-pbl-cover-num{display:flex;align-items:baseline;gap:6px;margin-top:4px;font-variant-numeric:tabular-nums}
+.aq-pbl-cover-num b{font-size:var(--aq-fs-display);font-weight:800;letter-spacing:-.03em;line-height:1.1;color:var(--aq-text)}
+.aq-pbl-cover-num small{font-size:var(--aq-fs-title-sm);font-weight:700;color:var(--aq-text-4)}
+.aq-pbl-cover-bar{display:flex;gap:3px;height:10px;margin-top:16px;border-radius:var(--aq-r-pill);overflow:hidden;background:var(--aq-bg)}
+.aq-pbl-cover-bar i{display:block;min-width:4px;transform-origin:left center;animation:ui-meter-grow var(--aq-motion-long) var(--aq-enter) backwards}
+.aq-pbl-cover .is-managed{background:var(--aq-blue-500)}
+.aq-pbl-cover .is-applying{background:var(--aq-violet-500)}
+.aq-pbl-cover .is-prepared{background:var(--aq-blue-300)}
+.aq-pbl-cover .is-missing{background:var(--aq-gray-200)}
+.aq-pbl-cover-legend{display:flex;flex-wrap:wrap;gap:8px 20px;margin:12px 0 0;padding:0;list-style:none;font-size:var(--aq-fs-sm);color:var(--aq-text-3)}
+.aq-pbl-cover-legend li{display:flex;align-items:center;gap:6px}
+.aq-pbl-cover-legend i{width:8px;height:8px;border-radius:var(--aq-r-pill)}
+.aq-pbl-cover-legend b{font-weight:700;color:var(--aq-text);font-variant-numeric:tabular-nums}
+.aq-pbl-cover-note{margin:0;font-size:var(--aq-fs-sm);line-height:1.6;color:var(--aq-text-3)}
+.aq-pbl-hero .aq-pbl-head-rows{margin-top:0}
+@media(max-width:640px){
+  .aq-pbl-hero-fix{flex-direction:column;align-items:stretch;padding:18px}
+  .aq-pbl-hero-fix>.ui-btn{width:100%}
+}
+@media(prefers-reduced-motion:reduce){.aq-pbl-cover-bar i{animation:none}}
+
+/* 신청 준비 — 할 일은 한 줄에 하나. 세 칸 타일로 두면 설명이 '…'로 잘렸다 */
+.aq-album-pub .aq-prep-list{grid-template-columns:minmax(0,1fr)}
+.aq-album-pub .aq-task-text small{-webkit-line-clamp:2;line-clamp:2}
+
+/* 저작권료 조건 — 다섯 칸이 한 줄에 같은 폭으로 (넷 + 하나로 줄이 갈리지 않게) */
+@media (min-width:761px){
+  .aq-pbl-filter{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+  .aq-pbl-filter>select{max-width:none}
+}
+/* 내역 도구 — 상태 칩과 CSV를 한 줄에 */
+@media (min-width:561px){
+  #view-publishing .aq-pbl-royalty-tools,.aq-pbl-royalty-tools{flex-wrap:nowrap;align-items:center}
+  .aq-pbl-royalty-tools>.ui-chips{flex:1 1 auto;min-width:0;padding-bottom:2px}
+  .aq-pbl-royalty-tools>.ui-btn{flex:none}
+}
+
+/* 신청할 곡 고르기 — 이름 · 참여자 왼쪽, 상태 배지 오른쪽 */
+.aq-pbl-song-picker .ui-check{align-items:center}
+.aq-pbl-song-pick{display:flex;align-items:center;gap:12px;flex:1;min-width:0}
+.aq-pbl-song-pick>.min-0{flex:1;display:grid;gap:3px}
+.aq-pbl-song-pick strong{font-size:var(--aq-fs-lg);overflow-wrap:anywhere}
+.aq-pbl-song-pick small{font-size:var(--aq-fs-sm);color:var(--aq-text-3);overflow-wrap:anywhere}
+.aq-pbl-song-pick>.ui-badge{flex:none}
+
+/* 연결된 녹음 — 상태 배지와 '연결 풀기'를 한 줄에 */
+.aq-pbl-work #workRecordings .ui-row-end{flex-direction:row;align-items:center;gap:10px}
+
+/* 보완 요청 — '선택' 표시는 이름 옆에, 번호는 메모칸 위쪽에 맞춘다 */
+.aq-pbl-work .aq-bundle-docs strong>.aq-optional{display:inline-block;margin:0 0 0 6px;vertical-align:1px}
+.aq-pbl-work .aq-bundle-docs li:has(textarea){align-items:start}
+.aq-pbl-work .aq-bundle-docs li:has(textarea) .aq-bundle-no{margin-top:-2px}
+.aq-pbl-work .aq-bundle-docs textarea{margin-top:8px}
+.aq-pbl-work .aq-bundle.is-needs>.ui-callout{margin:8px 14px 4px}
+.aq-pbl-work .aq-bundle.is-needs>.row-actions{margin:8px 0 0;padding:0 14px 10px}

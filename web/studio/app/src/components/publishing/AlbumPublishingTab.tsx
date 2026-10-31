@@ -12,8 +12,8 @@ import { errorMessage } from '../../api/errors';
 import { useAsync } from '../../hooks/useAsync';
 import { pct } from '../../lib/publishing';
 import {
-  CONFIRM_LABEL, CONFIRM_TONE, STAGE_LABEL, albumReadiness, confirmationBoard, workStage,
-  type ConfirmState, type PrepField, type PrepGroup, type WorkStage,
+  CONFIRM_LABEL, CONFIRM_TONE, STAGE_LABEL, STAGE_TONE, albumReadiness, confirmationBoard, workStage,
+  type ConfirmState, type PrepField, type PrepGroup,
 } from '../../lib/publishingPrep';
 import { Glyph, type GlyphName } from '../Glyph';
 import { SkeletonBlock } from '../Skeleton';
@@ -26,13 +26,12 @@ import { albumPublishing } from './ReleasePublishing';
 import { Modal } from '../Modal';
 import { WorkSheet } from './WorkSheet';
 import { AttachmentModal } from './Attachments';
-import { Badge, Callout, ChipGroup, IconTile, StatGrid, StatTile } from '../../ui';
+import { Badge, ChipGroup, IconTile } from '../../ui';
 
 import '../../styles/split/ReleaseDetail.css';
 import '../../styles/split/Publishing.css';
 
 const PREP_ICON: Record<PrepGroup['key'], GlyphName> = { tracks: 'music', fix: 'warning', split: 'scale', confirm: 'users', ipi: 'user' };
-const STAGE_TONE: Record<WorkStage, 'green' | 'amber' | 'violet' | 'blue' | 'gray'> = { ready: 'green', blocked: 'amber', applied: 'violet', managed: 'blue', readonly: 'gray' };
 type PeopleFilter = 'open' | ConfirmState;
 const START_STEPS = [
   ['곡 정리', '발매할 때 적은 크레딧으로 작사·작곡가를 채워 둬요'],
@@ -179,8 +178,12 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
     : applyingTracks ? `${applyingTracks}곡을 심사하고 있어요. 끝나면 알림으로 알려 드려요.`
     : prep.ready.length ? `${prep.ready.length}곡을 바로 신청할 수 있어요. 신청하면 담당자가 참여자와 지분을 확인해요.`
     : '이 앨범 곡의 작사·작곡 저작권도 맡기면 방송·스트리밍 저작권료까지 받아 드려요. (선택)';
-  // 숫자는 둘 이상이 의미 있을 때만 — 0곡이 줄지은 칸은 아무것도 알려 주지 않는다
-  const stats = ([['관리 중', managedTracks], ['심사 중', applyingTracks], ['정리 전', missing]] as const).filter(([, n]) => n > 0);
+  // 앨범 곡이 지금 어디에 있는지 한 막대로 — 정산 화면의 '쌓인 정산금' 막대와 같은 읽는 법(큰 숫자 · 막대 · 이름표)
+  const preparedTracks = rel.tracks.length - managedTracks - applyingTracks - missing;
+  const cover = ([
+    ['managed', '관리 중', managedTracks], ['applying', '심사 중', applyingTracks],
+    ['prepared', '정리함', preparedTracks], ['missing', '정리 전', missing],
+  ] as const).filter(([, , n]) => n > 0);
   const editable = a.mine.filter(w => w.myRole === 'owner' || w.myRole === 'editor');
   const contractId = a.managed.find(w => w.contractId)?.contractId ?? null;
   // 이 앨범에서 아직 아무 곡도 정리하지 않았으면 처음 시작하는 화면
@@ -205,7 +208,7 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
 
   return (
     <div className="aq-detail-stack aq-album-pub">
-      <section className="ui-card aq-manage-card" aria-labelledby="albumPubHead">
+      <section className="ui-card aq-manage-card aq-pbl-hero" aria-labelledby="albumPubHead">
         <ManageHead id="albumPubHead" icon="scale" title="작사·작곡 저작권 관리" status={a.status} />
         {fresh ? (
           <>
@@ -223,12 +226,35 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
           </>
         ) : (
           <>
-            <p className="ui-field-help">{text}</p>
-            {stats.length > 1 && (
-              <StatGrid cols={stats.length as 2 | 3} className="aq-pbl-album-stats">
-                {stats.map(([label, n]) => <StatTile key={label} compact label={label} value={n} unit="곡" />)}
-              </StatGrid>
+            {/* 보완 요청이 있으면 그 일이 이 탭의 판단 하나 — 홈 '먼저 할 일'과 같은 주황 면을 카드 맨 위에 */}
+            {a.fix && (
+              <div className="aq-pbl-hero-fix ui-tone-warn">
+                <span className="min-0">
+                  <small>먼저 할 일</small>
+                  <strong>{fixWork ? `‘${fixWork.title}’에 보완 요청이 왔어요` : '보완 요청이 왔어요'}</strong>
+                  <span>{fixWork?.fix?.reason ?? '아래 곡을 눌러 고쳐 주세요. 고쳐서 다시 내면 심사가 이어져요.'}</span>
+                </span>
+                {fixWork && (
+                  <button type="button" className="ui-btn is-primary aq-hero-cta" onClick={() => setSheet({ work: fixWork, no: trackNo.get(fixWork.id), focus: { field: 'fix' } })}>
+                    보완하기
+                    <span className="aq-cta-arrow" aria-hidden="true">
+                      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4" /></svg>
+                    </span>
+                  </button>
+                )}
+              </div>
             )}
+            <div className="aq-pbl-cover" role="group" aria-label={`${rel.tracks.length}곡 중 ${cover.map(([, l, n]) => `${l} ${n}곡`).join(', ')}`}>
+              <p className="aq-pbl-cover-cap" aria-hidden="true">저작권을 맡긴 곡</p>
+              <strong className="aq-pbl-cover-num" aria-hidden="true"><b>{managedTracks + applyingTracks}</b><small>/ {rel.tracks.length}곡</small></strong>
+              <div className="aq-pbl-cover-bar" aria-hidden="true">
+                {cover.map(([k, , n]) => <i key={k} className={`is-${k}`} style={{ flexGrow: n }} />)}
+              </div>
+              <ul className="aq-pbl-cover-legend" aria-hidden="true">
+                {cover.map(([k, l, n]) => <li key={k}><i className={`is-${k}`} />{l}<b>{n}곡</b></li>)}
+              </ul>
+            </div>
+            {!a.fix && <p className="aq-pbl-cover-note">{text}</p>}
             {/* 계약·저작권료는 한 줄씩 — 따로 카드를 두면 탭이 길어지기만 했다. 자세한 건 계약서·리포트에서 */}
             {(contractId || albumRoyalties.length > 0) && (
               <div className="ui-list is-inset aq-pbl-head-rows">
@@ -254,12 +280,6 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
           </>
         )}
       </section>
-
-      {a.fix && (
-        <Callout tone="warn" action={fixWork && <button type="button" className="ui-btn is-sm is-white" onClick={() => setSheet({ work: fixWork, no: trackNo.get(fixWork.id), focus: { field: 'fix' } })}>보완하기</button>}>
-          {fixWork ? `‘${fixWork.title}’에 보완 요청이 왔어요.` : '보완 요청이 왔어요. 아래 곡을 눌러 고쳐 주세요.'}
-        </Callout>
-      )}
 
       {openPrep && (
         <ApplyPrep
