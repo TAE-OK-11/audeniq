@@ -5,6 +5,7 @@
 import { Link, useNavigate } from '../../lib/router';
 import { pubApi, type Work } from '../../api/publishing';
 import { useAsync } from '../../hooks/useAsync';
+import { usePublishingUse } from '../../hooks/usePublishingUse';
 import { readJSON, removeKey } from '../../lib/storage';
 import { Glyph } from '../Glyph';
 import { IconTile } from '../../ui';
@@ -48,7 +49,9 @@ export function PublishingLinkRow({ releaseId, trackId }: { releaseId?: string; 
 export function PublishingBundleStep({ releaseId }: { releaseId: string }) {
   const nav = useNavigate();
   const { data: works } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
-  if (!works || !releaseId) return null;
+  // 퍼블리싱을 쓰지 않는 사람의 계약 묶음에는 저작권 줄을 붙이지 않는다 — 입구는 계약서 목록 아래 한 줄로
+  const use = usePublishingUse();
+  if (!works || !releaseId || !use.started) return null;
   const mine = works.filter(w => w.recordings.some(r => r.releaseId === releaseId) && w.myRole !== 'contributor');
   const managed = mine.filter(w => w.contractId);
   const applying = mine.filter(w => w.application && ['submitted', 'in_review', 'needs_fix'].includes(w.application.status));

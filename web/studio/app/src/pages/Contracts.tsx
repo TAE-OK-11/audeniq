@@ -1,7 +1,9 @@
 // 계약서 — 라이브 view-contracts / renderContracts(오버라이드) 대응
 import { OrgContractEnd } from '../components/OrgContractEnd';
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from '../lib/router';
+import { Link, useNavigate, useSearchParams } from '../lib/router';
+import { Glyph } from '../components/Glyph';
+import { usePublishingUse } from '../hooks/usePublishingUse';
 import { useDocs } from '../store/docs';
 import { DocEmpty } from '../components/DocCard';
 import { ContractBundle, bundleStage, type BundleStage } from '../components/ContractBundle';
@@ -38,11 +40,14 @@ export function Contracts() {
   const { data: releases } = useAsync(() => api.listReleases(), [], { key: 'releases' });
   const { data: pubContracts } = useAsync(() => pubApi.listContracts(), [], { key: 'pub-contracts' });
   const hasPublishing = !!pubContracts?.length;
+  const pub = usePublishingUse();
   const mine = releases ? new Set(releases.map(r => r.id)) : null;
   const agreements = docs
     .filter(c => c.kind === 'agreements' && (!mine || !c.releaseId || mine.has(c.releaseId)))
     .sort((a, b) => ORDER[bundleStage(a)] - ORDER[bundleStage(b)]
       || String(b.created || '').localeCompare(String(a.created || '')));
+  // 입구가 데려갈 앨범 — 가장 먼저 보이는 발매의 '퍼블리싱' 탭(처음 시작 안내)
+  const entryRelease = agreements.find(a => a.releaseId)?.releaseId;
   // 발매 상세에서 ‘확인하고 서명’으로 들어오면 바로 연다 (?doc=)
   const linked = params.get('doc');
   useEffect(() => {
@@ -61,7 +66,7 @@ export function Contracts() {
         <div>
           <p className="eyebrow">작업실</p>
           <h1>계약서</h1>
-          <p>발매마다 배급 신청서·계약서와 곡 저작권 계약을 한곳에서 확인하고 서명해요.</p>
+          <p>{pub.started ? '발매마다 배급 신청서·계약서와 곡 저작권 계약을 한곳에서 확인하고 서명해요.' : '발매마다 배급 신청서와 계약서를 한곳에서 확인하고 서명해요.'}</p>
         </div>
       </div>
 
@@ -82,6 +87,19 @@ export function Contracts() {
             desc="발매를 접수하면 배급 신청서와 배급 계약서가 여기에 함께 정리돼요."
           />
         )}
+        {/* 퍼블리싱을 쓰지 않는 사람에게는 입구 한 줄만 — 발매마다 저작권 줄을 붙이지 않는다 */}
+        {entryRelease && pub.ready && !pub.started && (
+          <div className="ui-list" style={{ marginTop: 12 }}>
+            <Link to={`/releases/${encodeURIComponent(entryRelease)}?tab=publishing`} className="ui-row">
+              <IconTile size="sm"><Glyph name="scale" size={16} /></IconTile>
+              <span className="min-0">
+                <span className="ui-row-title">곡 저작권도 맡기기 (선택)</span>
+                <span className="ui-row-meta"><span>작사·작곡 저작권료까지 배급 정산금과 같은 잔액으로 받아요</span></span>
+              </span>
+              <Glyph name="chevron-right" size={16} />
+            </Link>
+          </div>
+        )}
       </div>
 
       {/* 진행 순서는 처음 한 번 읽으면 되는 설명 — 서명할 계약서보다 위에 있어 매번 지나쳐야 했다 */}
@@ -89,7 +107,7 @@ export function Contracts() {
         <h2 id="docPathTitle">계약은 이렇게 진행돼요</h2>
         {/* 다른 목록과 같은 줄 — 번호 · 단계 · 언제. 카드 안에 흰 박스를 또 겹치지 않는다 */}
         <ol className="ui-card ui-list is-inset aq-doc-path">
-          {DOC_PATH.map(([title, when], i) => (
+          {DOC_PATH.filter(([title]) => pub.started || !title.startsWith('저작권')).map(([title, when], i) => (
             <li key={title} className="ui-row">
               <IconTile size="sm"><span className="aq-preview-no">{i + 1}</span></IconTile>
               <span className="ui-row-body min-0">

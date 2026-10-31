@@ -1,5 +1,6 @@
 import { Suspense, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { lazyComponent } from '../lib/lazyComponent';
+import { usePublishingUse } from '../hooks/usePublishingUse';
 import { releaseDay } from '../lib/albumPrep';
 import { useNavigate, useSearchParams } from '../lib/router';
 import { api, type Release, type Track } from '../api/client';
@@ -64,7 +65,9 @@ export function Releases() {
   const docs = useDocs();
   const [params, setParams] = useSearchParams();
   const tabParam = params.get('tab');
-  const tab = tabParam === 'tracks' || tabParam === 'works' ? tabParam : 'releases';
+  // 곡 저작권 탭은 퍼블리싱을 쓰는 사람에게만 — 쓰지 않으면 발매 상세 '퍼블리싱' 탭이 입구
+  const pubUse = usePublishingUse();
+  const tab = tabParam === 'tracks' || (tabParam === 'works' && (pubUse.started || !pubUse.ready)) ? tabParam : 'releases';
   const filter = params.get('status') || 'all';
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('updated');
@@ -171,7 +174,7 @@ export function Releases() {
           { value: 'releases', label: '발매 목록', count: listLoading ? null : list.length },
           { value: 'tracks', label: '전체 트랙', count: listLoading ? null : trackCount },
           // 작사·작곡 저작권(퍼블리싱) — 발매한 곡과 아직 발매하지 않은 곡을 같은 목록에서
-          { value: 'works', label: '곡 저작권', count: worksCount },
+          ...(pubUse.started ? [{ value: 'works', label: '곡 저작권', count: worksCount }] : []),
         ]}
         onChange={v => { const next = new URLSearchParams(); if (v !== 'releases') next.set('tab', v); setParams(next, { replace: true }); }}
         onIntent={v => { if (v === 'tracks') setTracksWanted(true); }}
