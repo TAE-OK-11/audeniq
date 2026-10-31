@@ -1,5 +1,5 @@
 /* Publishing layout only. Cards, controls, colors and typography use Studio's shared components/tokens.
-   anchors: aq-pbl-split aq-pbl-dashboard aq-pbl-album-stats aq-pbl-wizard aq-pbl-work aq-pbl-ar-form aq-pbl-guide aq-pbl-sheet aq-pbl-diff aq-pbl-files aq-pbl-selbar aq-pbl-trackline aq-pbl-people-board aq-pbl-reuse aq-pbl-filter aq-split-writer aq-pbl-missed aq-pen-editor aq-pbl-checks aq-pbl-evidence aq-pbl-income aq-pbl-rcard aq-pbl-scope */
+   anchors: aq-pbl-split aq-pbl-dashboard aq-pbl-album-stats aq-pbl-wizard aq-pbl-work aq-pbl-ar-form aq-pbl-guide aq-pbl-sheet aq-pbl-diff aq-pbl-files aq-pbl-selbar aq-pbl-trackline aq-pbl-people-board aq-pbl-reuse aq-pbl-filter aq-split-writer aq-pbl-missed aq-pen-editor aq-pbl-checks aq-pbl-evidence aq-pbl-income aq-pbl-rcard aq-pbl-scope aq-pbl-ccard */
 .aq-pbl-split{display:grid;gap:16px;margin:0}
 .aq-pbl-split>.ui-meter{margin-top:-8px}
 .aq-pbl-split>.ui-field-help{margin:0}
@@ -421,3 +421,22 @@
 }
 /* 상세 화면 쌓기 안에서도 퍼블리싱 수익 카드는 이름 위 · 금액 아래 */
 .aq-detail-stack>.aq-pbl-income,.aq-pbl-income{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important}
+/* 곡 '저작권·계약' — 계약 카드: 한 문장 머리 · 남은 날 · 설명 붙은 줄 · 맨 아래 계약 끝내기 */
+.aq-pbl-ccard{display:grid;gap:12px}
+.aq-pbl-ccard-cap{margin:0;font-size:var(--aq-fs-sm);font-weight:700;color:var(--aq-text-3)}
+.aq-pbl-ccard-title{margin:0;font-size:21px;line-height:1.45;font-weight:700;letter-spacing:-.01em;color:var(--aq-text)}
+.aq-pbl-ccard-title b{color:var(--aq-primary-text)}
+.aq-pbl-ccard-term{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px}
+.aq-pbl-ccard-term span{font-size:var(--aq-fs-sm);font-weight:700;color:var(--aq-primary-text);white-space:nowrap}
+.aq-pbl-ccard-term.is-soon span{color:var(--aq-amber-700)}
+.aq-pbl-ccard-lead{margin:0;font-size:var(--aq-fs-md);line-height:1.6;color:var(--aq-text-2)}
+.aq-pbl-ccard-wait{display:flex;gap:6px;align-items:flex-start;margin:0;padding:10px 12px;border-radius:var(--aq-r-md);background:var(--aq-bg);font-size:var(--aq-fs-sm);line-height:1.5;color:var(--aq-text-2)}
+.aq-pbl-ccard-wait svg{flex:none;margin-top:2px;color:var(--aq-primary-text)}
+.aq-pbl-ccard-wait.is-warn svg{color:var(--aq-amber-700)}
+.aq-pbl-ccard-rows{margin:0}
+.aq-pbl-ccard-rows .ui-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;width:100%;text-align:left}
+.aq-pbl-ccard-rows .ui-row:disabled{opacity:1;cursor:default}
+.aq-pbl-ccard-go{display:inline-flex;align-items:center;gap:2px;font-size:var(--aq-fs-sm);font-weight:700;color:var(--aq-primary-text)}
+.aq-pbl-end{justify-self:center;color:var(--aq-text-4)!important}
+.aq-pbl-ccard .aq-pbl-end{display:flex;width:auto;margin:0 auto}
+.aq-pbl-ccard{display:grid!important}

@@ -2,7 +2,7 @@
 //  · RightsInfoCard: 저작권 등록 정보 (상태 · ISWC · 곡 코드 · 단체 작품 코드 · 등록일 · 내 IPI)
 //  · RoyaltyInCard: 들어온 저작권료 — 큰 숫자 하나 (누르면 성과 탭)
 //  · SocietiesCard: 위임된 관리 단체 — 단체마다 등록 상태와 받은 금액
-//  · ContractCard: 계약 — 기간·남은 날·조건, 관리 국가·권리, 연장 · 관리 범위 바꾸기 · 계약서 · 종료 요청
+//  · ContractCard: 계약 — 언제까지 맡겼는지 한 문장, 남은 날, 나라·권리·연장·계약서 줄, 맨 아래 계약 끝내기
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from '../../lib/router';
 import { pubApi, type PublishingContract, type Royalty, type Work } from '../../api/publishing';
@@ -17,7 +17,7 @@ import { useToast } from '../Toast';
 import { useConfirm } from '../Confirm';
 import { RegBadge } from './parts';
 import { RenewModal } from './PublishingContracts';
-import { Badge, KeyValue, Meter } from '../../ui';
+import { KeyValue, Meter } from '../../ui';
 import '../../styles/split/Upload.css';
 import '../../styles/split/Publishing.css';
 
@@ -107,19 +107,19 @@ function ScopeModal({ c, onClose, onDone }: { c: PublishingContract; onClose: ()
   const unchanged = same(terr, c.territories) && same(rights, c.rights);
   const go = async () => {
     setBusy(true);
-    try { onDone(await pubApi.requestScope(c.id, terr, rights)); toast('관리 범위 변경을 요청했어요. 담당자가 관리 단체 위임을 맞춘 뒤 적용해요.', 'success'); onClose(); }
+    try { onDone(await pubApi.requestScope(c.id, terr, rights)); toast('바꿔 달라고 요청했어요. 담당자가 확인하면 바뀌어요.', 'success'); onClose(); }
     catch (e) { toast(errorMessage(e), 'error'); } finally { setBusy(false); }
   };
   return (
-    <Modal title="관리 범위 바꾸기" onClose={onClose}>
+    <Modal title="관리하는 나라·권리 바꾸기" onClose={onClose}>
       <div className="aq-pbl-scope">
-        <p className="ui-field-help">관리할 국가와 권리를 바꿀 수 있어요. 수수료({c.commissionRate}%)와 계약 기간은 그대로예요.</p>
+        <p className="ui-field-help">맡길 나라와 권리를 골라 주세요. 수수료({c.commissionRate}%)와 계약 기간은 그대로예요. 담당자가 관리 단체에 맞춘 뒤 바뀌어요.</p>
         {policy && <>
-          <h3 className="aq-track-sheet-h">관리 국가</h3>
+          <h3 className="aq-track-sheet-h">관리하는 나라</h3>
           <div className="ui-chips is-wrap" role="group" aria-label="관리 국가">
             {policy.territories.map(t => <button key={t.code} type="button" className="ui-chip" aria-pressed={terr.includes(t.code)} onClick={() => flip(terr, setTerr, t.code)}>{t.label}</button>)}
           </div>
-          <h3 className="aq-track-sheet-h">관리할 권리</h3>
+          <h3 className="aq-track-sheet-h">관리하는 권리</h3>
           <div className="aq-agree-box">
             {policy.rights.map(r => (
               <label key={r.key} className="ui-check is-plain">
@@ -139,10 +139,17 @@ function ScopeModal({ c, onClose, onDone }: { c: PublishingContract; onClose: ()
 }
 
 const DECISION: Record<NonNullable<PublishingContract['requestDecision']>['outcome'], string> = {
-  renewed: '연장 요청이 처리됐어요.', renewal_rejected: '연장 요청이 반려됐어요.', ended: '계약이 종료됐어요.',
-  termination_rejected: '종료 요청이 반려됐어요.', scope_changed: '관리 범위 변경이 적용됐어요.', scope_rejected: '관리 범위 변경 요청이 반려됐어요.',
+  renewed: '계약이 연장됐어요.', renewal_rejected: '연장 요청을 처리하지 못했어요.', ended: '계약이 끝났어요.',
+  termination_rejected: '계약 끝내기 요청을 처리하지 못했어요.', scope_changed: '관리하는 나라·권리가 바뀌었어요.', scope_rejected: '나라·권리 변경 요청을 처리하지 못했어요.',
 };
 
+/** "2027-10-31" → "2027년 10월 31일" */
+const longDay = (d: string) => (/^\d{4}-\d{2}-\d{2}$/.test(d) ? `${Number(d.slice(0, 4))}년 ${Number(d.slice(5, 7))}월 ${Number(d.slice(8, 10))}일` : d);
+/** "대한민국 외 3곳" — 줄에는 짧게, 누르면 전부 */
+const more = (list: string[], unit: string) => (list.length > 1 ? `${list[0]} 외 ${list.length - 1}${unit}` : list[0] ?? '');
+
+/** 계약 — 토스처럼 한 문장으로 먼저 말하고(언제까지 무엇을 맡겼는지), 할 수 있는 일은 설명이 붙은 줄로.
+ *  번호·시작일 같은 서류 정보는 계약서 줄 안에, 계약 끝내기는 맨 아래 작은 글자로 */
 export function ContractCard({ contract, canEdit }: { contract: PublishingContract; canEdit: boolean }) {
   const toast = useToast();
   const confirm = useConfirm();
@@ -152,52 +159,78 @@ export function ContractCard({ contract, canEdit }: { contract: PublishingContra
   const ended = c.status === 'ended';
   const left = Math.max(0, daysLeft(c.endDate));
   const total = Math.max(1, daysLeft(c.endDate, new Date(`${c.startDate}T00:00:00+09:00`)));
+  const soon = !ended && left <= 45;
   const open = canEdit && !ended && !c.terminationRequestedAt;
   const terminate = async () => {
     const ok = await confirm({
-      title: '저작권 관리 계약 종료를 요청할까요?',
-      message: '담당자가 관리 단체 절차를 확인한 뒤 종료해요. 종료 후에는 새 곡을 관리에 넣을 수 없고, 그동안의 등록·정산 기록은 남아요.',
-      confirmLabel: '종료 요청', danger: true,
+      title: '저작권 관리 계약을 끝낼까요?',
+      message: '담당자가 관리 단체 절차를 확인한 뒤 끝내요. 끝나면 새 저작권료를 받아 드릴 수 없고, 그동안의 기록은 남아요.',
+      confirmLabel: '끝내기 요청', danger: true,
     });
     if (!ok) return;
-    try { setC(await pubApi.requestTermination(c.id)); toast('종료를 요청했어요.', 'success'); }
+    try { setC(await pubApi.requestTermination(c.id)); toast('계약을 끝내 달라고 요청했어요.', 'success'); }
     catch (e) { toast(errorMessage(e), 'error'); }
   };
+  const terr = c.territories.map(territoryName);
+  const rights = c.rights.map(rightName);
+  // 지금 기다리는 요청 — 한 줄로만
+  const waiting = c.terminationRequestedAt ? '계약을 끝내 달라고 요청했어요. 담당자가 확인하고 있어요.'
+    : c.renewal ? `${termLabel(c.renewal.months)} 연장을 요청했어요. 담당자가 확인하면 새 날짜로 바뀌어요.`
+    : c.scopeRequest ? '관리하는 나라·권리를 바꿔 달라고 요청했어요. 담당자가 확인하고 있어요.' : null;
   return (
-    <section className="aq-relinfo-card aq-pbl-rcard" aria-labelledby="rcContract">
-      <div className="ui-section-head"><h2 className="subhead" id="rcContract">계약</h2><Badge tone={ended ? 'gray' : c.status === 'expiring' || c.terminationRequestedAt ? 'amber' : 'green'}>{ended ? '종료' : c.terminationRequestedAt ? '종료 요청' : c.status === 'expiring' ? '곧 끝남' : '관리 중'}</Badge></div>
+    <section className="aq-relinfo-card aq-pbl-ccard" aria-labelledby="rcContract">
+      <p className="aq-pbl-ccard-cap" id="rcContract">저작권 관리 계약</p>
+      {ended ? (
+        <h2 className="aq-pbl-ccard-title">계약이 끝났어요</h2>
+      ) : (
+        <h2 className="aq-pbl-ccard-title"><b className="aq-nowrap">{longDay(c.endDate)}</b>까지<br />AUDENIQ이 저작권을 관리해요</h2>
+      )}
       {!ended && (
-        <div className="aq-pbl-term">
-          <p><b>{left}일</b> 남았어요 <span className="muted">· {c.endDate}까지</span></p>
-          {/* 남은 기간을 채운 막대 — 첫날 빈 막대가 고장처럼 보였다 */}
-          <Meter total={total} parts={[{ value: left, tone: left <= 45 ? 'amber' : 'primary' }]} label={`계약 기간 ${left}일 남음`} />
+        <div className={`aq-pbl-ccard-term${soon ? ' is-soon' : ''}`}>
+          <Meter total={total} parts={[{ value: left, tone: soon ? 'amber' : 'primary' }]} label={`계약 기간 ${left}일 남음`} />
+          <span>{left}일 남았어요</span>
         </div>
       )}
-      <KeyValue cols={2} items={[
-        ['계약 번호', c.number],
-        ['시작일', c.startDate],
-        ['관리 수수료', `받은 저작권료의 ${c.commissionRate}%`],
-        ['최초 기간', termLabel(c.termMonths)],
-      ]} />
-      <div className="aq-pbl-scope-view">
-        <div><span>관리 국가</span><p>{c.territories.map(t => <Badge key={t} tone="gray">{territoryName(t)}</Badge>)}</p></div>
-        <div><span>관리할 권리</span><p>{c.rights.map(r => <Badge key={r} tone="gray">{rightName(r)}</Badge>)}</p></div>
-      </div>
-      {/* 담당자를 기다리는 요청과 지난 요청의 답 — 한 줄씩 */}
-      {c.renewal && <p className="ui-field-help aq-pbl-req"><Glyph name="clock" size={14} />{termLabel(c.renewal.months)} 연장을 요청했어요 · {day(c.renewal.requestedAt)}</p>}
-      {c.scopeRequest && <p className="ui-field-help aq-pbl-req"><Glyph name="clock" size={14} />관리 범위 변경을 요청했어요 — {c.scopeRequest.territories.map(territoryName).join(', ')} · {c.scopeRequest.rights.map(rightName).join(', ')}</p>}
-      {c.terminationRequestedAt && <p className="ui-field-help aq-pbl-req is-warn"><Glyph name="clock" size={14} />종료를 요청했어요 · {day(c.terminationRequestedAt)}</p>}
-      {!c.renewal && !c.scopeRequest && !c.terminationRequestedAt && c.requestDecision && (
-        <p className={`ui-field-help${c.requestDecision.outcome.endsWith('rejected') ? ' is-warn' : ''}`}>
-          {DECISION[c.requestDecision.outcome]}{c.requestDecision.note && ` — ${c.requestDecision.note}`}
+      <p className="aq-pbl-ccard-lead">저작권료가 들어오면 수수료 {c.commissionRate}%만 빼고 정산 잔액에 넣어 드려요.</p>
+
+      {waiting && <p className="aq-pbl-ccard-wait"><Glyph name="clock" size={15} />{waiting}</p>}
+      {!waiting && c.requestDecision && (
+        <p className={`aq-pbl-ccard-wait${c.requestDecision.outcome.endsWith('rejected') ? ' is-warn' : ''}`}>
+          <Glyph name="info" size={15} />{DECISION[c.requestDecision.outcome]}{c.requestDecision.note && ` ${c.requestDecision.note}`}
         </p>
       )}
-      <div className="aq-pbl-contract-btns">
-        {open && !c.renewal && <button type="button" className={`ui-btn ${c.status === 'expiring' ? 'is-primary' : 'is-soft'}`} onClick={() => setModal('renew')}>계약 연장</button>}
-        {open && !c.scopeRequest && <button type="button" className="ui-btn is-soft" onClick={() => setModal('scope')}>관리 범위 바꾸기</button>}
-        <Link to={`/contracts/publishing/${encodeURIComponent(c.id)}`} className="ui-btn is-soft">계약서 보기</Link>
-      </div>
-      {open && <button type="button" className="ui-btn is-text is-sm aq-danger-text aq-pbl-end" onClick={() => void terminate()}>계약 종료 요청</button>}
+      {/* 곧 끝나면 할 일이 하나 — 큰 버튼으로 */}
+      {open && soon && !c.renewal && <button type="button" className="ui-btn is-primary is-block is-lg" onClick={() => setModal('renew')}>계약 연장하기</button>}
+
+      <ul className="ui-list is-inset aq-pbl-ccard-rows">
+        <li>
+          <button type="button" className="ui-row" disabled={!open || !!c.scopeRequest} onClick={() => setModal('scope')}>
+            <span className="min-0"><span className="ui-row-title">관리하는 나라</span><span className="ui-row-meta"><span>{more(terr, '곳')}</span></span></span>
+            {open && !c.scopeRequest && <span className="aq-pbl-ccard-go">바꾸기<Glyph name="chevron-right" size={15} /></span>}
+          </button>
+        </li>
+        <li>
+          <button type="button" className="ui-row" disabled={!open || !!c.scopeRequest} onClick={() => setModal('scope')}>
+            <span className="min-0"><span className="ui-row-title">관리하는 권리</span><span className="ui-row-meta"><span>{more(rights, '개')}</span></span></span>
+            {open && !c.scopeRequest && <span className="aq-pbl-ccard-go">바꾸기<Glyph name="chevron-right" size={15} /></span>}
+          </button>
+        </li>
+        {open && !soon && !c.renewal && (
+          <li>
+            <button type="button" className="ui-row" onClick={() => setModal('renew')}>
+              <span className="min-0"><span className="ui-row-title">계약 연장</span><span className="ui-row-meta"><span>끝나기 전에 미리 늘려 둘 수 있어요</span></span></span>
+              <span className="aq-pbl-ccard-go">연장하기<Glyph name="chevron-right" size={15} /></span>
+            </button>
+          </li>
+        )}
+        <li>
+          <Link to={`/contracts/publishing/${encodeURIComponent(c.id)}`} className="ui-row">
+            <span className="min-0"><span className="ui-row-title">계약서</span><span className="ui-row-meta"><span>{c.number}</span>{c.startDate && <span>{longDay(c.startDate)} 시작</span>}</span></span>
+            <span className="aq-pbl-ccard-go">보기<Glyph name="chevron-right" size={15} /></span>
+          </Link>
+        </li>
+      </ul>
+      {open && <button type="button" className="ui-btn is-text is-sm aq-pbl-end" onClick={() => void terminate()}>계약 끝내기</button>}
       {modal === 'renew' && <RenewModal c={c} onClose={() => setModal(null)} onDone={setC} />}
       {modal === 'scope' && <ScopeModal c={c} onClose={() => setModal(null)} onDone={setC} />}
     </section>
