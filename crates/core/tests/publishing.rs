@@ -1531,6 +1531,72 @@ async fn staff_answer_artist_requests(pool: PgPool) {
         (Some("active"), Some("termination_rejected"))
     );
 
+    // Territories / rights change (0177): the same scope is refused; a new one waits for staff, who apply it.
+    let (s, e) = call(&app, "POST", &format!("{base}/publishing/contracts/{cid}/scope"),
+        json!({"territories": list["items"][0]["territories"], "rights": list["items"][0]["rights"]}), Some(&u)).await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("CONTRACT_SCOPE_UNCHANGED")
+        ),
+        "{e}"
+    );
+    let (s, asked) = call(
+        &app,
+        "POST",
+        &format!("{base}/publishing/contracts/{cid}/scope"),
+        json!({"territories": ["KR", "JP"], "rights": ["performance", "mechanical"]}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{asked}");
+    assert_eq!(asked["scopeRequest"]["territories"], json!(["KR", "JP"]));
+    let (_, reqs) = call(
+        &app,
+        "GET",
+        "/api/staff/publishing/contract-requests",
+        json!({}),
+        Some(&st),
+    )
+    .await;
+    assert!(
+        reqs["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["scope"]["rights"] == json!(["performance", "mechanical"])),
+        "{reqs}"
+    );
+    let (s, d) = call(
+        &app,
+        "POST",
+        &format!("/api/staff/publishing/contracts/{cid}/request"),
+        json!({"kind": "scope", "approve": true}),
+        Some(&st),
+    )
+    .await;
+    assert_eq!(
+        (s, d["outcome"].as_str()),
+        (StatusCode::OK, Some("scope_changed")),
+        "{d}"
+    );
+    let (_, list) = call(
+        &app,
+        "GET",
+        &format!("{base}/publishing/contracts"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (
+            list["items"][0]["territories"].clone(),
+            list["items"][0]["scopeRequest"].is_null()
+        ),
+        (json!(["KR", "JP"]), true)
+    );
+
     // Open A&R review: claim, fix, the artist answers, reviewed, proposing, closed.
     let (_, demo) = call(
         &app,
@@ -1728,6 +1794,7 @@ async fn staff_answer_artist_requests(pool: PgPool) {
         "‘겨울 편지’ 지분 변경이 반영됐어요.",
         "저작권 관리 계약이 연장됐어요.",
         "저작권 관리 계약 종료 요청이 반려됐어요.",
+        "저작권 관리 범위가 바뀌었어요.",
         "‘새벽 네 시’ A&R 보완 요청이 있어요.",
         "‘새벽 네 시’ A&R 심사가 끝났어요.",
         "새 저작권료 예상 내역이 들어왔어요.",

@@ -327,12 +327,12 @@ export const mockStaff = {
     return wait({ ...c.work, contributors: b.approve ? c.work.pendingChange!.contributors : c.work.contributors, pendingChange: null });
   },
   pubContractRequests: () => wait({ items: pubContractReqs }),
-  pubContractDecide: (cid: string, b: { kind: 'renewal' | 'termination'; approve: boolean; reason?: string }) => {
+  pubContractDecide: (cid: string, b: { kind: 'renewal' | 'termination' | 'scope'; approve: boolean; reason?: string }) => {
     const i = pubContractReqs.findIndex(c => c.id === cid);
     if (i < 0) fail('NOT_FOUND', 404);
     if (!b.approve && !b.reason?.trim()) fail('STAFF_REASON_REQUIRED', 400);
     pubContractReqs.splice(i, 1);
-    return wait({ id: cid, outcome: b.kind === 'renewal' ? (b.approve ? 'renewed' : 'renewal_rejected') : (b.approve ? 'ended' : 'termination_rejected') });
+    return wait({ id: cid, outcome: b.kind === 'renewal' ? (b.approve ? 'renewed' : 'renewal_rejected') : b.kind === 'scope' ? (b.approve ? 'scope_changed' : 'scope_rejected') : (b.approve ? 'ended' : 'termination_rejected') });
   },
   pubArList: (status?: string) => wait({ items: pubAr.filter(a => !status || a.status === status) }),
   pubArDecide: (aid: string, b: { action: ArDecisionAction; reason?: string }) => {

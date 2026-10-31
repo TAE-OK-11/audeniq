@@ -11,7 +11,7 @@ import { pubApi, type Work, type WorkContributor } from '../api/publishing';
 import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { MOCK } from '../lib/mode';
-import { APP_LABEL, APP_TONE, CONTRACT_LABEL, CONTRACT_TONE, FIX_FIELDS, LANGUAGES, fixNote, isFixField, type FixField, REG_LABEL, REG_SENTENCE, REG_STEPS, WORK_TYPES, AI_USE_OPTIONS, APPLICABLE_REG, PAYOUT_TIMING, estimateRoyalty, firstRoyaltyWindow, recordedRevenue, canEditInfo, editMode, pct, societyName, regStep, splitIssues, splitReady, workOrigin } from '../lib/publishing';
+import { APP_LABEL, APP_TONE, FIX_FIELDS, LANGUAGES, fixNote, isFixField, type FixField, REG_LABEL, REG_SENTENCE, REG_STEPS, WORK_TYPES, AI_USE_OPTIONS, APPLICABLE_REG, PAYOUT_TIMING, estimateRoyalty, firstRoyaltyWindow, recordedRevenue, canEditInfo, editMode, pct, regStep, splitIssues, splitReady, workOrigin } from '../lib/publishing';
 import { StageCard } from '../components/StageCard';
 import { STATUS_LABEL, localStamp, money, statusTone } from '../lib/format';
 import { useToast } from '../components/Toast';
@@ -24,7 +24,7 @@ import { Glyph } from '../components/Glyph';
 import { roleText } from '../components/publishing/parts';
 import { SplitEditor } from '../components/publishing/SplitEditor';
 import { RoyaltyTable } from '../components/publishing/Royalties';
-import { ContractManage } from '../components/publishing/PublishingContracts';
+import { ContractCard, RightsInfoCard, RoyaltyInCard, SocietiesCard } from '../components/publishing/WorkRightsCards';
 import { AttachmentList, AttachmentModal } from '../components/publishing/Attachments';
 import { InviteModal } from '../components/publishing/InviteModal';
 import { Badge, Callout, EmptyState, KeyValue, Segmented, StatGrid, StatTile, Tabs } from '../ui';
@@ -484,20 +484,12 @@ export function WorkDetail() {
 
         {view === 'register' && (
           <div className="aq-detail-stack">
-            <div className="aq-relinfo-card">
-              <h2 className="subhead">저작권 등록 현황</h2>
-              {/* 진행 단계는 머리 카드에 한 번만 — 여기서 같은 단계 판(카드 안 카드)과 같은 문장을 또 보여 주지 않는다.
-                  등록이 끝났으면 어디에 언제 등록됐는지만 */}
-              {w.registration === 'registered' ? (
-                <KeyValue cols={2} items={[
-                  ['관리 단체', societyName([...w.registrationLog].reverse().find(l => l.society)?.society) || <Empty>확인 중</Empty>],
-                  ['등록일', (() => { const at = [...w.registrationLog].reverse().find(l => l.status === 'registered')?.at; return at ? localStamp(at).replace(/ 오[전후].*$/, '') : <Empty>확인 중</Empty>; })()],
-                  ['ISWC', w.iswc ?? <Empty>{`발급 전 · ${w.internalCode}`}</Empty>],
-                ]} />
-              ) : <p className="ui-field-help">{REG_SENTENCE[w.registration]}</p>}
-              {/* 처리 이력(내부 확인·보완 제출이 오간 기록)은 담당자용 — 아티스트에게는 지금 상태만 */}
-              {w.registration !== 'registered' && <p className="ui-field-help">신청이 승인돼도 관리 단체 등록은 따로 진행돼요. 등록이 끝나야 사용료를 받을 수 있어요.</p>}
-            </div>
+            {/* 할 말마다 한 장씩 — 들어온 돈 · 등록 정보 · 맡긴 관리 단체 · 계약 · 신청 (예전엔 한 카드에 다 몰려 복잡했다) */}
+            {royalties && <RoyaltyInCard royalties={royalties} to={`/works/${encodeURIComponent(w.id)}?tab=revenue`} />}
+            <RightsInfoCard w={w} />
+            {w.registration !== 'none' && <SocietiesCard w={w} royalties={royalties ?? []} />}
+            {w.contractId && (contract ? <ContractCard contract={contract} canEdit={canEdit} />
+              : w.myRole === 'contributor' ? <div className="aq-relinfo-card"><h2 className="subhead">계약</h2><p className="muted small">곡 소유자의 계약으로 관리되고 있어요.</p></div> : <SkeletonBlock height={160} />)}
             <div className="aq-relinfo-card">
               <div className="ui-section-head"><h2 className="subhead">저작권 관리 신청</h2>{app && <Badge tone={APP_TONE[app.status]}>{APP_LABEL[app.status]}</Badge>}</div>
               {app && app.status !== 'withdrawn' ? (
@@ -526,16 +518,6 @@ export function WorkDetail() {
                 </div>
               )}
             </div>
-            {w.contractId && (
-              <div className="aq-relinfo-card">
-                <div className="ui-section-head"><h2 className="subhead">계약</h2>{contract && <Badge tone={CONTRACT_TONE[contract.status]}>{CONTRACT_LABEL[contract.status]}</Badge>}</div>
-                {contract ? (
-                  <>
-                    <ContractManage contract={contract} canEdit={canEdit} doc={<Link to={`/contracts/publishing/${contract.id}`} className="ui-btn is-soft is-sm">계약서 보기</Link>} />
-                  </>
-                ) : w.myRole === 'contributor' ? <p className="muted small">곡 소유자의 계약으로 관리되고 있어요.</p> : <SkeletonBlock height={64} />}
-              </div>
-            )}
           </div>
         )}
 

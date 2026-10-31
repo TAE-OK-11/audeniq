@@ -226,6 +226,8 @@ export interface PublishingContract {
   rights: string[];
   renewal: { months: number; requestedAt: string } | null;
   terminationRequestedAt: string | null;
+  /** 관리 국가·권리 변경 요청 — 담당자가 처리할 때까지 (0177) */
+  scopeRequest?: { territories: string[]; rights: string[]; requestedAt: string } | null;
   signedAt: string | null;
   /** 계약서 본문(한 줄에 한 조) — 승인할 때 확정된 조건으로 만든다 */
   body?: string;
@@ -237,7 +239,7 @@ export interface PublishingContract {
   applicationId?: string;
   applicationNumber?: string;
   /** 연장·종료 요청에 담당자가 한 답 (0173) */
-  requestDecision?: { outcome: 'renewed' | 'renewal_rejected' | 'ended' | 'termination_rejected'; note: string | null; at: string | null } | null;
+  requestDecision?: { outcome: 'renewed' | 'renewal_rejected' | 'ended' | 'termination_rejected' | 'scope_changed' | 'scope_rejected'; note: string | null; at: string | null } | null;
   /** 계약한 곡이 실린 발매 — 계약서 화면에서 그 발매 묶음에 보인다 */
   releaseIds?: string[];
   rowVersion?: number;
@@ -973,6 +975,18 @@ const mockApi = {
       return structuredClone(c);
     });
   },
+  async requestScope(id: string, territories: string[], rights: string[]) {
+    await wait(400);
+    return mutate(d => {
+      const c = d.contracts.find(x => x.id === id);
+      if (!c) throw notFound();
+      if (!territories.length || !rights.length) throw new ApiError('관리할 국가와 권리를 하나 이상 골라 주세요.', 400, 'VALIDATION');
+      const same = (a: string[], b: string[]) => a.length === b.length && a.every(x => b.includes(x));
+      if (same(c.territories, territories) && same(c.rights, rights)) throw new ApiError('지금과 같은 범위예요. 바꿀 국가나 권리를 골라 주세요.', 422, 'CONTRACT_SCOPE_UNCHANGED');
+      c.scopeRequest = { territories, rights, requestedAt: stampNow() };
+      return structuredClone(c);
+    });
+  },
   async requestTermination(id: string) {
     await wait(400);
     return mutate(d => {
@@ -1111,6 +1125,7 @@ const remoteApi = {
   simulateApprove: (_id: string) => Promise.reject(new ApiError('담당자 승인을 기다려 주세요.', 400, 'NOT_DEMO')) as Promise<PublishingContract>,
   renewContract: (id: string, months: number) => req<PublishingContract>(orgPath(`/publishing/contracts/${enc(id)}/renewal`), { method: 'POST', body: { months } }),
   requestTermination: (id: string) => req<PublishingContract>(orgPath(`/publishing/contracts/${enc(id)}/termination`), { method: 'POST' }),
+  requestScope: (id: string, territories: string[], rights: string[]) => req<PublishingContract>(orgPath(`/publishing/contracts/${enc(id)}/scope`), { method: 'POST', body: { territories, rights } }),
   listRoyalties: (workId?: string) => orEmpty(req<{ items: Royalty[] }>(orgPath(workId ? `/works/${enc(workId)}/royalties` : '/publishing/royalties')).then(r => r.items), [] as Royalty[]),
   listAr: () => orEmpty(req<{ items: ArSubmission[] }>(orgPath('/ar/submissions')).then(r => r.items), [] as ArSubmission[]),
   submitAr: (input: ArInput) => req<ArSubmission>(orgPath('/ar/submissions'), { method: 'POST', body: input }),

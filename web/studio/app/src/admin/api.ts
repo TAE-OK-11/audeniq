@@ -48,6 +48,9 @@ export interface PubChange { orgId: string; orgName: string; work: Work }
 export interface PubContractRequest {
   id: string; orgId: string; orgName: string; number: string; status: string; endDate: string | null; commissionRate: number; works: string[];
   renewal: { months: number; requestedAt: string } | null; terminationRequestedAt: string | null;
+  /** 관리 국가·권리 변경 요청 (0177) — 지금 범위와 바꿀 범위 */
+  territories?: string[]; rights?: string[];
+  scope?: { territories: string[]; rights: string[]; requestedAt: string } | null;
 }
 export interface StaffArSubmission {
   id: string; workId: string; workTitle: string; orgId: string; orgName: string; genre: string; mood: string[]; description: string; references: string;
@@ -400,7 +403,7 @@ const remote = {
   pubChanges: () => req<Page<PubChange>>('/api/staff/publishing/changes'),
   pubChangeDecide: (wid: string, body: { approve: boolean; reason?: string }) => req<Work>(`/api/staff/publishing/works/${id(wid)}/change`, { method: 'POST', body }),
   pubContractRequests: () => req<Page<PubContractRequest>>('/api/staff/publishing/contract-requests'),
-  pubContractDecide: (cid: string, body: { kind: 'renewal' | 'termination'; approve: boolean; reason?: string }) =>
+  pubContractDecide: (cid: string, body: { kind: 'renewal' | 'termination' | 'scope'; approve: boolean; reason?: string }) =>
     req<{ id: string; outcome: string }>(`/api/staff/publishing/contracts/${id(cid)}/request`, { method: 'POST', body }),
   pubArList: (status?: string) => req<Page<StaffArSubmission>>(`/api/staff/publishing/ar${qs({ status })}`),
   pubArDecide: (aid: string, body: { action: ArDecisionAction; reason?: string }) => req<StaffArSubmission>(`/api/staff/publishing/ar/${id(aid)}/decision`, { method: 'POST', body }),

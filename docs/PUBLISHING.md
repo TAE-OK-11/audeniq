@@ -159,6 +159,16 @@ society; split sheets as the strongest proof; KOMCA: project files, MIDI, versio
   (correction requests can ask for '창작 증빙 자료'). The apply screen shows a per-work checklist: blocking
   (shares, evidence) and recommended (lyrics, creation date, split sheet when co-writers have not confirmed, IPIs).
 
+## Contract scope changes (migration 0177)
+
+- The writer can ask to change a signed contract's territories and rights (`POST …/publishing/contracts/{id}/scope`);
+  the request waits on the contract (`scopeRequest`) until staff answer it from the contract requests queue
+  (`kind: "scope"`): approved, the contract takes the requested scope; rejected, a reason is kept. Notices as for
+  renewal / termination.
+- The work's 저작권·계약 tab is split into cards: royalties received, registration info (ISWC, codes, IPI),
+  societies (status and money per society), contract (days left, terms, scope; renew / change scope / terminate),
+  application.
+
 ## Stage 2 — not yet
 
 - A contributor with an AUDENIQ account answering inside the studio (`rights/confirmation` answers 501); link invites cover it.

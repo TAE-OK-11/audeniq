@@ -1,24 +1,23 @@
 // 계약서 화면의 저작권 관리 계약 — 배급처럼 신청서(신청할 때 서명)와 계약서(담당자 승인 뒤 서명)가 따로다.
 // 배급 계약과 같은 '계약 묶음'(ContractBundle의 aq-bundle) 모양: 머리(이름·상태) + 번호 붙은 줄(신청서 → 계약서).
-// 곡 화면의 계약 관리(ContractManage)에서 기간·연장·종료 요청을 다룬다
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+// 곡 화면의 계약 카드(WorkRightsCards › ContractCard)에서 기간·연장·관리 범위·종료 요청을 다룬다
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from '../../lib/router';
 import { pubApi, type PublishingContract } from '../../api/publishing';
 import { errorMessage } from '../../api/errors';
 import { useAsync } from '../../hooks/useAsync';
-import { CONTRACT_LABEL, CONTRACT_TONE, addMonths, daysLeft, rightName, termLabel, territoryName } from '../../lib/publishing';
-import { localStamp, niceDate } from '../../lib/format';
+import { CONTRACT_LABEL, CONTRACT_TONE, addMonths, termLabel } from '../../lib/publishing';
+import { niceDate } from '../../lib/format';
 import { useToast } from '../Toast';
-import { useConfirm } from '../Confirm';
 import { Modal } from '../Modal';
 import { CheckIcon } from '../Check';
-import { Badge, Meter, Segmented } from '../../ui';
+import { Badge, Segmented } from '../../ui';
 
 import '../../styles/split/ReleaseDetail.css';
 import '../../styles/split/Publishing.css';
 
 
-function RenewModal({ c, onClose, onDone }: { c: PublishingContract; onClose: () => void; onDone: (c: PublishingContract) => void }) {
+export function RenewModal({ c, onClose, onDone }: { c: PublishingContract; onClose: () => void; onDone: (c: PublishingContract) => void }) {
   const toast = useToast();
   const { data: policy } = useAsync(() => pubApi.policy(), [], { key: 'pub-policy' });
   const [months, setMonths] = useState<string>('');
@@ -40,57 +39,6 @@ function RenewModal({ c, onClose, onDone }: { c: PublishingContract; onClose: ()
         <button type="button" className="ui-btn is-primary" disabled={busy || !months} onClick={() => void go()}>{busy ? '요청 중' : '연장 요청'}</button>
       </div>
     </Modal>
-  );
-}
-
-/** 곡 화면 '등록·계약' 탭의 계약 관리 — 기간·남은 날·연장·종료 요청 (계약서 화면은 서류만 본다) */
-export function ContractManage({ contract, canEdit, doc }: { contract: PublishingContract; canEdit: boolean; doc?: ReactNode }) {
-  const toast = useToast();
-  const confirm = useConfirm();
-  const [c, setC] = useState(contract);
-  const [renewing, setRenewing] = useState(false);
-  useEffect(() => setC(contract), [contract]);
-  const left = daysLeft(c.endDate);
-  const ended = c.status === 'ended';
-  const total = Math.max(1, daysLeft(c.endDate, new Date(`${c.startDate}T00:00:00+09:00`)));
-  const terminate = async () => {
-    const ok = await confirm({
-      title: '저작권 관리 계약 종료를 요청할까요?',
-      message: '담당자가 관리 단체 절차를 확인한 뒤 종료해요. 종료 후에는 새 곡을 관리에 넣을 수 없고, 그동안의 등록·정산 기록은 남아요.',
-      confirmLabel: '종료 요청', danger: true,
-    });
-    if (!ok) return;
-    try { setC(await pubApi.requestTermination(c.id)); toast('종료를 요청했어요.', 'success'); }
-    catch (e) { toast(errorMessage(e), 'error'); }
-  };
-  return (
-    <>
-      <dl className="ui-kv is-2">
-        <div className="aq-kv-code"><dt>계약 기간</dt><dd>{c.startDate} ~ {c.endDate}</dd></div>
-        <div><dt>남은 기간</dt><dd>{ended ? '종료' : `${Math.max(0, left)}일`}</dd></div>
-        <div><dt>수수료</dt><dd>{c.commissionRate}%</dd></div>
-        <div className="aq-kv-code"><dt>관리 범위</dt><dd>{c.territories.map(territoryName).join(', ')} · {c.rights.map(rightName).join(', ')}</dd></div>
-      </dl>
-      {!ended && <Meter total={total} parts={[{ value: total - Math.max(0, left), tone: left <= 45 ? 'amber' : 'primary' }]} label={`계약 기간 ${Math.max(0, left)}일 남음`} />}
-      {c.renewal && <p className="ui-field-help">{termLabel(c.renewal.months)} 연장을 요청했어요 · {localStamp(c.renewal.requestedAt)}</p>}
-      {/* 지난 요청에 담당자가 한 답 */}
-      {!c.renewal && !c.terminationRequestedAt && c.requestDecision && (
-        <p className={`ui-field-help${c.requestDecision.outcome.endsWith('rejected') ? ' is-warn' : ''}`}>
-          {{ renewed: '연장 요청이 처리됐어요. 위 계약 기간이 새 종료일이에요.', renewal_rejected: '연장 요청이 반려됐어요.', ended: '계약이 종료됐어요.', termination_rejected: '종료 요청이 반려됐어요.' }[c.requestDecision.outcome]}
-          {c.requestDecision.note && ` — ${c.requestDecision.note}`}
-        </p>
-      )}
-      {c.terminationRequestedAt && <p className="ui-field-help is-warn">종료를 요청했어요 · {localStamp(c.terminationRequestedAt)}</p>}
-      {/* 버튼은 한 줄에 — 계약서 보기가 따로 아래 줄에 떨어져 있었다. 종료 요청은 위험한 일이라 맨 끝 글자 버튼으로 */}
-      {(doc || (canEdit && !ended && !c.terminationRequestedAt)) && (
-        <div className="row-actions aq-pbl-contract-actions">
-          {canEdit && !ended && !c.terminationRequestedAt && !c.renewal && <button type="button" className={`ui-btn ${c.status === 'expiring' ? 'is-primary' : 'is-soft'} is-sm`} onClick={() => setRenewing(true)}>연장하기</button>}
-          {doc}
-          {canEdit && !ended && !c.terminationRequestedAt && <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => void terminate()}>계약 종료 요청</button>}
-        </div>
-      )}
-      {renewing && <RenewModal c={c} onClose={() => setRenewing(false)} onDone={setC} />}
-    </>
   );
 }
 
