@@ -8,7 +8,7 @@ import { ROLE_LABEL, SOCIETIES, evenSplit, pct, societyName, splitIssues, sumSha
 import { Badge, Field, IconTile } from '../../ui';
 import { Glyph } from '../Glyph';
 import { SplitBar, peopleLine, roleText } from './parts';
-import { reuseContributors } from '../../lib/publishingPrep';
+import { mergeIntoMe, reuseContributors } from '../../lib/publishingPrep';
 import { SocietyJoin } from './SocietyJoin';
 import { useAsync } from '../../hooks/useAsync';
 import { useToast } from '../Toast';
@@ -126,21 +126,14 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
   const toast = useToast();
   const { data: me } = useAsync(() => pubApi.myCreator(), [], { key: 'my-creator' });
   const nameKey = (v: string) => v.replace(/\s+/g, '').toLowerCase();
-  const isPen = (name: string) => !!me?.penNames?.some(p => nameKey(p) === nameKey(name));
+  const penOf = (name: string) => me?.penNames?.find(p => nameKey(p.name) === nameKey(name));
+  const isPen = (name: string) => !!penOf(name);
   /** 필명으로 들어온 줄을 나로 — 내 줄이 이미 있으면 역할·지분을 합치고, 없으면 그 줄을 내 줄로. 이름은 필명으로 저장해 다음부터 알아본다 */
   const markMe = (c: WorkContributor) => {
     if (!me) return;
-    const mine = value.find(x => x.isMe);
-    if (mine) {
-      onChange(value.filter(x => x.id !== c.id).map(x => (x.id === mine.id ? {
-        ...x, roles: Array.from(new Set([...x.roles, ...c.roles])), share: Math.round((x.share + c.share) * 100) / 100,
-        publisherShare: Math.round((x.publisherShare + c.publisherShare) * 100) / 100,
-      } : x)));
-    } else {
-      set(c.id, { isMe: true, creatorId: me.id, external: false, confirm: 'confirmed', penName: nameKey(c.name) !== nameKey(me.name), society: c.society || me.society, ipi: c.ipi || me.ipi });
-    }
+    onChange(mergeIntoMe(value, c.id, me));
     if (nameKey(c.name) !== nameKey(me.name) && !isPen(c.name) && (me.penNames?.length ?? 0) < 5) {
-      void pubApi.saveMyCreator({ ...me, penNames: [...(me.penNames ?? []), c.name.trim()] })
+      void pubApi.saveMyCreator({ ...me, penNames: [...(me.penNames ?? []), { name: c.name.trim(), ipi: null }] })
         .then(() => toast(`‘${c.name.trim()}’을(를) 내 필명으로 저장했어요.`, { tone: 'success', sub: '다음 곡부터는 이 이름을 나로 알아봐요' }))
         .catch(() => {});
     }

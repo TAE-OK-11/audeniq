@@ -68,8 +68,11 @@ export interface Creator {
   isMe?: boolean;
   workCount?: number;
   /** 내가 곡에 올리는 다른 이름(필명·예명) — 크레딧에 이 이름이 있으면 나로 본다 (0176) */
-  penNames?: string[];
+  penNames?: PenName[];
 }
+
+/** 필명 — 관리 단체가 필명에 따로 준 IPI가 있으면 함께 (0176) */
+export interface PenName { name: string; ipi?: string | null }
 
 export interface WorkContributor {
   id: string;
@@ -144,6 +147,8 @@ export interface Work {
   /** 창작을 마친 날과 만든 과정 (0176) — 내가 만들었다는 근거 */
   createdOn?: string | null;
   creationNote?: string | null;
+  /** 이미 관리 단체에 등록된 곡이면 그 단체의 작품 코드 — 두 번 등록하지 않게 */
+  societyCode?: string | null;
   /** 지난 지분 변경 요청에 담당자가 한 답 (0173) — 반려면 사유 */
   changeDecision?: { outcome: 'applied' | 'rejected'; note: string | null; at: string | null } | null;
   contributors: WorkContributor[];
@@ -166,7 +171,7 @@ export interface Work {
 /** 발매 신청에서 곡 크레딧으로 곡을 만들 때 — enroll이면 저작권 관리 신청 준비까지 (기획안 4.2, 15) */
 export interface PrepareResult { created: number; linked: number; skipped: number }
 
-export type WorkInput = Pick<Work, 'title' | 'altTitles' | 'workType' | 'language' | 'genre' | 'description' | 'visibility' | 'iswc' | 'hasPriorPublisher' | 'priorPublisher' | 'contributors' | 'attachments' | 'origin' | 'externalRelease' | 'aiUse' | 'originalWork' | 'samples' | 'priorPublisherUntil' | 'createdOn' | 'creationNote'> & {
+export type WorkInput = Pick<Work, 'title' | 'altTitles' | 'workType' | 'language' | 'genre' | 'description' | 'visibility' | 'iswc' | 'hasPriorPublisher' | 'priorPublisher' | 'contributors' | 'attachments' | 'origin' | 'externalRelease' | 'aiUse' | 'originalWork' | 'samples' | 'priorPublisherUntil' | 'createdOn' | 'creationNote' | 'societyCode'> & {
   /** 발매 곡에서 만들 때 바로 연결할 녹음물 */
   recording?: Omit<WorkRecording, 'id'> | null;
 };
@@ -783,7 +788,8 @@ const mockApi = {
           for (const n of names) {
             const cur = people.get(n);
             if (cur) { if (!cur.roles.includes(role)) cur.roles.push(role); continue; }
-            const pen = (me.penNames ?? []).some(p => p.replace(/\s+/g, '').toLowerCase() === n.replace(/\s+/g, '').toLowerCase());
+            const penHit = (me.penNames ?? []).find(p => p.name.replace(/\s+/g, '').toLowerCase() === n.replace(/\s+/g, '').toLowerCase());
+            const pen = !!penHit;
             const isMe = n === me.name || n === rel.artist || pen;
             // 서버처럼 내 이름과 필명이 한 곡에 같이 있으면 한 줄(나)로 합친다
             const mine = isMe ? [...people.values()].find(c => c.isMe) : undefined;
@@ -791,7 +797,7 @@ const mockApi = {
             // 서버처럼 예전 곡에 적은 같은 사람(띄어쓰기 무시)의 관리 단체·IPI를 다시 채운다
             const key = n.replace(/\s+/g, '').toLowerCase();
             const past = isMe ? undefined : d.works.flatMap(w => w.contributors).find(c => c.name.replace(/\s+/g, '').toLowerCase() === key && (c.society || c.ipi));
-            people.set(n, { id: uid(), creatorId: isMe ? ME : null, name: isMe && !pen ? me.name : n, penName: pen || undefined, roles: [role], society: isMe ? me.society : past?.society ?? null, ipi: isMe ? me.ipi : past?.ipi ?? null, share: 0, publisherShare: 0, confirm: isMe ? 'confirmed' : 'pending', external: !isMe, isMe });
+            people.set(n, { id: uid(), creatorId: isMe ? ME : null, name: isMe && !pen ? me.name : n, penName: pen || undefined, roles: [role], society: isMe ? me.society : past?.society ?? null, ipi: isMe ? (penHit?.ipi || me.ipi) : past?.ipi ?? null, share: 0, publisherShare: 0, confirm: isMe ? 'confirmed' : 'pending', external: !isMe, isMe });
           }
         };
         const names = (v: string | null | undefined) => String(v ?? '').split(/[,/·&]/).map(x => x.trim()).filter(Boolean);

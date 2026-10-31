@@ -3,7 +3,7 @@
 // 활동명·활동 국가는 위 '아티스트', 법적 이름은 '본인 확인'의 실명을 그대로 쓴다 — 같은 정보를 두 번 받지 않는다.
 // 관리 단체·IPI는 곡을 만들 때 참여자 칸에 자동으로 들어간다
 import { useEffect, useState } from 'react';
-import { pubApi, type Creator, type CreatorRole } from '../../api/publishing';
+import { pubApi, type Creator, type CreatorRole, type PenName } from '../../api/publishing';
 import { errorMessage } from '../../api/errors';
 import { useAsync } from '../../hooks/useAsync';
 import { SOCIETIES, societyName } from '../../lib/publishing';
@@ -22,28 +22,38 @@ const key = (v: string) => v.replace(/\s+/g, '').toLowerCase();
 /** 필명 — 활동명과 다른 이름으로 곡에 올라가는 경우. 크레딧·참여자에 이 이름이 있으면 다른 사람이 아니라 나로 본다 (0176) */
 function PenNameEditor({ c, onSave }: { c: Creator; onSave: (next: Creator) => Promise<boolean> }) {
   const close = useModalClose();
-  const [list, setList] = useState<string[]>(c.penNames ?? []);
+  const [list, setList] = useState<PenName[]>(c.penNames ?? []);
   const [text, setText] = useState('');
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
   const add = () => {
     const v = text.trim();
-    if (!v || list.some(x => key(x) === key(v)) || key(v) === key(c.name)) { setText(''); return; }
-    setList(l => [...l, v].slice(0, 5));
+    if (!v || list.some(x => key(x.name) === key(v)) || key(v) === key(c.name)) { setText(''); return; }
+    setList(l => [...l, { name: v, ipi: null }].slice(0, 5));
     setText('');
   };
+  const setIpi = (name: string, ipi: string) => { setError(''); setList(l => l.map(x => (x.name === name ? { ...x, ipi: ipi.replace(/\D/g, '').slice(0, 11) || null } : x))); };
   const same = JSON.stringify(list) === JSON.stringify(c.penNames ?? []);
+  const save = async () => {
+    // 관리 단체가 준 번호는 9~11자리 — 비우면 내 IPI로 등록해요
+    if (list.some(x => x.ipi && !/^\d{9,11}$/.test(x.ipi))) { setError('필명 IPI는 숫자 9~11자리예요. 모르면 비워 두세요.'); return; }
+    setSaving(true); const ok = await onSave({ ...c, penNames: list }); setSaving(false); if (ok) close();
+  };
   return (
     <div className="aq-set-editor aq-pen-editor">
-      <p className="ui-field-help">발매 크레딧이나 관리 단체에 활동명(‘{c.name}’)과 다른 이름으로 올라간 적이 있으면 적어 주세요. 그 이름으로 적힌 작사·작곡은 다른 사람이 아니라 내 지분으로 처리해요. 관리 단체에 필명으로 등록했다면 그 이름 그대로 적어 주세요.</p>
+      <p className="ui-field-help">발매 크레딧이나 관리 단체에 활동명(‘{c.name}’)과 다른 이름으로 올라간 적이 있으면 적어 주세요. 그 이름으로 적힌 작사·작곡은 다른 사람이 아니라 내 지분으로 처리해요. 관리 단체에 필명으로 따로 등록해 번호를 받았다면 그 IPI도 적어 주세요.</p>
       {list.length > 0 && (
         <ul className="aq-pen-list">
-          {list.map(n => (
-            <li key={n}><span>{n}</span>
-              <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => setList(l => l.filter(x => x !== n))} aria-label={`${n} 빼기`}>빼기</button>
+          {list.map(p => (
+            <li key={p.name}>
+              <span className="aq-pen-name">{p.name}</span>
+              <input className="ui-input" inputMode="numeric" maxLength={11} placeholder="필명 IPI (선택)" aria-label={`${p.name} IPI`} value={p.ipi ?? ''} onChange={e => setIpi(p.name, e.target.value)} />
+              <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => setList(l => l.filter(x => x.name !== p.name))} aria-label={`${p.name} 빼기`}>빼기</button>
             </li>
           ))}
         </ul>
       )}
+      {error && <p className="ui-field-help aq-help-error">{error}</p>}
       {list.length < 5 && (
         <form className="aq-pen-add" onSubmit={e => { e.preventDefault(); add(); }}>
           <label htmlFor="creator-pen" className="sr-only">필명 더하기</label>
@@ -51,8 +61,7 @@ function PenNameEditor({ c, onSave }: { c: Creator; onSave: (next: Creator) => P
           <button type="submit" className="ui-btn is-soft" disabled={!text.trim()}>더하기</button>
         </form>
       )}
-      <button type="button" className={`ui-btn is-primary is-block${saving ? ' is-busy' : ''}`} disabled={saving || same}
-        onClick={async () => { setSaving(true); const ok = await onSave({ ...c, penNames: list }); setSaving(false); if (ok) close(); }}>
+      <button type="button" className={`ui-btn is-primary is-block${saving ? ' is-busy' : ''}`} disabled={saving || same} onClick={() => void save()}>
         {saving ? '저장하는 중' : '저장'}
       </button>
     </div>
@@ -162,7 +171,7 @@ export function CreatorProfile({ openEmpty = false, onOpened }: { openEmpty?: bo
       <SetRow label="저작권 관리 단체" value={societyName(c.society) || undefined} empty="가입하지 않음" onClick={() => setEditing('society')} />
       {!c.society && <SocietyJoin inline />}
       <SetRow label="IPI/CAE 번호" value={c.ipi ?? undefined} empty="입력하기" onClick={() => setEditing('ipi')} />
-      <SetRow label="작가명 (필명)" value={c.penNames?.length ? c.penNames.join(' · ') : undefined} empty="없음" onClick={() => setEditing('pen')} />
+      <SetRow label="작가명 (필명)" value={c.penNames?.length ? c.penNames.map(p => p.name).join(' · ') : undefined} empty="없음" onClick={() => setEditing('pen')} />
       <SetRow label="소속 조직" value={c.org ?? undefined} empty="없음" onClick={() => setEditing('org')} />
       {editing && (
         <Modal title={TITLE[editing]} onClose={() => setEditing(null)} modalClass="aq-set-modal">

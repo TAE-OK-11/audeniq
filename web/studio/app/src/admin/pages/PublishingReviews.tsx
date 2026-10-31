@@ -251,6 +251,7 @@ export function PublishingReviewDetail() {
               {/* 창작 증빙 — 언제·어떻게 만들었는지와 올린 자료 (0176) */}
               <dl className="ui-kv is-2" style={{ marginTop: 12 }}>
                 <div><dt>창작을 마친 날</dt><dd>{w.createdOn ?? '적지 않음'}</dd></div>
+                {w.societyCode && <div><dt>기존 작품 코드</dt><dd className="is-mono">{w.societyCode} · 새로 등록하지 말고 이어서 관리</dd></div>}
                 <div><dt>증빙 자료</dt><dd>{w.attachments.length ? Array.from(new Set(w.attachments.map(a => KIND_LABEL[a.kind]))).join(' · ') : '없음'}</dd></div>
                 {w.creationNote && <div className="is-wide"><dt>만든 과정</dt><dd style={{ whiteSpace: 'pre-line' }}>{w.creationNote}</dd></div>}
               </dl>

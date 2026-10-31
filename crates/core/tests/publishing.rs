@@ -2017,12 +2017,16 @@ async fn pen_names_evidence_and_identity(pool: PgPool) {
         &app,
         "PUT",
         "/api/me/creator",
-        json!({"roles": ["composer", "lyricist"], "penNames": ["하람", " 하 람 ", "HARAM", "haram"]}),
+        json!({"roles": ["composer", "lyricist"], "penNames": [{"name": "하람", "ipi": "00755500011"}, " 하 람 ", "HARAM", "haram"]}),
         Some(&u),
     )
     .await;
     assert_eq!(s, StatusCode::OK, "{me}");
-    assert_eq!(me["penNames"], json!(["하람", "HARAM"]), "{me}");
+    assert_eq!(
+        me["penNames"],
+        json!([{"name": "하람", "ipi": "00755500011"}, {"name": "HARAM", "ipi": null}]),
+        "{me}"
+    );
     // The release credits the writer twice: as themselves (composer) and as the pen name 하 람 (lyrics).
     let release = create_release(&app, &u).await;
     let t = track(&app, &pool, &u, release, "새벽", 1).await;
@@ -2073,6 +2077,45 @@ async fn pen_names_evidence_and_identity(pool: PgPool) {
     assert_eq!(mine.len(), 1, "{w}");
     assert_eq!(mine[0]["confirm"], "confirmed");
     assert_eq!(mine[0]["roles"].as_array().unwrap().len(), 2, "{w}");
+    // A song credited only under the pen name: my row keeps that name and the pen name's own IPI.
+    let solo = create_release(&app, &u).await;
+    let t2 = track(&app, &pool, &u, solo, "아침", 1).await;
+    sqlx::query(
+        "INSERT INTO catalog.credits(track_id,org_id,party_id,role) VALUES($1,$2,$3,'COMPOSER')",
+    )
+    .bind(t2)
+    .bind(u.org)
+    .bind(pen)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (s, r) = call(
+        &app,
+        "POST",
+        &format!("{base}/releases/{solo}/works"),
+        json!({"enroll": false}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{r}");
+    let (_, list) = call(&app, "GET", &format!("{base}/works"), json!({}), Some(&u)).await;
+    let morning = list["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|w| w["title"] == "아침")
+        .unwrap()
+        .clone();
+    assert_eq!(
+        (
+            morning["contributors"][0]["name"].as_str(),
+            morning["contributors"][0]["ipi"].as_str(),
+            morning["contributors"][0]["isMe"].as_bool(),
+            morning["contributors"][0]["penName"].as_bool()
+        ),
+        (Some("하 람"), Some("00755500011"), Some(true), Some(true)),
+        "{morning}"
+    );
     let id = w["id"].as_str().unwrap().to_string();
 
     // No evidence yet, then no verified identity.
@@ -2096,14 +2139,15 @@ async fn pen_names_evidence_and_identity(pool: PgPool) {
         json!({"kind": "project", "name": "새벽 세션", "text": "Logic 프로젝트, 2026-03-02 첫 버전"}), Some(&u)).await;
     assert_eq!(s, StatusCode::OK, "{v}");
     let (s, w2) = call(&app, "PATCH", &format!("{base}/works/{id}"),
-        json!({"createdOn": "2026-03-02", "creationNote": "피아노로 멜로디를 먼저 쓰고\n가사를 붙였어요.", "rowVersion": v["rowVersion"]}), Some(&u)).await;
+        json!({"createdOn": "2026-03-02", "creationNote": "피아노로 멜로디를 먼저 쓰고\n가사를 붙였어요.", "societyCode": "K-1234567", "rowVersion": v["rowVersion"]}), Some(&u)).await;
     assert_eq!(s, StatusCode::OK, "{w2}");
     assert_eq!(
         (
             w2["createdOn"].as_str(),
-            w2["attachments"][0]["kind"].as_str()
+            w2["attachments"][0]["kind"].as_str(),
+            w2["societyCode"].as_str()
         ),
-        (Some("2026-03-02"), Some("project"))
+        (Some("2026-03-02"), Some("project"), Some("K-1234567"))
     );
     // A future day is not when a song was finished.
     let (s, e) = call(

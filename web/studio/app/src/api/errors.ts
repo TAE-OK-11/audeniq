@@ -366,6 +366,7 @@ const CODE_MESSAGES: Record<string, string> = {
   WORK_CREATION_NOTE_INVALID: '창작 과정 메모는 1,000자까지 적을 수 있어요.',
   WORK_PEN_NAME_INVALID: '필명은 100자까지 적을 수 있어요.',
   WORK_PEN_NAME_TOO_MANY: '필명은 5개까지 등록할 수 있어요.',
+  WORK_SOCIETY_CODE_INVALID: '관리 단체 작품 코드는 40자까지 적을 수 있어요.',
   WORK_NO_FIX_REQUESTED: '보완 요청이 없는 곡이에요.',
   WORK_DOCUMENTS_DUE: '요청한 서류를 권리·보완 서류에서 먼저 올려 주세요.',
   APPLICATION_STATE: '이미 처리된 신청이에요. 새로고침해 주세요.',

@@ -376,3 +376,6 @@
 .aq-pen-add .ui-btn,.aq-pen-list .ui-btn{flex:none;width:auto!important}
 .aq-pbl-checks-pen{display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap;margin:0;font-size:var(--aq-fs-sm);font-weight:600;color:var(--aq-primary-text)}
 .aq-pbl-checks-pen svg{flex:none;margin-top:3px}
+.aq-pen-list li{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,9.5rem) auto;align-items:center}
+.aq-pen-list li .ui-input{width:100%!important;min-width:0;height:36px}
+.aq-pen-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}

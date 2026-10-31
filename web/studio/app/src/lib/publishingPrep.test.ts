@@ -121,3 +121,16 @@ describe('발매 크레딧 ↔ 곡 참여자', () => {
     expect(creditGaps(w, {})).toEqual({ missing: [], extra: [] });
   });
 });
+
+describe('필명', () => {
+  it('다른 사람으로 들어간 필명을 찾아 나로 — 내 줄이 있으면 합치고, 없으면 필명 IPI로 내 줄을 만든다', async () => {
+    const { penAsOthers, mergeIntoMe } = await import('./publishingPrep');
+    const me = { id: 'me', name: '서린', society: 'KOMCA', ipi: '00700000001', penNames: [{ name: '하람', ipi: '00755500011' }] };
+    const both = [person({ id: '1', name: '서린', isMe: true, share: 40, roles: ['composer'] }), person({ id: '2', name: '하 람', share: 30, roles: ['lyricist'], confirm: 'pending' }), person({ id: '3', name: '김하늘', share: 30 })];
+    expect(penAsOthers(both, me).map(c => c.id)).toEqual(['2']);
+    const merged = mergeIntoMe(both, '2', me);
+    expect(merged.map(c => [c.name, c.share, c.roles.join('/')])).toEqual([['서린', 70, 'composer/lyricist'], ['김하늘', 30, 'composer']]);
+    const alone = mergeIntoMe([person({ id: '2', name: '하람', share: 100, ipi: null, confirm: 'pending' })], '2', me);
+    expect(alone[0]).toMatchObject({ isMe: true, penName: true, confirm: 'confirmed', ipi: '00755500011', name: '하람' });
+  });
+});

@@ -24,7 +24,7 @@ import { SignaturePad, type SignaturePadHandle } from '../components/SignaturePa
 import { SplitBar, roleText } from '../components/publishing/parts';
 import { SocietyJoin } from '../components/publishing/SocietyJoin';
 import { AttachmentModal } from '../components/publishing/Attachments';
-import { workIssues } from '../lib/publishingPrep';
+import { penAsOthers, workIssues } from '../lib/publishingPrep';
 import { Badge, Callout, EmptyState, StatGrid, StatTile } from '../ui';
 import '../styles/split/Upload.css';
 import '../styles/split/Publishing.css';
@@ -119,8 +119,7 @@ export function PublishingApply() {
   const [attachFor, setAttachFor] = useState<Work | null>(null);
   // 내 필명인데 다른 사람으로 들어간 참여자 — 남처럼 확인을 기다리고 내 몫이 남의 몫으로 등록된다
   const { data: me } = useAsync(() => pubApi.myCreator(), [], { key: 'my-creator' });
-  const nameKey = (v: string) => v.replace(/\s+/g, '').toLowerCase();
-  const penAsOther = (w: Work) => w.contributors.filter(c => !c.isMe && me?.penNames?.some(p => nameKey(p) === nameKey(c.name)));
+  const penAsOther = (w: Work) => penAsOthers(w.contributors, me);
   const conflicts = chosen.filter(w => w.hasPriorPublisher);
   const pendingPeople = chosen.flatMap(w => w.contributors.filter(c => !c.isMe && c.confirm !== 'confirmed').map(c => ({ w, c })));
 

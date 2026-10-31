@@ -1,6 +1,6 @@
 // 앨범 퍼블리싱 탭이 함께 쓰는 계산 — 신청 전 준비 점검 · 참여자 확인 현황 · 지분 변경 전후 · 참여자 재사용 · 저작권료 기간·조건.
 // 화면(AlbumPublishingTab · WorkSheet · Publishing)은 이 결과만 그린다 (테스트: publishingPrep.test.ts)
-import type { Royalty, Work, WorkContributor } from '../api/publishing';
+import type { Creator, Royalty, Work, WorkContributor } from '../api/publishing';
 import { ROLE_LABEL, isManaged, pct, societyName, splitIssues, sumShares } from './publishing';
 import { uid } from './store';
 
@@ -252,4 +252,29 @@ export function filterToParams(f: RoyaltyFilter): Record<string, string | null> 
     period: f.period === DEFAULT_PERIOD ? null : f.period, from: f.period === 'custom' ? f.from || null : null, to: f.period === 'custom' ? f.to || null : null,
     work: f.work || null, src: f.source || null, country: f.country || null,
   };
+}
+
+// ---------- 필명 ----------
+
+const penKey = (v: string) => v.replace(/\s+/g, '').toLowerCase();
+/** 내 필명인데 다른 사람으로 들어간 참여자 — 남처럼 확인을 기다리고 내 몫이 남의 몫으로 등록된다 (0176) */
+export function penAsOthers(list: readonly WorkContributor[], me: Pick<Creator, 'penNames'> | null | undefined): WorkContributor[] {
+  return list.filter(c => !c.isMe && !!me?.penNames?.some(p => penKey(p.name) === penKey(c.name)));
+}
+/** 그 참여자를 나로 — 내 줄이 이미 있으면 역할·지분을 합치고(내 이름 그대로), 없으면 그 줄을 내 줄로(필명 이름 그대로, 필명 IPI) */
+export function mergeIntoMe(list: readonly WorkContributor[], contributorId: string, me: Pick<Creator, 'id' | 'name' | 'society' | 'ipi' | 'penNames'>): WorkContributor[] {
+  const c = list.find(x => x.id === contributorId);
+  if (!c) return [...list];
+  const mine = list.find(x => x.isMe);
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  if (mine) {
+    return list.filter(x => x.id !== c.id).map(x => (x.id === mine.id ? {
+      ...x, roles: Array.from(new Set([...x.roles, ...c.roles])), share: r2(x.share + c.share), publisherShare: r2(x.publisherShare + c.publisherShare),
+    } : x));
+  }
+  const pen = me.penNames?.find(p => penKey(p.name) === penKey(c.name));
+  return list.map(x => (x.id === c.id ? {
+    ...x, isMe: true, creatorId: me.id, external: false, confirm: 'confirmed' as const, penName: penKey(c.name) !== penKey(me.name),
+    society: c.society || me.society || null, ipi: c.ipi || pen?.ipi || me.ipi || null,
+  } : x));
 }
