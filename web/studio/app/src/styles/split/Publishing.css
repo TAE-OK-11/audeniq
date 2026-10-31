@@ -238,3 +238,12 @@
 /* 곡 상세 '저작권 관리 신청' — 신청 번호는 끊지 않고, 이력은 항목/값과 띄운다. 이력 펼치기는 글 줄 왼쪽 선에 */
 .aq-pbl-work .ui-kv+.ui-timeline{margin-top:16px}
 .aq-pbl-work .aq-relinfo-card>.ui-btn.is-text{justify-self:start;padding-inline:0}
+/* 계약서 서명이 남았을 때 — 보완(주황)이 아니라 할 일이므로 옅은 파랑 면 */
+.aq-pbl-hero-fix.is-sign{background:var(--aq-primary-soft)}
+.aq-pbl-hero-fix.is-sign small{color:var(--aq-primary-text)}
+.aq-pbl-cover .is-signing{background:var(--aq-blue-400)}
+/* 신청서·계약서 화면 */
+.aq-pbl-demo-note{margin:0 0 14px}
+.aq-pbl-sign{display:grid;gap:16px}
+.aq-pbl-sign .ui-field{margin:0}
+.aq-pbl-company{margin-top:14px}

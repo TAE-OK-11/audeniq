@@ -56,7 +56,7 @@ fn people(me: &User, my_share: f64, other_share: f64) -> Value {
 fn apply(works: &[&str], key: &str) -> Value {
     json!({
         "workIds": works, "territories": ["KR", "WORLD"], "rights": ["performance", "mechanical", "digital"],
-        "policyVersion": "2026-10", "agreed": ["terms", "rights", "exclusive", "share"],
+        "policyVersion": "2026-11", "agreed": ["accurate", "rights", "prior", "share"],
         "signature": {"name": "서린", "method": "drawn", "data": SIG},
         "idempotencyKey": key,
     })
@@ -82,7 +82,7 @@ async fn work_to_application_to_review(pool: PgPool) {
     .await;
     assert_eq!(
         (s, p["version"].as_str()),
-        (StatusCode::OK, Some("2026-10"))
+        (StatusCode::OK, Some("2026-11"))
     );
 
     // A work from a released track, shares still being split (90%).
@@ -437,6 +437,98 @@ async fn work_to_application_to_review(pool: PgPool) {
     );
     let (s, _) = decide(json!({"action": "REJECT", "reason": "늦은 반려"})).await;
     assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // Approval made the contract (계약서) with the confirmed terms; it waits for the artist's signature,
+    // and the society registration waits for the contract.
+    let (s, list) = call(
+        &app,
+        "GET",
+        &format!("{base}/publishing/contracts"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{list}");
+    let contract = list["items"][0].clone();
+    assert_eq!(contract["status"], "pending_sign");
+    assert_eq!(contract["commissionRate"], 10.0);
+    assert!(contract["number"].as_str().unwrap().starts_with("AQP-"));
+    assert!(contract["body"].as_str().unwrap().contains("‘파도’"));
+    assert_eq!(contract["works"][0]["title"], "파도");
+    assert_eq!(contract["releaseIds"][0], release.to_string());
+    let cid = contract["id"].as_str().unwrap().to_string();
+    let (s, e) = decide(json!({"action": "REGISTER", "society": "KOMCA"})).await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("CONTRACT_NOT_SIGNED")
+        ),
+        "{e}"
+    );
+    let (_, w) = call(
+        &app,
+        "GET",
+        &format!("{base}/works/{id}"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert!(
+        w["contractId"].is_null(),
+        "an unsigned contract does not count yet"
+    );
+    let sign = |ticks: Vec<&str>| json!({"signerName": "서린", "signature": SIG, "confirmations": ticks, "rowVersion": contract["rowVersion"]});
+    let (s, e) = call(
+        &app,
+        "POST",
+        &format!("{base}/publishing/contracts/{cid}/sign"),
+        sign(vec!["read"]),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("AGREEMENT_CONFIRMATION_REQUIRED")
+        ),
+        "{e}"
+    );
+    let (s, c) = call(
+        &app,
+        "POST",
+        &format!("{base}/publishing/contracts/{cid}/sign"),
+        sign(vec!["read", "rights", "exclusive"]),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{c}");
+    assert_eq!(c["status"], "active");
+    assert_eq!(c["signerName"], "서린");
+    assert!(c["contentHash"].as_str().is_some_and(|h| h.len() == 64));
+    assert!(
+        !c["startDate"].as_str().unwrap().is_empty() && !c["endDate"].as_str().unwrap().is_empty()
+    );
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("{base}/publishing/contracts/{cid}/sign"),
+        sign(vec!["read", "rights", "exclusive"]),
+        Some(&u),
+    )
+    .await;
+    assert_ne!(s, StatusCode::OK, "a contract is signed once");
+    let (_, w) = call(
+        &app,
+        "GET",
+        &format!("{base}/works/{id}"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(w["contractId"], cid);
+
     let (s, _) = decide(json!({"action": "REGISTER", "society": "KOMCA"})).await;
     assert_eq!(s, StatusCode::OK);
     let (_, w) = call(
@@ -619,7 +711,7 @@ async fn prepare_from_credits_withdraw_and_isolation(pool: PgPool) {
         (StatusCode::UNPROCESSABLE_ENTITY, Some("POLICY_CHANGED"))
     );
     let mut bad = apply(&ids, "key-no-agree");
-    bad["agreed"] = json!(["terms"]);
+    bad["agreed"] = json!(["accurate"]);
     let (s, _) = call(
         &app,
         "POST",

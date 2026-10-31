@@ -27,9 +27,19 @@ Rules:
 - A fix is answered with `registration/resubmit` once every requested document is in (`WORK_DOCUMENTS_DUE`).
 - Works are archived, never deleted, and not once applied (`WORK_IN_USE`).
 
+## Contracts (migration 0168)
+
+Like distribution, the application (신청서) and the contract (계약서) are two documents:
+- The application is where the artist picks works and conditions (territories, rights; commission and term
+  shown) and signs the application with its own confirmations. Fixes happen on the song screens.
+- Approving an application makes `portal.pub_contracts` with the confirmed terms and a server-rendered body.
+  The artist reads it on 계약서 (in the bundle of the release its works are on), ticks every confirmation and
+  signs; the hash over body + terms + ticks + signature is kept. The term starts on the day of signing.
+- Society registration (REGISTER) waits for the signed contract (`CONTRACT_NOT_SIGNED`). A work's `contractId`
+  is its signed contract. Renewal and termination are requests on a signed contract.
+
 ## Stage 2 — not yet
 
 - Contributor invites and their own confirmation (`rights/confirmation` answers 501 `NOT_IMPLEMENTED`), mail.
-- Publishing contracts (signing, renewal, termination) linked to approved applications.
 - Society registration feeds, royalties (statements, posting to the shared balance), CSV from the server.
 - Attachment preview links (signed URLs for demo/score/proof); Open A&R submissions.

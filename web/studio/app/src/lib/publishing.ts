@@ -68,6 +68,45 @@ export function fixNote(f: WorkFix): string | null {
   return text?.trim() || null;
 }
 
+/** 신청서에 서명하며 확인하는 항목 — 서버 AGREEMENTS(crates/core/src/publishing.rs)와 같은 키.
+ *  계약서의 확인 항목(CONTRACT_CONFIRMATIONS)과는 다르다: 신청서는 '신청 내용이 맞다', 계약서는 '계약을 맺는다' */
+export const APPLICATION_AGREE = [
+  ['accurate', '신청서에 적은 곡·참여자·지분 정보가 사실과 같아요.'],
+  ['rights', '신청한 곡에 대해 적은 지분만큼 권리를 가지고 있어요.'],
+  ['prior', '다른 퍼블리셔와 맺은 계약이 있으면 곡 정보에 알렸어요.'],
+  ['share', '공동 참여자의 지분은 각자의 확인을 거쳐 반영된다는 것을 알아요.'],
+] as const;
+
+/** 저작권 관리 계약서에 서명하기 전 체크하는 항목 — 서버 CONTRACT_CONFIRMATIONS와 같다 (모두 필수) */
+export const CONTRACT_CONFIRMATIONS = [
+  ['read', '저작권 관리 계약서의 내용을 모두 읽고 이해했어요.'],
+  ['rights', '계약한 곡에 대해 신고한 지분만큼 권리를 가지고 있어요.'],
+  ['exclusive', '계약 기간 동안 같은 권리를 다른 퍼블리셔에게 맡기지 않아요.'],
+] as const;
+
+const TERRITORY_NAME: Record<string, string> = { KR: '대한민국', JP: '일본', US: '미국', WORLD: '전 세계(그 밖의 국가)' };
+const RIGHT_NAME: Record<string, string> = { performance: '공연권', mechanical: '복제권', digital: '전송권', sync: '싱크 라이선스' };
+export const territoryName = (c: string) => TERRITORY_NAME[c] ?? c;
+export const rightName = (k: string) => RIGHT_NAME[k] ?? k;
+
+/** 계약서 본문 — 서버 contract_body와 같은 문장 (체험 데이터용; 실서버는 승인할 때 서버가 만든다) */
+export function contractBody(works: readonly (readonly [string, string])[], territories: readonly string[], rights: readonly string[], rate: number, months: number, renewals: readonly number[]): string {
+  return [
+    '제1조 (목적) 이 계약은 작가가 아래 곡의 저작권 관리를 주식회사 AUDENIQ(이하 ‘회사’)에 맡기고, 회사가 이를 관리하는 데 필요한 사항을 정한다.',
+    `제2조 (대상 곡) ${works.map(([t, code]) => `‘${t}’(${code})`).join(', ')}. 작가는 각 곡에 신고한 지분만큼의 권리를 가진다.`,
+    `제3조 (관리 범위) 회사는 ${territories.map(territoryName).join(', ')}에서 ${rights.map(rightName).join(', ')}을(를) 관리한다. 관리 단체 등록, 사용료 징수, 이용 허락 협의를 포함한다.`,
+    `제4조 (수수료) 회사는 실제 징수한 사용료의 ${rate}%를 관리 수수료로 공제하고 나머지를 작가에게 지급한다. 예상 금액은 지급 대상이 아니다.`,
+    `제5조 (기간) 계약 기간은 작가가 서명한 날부터 ${termLabel(months)}로 하며, 작가가 요청하면 ${renewals.map(termLabel).join(', ')} 단위로 연장한다.`,
+    '제6조 (공동 저작) 공동 참여자의 지분은 각 참여자의 확인을 거쳐 반영한다. 확인되지 않은 지분은 확인될 때까지 사용료 지급을 보류할 수 있다.',
+    '제7조 (종료) 어느 한쪽이 종료를 요청하면 관리 단체 절차에 따라 관리를 마친다. 종료 전 발생한 사용료는 종료 후에도 정산한다.',
+    '제8조 (기존 계약) 작가는 다른 퍼블리셔와의 계약을 신고해야 하며, 충돌이 있으면 회사가 검토한 뒤 관리 범위를 조정할 수 있다.',
+    '제9조 (전자계약) 이 계약은 전자문서로 작성하고 전자서명으로 체결한다. 체결일은 작가가 서명한 날이며, 서명·확인 항목·문서 확인 코드는 함께 보관한다.',
+  ].join('\n');
+}
+
+/** 역할 이름 — '작사·작곡' */
+export const roleTextOf = (roles: readonly ContributorRole[]) => roles.map(r => ROLE_LABEL[r]).join('·') || '역할 없음';
+
 export const APP_LABEL: Record<ApplicationStatus, string> = {
   draft: '작성 중', submitted: '제출 완료', in_review: '심사 중', needs_fix: '보완 요청', approved: '승인', rejected: '반려', withdrawn: '철회',
 };
@@ -76,10 +115,10 @@ export const APP_TONE: Record<ApplicationStatus, Tone> = {
 };
 
 export const CONTRACT_LABEL: Record<ContractStatus, string> = {
-  pending_sign: '서명 필요', active: '관리 중', expiring: '곧 만료', ended: '종료', terminating: '종료 요청됨',
+  pending_sign: '계약서 서명 필요', active: '관리 중', expiring: '곧 만료', ended: '종료', terminating: '종료 요청됨',
 };
 export const CONTRACT_TONE: Record<ContractStatus, Tone> = {
-  pending_sign: 'amber', active: 'green', expiring: 'amber', ended: 'gray', terminating: 'red',
+  pending_sign: 'blue', active: 'green', expiring: 'amber', ended: 'gray', terminating: 'red',
 };
 
 export const ROLE_LABEL: Record<ContributorRole, string> = {

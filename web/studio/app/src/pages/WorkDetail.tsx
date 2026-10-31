@@ -413,9 +413,18 @@ export function WorkDetail() {
                       {[...application.history].reverse().map((h, i) => <li key={i}><strong>{h.text}</strong><small>{localStamp(h.at)}</small></li>)}
                     </ol>
                   )}
-                  {canEdit && ['submitted', 'in_review', 'needs_fix'].includes(app.status) && (
-                    <div className="row-actions"><button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => void withdraw()}>신청 철회</button></div>
+                  {/* 신청서와 계약서는 따로 — 승인되면 계약서가 만들어지고 계약서 화면에서 서명한다 */}
+                  {application?.contractId && !w.contractId && (
+                    <Callout tone="info" action={<Link to={`/contracts/publishing/${encodeURIComponent(application.contractId)}`} className="ui-btn is-primary is-sm">확인하고 서명</Link>}>
+                      담당자가 승인했어요. 저작권 관리 계약서에 서명하면 계약이 맺어지고 관리 단체 등록이 시작돼요.
+                    </Callout>
                   )}
+                  <div className="row-actions">
+                    <Link to={`/publishing/applications/${encodeURIComponent(app.id)}`} className="ui-btn is-soft is-sm">신청서 보기</Link>
+                    {canEdit && ['submitted', 'in_review', 'needs_fix'].includes(app.status) && (
+                      <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => void withdraw()}>신청 철회</button>
+                    )}
+                  </div>
                 </>
               ) : (
                 <div className="empty-note">
@@ -430,7 +439,7 @@ export function WorkDetail() {
                 {contract ? (
                   <>
                     <ContractManage contract={contract} canEdit={canEdit} />
-                    <div className="row-actions"><Link to={`/contracts?pub=${contract.id}`} className="ui-btn is-text is-sm">계약서 보기</Link></div>
+                    <div className="row-actions"><Link to={`/contracts/publishing/${contract.id}`} className="ui-btn is-text is-sm">계약서 보기</Link></div>
                   </>
                 ) : w.myRole === 'contributor' ? <p className="muted small">곡 소유자의 계약으로 관리되고 있어요.</p> : <SkeletonBlock height={64} />}
               </div>

@@ -87,7 +87,7 @@ export function ContractBundle({ releaseId, releaseTitle, agreement, hasApplicat
             </button>
           )}
         </li>
-        {/* 같은 발매 곡의 저작권 관리 계약 — 배급 계약까지 서명한 뒤 이어서 (선택) */}
+        {/* 같은 발매 곡의 저작권 관리 계약서 — 담당자가 신청을 승인해 계약서가 생긴 뒤에만 */}
         {hasApplication && stage !== 'needs' && <PublishingBundleStep releaseId={releaseId} />}
       </ol>
     </article>
