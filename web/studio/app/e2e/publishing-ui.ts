@@ -14,7 +14,7 @@ const routes = [
   ['album', '/releases/r2?tab=publishing', '.aq-album-pub'],
   ['work', '/works/w1', '.aq-pbl-person-read'],
   ['registration', '/works/w2?tab=register', '.aq-fix-panel'],
-  ['work-income', '/works/w1?tab=revenue', '.settle-entry'],
+  ['work-income', '/works/w1?tab=revenue', '#wrHist'],
   ['work-files', '/works/w1?tab=files', '.aq-pbl-files'],
   ['ar', '/ar', '.aq-ar-card'],
   ['ar-submit', '/ar?work=w4', '#arWork'],

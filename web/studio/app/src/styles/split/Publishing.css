@@ -1,5 +1,5 @@
 /* Publishing layout only. Cards, controls, colors and typography use Studio's shared components/tokens.
-   anchors: aq-pbl-split aq-pbl-dashboard aq-pbl-album-stats aq-pbl-wizard aq-pbl-work aq-pbl-ar-form aq-pbl-guide aq-pbl-sheet aq-pbl-diff aq-pbl-files aq-pbl-selbar aq-pbl-trackline aq-pbl-people-board aq-pbl-reuse aq-pbl-filter aq-split-writer aq-pbl-missed aq-pen-editor aq-pbl-checks aq-pbl-evidence aq-pbl-income aq-pbl-rcard aq-pbl-scope aq-pbl-ccard aq-pbl-kvs */
+   anchors: aq-pbl-split aq-pbl-dashboard aq-pbl-album-stats aq-pbl-wizard aq-pbl-work aq-pbl-ar-form aq-pbl-guide aq-pbl-sheet aq-pbl-diff aq-pbl-files aq-pbl-selbar aq-pbl-trackline aq-pbl-people-board aq-pbl-reuse aq-pbl-filter aq-split-writer aq-pbl-missed aq-pen-editor aq-pbl-checks aq-pbl-evidence aq-pbl-income aq-pbl-rcard aq-pbl-scope aq-pbl-ccard aq-pbl-kvs aq-pbl-income-pair aq-pbl-month */
 .aq-pbl-split{display:grid;gap:16px;margin:0}
 .aq-pbl-split>.ui-meter{margin-top:-8px}
 .aq-pbl-split>.ui-field-help{margin:0}
@@ -470,3 +470,12 @@ button.aq-pbl-kv{width:100%;border:0;background:none;font:inherit;text-align:lef
 .aq-pbl-confirm.is-confirmed{color:var(--aq-green-700, #15803d)}
 .aq-pbl-confirm.is-pending{color:var(--aq-amber-700)}
 .aq-pbl-confirm.is-disputed{color:var(--aq-red-600)}
+/* 곡 '성과' 탭 — 큰 숫자 카드 두 장 · 달마다 내역 */
+.aq-pbl-income-pair{display:grid;gap:12px}
+.aq-pbl-income-sub{grid-column:1;font-size:var(--aq-fs-sm);color:var(--aq-text-3)}
+.aq-pbl-income.is-quiet .aq-pbl-income-num{color:var(--aq-text)}
+.aq-pbl-month{display:grid;gap:6px}
+.aq-pbl-month-head{margin:0;font-size:var(--aq-fs-sm);font-weight:700;color:var(--aq-text-3)}
+.aq-pbl-plus{color:var(--aq-primary-text)!important}
+.aq-pbl-est{color:var(--aq-text-4)!important}
+.aq-pbl-plus,.aq-pbl-est{white-space:nowrap;overflow-wrap:normal!important}
