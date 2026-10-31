@@ -11,7 +11,7 @@ import { pubApi, type Work, type WorkContributor } from '../api/publishing';
 import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { MOCK } from '../lib/mode';
-import { APP_LABEL, APP_TONE, FIX_FIELDS, LANGUAGES, fixNote, isFixField, type FixField, REG_LABEL, REG_SENTENCE, REG_STEPS, WORK_TYPES, AI_USE_OPTIONS, APPLICABLE_REG, PAYOUT_TIMING, estimateRoyalty, firstRoyaltyWindow, recordedRevenue, canEditInfo, editMode, pct, regStep, splitIssues, splitReady, workOrigin } from '../lib/publishing';
+import { FIX_FIELDS, LANGUAGES, fixNote, isFixField, type FixField, REG_LABEL, REG_SENTENCE, REG_STEPS, WORK_TYPES, AI_USE_OPTIONS, APPLICABLE_REG, PAYOUT_TIMING, estimateRoyalty, firstRoyaltyWindow, recordedRevenue, canEditInfo, editMode, pct, regStep, splitIssues, splitReady, workOrigin } from '../lib/publishing';
 import { StageCard } from '../components/StageCard';
 import { STATUS_LABEL, localStamp, money, statusTone } from '../lib/format';
 import { useToast } from '../components/Toast';
@@ -24,7 +24,7 @@ import { Glyph } from '../components/Glyph';
 import { roleText } from '../components/publishing/parts';
 import { SplitEditor } from '../components/publishing/SplitEditor';
 import { RoyaltyTable } from '../components/publishing/Royalties';
-import { ContractCard, RightsInfoCard, RoyaltyInCard, SocietiesCard } from '../components/publishing/WorkRightsCards';
+import { ApplicationCard, ContractCard, RightsInfoCard, RoyaltyInCard, SocietiesCard } from '../components/publishing/WorkRightsCards';
 import { AttachmentList, AttachmentModal } from '../components/publishing/Attachments';
 import { InviteModal } from '../components/publishing/InviteModal';
 import { Badge, Callout, EmptyState, KeyValue, Segmented, StatGrid, StatTile, Tabs } from '../ui';
@@ -489,35 +489,11 @@ export function WorkDetail() {
             <RightsInfoCard w={w} />
             {w.registration !== 'none' && <SocietiesCard w={w} royalties={royalties ?? []} />}
             {w.contractId && (contract ? <ContractCard contract={contract} canEdit={canEdit} />
-              : w.myRole === 'contributor' ? <div className="aq-relinfo-card"><h2 className="subhead">계약</h2><p className="muted small">곡 소유자의 계약으로 관리되고 있어요.</p></div> : <SkeletonBlock height={160} />)}
-            <div className="aq-relinfo-card">
-              <div className="ui-section-head"><h2 className="subhead">저작권 관리 신청</h2>{app && <Badge tone={APP_TONE[app.status]}>{APP_LABEL[app.status]}</Badge>}</div>
-              {app && app.status !== 'withdrawn' ? (
-                <>
-                  <dl className="ui-kv is-2">
-                    <div className="aq-kv-code"><dt>신청 번호</dt><dd className="aq-nowrap">{app.number}</dd></div>
-                    <div className="aq-kv-code"><dt>제출</dt><dd>{application?.submittedAt ? localStamp(application.submittedAt) : '—'}</dd></div>
-                  </dl>
-                  {/* 신청서와 계약서는 따로 — 승인되면 계약서가 만들어지고 계약서 화면에서 서명한다 */}
-                  {application?.contractId && !w.contractId && (
-                    <Callout tone="info" action={<Link to={`/contracts/publishing/${encodeURIComponent(application.contractId)}`} className="ui-btn is-primary is-sm">확인하고 서명</Link>}>
-                      담당자가 승인했어요. 저작권 관리 계약서에 서명하면 계약이 맺어지고 관리 단체 등록이 시작돼요.
-                    </Callout>
-                  )}
-                  <div className="row-actions">
-                    <Link to={`/publishing/applications/${encodeURIComponent(app.id)}`} className="ui-btn is-soft is-sm">신청서 보기</Link>
-                    {canEdit && ['submitted', 'in_review', 'needs_fix'].includes(app.status) && (
-                      <button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => void withdraw()}>신청 철회</button>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <div className="empty-note">
-                  {app?.status === 'withdrawn' ? '신청을 철회했어요.' : '아직 신청하지 않았어요.'}<br />저작권 관리를 쓰지 않아도 곡 정보는 계속 관리할 수 있어요.<br />
-                  {canApply && <Link to={`/publishing/apply?work=${w.id}`} className="ui-btn is-white is-sm">저작권 관리 시작 <Glyph name="chevron-right" size={13} /></Link>}
-                </div>
-              )}
-            </div>
+              : w.myRole === 'contributor' ? <div className="aq-relinfo-card aq-pbl-ccard"><p className="aq-pbl-ccard-cap">저작권 관리 계약</p><h2 className="aq-pbl-ccard-title">곡 소유자의 계약으로 관리되고 있어요</h2></div> : <SkeletonBlock height={160} />)}
+            <ApplicationCard app={app ?? null} submittedAt={application?.submittedAt}
+              signTo={application?.contractId && !w.contractId ? `/contracts/publishing/${encodeURIComponent(application.contractId)}` : null}
+              canWithdraw={!!app && canEdit && ['submitted', 'in_review', 'needs_fix'].includes(app.status)} onWithdraw={() => void withdraw()}
+              applyTo={canApply ? `/publishing/apply?work=${w.id}` : null} />
           </div>
         )}
 
