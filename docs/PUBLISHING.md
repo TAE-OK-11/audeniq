@@ -88,6 +88,22 @@ Rules:
   yet (`WORK_RELEASED`), with a demo (`AR_DEMO_REQUIRED`), one open submission per work (`DUPLICATE_SUBMISSION`), the same
   idempotency key returns the first. History is the audit trail (`publishing.ar_*`). Staff review of submissions is next.
 
+## Staff answers and royalties (migration 0173)
+
+Admin › 심사 › 퍼블리싱 요청 (`/admin/publishing-ops`):
+- 지분 변경: `GET /api/staff/publishing/changes`, `POST …/works/{id}/change` `{approve, reason}` — applying rewrites the
+  shares (changed co-writers confirm again); rejecting needs a reason. The work carries `changeDecision`.
+- 계약 요청: `GET …/contract-requests`, `POST …/contracts/{id}/request` `{kind: renewal|termination, approve, reason}` —
+  renewal moves the end date by the asked months; termination ends today. The contract carries `requestDecision`.
+- Open A&R: `GET …/ar?status`, `POST …/ar/{id}/decision` `{action: CLAIM|FIX|REVIEWED|PROPOSING|CLOSE, reason}`; the artist
+  answers a fix with `POST /ar/submissions/{id}/resubmit` `{reply}`.
+- 저작권료 (Finance duty): `POST …/royalties` `{source, period, status, rows[{work, kind, country, collected}], preview}` —
+  rows match works by internal code or ISWC, commission from the work's signed contract (policy rate otherwise); nothing
+  is stored while a row fails. `POST …/royalties/{id}/status` estimated → confirmed → paid. Artist lists and the home summary
+  read `portal.pub_royalties`. Posting to the shared balance stays with the finance owner CLI.
+
+Studio: `/reports/publishing/statement?q=YYYY-Qn` prints a quarterly royalty statement.
+
 ## Stage 2 — not yet
 
 - A contributor with an AUDENIQ account answering inside the studio (`rights/confirmation` answers 501); link invites cover it.

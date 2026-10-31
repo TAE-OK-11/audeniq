@@ -5,7 +5,8 @@ import { applicationPending, needsSecond } from './labels';
 import type {
   ApprovalItem, DecisionInput, DecisionResult, DeliveryDecisionInput, DeliveryItem, DspItem, InquiryMessage, InquiryItem,
   Overview, PayoutItem, QueueRelease, ReleaseSheet, ReleaseTimelineItem, StagingRow, StaffDocument, StaffMe, AgreementTerms, AgreementTermsInput, TakedownItem, CorrectionItem, InfringementClaim, PitchItem,
-  IdentityAccount, IdentityVerifyInput, PubApplication, PubAppStatus, PubDecisionInput
+  IdentityAccount, IdentityVerifyInput, PubApplication, PubAppStatus, PubDecisionInput,
+  PubChange, PubContractRequest, StaffArSubmission, ArDecisionAction, PubStatement, RoyaltyImportInput, RoyaltyImportResult
 } from './api';
 import type { Work, WorkContributor } from '../api/publishing';
 import { applicationHash, type StudioDraft } from './application';
@@ -283,7 +284,82 @@ const pubFind = (aid: string) => pubApps.find(a => a.id === aid) ?? fail('NOT_FO
 const pubList = (a: PubApplication) => { const { works: _w, ...rest } = a; return rest; };
 const pubRegistration = (a: PubApplication, reg: Work['registration'], ids = a.workIds) => { for (const w of a.works ?? []) if (ids.includes(w.id)) w.registration = reg; };
 
+// 퍼블리싱 요청 (0173) — 지분 변경 · 계약 요청 · Open A&R · 저작권료 명세서 예시
+const changeWork = (() => {
+  const w = pubWork('pw-4', '첫 번째 싱글', [person('김한결', ['lyricist', 'composer'], 100, 100, '00712345678', 'confirmed', true)], '첫 번째 싱글', 'registered');
+  // 같은 사람은 같은 id — 서버처럼 '바뀐 지분'으로 보이게 (id가 다르면 빠짐·추가로 보였다)
+  w.pendingChange = { contributors: [{ ...w.contributors[0], share: 70, publisherShare: 70 }, person('이온', ['composer'], 30, 0, '00755511122', 'pending')], requestedAt: iso(20) };
+  return w;
+})();
+const pubChanges: PubChange[] = [{ orgId: 'org-2', orgName: '한결 뮤직', work: changeWork }];
+const pubContractReqs: PubContractRequest[] = [
+  { id: 'pc-1', orgId: 'org-2', orgName: '한결 뮤직', number: 'AQP-20261013-QW8E2R', status: 'expiring', endDate: '2026-11-28', commissionRate: 10, works: ['첫 번째 싱글'], renewal: { months: 12, requestedAt: iso(30) }, terminationRequestedAt: null },
+  { id: 'pc-2', orgId: 'org-3', orgName: '새벽 레코즈', number: 'AQP-20260502-T7Y3UI', status: 'terminating', endDate: '2027-05-01', commissionRate: 10, works: ['새벽 네 시'], renewal: null, terminationRequestedAt: iso(8) },
+];
+const pubAr: StaffArSubmission[] = [
+  { id: 'ar-1', workId: 'pw-9', workTitle: '여름밤 산책', orgId: 'org-3', orgName: '새벽 레코즈', genre: 'City Pop', mood: ['청량한', '설레는'], description: '여름 시즌 싱글로 어울려요.', references: '',
+    scope: 'partners', sync: true, status: 'submitted', fixReason: null, fixReply: null, submittedAt: iso(30), history: [{ at: iso(30), text: '제출 완료' }], demoName: 'summer_walk_demo.mp3', lyrics: '여름밤 걸어가\n바람이 불어와' },
+  { id: 'ar-2', workId: 'pw-10', workTitle: '새벽 네 시', orgId: 'org-3', orgName: '새벽 레코즈', genre: 'R&B', mood: ['잔잔한'], description: '', references: '',
+    scope: 'internal', sync: false, status: 'in_review', fixReason: null, fixReply: null, submittedAt: iso(90), history: [{ at: iso(90), text: '제출 완료' }, { at: iso(60), text: '심사 시작' }], demoName: 'saebyeok_demo_v2.mp3', lyrics: null },
+];
+const pubStatements: PubStatement[] = [
+  { id: 'ps-1', source: 'KOMCA', period: '2026-08', status: 'confirmed', fileName: 'komca_2026_08.csv', rowCount: 3, totalCollected: 412000, importedAt: iso(240) },
+];
+const AR_NEXT: Record<ArDecisionAction, [StaffArSubmission['status'][], StaffArSubmission['status'], string]> = {
+  CLAIM: [['submitted'], 'in_review', '심사 시작'], FIX: [['in_review'], 'needs_fix', '보완 요청'], REVIEWED: [['in_review'], 'reviewed', '심사 완료'],
+  PROPOSING: [['reviewed'], 'proposing', '제안 진행'], CLOSE: [['submitted', 'in_review', 'needs_fix', 'reviewed', 'proposing'], 'closed', '종료'],
+};
+const KNOWN_CODES: Record<string, string> = { 'AQW-000004': '첫 번째 싱글', 'AQW-000001': '파도', 'AQW-000002': '노을' };
+
 export const mockStaff = {
+  pubChanges: () => wait({ items: pubChanges }),
+  pubChangeDecide: (wid: string, b: { approve: boolean; reason?: string }) => {
+    const i = pubChanges.findIndex(c => c.work.id === wid);
+    if (i < 0) fail('NOT_FOUND', 404);
+    if (!b.approve && !b.reason?.trim()) fail('STAFF_REASON_REQUIRED', 400);
+    const [c] = pubChanges.splice(i, 1);
+    return wait({ ...c.work, contributors: b.approve ? c.work.pendingChange!.contributors : c.work.contributors, pendingChange: null });
+  },
+  pubContractRequests: () => wait({ items: pubContractReqs }),
+  pubContractDecide: (cid: string, b: { kind: 'renewal' | 'termination'; approve: boolean; reason?: string }) => {
+    const i = pubContractReqs.findIndex(c => c.id === cid);
+    if (i < 0) fail('NOT_FOUND', 404);
+    if (!b.approve && !b.reason?.trim()) fail('STAFF_REASON_REQUIRED', 400);
+    pubContractReqs.splice(i, 1);
+    return wait({ id: cid, outcome: b.kind === 'renewal' ? (b.approve ? 'renewed' : 'renewal_rejected') : (b.approve ? 'ended' : 'termination_rejected') });
+  },
+  pubArList: (status?: string) => wait({ items: pubAr.filter(a => !status || a.status === status) }),
+  pubArDecide: (aid: string, b: { action: ArDecisionAction; reason?: string }) => {
+    const a = pubAr.find(x => x.id === aid) ?? fail('NOT_FOUND', 404);
+    const [from, to, text] = AR_NEXT[b.action];
+    if (!from.includes(a.status)) fail('AR_STATE');
+    if (b.action === 'FIX' && !b.reason?.trim()) fail('STAFF_REASON_REQUIRED', 400);
+    a.status = to;
+    if (to === 'needs_fix') { a.fixReason = b.reason!.trim(); a.fixReply = null; }
+    a.history.push({ at: iso(0), text });
+    return wait(a);
+  },
+  pubStatements: () => wait({ items: pubStatements }),
+  pubRoyaltyImport: (i: RoyaltyImportInput) => {
+    const rows: RoyaltyImportResult['rows'] = i.rows.map((r, k) => {
+      const title = KNOWN_CODES[r.work.trim().toUpperCase()];
+      if (!title) return { line: k + 1, work: r.work, error: '곡 코드(AQW-… 또는 ISWC)를 찾지 못했어요' };
+      const fee = Math.floor(r.collected / 10);
+      return { line: k + 1, workTitle: title, orgName: '한결 뮤직', collected: r.collected, fee, net: r.collected - fee };
+    });
+    const errors = rows.filter(r => r.error).length;
+    if (!i.preview && errors) fail('ROYALTY_ROWS_INVALID');
+    if (i.preview) return wait({ rows, errors });
+    const st: PubStatement = { id: uid(), source: i.source, period: i.period, status: i.status, fileName: i.fileName ?? null, rowCount: rows.length, totalCollected: i.rows.reduce((n, r) => n + r.collected, 0), importedAt: iso(0) };
+    pubStatements.unshift(st);
+    return wait({ id: st.id, rows, errors: 0 });
+  },
+  pubStatementStatus: (sid: string, status: 'confirmed' | 'paid') => {
+    const st = pubStatements.find(x => x.id === sid) ?? fail('NOT_FOUND', 404);
+    if (!((st.status === 'estimated' && status === 'confirmed') || (st.status === 'confirmed' && status === 'paid'))) fail('ROYALTY_STATE');
+    st.status = status;
+    return wait({ id: sid, status });
+  },
   me: () => wait<StaffMe>({ user_id: ME, role: 'OWNER', level: 4, duties: ['REVIEW', 'DOCUMENTS', 'INQUIRIES', 'DELIVERY', 'IDENTITY', 'FINANCE'], dual_approval: false }),
   overview: () => wait<Overview>({
     review: releases.filter(awaiting).length,

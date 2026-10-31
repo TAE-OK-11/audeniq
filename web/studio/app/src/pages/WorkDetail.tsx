@@ -391,6 +391,12 @@ export function WorkDetail() {
                 {w.contributors.length > 1 && !splitDraft && <Link to={`/works/${w.id}/split-sheet`} className="ui-btn is-text is-sm">합의서 만들기</Link>}
                 {canEdit && !splitDraft && mode !== 'locked' && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setSplitDraft(structuredClone(w.pendingChange?.contributors ?? w.contributors))}>{w.pendingChange ? '변경값 고치기' : '지분 고치기'}</button>}
               </div>
+              {/* 지난 변경 요청에 담당자가 한 답 — 반려면 사유를 그대로 */}
+              {!w.pendingChange && w.changeDecision && (
+                w.changeDecision.outcome === 'rejected'
+                  ? <Callout tone="warn"><b>지분 변경이 반려됐어요.</b> {w.changeDecision.note ?? ''} 고쳐서 다시 요청할 수 있어요.</Callout>
+                  : <p className="ui-field-help aq-pbl-import-note"><Glyph name="check" size={14} />요청한 지분 변경이 반영됐어요{w.changeDecision.at ? ` · ${localStamp(w.changeDecision.at)}` : ''}.</p>
+              )}
               {canEdit && mode === 'locked' && <p className="ui-field-help">{signing(w) ? '계약서 서명을 기다리는 곡이라 지금은 지분을 바꿀 수 없어요. 서명한 뒤에는 변경을 요청할 수 있어요.' : '담당자가 심사하는 동안에는 지분을 바꿀 수 없어요. 보완 요청이 오면 고칠 수 있고, 급하면 신청을 철회한 뒤 고쳐요.'}</p>}
               {splitDraft ? (
                 <>

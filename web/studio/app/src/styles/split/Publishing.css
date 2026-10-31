@@ -310,3 +310,16 @@
 /* 긴 링크가 창 폭을 밀어내지 않게 — 그리드 칸의 최소 폭을 0으로 */
 .aq-pbl-invite,.aq-pbl-invite-list,.aq-pbl-invite-list>li,.aq-pbl-invite-link,.aq-pbl-invite-mail{min-width:0;max-width:100%}
 .aq-pbl-invite-link code{display:block}
+/* 분기 명세서 — 곡마다 소계 줄 */
+.aq-statement-sub td{font-weight:700;background:var(--aq-gray-50)}
+/* Open A&R 보완 답장 */
+.aq-pbl-ar-fix{display:grid;gap:8px}
+.aq-pbl-ar-fix .ui-btn{justify-self:start}
+/* 분기 명세서 표 — 첫 칸은 번호가 아니라 곡 이름이라 공통 서류 표의 칸 너비(44px 번호 칸)를 쓰지 않는다 */
+@media (min-width:601px), print{
+  .aq-paper-grid.aq-statement-grid thead th:nth-child(1){width:24%}
+  .aq-paper-grid.aq-statement-grid thead th:nth-child(2){width:26%}
+  .aq-paper-grid.aq-statement-grid thead th:is(:nth-child(3),:nth-child(4),:nth-child(5)){width:14%;text-align:right}
+  .aq-paper-grid.aq-statement-grid thead th:nth-child(6){width:8%}
+  .aq-paper-grid.aq-statement-grid td.num{text-align:right}
+}
