@@ -24,7 +24,7 @@ import { SplitEditor } from '../components/publishing/SplitEditor';
 import { RoyaltyTable } from '../components/publishing/Royalties';
 import { ContractManage } from '../components/publishing/PublishingContracts';
 import { AttachmentList, AttachmentModal } from '../components/publishing/Attachments';
-import { Badge, Callout, EmptyState, Segmented, StatGrid, StatTile, Tabs } from '../ui';
+import { Badge, Callout, EmptyState, KeyValue, Segmented, StatGrid, StatTile, Tabs } from '../ui';
 import { SplitDiffList } from '../components/publishing/WorkSheet';
 import { changeNeedsReview, reusableWorks, splitDiff } from '../lib/publishingPrep';
 import { Money } from '../components/Money';
@@ -276,7 +276,7 @@ export function WorkDetail() {
       </div>
 
       <div className="aq-detail-hero" aria-label="곡 정보">
-        <ReleaseCover id={w.id} className="cover aq-detail-cover" />
+        <ReleaseCover id={w.recordings[0]?.releaseId ?? w.id} className="cover aq-detail-cover" />
         <div className="aq-detail-info">
           <div className="aq-detail-top">
             <span className="eyebrow">곡{w.recordings.length === 0 && ' · 미발매'}</span>
@@ -316,17 +316,17 @@ export function WorkDetail() {
             )}
             <div className="aq-relinfo-card">
               <h2 className="subhead">곡 정보</h2>
-              <dl className="ui-kv is-2">
-                <div><dt>곡 유형</dt><dd>{label(WORK_TYPES, w.workType)}</dd></div>
-                <div><dt>주요 언어</dt><dd>{label(LANGUAGES, w.language)}</dd></div>
-                <div><dt>장르</dt><dd>{w.genre || <Empty>입력 전</Empty>}</dd></div>
-                <div><dt>공개 범위</dt><dd>{w.visibility === 'shared' ? '참여자에게 공개' : '비공개'}</dd></div>
-                <div><dt>ISWC</dt><dd>{w.iswc ?? <Empty>{`발급 전 · ${w.internalCode}`}</Empty>}</dd></div>
-                <div><dt>기존 퍼블리셔</dt><dd>{w.hasPriorPublisher ? (w.priorPublisher || '있음') : '없음'}</dd></div>
-                <div><dt>내 역할</dt><dd>{me ? `${roleText(me)} · ${pct(me.share)}` : <Empty>참여하지 않음</Empty>}</dd></div>
-                <div><dt>연결된 녹음</dt><dd>{w.recordings.length ? `${w.recordings.length}개` : <Empty>미발매</Empty>}</dd></div>
-                {w.altTitles.length > 0 && <div className="is-wide"><dt>대체 제목</dt><dd>{w.altTitles.join(' · ')}</dd></div>}
-              </dl>
+              <KeyValue cols={2} items={[
+                ['곡 유형', label(WORK_TYPES, w.workType)],
+                ['주요 언어', label(LANGUAGES, w.language)],
+                ['장르', w.genre || <Empty>입력 전</Empty>],
+                ['공개 범위', w.visibility === 'shared' ? '참여자에게 공개' : '비공개'],
+                ['ISWC', w.iswc ?? <Empty>{`발급 전 · ${w.internalCode}`}</Empty>],
+                ['기존 퍼블리셔', w.hasPriorPublisher ? (w.priorPublisher || '있음') : '없음'],
+                ['내 역할', me ? `${roleText(me)} · ${pct(me.share)}` : <Empty>참여하지 않음</Empty>],
+                ['연결된 녹음', w.recordings.length ? `${w.recordings.length}개` : <Empty>미발매</Empty>],
+              ]} />
+              {w.altTitles.length > 0 && <KeyValue items={[[ '대체 제목', w.altTitles.join(' · ') ]]} />}
               {w.description && <><h2 className="subhead">곡 설명</h2><p className="muted small break">{w.description}</p></>}
             </div>
           </div>

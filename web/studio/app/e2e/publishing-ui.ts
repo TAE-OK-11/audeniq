@@ -17,7 +17,7 @@ const routes = [
   ['work-income', '/works/w1?tab=revenue', '.settle-entry'],
   ['work-files', '/works/w1?tab=files', '.aq-pbl-files'],
   ['ar', '/ar', '.aq-ar-card'],
-  ['ar-submit', '/ar?work=w4', '#arGenre'],
+  ['ar-submit', '/ar?work=w4', '#arWork'],
   ['apply', '/publishing/apply?work=w4', '.aq-pbl-song-picker'],
   ['contracts', '/contracts?pub=c1', '.aq-pbl-contract'],
 ] as const;
@@ -57,6 +57,22 @@ try {
     }
     console.log(`Layout passed: ${width}px`);
   }
+  // Open A&R opens the shared application shell; review links retain entered data.
+  await page.goto(base + '/ar');
+  await page.getByRole('button', { name: '데모 제출', exact: true }).click();
+  await page.locator('#arWork').selectOption('w4');
+  await page.locator('#wizardNext').click();
+  await page.locator('#arGenre').fill('R&B');
+  await page.getByRole('button', { name: '잔잔한', exact: true }).click();
+  await page.locator('#wizardNext').click();
+  assert.equal(await page.locator('#wizardNext').isDisabled(), true);
+  await page.getByRole('checkbox').check();
+  assert.equal(await page.locator('#wizardNext').isEnabled(), true);
+  await page.getByRole('button', { name: '곡 소개 수정', exact: true }).click();
+  assert.equal(await page.locator('#arGenre').inputValue(), 'R&B');
+  await page.getByRole('button', { name: '이전으로 돌아가기', exact: true }).click();
+  await page.getByRole('button', { name: '이전으로 돌아가기', exact: true }).click();
+  await page.locator('#view-ar').waitFor();
   // Album tab: the prep check opens the song sheet at the field to fix, edits show before → after, and saving returns to the list.
   await page.setViewportSize({ width: 390, height: 900 });
   await page.goto(base + '/releases/r2?tab=publishing');
@@ -75,12 +91,9 @@ try {
   await sheet.getByRole('button', { name: '취소' }).click();
   await page.locator('#modal').getByRole('button', { name: '닫기' }).click();
   await sheet.waitFor({ state: 'detached' });
-  // Selecting songs keeps the same selection for prep check, bundling and download.
-  await page.locator('.aq-pbl-pick input').first().check();
-  await page.locator('.aq-pbl-selbar').waitFor();
-  assert.match(await page.locator('#pubPrepTitle').innerText(), /고른 1곡/);
-  await noOverflow(page, 'album selection');
-  await page.screenshot({ path: `${out}/album-select-390.png`, fullPage: true });
+  // Album tracks open directly; selection controls and the floating action bar are absent.
+  assert.equal(await page.locator('.aq-pbl-pick, .aq-pbl-selbar').count(), 0);
+  assert.equal(await page.getByRole('button', { name: '전체 선택', exact: true }).count(), 0);
   // Attach materials from a dialog, then preview them inside the song sheet.
   await page.getByRole('button', { name: '자료 첨부' }).first().click();
   await page.locator('#modal #attachWork').waitFor();
@@ -159,7 +172,7 @@ try {
   await page.locator('.ui-callout.is-success').waitFor();
   await page.locator('.adm-release-hero').getByText('보완 요청', { exact: true }).waitFor();
   assert.deepEqual(errors, []);
-  console.log('Publishing UI passed: 12 pages × 4 widths, album prep/sheet/selection/attach, split editing, return navigation, filters, album scope, and report amounts, admin review.');
+  console.log('Publishing UI passed: 12 pages × 4 widths, album prep/sheet/attach, split editing, return navigation, filters, album scope, and report amounts, admin review.');
 } finally {
   await browser.close();
   if (server && 'close' in server) await server.close();
