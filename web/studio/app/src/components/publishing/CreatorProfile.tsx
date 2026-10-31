@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { pubApi, type Creator, type CreatorRole } from '../../api/publishing';
 import { errorMessage } from '../../api/errors';
 import { useAsync } from '../../hooks/useAsync';
-import { SOCIETIES } from '../../lib/publishing';
+import { SOCIETIES, societyName } from '../../lib/publishing';
 import { useToast } from '../Toast';
 import { Modal, useModalClose } from '../Modal';
 import { Glyph } from '../Glyph';
@@ -30,7 +30,7 @@ function CreatorFieldEditor({ field, c, onSave }: { field: Field; c: Creator; on
     const current = c.society ?? '';
     return (
       <div className="aq-set-editor aq-country-list" role="radiogroup" aria-label={TITLE.society}>
-        {[['', '가입하지 않았어요'] as const, ...SOCIETIES.filter(s => s !== '없음').map(s => [s, s] as const)].map(([v, label]) => (
+        {[['', '가입하지 않았어요'] as const, ...SOCIETIES.filter(s => s !== '없음').map(s => [s, societyName(s)] as const)].map(([v, label]) => (
           <button key={v || 'none'} type="button" role="radio" aria-checked={v === current} disabled={saving}
             className={`aq-picker-opt${v === current ? ' is-on' : ''}`}
             onClick={() => (v === current ? close() : void save({ ...c, society: v || null }))}>
@@ -105,7 +105,7 @@ export function CreatorProfile() {
     <section className="aq-set-card" aria-labelledby="setPublishing">
       <h2 id="setPublishing">퍼블리싱</h2>
       <SetRow label="역할 (작곡·작사 등)" value={roleText} empty="고르기" onClick={() => setEditing('roles')} />
-      <SetRow label="저작권 관리 단체" value={c.society ?? undefined} empty="가입하지 않음" onClick={() => setEditing('society')} />
+      <SetRow label="저작권 관리 단체" value={societyName(c.society) || undefined} empty="가입하지 않음" onClick={() => setEditing('society')} />
       <SetRow label="IPI/CAE 번호" value={c.ipi ?? undefined} empty="입력하기" onClick={() => setEditing('ipi')} />
       <SetRow label="소속 조직" value={c.org ?? undefined} empty="없음" onClick={() => setEditing('org')} />
       {editing && (

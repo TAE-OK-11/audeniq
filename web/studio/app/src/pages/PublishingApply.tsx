@@ -15,7 +15,7 @@ import { useProfile } from '../store/profile';
 import { compactSignature } from '../lib/application';
 import { readJSON, removeKey, writeJSON } from '../lib/storage';
 import { uid } from '../lib/store';
-import { APPLICATION_AGREE, APP_LABEL, APP_TONE, isReleased, pct, splitIssues, splitReady, termLabel } from '../lib/publishing';
+import { APPLICATION_AGREE, APP_LABEL, APP_TONE, isReleased, pct, societyName, splitIssues, splitReady, termLabel } from '../lib/publishing';
 import { money } from '../lib/format';
 import { ReviewCard, WizardShell, type WizardStep } from '../components/WizardShell';
 import { SkeletonBlock } from '../components/Skeleton';
@@ -220,7 +220,7 @@ export function PublishingApply() {
                     <div key={c.id} className="ui-row is-flat">
                       <span className="min-0">
                         <span className="ui-row-title">{c.name}{c.isMe && ' (나)'} · {pct(c.share)}</span>
-                        <span className="ui-row-meta"><span>{roleText(c)}</span>{c.society && <span>{c.society}</span>}</span>
+                        <span className="ui-row-meta"><span>{roleText(c)}</span>{c.society && <span>{societyName(c.society)}</span>}</span>
                       </span>
                       {c.confirm === 'confirmed' ? <Badge tone="green">확인</Badge> : c.confirm === 'disputed' ? <Badge tone="red">이의</Badge> : <Badge tone="amber">확인 필요</Badge>}
                     </div>

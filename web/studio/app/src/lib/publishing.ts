@@ -161,6 +161,13 @@ export const WORK_TYPES = [
 ] as const;
 export const LANGUAGES = [['ko', '한국어'], ['en', '영어'], ['ja', '일본어'], ['zh', '중국어'], ['es', '스페인어'], ['zxx', '가사 없음'], ['other', '기타']] as const;
 export const SOCIETIES = ['KOMCA', '함께하는음악저작인협회', 'JASRAC', 'ASCAP', 'BMI', 'SESAC', 'PRS', 'GEMA', 'SACEM', '없음'] as const;
+/** 관리 단체를 화면에 보이는 이름으로 — 저장값(KOMCA 등)은 그대로 두고 국내 두 단체는 정식 이름(약칭)으로.
+ *  '음저협'·'함저협'으로 부르는 곳이라 영문 약칭만 보면 어느 단체인지 헷갈렸다 */
+const SOCIETY_NAME: Record<string, string> = {
+  KOMCA: '한국음악저작권협회(KOMCA)', 한국음악저작권협회: '한국음악저작권협회(KOMCA)',
+  함께하는음악저작인협회: '함께하는음악저작인협회(KOSCAP)', KOSCAP: '함께하는음악저작인협회(KOSCAP)',
+};
+export const societyName = (s: string | null | undefined) => (s ? SOCIETY_NAME[s] ?? s : '');
 
 /** 저장 단위 소수점 둘째 자리까지 — 33.33 + 33.33 + 33.34 같은 나누기를 받는다 */
 const round2 = (n: number) => Math.round(n * 100) / 100;

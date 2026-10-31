@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Work, WorkContributor } from '../api/publishing';
-import { addMonths, canEditInfo, editMode, evenSplit, isReleased, matchFilter, workOrigin, regStep, similarWorks, splitIssues, splitNames, splitReady, sumShares } from './publishing';
+import { addMonths, canEditInfo, editMode, evenSplit, isReleased, matchFilter, societyName, workOrigin, regStep, similarWorks, splitIssues, splitNames, splitReady, sumShares } from './publishing';
 
 const person = (p: Partial<WorkContributor>): WorkContributor => ({
   id: p.name ?? 'x', creatorId: null, name: '서린', roles: ['composer'], share: 100, publisherShare: 0, confirm: 'confirmed', external: false, ...p,
@@ -117,5 +117,14 @@ describe('곡 목록 필터', () => {
     expect(matchFilter(work({ origin: 'unreleased' }), 'none')).toBe(false);
     expect(matchFilter(work({ origin: 'unreleased' }), 'unreleased')).toBe(true);
     expect(matchFilter(work({ origin: 'other_release', externalRelease: { artist: '이온', title: '겨울 편지' } }), 'none')).toBe(true);
+  });
+});
+
+describe('관리 단체 이름', () => {
+  it('국내 두 단체는 정식 이름(약칭)으로, 나머지는 그대로', () => {
+    expect(societyName('KOMCA')).toBe('한국음악저작권협회(KOMCA)');
+    expect(societyName('함께하는음악저작인협회')).toBe('함께하는음악저작인협회(KOSCAP)');
+    expect(societyName('JASRAC')).toBe('JASRAC');
+    expect(societyName(null)).toBe('');
   });
 });

@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { Link } from '../../lib/router';
 import type { RegistrationStatus, RegistrationStep, Work, WorkContributor } from '../../api/publishing';
-import { APP_LABEL, APP_TONE, REG_LABEL, REG_SENTENCE, REG_STEPS, REG_TONE, ORIGIN_LABEL, ROLE_LABEL, pct, regStep, sumShares, workOrigin } from '../../lib/publishing';
+import { APP_LABEL, APP_TONE, REG_LABEL, REG_SENTENCE, REG_STEPS, REG_TONE, ORIGIN_LABEL, ROLE_LABEL, pct, regStep, societyName, sumShares, workOrigin } from '../../lib/publishing';
 import { localStamp } from '../../lib/format';
 import { Badge, IconTile, Meter } from '../../ui';
 import { StageCard } from '../StageCard';
@@ -44,7 +44,7 @@ export function RegProgress({ status, log, stage: showStage = true, head = true 
             <ol className="ui-timeline is-latest-first">
               {[...log].reverse().map((l, i) => (
                 <li key={i} className={TIMELINE_TONE[l.status]}>
-                  <strong>{REG_LABEL[l.status]}{l.society && ` · ${l.society}`}{l.note && ` — ${l.note}`}</strong>
+                  <strong>{REG_LABEL[l.status]}{l.society && ` · ${societyName(l.society)}`}{l.note && ` — ${l.note}`}</strong>
                   <small>{localStamp(l.at)}</small>
                 </li>
               ))}

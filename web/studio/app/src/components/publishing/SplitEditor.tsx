@@ -4,7 +4,7 @@
 import { useDeferredValue, useEffect, useState } from 'react';
 import { pubApi, type ContributorRole, type Creator, type Work, type WorkContributor } from '../../api/publishing';
 import { uid } from '../../lib/store';
-import { ROLE_LABEL, SOCIETIES, evenSplit, pct, splitIssues, sumShares } from '../../lib/publishing';
+import { ROLE_LABEL, SOCIETIES, evenSplit, pct, societyName, splitIssues, sumShares } from '../../lib/publishing';
 import { Badge, Field, IconTile } from '../../ui';
 import { Glyph } from '../Glyph';
 import { SplitBar, peopleLine, roleText } from './parts';
@@ -39,7 +39,7 @@ function CreatorSearch({ onPick, onExternal, taken }: { onPick: (c: Creator) => 
           <div className="ui-chips is-wrap">
             {recent.filter(c => !taken.has(c.id)).slice(0, 8).map(c => (
               <button key={c.id} type="button" className="ui-chip is-sm" onMouseDown={e => e.preventDefault()} onClick={() => add(c)}
-                title={[c.society, c.ipi && `IPI ${c.ipi}`].filter(Boolean).join(' · ') || undefined}>
+                title={[societyName(c.society), c.ipi && `IPI ${c.ipi}`].filter(Boolean).join(' · ') || undefined}>
                 <Glyph name="plus" size={13} />{c.name}
               </button>
             ))}
@@ -54,7 +54,7 @@ function CreatorSearch({ onPick, onExternal, taken }: { onPick: (c: Creator) => 
                 <IconTile size="sm"><Glyph name="user" size={16} /></IconTile>
                 <span className="min-0">
                   <span className="ui-row-title">{c.name}{c.isMe && ' (나)'}</span>
-                  <span className="ui-row-meta">{[c.society, c.ipi && `IPI ${c.ipi}`, c.workCount != null && `곡 ${c.workCount}개`].filter(Boolean).map(t => <span key={String(t)}>{t}</span>)}</span>
+                  <span className="ui-row-meta">{[societyName(c.society), c.ipi && `IPI ${c.ipi}`, c.workCount != null && `곡 ${c.workCount}개`].filter(Boolean).map(t => <span key={String(t)}>{t}</span>)}</span>
                 </span>
                 {taken.has(c.id) ? <Badge tone="gray">추가됨</Badge> : <Glyph name="plus" size={16} />}
               </button>
@@ -161,7 +161,7 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
               <IconTile size="sm" tone="gray"><Glyph name="user" size={17} /></IconTile>
               <div className="min-0">
                 <strong>{c.name || '이름 없는 참여자'}{c.isMe && ' (나)'}</strong>
-                <span className="ui-row-meta">{roleText(c)}{c.society && ` · ${c.society}`}{c.ipi && <> · <span className="aq-nowrap">IPI {c.ipi}</span></>}</span>
+                <span className="ui-row-meta">{roleText(c)}{c.society && ` · ${societyName(c.society)}`}{c.ipi && <> · <span className="aq-nowrap">IPI {c.ipi}</span></>}</span>
                 {/* 맡기기 전(0%)에는 줄을 두지 않는다 — 'AUDENIQ 관리 0%'가 참여자마다 되풀이됐다 */}
                 {c.publisherShare > 0 && <span className="ui-row-meta">AUDENIQ 관리 {pct(c.publisherShare)}</span>}
               </div>
@@ -191,7 +191,7 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
                 if (!k || (!k.society && !k.ipi) || (k.society === c.society && k.ipi === c.ipi)) return null;
                 return (
                   <button type="button" className="aq-pbl-fill" onClick={() => set(c.id, { society: c.society || k.society, ipi: c.ipi || k.ipi })}>
-                    <Glyph name="repeat" size={14} />지난 곡 정보 채우기<span>{[k.society, k.ipi && `IPI ${k.ipi}`].filter(Boolean).join(' · ')}</span>
+                    <Glyph name="repeat" size={14} />지난 곡 정보 채우기<span>{[societyName(k.society), k.ipi && `IPI ${k.ipi}`].filter(Boolean).join(' · ')}</span>
                   </button>
                 );
               })()}
@@ -213,7 +213,7 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
                     <span className="aq-affix" data-unit="%"><input id={`${prefix}-managed`} className="ui-input" inputMode="decimal" value={c.publisherShare || ''} placeholder="0" onChange={e => set(c.id, { publisherShare: num(e.target.value) })} /></span>
                   </Field>
                   <Field label="저작권 관리 단체" htmlFor={`${prefix}-society`}>
-                    <select id={`${prefix}-society`} className="ui-select" value={c.society ?? ''} onChange={e => set(c.id, { society: e.target.value || null })}><option value="">모름·입력 전</option>{SOCIETIES.map(s => <option key={s} value={s}>{s}</option>)}</select>
+                    <select id={`${prefix}-society`} className="ui-select" value={c.society ?? ''} onChange={e => set(c.id, { society: e.target.value || null })}><option value="">모름·입력 전</option>{SOCIETIES.map(s => <option key={s} value={s}>{societyName(s)}</option>)}</select>
                   </Field>
                   <Field label="IPI/CAE 번호" htmlFor={`${prefix}-ipi`} help={c.isMe ? '한 번 적으면 계정 정보에 저장돼 다음 곡부터 자동으로 채워져요.' : '모르면 비워 두세요.'}>
                     <input id={`${prefix}-ipi`} className="ui-input" inputMode="numeric" placeholder="작가 식별 번호" value={c.ipi ?? ''} readOnly={!c.external && !c.isMe} onChange={e => set(c.id, { ipi: e.target.value.replace(/\D/g, '').slice(0, 11) || null })} />
