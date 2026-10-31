@@ -1,5 +1,5 @@
 /* Publishing layout only. Cards, controls, colors and typography use Studio's shared components/tokens.
-   anchors: aq-pbl-split aq-pbl-dashboard aq-pbl-album-stats aq-pbl-wizard aq-pbl-work aq-pbl-ar-form aq-pbl-guide aq-pbl-sheet aq-pbl-diff aq-pbl-files aq-pbl-selbar aq-pbl-trackline aq-pbl-people-board aq-pbl-reuse aq-pbl-filter aq-split-writer aq-pbl-missed aq-pen-editor aq-pbl-checks aq-pbl-evidence */
+   anchors: aq-pbl-split aq-pbl-dashboard aq-pbl-album-stats aq-pbl-wizard aq-pbl-work aq-pbl-ar-form aq-pbl-guide aq-pbl-sheet aq-pbl-diff aq-pbl-files aq-pbl-selbar aq-pbl-trackline aq-pbl-people-board aq-pbl-reuse aq-pbl-filter aq-split-writer aq-pbl-missed aq-pen-editor aq-pbl-checks aq-pbl-evidence aq-pbl-income */
 .aq-pbl-split{display:grid;gap:16px;margin:0}
 .aq-pbl-split>.ui-meter{margin-top:-8px}
 .aq-pbl-split>.ui-field-help{margin:0}
@@ -385,3 +385,13 @@
 .aq-pbl-evidence-opts{display:flex;flex-wrap:wrap;gap:6px}
 /* 저작권 관리 신청·계약 — 본인인증 전 안내와 큰 버튼 */
 .aq-pbl-verify{display:grid;gap:12px}
+/* 앨범 퍼블리싱 탭 — 퍼블리싱 수익(저작권료) 카드: 큰 숫자 하나와 한 줄 내역 */
+.aq-pbl-income{display:grid;gap:6px;padding:20px 22px;text-decoration:none;color:inherit}
+.aq-pbl-income-cap{display:inline-flex;align-items:center;gap:6px;font-size:var(--aq-fs-sm);font-weight:700;color:var(--aq-text-3)}
+.aq-pbl-income-num{font-size:30px;line-height:1.2;font-weight:800;letter-spacing:-.02em;color:var(--aq-text)}
+.aq-pbl-income-meta{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:var(--aq-fs-sm);color:var(--aq-text-3)}
+.aq-pbl-income-go{display:inline-flex;align-items:center;gap:2px;justify-self:start;margin-top:4px;font-size:var(--aq-fs-sm);font-weight:700;color:var(--aq-primary-text)}
+.aq-pbl-checks-gap{display:grid;gap:8px;padding:10px 12px;border-radius:var(--aq-r-md);background:var(--aq-amber-50, #fff7ed)}
+.aq-pbl-checks-gap p{display:flex;gap:6px;align-items:flex-start;margin:0;font-size:var(--aq-fs-sm);line-height:1.5;color:var(--aq-text-2)}
+.aq-pbl-checks-gap svg{flex:none;margin-top:3px;color:var(--aq-amber-600, #c2410c)}
+.aq-pbl-checks-gap .ui-btn{justify-self:start}

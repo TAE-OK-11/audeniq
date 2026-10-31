@@ -23,7 +23,10 @@ import { SplitBar, roleText } from '../components/publishing/parts';
 import { SocietyJoin } from '../components/publishing/SocietyJoin';
 import { AttachmentModal } from '../components/publishing/Attachments';
 import { VerifyGate } from '../components/publishing/VerifyGate';
-import { penAsOthers, workIssues } from '../lib/publishingPrep';
+import { creditGaps, penAsOthers, workIssues } from '../lib/publishingPrep';
+import { draftTrackOf } from '../lib/albumPrep';
+import { api } from '../api/client';
+import { WorkSheet } from '../components/publishing/WorkSheet';
 import { Badge, Callout, EmptyState, StatGrid, StatTile } from '../ui';
 import '../styles/split/Upload.css';
 import '../styles/split/Publishing.css';
@@ -120,6 +123,21 @@ export function PublishingApply() {
   // 내 필명인데 다른 사람으로 들어간 참여자 — 남처럼 확인을 기다리고 내 몫이 남의 몫으로 등록된다
   const { data: me } = useAsync(() => pubApi.myCreator(), [], { key: 'my-creator' });
   const penAsOther = (w: Work) => penAsOthers(w.contributors, me);
+  // 발매 크레딧과 곡 참여자가 다른 곡 — 관리 단체는 크레딧과 같은 작사·작곡가로 등록한다. 신청할 때 걸러서 그 자리에서 고치게 한다
+  const relIds = Array.from(new Set(chosen.flatMap(w => w.recordings.map(r => r.releaseId)))).sort();
+  const { data: rels } = useAsync(() => Promise.all(relIds.map(id => api.getRelease(id).catch(() => null))), [relIds.join(',')]);
+  const gapsOf = (w: Work) => {
+    for (const r of w.recordings) {
+      const rel = rels?.find(x => x?.id === r.releaseId);
+      const t = rel?.tracks.find(x => x.id === r.trackId);
+      if (!rel || !t) continue;
+      const d = draftTrackOf(t, rel.draft);
+      const g = creditGaps(w, { composers: t.composers ?? d?.composers, lyricists: t.lyricists ?? d?.lyricists, arrangers: d?.arrangers, instrumental: d?.instrumental });
+      if (g.missing.length || g.extra.length) return g;
+    }
+    return null;
+  };
+  const [sheetFor, setSheetFor] = useState<Work | null>(null);
   const conflicts = chosen.filter(w => w.hasPriorPublisher);
   const pendingPeople = chosen.flatMap(w => w.contributors.filter(c => !c.isMe && c.confirm !== 'confirmed').map(c => ({ w, c })));
 
@@ -263,6 +281,15 @@ export function PublishingApply() {
                     <span>창작 증빙 · 등록 정보</span>
                     <span className="muted">{w.attachments.length ? `자료 ${w.attachments.length}개` : '자료 없음'}{w.createdOn ? ` · 창작 ${w.createdOn}` : ''}</span>
                   </p>
+                  {(() => {
+                    const g = gapsOf(w);
+                    return g && (
+                      <div className="aq-pbl-checks-gap">
+                        <p><Glyph name="warning" size={14} /><span><b>발매 크레딧과 참여자가 달라요.</b> 관리 단체는 크레딧과 같은 작사·작곡가로 등록해요.{g.missing.length > 0 && ` 크레딧에만: ${g.missing.join(', ')}.`}{g.extra.length > 0 && ` 참여자에만: ${g.extra.join(', ')}.`}</span></p>
+                        {(w.myRole === 'owner' || w.myRole === 'editor') && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setSheetFor(w)}>참여자 고치기</button>}
+                      </div>
+                    );
+                  })()}
                   {penAsOther(w).map(c => (
                     <p key={c.id} className="aq-pbl-checks-pen"><Glyph name="user" size={14} />‘{c.name}’은(는) 내 필명인데 다른 사람으로 들어가 있어요. <Link to={`/works/${w.id}?tab=rights`}>곡 화면에서 나로 합치기</Link></p>
                   ))}
@@ -361,6 +388,10 @@ export function PublishingApply() {
         </>
       )}
 
+      {sheetFor && (
+        <WorkSheet work={works?.find(x => x.id === sheetFor.id) ?? sheetFor} all={works ?? []} focus={{ field: 'split' }}
+          releaseId={sheetFor.recordings[0]?.releaseId} onClose={() => setSheetFor(null)} onSaved={() => reloadWorks()} />
+      )}
       {attachFor && <AttachmentModal works={[attachFor.work]} workId={attachFor.work.id} initialKind={attachFor.kind} onClose={() => setAttachFor(null)} onAdded={() => reloadWorks()} />}
     </WizardShell>
   );
