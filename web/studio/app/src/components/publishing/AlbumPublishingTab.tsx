@@ -28,6 +28,7 @@ import { WorkSheet } from './WorkSheet';
 import { AttachmentModal } from './Attachments';
 import { Badge, ChipGroup, IconTile } from '../../ui';
 
+import '../../styles/split/Dashboard.css';
 import '../../styles/split/ReleaseDetail.css';
 import '../../styles/split/Publishing.css';
 
