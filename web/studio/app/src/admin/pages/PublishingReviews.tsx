@@ -11,7 +11,7 @@ import { useAsync } from '../../hooks/useAsync';
 import { Glyph } from '../../components/Glyph';
 import { SplitEditor } from '../../components/publishing/SplitEditor';
 import { RegBadge } from '../../components/publishing/parts';
-import { SOCIETIES, pct, splitReady, sumShares } from '../../lib/publishing';
+import { FIX_FIELDS, SOCIETIES, fixNote, pct, splitReady, sumShares, type FixField } from '../../lib/publishing';
 import { staffApi, type PubAppStatus, type PubApplication, type PubDecisionAction } from '../api';
 import { ago, when } from '../labels';
 import { Badge, ChipGroup, EmptyState, ErrorBox, NoDuty, PageHeader, ReviewTabs, Section, SkeletonList, StatusBadge, useStaff } from '../ui';
@@ -87,16 +87,20 @@ function DecisionForm({ app, action, onDone }: { app: PubApplication; action: Pu
   const [reason, setReason] = useState('');
   const [works, setWorks] = useState<string[]>(app.workIds);
   const [docs, setDocs] = useState<string[]>([]);
+  const [fields, setFields] = useState<FixField[]>([]);
   const [other, setOther] = useState('');
   const [society, setSociety] = useState('KOMCA');
   const [busy, setBusy] = useState(false);
-  const needReason = action === 'REQUEST_CORRECTION' || action === 'REJECT';
+  // 보완은 고칠 항목·서류를 고르고, 의견은 따로 할 말이 있을 때만 — 아티스트 화면은 의견이 있을 때만 검토팀 말풍선을 보인다
+  const needReason = action === 'REJECT';
+  const fixing = action === 'REQUEST_CORRECTION';
   const toggle = (list: string[], set: (v: string[]) => void, v: string) => set(list.includes(v) ? list.filter(x => x !== v) : [...list, v]);
   const submit = async () => {
     setBusy(true);
     try {
       const documents = [...docs, ...other.split(',').map(d => d.trim()).filter(Boolean)];
-      await staffApi.pubDecide(app.id, { action, reason: reason.trim(), work_ids: action === 'REQUEST_CORRECTION' ? works : undefined, documents: action === 'REQUEST_CORRECTION' ? documents : undefined, society: action === 'REGISTER' ? society : undefined });
+      if (fixing && !fields.length && !documents.length && !reason.trim()) { toast('고칠 항목이나 서류를 골라 주세요.', 'error'); return; }
+      await staffApi.pubDecide(app.id, { action, reason: reason.trim(), work_ids: fixing ? works : undefined, fields: fixing ? fields : undefined, documents: fixing ? documents : undefined, society: action === 'REGISTER' ? society : undefined });
       onDone(action === 'APPROVE' ? '승인했어요. 관리 단체 등록을 준비해 주세요.' : action === 'REQUEST_CORRECTION' ? `보완을 요청했어요.${documents.length ? ' 서류는 아티스트의 권리·보완 서류에 올라가요.' : ''}` : action === 'REJECT' ? '반려했어요.' : `${society} 등록 완료로 기록했어요.`);
     } catch (err) { toast(errorMessage(err, '처리하지 못했어요.'), 'error'); } finally { setBusy(false); }
   };
@@ -111,16 +115,25 @@ function DecisionForm({ app, action, onDone }: { app: PubApplication; action: Pu
           </div>
         </fieldset>
       )}
-      {needReason && (
+      {fixing && (
+        <fieldset className="ui-field">
+          <legend>고칠 항목</legend>
+          <div className="ui-chips is-wrap">
+            {(Object.keys(FIX_FIELDS) as FixField[]).map(f => <button key={f} type="button" className="ui-chip is-sm" aria-pressed={fields.includes(f)} onClick={() => toggle(fields, v => setFields(v as FixField[]), f)}>{FIX_FIELDS[f]}</button>)}
+          </div>
+        </fieldset>
+      )}
+      {(needReason || fixing) && (
         <div className="ui-field">
-          <label htmlFor="pubReason">{action === 'REJECT' ? '반려 사유' : '아티스트에게 보낼 요청'}</label>
+          <label htmlFor="pubReason">{action === 'REJECT' ? '반려 사유' : <>검토팀 의견 <span className="aq-optional">선택</span></>}</label>
           <textarea id="pubReason" className="ui-textarea" rows={4} maxLength={2000} value={reason} onChange={e => setReason(e.target.value)}
-            placeholder={action === 'REJECT' ? '예: 기존 퍼블리셔와의 계약이 남아 있어 관리할 수 없어요.' : '예: 공동 작곡가 김하늘 님의 IPI 번호를 적어 주세요.'} />
+            placeholder={action === 'REJECT' ? '예: 기존 퍼블리셔와의 계약이 남아 있어 관리할 수 없어요.' : '항목만으로 부족할 때만 — 예: 김하늘 님은 KOMCA 회원이 아니라 JASRAC IPI를 적어 주세요.'} />
+          {fixing && <small className="ui-field-help">적은 경우에만 아티스트 화면에 ‘AUDENIQ 검토팀’ 의견으로 보여요.</small>}
         </div>
       )}
       {action === 'REQUEST_CORRECTION' && (
         <fieldset className="ui-field">
-          <legend>함께 받을 서류 (선택)</legend>
+          <legend>함께 받을 서류 <span className="aq-optional">선택</span></legend>
           <div className="ui-chips is-wrap">
             {DOCS.map(d => <button key={d} type="button" className="ui-chip is-sm" aria-pressed={docs.includes(d)} onClick={() => toggle(docs, setDocs, d)}>{d}</button>)}
           </div>
@@ -138,7 +151,7 @@ function DecisionForm({ app, action, onDone }: { app: PubApplication; action: Pu
       )}
       <div className="adm-form-actions">
         <button type="button" className={`ui-btn ${action === 'REJECT' ? 'is-danger' : action === 'REQUEST_CORRECTION' ? 'is-warn' : 'is-primary'}${busy ? ' is-busy' : ''}`}
-          disabled={busy || (needReason && !reason.trim()) || (action === 'REQUEST_CORRECTION' && !works.length)} onClick={() => void submit()}>
+          disabled={busy || (needReason && !reason.trim()) || (fixing && (!works.length || (!fields.length && !docs.length && !other.trim() && !reason.trim())))} onClick={() => void submit()}>
           {busy ? '처리 중' : ACTION_TITLE[action]}
         </button>
       </div>
@@ -227,7 +240,7 @@ export function PublishingReviewDetail() {
           {works.map(w => (
             <Section key={w.id} title={w.title} meta={[w.iswc ?? w.internalCode, w.recordings[0]?.releaseTitle].filter(Boolean).join(' · ')}
               action={<RegBadge status={w.registration} />}>
-              {w.fix && <div className="ui-callout is-warn">{w.fix.reason}{w.fix.documents?.length ? ` · 서류: ${w.fix.documents.join(', ')}` : ''}</div>}
+              {w.fix && <div className="ui-callout is-warn">{w.fix.reason}{fixNote(w.fix) && fixNote(w.fix) !== w.fix.reason ? ` — ${fixNote(w.fix)}` : ''}</div>}
               <SplitEditor value={w.contributors} onChange={() => {}} readOnly />
             </Section>
           ))}

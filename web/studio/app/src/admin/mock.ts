@@ -9,6 +9,7 @@ import type {
 } from './api';
 import type { Work, WorkContributor } from '../api/publishing';
 import { applicationHash, type StudioDraft } from './application';
+import { FIX_FIELDS, type FixField } from '../lib/publishing';
 
 // 체험용 손글씨 서명 (작은 SVG)
 const MOCK_SIGNATURE = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 60"><path d="M10 42c14-20 22-30 28-24s-10 26 2 22 18-30 26-28-6 26 6 24 16-18 24-20 4 16 14 14 20-14 30-16 12 10 22 8 20-6 38-10" fill="none" stroke="#1d2433" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>');
@@ -583,13 +584,17 @@ export const mockStaff = {
     const a = pubFind(aid);
     const open = a.status === 'submitted' || a.status === 'in_review';
     const reason = (i.reason ?? '').trim();
-    if ((i.action === 'REQUEST_CORRECTION' || i.action === 'REJECT') && !reason) fail('APPLICATION_REASON_REQUIRED', 400);
+    if (i.action === 'REJECT' && !reason) fail('APPLICATION_REASON_REQUIRED', 400);
+    if (i.action === 'REQUEST_CORRECTION' && !reason && !i.fields?.length && !i.documents?.length) fail('APPLICATION_REASON_REQUIRED', 400);
     if (i.action === 'APPROVE' && open) { a.status = 'approved'; pubRegistration(a, 'ready'); a.history.push({ at: iso(0), text: '승인' }); }
     else if (i.action === 'REQUEST_CORRECTION' && open) {
-      a.status = 'needs_fix'; a.fixReason = reason;
+      // 서버와 같이 reason은 한 줄 요약(고칠 항목·서류), note는 담당자가 따로 쓴 의견
+      const parts = [...(i.fields ?? []).map(f => FIX_FIELDS[f as FixField] ?? f), ...(i.documents?.length ? [`서류 ${i.documents.join(', ')}`] : [])];
+      const summary = parts.length ? `${parts.join(' · ')} 보완` : reason;
+      a.status = 'needs_fix'; a.fixReason = summary;
       const ids = i.work_ids?.length ? i.work_ids : a.workIds;
       pubRegistration(a, 'needs_fix', ids);
-      for (const w of a.works ?? []) if (ids.includes(w.id)) w.fix = { reason, fields: i.fields ?? [], documents: i.documents ?? [], requestedAt: iso(0) };
+      for (const w of a.works ?? []) if (ids.includes(w.id)) w.fix = { reason: summary, note: reason || null, fields: i.fields ?? [], documents: i.documents ?? [], requestedAt: iso(0) };
       a.history.push({ at: iso(0), text: '보완 요청' });
     } else if (i.action === 'REJECT' && (open || a.status === 'needs_fix')) { a.status = 'rejected'; a.fixReason = reason; pubRegistration(a, 'rejected'); a.history.push({ at: iso(0), text: '반려' }); }
     else if (i.action === 'REGISTER' && a.status === 'approved') { pubRegistration(a, 'registered'); a.history.push({ at: iso(0), text: '관리 단체 등록 완료' }); }

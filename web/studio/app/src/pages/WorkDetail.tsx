@@ -9,7 +9,7 @@ import { pubApi, type Work, type WorkContributor } from '../api/publishing';
 import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { MOCK } from '../lib/mode';
-import { APP_LABEL, APP_TONE, CONTRACT_LABEL, CONTRACT_TONE, LANGUAGES, REG_LABEL, REG_SENTENCE, REG_STEPS, WORK_TYPES, pct, regStep, splitIssues, splitReady } from '../lib/publishing';
+import { APP_LABEL, APP_TONE, CONTRACT_LABEL, CONTRACT_TONE, FIX_FIELDS, LANGUAGES, fixNote, isFixField, type FixField, REG_LABEL, REG_SENTENCE, REG_STEPS, WORK_TYPES, pct, regStep, splitIssues, splitReady } from '../lib/publishing';
 import { StageCard } from '../components/StageCard';
 import { STATUS_LABEL, localStamp, statusTone } from '../lib/format';
 import { useToast } from '../components/Toast';
@@ -56,17 +56,20 @@ function nextAction(w: Work): { text: string; tab?: Tab; to?: string; btn: strin
   return null;
 }
 
-/** 보완 요청 — 발매 상세의 보완 카드와 같은 모양(aq-fix-panel): 검토팀 말풍선으로 사유, 고칠 일은 할 일 줄(누르면 그 자리로),
- *  맨 아래 다시 심사받기 하나. 담당자에게 따로 적는 칸은 두지 않는다 — 발매 보완처럼 고친 내용이 곧 답이다.
+/** 보완 요청 — 발매 상세의 보완 카드와 같은 모양(aq-fix-panel): 담당자가 고른 항목·서류를 할 일 줄로(누르면 고칠 자리로),
+ *  맨 아래 다시 심사받기 하나. 담당자가 따로 의견을 남겼을 때만 검토팀 말풍선을 보인다 (발매의 REVIEW_NOTE와 같다).
+ *  아티스트가 담당자에게 적는 칸은 두지 않는다 — 고친 내용이 곧 답이다.
  *  요청한 서류는 발매 보완과 같은 '권리·보완 서류'에서 낸다 — 같은 제출 화면·알림·담당자 확인을 쓴다 */
 function FixPanel({ work, onDone, goRights }: { work: Work; onDone: (w: Work) => void; goRights: () => void }) {
   const toast = useToast();
   const nav = useNavigate();
   const [busy, setBusy] = useState(false);
   const fix = work.fix!;
+  const fields = fix.fields.filter(isFixField);
   const docs = fix.documents ?? [];
-  const infoOk = splitReady(work.contributors) && work.contributors.every(c => c.ipi || c.isMe);
-  const open = (infoOk ? 0 : 1) + docs.length;
+  const note = fixNote(fix);
+  const open = fields.length + docs.length;
+  const goField = (f: FixField) => (f.startsWith('contributors.') ? goRights() : nav(`/works/${work.id}/edit`));
   const send = async () => {
     if (busy) return;
     setBusy(true);
@@ -78,21 +81,24 @@ function FixPanel({ work, onDone, goRights }: { work: Work; onDone: (w: Work) =>
     <section className="aq-fix-panel ui-tone-warn" aria-labelledby="workFixHead">
       <p className="eyebrow">{open ? `보완 요청 ${open}건` : '보완 필요'}</p>
       <h2 id="workFixHead" className="aq-fix-title">
-        {open ? `${open}가지 고치면 다시 심사받을 수 있어요` : '고친 내용을 보내면 바로 다시 심사해요'}
+        {open ? `${open}가지 고치면 다시 심사받을 수 있어요` : '검토팀 의견을 확인하고 고쳐 주세요'}
       </h2>
       <div className="aq-fix-body">
-        <ReviewNote text={fix.reason} />
+        {note && <ReviewNote text={note} />}
         {open > 0 && (
           <ul className="aq-task-list aq-fix-tasks">
-            {!infoOk && (
-              <li>
-                <button type="button" className="aq-task is-warn" onClick={goRights}>
+            {fields.map(f => (
+              <li key={f}>
+                <button type="button" className="aq-task is-warn" onClick={() => goField(f)}>
                   <span className="ui-icon" aria-hidden="true"><Glyph name="pencil" size={18} /></span>
-                  <span className="aq-task-text"><strong>참여자·지분 정보 고치기</strong><small>원래 정보는 담당자 확인 전까지 그대로 남아요</small></span>
+                  <span className="aq-task-text">
+                    <strong>{FIX_FIELDS[f]}</strong>
+                    <small>{f.startsWith('contributors.') ? '참여자·지분에서 고쳐요 · 원래 정보는 담당자 확인 전까지 그대로 남아요' : '곡 정보 고치기에서 고쳐요'}</small>
+                  </span>
                   <span className="aq-task-go">고치러 가기<i aria-hidden="true"><Glyph name="chevron-right" size={14} /></i></span>
                 </button>
               </li>
-            )}
+            ))}
             {docs.map(d => (
               <li key={d}>
                 <button type="button" className="aq-task is-warn" onClick={() => nav('/rights')}>

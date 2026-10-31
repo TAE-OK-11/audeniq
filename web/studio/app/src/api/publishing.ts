@@ -84,7 +84,9 @@ export interface WorkRecording { id: string; releaseId: string; trackId: string;
 export interface WorkEvent { at: string; text: string; who?: string; kind?: 'edit' | 'rights' | 'apply' | 'review' | 'register' | 'file' | 'link' }
 export interface RegistrationStep { status: RegistrationStatus; at: string; note?: string; society?: string }
 
-export interface WorkFix { reason: string; fields: string[]; requestedAt: string; documents?: string[] }
+/** 담당자의 보완 요청 — reason은 한 줄 요약(고칠 항목·서류), note는 담당자가 따로 남긴 의견(쓴 경우만).
+ *  예전 요청에는 note가 없고 reason이 담당자가 쓴 글 그대로다 */
+export interface WorkFix { reason: string; note?: string | null; fields: string[]; requestedAt: string; documents?: string[] }
 
 export interface Work {
   id: string;
@@ -283,8 +285,8 @@ function seedWorks(): Work[] {
       registrationLog: [{ status: 'internal_review', at: '2026-10-20 13:00' }, { status: 'needs_fix', at: '2026-10-24 17:10', note: '공동 작곡가 확인 필요' }],
       application: { id: 'a2', number: 'PUB-2026-0014', status: 'needs_fix' }, contractId: null, myRole: 'owner',
       fix: {
-        reason: '공동 작곡가 김하늘 님의 IPI 번호가 비어 있고, 지분 확인을 아직 받지 못했어요. IPI 번호를 입력하고 공동 작곡 합의서를 올려 주세요.',
-        fields: ['contributors.ipi', 'attachments.proof'], requestedAt: '2026-10-24 17:10', documents: ['공동 작곡 합의서'],
+        reason: '참여자 IPI 번호 · 참여자·지분 · 서류 공동 작곡 합의서 보완', note: null,
+        fields: ['contributors.ipi', 'contributors.split'], requestedAt: '2026-10-24 17:10', documents: ['공동 작곡 합의서'],
       },
       activity: [
         { at: '2026-10-24 17:10', text: '담당자가 보완을 요청했어요.', kind: 'review', who: 'AUDENIQ' },
