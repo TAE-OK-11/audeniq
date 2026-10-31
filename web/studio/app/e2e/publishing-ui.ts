@@ -8,7 +8,7 @@ import { createServer, preview } from 'vite';
 
 const out = 'test-results/publishing-ui';
 const routes = [
-  ['analysis', '/reports?type=publishing', '.aq-pbl-dashboard'],
+  ['analysis', '/reports?type=publishing', '.aq-report-card'],
   ['songs', '/releases?tab=works', '.aq-track-row'],
   ['legacy-redirect', '/publishing?tab=royalties', '.settle-entry'],
   ['album', '/releases/r2?tab=publishing', '.aq-album-pub'],
@@ -120,7 +120,7 @@ try {
   // Analysis separates estimates; the album filter survives tab navigation and application entry.
   await page.goto(base + '/publishing');
   await page.waitForURL('**/reports?type=publishing');
-  await page.locator('.aq-pbl-dashboard').waitFor();
+  await page.locator('.aq-report-card').waitFor();
   assert.match(await page.locator('.aq-report-total').innerText(), /337,860/);
   // Period/condition filter narrows the report and is carried into the royalty list (and its CSV).
   await page.getByLabel('징수 단체').selectOption('JASRAC');
@@ -131,7 +131,7 @@ try {
   assert.equal(await page.locator('#pubRoyaltyList .settle-entry').count(), 1);
   await page.screenshot({ path: `${out}/royalties-filtered-1440.png`, fullPage: true });
   await page.goto(base + '/reports?type=publishing');
-  await page.locator('.aq-pbl-dashboard').waitFor();
+  await page.locator('.aq-report-card').waitFor();
   await page.getByLabel('볼 앨범').selectOption('r2');
   assert.equal(new URL(page.url()).searchParams.get('release'), 'r2');
   // Songs live in 발매·곡 관리; the menu no longer has a separate 퍼블리싱 entry.

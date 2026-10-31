@@ -23,10 +23,11 @@ import { useToast } from '../Toast';
 import { peopleLine } from './parts';
 import { royaltyTotals, saveRoyaltyCsv } from './Royalties';
 import { Money } from '../Money';
-import { PublishingBundleStep, albumPublishing } from './ReleasePublishing';
+import { albumPublishing } from './ReleasePublishing';
+import { Modal } from '../Modal';
 import { WorkSheet } from './WorkSheet';
 import { AttachmentModal } from './Attachments';
-import { Badge, Callout, ChipGroup, KeyValue, StatGrid, StatTile } from '../../ui';
+import { Badge, Callout, ChipGroup, IconTile, StatGrid, StatTile } from '../../ui';
 
 import '../../styles/split/ReleaseDetail.css';
 import '../../styles/split/Publishing.css';
@@ -103,20 +104,16 @@ function ApplyPrep({ title, summary, groups, readyCount, total, onGo, applyTo }:
   );
 }
 
-/** 참여자 확인 현황 — 사람마다 한 줄, 그 사람이 들어간 곡을 아래에. 곡을 누르면 그 참여자 줄이 있는 시트 */
-function Confirmations({ works, onOpen }: { works: Work[]; onOpen: (w: Work, contributorId: string) => void }) {
+/** 참여자 확인 현황 — 준비 점검의 '참여자 확인'을 누르면 뜨는 창. 사람마다 한 줄, 그 사람이 들어간 곡을 아래에.
+ *  탭에 카드로 두면 준비 점검과 같은 이야기를 한 번 더 했다 */
+function PeopleModal({ works, onOpen, onClose }: { works: Work[]; onOpen: (w: Work, contributorId: string) => void; onClose: () => void }) {
   const board = useMemo(() => confirmationBoard(works), [works]);
   const open = board.counts.pending + board.counts.disputed;
   const [filter, setFilter] = useState<PeopleFilter>('open');
-  // 모두 확인했으면 카드를 두지 않는다 — '확인 완료' 목록은 할 일이 아니다 (참여자는 곡 시트에서 볼 수 있다)
-  if (!open) return null;
   const shown = board.people.filter(p => (filter === 'open' ? p.state !== 'confirmed' : p.state === filter));
   return (
-    <section className="aq-relinfo-card aq-pbl-people-board" aria-labelledby="pubPeople">
-      <div className="ui-section-head">
-        <h2 id="pubPeople" className="subhead">참여자 확인 현황</h2>
-        <span className="ui-count is-soft">{board.people.length}명</span>
-      </div>
+    <Modal title={`참여자 확인 현황 · ${board.people.length}명`} onClose={onClose}>
+    <div className="aq-pbl-people-board">
       <ChipGroup size="sm" label="확인 상태" value={filter} onChange={setFilter} options={[
         { value: 'open', label: '미확인', count: open },
         { value: 'pending', label: CONFIRM_LABEL.pending, count: board.counts.pending, hidden: !board.counts.pending },
@@ -148,7 +145,8 @@ function Confirmations({ works, onOpen }: { works: Work[]; onOpen: (w: Work, con
       ) : (
         <p className="aq-empty-val">{filter === 'open' ? '확인을 기다리는 참여자가 없어요.' : '해당하는 참여자가 없어요.'}</p>
       )}
-    </section>
+    </div>
+    </Modal>
   );
 }
 
@@ -160,6 +158,7 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
   const [busy, setBusy] = useState(false);
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const [attaching, setAttaching] = useState(false);
+  const [peopleOpen, setPeopleOpen] = useState(false);
   // 고른 곡 — 시트를 열고 닫아도, 저장해도 그대로 남는다
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   if (!works) return <SkeletonBlock height={240} />;
@@ -189,6 +188,7 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
   // 숫자는 둘 이상이 의미 있을 때만 — 0곡이 줄지은 칸은 아무것도 알려 주지 않는다
   const stats = ([['관리 중', managedTracks], ['심사 중', applyingTracks], ['정리 전', missing]] as const).filter(([, n]) => n > 0);
   const editable = a.mine.filter(w => w.myRole === 'owner' || w.myRole === 'editor');
+  const contractId = a.managed.find(w => w.contractId)?.contractId ?? null;
   // 이 앨범에서 아직 아무 곡도 정리하지 않았으면 처음 시작하는 화면
   const fresh = a.mine.length === 0 && missing > 0;
   const openPrep = !fresh && (prep.groups.some(g => g.state !== 'done') || prep.ready.length > 0);
@@ -202,8 +202,9 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
   };
   const goPrep = (g: PrepGroup) => {
     if (g.key === 'tracks') { void prepare(); return; }
+    if (g.key === 'confirm') { setPeopleOpen(true); return; }
     const w = g.works[0];
-    const issue = w && (g.key === 'confirm' ? w.contributors.find(c => c.confirm !== 'confirmed') : g.key === 'ipi' ? w.contributors.find(c => !c.isMe && !c.ipi) : null);
+    const issue = w && g.key === 'ipi' ? w.contributors.find(c => !c.isMe && !c.ipi) : null;
     if (w) setSheet({ work: w, no: trackNo.get(w.id), focus: { field: g.key, contributorId: issue?.id } });
   };
   const toggle = (id: string) => setPicked(p => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -248,6 +249,28 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
               <StatGrid cols={stats.length as 2 | 3} className="aq-pbl-album-stats">
                 {stats.map(([label, n]) => <StatTile key={label} compact label={label} value={n} unit="곡" />)}
               </StatGrid>
+            )}
+            {/* 계약·저작권료는 한 줄씩 — 따로 카드를 두면 탭이 길어지기만 했다. 자세한 건 계약서·리포트에서 */}
+            {(contractId || albumRoyalties.length > 0) && (
+              <div className="ui-list is-inset aq-pbl-head-rows">
+                {contractId && (
+                  <Link to={`/contracts?pub=${encodeURIComponent(contractId)}`} className="ui-row">
+                    <IconTile size="sm"><Glyph name="sign" size={16} /></IconTile>
+                    <span className="min-0"><span className="ui-row-title">저작권 관리 계약</span><span className="ui-row-meta"><span>{managedTracks}곡 관리 중</span></span></span>
+                    <Glyph name="chevron-right" size={16} />
+                  </Link>
+                )}
+                {albumRoyalties.length > 0 && (
+                  <Link to={`/reports?type=publishing&release=${encodeURIComponent(rel.id)}`} className="ui-row">
+                    <IconTile size="sm"><Glyph name="won" size={16} /></IconTile>
+                    <span className="min-0">
+                      <span className="ui-row-title">누적 저작권료 <Money value={totals.confirmed + totals.paid} /></span>
+                      {totals.estimated > 0 && <span className="ui-row-meta"><span>확정 전 예상 <Money value={totals.estimated} /></span></span>}
+                    </span>
+                    <Glyph name="chevron-right" size={16} />
+                  </Link>
+                )}
+              </div>
             )}
           </>
         )}
@@ -345,38 +368,15 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
         </div>
       )}
 
-      <Confirmations works={a.mine} onOpen={(w, cid) => setSheet({ work: w, no: trackNo.get(w.id), focus: { field: 'confirm', contributorId: cid } })} />
-
-      {/* 계약은 생긴 뒤에만 — 심사·보완 중에는 위 안내가 할 일을 말한다 */}
-      {a.managed.some(w => w.contractId) && (
-        <div className="aq-relinfo-card">
-          <h2 className="subhead">계약</h2>
-          <ol className="aq-bundle-docs"><PublishingBundleStep releaseId={rel.id} /></ol>
-        </div>
-      )}
-
-      {(a.managed.length > 0 || albumRoyalties.length > 0) && (
-        <section className="aq-relinfo-card aq-album-earn" aria-labelledby="albumEarn">
-          <div className="ui-section-head">
-            <h2 id="albumEarn" className="subhead">이 앨범 저작권료</h2>
-            {albumRoyalties.length > 0 && <Link to={`/reports?type=publishing&release=${encodeURIComponent(rel.id)}`} className="aq-head-link">리포트에서 보기<Glyph name="chevron-right" size={14} /></Link>}
-          </div>
-          {albumRoyalties.length ? (
-            <KeyValue cols={2} items={[
-              ['누적 확정 저작권료', <b className="aq-pub-amount"><Money value={totals.confirmed + totals.paid} animate /></b>],
-              ['확정 전 예상', totals.estimated ? <Money value={totals.estimated} /> : '—'],
-            ]} />
-          ) : (
-            <p className="ui-field-help">관리 단체가 사용료를 나눠 주면 여기에 보여 드려요. 보통 사용된 달부터 3~6개월 걸려요.</p>
-          )}
-        </section>
-      )}
-
       {sheet && (
         <WorkSheet work={works.find(x => x.id === sheet.work.id) ?? sheet.work} no={sheet.no} all={works} focus={sheet.focus} releaseId={rel.id}
           onClose={() => setSheet(null)} onSaved={saved} />
       )}
       {attaching && <AttachmentModal works={editable} onClose={() => setAttaching(false)} onAdded={saved} />}
+      {peopleOpen && (
+        <PeopleModal works={a.mine} onClose={() => setPeopleOpen(false)}
+          onOpen={(w, cid) => { setPeopleOpen(false); setSheet({ work: w, no: trackNo.get(w.id), focus: { field: 'confirm', contributorId: cid } }); }} />
+      )}
     </div>
   );
 }

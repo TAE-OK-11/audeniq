@@ -57,7 +57,7 @@
 .aq-pbl-album-stats .ui-stat{background:var(--aq-bg);padding:14px}
 .aq-pbl-track-list .ui-row>.min-0{flex:1}
 .aq-pbl-track-list .ui-row-meta{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.aq-pbl-work #workRights,.aq-pbl-work #workRecordings{scroll-margin-top:calc(var(--aq-header-h) + 72px)}
+.aq-pbl-work #workRights,.aq-pbl-work #workRecordings,.aq-pbl-work #workFiles{scroll-margin-top:calc(var(--aq-header-h) + 72px)}
 .aq-pbl-work .aq-detail-hero .aq-stage{margin-bottom:0}
 .aq-pbl-ar-form{display:grid;gap:20px}
 .aq-pbl-ar-form>h2,.aq-pbl-ar-form>.ui-field{margin:0}
@@ -83,7 +83,7 @@
 /* Override the shared form's outer spacing only inside these grouped publishing forms. */
 #view-new.aq-pbl-wizard .step-section .ui-field{margin:0!important}
 .aq-pbl-album-stats.ui-stats>:last-child:nth-child(odd),.aq-pbl-status .ui-stats>:last-child:nth-child(odd){grid-column:auto}
-.aq-pbl-dashboard .aq-report-card>.aq-report-kv,.aq-pbl-dashboard .aq-report-card>.aq-report-foot{grid-column:1/-1}
+#view-publishing .aq-report-card>.aq-report-kv,#view-publishing .aq-report-card>.aq-report-foot{grid-column:1/-1}
 #view-publishing .aq-report-total .aq-home-report-note .aq-money-unit{font-size:inherit}
 .aq-pbl-royalty-list .settle-entry .settle-entry-amount.is-estimated{color:var(--aq-text-3)}
 .aq-pbl-report-pending{font-size:var(--aq-fs-title)!important;line-height:1.5}
@@ -181,3 +181,5 @@
 .aq-pub-count-actions{display:flex;flex-wrap:wrap;gap:6px}
 /* 숫자 칸이 둘이면 두 칸으로 — 세 칸 자리에 두 개만 앉아 오른쪽이 비었다 */
 .aq-pbl-album-stats.ui-stats.is-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.aq-pbl-head-rows{margin-top:14px}
+.aq-pbl-head-rows .ui-row-title .aq-money,.aq-pbl-head-rows .ui-row-title b{font-variant-numeric:tabular-nums}

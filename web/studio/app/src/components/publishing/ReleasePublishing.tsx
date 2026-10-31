@@ -81,10 +81,13 @@ export function albumPublishing(works: readonly Work[], releaseId: string, track
   const managed = mine.filter(w => w.registration === 'registered' || !!w.contractId);
   const applying = mine.filter(w => w.application && ['submitted', 'in_review', 'needs_fix'].includes(w.application.status));
   const fix = applying.some(w => w.application!.status === 'needs_fix') || mine.some(w => w.registration === 'needs_fix');
+  // 트랙 기준으로 센다 — 한 곡이 원곡·Inst.처럼 두 트랙에 실리면 곡 수로는 '1곡 관리 중'이 됐다
+  const tracksOf = (list: Work[]) => list.reduce((n, w) => n + w.recordings.filter(r => r.releaseId === releaseId).length, 0);
+  const managedTracks = tracksOf(managed);
   const status = fix ? { tone: 'amber' as const, label: '보완 필요' }
-    : managed.length && managed.length >= trackCount ? { tone: 'green' as const, label: '관리 중' }
+    : managedTracks && managedTracks >= trackCount ? { tone: 'green' as const, label: '관리 중' }
     : applying.length ? { tone: 'violet' as const, label: '심사 중' }
-    : managed.length ? { tone: 'blue' as const, label: `${managed.length}곡 관리 중` }
+    : managedTracks ? { tone: 'blue' as const, label: `${managedTracks}곡 관리 중` }
     : null;
   return { mine, managed, applying, fix, status };
 }

@@ -33,12 +33,13 @@ import '../styles/split/ReleaseDetail.css';
 import '../styles/split/Publishing.css';
 
 type Tab = 'overview' | 'rights' | 'register' | 'recordings' | 'revenue' | 'files';
-// 탭은 발매 상세와 같은 순서·이름으로 — 정보 · 성과 · (배급·계약 자리에) 저작권·계약 · 자료 (변경 기록은 사용자에게 보여 주지 않는다).
-// 예전 '참여자·권리'·'녹음·발매' 탭은 정보 탭 안의 칸이 됐다 (주소로 오면 그 칸으로 내려간다)
+// 탭은 발매 상세와 같은 순서·이름으로 — 정보 · 성과 · (배급·계약 자리에) 저작권·계약 (변경 기록은 사용자에게 보여 주지 않는다).
+// 예전 '참여자·권리'·'녹음·발매'·'자료' 탭은 정보 탭 안의 칸이 됐다 (주소로 오면 그 칸으로 내려간다).
+// 자료는 첨부 목록 하나뿐이라 탭 하나를 차지할 만큼이 아니었다
 const TABS: { value: Tab; label: string }[] = [
-  { value: 'overview', label: '정보' }, { value: 'revenue', label: '성과' }, { value: 'register', label: '저작권·계약' }, { value: 'files', label: '자료' },
+  { value: 'overview', label: '정보' }, { value: 'revenue', label: '성과' }, { value: 'register', label: '저작권·계약' },
 ];
-const SECTION: Partial<Record<Tab, string>> = { rights: 'workRights', recordings: 'workRecordings' };
+const SECTION: Partial<Record<Tab, string>> = { rights: 'workRights', recordings: 'workRecordings', files: 'workFiles' };
 const label = <T extends readonly (readonly [string, string])[]>(list: T, v: string) => list.find(([k]) => k === v)?.[1] ?? v;
 const Empty = ({ children }: { children: string }) => <span className="aq-empty-val">{children}</span>;
 
@@ -483,9 +484,9 @@ export function WorkDetail() {
           </div>
         )}
 
-        {view === 'files' && (
+        {view === 'overview' && (
           <div className="aq-detail-stack">
-            <div className="aq-relinfo-card">
+            <div className="aq-relinfo-card" id="workFiles">
               <div className="ui-section-head">
                 <h2 className="subhead">자료</h2>
                 {canEdit && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setAttaching(true)}><Glyph name="clip" size={14} className="aq-glyph-lead" />자료 첨부</button>}

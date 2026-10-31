@@ -18,7 +18,7 @@ import { MiniTrend } from '../components/MiniTrend';
 import { publishingReport } from '../lib/publishingReport';
 import { periodLabel } from '../data/reports';
 import { money, num } from '../lib/format';
-import { Badge, EmptyState, IconTile, KeyValue, Meter, StatGrid, StatTile } from '../ui';
+import { Badge, EmptyState, IconTile, KeyValue, Meter } from '../ui';
 import { MonthField } from '../components/Picker';
 import {
   ROYALTY_PERIODS, filterFromParams, filterRoyalties, filterToParams, isDefaultFilter, royaltyFilterLabel, type RoyaltyFilter, type RoyaltyPeriod,
@@ -32,13 +32,6 @@ interface Scope { releaseId: string; title: string }
 const inScope = (w: Work, scope: Scope | null) => !scope || w.recordings.some(r => r.releaseId === scope.releaseId);
 const SONG_FILTERS: [WorkFilter, string][] = [['all', '전체'], ['managed', '관리 중'], ['review', '심사 중'], ['fix', '보완 필요'], ['none', '미신청'], ['unreleased', '미발매']];
 const shortWon = (n: number) => (n >= 10000 ? `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}만` : num(n));
-const PATH = [
-  ['저작권 관리 신청', '맡길 곡과 지분을 고르고 신청서에 서명'],
-  ['담당자 심사', '참여자·지분·권리를 확인해요'],
-  ['계약서 서명', '수수료·관리 범위를 확인하고 서명'],
-  ['관리 단체 등록', 'KOMCA 등 관리 단체에 곡을 등록해요'],
-  ['저작권료 정산', '들어온 저작권료는 배급 정산과 같은 잔액으로'],
-] as const;
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, '');
 // 손이 가야 하는 곡이 먼저 — 보완 요청 → 맡기지 않음 → 심사 중 → 관리 중
 const urgency = (w: Work) => (matchFilter(w, 'fix') ? 0 : matchFilter(w, 'none') ? 1 : matchFilter(w, 'review') ? 2 : 3);
@@ -61,63 +54,23 @@ function SongRow({ w, releaseId }: { w: Work; releaseId?: string }) {
 
 /** 분석 — 저작권료 리포트 · 곡 관리 현황 · 곡별 저작권료 */
 function Overview({ scope, works, rows, label }: { scope: Scope | null; works: Work[] | null; rows: Royalty[] | null; label: string }) {
-  const { data: sum, loading } = useAsync(() => pubApi.summary(), [], { key: 'pub-summary' });
-  if (loading && !sum) return <SkeletonRows count={3} />;
-  if (!sum || !works) return null;
-  // 관리 현황은 선택한 앨범을 기준으로 센다
-  const mine = works.filter(w => inScope(w, scope));
-  const s = scope ? {
-    ...sum, works: {
-      total: mine.length, managed: mine.filter(w => matchFilter(w, 'managed')).length,
-      inProgress: mine.filter(w => matchFilter(w, 'review') || matchFilter(w, 'fix')).length,
-      unregistered: mine.filter(w => matchFilter(w, 'none')).length,
-    },
-  } : sum;
+  if (!works) return <SkeletonRows count={3} />;
+  const total = works.filter(w => inScope(w, scope)).length;
+  // 리포트는 돈 이야기만 — 곡이 몇 곡 관리 중인지는 '발매·곡 관리 › 곡 저작권'에, 처음 순서는 앨범 '퍼블리싱' 탭에 있다
   return (
     <div className="aq-detail-stack">
-      {!s.works.total ? (
+      {!total ? (
         <EmptyState icon={<Glyph name="scale" size={22} />} title={scope ? '이 앨범에는 아직 등록한 곡이 없어요' : '아직 등록한 곡이 없어요'}
-          actions={<Link to={scope ? `/releases/${encodeURIComponent(scope.releaseId)}?tab=publishing` : '/publishing/apply'} className="ui-btn is-primary">{scope ? '앨범에서 시작하기' : '저작권 관리 신청'}</Link>}>
+          actions={<Link to={scope ? `/releases/${encodeURIComponent(scope.releaseId)}?tab=publishing` : '/releases?tab=works'} className="ui-btn is-primary">{scope ? '앨범에서 시작하기' : '곡 저작권 보기'}</Link>}>
           곡을 쓴 사람에게는 작사·작곡 저작권이 있어요. 맡기면 방송·스트리밍 저작권료를 AUDENIQ이 받아 배급 정산과 같은 잔액으로 드려요.
         </EmptyState>
       ) : (
         <>
-          <div className="aq-pbl-dashboard">
-            <RoyaltyReport rows={rows} label={label} />
-            <section className="ui-card aq-pbl-status" aria-labelledby="pubHeroSongs">
-              <div className="ui-section-head"><h2 id="pubHeroSongs">곡 관리 현황</h2><span className="ui-count is-soft">전체 {s.works.total}곡</span></div>
-              <StatGrid cols={3}>
-                <StatTile compact label="관리 중" value={s.works.managed} unit="곡" />
-                <StatTile compact label="진행 중" value={s.works.inProgress} unit="곡" />
-                <StatTile compact label="미신청" value={s.works.unregistered} unit="곡" />
-              </StatGrid>
-              <Link to={`/releases?tab=works${scope ? `&release=${encodeURIComponent(scope.releaseId)}` : ''}`} className="aq-head-link">곡별 상태 보기<Glyph name="chevron-right" size={14} /></Link>
-              {scope && <Link to={`/releases/${encodeURIComponent(scope.releaseId)}?tab=publishing`} className="ui-btn is-soft is-block">이 앨범에서 관리하기<Glyph name="chevron-right" size={14} /></Link>}
-            </section>
-          </div>
+          <RoyaltyReport rows={rows} label={label} />
           <SongRoyalties rows={rows} works={works} label={label} />
-          {/* 아직 맡긴 곡이 없을 때만 — 처음 쓰는 사람에게 순서를 */}
-          {!scope && !s.works.managed && <PathGuide />}
         </>
       )}
     </div>
-  );
-}
-
-/** 퍼블리싱은 이렇게 진행돼요 — 처음 쓰는 사람을 위한 순서 */
-function PathGuide() {
-  return (
-      <section className="aq-doc-path-wrap" aria-labelledby="pubPath">
-        <h2 id="pubPath">퍼블리싱은 이렇게 진행돼요</h2>
-        <ol className="ui-card ui-list is-inset aq-doc-path">
-          {PATH.map(([title, when], i) => (
-            <li key={title} className="ui-row">
-              <IconTile size="sm"><span className="aq-preview-no">{i + 1}</span></IconTile>
-              <span className="ui-row-body min-0"><b className="ui-row-title">{title}</b><span className="ui-row-meta">{when}</span></span>
-            </li>
-          ))}
-        </ol>
-      </section>
   );
 }
 
