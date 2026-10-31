@@ -269,7 +269,8 @@ function DistributionReport() {
           <strong className="aq-report-amount"><Money value={totalRevenue} animate /></strong>
           {insight?.revenueChange != null && (
             <span className={`aq-report-change ${insight.revenueChange >= 0 ? 'is-up' : 'is-down'}`}>
-              지난달보다 {pctText(insight.revenueChange)}
+              {/* 합계(여러 달) 아래의 증감은 최근 달 기준 — 어느 달인지 말하지 않으면 12개월 합계가 133% 늘어난 것처럼 읽혔다 */}
+              {period === 'month' ? '지난달보다' : `${monthShort(thisMonth)} 수익이 지난달보다`} {pctText(insight.revenueChange)}
             </span>
           )}
           <p className="aq-report-sub">

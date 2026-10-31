@@ -143,7 +143,7 @@ export function ReleaseAddons({ releaseId, editable }: { releaseId: string; edit
     <section className="aq-manage-group" aria-label="부가서비스">
       <h3 className="aq-manage-group-title">부가서비스</h3>
       <section className="ui-card aq-manage-card aq-release-addons" aria-labelledby="releaseAddonsTitle">
-        <ManageHead id="releaseAddonsTitle" icon="layers" title="신청한 부가서비스"
+        <ManageHead id="releaseAddonsTitle" icon="layers" title={rows.length || waiting ? '신청한 부가서비스' : '부가서비스 신청'}
           status={waiting ? { tone: 'amber', label: `결제 대기 ${waiting}건` } : null} />
         <p className="ui-field-help">
           {waiting ? '결제를 기다리는 부가서비스가 있어요. 이 발매 맨 위에서 결제할 수 있어요.'

@@ -374,13 +374,14 @@ export function Dashboard() {
   // 바로가기는 메뉴와 같은 이름만 두지 않고 지금 상태를 한 줄로 — 들어가기 전에 무엇이 있는지 보인다
   const gridStatus: Partial<Record<GridKey, { text: string; tone?: 'warn' }>> = {};
   if (!loading) {
-    if (needs) gridStatus.releases = { text: `보완 필요 ${needs}건`, tone: 'warn' };
+    // 맨 위 큰 카드가 이미 '보완이 필요한 발매'면 바로가기는 같은 말을 되풀이하지 않는다
+    if (needs && urgent?.icon !== 'alert') gridStatus.releases = { text: `보완 필요 ${needs}건`, tone: 'warn' };
     else if (reviewing) gridStatus.releases = { text: `검토 중 ${reviewing}건` };
     else if (releases.length) gridStatus.releases = { text: `발매 ${releases.length}건` };
   }
   // 홈의 돈은 정산 하나 — 리포트 바로가기는 재생 수로
   if (!reportEmpty && report.plays > 0) gridStatus.reports = { text: `${Number(report.period.slice(5))}월 재생 ${num(report.plays)}회` };
-  if (docFix) gridStatus.contracts = { text: `보완 서류 ${docFix}건`, tone: 'warn' };
+  if (docFix && urgent?.to !== '/rights') gridStatus.contracts = { text: `보완 서류 ${docFix}건`, tone: 'warn' };
   else if (toSign) gridStatus.contracts = { text: `서명할 계약서 ${toSign}건` };
 
   return (
