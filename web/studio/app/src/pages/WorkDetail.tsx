@@ -197,6 +197,11 @@ export function WorkDetail() {
     );
   }
 
+  // 할 말이 있는 탭만 — 발매도 저작권료도 없는 곡의 '성과'(0원 두 칸), 신청 전 곡의 '저작권·계약'(신청 안 했어요 두 번)은 빈 화면이었다.
+  // 신청은 머리의 '저작권 관리 신청' 버튼이 입구
+  const applied = !!w.application || !!w.contractId || w.registration !== 'none' || !!w.fix;
+  const shownTabs = TABS.filter(t => (t.value !== 'revenue' || w.recordings.length > 0 || !!royalties?.length) && (t.value !== 'register' || applied));
+  const view: Tab = shownTabs.some(t => t.value === tab) ? tab : 'overview';
   const canEdit = w.myRole === 'owner' || w.myRole === 'editor';
   const next = nextAction(w);
   const distRows = reportRows.filter(r => w.recordings.some(rec => (r.releaseId ? r.releaseId === rec.releaseId : r.release === rec.releaseTitle) && r.track === rec.title));
@@ -257,7 +262,8 @@ export function WorkDetail() {
   const buttons = canEdit && (
     <>
       <Link to={`/works/${w.id}/edit${backToAlbum ? `?release=${encodeURIComponent(fromRelease!)}` : ''}`} className="ui-btn is-soft">정보 고치기</Link>
-      {canApply ? <Link to={`/publishing/apply?work=${w.id}`} className="ui-btn is-primary">저작권 관리 신청</Link>
+      {/* 지분이 맞지 않으면 신청이 막힌다 — 그때는 진한 버튼을 신청에 두지 않는다 (위 안내의 '지분 고치기'가 할 일) */}
+      {canApply ? <Link to={`/publishing/apply?work=${w.id}`} className={`ui-btn ${splitReady(w.contributors) ? 'is-primary' : 'is-soft'}`}>저작권 관리 신청</Link>
         : <Link to={`/ar?work=${w.id}`} className="ui-btn is-soft">A&R 제출</Link>}
     </>
   );
@@ -293,12 +299,12 @@ export function WorkDetail() {
       </div>
 
       <div className="aq-detail-tabs" style={{ top: 'var(--aq-header-h)' }}>
-        <Tabs label="곡 상세 메뉴" value={tab} onChange={setTab} className="is-fill"
-          items={TABS.map(t => ({ ...t, count: t.value === 'register' && w.fix ? 1 : undefined }))} />
+        <Tabs label="곡 상세 메뉴" value={view} onChange={setTab} className="is-fill"
+          items={shownTabs.map(t => ({ ...t, count: t.value === 'register' && w.fix ? 1 : undefined }))} />
       </div>
 
-      <div className="ui-tab-panel" key={tab}>
-        {tab === 'overview' && (
+      <div className="ui-tab-panel" key={view}>
+        {view === 'overview' && (
           <div className="aq-detail-stack">
             {next && (
               <Callout tone={next.tone} action={next.to
@@ -317,7 +323,7 @@ export function WorkDetail() {
                 <div><dt>ISWC</dt><dd>{w.iswc ?? <Empty>{`발급 전 · ${w.internalCode}`}</Empty>}</dd></div>
                 <div><dt>기존 퍼블리셔</dt><dd>{w.hasPriorPublisher ? (w.priorPublisher || '있음') : '없음'}</dd></div>
                 <div><dt>내 역할</dt><dd>{me ? `${roleText(me)} · ${pct(me.share)}` : <Empty>참여하지 않음</Empty>}</dd></div>
-                <div><dt>연결된 녹음</dt><dd>{w.recordings.length ? `${w.recordings.length}개` : <Empty>미공개</Empty>}</dd></div>
+                <div><dt>연결된 녹음</dt><dd>{w.recordings.length ? `${w.recordings.length}개` : <Empty>미발매</Empty>}</dd></div>
                 {w.altTitles.length > 0 && <div className="is-wide"><dt>대체 제목</dt><dd>{w.altTitles.join(' · ')}</dd></div>}
               </dl>
               {w.description && <><h2 className="subhead">곡 설명</h2><p className="muted small break">{w.description}</p></>}
@@ -325,7 +331,7 @@ export function WorkDetail() {
           </div>
         )}
 
-        {tab === 'overview' && (
+        {view === 'overview' && (
           <div className="aq-detail-stack" id="workRights">
             {me && me.confirm !== 'confirmed' && w.myRole === 'contributor' && (
               <Callout tone={me.confirm === 'disputed' ? 'danger' : 'warn'} action={me.confirm === 'pending' && (
@@ -371,7 +377,7 @@ export function WorkDetail() {
           </div>
         )}
 
-        {tab === 'register' && (
+        {view === 'register' && (
           <div className="aq-detail-stack">
             {w.fix && canEdit && <FixPanel work={w} onDone={update} goRights={() => setTab('rights')} />}
             <div className="aq-relinfo-card">
@@ -417,7 +423,7 @@ export function WorkDetail() {
           </div>
         )}
 
-        {tab === 'overview' && (
+        {view === 'overview' && (
           <div className="aq-relinfo-card" id="workRecordings">
             <div className="ui-section-head">
               <h2 className="subhead">연결된 녹음·발매</h2>
@@ -449,7 +455,7 @@ export function WorkDetail() {
           </div>
         )}
 
-        {tab === 'revenue' && (
+        {view === 'revenue' && (
           <div className="aq-detail-stack">
             {/* 한 곡이 번 돈을 한 화면에 — 녹음 배급 수익과 저작권료는 다른 돈이라 나란히 두되 더하지 않는다 */}
             <StatGrid cols={2}>
@@ -477,7 +483,7 @@ export function WorkDetail() {
           </div>
         )}
 
-        {tab === 'files' && (
+        {view === 'files' && (
           <div className="aq-detail-stack">
             <div className="aq-relinfo-card">
               <div className="ui-section-head">

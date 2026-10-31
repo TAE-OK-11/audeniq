@@ -179,3 +179,5 @@
 .aq-pbl-royalty-section{margin-top:28px}
 .aq-pbl-royalty-section>.subhead{margin:0 0 8px}
 .aq-pub-count-actions{display:flex;flex-wrap:wrap;gap:6px}
+/* 숫자 칸이 둘이면 두 칸으로 — 세 칸 자리에 두 개만 앉아 오른쪽이 비었다 */
+.aq-pbl-album-stats.ui-stats.is-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}

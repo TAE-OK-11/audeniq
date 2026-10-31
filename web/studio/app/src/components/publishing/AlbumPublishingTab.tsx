@@ -47,9 +47,23 @@ function ApplyPrep({ title, summary, groups, readyCount, total, onGo, applyTo }:
   title: string; summary: string; groups: PrepGroup[]; readyCount: number; total: number;
   onGo: (g: PrepGroup) => void; applyTo: string | null;
 }) {
-  const [all, setAll] = useState(false);
-  const todo = groups.filter(g => g.state === 'todo');
-  const shown = todo.length && !all ? todo : groups;
+  // 끝난 항목('보완 요청 없음', '모두 정리했어요')은 할 일이 아니다 — 남은 일만 보여 준다
+  const open = groups.filter(g => g.state !== 'done');
+  const apply = applyTo && readyCount > 0 && <Link to={applyTo} className="ui-btn is-primary is-block">{readyCount}곡 저작권 관리 신청</Link>;
+  if (!open.length) {
+    // 남은 일이 없으면 목록 대신 한 줄과 신청 버튼만
+    return (
+      <section className="aq-relinfo-card aq-prep" aria-labelledby="pubPrepTitle">
+        <div className="aq-prep-head">
+          <div className="min-0">
+            <h2 className="subhead" id="pubPrepTitle">신청 준비가 끝났어요</h2>
+            <p className="aq-prep-sub">{readyCount ? `${readyCount}곡 모두 참여자와 지분을 확인했어요` : summary}</p>
+          </div>
+        </div>
+        {apply}
+      </section>
+    );
+  }
   return (
     <section className="aq-relinfo-card aq-prep" aria-labelledby="pubPrepTitle">
       <div className="aq-prep-head">
@@ -57,20 +71,21 @@ function ApplyPrep({ title, summary, groups, readyCount, total, onGo, applyTo }:
           <h2 className="subhead" id="pubPrepTitle">{title}</h2>
           <p className="aq-prep-sub">{summary}</p>
         </div>
-        {total > 0 && <p className="aq-prep-count" aria-label={`${total}곡 중 ${readyCount}곡 신청 가능`}><b>{readyCount}</b>/{total}</p>}
+        {/* 진행 숫자는 여러 곡일 때만 — 1곡이면 '1/1'은 할 말이 없다 */}
+        {total > 1 && <p className="aq-prep-count" aria-label={`${total}곡 중 ${readyCount}곡 신청 가능`}><b>{readyCount}</b>/{total}</p>}
       </div>
-      {total > 0 && <div className="aq-prep-bar" aria-hidden="true"><i style={{ ['--p' as string]: `${Math.round((readyCount / total) * 100)}%` }} /></div>}
+      {total > 1 && <div className="aq-prep-bar" aria-hidden="true"><i style={{ ['--p' as string]: `${Math.round((readyCount / total) * 100)}%` }} /></div>}
       <ul className="aq-task-list aq-prep-list">
-        {shown.map(g => {
+        {open.map(g => {
           const body = (
             <>
-              <span className={`ui-icon${g.state === 'done' ? ' is-green' : g.state === 'wait' ? ' is-gray' : ''}`} aria-hidden="true">
-                <Glyph name={g.state === 'done' ? 'check' : g.state === 'wait' ? 'clock' : PREP_ICON[g.key]} size={18} />
+              <span className={`ui-icon${g.state === 'wait' ? ' is-gray' : ''}`} aria-hidden="true">
+                <Glyph name={g.state === 'wait' ? 'clock' : PREP_ICON[g.key]} size={18} />
               </span>
               <span className="aq-task-text"><strong>{g.label}</strong><small>{g.sub}</small></span>
             </>
           );
-          const go = g.state !== 'done' && (g.key === 'tracks' || g.works.length > 0);
+          const go = g.key === 'tracks' || g.works.length > 0;
           return (
             <li key={g.key} className={`is-${g.state}`}>
               {go ? (
@@ -83,13 +98,7 @@ function ApplyPrep({ title, summary, groups, readyCount, total, onGo, applyTo }:
           );
         })}
       </ul>
-      {(todo.length > 0 && shown.length < groups.length) || all ? (
-        <button type="button" className="aq-task-more" aria-expanded={all} onClick={() => setAll(v => !v)}>
-          {all ? '할 일만 보기' : `끝난 항목 ${groups.length - shown.length}개 보기`}
-          <Glyph name="chevron-down" size={14} className={all ? 'is-flip' : undefined} />
-        </button>
-      ) : null}
-      {applyTo && readyCount > 0 && <Link to={applyTo} className="ui-btn is-primary is-block">신청 가능한 {readyCount}곡 저작권 관리 신청</Link>}
+      {apply}
     </section>
   );
 }
@@ -98,8 +107,9 @@ function ApplyPrep({ title, summary, groups, readyCount, total, onGo, applyTo }:
 function Confirmations({ works, onOpen }: { works: Work[]; onOpen: (w: Work, contributorId: string) => void }) {
   const board = useMemo(() => confirmationBoard(works), [works]);
   const open = board.counts.pending + board.counts.disputed;
-  const [filter, setFilter] = useState<PeopleFilter>(open ? 'open' : 'confirmed');
-  if (!board.people.length) return null;
+  const [filter, setFilter] = useState<PeopleFilter>('open');
+  // 모두 확인했으면 카드를 두지 않는다 — '확인 완료' 목록은 할 일이 아니다 (참여자는 곡 시트에서 볼 수 있다)
+  if (!open) return null;
   const shown = board.people.filter(p => (filter === 'open' ? p.state !== 'confirmed' : p.state === filter));
   return (
     <section className="aq-relinfo-card aq-pbl-people-board" aria-labelledby="pubPeople">
@@ -107,11 +117,11 @@ function Confirmations({ works, onOpen }: { works: Work[]; onOpen: (w: Work, con
         <h2 id="pubPeople" className="subhead">참여자 확인 현황</h2>
         <span className="ui-count is-soft">{board.people.length}명</span>
       </div>
-      <ChipGroup size="sm" label="확인 상태" value={filter} onChange={setFilter} hideZero={false} options={[
+      <ChipGroup size="sm" label="확인 상태" value={filter} onChange={setFilter} options={[
         { value: 'open', label: '미확인', count: open },
-        { value: 'pending', label: CONFIRM_LABEL.pending, count: board.counts.pending },
-        { value: 'disputed', label: CONFIRM_LABEL.disputed, count: board.counts.disputed },
-        { value: 'confirmed', label: CONFIRM_LABEL.confirmed, count: board.counts.confirmed },
+        { value: 'pending', label: CONFIRM_LABEL.pending, count: board.counts.pending, hidden: !board.counts.pending },
+        { value: 'disputed', label: CONFIRM_LABEL.disputed, count: board.counts.disputed, hidden: !board.counts.disputed },
+        { value: 'confirmed', label: CONFIRM_LABEL.confirmed, count: board.counts.confirmed, hidden: !board.counts.confirmed },
       ]} />
       {shown.length ? (
         <ul className="aq-pbl-people-list">
@@ -167,10 +177,17 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
   const albumRoyalties = (royalties ?? []).filter(r => workIds.has(r.workId));
   const totals = royaltyTotals(albumRoyalties);
   const fixWork = a.mine.find(w => w.registration === 'needs_fix' || w.application?.status === 'needs_fix');
+  // 숫자는 트랙 기준으로 — 한 곡이 원곡·Inst.처럼 두 트랙에 실리면 '2곡 중 1곡'으로 어긋났다
+  const trackCount = (list: Work[]) => rel.tracks.filter(t => { const w = byTrack.get(t.id); return !!w && list.includes(w); }).length;
+  const managedTracks = trackCount(a.managed);
+  const applyingTracks = trackCount(a.applying);
   const text = a.fix ? '심사 중에 보완할 곡이 생겼어요. 고쳐서 다시 내면 심사가 이어져요.'
-    : a.managed.length ? `${rel.tracks.length}곡 중 ${a.managed.length}곡의 저작권을 AUDENIQ이 관리하고 있어요. 저작권료는 정산 잔액에 함께 쌓여요.`
-    : a.applying.length ? `${a.applying.length}곡을 심사하고 있어요. 끝나면 알림으로 알려 드려요.`
+    : managedTracks ? `${managedTracks === rel.tracks.length ? `${rel.tracks.length}곡 모두` : `${rel.tracks.length}곡 중 ${managedTracks}곡의`} 저작권을 AUDENIQ이 관리하고 있어요. 저작권료는 정산 잔액에 함께 쌓여요.`
+    : applyingTracks ? `${applyingTracks}곡을 심사하고 있어요. 끝나면 알림으로 알려 드려요.`
+    : prep.ready.length && !selected.length ? `${prep.ready.length}곡을 바로 신청할 수 있어요. 신청하면 담당자가 참여자와 지분을 확인해요.`
     : '이 앨범 곡의 작사·작곡 저작권도 맡기면 방송·스트리밍 저작권료까지 받아 드려요. (선택)';
+  // 숫자는 둘 이상이 의미 있을 때만 — 0곡이 줄지은 칸은 아무것도 알려 주지 않는다
+  const stats = ([['관리 중', managedTracks], ['심사 중', applyingTracks], ['정리 전', missing]] as const).filter(([, n]) => n > 0);
   const editable = a.mine.filter(w => w.myRole === 'owner' || w.myRole === 'editor');
   // 이 앨범에서 아직 아무 곡도 정리하지 않았으면 처음 시작하는 화면
   const fresh = a.mine.length === 0 && missing > 0;
@@ -227,11 +244,11 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
         ) : (
           <>
             <p className="ui-field-help">{text}</p>
-            <StatGrid cols={3} className="aq-pbl-album-stats">
-              <StatTile compact label="관리 중" value={a.managed.length} unit="곡" />
-              <StatTile compact label="심사 중" value={a.applying.length} unit="곡" />
-              <StatTile compact label="정보 등록 전" value={missing} unit="곡" />
-            </StatGrid>
+            {stats.length > 1 && (
+              <StatGrid cols={stats.length as 2 | 3} className="aq-pbl-album-stats">
+                {stats.map(([label, n]) => <StatTile key={label} compact label={label} value={n} unit="곡" />)}
+              </StatGrid>
+            )}
           </>
         )}
       </section>
@@ -245,7 +262,7 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
       {(openPrep || selected.length > 0) && (
         <ApplyPrep
           title={selected.length ? `고른 ${selected.length}곡 준비 상태` : '저작권 관리 신청 준비'}
-          summary={prep.summary} groups={prep.groups.filter(g => !selected.length || g.key !== 'tracks')}
+          summary={prep.summary} groups={prep.groups.filter(g => g.key !== 'fix' && (!selected.length || g.key !== 'tracks'))}
           readyCount={prep.ready.length} total={scope.filter(w => ['ready', 'blocked'].includes(workStage(w))).length}
           onGo={goPrep} applyTo={prep.ready.length ? applyTo(prep.ready) : null}
         />
@@ -330,7 +347,8 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
 
       <Confirmations works={a.mine} onOpen={(w, cid) => setSheet({ work: w, no: trackNo.get(w.id), focus: { field: 'confirm', contributorId: cid } })} />
 
-      {(a.managed.length > 0 || a.applying.length > 0) && (
+      {/* 계약은 생긴 뒤에만 — 심사·보완 중에는 위 안내가 할 일을 말한다 */}
+      {a.managed.some(w => w.contractId) && (
         <div className="aq-relinfo-card">
           <h2 className="subhead">계약</h2>
           <ol className="aq-bundle-docs"><PublishingBundleStep releaseId={rel.id} /></ol>
