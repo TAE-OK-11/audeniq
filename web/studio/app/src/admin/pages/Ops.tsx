@@ -12,7 +12,8 @@ import { Glyph } from '../../components/Glyph';
 import { Badge, Callout, Field, Tabs, inputClass, selectClass } from '../../ui';
 import { EmptyState, ErrorBox, PageHeader, Section, SkeletonList, useStaff } from '../ui';
 import { ROLE_LABEL, ago, when } from '../labels';
-import { ROLE_LEVEL, levelOf, type StaffRole } from '../api';
+import { ROLE_LEVEL, levelOf, staffApi, type StaffRole } from '../api';
+import { societyName } from '../../lib/publishing';
 import {
   can, entry, opsApi,
   type AgentRow, type DevAppRow, type IssuerRow, type LimitRow, type OpsArea, type OpsIndex, type PartnerRow,
@@ -783,7 +784,8 @@ function Issuers({ index }: { index: OpsIndex | undefined }) {
 export function OpsFinance() {
   const ix = useOpsIndex();
   const index = ix.data;
-  const [tab, setTab] = useState<'payouts' | 'royalty' | 'balance'>('payouts');
+  // 퍼블리싱 요청 › 저작권료에서 '정산 잔액 반영'으로 오면 그 탭부터 (?tab=publishing)
+  const [tab, setTab] = useState<'payouts' | 'royalty' | 'publishing' | 'balance'>(() => (new URLSearchParams(window.location.search).get('tab') === 'publishing' ? 'publishing' : 'payouts'));
   // 정산금 추가는 CLI로만 주는 최고 관리자(레벨 4)에게만 보인다 — 서버와 DB가 다시 확인한다
   const owner = can(index, 'balance', 'credit');
   return (
@@ -793,9 +795,10 @@ export function OpsFinance() {
         <>
           <Tabs label="정산·지급" value={tab} onChange={setTab} items={[
             { value: 'payouts', label: '지급 처리' }, { value: 'royalty', label: '로열티 정산' },
+            ...(can(index, 'publishing', 'post') ? [{ value: 'publishing' as const, label: '퍼블리싱 저작권료' }] : []),
             ...(owner ? [{ value: 'balance' as const, label: '정산금 추가' }] : []),
           ]} />
-          {tab === 'payouts' ? <PayoutDesk index={index} /> : tab === 'royalty' ? <RoyaltyDesk index={index} /> : <BalanceDesk index={index} />}
+          {tab === 'payouts' ? <PayoutDesk index={index} /> : tab === 'royalty' ? <RoyaltyDesk index={index} /> : tab === 'publishing' ? <PublishingDesk index={index} /> : <BalanceDesk index={index} />}
         </>
       )}
     </OpsPage>
@@ -1014,6 +1017,48 @@ function BalanceDesk({ index }: { index: OpsIndex | undefined }) {
           )}
         </Section>
       ))}
+      {modal}
+    </>
+  );
+}
+
+/** 퍼블리싱 저작권료 반영 — '퍼블리싱 요청 › 저작권료'에서 확정한 명세서를 아티스트 정산 잔액에 넣는다 (0174).
+ *  작업 공간마다 장부에 받은 금액 · 수수료 · 아티스트 몫을 기록하고 지급 완료로 바꾼다. 한 번만, 인증 코드를 한 번 더 받는다 */
+function PublishingDesk({ index }: { index: OpsIndex | undefined }) {
+  const { run, busy, modal } = useRun(index);
+  const { data, loading, error, reload } = useAsync(() => staffApi.pubStatements(), []);
+  const waiting = (data?.items ?? []).filter(s => s.status === 'confirmed');
+  const done = (data?.items ?? []).filter(s => s.status === 'paid').slice(0, 10);
+  return (
+    <>
+      <Section title="반영할 명세서">
+        <p className="ui-field-help">확정한 명세서만 반영해요. 반영하면 아티스트 잔액에 쌓이고 알림이 가요. 되돌리려면 반대 기록이 필요해요.</p>
+        {error ? <ErrorBox message={error} onRetry={reload} /> : loading && !data ? <SkeletonList rows={2} /> : !waiting.length ? (
+          <EmptyState title="반영할 명세서가 없어요">‘퍼블리싱 요청 › 저작권료’에서 명세서를 올리고 확정하면 이곳에 보여요.</EmptyState>
+        ) : (
+          <div className="ui-list">
+            {waiting.map(st => (
+              <div key={st.id} className="ui-row is-flat">
+                <span className="adm-min">
+                  <span className="ui-row-title">{societyName(st.source)} · {st.period}</span>
+                  <span className="ui-row-meta"><span>{st.rowCount}줄</span><span>징수 <Money value={st.totalCollected} /></span>{st.currency && st.currency !== 'KRW' && <span>{st.currency} · 환율 {String(st.fxRate)}</span>}</span>
+                </span>
+                <button type="button" className="ui-btn is-primary is-sm" disabled={busy}
+                  onClick={async () => { if (await run('publishing', 'post', { statement_id: st.id }, { confirm: { title: '정산 잔액에 반영할까요?', message: `${societyName(st.source)} ${st.period} 명세서를 작업 공간마다 장부에 기록하고 지급 완료로 바꿔요.`, confirmLabel: '반영' }, done: '정산 잔액에 반영했어요.' })) reload(); }}>
+                  정산 잔액에 반영
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+      {done.length > 0 && (
+        <Section title="최근 반영">
+          <div className="ui-list is-inset">
+            {done.map(st => <div key={st.id} className="ui-row is-flat"><span className="adm-min"><span className="ui-row-title">{societyName(st.source)} · {st.period}</span><span className="ui-row-meta"><span><Money value={st.totalCollected} /></span>{st.postedAt && <span>{ago(st.postedAt)}</span>}</span></span><Badge tone="green">반영 완료</Badge></div>)}
+          </div>
+        </Section>
+      )}
       {modal}
     </>
   );

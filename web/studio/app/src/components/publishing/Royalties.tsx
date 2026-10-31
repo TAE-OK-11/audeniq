@@ -67,6 +67,8 @@ export function RoyaltyTable({ rows, showWork = true, emptyText, summary = true,
         <ChipGroup size="sm" label="지급 상태" value={status} onChange={setStatus}
           options={[{ value: 'all', label: '전체', count: counts.all }, ...(['confirmed', 'estimated', 'paid'] as const).map(s => ({ value: s, label: ROYALTY_STATUS_LABEL[s], count: counts[s] ?? 0 }))]} />
         <button type="button" className="ui-btn is-soft is-sm" disabled={!shown.length} onClick={() => saveRoyaltyCsv(shown, csvLabel)}><Glyph name="download" size={14} className="aq-glyph-lead" />명세서 CSV</button>
+        {/* 세금·회계용 — 분기마다 곡별 합계가 있는 한 장 (인쇄·PDF) */}
+        <Link to="/reports/publishing/statement" className="ui-btn is-soft is-sm"><Glyph name="doc" size={14} className="aq-glyph-lead" />분기 명세서 PDF</Link>
       </div>
       {!shown.length && <EmptyState compact title="이 상태의 저작권료가 없어요" actions={<button type="button" className="ui-btn is-soft is-sm" onClick={() => setStatus('all')}>전체 내역 보기</button>}>다른 지급 상태를 선택해 주세요.</EmptyState>}
       <div className="aq-catalog-cards aq-stagger aq-pbl-royalty-list">

@@ -41,6 +41,23 @@ export interface PubApplication {
 export type PubDecisionAction = 'APPROVE' | 'REQUEST_CORRECTION' | 'REJECT' | 'REGISTER';
 export interface PubDecisionInput { action: PubDecisionAction; reason?: string; work_ids?: string[]; fields?: string[]; documents?: string[]; society?: string }
 
+/** 퍼블리싱 요청 (0173) — 담당자가 답하는 아티스트 요청과 저작권료 명세서 */
+export interface PubChange { orgId: string; orgName: string; work: Work }
+export interface PubContractRequest {
+  id: string; orgId: string; orgName: string; number: string; status: string; endDate: string | null; commissionRate: number; works: string[];
+  renewal: { months: number; requestedAt: string } | null; terminationRequestedAt: string | null;
+}
+export interface StaffArSubmission {
+  id: string; workId: string; workTitle: string; orgId: string; orgName: string; genre: string; mood: string[]; description: string; references: string;
+  scope: 'internal' | 'partners'; sync?: boolean; status: 'submitted' | 'in_review' | 'needs_fix' | 'reviewed' | 'proposing' | 'closed';
+  fixReason: string | null; fixReply?: string | null; submittedAt: string; history: { at: string; text: string }[]; demoName: string | null; lyrics: string | null;
+}
+export type ArDecisionAction = 'CLAIM' | 'FIX' | 'REVIEWED' | 'PROPOSING' | 'CLOSE';
+export interface PubStatement { id: string; source: string; period: string; status: 'estimated' | 'confirmed' | 'paid'; fileName: string | null; rowCount: number; totalCollected: number; importedAt: string; currency?: string; fxRate?: string | number | null; postedAt?: string | null }
+export interface RoyaltyRowInput { work: string; kind: string; country: string; collected: number }
+export interface RoyaltyImportInput { source: string; period: string; status: 'estimated' | 'confirmed'; fileName?: string; currency?: string; fxRate?: number; rows: RoyaltyRowInput[]; preview?: boolean }
+export interface RoyaltyImportResult { id?: string; errors: number; rows: { line: number; work?: string; workTitle?: string; orgName?: string; collected?: number; fee?: number; net?: number; error?: string }[] }
+
 export interface QueueRelease {
   id: string; org_id: string; org_name: string; title: string; release_type: string; status: string;
   revision_id: string | null; artist: string | null; release_date: string | null; submitted_at: string | null;
@@ -378,6 +395,16 @@ const remote = {
   pubApplication: (aid: string) => req<PubApplication>(`/api/staff/publishing/applications/${id(aid)}`),
   pubClaim: (aid: string) => req<PubApplication>(`/api/staff/publishing/applications/${id(aid)}/claim`, { method: 'POST' }),
   pubDecide: (aid: string, body: PubDecisionInput) => req<PubApplication>(`/api/staff/publishing/applications/${id(aid)}/decision`, { method: 'POST', body }),
+  pubChanges: () => req<Page<PubChange>>('/api/staff/publishing/changes'),
+  pubChangeDecide: (wid: string, body: { approve: boolean; reason?: string }) => req<Work>(`/api/staff/publishing/works/${id(wid)}/change`, { method: 'POST', body }),
+  pubContractRequests: () => req<Page<PubContractRequest>>('/api/staff/publishing/contract-requests'),
+  pubContractDecide: (cid: string, body: { kind: 'renewal' | 'termination'; approve: boolean; reason?: string }) =>
+    req<{ id: string; outcome: string }>(`/api/staff/publishing/contracts/${id(cid)}/request`, { method: 'POST', body }),
+  pubArList: (status?: string) => req<Page<StaffArSubmission>>(`/api/staff/publishing/ar${qs({ status })}`),
+  pubArDecide: (aid: string, body: { action: ArDecisionAction; reason?: string }) => req<StaffArSubmission>(`/api/staff/publishing/ar/${id(aid)}/decision`, { method: 'POST', body }),
+  pubStatements: () => req<Page<PubStatement>>('/api/staff/publishing/royalties'),
+  pubRoyaltyImport: (body: RoyaltyImportInput) => req<RoyaltyImportResult>('/api/staff/publishing/royalties', { method: 'POST', body, timeoutMs: 60_000 }),
+  pubStatementStatus: (sid: string, status: 'confirmed') => req<{ id: string; status: string }>(`/api/staff/publishing/royalties/${id(sid)}/status`, { method: 'POST', body: { status } }),
   identityLookup: (email: string) => req<IdentityAccount>('/api/staff/identity/lookup', { method: 'POST', body: { email } }),
   identityVerify: (uid: string, body: IdentityVerifyInput) => req<IdentityAccount>(`/api/staff/identity/${id(uid)}/verify`, { method: 'POST', body }),
 };

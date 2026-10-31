@@ -137,6 +137,8 @@ export interface Work {
   samples?: SampleUse[];
   /** 기존 퍼블리셔 계약이 끝나는 날 — 그 다음부터 AUDENIQ이 징수한다 */
   priorPublisherUntil?: string | null;
+  /** 지난 지분 변경 요청에 담당자가 한 답 (0173) — 반려면 사유 */
+  changeDecision?: { outcome: 'applied' | 'rejected'; note: string | null; at: string | null } | null;
   contributors: WorkContributor[];
   attachments: WorkAttachment[];
   recordings: WorkRecording[];
@@ -222,6 +224,8 @@ export interface PublishingContract {
   contentHash?: string | null;
   applicationId?: string;
   applicationNumber?: string;
+  /** 연장·종료 요청에 담당자가 한 답 (0173) */
+  requestDecision?: { outcome: 'renewed' | 'renewal_rejected' | 'ended' | 'termination_rejected'; note: string | null; at: string | null } | null;
   /** 계약한 곡이 실린 발매 — 계약서 화면에서 그 발매 묶음에 보인다 */
   releaseIds?: string[];
   rowVersion?: number;
@@ -277,6 +281,8 @@ export interface ArSubmission {
   status: ArStatus;
   submittedAt: string;
   fixReason?: string | null;
+  /** 보완 요청에 아티스트가 남긴 답 */
+  fixReply?: string | null;
   history: { at: string; text: string }[];
 }
 export type ArInput = Pick<ArSubmission, 'workId' | 'genre' | 'mood' | 'description' | 'references' | 'scope' | 'sync'> & { demoName?: string; lyrics?: string; consent: boolean; idempotencyKey: string };
@@ -980,6 +986,19 @@ const mockApi = {
       return structuredClone(s);
     });
   },
+  /** 보완 요청에 답하고 다시 심사받기 */
+  async resubmitAr(id: string, reply: string) {
+    await wait(300);
+    return mutate(d => {
+      const a = d.ar.find(x => x.id === id);
+      if (!a) throw notFound();
+      if (a.status !== 'needs_fix') throw new ApiError('보완 요청을 받은 제출만 다시 낼 수 있어요.', 422, 'AR_STATE');
+      a.status = 'in_review';
+      a.fixReply = reply.trim() || null;
+      a.history.push({ at: stampNow(), text: '보완 제출' });
+      return structuredClone(a);
+    });
+  },
   async withdrawAr(id: string) {
     await wait(300);
     return mutate(d => {
@@ -1071,6 +1090,7 @@ const remoteApi = {
   listAr: () => orEmpty(req<{ items: ArSubmission[] }>(orgPath('/ar/submissions')).then(r => r.items), [] as ArSubmission[]),
   submitAr: (input: ArInput) => req<ArSubmission>(orgPath('/ar/submissions'), { method: 'POST', body: input }),
   withdrawAr: (id: string) => req<ArSubmission>(orgPath(`/ar/submissions/${enc(id)}/withdraw`), { method: 'POST' }),
+  resubmitAr: (id: string, reply: string) => req<ArSubmission>(orgPath(`/ar/submissions/${enc(id)}/resubmit`), { method: 'POST', body: { reply } }),
   reset() { /* 실서버에는 없음 */ },
 };
 

@@ -138,6 +138,27 @@ function SubmitForm({ works, preset, busyIds, releasedPreset, onDone, onClose, o
   );
 }
 
+/** 담당자 보완 요청에 답하고 다시 심사받기 — 데모를 바꿨으면 곡 화면에서 먼저 올린다 */
+function FixReply({ s, onDone }: { s: ArSubmission; onDone: () => void }) {
+  const toast = useToast();
+  const [reply, setReply] = useState('');
+  const [busy, setBusy] = useState(false);
+  const send = async () => {
+    setBusy(true);
+    try { await pubApi.resubmitAr(s.id, reply); toast('보완해서 다시 냈어요. 담당자가 이어서 들어요.', 'success'); onDone(); }
+    catch (e) { toast(errorMessage(e, '보내지 못했어요. 다시 시도해 주세요.'), 'error'); } finally { setBusy(false); }
+  };
+  return (
+    <div className="aq-pbl-ar-fix">
+      <Callout tone="warn"><b>담당자 보완 요청</b> {s.fixReason}</Callout>
+      <p className="ui-field-help">데모나 가사를 바꿨다면 <Link to={`/works/${s.workId}`} className="aq-inline-link">곡 화면</Link>에서 먼저 올린 뒤 보내 주세요.</p>
+      <label className="sr-only" htmlFor={`arReply-${s.id}`}>담당자에게 남길 말</label>
+      <textarea id={`arReply-${s.id}`} className="ui-textarea" rows={2} maxLength={1000} value={reply} onChange={e => setReply(e.target.value)} placeholder="무엇을 고쳤는지 짧게 남겨 주세요 (선택)" />
+      <button type="button" className={`ui-btn is-primary is-sm${busy ? ' is-busy' : ''}`} disabled={busy} onClick={() => void send()}>보완해서 다시 보내기</button>
+    </div>
+  );
+}
+
 export function OpenAr() {
   const [params, setParams] = useSearchParams();
   const preset = params.get('work');
@@ -191,7 +212,8 @@ export function OpenAr() {
                     <Glyph name="chevron-right" size={16} />
                   </Link>
                   {s.status !== 'closed' && <StageCard steps={AR_STEPS} current={arStep(s.status)} tone={s.status === 'needs_fix' ? 'warn' : undefined} label="A&R 진행 단계" />}
-                  {s.fixReason && <Callout tone="warn">{s.fixReason}</Callout>}
+                  {s.status === 'needs_fix' && s.fixReason ? <FixReply s={s} onDone={reload} />
+                    : s.fixReason && s.status === 'in_review' && s.fixReply ? <p className="ui-field-help">보완해서 다시 냈어요 — “{s.fixReply}”</p> : null}
                   {['submitted', 'in_review', 'needs_fix'].includes(s.status) && (
                     <div className="row-actions"><button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => void withdraw(s)}>제출 취소</button></div>
                   )}

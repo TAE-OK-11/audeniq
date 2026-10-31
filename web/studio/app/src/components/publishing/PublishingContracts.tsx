@@ -73,6 +73,13 @@ export function ContractManage({ contract, canEdit, doc }: { contract: Publishin
       </dl>
       {!ended && <Meter total={total} parts={[{ value: total - Math.max(0, left), tone: left <= 45 ? 'amber' : 'primary' }]} label={`계약 기간 ${Math.max(0, left)}일 남음`} />}
       {c.renewal && <p className="ui-field-help">{termLabel(c.renewal.months)} 연장을 요청했어요 · {localStamp(c.renewal.requestedAt)}</p>}
+      {/* 지난 요청에 담당자가 한 답 */}
+      {!c.renewal && !c.terminationRequestedAt && c.requestDecision && (
+        <p className={`ui-field-help${c.requestDecision.outcome.endsWith('rejected') ? ' is-warn' : ''}`}>
+          {{ renewed: '연장 요청이 처리됐어요. 위 계약 기간이 새 종료일이에요.', renewal_rejected: '연장 요청이 반려됐어요.', ended: '계약이 종료됐어요.', termination_rejected: '종료 요청이 반려됐어요.' }[c.requestDecision.outcome]}
+          {c.requestDecision.note && ` — ${c.requestDecision.note}`}
+        </p>
+      )}
       {c.terminationRequestedAt && <p className="ui-field-help is-warn">종료를 요청했어요 · {localStamp(c.terminationRequestedAt)}</p>}
       {/* 버튼은 한 줄에 — 계약서 보기가 따로 아래 줄에 떨어져 있었다. 종료 요청은 위험한 일이라 맨 끝 글자 버튼으로 */}
       {(doc || (canEdit && !ended && !c.terminationRequestedAt)) && (

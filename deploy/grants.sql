@@ -146,6 +146,9 @@ GRANT SELECT,INSERT,UPDATE ON portal.pub_contracts TO audeniq_api;
 GRANT SELECT,INSERT,UPDATE ON portal.pub_split_invites TO audeniq_api;
 -- Open A&R 제출 (0172): 제출·목록·취소. 이력은 operations.audit_events.
 GRANT SELECT,INSERT,UPDATE ON portal.pub_ar_submissions TO audeniq_api;
+-- 퍼블리싱 저작권료 (0173): 담당자가 관리 단체 명세서를 올리고(INSERT) 확정·지급 표시를 고친다(UPDATE). 아티스트는 읽기만.
+-- 정산 잔액 반영(posting)은 다른 저작권료처럼 finance owner CLI.
+GRANT SELECT,INSERT,UPDATE ON portal.pub_royalty_statements, portal.pub_royalties TO audeniq_api;
 GRANT USAGE ON SCHEMA finance TO audeniq_api;
 GRANT SELECT ON finance.ledger_transactions,finance.ledger_entries,finance.payout_orders,finance.royalty_reports,finance.report_lines,finance.finance_holds TO audeniq_api;
 -- Held (disputed) royalties are not withdrawable (0124).
@@ -341,6 +344,8 @@ IF EXISTS (SELECT FROM pg_roles WHERE rolname='audeniq_staff_ops') THEN
   GRANT EXECUTE ON FUNCTION finance.staff_credit_balance(uuid,uuid,numeric,text,text) TO audeniq_staff_ops;
   -- payouts and royalty reports
   GRANT INSERT,UPDATE ON finance.payout_orders,finance.finance_holds,finance.royalty_reports,finance.report_lines TO audeniq_staff_ops;
+  -- 퍼블리싱 저작권료 반영 (0174): 확정한 명세서를 장부에 기록하고 지급 완료로 표시한다
+  GRANT UPDATE ON portal.pub_royalty_statements, portal.pub_royalties TO audeniq_staff_ops;
   GRANT INSERT ON finance.ledger_transactions,finance.ledger_entries,finance.payout_returns,finance.royalty_receipts,
     finance.royalty_match_candidates,finance.royalty_postings,finance.split_allocations TO audeniq_staff_ops;
   GRANT UPDATE ON portal.payout_requests TO audeniq_staff_ops;

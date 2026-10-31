@@ -145,6 +145,8 @@ pub const OPS: &[Op] = &[
     op("royalty", "match", FIN, true, false),
     op("royalty", "receipt", FIN, true, true),
     op("royalty", "post", FIN, true, true),
+    // Publishing statements (0174): credit a confirmed statement to the artists' balances.
+    op("publishing", "post", FIN, true, true),
     // 정산금 직접 추가: CLI로만 주는 OWNER만 (0159가 DB에서도 다시 확인)
     op("balance", "show", L4, false, false),
     op("balance", "credit", L4, true, true),
@@ -813,6 +815,9 @@ pub async fn run(
             json!({"order_id": id, "return_id": return_id})
         }
 
+        ("publishing", "post") => {
+            crate::publishing::post_statement(pool, actor, a.uuid("statement_id")?).await?
+        }
         ("royalty", "show") => royalty_show(pool, a.uuid("org_id")?, a.uuid("report_id")?).await?,
         ("royalty", name) => {
             let org = a.uuid("org_id")?;
@@ -1098,6 +1103,7 @@ mod tests {
             ("staff", "revoke"),
             ("payouts", "manual"),
             ("royalty", "post"),
+            ("publishing", "post"),
             ("identifiers", "register"),
             ("partners", "go-live"),
             ("balance", "credit"),

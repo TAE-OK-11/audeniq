@@ -1280,3 +1280,422 @@ async fn open_ar_and_work_details(pool: PgPool) {
         (StatusCode::UNPROCESSABLE_ENTITY, Some("WORK_RELEASED"))
     );
 }
+
+/// Staff answer what artists ask (0173): share changes, contract renewal / termination, Open A&R review, and
+/// royalties from a society statement that the artist then sees.
+#[sqlx::test]
+async fn staff_answer_artist_requests(pool: PgPool) {
+    let (app, _store) = app(pool.clone()).await;
+    admit_signature(&pool).await;
+    let u = user(&app).await;
+    let base = format!("/api/orgs/{}", u.org);
+    let st = user(&app).await;
+    sqlx::query("INSERT INTO identity.staff_members(user_id,role,granted_by) VALUES($1,'ADMIN','test-operator')")
+        .bind(st.user).execute(&pool).await.unwrap();
+
+    // A managed work: applied, approved, signed, registered.
+    let (_, w) = call(&app, "POST", &format!("{base}/works"), json!({
+        "title": "겨울 편지", "origin": "other_release", "externalRelease": {"artist": "이온", "title": "겨울 편지"}, "contributors": people(&u, 60.0, 40.0)
+    }), Some(&u)).await;
+    let id = w["id"].as_str().unwrap().to_string();
+    let code = w["internalCode"].as_str().unwrap().to_string();
+    let (_, a) = call(
+        &app,
+        "POST",
+        &format!("{base}/publishing/applications"),
+        apply(&[&id], "key-staff-ops"),
+        Some(&u),
+    )
+    .await;
+    let aid = a["id"].as_str().unwrap();
+    call(
+        &app,
+        "POST",
+        &format!("/api/staff/publishing/applications/{aid}/claim"),
+        json!({}),
+        Some(&st),
+    )
+    .await;
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("/api/staff/publishing/applications/{aid}/decision"),
+        json!({"action": "APPROVE", "reason": ""}),
+        Some(&st),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, list) = call(
+        &app,
+        "GET",
+        &format!("{base}/publishing/contracts"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    let c = list["items"][0].clone();
+    let cid = c["id"].as_str().unwrap().to_string();
+    let ticks: Vec<String> = c["confirmations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x["id"].as_str().unwrap().to_string())
+        .collect();
+    let (s, signed) = call(&app, "POST", &format!("{base}/publishing/contracts/{cid}/sign"), json!({"signerName": "서린", "signature": SIG, "confirmations": ticks, "rowVersion": c["rowVersion"]}), Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{signed}");
+    let end = signed["endDate"].as_str().unwrap().to_string();
+
+    // Share change: rejected with a reason, asked again, applied.
+    let (_, w) = call(
+        &app,
+        "GET",
+        &format!("{base}/works/{id}"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    let (_, w) = call(
+        &app,
+        "PUT",
+        &format!("{base}/works/{id}/rights"),
+        json!({"contributors": people(&u, 50.0, 50.0), "row_version": w["rowVersion"]}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(w["pendingChange"]["contributors"][0]["share"], 50.0);
+    let (_, changes) = call(
+        &app,
+        "GET",
+        "/api/staff/publishing/changes",
+        json!({}),
+        Some(&st),
+    )
+    .await;
+    assert_eq!(changes["items"][0]["work"]["id"], id.as_str());
+    let (s, e) = call(
+        &app,
+        "POST",
+        &format!("/api/staff/publishing/works/{id}/change"),
+        json!({"approve": false}),
+        Some(&st),
+    )
+    .await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("STAFF_REASON_REQUIRED"))
+    );
+    call(
+        &app,
+        "POST",
+        &format!("/api/staff/publishing/works/{id}/change"),
+        json!({"approve": false, "reason": "공동 작곡 합의서가 필요해요."}),
+        Some(&st),
+    )
+    .await;
+    let (_, w) = call(
+        &app,
+        "GET",
+        &format!("{base}/works/{id}"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert!(w["pendingChange"].is_null());
+    assert_eq!(w["changeDecision"]["outcome"], "rejected");
+    assert_eq!(w["changeDecision"]["note"], "공동 작곡 합의서가 필요해요.");
+    let (_, w) = call(
+        &app,
+        "PUT",
+        &format!("{base}/works/{id}/rights"),
+        json!({"contributors": people(&u, 50.0, 50.0), "row_version": w["rowVersion"]}),
+        Some(&u),
+    )
+    .await;
+    assert!(
+        w["changeDecision"].is_null(),
+        "a new request clears the last answer"
+    );
+    let (s, w) = call(
+        &app,
+        "POST",
+        &format!("/api/staff/publishing/works/{id}/change"),
+        json!({"approve": true}),
+        Some(&st),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{w}");
+    assert_eq!(w["contributors"][0]["share"], 50.0);
+    assert_eq!(
+        w["contributors"][1]["confirm"], "pending",
+        "a co-writer whose share changed confirms again"
+    );
+
+    // Renewal approved: the end date moves 12 months. Termination asked, then rejected.
+    call(
+        &app,
+        "POST",
+        &format!("{base}/publishing/contracts/{cid}/renewal"),
+        json!({"months": 12}),
+        Some(&u),
+    )
+    .await;
+    let (_, reqs) = call(
+        &app,
+        "GET",
+        "/api/staff/publishing/contract-requests",
+        json!({}),
+        Some(&st),
+    )
+    .await;
+    assert_eq!(reqs["items"][0]["renewal"]["months"], 12);
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("/api/staff/publishing/contracts/{cid}/request"),
+        json!({"kind": "renewal", "approve": true}),
+        Some(&st),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, list) = call(
+        &app,
+        "GET",
+        &format!("{base}/publishing/contracts"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    let renewed = &list["items"][0];
+    assert!(renewed["renewal"].is_null());
+    assert_eq!(renewed["requestDecision"]["outcome"], "renewed");
+    let next_year = format!("{}{}", end[..4].parse::<i32>().unwrap() + 1, &end[4..]);
+    assert_eq!(renewed["endDate"], next_year.as_str());
+    call(
+        &app,
+        "POST",
+        &format!("{base}/publishing/contracts/{cid}/termination"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    call(&app, "POST", &format!("/api/staff/publishing/contracts/{cid}/request"), json!({"kind": "termination", "approve": false, "reason": "관리 단체 절차가 진행 중이에요."}), Some(&st)).await;
+    let (_, list) = call(
+        &app,
+        "GET",
+        &format!("{base}/publishing/contracts"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (
+            list["items"][0]["status"].as_str(),
+            list["items"][0]["requestDecision"]["outcome"].as_str()
+        ),
+        (Some("active"), Some("termination_rejected"))
+    );
+
+    // Open A&R review: claim, fix, the artist answers, reviewed, proposing, closed.
+    let (_, demo) = call(
+        &app,
+        "POST",
+        &format!("{base}/works"),
+        json!({"title": "새벽 네 시", "contributors": people(&u, 60.0, 40.0)}),
+        Some(&u),
+    )
+    .await;
+    let did = demo["id"].as_str().unwrap();
+    call(
+        &app,
+        "POST",
+        &format!("{base}/works/{did}/attachments"),
+        json!({"kind": "demo", "name": "demo.mp3", "size": 10}),
+        Some(&u),
+    )
+    .await;
+    let (_, ar) = call(&app, "POST", &format!("{base}/ar/submissions"), json!({"workId": did, "genre": "R&B", "mood": ["잔잔한"], "scope": "partners", "consent": true, "idempotencyKey": "key-staff-ar"}), Some(&u)).await;
+    let arid = ar["id"].as_str().unwrap();
+    let (_, queue) = call(
+        &app,
+        "GET",
+        "/api/staff/publishing/ar?status=submitted",
+        json!({}),
+        Some(&st),
+    )
+    .await;
+    assert_eq!(queue["items"][0]["demoName"], "demo.mp3");
+    let ar_path = format!("/api/staff/publishing/ar/{arid}/decision");
+    let decide = |action: &str, reason: &str| {
+        call(
+            &app,
+            "POST",
+            &ar_path,
+            json!({"action": action, "reason": reason}),
+            Some(&st),
+        )
+    };
+    assert_eq!(decide("CLAIM", "").await.1["status"], "in_review");
+    assert_eq!(
+        decide("FIX", "후렴이 담긴 데모로 바꿔 주세요.").await.1["status"],
+        "needs_fix"
+    );
+    let (_, mine) = call(
+        &app,
+        "POST",
+        &format!("{base}/ar/submissions/{arid}/resubmit"),
+        json!({"reply": "후렴까지 넣었어요."}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (mine["status"].as_str(), mine["fixReply"].as_str()),
+        (Some("in_review"), Some("후렴까지 넣었어요."))
+    );
+    assert_eq!(decide("REVIEWED", "").await.1["status"], "reviewed");
+    assert_eq!(decide("PROPOSING", "").await.1["status"], "proposing");
+    let (_, closed) = decide("CLOSE", "").await;
+    let steps: Vec<&str> = closed["history"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| h["text"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        steps,
+        [
+            "제출 완료",
+            "심사 시작",
+            "보완 요청",
+            "보완 제출",
+            "심사 완료",
+            "제안 진행",
+            "종료"
+        ]
+    );
+
+    // Royalties: a statement with an unknown code is refused (preview says which line); the good one is stored.
+    let rows = |work: &str| json!([{"work": work, "kind": "digital", "country": "KR", "collected": 100000}, {"work": code, "kind": "performance", "country": "JP", "collected": 20000}]);
+    let (_, pv) = call(&app, "POST", "/api/staff/publishing/royalties", json!({"source": "KOMCA", "period": "2026-09", "status": "estimated", "rows": rows("AQW-999999"), "preview": true}), Some(&st)).await;
+    assert_eq!(pv["errors"], 1, "{pv}");
+    assert!(pv["rows"][0]["error"].is_string());
+    let (s, _) = call(&app, "POST", "/api/staff/publishing/royalties", json!({"source": "KOMCA", "period": "2026-09", "status": "estimated", "rows": rows("AQW-999999")}), Some(&st)).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    let (s, imp) = call(&app, "POST", "/api/staff/publishing/royalties", json!({"source": "KOMCA", "period": "2026-09", "status": "estimated", "fileName": "komca.csv", "rows": rows(&code)}), Some(&st)).await;
+    assert_eq!(s, StatusCode::OK, "{imp}");
+    assert_eq!(
+        (
+            imp["rows"][0]["fee"].as_i64(),
+            imp["rows"][0]["net"].as_i64()
+        ),
+        (Some(10000), Some(90000)),
+        "the contract's 10% commission"
+    );
+    let (_, mine) = call(
+        &app,
+        "GET",
+        &format!("{base}/works/{id}/royalties"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(mine["items"].as_array().unwrap().len(), 2);
+    assert_eq!(mine["items"][0]["status"], "estimated");
+    let (_, sum) = call(
+        &app,
+        "GET",
+        &format!("{base}/publishing/summary"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(sum["revenue"]["publishing"]["estimated"], 108000);
+    let sid = imp["id"].as_str().unwrap();
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("/api/staff/publishing/royalties/{sid}/status"),
+        json!({"status": "paid"}),
+        Some(&st),
+    )
+    .await;
+    assert_eq!(
+        s,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "estimated is confirmed before paid"
+    );
+    call(
+        &app,
+        "POST",
+        &format!("/api/staff/publishing/royalties/{sid}/status"),
+        json!({"status": "confirmed"}),
+        Some(&st),
+    )
+    .await;
+    // Paid means credited to the balance — only the staff console's posting does it (tests/staff_ops.rs).
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("/api/staff/publishing/royalties/{sid}/status"),
+        json!({"status": "paid"}),
+        Some(&st),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    let (_, all) = call(
+        &app,
+        "GET",
+        &format!("{base}/publishing/royalties"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert!(
+        all["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|r| r["status"] == "confirmed" && r["postedAt"].is_null())
+    );
+    let (_, sum) = call(
+        &app,
+        "GET",
+        &format!("{base}/publishing/summary"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(sum["revenue"]["publishing"]["confirmed"], 108000);
+    let (_, stl) = call(
+        &app,
+        "GET",
+        "/api/staff/publishing/royalties",
+        json!({}),
+        Some(&st),
+    )
+    .await;
+    assert_eq!(
+        (
+            stl["items"][0]["rowCount"].as_i64(),
+            stl["items"][0]["totalCollected"].as_i64()
+        ),
+        (Some(2), Some(120000))
+    );
+    // Each answer reached the artist as a notice.
+    let notices: Vec<String> =
+        sqlx::query_scalar("SELECT title FROM portal.notifications WHERE org_id=$1")
+            .bind(u.org)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    for t in [
+        "‘겨울 편지’ 지분 변경이 반려됐어요.",
+        "‘겨울 편지’ 지분 변경이 반영됐어요.",
+        "저작권 관리 계약이 연장됐어요.",
+        "저작권 관리 계약 종료 요청이 반려됐어요.",
+        "‘새벽 네 시’ A&R 보완 요청이 있어요.",
+        "‘새벽 네 시’ A&R 심사가 끝났어요.",
+        "새 저작권료 예상 내역이 들어왔어요.",
+    ] {
+        assert!(notices.iter().any(|n| n == t), "{t} in {notices:?}");
+    }
+}

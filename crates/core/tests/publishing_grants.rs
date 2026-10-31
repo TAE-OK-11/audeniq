@@ -174,7 +174,7 @@ async fn publishing_screens_work_under_the_api_role(pool: PgPool) {
     }), Some(&u)).await;
     ok(s, &a, "application");
     let staff = user(&app).await;
-    sqlx::query("INSERT INTO identity.staff_members(user_id,role,granted_by) VALUES($1,'REVIEWER','test-operator')")
+    sqlx::query("INSERT INTO identity.staff_members(user_id,role,granted_by) VALUES($1,'ADMIN','test-operator')")
         .bind(staff.user)
         .execute(&pool)
         .await
@@ -229,6 +229,95 @@ async fn publishing_screens_work_under_the_api_role(pool: PgPool) {
     )
     .await;
     ok(s, &v, "renewal request");
+    let cid = contract["id"].as_str().unwrap();
+    let (s, v) = call(
+        &app,
+        "GET",
+        "/api/staff/publishing/contract-requests",
+        json!({}),
+        Some(&staff),
+    )
+    .await;
+    ok(s, &v, "staff contract requests");
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/staff/publishing/contracts/{cid}/request"),
+        json!({"kind": "renewal", "approve": true}),
+        Some(&staff),
+    )
+    .await;
+    ok(s, &v, "staff renew");
+    // A share change of the contracted work, applied by staff.
+    let (_, w) = call(
+        &app,
+        "GET",
+        &format!("{base}/works/{id}"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    let mut split = w["contributors"].clone();
+    split[0]["share"] = json!(50.0);
+    split[0]["publisherShare"] = json!(50.0);
+    split[1]["share"] = json!(50.0);
+    let (s, v) = call(
+        &app,
+        "PUT",
+        &format!("{base}/works/{id}/rights"),
+        json!({"contributors": split, "row_version": w["rowVersion"]}),
+        Some(&u),
+    )
+    .await;
+    ok(s, &v, "share change request");
+    let (s, v) = call(
+        &app,
+        "GET",
+        "/api/staff/publishing/changes",
+        json!({}),
+        Some(&staff),
+    )
+    .await;
+    ok(s, &v, "staff changes");
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/staff/publishing/works/{id}/change"),
+        json!({"approve": true}),
+        Some(&staff),
+    )
+    .await;
+    ok(s, &v, "staff apply change");
+    // Royalties from a statement, seen by the artist.
+    let code = v["internalCode"].as_str().unwrap();
+    let (s, v) = call(&app, "POST", "/api/staff/publishing/royalties", json!({"source": "KOMCA", "period": "2026-09", "status": "estimated", "rows": [{"work": code, "kind": "digital", "country": "KR", "collected": 50000}]}), Some(&staff)).await;
+    ok(s, &v, "royalty import");
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!(
+            "/api/staff/publishing/royalties/{}/status",
+            v["id"].as_str().unwrap()
+        ),
+        json!({"status": "confirmed"}),
+        Some(&staff),
+    )
+    .await;
+    ok(s, &v, "royalty confirmed");
+    for path in [
+        "/api/staff/publishing/royalties".to_string(),
+        format!("{base}/publishing/royalties"),
+        format!("{base}/works/{id}/royalties"),
+        format!("{base}/publishing/summary"),
+    ] {
+        let who = if path.starts_with("/api/staff") {
+            &staff
+        } else {
+            &u
+        };
+        let (s, v) = call(&app, "GET", &path, json!({}), Some(who)).await;
+        ok(s, &v, &path);
+    }
 
     // Open A&R for a song not released yet, with a demo.
     let (s, demo) = call(&app, "POST", &format!("{base}/works"), json!({"title": "새벽 네 시", "contributors": [{"id": "l1", "creatorId": u.party.to_string(), "name": "서린", "roles": ["composer"], "share": 100.0, "publisherShare": 0, "isMe": true}]}), Some(&u)).await;
@@ -245,6 +334,36 @@ async fn publishing_screens_work_under_the_api_role(pool: PgPool) {
     ok(s, &v, "demo");
     let (s, ar) = call(&app, "POST", &format!("{base}/ar/submissions"), json!({"workId": did, "genre": "R&B", "mood": ["잔잔한"], "scope": "internal", "consent": true, "idempotencyKey": "key-grants-ar"}), Some(&u)).await;
     ok(s, &ar, "A&R submit");
+    let arid = ar["id"].as_str().unwrap();
+    let (s, v) = call(
+        &app,
+        "GET",
+        "/api/staff/publishing/ar",
+        json!({}),
+        Some(&staff),
+    )
+    .await;
+    ok(s, &v, "staff A&R list");
+    for (action, reason) in [("CLAIM", ""), ("FIX", "후렴을 넣어 주세요.")] {
+        let (s, v) = call(
+            &app,
+            "POST",
+            &format!("/api/staff/publishing/ar/{arid}/decision"),
+            json!({"action": action, "reason": reason}),
+            Some(&staff),
+        )
+        .await;
+        ok(s, &v, action);
+    }
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("{base}/ar/submissions/{arid}/resubmit"),
+        json!({"reply": "넣었어요."}),
+        Some(&u),
+    )
+    .await;
+    ok(s, &v, "A&R resubmit");
     let (s, v) = call(
         &app,
         "POST",

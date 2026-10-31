@@ -510,7 +510,8 @@ async fn works_json(
     let works = sqlx::query(
         "SELECT w.id, w.internal_code, w.title, w.alt_titles, w.work_type, w.language, w.genre, w.description, w.visibility,
                 w.iswc, w.has_prior_publisher, w.prior_publisher, w.registration, w.fix, w.pending_contributors, w.pending_at,
-                w.origin, w.external_release, w.ai_use, w.original_work, w.samples, w.prior_publisher_until, w.row_version, w.created_at, w.updated_at,
+                w.origin, w.external_release, w.ai_use, w.original_work, w.samples, w.prior_publisher_until,
+                w.change_outcome, w.change_note, w.change_decided_at, w.row_version, w.created_at, w.updated_at,
                 -- The signed contract the work is under (a contract waiting for signature does not count yet).
                 (SELECT c.id FROM portal.pub_contracts c JOIN portal.pub_application_works aw ON aw.application_id=c.application_id
                   WHERE aw.work_id=w.id AND c.status <> 'pending_sign' ORDER BY c.created_at DESC LIMIT 1) AS contract_id
@@ -661,6 +662,10 @@ async fn works_json(
                 "originalWork": w.get::<Option<Value>, _>("original_work"),
                 "samples": w.get::<Value, _>("samples"),
                 "priorPublisherUntil": w.get::<Option<chrono::NaiveDate>, _>("prior_publisher_until").map(|d| d.to_string()),
+                // Staff answer to the last share change (0173).
+                "changeDecision": w.get::<Option<String>, _>("change_outcome").map(|o| json!({
+                    "outcome": o, "note": w.get::<Option<String>, _>("change_note"),
+                    "at": w.get::<Option<DateTime<Utc>>, _>("change_decided_at").map(ts)})),
                 "contributors": people.remove(&id).unwrap_or_default(),
                 "attachments": files.remove(&id).unwrap_or_default(),
                 "recordings": recordings.remove(&id).unwrap_or_default(),
@@ -1166,7 +1171,7 @@ pub async fn put_rights(
     .await?;
     if registration == "registered" || (contracted && !EDITABLE.contains(&registration.as_str())) {
         sqlx::query(
-            "UPDATE portal.pub_works SET pending_contributors=$2, pending_at=now() WHERE id=$1",
+            "UPDATE portal.pub_works SET pending_contributors=$2, pending_at=now(), change_outcome=NULL, change_note=NULL, change_decided_at=NULL WHERE id=$1",
         )
         .bind(id)
         .bind(pending_json(&plan, a.party))
@@ -1313,13 +1318,14 @@ pub struct ArIn {
 const AR_HISTORY: &str = "COALESCE((SELECT jsonb_agg(jsonb_build_object('at',e.occurred_at,'text',
       CASE e.action WHEN 'publishing.ar_submitted' THEN '제출 완료' WHEN 'publishing.ar_withdrawn' THEN '제출 취소'
         WHEN 'publishing.ar_review' THEN '심사 시작' WHEN 'publishing.ar_fix' THEN '보완 요청' WHEN 'publishing.ar_reviewed' THEN '심사 완료'
-        WHEN 'publishing.ar_proposing' THEN '제안 진행' END) ORDER BY e.occurred_at, e.id)
+        WHEN 'publishing.ar_proposing' THEN '제안 진행' WHEN 'publishing.ar_closed' THEN '종료'
+        WHEN 'publishing.ar_resubmitted' THEN '보완 제출' END) ORDER BY e.occurred_at, e.id)
     FROM operations.audit_events e WHERE e.resource_id=s.id AND e.action LIKE 'publishing.ar_%'),'[]')";
 
 async fn ar_json(c: &mut PgConnection, org: Uuid, id: Option<Uuid>) -> Result<Vec<Value>> {
     // Only constant text is formatted in (AR_HISTORY); every value is bound.
     let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
-        "SELECT s.id, s.work_id, w.title, s.genre, s.mood, s.description, s.refs, s.scope, s.sync, s.status, s.fix_reason, s.submitted_at,
+        "SELECT s.id, s.work_id, w.title, s.genre, s.mood, s.description, s.refs, s.scope, s.sync, s.status, s.fix_reason, s.fix_reply, s.submitted_at,
                 {AR_HISTORY} AS history
            FROM portal.pub_ar_submissions s JOIN portal.pub_works w ON w.id=s.work_id
           WHERE s.org_id=$1 AND ($2::uuid IS NULL OR s.id=$2) ORDER BY s.submitted_at DESC, s.id"
@@ -1335,6 +1341,7 @@ async fn ar_json(c: &mut PgConnection, org: Uuid, id: Option<Uuid>) -> Result<Ve
                    "genre": r.get::<String, _>("genre"), "mood": r.get::<Vec<String>, _>("mood"), "description": r.get::<String, _>("description"),
                    "references": r.get::<String, _>("refs"), "scope": r.get::<String, _>("scope"), "sync": r.get::<bool, _>("sync"),
                    "status": r.get::<String, _>("status"), "fixReason": r.get::<Option<String>, _>("fix_reason"),
+                   "fixReply": r.get::<Option<String>, _>("fix_reply"),
                    "submittedAt": ts(r.get("submitted_at")), "history": r.get::<Value, _>("history")})
         })
         .collect())
@@ -1458,6 +1465,725 @@ pub async fn withdraw_ar(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result
         .ok_or(Error::NotFound)?;
     tx.commit().await?;
     Ok(out)
+}
+
+/// The artist answers a fix request and sends the demo back to review.
+#[derive(Deserialize, Default)]
+pub struct ArReplyIn {
+    #[serde(default)]
+    pub reply: String,
+}
+
+pub async fn resubmit_ar(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    id: Uuid,
+    i: ArReplyIn,
+) -> Result<Value> {
+    let reply = clean(&i.reply, 1000, "AR_REPLY_INVALID")?;
+    let mut tx = s.pool.begin().await?;
+    auth::membership(&mut tx, a, org, true).await?;
+    let n = sqlx::query("UPDATE portal.pub_ar_submissions SET status='in_review', fix_reply=NULLIF($3,'') WHERE org_id=$1 AND id=$2 AND status='needs_fix'")
+        .bind(org)
+        .bind(id)
+        .bind(&reply)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    if n != 1 {
+        return Err(Error::PolicyGate("AR_STATE"));
+    }
+    audit(&mut tx, a, org, id, "publishing.ar_resubmitted").await?;
+    let out = ar_json(&mut tx, org, Some(id))
+        .await?
+        .pop()
+        .ok_or(Error::NotFound)?;
+    tx.commit().await?;
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// Staff: share changes, contract requests, Open A&R, royalties (migration 0173)
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct StaffAnswerIn {
+    pub approve: bool,
+    #[serde(default)]
+    pub reason: String,
+    /// Contract requests: "renewal" or "termination".
+    #[serde(default)]
+    pub kind: String,
+}
+
+/// Works with a share change waiting for review, as the artist's screen shows them.
+pub async fn staff_changes(s: &AppState, h: &HeaderMap) -> Result<Value> {
+    let st = staff::staff(s, h, false).await?;
+    staff::require(&st, Duty::Review)?;
+    let mut c = s.pool.acquire().await?;
+    let rows = sqlx::query(
+        "SELECT w.id, w.org_id, o.name AS org_name FROM portal.pub_works w JOIN identity.orgs o ON o.id=w.org_id
+          WHERE w.pending_contributors IS NOT NULL AND w.archived_at IS NULL ORDER BY w.pending_at LIMIT 200",
+    )
+    .fetch_all(&mut *c)
+    .await?;
+    let mut items = Vec::new();
+    for r in rows {
+        let org: Uuid = r.get("org_id");
+        if let Some(work) = works_json(
+            &mut c,
+            org,
+            Uuid::nil(),
+            "VIEWER",
+            Filter::Ids(vec![r.get("id")]),
+        )
+        .await?
+        .pop()
+        {
+            items.push(
+                json!({"orgId": org, "orgName": r.get::<String, _>("org_name"), "work": work}),
+            );
+        }
+    }
+    Ok(json!({"items": items}))
+}
+
+/// Apply a share change (the co-writers whose share changed confirm again) or reject it with a reason.
+pub async fn staff_change_decide(
+    s: &AppState,
+    h: &HeaderMap,
+    id: Uuid,
+    i: StaffAnswerIn,
+) -> Result<Value> {
+    let st = staff::staff(s, h, true).await?;
+    staff::require(&st, Duty::Review)?;
+    let reason = clean(&i.reason, 1000, "STAFF_REASON_INVALID")?;
+    if !i.approve && reason.is_empty() {
+        return Err(Error::InvalidCode("STAFF_REASON_REQUIRED"));
+    }
+    let mut tx = s.pool.begin().await?;
+    let row = sqlx::query("SELECT org_id, pending_contributors, created_by FROM portal.pub_works WHERE id=$1 AND archived_at IS NULL FOR UPDATE")
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(Error::NotFound)?;
+    let org: Uuid = row.get("org_id");
+    let Some(pending) = row.get::<Option<Value>, _>("pending_contributors") else {
+        return Err(Error::PolicyGate("WORK_NO_PENDING_CHANGE"));
+    };
+    if i.approve {
+        let list: Vec<ContributorIn> =
+            serde_json::from_value(pending).map_err(|_| Error::Internal)?;
+        // The writer whose row is "me" in the pending list owns the work's account side.
+        let party = list
+            .iter()
+            .find(|c| c.is_me == Some(true))
+            .and_then(|c| c.creator_id.as_deref())
+            .and_then(|v| Uuid::parse_str(v).ok())
+            .unwrap_or(Uuid::nil());
+        let plan = plan_contributors(&list, party)?;
+        write_contributors(&mut tx, org, id, party, row.get("created_by"), plan).await?;
+    }
+    sqlx::query(
+        "UPDATE portal.pub_works SET pending_contributors=NULL, pending_at=NULL, change_outcome=$2, change_note=NULLIF($3,''), change_decided_at=now() WHERE id=$1",
+    )
+    .bind(id)
+    .bind(if i.approve { "applied" } else { "rejected" })
+    .bind(&reason)
+    .execute(&mut *tx)
+    .await?;
+    touch(&mut tx, id).await?;
+    staff_audit(
+        &mut tx,
+        &st,
+        org,
+        id,
+        if i.approve {
+            "publishing.change_applied"
+        } else {
+            "publishing.change_rejected"
+        },
+    )
+    .await?;
+    let out = works_json(&mut tx, org, Uuid::nil(), "VIEWER", Filter::Ids(vec![id]))
+        .await?
+        .pop()
+        .ok_or(Error::Internal)?;
+    tx.commit().await?;
+    Ok(out)
+}
+
+/// Signed contracts with a renewal or termination request waiting.
+pub async fn staff_contract_requests(s: &AppState, h: &HeaderMap) -> Result<Value> {
+    let st = staff::staff(s, h, false).await?;
+    staff::require(&st, Duty::Review)?;
+    let mut c = s.pool.acquire().await?;
+    let rows = sqlx::query(
+        "SELECT c.id, c.org_id, o.name AS org_name, c.contract_no, c.status, c.end_date, c.renewal_months, c.renewal_requested_at,
+                c.termination_requested_at, c.commission_bps,
+                COALESCE((SELECT jsonb_agg(w.title ORDER BY w.title) FROM portal.pub_application_works aw JOIN portal.pub_works w ON w.id=aw.work_id
+                           WHERE aw.application_id=c.application_id),'[]') AS works
+           FROM portal.pub_contracts c JOIN identity.orgs o ON o.id=c.org_id
+          WHERE c.renewal_requested_at IS NOT NULL OR c.status='terminating'
+          ORDER BY COALESCE(c.renewal_requested_at, c.termination_requested_at) LIMIT 200",
+    )
+    .fetch_all(&mut *c)
+    .await?;
+    Ok(json!({"items": rows.into_iter().map(|r| json!({
+        "id": r.get::<Uuid, _>("id"), "orgId": r.get::<Uuid, _>("org_id"), "orgName": r.get::<String, _>("org_name"),
+        "number": r.get::<String, _>("contract_no"), "status": r.get::<String, _>("status"),
+        "endDate": r.get::<Option<chrono::NaiveDate>, _>("end_date").map(|d| d.to_string()),
+        "commissionRate": pct(r.get("commission_bps")), "works": r.get::<Value, _>("works"),
+        "renewal": r.get::<Option<i32>, _>("renewal_months").map(|m| json!({"months": m, "requestedAt": r.get::<Option<DateTime<Utc>>, _>("renewal_requested_at").map(ts)})),
+        "terminationRequestedAt": r.get::<Option<DateTime<Utc>>, _>("termination_requested_at").map(ts),
+    })).collect::<Vec<_>>()}))
+}
+
+/// Renew (the end date moves by the asked months) or end the contract; or reject the request with a reason.
+pub async fn staff_contract_decide(
+    s: &AppState,
+    h: &HeaderMap,
+    id: Uuid,
+    i: StaffAnswerIn,
+) -> Result<Value> {
+    let st = staff::staff(s, h, true).await?;
+    staff::require(&st, Duty::Review)?;
+    let reason = clean(&i.reason, 1000, "STAFF_REASON_INVALID")?;
+    if !i.approve && reason.is_empty() {
+        return Err(Error::InvalidCode("STAFF_REASON_REQUIRED"));
+    }
+    let mut tx = s.pool.begin().await?;
+    let row = sqlx::query(
+        "SELECT org_id, status, renewal_months FROM portal.pub_contracts WHERE id=$1 FOR UPDATE",
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(Error::NotFound)?;
+    let org: Uuid = row.get("org_id");
+    let (sql, outcome, action) = match (i.kind.as_str(), i.approve) {
+        ("renewal", _) if row.get::<Option<i32>, _>("renewal_months").is_none() => return Err(Error::PolicyGate("CONTRACT_NO_REQUEST")),
+        ("termination", _) if row.get::<String, _>("status") != "terminating" => return Err(Error::PolicyGate("CONTRACT_NO_REQUEST")),
+        ("renewal", true) => (
+            "UPDATE portal.pub_contracts SET end_date=end_date + make_interval(months => renewal_months), term_months=LEAST(term_months + renewal_months, 120),
+                    status='active', renewal_months=NULL, renewal_requested_at=NULL, request_outcome=$2, request_note=NULLIF($3,''),
+                    request_decided_at=now(), row_version=row_version+1 WHERE id=$1",
+            "renewed", "publishing.contract_renewed",
+        ),
+        ("renewal", false) => (
+            "UPDATE portal.pub_contracts SET renewal_months=NULL, renewal_requested_at=NULL, request_outcome=$2, request_note=NULLIF($3,''),
+                    request_decided_at=now(), row_version=row_version+1 WHERE id=$1",
+            "renewal_rejected", "publishing.contract_renewal_rejected",
+        ),
+        ("termination", true) => (
+            "UPDATE portal.pub_contracts SET status='ended', end_date=LEAST(end_date, current_date), renewal_months=NULL, renewal_requested_at=NULL,
+                    request_outcome=$2, request_note=NULLIF($3,''), request_decided_at=now(), row_version=row_version+1 WHERE id=$1",
+            "ended", "publishing.contract_ended",
+        ),
+        ("termination", false) => (
+            "UPDATE portal.pub_contracts SET status='active', termination_requested_at=NULL, request_outcome=$2, request_note=NULLIF($3,''),
+                    request_decided_at=now(), row_version=row_version+1 WHERE id=$1",
+            "termination_rejected", "publishing.contract_termination_rejected",
+        ),
+        _ => return Err(Error::Invalid),
+    };
+    sqlx::query(sql)
+        .bind(id)
+        .bind(outcome)
+        .bind(&reason)
+        .execute(&mut *tx)
+        .await?;
+    staff_audit(&mut tx, &st, org, id, action).await?;
+    tx.commit().await?;
+    Ok(json!({"id": id, "outcome": outcome}))
+}
+
+/// Open A&R submissions for staff, oldest waiting first.
+pub async fn staff_ar_list(s: &AppState, h: &HeaderMap, status: Option<String>) -> Result<Value> {
+    let st = staff::staff(s, h, false).await?;
+    staff::require(&st, Duty::Review)?;
+    let mut c = s.pool.acquire().await?;
+    let rows = sqlx::query(
+        "SELECT s.id, s.org_id, o.name AS org_name FROM portal.pub_ar_submissions s JOIN identity.orgs o ON o.id=s.org_id
+          WHERE ($1::text IS NULL OR s.status=$1) ORDER BY s.submitted_at LIMIT 200",
+    )
+    .bind(status)
+    .fetch_all(&mut *c)
+    .await?;
+    let mut items = Vec::new();
+    for r in rows {
+        let org: Uuid = r.get("org_id");
+        if let Some(mut v) = ar_json(&mut c, org, Some(r.get("id"))).await?.pop() {
+            let demo: Option<(String, Option<String>)> = sqlx::query_as(
+                "SELECT f.name, (SELECT f2.text_body FROM portal.pub_work_attachments f2 WHERE f2.work_id=f.work_id AND f2.kind='lyrics' LIMIT 1)
+                   FROM portal.pub_work_attachments f WHERE f.work_id=$1 AND f.kind='demo' ORDER BY f.created_at DESC LIMIT 1",
+            )
+            .bind(Uuid::parse_str(v["workId"].as_str().unwrap_or_default()).unwrap_or(Uuid::nil()))
+            .fetch_optional(&mut *c)
+            .await?;
+            v["orgId"] = json!(org);
+            v["orgName"] = json!(r.get::<String, _>("org_name"));
+            v["demoName"] = json!(demo.as_ref().map(|d| d.0.clone()));
+            v["lyrics"] = json!(demo.and_then(|d| d.1));
+            items.push(v);
+        }
+    }
+    Ok(json!({"items": items}))
+}
+
+#[derive(Deserialize)]
+pub struct ArDecisionIn {
+    pub action: String,
+    #[serde(default)]
+    pub reason: String,
+}
+
+/// claim → in_review · fix → needs_fix (reason) · reviewed · proposing · close.
+pub async fn staff_ar_decide(
+    s: &AppState,
+    h: &HeaderMap,
+    id: Uuid,
+    i: ArDecisionIn,
+) -> Result<Value> {
+    let st = staff::staff(s, h, true).await?;
+    staff::require(&st, Duty::Review)?;
+    let reason = clean(&i.reason, 1000, "STAFF_REASON_INVALID")?;
+    let mut tx = s.pool.begin().await?;
+    let (org, status): (Uuid, String) = sqlx::query_as(
+        "SELECT org_id, status FROM portal.pub_ar_submissions WHERE id=$1 FOR UPDATE",
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(Error::NotFound)?;
+    let (next, action) = match (i.action.as_str(), status.as_str()) {
+        ("CLAIM", "submitted") => ("in_review", "publishing.ar_review"),
+        ("FIX", "in_review") => {
+            if reason.is_empty() {
+                return Err(Error::InvalidCode("STAFF_REASON_REQUIRED"));
+            }
+            ("needs_fix", "publishing.ar_fix")
+        }
+        ("REVIEWED", "in_review") => ("reviewed", "publishing.ar_reviewed"),
+        ("PROPOSING", "reviewed") => ("proposing", "publishing.ar_proposing"),
+        ("CLOSE", s) if s != "closed" => ("closed", "publishing.ar_closed"),
+        _ => return Err(Error::PolicyGate("AR_STATE")),
+    };
+    sqlx::query(
+        "UPDATE portal.pub_ar_submissions SET status=$2, claimed_by=COALESCE(claimed_by,$3),
+                fix_reason=CASE WHEN $2='needs_fix' THEN $4 ELSE fix_reason END,
+                fix_reply=CASE WHEN $2='needs_fix' THEN NULL ELSE fix_reply END WHERE id=$1",
+    )
+    .bind(id)
+    .bind(next)
+    .bind(st.actor.user)
+    .bind(&reason)
+    .execute(&mut *tx)
+    .await?;
+    staff_audit(&mut tx, &st, org, id, action).await?;
+    let out = ar_json(&mut tx, org, Some(id))
+        .await?
+        .pop()
+        .ok_or(Error::Internal)?;
+    tx.commit().await?;
+    Ok(out)
+}
+
+#[derive(Deserialize)]
+pub struct RoyaltyRowIn {
+    /// The work's code: AUDENIQ internal code (AQW-…) or ISWC.
+    #[serde(default)]
+    pub work: String,
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub country: String,
+    /// In the statement's currency (decimals allowed for foreign statements).
+    #[serde(default)]
+    pub collected: rust_decimal::Decimal,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoyaltyImportIn {
+    #[serde(default)]
+    pub source: String,
+    #[serde(default)]
+    pub period: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub file_name: Option<String>,
+    /// KRW unless given; another currency needs the rate to won (0174).
+    #[serde(default)]
+    pub currency: Option<String>,
+    #[serde(default)]
+    pub fx_rate: Option<rust_decimal::Decimal>,
+    #[serde(default)]
+    pub rows: Vec<RoyaltyRowIn>,
+    /// Check only: what each row matches and how it splits, nothing stored.
+    #[serde(default)]
+    pub preview: bool,
+}
+
+const ROYALTY_KINDS: [&str; 7] = [
+    "performance",
+    "mechanical",
+    "digital",
+    "sync",
+    "youtube",
+    "print",
+    "other",
+];
+/// Rows per statement.
+const MAX_ROYALTY_ROWS: usize = 5000;
+
+/// Import one society statement. Each row matches a work by its code; the commission is the work's signed
+/// contract's (the policy rate when none). Nothing is stored while any row does not match (preview shows why).
+pub async fn staff_royalty_import(
+    s: &AppState,
+    h: &HeaderMap,
+    i: RoyaltyImportIn,
+) -> Result<Value> {
+    let st = staff::staff(s, h, true).await?;
+    staff::require(&st, Duty::Finance)?;
+    let source = clean(&i.source, 60, "ROYALTY_SOURCE_INVALID")?;
+    let period_ok = i.period.len() == 7
+        && chrono::NaiveDate::parse_from_str(&format!("{}-01", i.period), "%Y-%m-%d").is_ok();
+    if source.is_empty() || !period_ok || !["estimated", "confirmed"].contains(&i.status.as_str()) {
+        return Err(Error::InvalidCode("ROYALTY_STATEMENT_INVALID"));
+    }
+    if i.rows.is_empty() || i.rows.len() > MAX_ROYALTY_ROWS {
+        return Err(Error::InvalidCode("ROYALTY_ROWS_INVALID"));
+    }
+    let currency = i
+        .currency
+        .as_deref()
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+        .unwrap_or("KRW")
+        .to_ascii_uppercase();
+    if currency.len() != 3 || !currency.bytes().all(|b| b.is_ascii_uppercase()) {
+        return Err(Error::InvalidCode("ROYALTY_STATEMENT_INVALID"));
+    }
+    // Whole won: a foreign amount times the rate, rounded down.
+    let fx = match (currency.as_str(), i.fx_rate) {
+        ("KRW", _) => None,
+        (_, Some(r)) if r > rust_decimal::Decimal::ZERO => Some(r),
+        _ => return Err(Error::InvalidCode("ROYALTY_FX_REQUIRED")),
+    };
+    let won = |v: rust_decimal::Decimal| -> Option<i64> {
+        use rust_decimal::prelude::ToPrimitive;
+        (v * fx.unwrap_or(rust_decimal::Decimal::ONE))
+            .round_dp_with_strategy(0, rust_decimal::RoundingStrategy::ToZero)
+            .to_i64()
+    };
+    let mut tx = s.pool.begin().await?;
+    let mut out = Vec::with_capacity(i.rows.len());
+    let mut planned = Vec::new();
+    let mut errors = 0;
+    for (k, r) in i.rows.iter().enumerate() {
+        let code = r.work.trim();
+        let country = r.country.trim().to_uppercase();
+        let mut error: Option<&str> = None;
+        if !ROYALTY_KINDS.contains(&r.kind.as_str()) {
+            error = Some("종류가 맞지 않아요");
+        } else if !(country == "WORLD"
+            || (country.len() == 2 && country.bytes().all(|b| b.is_ascii_uppercase())))
+        {
+            error = Some("국가 코드가 맞지 않아요");
+        } else if r.collected < rust_decimal::Decimal::ZERO || won(r.collected).is_none() {
+            error = Some("금액이 맞지 않아요");
+        }
+        let collected = won(r.collected).unwrap_or(0);
+        let work = if error.is_none() {
+            sqlx::query(
+                "SELECT w.id, w.org_id, w.title, o.name AS org_name,
+                        COALESCE((SELECT sum(publisher_share_bps) FROM portal.pub_work_contributors c WHERE c.work_id=w.id),0)::int AS share_bps,
+                        (SELECT c.commission_bps FROM portal.pub_contracts c JOIN portal.pub_application_works aw ON aw.application_id=c.application_id
+                          WHERE aw.work_id=w.id AND c.status <> 'pending_sign' ORDER BY c.created_at DESC LIMIT 1) AS commission_bps
+                   FROM portal.pub_works w JOIN identity.orgs o ON o.id=w.org_id
+                  WHERE w.archived_at IS NULL AND (w.internal_code=upper($1) OR w.iswc=$2) LIMIT 1",
+            )
+            .bind(code)
+            .bind(iswc(code))
+            .fetch_optional(&mut *tx)
+            .await?
+        } else {
+            None
+        };
+        if error.is_none() && work.is_none() {
+            error = Some("곡 코드(AQW-… 또는 ISWC)를 찾지 못했어요");
+        }
+        match work.filter(|_| error.is_none()) {
+            Some(w) => {
+                let bps = w
+                    .get::<Option<i32>, _>("commission_bps")
+                    .unwrap_or(COMMISSION_BPS);
+                let fee = collected * i64::from(bps) / 10_000;
+                out.push(json!({"line": k + 1, "workTitle": w.get::<String, _>("title"), "orgName": w.get::<String, _>("org_name"),
+                                "collected": collected, "fee": fee, "net": collected - fee}));
+                planned.push((
+                    w.get::<Uuid, _>("org_id"),
+                    w.get::<Uuid, _>("id"),
+                    r.kind.clone(),
+                    country,
+                    collected,
+                    w.get::<i32, _>("share_bps").min(10_000),
+                    fee,
+                ));
+            }
+            None => {
+                errors += 1;
+                out.push(json!({"line": k + 1, "work": code, "error": error}));
+            }
+        }
+    }
+    if i.preview || errors > 0 {
+        tx.rollback().await?;
+        if !i.preview {
+            return Err(Error::PolicyGate("ROYALTY_ROWS_INVALID"));
+        }
+        return Ok(json!({"rows": out, "errors": errors}));
+    }
+    let statement = Uuid::new_v4();
+    let total: i64 = planned.iter().map(|p| p.4).sum();
+    sqlx::query("INSERT INTO portal.pub_royalty_statements(id,source,period,status,file_name,row_count,total_collected,imported_by,currency,fx_rate) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
+        .bind(statement)
+        .bind(&source)
+        .bind(&i.period)
+        .bind(&i.status)
+        .bind(opt_clean(i.file_name.as_deref(), 200, "ROYALTY_STATEMENT_INVALID")?)
+        .bind(planned.len() as i32)
+        .bind(total)
+        .bind(st.actor.user)
+        .bind(&currency)
+        .bind(fx)
+        .execute(&mut *tx)
+        .await?;
+    for (org, work, kind, country, collected, share, fee) in &planned {
+        sqlx::query(
+            "INSERT INTO portal.pub_royalties(id,statement_id,org_id,work_id,kind,source,period,country,collected,share_bps,fee,net,status)
+             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
+        )
+        .bind(Uuid::new_v4())
+        .bind(statement)
+        .bind(org)
+        .bind(work)
+        .bind(kind)
+        .bind(&source)
+        .bind(&i.period)
+        .bind(country)
+        .bind(collected)
+        .bind(share)
+        .bind(fee)
+        .bind(collected - fee)
+        .bind(&i.status)
+        .execute(&mut *tx)
+        .await?;
+    }
+    operations::audit(
+        &mut tx,
+        Some(st.actor.user),
+        None,
+        Some(statement),
+        "publishing.royalties_imported",
+        "STAFF",
+        st.actor.request,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"id": statement, "rows": out, "errors": 0}))
+}
+
+pub async fn staff_royalty_statements(s: &AppState, h: &HeaderMap) -> Result<Value> {
+    let st = staff::staff(s, h, false).await?;
+    staff::require(&st, Duty::Finance)?;
+    let mut c = s.pool.acquire().await?;
+    let rows = sqlx::query("SELECT id, source, period, status, file_name, row_count, total_collected, created_at, currency, fx_rate, posted_at FROM portal.pub_royalty_statements ORDER BY created_at DESC LIMIT 200")
+        .fetch_all(&mut *c)
+        .await?;
+    Ok(json!({"items": rows.into_iter().map(|r| json!({
+        "id": r.get::<Uuid, _>("id"), "source": r.get::<String, _>("source"), "period": r.get::<String, _>("period"),
+        "status": r.get::<String, _>("status"), "fileName": r.get::<Option<String>, _>("file_name"),
+        "rowCount": r.get::<i32, _>("row_count"), "totalCollected": r.get::<i64, _>("total_collected"), "importedAt": ts(r.get("created_at")),
+        "currency": r.get::<String, _>("currency"), "fxRate": r.get::<Option<rust_decimal::Decimal>, _>("fx_rate"),
+        "postedAt": r.get::<Option<DateTime<Utc>>, _>("posted_at").map(ts),
+    })).collect::<Vec<_>>()}))
+}
+
+#[derive(Deserialize)]
+pub struct StatementStatusIn {
+    pub status: String,
+}
+
+/// Estimated → confirmed → paid, for the whole statement.
+pub async fn staff_royalty_status(
+    s: &AppState,
+    h: &HeaderMap,
+    id: Uuid,
+    i: StatementStatusIn,
+) -> Result<Value> {
+    let st = staff::staff(s, h, true).await?;
+    staff::require(&st, Duty::Finance)?;
+    let mut tx = s.pool.begin().await?;
+    let status: String = sqlx::query_scalar(
+        "SELECT status FROM portal.pub_royalty_statements WHERE id=$1 FOR UPDATE",
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(Error::NotFound)?;
+    // Paid means credited to the balance: that is the staff console's posting (owner-level login, step-up), not this.
+    let ok = matches!(
+        (status.as_str(), i.status.as_str()),
+        ("estimated", "confirmed")
+    );
+    if !ok {
+        return Err(Error::PolicyGate("ROYALTY_STATE"));
+    }
+    sqlx::query("UPDATE portal.pub_royalty_statements SET status=$2 WHERE id=$1")
+        .bind(id)
+        .bind(&i.status)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("UPDATE portal.pub_royalties SET status=$2, paid_at=CASE WHEN $2='paid' THEN now() ELSE paid_at END WHERE statement_id=$1")
+        .bind(id)
+        .bind(&i.status)
+        .execute(&mut *tx)
+        .await?;
+    operations::audit(
+        &mut tx,
+        Some(st.actor.user),
+        None,
+        Some(id),
+        &format!("publishing.royalties_{}", i.status),
+        "STAFF",
+        st.actor.request,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"id": id, "status": i.status}))
+}
+
+/// Post a confirmed statement to the books (staff console `publishing post`, login audeniq_staff_ops, step-up).
+/// Per org: DEBIT ROYALTY_RECEIVED (collected), CREDIT AUDENIQ_FEE (fee) and ROYALTY_PAYABLE (net). Its rows become paid
+/// (the artist's balance has them); once only.
+pub async fn post_statement(pool: &sqlx::PgPool, actor: Uuid, statement: Uuid) -> Result<Value> {
+    use crate::finance::{EntrySide, LedgerEntryInput, PostTransaction};
+    use rust_decimal::Decimal;
+    let mut tx = pool.begin().await?;
+    let row = sqlx::query("SELECT source, period, status, posted_at FROM portal.pub_royalty_statements WHERE id=$1 FOR UPDATE")
+        .bind(statement)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(Error::NotFound)?;
+    if row.get::<Option<DateTime<Utc>>, _>("posted_at").is_some() {
+        return Err(Error::PolicyGate("ROYALTY_ALREADY_POSTED"));
+    }
+    if row.get::<String, _>("status") != "confirmed" {
+        return Err(Error::PolicyGate("ROYALTY_NOT_CONFIRMED"));
+    }
+    let (source, period): (String, String) = (row.get("source"), row.get("period"));
+    let description = format!("{source} {period} 저작권료");
+    let orgs = sqlx::query(
+        "SELECT org_id, sum(collected)::bigint AS collected, sum(fee)::bigint AS fee, sum(net)::bigint AS net
+           FROM portal.pub_royalties WHERE statement_id=$1 GROUP BY org_id ORDER BY org_id",
+    )
+    .bind(statement)
+    .fetch_all(&mut *tx)
+    .await?;
+    let mut posted = Vec::new();
+    for o in &orgs {
+        let org: Uuid = o.get("org_id");
+        let (collected, fee, net) = (
+            Decimal::from(o.get::<i64, _>("collected")),
+            Decimal::from(o.get::<i64, _>("fee")),
+            Decimal::from(o.get::<i64, _>("net")),
+        );
+        if collected == Decimal::ZERO {
+            continue;
+        }
+        let entry = |account, side, amount| LedgerEntryInput {
+            account,
+            side,
+            amount,
+            currency: None,
+            party_id: None,
+            isrc: None,
+            split_snapshot_id: None,
+        };
+        let mut entries = vec![entry("ROYALTY_RECEIVED", EntrySide::Debit, collected)];
+        if fee > Decimal::ZERO {
+            entries.push(entry("AUDENIQ_FEE", EntrySide::Credit, fee));
+        }
+        if net > Decimal::ZERO {
+            entries.push(entry("ROYALTY_PAYABLE", EntrySide::Credit, net));
+        }
+        let txn = crate::finance::post_transaction_in(
+            &mut tx,
+            org,
+            PostTransaction {
+                transaction_code: "PUBLISHING_ROYALTY",
+                currency: "KRW",
+                entries,
+                match_status: Some("AUTO"),
+                fx_rate: None,
+                fee_policy_version: Some("publishing-contract"),
+                contract_version: None,
+                tax_rule_version: None,
+                source_ref: json!({"publishing_statement": statement}),
+                description: &description,
+                created_by: Some(actor),
+            },
+        )
+        .await?;
+        posted.push(json!({"org_id": org, "transaction_id": txn, "net": net}));
+    }
+    sqlx::query(
+        "UPDATE portal.pub_royalties SET status='paid', paid_at=now() WHERE statement_id=$1",
+    )
+    .bind(statement)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("UPDATE portal.pub_royalty_statements SET status='paid', posted_at=now(), posted_by=$2 WHERE id=$1")
+        .bind(statement)
+        .bind(actor)
+        .execute(&mut *tx)
+        .await?;
+    operations::audit(
+        &mut tx,
+        Some(actor),
+        None,
+        Some(statement),
+        "publishing.royalties_posted",
+        "STAFF_CONSOLE",
+        Uuid::new_v4(),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"statement_id": statement, "posted": posted}))
+}
+
+/// The artist's royalties — all works of the org, or one work.
+async fn royalties_json(c: &mut PgConnection, org: Uuid, work: Option<Uuid>) -> Result<Vec<Value>> {
+    let rows = sqlx::query(
+        "SELECT r.id, r.work_id, w.title, r.kind, r.source, r.period, r.country, r.currency, r.collected, r.share_bps, r.fee, r.net, r.status, r.paid_at
+           FROM portal.pub_royalties r JOIN portal.pub_works w ON w.id=r.work_id
+          WHERE r.org_id=$1 AND ($2::uuid IS NULL OR r.work_id=$2) ORDER BY r.period DESC, w.title, r.kind LIMIT 5000",
+    )
+    .bind(org)
+    .bind(work)
+    .fetch_all(&mut *c)
+    .await?;
+    Ok(rows.into_iter().map(|r| json!({
+        "id": r.get::<Uuid, _>("id"), "workId": r.get::<Uuid, _>("work_id"), "workTitle": r.get::<String, _>("title"),
+        "kind": r.get::<String, _>("kind"), "source": r.get::<String, _>("source"), "period": r.get::<String, _>("period"),
+        "country": r.get::<String, _>("country"), "currency": r.get::<String, _>("currency"), "collected": r.get::<i64, _>("collected"),
+        "share": pct(r.get("share_bps")), "fee": r.get::<i64, _>("fee"), "net": r.get::<i64, _>("net"), "status": r.get::<String, _>("status"),
+        "postedAt": r.get::<Option<DateTime<Utc>>, _>("paid_at").map(ts),
+    })).collect())
 }
 
 // ---------------------------------------------------------------------------
@@ -2501,6 +3227,14 @@ pub async fn summary(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
     let mut c = s.pool.acquire().await?;
     let role = auth::membership_read(&mut c, a, org).await?;
     let works = works_json(&mut c, org, a.party, &role, Filter::All).await?;
+    // Publishing royalties the artist has (0173): confirmed or paid, and estimates not confirmed yet.
+    let (pub_confirmed, pub_estimated): (i64, i64) = sqlx::query_as(
+        "SELECT COALESCE(sum(net) FILTER (WHERE status <> 'estimated'),0)::bigint, COALESCE(sum(net) FILTER (WHERE status='estimated'),0)::bigint
+           FROM portal.pub_royalties WHERE org_id=$1",
+    )
+    .bind(org)
+    .fetch_one(&mut *c)
+    .await?;
     let reg = |w: &Value| w["registration"].as_str().unwrap_or_default().to_string();
     let managed = works
         .iter()
@@ -2580,7 +3314,7 @@ pub async fn summary(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
         "works": {"total": works.len(), "managed": managed, "inProgress": in_progress, "unregistered": unregistered},
         "tasks": tasks,
         // Royalties are stage 2.
-        "revenue": {"distribution": {"confirmed": 0, "estimated": 0}, "publishing": {"confirmed": 0, "estimated": 0}, "payable": 0},
+        "revenue": {"distribution": {"confirmed": 0, "estimated": 0}, "publishing": {"confirmed": pub_confirmed, "estimated": pub_estimated}, "payable": pub_confirmed},
         "suggestion": suggestion,
     }))
 }
@@ -3108,6 +3842,7 @@ async fn contracts_json(
         "SELECT c.id, c.contract_no, c.status, c.commission_bps, c.term_months, c.territories, c.rights, c.body,
                 c.signer_name, c.signature, c.confirmations, c.content_hash, c.signed_at, c.start_date, c.end_date,
                 c.renewal_months, c.renewal_requested_at, c.termination_requested_at, c.row_version, c.created_at,
+                c.request_outcome, c.request_note, c.request_decided_at,
                 a.id AS application_id, ra.application_no,
                 COALESCE((SELECT jsonb_agg(jsonb_build_object('id',w.id,'title',w.title) ORDER BY w.title)
                             FROM portal.pub_application_works aw JOIN portal.pub_works w ON w.id=aw.work_id
@@ -3138,6 +3873,9 @@ async fn contracts_json(
             json!({
                 "id": r.get::<Uuid, _>("id"), "number": r.get::<String, _>("contract_no"), "status": r.get::<String, _>("status"),
                 "startDate": date(r.get("start_date")), "endDate": date(r.get("end_date")),
+                "requestDecision": r.get::<Option<String>, _>("request_outcome").map(|o| json!({
+                    "outcome": o, "note": r.get::<Option<String>, _>("request_note"),
+                    "at": r.get::<Option<DateTime<Utc>>, _>("request_decided_at").map(ts)})),
                 "commissionRate": f64::from(r.get::<i32, _>("commission_bps")) / 100.0, "termMonths": r.get::<i32, _>("term_months"),
                 "works": r.get::<Value, _>("works"), "territories": r.get::<Vec<String>, _>("territories"),
                 "rights": r.get::<Vec<String>, _>("rights"), "renewal": renewal,
@@ -3465,6 +4203,72 @@ async fn h_ar_withdraw(
         withdraw_ar(&s, &writer(&s, &h).await?, org, id).await?,
     ))
 }
+async fn h_ar_resubmit(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+    body: Option<Json<ArReplyIn>>,
+) -> Result<Json<Value>> {
+    let i = body.map(|Json(b)| b).unwrap_or_default();
+    Ok(Json(
+        resubmit_ar(&s, &writer(&s, &h).await?, org, id, i).await?,
+    ))
+}
+async fn h_staff_changes(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
+    Ok(Json(staff_changes(&s, &h).await?))
+}
+async fn h_staff_change(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    h: HeaderMap,
+    Json(i): Json<StaffAnswerIn>,
+) -> Result<Json<Value>> {
+    Ok(Json(staff_change_decide(&s, &h, id, i).await?))
+}
+async fn h_staff_contract_requests(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
+    Ok(Json(staff_contract_requests(&s, &h).await?))
+}
+async fn h_staff_contract_request(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    h: HeaderMap,
+    Json(i): Json<StaffAnswerIn>,
+) -> Result<Json<Value>> {
+    Ok(Json(staff_contract_decide(&s, &h, id, i).await?))
+}
+async fn h_staff_ar(
+    State(s): State<AppState>,
+    Query(q): Query<StatusQuery>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    Ok(Json(staff_ar_list(&s, &h, q.status).await?))
+}
+async fn h_staff_ar_decide(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    h: HeaderMap,
+    Json(i): Json<ArDecisionIn>,
+) -> Result<Json<Value>> {
+    Ok(Json(staff_ar_decide(&s, &h, id, i).await?))
+}
+async fn h_staff_royalties(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
+    Ok(Json(staff_royalty_statements(&s, &h).await?))
+}
+async fn h_staff_royalty_import(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Json(i): Json<RoyaltyImportIn>,
+) -> Result<Json<Value>> {
+    Ok(Json(staff_royalty_import(&s, &h, i).await?))
+}
+async fn h_staff_royalty_status(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    h: HeaderMap,
+    Json(i): Json<StatementStatusIn>,
+) -> Result<Json<Value>> {
+    Ok(Json(staff_royalty_status(&s, &h, id, i).await?))
+}
 async fn h_split_invite(
     State(s): State<AppState>,
     Path(token): Path<String>,
@@ -3622,7 +4426,9 @@ async fn h_empty(
     let a = reader(&s, &h).await?;
     let mut c = s.pool.acquire().await?;
     auth::membership_read(&mut c, &a, org).await?;
-    Ok(Json(json!({"items": []})))
+    Ok(Json(
+        json!({"items": royalties_json(&mut c, org, None).await?}),
+    ))
 }
 async fn h_work_royalties(
     State(s): State<AppState>,
@@ -3631,7 +4437,10 @@ async fn h_work_royalties(
 ) -> Result<Json<Value>> {
     let a = reader(&s, &h).await?;
     get_work(&s, &a, org, id).await?;
-    Ok(Json(json!({"items": []})))
+    let mut c = s.pool.acquire().await?;
+    Ok(Json(
+        json!({"items": royalties_json(&mut c, org, Some(id)).await?}),
+    ))
 }
 async fn h_me(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     Ok(Json(my_creator(&s, &reader(&s, &h).await?).await?))
@@ -3724,6 +4533,37 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/orgs/{org}/ar/submissions/{id}/withdraw",
             post(h_ar_withdraw),
+        )
+        .route(
+            "/api/orgs/{org}/ar/submissions/{id}/resubmit",
+            post(h_ar_resubmit),
+        )
+        // Staff answers to artists' publishing requests (0173).
+        .route("/api/staff/publishing/changes", get(h_staff_changes))
+        .route(
+            "/api/staff/publishing/works/{id}/change",
+            post(h_staff_change),
+        )
+        .route(
+            "/api/staff/publishing/contract-requests",
+            get(h_staff_contract_requests),
+        )
+        .route(
+            "/api/staff/publishing/contracts/{id}/request",
+            post(h_staff_contract_request),
+        )
+        .route("/api/staff/publishing/ar", get(h_staff_ar))
+        .route(
+            "/api/staff/publishing/ar/{id}/decision",
+            post(h_staff_ar_decide),
+        )
+        .route(
+            "/api/staff/publishing/royalties",
+            get(h_staff_royalties).post(h_staff_royalty_import),
+        )
+        .route(
+            "/api/staff/publishing/royalties/{id}/status",
+            post(h_staff_royalty_status),
         )
         // The co-writer's side — no account, the link is the secret (as /api/split-invites).
         .route("/api/pub-invites/{token}", get(h_split_invite))

@@ -878,3 +878,115 @@ async fn only_an_owner_adds_settlement_balance(pool: PgPool) {
         .unwrap_err();
     assert!(e.to_string().contains("STAFF_OWNER_REQUIRED"), "{e}");
 }
+
+/// A confirmed publishing statement is credited to the artists' balances from the console (0174), on the real
+/// audeniq_staff_ops grants: ledger per org, rows paid, notices, once only.
+#[sqlx::test]
+async fn publishing_statement_posts_to_the_balance(pool: PgPool) {
+    let app = console(&pool, true).await;
+    let u = user(&app).await;
+    let (st, _) = staff(&app, &pool, "ADMIN").await;
+    let base = format!("/api/orgs/{}", u.org);
+    let (_, w) = call(&app, "POST", &format!("{base}/works"), json!({
+        "title": "겨울 편지", "origin": "other_release", "externalRelease": {"artist": "이온", "title": "겨울 편지"},
+        "contributors": [{"id": "l1", "creatorId": u.party.to_string(), "name": "서린", "roles": ["lyricist"], "share": 100.0, "publisherShare": 100.0, "isMe": true}]
+    }), Some(&u)).await;
+    let code = w["internalCode"].as_str().unwrap();
+    // A USD statement: 100.50 × 1,350 = 135,675 won; the policy commission (no contract) is 10%.
+    let (s, imp) = call(&app, "POST", "/api/staff/publishing/royalties", json!({
+        "source": "ASCAP", "period": "2026-09", "status": "estimated", "currency": "USD", "fxRate": "1350",
+        "rows": [{"work": code, "kind": "performance", "country": "US", "collected": "100.50"}]
+    }), Some(&st)).await;
+    assert_eq!(s, StatusCode::OK, "{imp}");
+    assert_eq!(
+        (
+            imp["rows"][0]["collected"].as_i64(),
+            imp["rows"][0]["fee"].as_i64()
+        ),
+        (Some(135_675), Some(13_567))
+    );
+    let (s, e) = call(
+        &app,
+        "POST",
+        "/api/staff/publishing/royalties",
+        json!({"source": "ASCAP", "period": "2026-09", "status": "estimated", "currency": "USD",
+        "rows": [{"work": code, "kind": "performance", "country": "US", "collected": "1"}]}),
+        Some(&st),
+    )
+    .await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("ROYALTY_FX_REQUIRED"))
+    );
+    let sid: Uuid = imp["id"].as_str().unwrap().parse().unwrap();
+    let ops = ops_pool(&pool).await;
+    let actor = st.user;
+    let err = audeniq_core::publishing::post_statement(&ops, actor, sid)
+        .await
+        .unwrap_err();
+    assert!(
+        format!("{err:?}").contains("ROYALTY_NOT_CONFIRMED"),
+        "{err:?}"
+    );
+    let (s, e) = call(
+        &app,
+        "POST",
+        &format!("/api/staff/publishing/royalties/{sid}/status"),
+        json!({"status": "paid"}),
+        Some(&st),
+    )
+    .await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (StatusCode::UNPROCESSABLE_ENTITY, Some("ROYALTY_STATE")),
+        "paid only by posting"
+    );
+    call(
+        &app,
+        "POST",
+        &format!("/api/staff/publishing/royalties/{sid}/status"),
+        json!({"status": "confirmed"}),
+        Some(&st),
+    )
+    .await;
+
+    let out = audeniq_core::publishing::post_statement(&ops, actor, sid)
+        .await
+        .unwrap();
+    assert_eq!(out["posted"][0]["net"], json!(Decimal::from(122_108)));
+    let credited: Decimal = sqlx::query_scalar("SELECT COALESCE(sum(amount),0) FROM finance.ledger_entries WHERE org_id=$1 AND account='ROYALTY_PAYABLE' AND side='CREDIT'")
+        .bind(u.org).fetch_one(&pool).await.unwrap();
+    assert_eq!(credited, Decimal::from(122_108));
+    let err = audeniq_core::publishing::post_statement(&ops, actor, sid)
+        .await
+        .unwrap_err();
+    assert!(format!("{err:?}").contains("ROYALTY_ALREADY_POSTED"));
+    let (_, mine) = call(
+        &app,
+        "GET",
+        &format!("{base}/publishing/royalties"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(mine["items"][0]["status"], "paid");
+    let notices: Vec<String> = sqlx::query_scalar(
+        "SELECT title FROM portal.notifications WHERE org_id=$1 ORDER BY created_at",
+    )
+    .bind(u.org)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert!(
+        notices
+            .iter()
+            .any(|t| t == "새 저작권료 예상 내역이 들어왔어요."),
+        "{notices:?}"
+    );
+    assert!(
+        notices
+            .iter()
+            .any(|t| t == "저작권료가 정산 잔액에 쌓였어요."),
+        "{notices:?}"
+    );
+}

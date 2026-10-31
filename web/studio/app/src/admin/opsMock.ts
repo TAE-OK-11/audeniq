@@ -11,7 +11,7 @@ const OPS: [OpsArea, string, number, boolean, boolean][] = [
   ['partners', 'list', 2, false, false], ['partners', 'status', 2, false, false], ['partners', 'probe', 3, true, false], ['partners', 'route', 3, true, false], ['partners', 'go-live', 4, true, true],
   ['identifiers', 'list', 3, false, false], ['identifiers', 'register', 4, true, true],
   ['payouts', 'list', 2, false, false], ['payouts', 'order', 2, true, false], ['payouts', 'approve', 2, true, true],
-  ['royalty', 'show', 2, false, false], ['royalty', 'post', 2, true, true],
+  ['royalty', 'show', 2, false, false], ['royalty', 'post', 2, true, true], ['publishing', 'post', 2, true, true],
   ['balance', 'show', 4, false, false], ['balance', 'credit', 4, true, true],
 ];
 
@@ -61,8 +61,10 @@ const DATA: Record<string, unknown> = {
 const wait = <T>(v: T) => new Promise<T>(r => setTimeout(() => r(structuredClone(v)), 200));
 
 export const mockOps = {
-  index: () => wait<OpsIndex>({ available: true, role: 'OWNER', level: 4, ops: OPS.map(([area, op, level, write, step_up]) => ({ area, op, level, write, step_up, finance: area === 'payouts' || area === 'royalty', allowed: true })) }),
+  index: () => wait<OpsIndex>({ available: true, role: 'OWNER', level: 4, ops: OPS.map(([area, op, level, write, step_up]) => ({ area, op, level, write, step_up, finance: area === 'payouts' || area === 'royalty' || area === 'publishing', allowed: true })) }),
   read: <T>(area: OpsArea, op: string, _q: Record<string, string | undefined>) => wait(DATA[`${area}/${op}`] as T),
-  write: <T>(area: OpsArea, op: string, _body: Record<string, unknown>) =>
-    wait((area === 'ai-clients' && op === 'add' ? { client_id: 'audeniq-agent-demo', client_secret: 'demo-secret-shown-once' } : { ok: true }) as T),
+  write: <T>(area: OpsArea, op: string, body: Record<string, unknown>) =>
+    area === 'publishing' && op === 'post'
+      ? import('./mock').then(m => m.markStatementPosted(String(body.statement_id))).then(() => wait({ ok: true } as T))
+      : wait((area === 'ai-clients' && op === 'add' ? { client_id: 'audeniq-agent-demo', client_secret: 'demo-secret-shown-once' } : { ok: true }) as T),
 };

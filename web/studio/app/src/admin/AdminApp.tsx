@@ -20,6 +20,7 @@ const PAGE_LOADERS = {
   Approvals: () => import('./pages/Approvals'),
   PublishingReviews: () => import('./pages/PublishingReviews'),
   PublishingReviewDetail: () => import('./pages/PublishingReviews'),
+  PublishingOps: () => import('./pages/PublishingOps'),
   Documents: () => import('./pages/Documents'),
   Inquiries: () => import('./pages/Inquiries'),
   IdentityDesk: () => import('./pages/IdentityDesk'),
@@ -57,6 +58,7 @@ const ReviewQueue = page('ReviewQueue');
 const ReviewDetail = page('ReviewDetail');
 const Approvals = page('Approvals');
 const PublishingReviews = page('PublishingReviews');
+const PublishingOps = page('PublishingOps');
 const PublishingReviewDetail = page('PublishingReviewDetail');
 const Documents = page('Documents');
 const Inquiries = page('Inquiries');
@@ -136,6 +138,8 @@ const NAV: { group: string; items: NavItem[] }[] = [
       // 2차 승인은 발매 심사 안의 탭
       { to: '/admin/reviews', label: '발매 심사', icon: 'review', count: o => (o ? o.review + o.second_approvals : 0), hot: true, also: ['/admin/approvals', '/admin/publishing'] },
       { to: '/admin/documents', label: '서류 검토', icon: 'doc', count: o => (o ? o.documents : 0) },
+      // 아티스트가 퍼블리싱에서 요청한 것(지분 변경 · 계약 연장·종료 · Open A&R)과 저작권료 명세서
+      { to: '/admin/publishing-ops', label: '퍼블리싱 요청', icon: 'scale' },
     ],
   },
   { group: '고객 지원', items: [
@@ -340,6 +344,7 @@ export function AdminApp() {
               <Route path="/admin/approvals" element={<Approvals />} />
               <Route path="/admin/publishing" element={<PublishingReviews />} />
               <Route path="/admin/publishing/:id" element={<PublishingReviewDetail />} />
+              <Route path="/admin/publishing-ops" element={<PublishingOps />} />
               <Route path="/admin/documents" element={<Documents />} />
               <Route path="/admin/inquiries" element={<Inquiries />} />
               <Route path="/admin/inquiries/:id" element={<Inquiries />} />

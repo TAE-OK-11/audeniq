@@ -4,7 +4,7 @@
 import { req } from '../api/http';
 import { MOCK } from '../lib/mode';
 
-export type OpsArea = 'staff' | 'protected' | 'developer-apps' | 'ai-clients' | 'ai-limits' | 'partners' | 'identifiers' | 'payouts' | 'royalty' | 'balance';
+export type OpsArea = 'staff' | 'protected' | 'developer-apps' | 'ai-clients' | 'ai-limits' | 'partners' | 'identifiers' | 'payouts' | 'royalty' | 'balance' | 'publishing';
 
 export interface OpsEntry { area: OpsArea; op: string; write: boolean; step_up: boolean; allowed: boolean; level: number; finance: boolean }
 export interface OpsIndex { available: boolean; role: string; level: number; ops: OpsEntry[] }
