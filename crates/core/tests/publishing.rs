@@ -1699,3 +1699,83 @@ async fn staff_answer_artist_requests(pool: PgPool) {
         assert!(notices.iter().any(|n| n == t), "{t} in {notices:?}");
     }
 }
+
+/// Puts a release live on a platform: the package rows are a fixture written past their constraints (as in
+/// execution.rs), the live binding itself goes in normally so its notice triggers fire.
+async fn go_live(pool: &PgPool, org: Uuid, release: Uuid, partner: &str) {
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("SET LOCAL session_replication_role = replica")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    let package: Option<Uuid> = sqlx::query_scalar(
+        "SELECT dp.id FROM distribution.distribution_packages dp JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id WHERE cr.release_id=$1",
+    )
+    .bind(release)
+    .fetch_optional(&mut *tx)
+    .await
+    .unwrap();
+    let package = match package {
+        Some(p) => p,
+        None => {
+            let (canonical, package, hash) = (Uuid::new_v4(), Uuid::new_v4(), "0".repeat(64));
+            sqlx::query("INSERT INTO distribution.canonical_releases(id,org_id,release_id,revision_id,verification_package_id,canonical_hash,body) VALUES($1,$2,$3,$4,$5,$6,'{}')")
+                .bind(canonical).bind(org).bind(release).bind(Uuid::new_v4()).bind(Uuid::new_v4()).bind(&hash)
+                .execute(&mut *tx).await.unwrap();
+            sqlx::query("INSERT INTO distribution.distribution_packages(id,org_id,canonical_release_id,package_hash,body) VALUES($1,$2,$3,$4,'{}')")
+                .bind(package).bind(org).bind(canonical).bind(&hash)
+                .execute(&mut *tx).await.unwrap();
+            package
+        }
+    };
+    tx.commit().await.unwrap();
+    sqlx::query("INSERT INTO execution.live_bindings(id,org_id,package_id,partner_id,live_status) VALUES($1,$2,$3,$4,'LIVE')")
+        .bind(Uuid::new_v4())
+        .bind(org)
+        .bind(package)
+        .bind(partner)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+#[sqlx::test]
+async fn release_live_suggests_publishing(pool: PgPool) {
+    let (app, _store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let base = format!("/api/orgs/{}", u.org);
+    // One release whose songs are already prepared, one with nothing yet.
+    let prepared = create_release(&app, &u).await;
+    track(&app, &pool, &u, prepared, "한낮", 1).await;
+    let (s, r) = call(
+        &app,
+        "POST",
+        &format!("{base}/releases/{prepared}/works"),
+        json!({"enroll": false}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{r}");
+    let fresh = create_release(&app, &u).await;
+    track(&app, &pool, &u, fresh, "밤바다", 1).await;
+    track(&app, &pool, &u, fresh, "새벽", 2).await;
+    for (rel, partner) in [(prepared, "D-1"), (fresh, "D-1"), (fresh, "D-5")] {
+        go_live(&pool, u.org, rel, partner).await;
+    }
+    let hints: Vec<(String, String)> = sqlx::query_as(
+        "SELECT title, link FROM portal.notifications WHERE org_id=$1 AND title LIKE '%저작권도 맡겨 보세요.'",
+    )
+    .bind(u.org)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    // Once, for the release with songs not yet prepared, however many platforms go live.
+    assert_eq!(hints.len(), 1, "{hints:?}");
+    assert!(
+        hints[0]
+            .0
+            .ends_with(" 2곡의 작사·작곡 저작권도 맡겨 보세요."),
+        "{hints:?}"
+    );
+    assert_eq!(hints[0].1, format!("/releases/{fresh}?tab=publishing"));
+}

@@ -306,4 +306,35 @@ export function daysLeft(end: string, now = new Date()): number {
   return Math.ceil(d / 86_400_000);
 }
 
+/** 녹음 배급 수익 중 이 곡 몫 — 곡별 행은 그대로, 발매 전체 행(실서버 리포트는 발매 단위, track '전체')은 그 발매 곡 수로 나눈 몫.
+ *  recent는 리포트에 있는 가장 최근 3개월. split이면 나눈 추정이 섞였다 */
+export function recordedRevenue(
+  rows: readonly { period: string; release: string; track: string; revenue: number; releaseId?: string }[],
+  recordings: readonly { releaseId: string; releaseTitle: string; title: string }[],
+  trackCounts: Readonly<Record<string, number>> = {},
+): { all: number; recent: number; split: boolean } {
+  const months = Array.from(new Set(rows.map(r => r.period.slice(0, 7)))).sort().slice(-3);
+  let all = 0, recent = 0, split = false;
+  for (const r of rows) {
+    for (const rec of recordings) {
+      if (!(r.releaseId ? r.releaseId === rec.releaseId : r.release === rec.releaseTitle)) continue;
+      const whole = r.track === '전체';
+      if (!whole && r.track !== rec.title) continue;
+      const part = whole ? r.revenue / Math.max(1, trackCounts[rec.releaseId] ?? 1) : r.revenue;
+      split ||= whole;
+      all += part;
+      if (months.includes(r.period.slice(0, 7))) recent += part;
+    }
+  }
+  return { all: Math.round(all), recent: Math.round(recent), split };
+}
+
+/** 예상 저작권료 (분기) — 스트리밍에서 작사·작곡 몫은 보통 녹음 수익의 10~15% 수준이라, 최근 3개월 녹음 수익에 그 비율 ·
+ *  내 창작 지분 · (1 − 관리 수수료)를 곱한 범위. 백 원 단위로 내린다. 실제 금액은 관리 단체 분배에 따라 다르다 */
+export const PUB_RATIO = [0.1, 0.15] as const;
+export function estimateRoyalty(recentRecorded: number, sharePct: number, commissionPct: number): [number, number] {
+  const f = (ratio: number) => Math.floor((recentRecorded * ratio * (sharePct / 100) * (1 - commissionPct / 100)) / 100) * 100;
+  return [f(PUB_RATIO[0]), f(PUB_RATIO[1])];
+}
+
 export const pct = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(2).replace(/0$/, '')}%`;

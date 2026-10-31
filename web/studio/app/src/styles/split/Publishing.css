@@ -323,3 +323,8 @@
   .aq-paper-grid.aq-statement-grid thead th:nth-child(6){width:8%}
   .aq-paper-grid.aq-statement-grid td.num{text-align:right}
 }
+/* 예상 저작권료 한 줄 */
+.aq-pbl-estimate{margin:0;font-size:var(--aq-fs-sm);line-height:1.6;color:var(--aq-text-2)}
+.aq-pbl-estimate b{color:var(--aq-primary-text)}
+.aq-pbl-estimate small{color:var(--aq-text-4)}
+.aq-pbl-estimate.is-inline{padding:0 4px}

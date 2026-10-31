@@ -101,6 +101,24 @@ export function albumReadiness(works: readonly Work[], missingTracks: number) {
   return { ready, blocked, groups, summary: parts.join(' · ') || (open.length ? '확인할 곡이 없어요' : '신청할 곡이 없어요') };
 }
 
+// ---------- 발매 크레딧 ↔ 곡 참여자 ----------
+
+const nameKey = (n: string) => n.toLowerCase().replace(/\s+/g, '');
+/** 발매 크레딧(작사·작곡·편곡)과 곡 참여자가 다른 곳 — missing은 크레딧엔 있는데 참여자에 없는 이름, extra는 참여자(작사·작곡·편곡)엔 있는데
+ *  크레딧에 없는 이름. 관리 단체 등록은 발매 크레딧과 맞아야 해서 신청 전에 맞춰 두면 반려를 줄인다 */
+export function creditGaps(w: Pick<Work, 'contributors'>, credits: { composers?: string | null; lyricists?: string | null; arrangers?: string | null; instrumental?: boolean }): { missing: string[]; extra: string[] } {
+  const split = (s?: string | null) => String(s ?? '').split(/[,/·&]|\s+(?:and|feat\.?)\s+/i).map(x => x.trim()).filter(Boolean);
+  const credited = [...split(credits.composers), ...(credits.instrumental ? [] : split(credits.lyricists)), ...split(credits.arrangers)];
+  if (!credited.length) return { missing: [], extra: [] };
+  const people = w.contributors.filter(c => c.roles.some(r => r !== 'other'));
+  const have = new Set(people.map(c => nameKey(c.name)));
+  const credKeys = new Set(credited.map(nameKey));
+  return {
+    missing: Array.from(new Set(credited.filter(n => !have.has(nameKey(n))))),
+    extra: people.filter(c => !credKeys.has(nameKey(c.name))).map(c => c.name),
+  };
+}
+
 // ---------- 참여자 확인 현황 ----------
 
 export type ConfirmState = WorkContributor['confirm'];

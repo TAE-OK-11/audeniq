@@ -98,3 +98,13 @@ describe('저작권료 기간·조건', () => {
     expect(filterToParams({ period: '12m' }).period).toBeNull();
   });
 });
+
+describe('발매 크레딧 ↔ 곡 참여자', () => {
+  it('크레딧에만 있는 이름과 참여자에만 있는 이름을 짚는다 (띄어쓰기·대소문자 무시)', async () => {
+    const { creditGaps } = await import('./publishingPrep');
+    const w = work({ contributors: [person({ name: '서린', isMe: true, roles: ['composer'] }), person({ name: '김 하늘', roles: ['lyricist'] }), person({ name: '박도윤', roles: ['arranger'] })] });
+    expect(creditGaps(w, { composers: '서린, 이온', lyricists: '김하늘' })).toEqual({ missing: ['이온'], extra: ['박도윤'] });
+    expect(creditGaps(w, { composers: '서린', lyricists: '없는사람', instrumental: true, arrangers: '박도윤' })).toEqual({ missing: [], extra: ['김 하늘'] });
+    expect(creditGaps(w, {})).toEqual({ missing: [], extra: [] });
+  });
+});

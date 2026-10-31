@@ -9,9 +9,9 @@ import { pubApi, type Work, type WorkContributor } from '../api/publishing';
 import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { MOCK } from '../lib/mode';
-import { APP_LABEL, APP_TONE, AR_LABEL, AR_TONE, CONTRACT_LABEL, CONTRACT_TONE, FIX_FIELDS, LANGUAGES, ORIGIN_LABEL, fixNote, isFixField, type FixField, REG_LABEL, REG_SENTENCE, REG_STEPS, WORK_TYPES, AI_USE_OPTIONS, APPLICABLE_REG, PAYOUT_TIMING, canEditInfo, editMode, pct, societyName, regStep, splitIssues, splitReady, workOrigin } from '../lib/publishing';
+import { APP_LABEL, APP_TONE, AR_LABEL, AR_TONE, CONTRACT_LABEL, CONTRACT_TONE, FIX_FIELDS, LANGUAGES, ORIGIN_LABEL, fixNote, isFixField, type FixField, REG_LABEL, REG_SENTENCE, REG_STEPS, WORK_TYPES, AI_USE_OPTIONS, APPLICABLE_REG, PAYOUT_TIMING, estimateRoyalty, recordedRevenue, canEditInfo, editMode, pct, societyName, regStep, splitIssues, splitReady, workOrigin } from '../lib/publishing';
 import { StageCard } from '../components/StageCard';
-import { STATUS_LABEL, localStamp, statusTone } from '../lib/format';
+import { STATUS_LABEL, localStamp, money, statusTone } from '../lib/format';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { Modal } from '../components/Modal';
@@ -190,6 +190,14 @@ export function WorkDetail() {
 
   // 연결된 녹음의 배급 수익 — 음악 리포트와 같은 행(곡 이름이 맞는 행만)
   const { rows: reportRows } = useReportRows();
+  // 발매마다 곡 수 — 실서버 리포트는 발매 단위라 곡 몫을 곡 수로 나눠 본다
+  const { data: trackCounts } = useAsync(async () => {
+    const ids = Array.from(new Set((data?.recordings ?? []).map(r => r.releaseId)));
+    const out: Record<string, number> = {};
+    await Promise.all(ids.map(id => api.getRelease(id).then(r => { out[id] = r.tracks.length; }).catch(() => {})));
+    return out;
+  }, [data?.recordings.map(r => r.releaseId).join(',')]);
+  const { data: policy } = useAsync(() => pubApi.policy(), [], { key: 'pub-policy' });
   const [splitDraft, setSplitDraft] = useState<WorkContributor[] | null>(null);
   const [savingSplit, setSavingSplit] = useState(false);
   const [linking, setLinking] = useState(false);
@@ -220,8 +228,15 @@ export function WorkDetail() {
   const view: Tab = shownTabs.some(t => t.value === tab) ? tab : 'overview';
   const canEdit = w.myRole === 'owner' || w.myRole === 'editor';
   const next = nextAction(w);
-  const distRows = reportRows.filter(r => w.recordings.some(rec => (r.releaseId ? r.releaseId === rec.releaseId : r.release === rec.releaseTitle) && r.track === rec.title));
-  const distRevenue = distRows.reduce((n, r) => n + r.revenue, 0);
+  // 곡별 행 또는 발매 전체 행(곡 수로 나눈 몫) — 실서버에서는 발매 전체 행만 와서 곡 행만 고르면 늘 0원이었다
+  const rel = (r: { releaseId?: string; release: string }, rec: { releaseId: string; releaseTitle: string }) => (r.releaseId ? r.releaseId === rec.releaseId : r.release === rec.releaseTitle);
+  const distRows = reportRows.filter(r => w.recordings.some(rec => rel(r, rec) && (r.track === rec.title || r.track === '전체')));
+  const recorded = recordedRevenue(reportRows, w.recordings, trackCounts ?? {});
+  const distRevenue = recorded.all;
+  const partOf = (r: { releaseId?: string; release: string; track: string }) => {
+    const rec = w.recordings.find(x => rel(r, x));
+    return r.track === '전체' && rec ? Math.max(1, trackCounts?.[rec.releaseId] ?? 1) : 1;
+  };
   const app = w.application;
   const contract = contracts?.find(c => c.id === w.contractId) ?? null;
   const application = apps?.find(a => a.id === app?.id) ?? null;
@@ -350,6 +365,15 @@ export function WorkDetail() {
                 {next.text}
               </Callout>
             )}
+            {/* 예상 저작권료 — 맡기기 전에 얼마쯤 받을 수 있는지 (최근 3개월 녹음 수익으로 추정) */}
+            {canApply && me && policy && (() => {
+              const [low, high] = estimateRoyalty(recorded.recent, me.share, policy.commissionRate);
+              return high > 0 && (
+                <Callout tone="info" action={<Link to={`/publishing/apply?work=${w.id}`} className="ui-btn is-primary is-sm">저작권 관리 신청</Link>}>
+                  <b>맡기면 분기마다 약 {money(low)}~{money(high)}의 저작권료를 기대할 수 있어요.</b> 내 지분 {pct(me.share)} · 최근 3개월 재생 기준 추정이에요. 실제 금액은 관리 단체 분배에 따라 달라요.
+                </Callout>
+              );
+            })()}
             <div className="aq-relinfo-card">
               <h2 className="subhead">곡 정보</h2>
               <KeyValue cols={2} items={[
@@ -536,7 +560,7 @@ export function WorkDetail() {
           <div className="aq-detail-stack">
             {/* 한 곡이 번 돈을 한 화면에 — 녹음 배급 수익과 저작권료는 다른 돈이라 나란히 두되 더하지 않는다 */}
             <StatGrid cols={2}>
-              <StatTile label="녹음 배급 수익" value={<Money value={distRevenue} />} hint={`녹음 ${w.recordings.length}개 · 스트리밍·다운로드`} to={w.recordings[0] ? `/releases/${w.recordings[0].releaseId}?tab=stats` : '/reports'} />
+              <StatTile label="녹음 배급 수익" value={<Money value={distRevenue} />} hint={recorded.split ? '앨범 수익을 곡 수로 나눈 추정' : `녹음 ${w.recordings.length}개 · 스트리밍·다운로드`} to={w.recordings[0] ? `/releases/${w.recordings[0].releaseId}?tab=stats` : '/reports'} />
               <StatTile label="저작권료 (확정·지급)" value={<Money value={(royalties ?? []).filter(r => r.status !== 'estimated').reduce((n, r) => n + r.net, 0)} />} hint="작사·작곡 몫 · 관리 단체" />
             </StatGrid>
             <div className="aq-relinfo-card">
@@ -549,8 +573,8 @@ export function WorkDetail() {
                 <div className="ui-list is-inset">
                   {distRows.map((r, i) => (
                     <div key={i} className="ui-row is-flat">
-                      <span className="min-0"><span className="ui-row-title">{r.platform}</span><span className="ui-row-meta"><span>{r.release}</span><span>{r.period}</span><span>{r.plays.toLocaleString('ko-KR')}회</span></span></span>
-                      <Money value={r.revenue} />
+                      <span className="min-0"><span className="ui-row-title">{r.platform}</span><span className="ui-row-meta"><span>{r.release}{partOf(r) > 1 && ` · 앨범 ÷ ${partOf(r)}곡`}</span><span>{r.period}</span><span>{r.plays.toLocaleString('ko-KR')}회</span></span></span>
+                      <Money value={Math.round(r.revenue / partOf(r))} />
                     </div>
                   ))}
                 </div>
