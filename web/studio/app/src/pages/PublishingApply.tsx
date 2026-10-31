@@ -38,6 +38,9 @@ const AGREE = APPLICATION_AGREE;
 
 interface Saved { step: number; workIds: string[]; territories: string[]; rights: string[]; key: string; from?: string }
 const SAVE_KEY = 'publishing-apply';
+// 지난번에 고른 관리 범위 — 다음 신청에서 국가·권리를 처음부터 다시 고르지 않게 (계정 정보의 작가 정보처럼 한 번 고르면 다시 쓴다)
+const SCOPE_KEY = 'publishing-apply-scope';
+interface Scope { territories: string[]; rights: string[] }
 const activeApp = (w: Work) => !!w.application && ['submitted', 'in_review', 'needs_fix', 'approved'].includes(w.application.status);
 // 저작권 관리는 발매된 곡(내 발매 · 다른 아티스트 발매)만 — 발매 전 곡은 Open A&R로 피칭한다 (서버도 WORK_NOT_RELEASED로 막는다)
 const canPick = (w: Work) => !activeApp(w) && isReleased(w);
@@ -81,12 +84,17 @@ export function PublishingApply() {
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState('');
 
-  // 정책을 받으면 기본값: 모든 지역·권리
+  // 정책을 받으면 기본값: 지난 신청과 같은 범위(지금 정책에 있는 것만), 처음이면 모든 지역·권리
+  const lastScope = useRef(readJSON<Scope | null>(SCOPE_KEY, null));
+  const [fromLast, setFromLast] = useState(false);
   useEffect(() => {
     if (!policy) return;
-    setTerritories(t => (t.length ? t : policy.territories.map(x => x.code)));
-    setRights(r => (r.length ? r : policy.rights.map(x => x.key)));
-  }, [policy]);
+    const lt = lastScope.current?.territories.filter(c => policy.territories.some(x => x.code === c)) ?? [];
+    const lr = lastScope.current?.rights.filter(k => policy.rights.some(x => x.key === k)) ?? [];
+    setTerritories(t => (t.length ? t : lt.length ? lt : policy.territories.map(x => x.code)));
+    setRights(r => (r.length ? r : lr.length ? lr : policy.rights.map(x => x.key)));
+    if (!resume && lt.length && lr.length) setFromLast(true);
+  }, [policy]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     writeJSON(SAVE_KEY, { step, workIds: picked, territories, rights, key, from } satisfies Saved);
@@ -124,6 +132,7 @@ export function PublishingApply() {
         idempotencyKey: key,
       });
       removeKey(SAVE_KEY);
+      writeJSON(SCOPE_KEY, { territories, rights } satisfies Scope);
       // 배급처럼 접수한 신청서를 바로 보여 준다 — 맨 위 '신청했어요' 카드와 남은 단계, 그 아래 서명한 신청서
       nav(`/publishing/applications/${encodeURIComponent(app.id)}?done=1`, { replace: true });
     } catch (e) {
@@ -231,6 +240,7 @@ export function PublishingApply() {
             );
           })}
           <div className="ui-card">
+            {fromLast && <p className="ui-field-help aq-pbl-import-note"><Glyph name="repeat" size={14} />지난 신청과 같은 범위로 골라 두었어요. 바꿔도 돼요.</p>}
             <h2>관리 대상 국가</h2>
             <div className="ui-chips is-wrap" role="group" aria-label="관리 대상 국가">
               {policy.territories.map(t => (

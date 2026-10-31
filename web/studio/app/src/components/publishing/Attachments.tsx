@@ -78,7 +78,23 @@ export function AttachmentModal({ works, workId, onClose, onAdded }: {
   const [target, setTarget] = useState(workId ?? editable[0]?.id ?? '');
   const [kind, setKind] = useState<WorkAttachment['kind']>('demo');
   const [busy, setBusy] = useState(false);
+  const [lyrics, setLyrics] = useState('');
   const work = works.find(w => w.id === target);
+
+  // 가사는 붙여 넣어도 된다 — 메모장에 저장해 파일로 올리는 수고 없이, 곡 화면에서 바로 읽히는 본문으로
+  const saveLyrics = async () => {
+    const text = lyrics.trim();
+    if (!text || !work || busy) return;
+    setBusy(true);
+    try {
+      const w = await pubApi.addAttachment(work.id, 'lyrics', `${work.title || '곡'} 가사`, new Blob([text]).size, { text });
+      toast(`‘${work.title}’에 가사를 붙였어요.`, 'success');
+      onAdded(w);
+      onClose();
+    } catch (err) {
+      toast(errorMessage(err, '가사를 저장하지 못했어요. 다시 시도해 주세요.'), 'error');
+    } finally { setBusy(false); }
+  };
 
   const pick = async (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -112,6 +128,12 @@ export function AttachmentModal({ works, workId, onClose, onAdded }: {
         <Field label="자료 종류">
           <Segmented label="자료 종류" value={kind} onChange={setKind} fill size="sm" options={KINDS.map(k => ({ value: k, label: KIND_LABEL[k] }))} />
         </Field>
+        {kind === 'lyrics' && (
+          <Field label="가사 붙여 넣기" htmlFor="attachLyrics" help="여기에 붙여 넣으면 곡 화면에서 바로 읽을 수 있어요. 파일이 있으면 아래에서 올려도 돼요.">
+            <textarea id="attachLyrics" className="ui-textarea" rows={8} maxLength={20000} value={lyrics} onChange={e => setLyrics(e.target.value)} disabled={busy} placeholder={'1절\n…\n\n후렴\n…'} />
+            <button type="button" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={!lyrics.trim() || !work || busy} onClick={() => void saveLyrics()}>가사 저장</button>
+          </Field>
+        )}
         <Field label="파일" htmlFor="attachFile" help={kind === 'demo' ? 'MP3·WAV·M4A — 곡 화면에서 바로 들을 수 있어요.' : kind === 'lyrics' ? 'TXT로 올리면 곡 화면에서 바로 읽을 수 있어요.' : 'PDF·이미지 — 곡 화면에서 바로 열어 볼 수 있어요.'}>
           <FilePicker id="attachFile" accept={KIND_ACCEPT[kind]} busy={busy} disabled={!work} onChange={e => void pick(e)} />
         </Field>

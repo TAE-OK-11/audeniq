@@ -152,6 +152,15 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
       {!readOnly && total < 100 && <p className="ui-field-help">남은 {pct(rest)}를 참여자에게 나눠 주세요. 미완성 정보도 저장할 수 있어요.</p>}
       {!readOnly && imported && <p className="ui-field-help aq-pbl-import-note"><Glyph name="info" size={14} />가져온 참여자의 지분은 비어 있어요. 이번 곡의 몫을 직접 확인해서 적어 주세요.</p>}
 
+      {/* 확인을 기다리는 사람이 여럿이면 한 번에 — 한 사람씩 '다시 보내기'를 누르지 않게 */}
+      {readOnly && onRequestConfirm && (() => {
+        const waiting = value.filter(c => !c.isMe && c.confirm === 'pending');
+        return waiting.length > 1 && (
+          <button type="button" className="ui-btn is-soft is-sm aq-pbl-remind-all" onClick={() => waiting.forEach(onRequestConfirm)}>
+            <Glyph name="mail" size={14} className="aq-glyph-lead" />{waiting.length}명에게 확인 요청 모두 보내기
+          </button>
+        );
+      })()}
       <div className="aq-pbl-people">
         {value.map((c, i) => {
           const errors = issues.filter(x => x.contributorId === c.id && x.level === 'error');
