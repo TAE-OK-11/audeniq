@@ -9,7 +9,7 @@ import { pubApi, type Work, type WorkContributor } from '../api/publishing';
 import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { MOCK } from '../lib/mode';
-import { APP_LABEL, APP_TONE, CONTRACT_LABEL, CONTRACT_TONE, LANGUAGES, REG_LABEL, REG_SENTENCE, REG_STEPS, WORK_TYPES, pct, regStep, splitIssues, splitReady } from '../lib/publishing';
+import { APP_LABEL, APP_TONE, CONTRACT_LABEL, CONTRACT_TONE, FIX_FIELDS, LANGUAGES, fixNote, isFixField, type FixField, REG_LABEL, REG_SENTENCE, REG_STEPS, WORK_TYPES, pct, regStep, splitIssues, splitReady } from '../lib/publishing';
 import { StageCard } from '../components/StageCard';
 import { STATUS_LABEL, localStamp, statusTone } from '../lib/format';
 import { useToast } from '../components/Toast';
@@ -17,7 +17,7 @@ import { useConfirm } from '../components/Confirm';
 import { Modal } from '../components/Modal';
 import { SkeletonBlock } from '../components/Skeleton';
 import { ReleaseCover } from '../components/ReleaseCover';
-import { CheckIcon } from '../components/Check';
+import { ReviewNote } from '../components/CorrectionList';
 import { Glyph } from '../components/Glyph';
 import { RegBadge, RegProgress, roleText } from '../components/publishing/parts';
 import { SplitEditor } from '../components/publishing/SplitEditor';
@@ -46,7 +46,8 @@ const Empty = ({ children }: { children: string }) => <span className="aq-empty-
 /** 다음에 할 일 — 개요 탭 맨 위 알림 상자 하나 */
 function nextAction(w: Work): { text: string; tab?: Tab; to?: string; btn: string; tone: 'warn' | 'info' } | null {
   const canEdit = w.myRole === 'owner' || w.myRole === 'editor';
-  if (w.fix) return { text: `보완 요청이 왔어요. ${w.fix.reason}`, tab: 'register', btn: '보완하기', tone: 'warn' };
+  // 보완 요청은 탭 위 보완 카드(FixPanel)가 맡는다 — 여기서 한 번 더 알리지 않는다
+  if (w.fix) return null;
   const mine = w.contributors.find(c => c.isMe && c.confirm === 'pending');
   if (mine) return { text: `내 지분 ${pct(mine.share)}를 확인해 주세요. 맞으면 확인, 다르면 변경을 요청해요.`, tab: 'rights', btn: '확인하기', tone: 'warn' };
   if (!canEdit) return null;
@@ -55,56 +56,65 @@ function nextAction(w: Work): { text: string; tab?: Tab; to?: string; btn: strin
   return null;
 }
 
-/** 보완 요청 — 계약 묶음(aq-bundle)과 같은 번호 줄로 할 일을 차례대로 (기획안 7.3).
+/** 보완 요청 — 발매 상세의 보완 카드와 같은 모양(aq-fix-panel): 담당자가 고른 항목·서류를 할 일 줄로(누르면 고칠 자리로),
+ *  맨 아래 다시 심사받기 하나. 담당자가 따로 의견을 남겼을 때만 검토팀 말풍선을 보인다 (발매의 REVIEW_NOTE와 같다).
+ *  아티스트가 담당자에게 적는 칸은 두지 않는다 — 고친 내용이 곧 답이다.
  *  요청한 서류는 발매 보완과 같은 '권리·보완 서류'에서 낸다 — 같은 제출 화면·알림·담당자 확인을 쓴다 */
 function FixPanel({ work, onDone, goRights }: { work: Work; onDone: (w: Work) => void; goRights: () => void }) {
   const toast = useToast();
-  const [note, setNote] = useState('');
+  const nav = useNavigate();
   const [busy, setBusy] = useState(false);
   const fix = work.fix!;
-  const needsDocs = (fix.documents?.length ?? 0) > 0;
-  const infoOk = splitReady(work.contributors) && work.contributors.every(c => c.ipi || c.isMe);
+  const fields = fix.fields.filter(isFixField);
+  const docs = fix.documents ?? [];
+  const note = fixNote(fix);
+  const open = fields.length + docs.length;
+  const goField = (f: FixField) => (f.startsWith('contributors.') ? goRights() : nav(`/works/${work.id}/edit`));
   const send = async () => {
     if (busy) return;
     setBusy(true);
-    try { const w = await pubApi.resubmitFix(work.id, note.trim(), []); toast('보완했어요. 담당자가 다시 확인해요.', 'success'); onDone(w); }
+    try { const w = await pubApi.resubmitFix(work.id, '', []); toast('보완했어요. 담당자가 다시 확인해요.', 'success'); onDone(w); }
     catch (err) { toast(errorMessage(err, '보내지 못했어요. 다시 시도해 주세요.'), 'error'); }
     finally { setBusy(false); }
   };
   return (
-    <article className="aq-bundle is-needs" aria-label="보완 요청">
-      <header className="aq-bundle-head">
-        <div className="min-0"><strong>보완 요청</strong><span>{localStamp(fix.requestedAt)} · AUDENIQ 담당자</span></div>
-        <Badge tone="amber" className="aq-bundle-state">보완 필요</Badge>
-      </header>
-      <Callout tone="warn">{fix.reason}</Callout>
-      <ol className="aq-bundle-docs">
-        <li className={infoOk ? 'is-done' : 'is-current'}>
-          <span className="aq-bundle-no" aria-hidden="true">{infoOk ? <CheckIcon size={14} /> : 1}</span>
-          <div className="min-0"><strong>빠진 정보 고치기</strong><span>원래 정보는 담당자 확인 전까지 그대로 남아요</span></div>
-          <button type="button" className="ui-btn is-soft is-sm" onClick={goRights}>참여자·권리</button>
-        </li>
-        {needsDocs && (
-          <li className="is-current">
-            <span className="aq-bundle-no" aria-hidden="true">2</span>
-            <div className="min-0"><strong>{fix.documents!.join(', ')}</strong><span>권리·보완 서류에서 파일을 올려 주세요</span></div>
-            <Link to="/rights" className="ui-btn is-soft is-sm">서류 제출</Link>
-          </li>
+    <section className="aq-fix-panel ui-tone-warn" aria-labelledby="workFixHead">
+      <p className="eyebrow">{open ? `보완 요청 ${open}건` : '보완 필요'}</p>
+      <h2 id="workFixHead" className="aq-fix-title">
+        {open ? `${open}가지 고치면 다시 심사받을 수 있어요` : '검토팀 의견을 확인하고 고쳐 주세요'}
+      </h2>
+      <div className="aq-fix-body">
+        {note && <ReviewNote text={note} />}
+        {open > 0 && (
+          <ul className="aq-task-list aq-fix-tasks">
+            {fields.map(f => (
+              <li key={f}>
+                <button type="button" className="aq-task is-warn" onClick={() => goField(f)}>
+                  <span className="ui-icon" aria-hidden="true"><Glyph name="pencil" size={18} /></span>
+                  <span className="aq-task-text">
+                    <strong>{FIX_FIELDS[f]}</strong>
+                    <small>{f.startsWith('contributors.') ? '참여자·지분에서 고쳐요 · 원래 정보는 담당자 확인 전까지 그대로 남아요' : '곡 정보 고치기에서 고쳐요'}</small>
+                  </span>
+                  <span className="aq-task-go">고치러 가기<i aria-hidden="true"><Glyph name="chevron-right" size={14} /></i></span>
+                </button>
+              </li>
+            ))}
+            {docs.map(d => (
+              <li key={d}>
+                <button type="button" className="aq-task is-warn" onClick={() => nav('/rights')}>
+                  <span className="ui-icon" aria-hidden="true"><Glyph name="doc" size={18} /></span>
+                  <span className="aq-task-text"><strong>{d}</strong><small>권리·보완 서류에서 파일을 올려 주세요</small></span>
+                  <span className="aq-task-go">서류 첨부하기<i aria-hidden="true"><Glyph name="chevron-right" size={14} /></i></span>
+                </button>
+              </li>
+            ))}
+          </ul>
         )}
-        <li>
-          <span className="aq-bundle-no" aria-hidden="true">{needsDocs ? 3 : 2}</span>
-          <div className="min-0">
-            <strong>담당자에게 한마디 <span className="aq-optional">선택</span></strong>
-            <textarea className="ui-textarea" rows={2} value={note} onChange={e => setNote(e.target.value)} placeholder="예: 김하늘 님 IPI 번호를 추가했어요." />
-          </div>
-        </li>
-      </ol>
-      <div className="row-actions">
-        <button type="button" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={busy} onClick={() => void send()}>
+        <button type="button" className={`ui-btn is-primary aq-fix-cta${busy ? ' is-busy' : ''}`} disabled={busy} onClick={() => void send()}>
           {busy ? '보내는 중' : '보완 완료하고 다시 심사받기'}
         </button>
       </div>
-    </article>
+    </section>
   );
 }
 
@@ -298,11 +308,14 @@ export function WorkDetail() {
         <div className="aq-detail-actions is-narrow">{buttons}</div>
       </div>
 
+      {/* 보완 요청은 발매 상세처럼 머리 카드와 탭 사이 — 어느 탭을 보고 있어도 먼저 보인다 */}
+      {w.fix && canEdit && <FixPanel work={w} onDone={update} goRights={() => setTab('rights')} />}
+
       {/* 고를 탭이 '정보' 하나뿐이면(맡기기 전 · 미발매) 탭 줄을 그리지 않는다 — 혼자 화면 폭을 차지한 탭은 누를 일이 없다 */}
       {shownTabs.length > 1 && (
         <div className="aq-detail-tabs" style={{ top: 'var(--aq-header-h)' }}>
           <Tabs label="곡 상세 메뉴" value={view} onChange={setTab} className="is-fill"
-            items={shownTabs.map(t => ({ ...t, count: t.value === 'register' && w.fix ? 1 : undefined }))} />
+            items={shownTabs} />
         </div>
       )}
 
@@ -382,7 +395,6 @@ export function WorkDetail() {
 
         {view === 'register' && (
           <div className="aq-detail-stack">
-            {w.fix && canEdit && <FixPanel work={w} onDone={update} goRights={() => setTab('rights')} />}
             <div className="aq-relinfo-card">
               <h2 className="subhead">저작권 등록 현황</h2>
               <RegProgress status={w.registration} log={w.registrationLog} stage={regStep(w.registration) < 0 || w.registration === 'registered'} />

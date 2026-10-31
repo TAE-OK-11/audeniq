@@ -40,7 +40,7 @@ function Preview({ a }: { a: WorkAttachment }) {
 /** 자료 목록 — 누르면 그 줄 아래에서 재생·열람 */
 export function AttachmentList({ items, empty = '아직 올린 자료가 없어요. 데모·가사·악보·권리 증빙을 모아 둘 수 있어요.' }: { items: readonly WorkAttachment[]; empty?: string }) {
   const [open, setOpen] = useState<string | null>(null);
-  if (!items.length) return <p className="aq-empty-val">{empty}</p>;
+  if (!items.length) return <p className="ui-field-help aq-pbl-files-empty">{empty}</p>;
   return (
     <ul className="ui-list is-inset aq-pbl-files">
       {items.map(a => (

@@ -13,7 +13,7 @@ const routes = [
   ['legacy-redirect', '/publishing?tab=royalties', '.settle-entry'],
   ['album', '/releases/r2?tab=publishing', '.aq-album-pub'],
   ['work', '/works/w1', '.aq-pbl-person-read'],
-  ['registration', '/works/w2?tab=register', '.aq-bundle.is-needs'],
+  ['registration', '/works/w2?tab=register', '.aq-fix-panel'],
   ['work-income', '/works/w1?tab=revenue', '.settle-entry'],
   ['work-files', '/works/w1?tab=files', '.aq-pbl-files'],
   ['ar', '/ar', '.aq-ar-card'],

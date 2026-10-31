@@ -108,9 +108,12 @@ export function WorkSheet({ work, no, all, focus, onClose, onSaved, releaseId }:
           {!w.fix && stage === 'managed' && <RegBadge status={w.registration} />}
         </div>
 
-        {!draft && blocking.length > 0 && stage === 'blocked' && (
+        {/* 할 일 안내는 맨 위 한 번만 — 보완 요청이 있으면 그것(보완하기로 곡 상세 보완 카드에), 없으면 신청을 막는 첫 문제 */}
+        {!draft && (w.fix ? (
+          <Callout tone="warn" action={canEdit && <Link to={`/works/${w.id}${back}`} className="ui-btn is-white is-sm">보완하기</Link>}>{w.fix.reason}</Callout>
+        ) : blocking.length > 0 && stage === 'blocked' && (
           <Callout tone="warn">{blocking[0].text}{blocking.length > 1 && ` 외 ${blocking.length - 1}건`}</Callout>
-        )}
+        ))}
 
         <section ref={splitRef} className="aq-pbl-sheet-sec" aria-labelledby="wsSplit">
           <div className="ui-section-head">
@@ -147,10 +150,7 @@ export function WorkSheet({ work, no, all, focus, onClose, onSaved, releaseId }:
         </section>
 
         <section ref={statusRef} className="aq-pbl-sheet-sec" aria-labelledby="wsStatus">
-          <h3 id="wsStatus" className="aq-track-sheet-h">관리 상태</h3>
-          {w.fix && (
-            <Callout tone="warn" action={canEdit && <Link to={`/works/${w.id}?tab=register${back && `&${back.slice(1)}`}`} className="ui-btn is-white is-sm">보완하기</Link>}>{w.fix.reason}</Callout>
-          )}
+          <div className="ui-section-head"><h3 id="wsStatus" className="aq-track-sheet-h">관리 상태</h3></div>
           <RegProgress status={w.registration} log={w.registrationLog} />
         </section>
 
@@ -163,7 +163,7 @@ export function WorkSheet({ work, no, all, focus, onClose, onSaved, releaseId }:
         </section>
 
         {draft ? (
-          <div className="aq-sticky-foot ui-actions">
+          <div className="aq-sticky-foot ui-actions is-fill">
             <button type="button" className="ui-btn is-soft" disabled={saving} onClick={() => setDraft(null)}>취소</button>
             <button type="button" className={`ui-btn is-primary${saving ? ' is-busy' : ''}`} disabled={saving || !changes.length} onClick={() => void save()}>
               {saving ? '저장 중' : managed ? '변경 요청' : '저장'}

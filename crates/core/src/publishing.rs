@@ -326,6 +326,37 @@ fn ts(v: DateTime<Utc>) -> String {
     v.to_rfc3339()
 }
 
+/// Fields a reviewer can ask to fix on a song (`fields` of a correction request) and how Studio names them.
+/// Same keys as FIX_FIELDS in web/studio/app/src/lib/publishing.ts.
+fn fix_field_label(key: &str) -> Option<&'static str> {
+    Some(match key {
+        "contributors.split" => "참여자·지분",
+        "contributors.ipi" => "참여자 IPI 번호",
+        "contributors.society" => "저작권 관리 단체",
+        "work.info" => "곡 정보",
+        "work.prior" => "기존 퍼블리셔",
+        _ => return None,
+    })
+}
+
+/// One line for a correction request: what to fix and which documents, or the reviewer's comment when
+/// nothing was picked ('참여자 IPI 번호 · 서류 공동 작곡 합의서').
+fn fix_summary(fields: &[String], documents: &[String], comment: &str) -> String {
+    let mut parts: Vec<String> = fields
+        .iter()
+        .filter_map(|f| fix_field_label(f))
+        .map(str::to_string)
+        .collect();
+    if !documents.is_empty() {
+        parts.push(format!("서류 {}", documents.join(", ")));
+    }
+    if parts.is_empty() {
+        comment.to_string()
+    } else {
+        format!("{} 보완", parts.join(" · "))
+    }
+}
+
 /// Studio's release status chip (draft, review, needs, scheduled, live, ...) for a release pipeline status.
 /// Mirrors `uiStatus` in web/studio/app/src/api/remote.ts so a linked recording reads like its release
 /// instead of a raw stage name such as `stage1_correction`.
@@ -1907,8 +1938,13 @@ pub async fn staff_decide(s: &AppState, h: &HeaderMap, id: Uuid, i: DecisionIn) 
             .await?;
         }
         "REQUEST_CORRECTION" if open => {
-            if reason.is_empty() {
+            // What to fix is picked (fields · documents); `reason` is the reviewer's own comment and may be
+            // left out. Studio shows the comment only when it was written, like a release REVIEW_NOTE.
+            if reason.is_empty() && i.fields.is_empty() && i.documents.is_empty() {
                 return Err(Error::InvalidCode("APPLICATION_REASON_REQUIRED"));
+            }
+            if i.fields.iter().any(|f| fix_field_label(f).is_none()) {
+                return Err(Error::Invalid);
             }
             let target: Vec<Uuid> = if i.work_ids.is_empty() {
                 works.clone()
@@ -1926,7 +1962,11 @@ pub async fn staff_decide(s: &AppState, h: &HeaderMap, id: Uuid, i: DecisionIn) 
                 .iter()
                 .map(|d| clean(d, 100, "APPLICATION_REASON_INVALID"))
                 .collect::<Result<Vec<_>>>()?;
-            let fix = json!({"reason": reason, "fields": i.fields, "documents": documents, "requestedAt": Utc::now().to_rfc3339()});
+            // `reason` stays the one-line summary every screen and log already reads; `note` is the comment alone.
+            let summary = fix_summary(&i.fields, &documents, &reason);
+            let note = (!reason.is_empty()).then_some(reason.as_str());
+            let fix = json!({"reason": summary, "note": note, "fields": i.fields, "documents": documents, "requestedAt": Utc::now().to_rfc3339()});
+            let reason = summary;
             sqlx::query("UPDATE portal.pub_applications SET status='needs_fix', fix_reason=$2, reply_note=NULL WHERE id=$1")
                 .bind(id)
                 .bind(&reason)
@@ -1957,7 +1997,7 @@ pub async fn staff_decide(s: &AppState, h: &HeaderMap, id: Uuid, i: DecisionIn) 
                     .bind(org)
                     .bind(w)
                     .bind(format!("{} · {d}", title.chars().take(80).collect::<String>()))
-                    .bind(reason.chars().take(1000).collect::<String>())
+                    .bind(note.unwrap_or(&reason).chars().take(1000).collect::<String>())
                     .execute(&mut *tx)
                     .await?;
                 }
@@ -2349,6 +2389,24 @@ pub fn routes() -> Router<AppState> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fix_summary_names_the_fields_and_documents() {
+        let f = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            fix_summary(
+                &f(&["contributors.ipi", "contributors.split"]),
+                &f(&["공동 작곡 합의서"]),
+                "메모"
+            ),
+            "참여자 IPI 번호 · 참여자·지분 · 서류 공동 작곡 합의서 보완"
+        );
+        assert_eq!(
+            fix_summary(&[], &[], "IPI를 적어 주세요."),
+            "IPI를 적어 주세요."
+        );
+        assert!(fix_field_label("work.title").is_none());
+    }
 
     #[test]
     fn recording_status_reads_like_the_release() {

@@ -314,6 +314,8 @@ async fn work_to_application_to_review(pool: PgPool) {
         (s, e["error"]["code"].as_str()),
         (StatusCode::BAD_REQUEST, Some("APPLICATION_REASON_REQUIRED"))
     );
+    let (s, e) = decide(json!({"action": "REQUEST_CORRECTION", "fields": ["work.title"]})).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST, "{e}");
     let (s, x) = decide(json!({"action": "REQUEST_CORRECTION", "reason": "김하늘 님 IPI를 적어 주세요.", "fields": ["contributors.ipi"], "documents": ["공동 작곡 합의서"]})).await;
     assert_eq!(s, StatusCode::OK, "{x}");
     assert_eq!(x["status"], "needs_fix");
@@ -327,6 +329,12 @@ async fn work_to_application_to_review(pool: PgPool) {
     .await;
     assert_eq!(w["registration"], "needs_fix");
     assert_eq!(w["fix"]["documents"][0], "공동 작곡 합의서");
+    // What to fix is the summary; the reviewer's own words are the note Studio shows as 검토팀 의견.
+    assert_eq!(
+        w["fix"]["reason"],
+        "참여자 IPI 번호 · 서류 공동 작곡 합의서 보완"
+    );
+    assert_eq!(w["fix"]["note"], "김하늘 님 IPI를 적어 주세요.");
     // The document waits on 권리·보완 서류 like a release proof, with its notice.
     let (_, docs) = call(
         &app,

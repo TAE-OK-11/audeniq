@@ -2,7 +2,7 @@
 // 서버 응답 모양은 api/publishing.ts, 여기는 계산과 글자만 (테스트: publishing.test.ts)
 import type { Tone } from '../ui/tone';
 import type {
-  ApplicationStatus, ArStatus, ContractStatus, ContributorRole, RegistrationStatus, RoyaltyKind, RoyaltyStatus, Work, WorkContributor,
+  ApplicationStatus, ArStatus, ContractStatus, ContributorRole, RegistrationStatus, RoyaltyKind, RoyaltyStatus, Work, WorkContributor, WorkFix,
 } from '../api/publishing';
 
 /** 곡 등록(권리 관리) 진행 — 기획안 7.1
@@ -48,6 +48,24 @@ export function regStep(s: RegistrationStatus): number {
     case 'submitted': case 'external_review': case 'rejected': return 3;
     case 'registered': return 5;
   }
+}
+
+/** 담당자가 고르는 보완 항목 — 서버 fix_field_label(crates/core/src/publishing.rs)과 같은 키.
+ *  곡 상세의 보완 카드는 항목마다 고칠 자리로 데려간다 (참여자 쪽은 참여자·지분, 곡 쪽은 곡 정보 고치기) */
+export const FIX_FIELDS = {
+  'contributors.split': '참여자·지분',
+  'contributors.ipi': '참여자 IPI 번호',
+  'contributors.society': '저작권 관리 단체',
+  'work.info': '곡 정보',
+  'work.prior': '기존 퍼블리셔',
+} as const;
+export type FixField = keyof typeof FIX_FIELDS;
+export const isFixField = (f: string): f is FixField => f in FIX_FIELDS;
+
+/** 담당자가 따로 남긴 의견 — 있을 때만 '검토팀' 말풍선으로 보인다. 예전 요청(note 없음)은 reason이 담당자의 글이다 */
+export function fixNote(f: WorkFix): string | null {
+  const text = f.note === undefined ? f.reason : f.note;
+  return text?.trim() || null;
 }
 
 export const APP_LABEL: Record<ApplicationStatus, string> = {
