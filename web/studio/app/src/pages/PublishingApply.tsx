@@ -14,15 +14,16 @@ import { useProfile } from '../store/profile';
 import { compactSignature } from '../lib/application';
 import { readJSON, removeKey, writeJSON } from '../lib/storage';
 import { uid } from '../lib/store';
-import { APP_LABEL, APP_TONE, pct, splitIssues, splitReady, termLabel } from '../lib/publishing';
+import { APP_LABEL, APP_TONE, REG_STEPS, pct, splitIssues, splitReady, termLabel } from '../lib/publishing';
 import { money } from '../lib/format';
 import { ReviewCard, WizardShell, type WizardStep } from '../components/WizardShell';
 import { SkeletonBlock } from '../components/Skeleton';
 import { Glyph } from '../components/Glyph';
 import { SignaturePad, type SignaturePadHandle } from '../components/SignaturePad';
 import { SplitBar, roleText } from '../components/publishing/parts';
-import { Badge, Callout, EmptyState, StatGrid, StatTile, Steps } from '../ui';
+import { Badge, Callout, EmptyState, StatGrid, StatTile } from '../ui';
 import { CheckIcon } from '../components/Check';
+import { Burst } from '../components/Burst';
 import '../styles/split/Upload.css';
 import '../styles/split/Publishing.css';
 
@@ -147,24 +148,36 @@ export function PublishingApply() {
   // 신청을 받았으면 신청서 틀을 벗고 결과만
   if (step === 4 && result) {
     return (
-      <div className="view" ref={topRef}>
+      <div className="view aq-pbl-done" ref={topRef}>
         <div className="ui-page-head">
           <div>
-            <p className="eyebrow">퍼블리싱</p>
+            <p className="eyebrow">곡 저작권</p>
             <h1>신청을 받았어요</h1>
-            <p>심사가 끝나면 알림으로 알려 드려요.</p>
+            <p>신청번호 <span className="aq-nowrap">{result.number}</span></p>
           </div>
         </div>
-        <section className="ui-tab-panel" aria-live="polite">
-          <EmptyState icon={<CheckIcon size={22} />} tone="green" title={`신청번호 ${result.number}`}
-            actions={<><Link to={`/works/${result.workIds[0]}?tab=register`} className="ui-btn is-primary">진행 상황 보기</Link><Link to="/contracts" className="ui-btn is-soft">계약서</Link></>}>
-            {result.workTitles.join(', ')} · {result.workTitles.length}개 곡
-          </EmptyState>
-          <div className="ui-card">
-            <Steps steps={['제출 완료', '심사', '승인', '외부 등록']} current={1} label="처리 진행 상황" />
-            <p className="ui-field-help">보통 영업일 3~5일 안에 심사 결과를 알려 드려요. 보완이 필요하면 알림과 곡 화면에 함께 보여요. 서명한 계약서는 계약서 화면에서 받을 수 있어요.</p>
+        {/* 발매 신청 완료(신청서 화면의 aq-doc-done)와 같은 카드 — 무엇을 했는지와 남은 단계를 한 장에.
+            단계 이름은 곡 화면의 진행 단계(REG_STEPS)와 같은 말을 쓴다 */}
+        <div className="aq-doc-done" role="status" aria-live="polite">
+          <span className="aq-doc-done-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            <Burst />
+          </span>
+          <div className="min-0">
+            <strong>{result.workTitles.length > 1 ? `‘${result.workTitles[0]}’ 외 ${result.workTitles.length - 1}곡` : `‘${result.workTitles[0] ?? '곡'}’`} 저작권 관리를 신청했어요</strong>
+            <span>{result.workTitles.join(', ')} · 남은 단계는 이래요.</span>
+            <ol className="aq-doc-next" aria-label="다음 단계">
+              <li className="is-done"><i aria-hidden="true"><CheckIcon size={10} /></i>{REG_STEPS[0]} — 방금 마쳤어요</li>
+              <li><i aria-hidden="true">2</i>{REG_STEPS[1]} — 담당자가 참여자·지분을 확인해요. 보통 영업일 3~5일, 끝나면 알림으로 알려 드려요</li>
+              <li><i aria-hidden="true">3</i>{REG_STEPS[2]} — 보완이 필요하면 곡 화면에 보완 요청이 보여요</li>
+              <li><i aria-hidden="true">4</i>{REG_STEPS[3]} · {REG_STEPS[4]} — 관리 단체 등록이 끝나야 저작권료를 받아요</li>
+            </ol>
           </div>
-        </section>
+        </div>
+        <div className="ui-actions is-fill aq-pbl-done-actions">
+          <Link to="/contracts" className="ui-btn is-soft">계약서 보기</Link>
+          <Link to={`/works/${result.workIds[0]}?tab=register`} className="ui-btn is-primary">진행 상황 보기</Link>
+        </div>
       </div>
     );
   }

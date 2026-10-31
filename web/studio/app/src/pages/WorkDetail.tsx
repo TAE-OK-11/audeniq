@@ -405,8 +405,8 @@ export function WorkDetail() {
               {app && app.status !== 'withdrawn' ? (
                 <>
                   <dl className="ui-kv is-2">
-                    <div><dt>신청 번호</dt><dd>{app.number}</dd></div>
-                    <div><dt>제출</dt><dd>{application?.submittedAt ? localStamp(application.submittedAt) : '—'}</dd></div>
+                    <div className="aq-kv-code"><dt>신청 번호</dt><dd className="aq-nowrap">{app.number}</dd></div>
+                    <div className="aq-kv-code"><dt>제출</dt><dd>{application?.submittedAt ? localStamp(application.submittedAt) : '—'}</dd></div>
                   </dl>
                   {application && (
                     <ol className="ui-timeline is-latest-first">

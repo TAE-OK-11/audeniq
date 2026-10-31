@@ -231,3 +231,10 @@
 /* 참여 역할 칩 아래 여백 — 가로 스크롤 칩 줄의 아래 여백(14px)이 '창작 지분'과의 사이를 벌렸다 */
 .aq-pbl-person .ui-chips{padding-bottom:2px}
 .aq-pbl-sheet .aq-pbl-sheet-sec>.ui-btn.is-text{justify-self:start}
+
+/* 저작권 관리 신청 완료 — 발매 신청 완료 카드(aq-doc-done) 아래 버튼 한 줄 */
+.aq-pbl-done .aq-doc-done{margin-bottom:16px}
+.aq-pbl-done-actions{margin:0}
+/* 곡 상세 '저작권 관리 신청' — 신청 번호는 끊지 않고, 이력은 항목/값과 띄운다. 이력 펼치기는 글 줄 왼쪽 선에 */
+.aq-pbl-work .ui-kv+.ui-timeline{margin-top:16px}
+.aq-pbl-work .aq-relinfo-card>.ui-btn.is-text{justify-self:start;padding-inline:0}
