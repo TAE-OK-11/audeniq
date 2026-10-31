@@ -1,26 +1,20 @@
 // 저작권 관리 화면 조각 — 등록 상태 배지·진행, 지분 막대, 곡 줄. 곡 상세·라이브러리·곡 상세·홈이 같이 쓴다.
 // 새 모양을 만들지 않고 발매 화면과 같은 부품을 쓴다: 진행은 StageCard(발매 상세), 이력은 ui-timeline(발매 '기록' 탭),
 // 지분 막대는 Meter(홈 플랫폼 반영), 줄은 ui-row + IconTile(홈 피칭 카드)
-import { useState } from 'react';
 import { Link } from '../../lib/router';
 import type { RegistrationStatus, RegistrationStep, Work, WorkContributor } from '../../api/publishing';
-import { APP_LABEL, APP_TONE, REG_LABEL, REG_SENTENCE, REG_STEPS, REG_TONE, ORIGIN_LABEL, ROLE_LABEL, pct, regStep, societyName, sumShares, workOrigin } from '../../lib/publishing';
-import { localStamp } from '../../lib/format';
+import { APP_LABEL, APP_TONE, REG_LABEL, REG_SENTENCE, REG_STEPS, REG_TONE, ORIGIN_LABEL, ROLE_LABEL, pct, regStep, sumShares, workOrigin } from '../../lib/publishing';
 import { Badge, IconTile, Meter } from '../../ui';
 import { StageCard } from '../StageCard';
 import { Glyph } from '../Glyph';
-import { Reveal } from '../../ui/Reveal';
 
 export function RegBadge({ status }: { status: RegistrationStatus }) {
   return <Badge tone={REG_TONE[status]}>{REG_LABEL[status]}</Badge>;
 }
 
-const TIMELINE_TONE: Partial<Record<RegistrationStatus, string>> = { needs_fix: 'is-warn', rejected: 'is-bad' };
-
-/** 등록 진행 — 발매 진행 단계와 같은 카드. 처리 이력은 눌러서 펼친다 (기획안 7.2).
- *  stage={false}: 곡 상세처럼 머리 카드가 이미 진행 막대를 보여 주면 여기서는 한 문장과 이력만 — 같은 막대를 두 번 그리지 않는다 */
-export function RegProgress({ status, log, stage: showStage = true, head = true }: { status: RegistrationStatus; log: RegistrationStep[]; stage?: boolean; head?: boolean }) {
-  const [open, setOpen] = useState(false);
+/** 등록 진행 — 발매 진행 단계와 같은 카드. 처리 이력(내부 확인·보완이 오간 기록)은 담당자 화면에만 있고 여기서는 지금 단계만.
+ *  stage={false}: 곡 상세처럼 머리 카드가 이미 진행 막대를 보여 주면 여기서는 한 문장만 — 같은 막대를 두 번 그리지 않는다 */
+export function RegProgress({ status, stage: showStage = true, head = true }: { status: RegistrationStatus; log?: RegistrationStep[]; stage?: boolean; head?: boolean }) {
   const step = regStep(status);
   const warn = status === 'needs_fix';
   return (
@@ -35,23 +29,7 @@ export function RegProgress({ status, log, stage: showStage = true, head = true 
           note={REG_SENTENCE[status]} label="저작권 등록 진행 단계"
         />
       )}
-      {log.length > 0 && (
-        <>
-          <button type="button" className="ui-btn is-text is-sm" aria-expanded={open} onClick={() => setOpen(v => !v)}>
-            처리 이력 {log.length}건<Glyph name="chevron-down" size={14} />
-          </button>
-          <Reveal open={open}>
-            <ol className="ui-timeline is-latest-first">
-              {[...log].reverse().map((l, i) => (
-                <li key={i} className={TIMELINE_TONE[l.status]}>
-                  <strong>{REG_LABEL[l.status]}{l.society && ` · ${societyName(l.society)}`}{l.note && ` — ${l.note}`}</strong>
-                  <small>{localStamp(l.at)}</small>
-                </li>
-              ))}
-            </ol>
-          </Reveal>
-        </>
-      )}
+      {/* 처리 이력은 담당자 화면에만 — 아티스트에게는 지금 단계만 보여 준다 */}
     </>
   );
 }

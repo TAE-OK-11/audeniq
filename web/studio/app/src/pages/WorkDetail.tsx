@@ -21,7 +21,7 @@ import { SkeletonBlock } from '../components/Skeleton';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { ReviewNote } from '../components/CorrectionList';
 import { Glyph } from '../components/Glyph';
-import { RegProgress, roleText } from '../components/publishing/parts';
+import { roleText } from '../components/publishing/parts';
 import { SplitEditor } from '../components/publishing/SplitEditor';
 import { RoyaltyTable } from '../components/publishing/Royalties';
 import { ContractManage } from '../components/publishing/PublishingContracts';
@@ -494,8 +494,8 @@ export function WorkDetail() {
                   ['등록일', (() => { const at = [...w.registrationLog].reverse().find(l => l.status === 'registered')?.at; return at ? localStamp(at).replace(/ 오[전후].*$/, '') : <Empty>확인 중</Empty>; })()],
                   ['ISWC', w.iswc ?? <Empty>{`발급 전 · ${w.internalCode}`}</Empty>],
                 ]} />
-              ) : regStep(w.registration) < 0 && <p className="ui-field-help">{REG_SENTENCE[w.registration]}</p>}
-              <RegProgress status={w.registration} log={w.registrationLog} head={false} />
+              ) : <p className="ui-field-help">{REG_SENTENCE[w.registration]}</p>}
+              {/* 처리 이력(내부 확인·보완 제출이 오간 기록)은 담당자용 — 아티스트에게는 지금 상태만 */}
               {w.registration !== 'registered' && <p className="ui-field-help">신청이 승인돼도 관리 단체 등록은 따로 진행돼요. 등록이 끝나야 사용료를 받을 수 있어요.</p>}
             </div>
             <div className="aq-relinfo-card">
@@ -506,11 +506,6 @@ export function WorkDetail() {
                     <div className="aq-kv-code"><dt>신청 번호</dt><dd className="aq-nowrap">{app.number}</dd></div>
                     <div className="aq-kv-code"><dt>제출</dt><dd>{application?.submittedAt ? localStamp(application.submittedAt) : '—'}</dd></div>
                   </dl>
-                  {application && (
-                    <ol className="ui-timeline is-latest-first">
-                      {[...application.history].reverse().map((h, i) => <li key={i}><strong>{h.text}</strong><small>{localStamp(h.at)}</small></li>)}
-                    </ol>
-                  )}
                   {/* 신청서와 계약서는 따로 — 승인되면 계약서가 만들어지고 계약서 화면에서 서명한다 */}
                   {application?.contractId && !w.contractId && (
                     <Callout tone="info" action={<Link to={`/contracts/publishing/${encodeURIComponent(application.contractId)}`} className="ui-btn is-primary is-sm">확인하고 서명</Link>}>

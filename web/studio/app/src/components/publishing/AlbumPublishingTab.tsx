@@ -5,7 +5,7 @@
 //  · 자료 첨부: 창에서 곡·종류·파일을 골라 올린다
 // 번 돈은 한 장으로만 — 월별 추이·곡별·자세한 내역은 퍼블리싱 메뉴에서 이 앨범을 골라 본다
 import { useMemo, useState } from 'react';
-import { Link } from '../../lib/router';
+import { Link, useNavigate } from '../../lib/router';
 import type { ReleaseDetail } from '../../api/types';
 import { pubApi, type Work } from '../../api/publishing';
 import { errorMessage } from '../../api/errors';
@@ -15,7 +15,7 @@ import { useReportRows } from '../../hooks/useReportRows';
 import { money } from '../../lib/format';
 import {
   CONFIRM_LABEL, CONFIRM_TONE, STAGE_LABEL, STAGE_TONE, albumReadiness, confirmationBoard, workStage,
-  type ConfirmState, type PrepField, type PrepGroup,
+  type ConfirmState, type PrepGroup,
 } from '../../lib/publishingPrep';
 import { Glyph, type GlyphName } from '../Glyph';
 import { SkeletonBlock } from '../Skeleton';
@@ -26,7 +26,6 @@ import { royaltyTotals } from './Royalties';
 import { Money } from '../Money';
 import { albumPublishing } from './ReleasePublishing';
 import { Modal } from '../Modal';
-import { WorkSheet } from './WorkSheet';
 import { AttachmentModal } from './Attachments';
 import { InviteModal } from './InviteModal';
 import { Badge, ChipGroup } from '../../ui';
@@ -43,7 +42,6 @@ const START_STEPS = [
   ['신청·서명', '맡길 곡을 골라 신청하면 담당자가 등록까지 맡아요'],
 ] as const;
 
-interface Sheet { work: Work; no?: number; focus?: { field: PrepField; contributorId?: string } | null }
 
 /** 신청 준비 점검 — 발매 상세 '발매 준비 항목'(AlbumPrep)과 같은 카드: 숫자 · 막대 · 할 일 줄 */
 function ApplyPrep({ title, summary, groups, readyCount, total, onGo, applyTo }: {
@@ -175,7 +173,9 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
   const { data: royalties } = useAsync(() => pubApi.listRoyalties(), [], { key: 'royalties:all' });
   const { data: contracts } = useAsync(() => pubApi.listContracts(), [], { key: 'pub-contracts' });
   const [busy, setBusy] = useState(false);
-  const [sheet, setSheet] = useState<Sheet | null>(null);
+  // 곡을 누르면 중간 창 없이 그 곡의 퍼블리싱 화면으로 — 고칠 곳이 있으면 그 칸(참여자·지분, 자료)으로
+  const nav = useNavigate();
+  const goWork = (w: Work, tab?: 'rights' | 'files') => nav(`/works/${encodeURIComponent(w.id)}?release=${encodeURIComponent(rel.id)}${tab ? `&tab=${tab}` : ''}`);
   const [attaching, setAttaching] = useState(false);
   const [peopleOpen, setPeopleOpen] = useState(false);
   const { rows: reportRows } = useReportRows();
@@ -243,8 +243,7 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
     if (g.key === 'tracks') { void prepare(); return; }
     if (g.key === 'confirm') { setPeopleOpen(true); return; }
     const w = g.works[0];
-    const issue = w && g.key === 'ipi' ? w.contributors.find(c => !c.isMe && !c.ipi) : null;
-    if (w) setSheet({ work: w, no: trackNo.get(w.id), focus: { field: g.key, contributorId: issue?.id } });
+    if (w) goWork(w, g.key === 'evidence' ? 'files' : g.key === 'fix' ? undefined : 'rights');
   };
   const saved = () => reload();
 
@@ -275,7 +274,7 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
             <span>{fixWork?.fix?.reason ?? '아래 곡을 눌러 고쳐 주세요. 고쳐서 다시 내면 심사가 이어져요.'}</span>
           </span>
           {fixWork && (
-            <button type="button" className="ui-btn is-primary aq-hero-cta" onClick={() => setSheet({ work: fixWork, no: trackNo.get(fixWork.id), focus: { field: 'fix' } })}>
+            <button type="button" className="ui-btn is-primary aq-hero-cta" onClick={() => goWork(fixWork)}>
               보완하기
               <span className="aq-cta-arrow" aria-hidden="true">
                 <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4" /></svg>
@@ -368,7 +367,7 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
             const stage = workStage(w);
             return (
               <li key={t.id}>
-                  <button type="button" className="aq-trackrow aq-pbl-trackrow" onClick={() => setSheet({ work: w, no: i + 1 })} aria-label={`${i + 1}번 곡 ${t.title} 저작권 보기`}>
+                  <button type="button" className="aq-trackrow aq-pbl-trackrow" onClick={() => goWork(w)} aria-label={`${i + 1}번 곡 ${t.title} 저작권 보기`}>
                     <span className="aq-trackrow-no" aria-hidden="true">{i + 1}</span>
                     <span className="aq-trackrow-main">
                       <span className="aq-trackrow-title">{t.title || w.title}</span>
@@ -395,14 +394,10 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
         )}
       </div>
 
-      {sheet && (
-        <WorkSheet work={works.find(x => x.id === sheet.work.id) ?? sheet.work} no={sheet.no} all={works} focus={sheet.focus} releaseId={rel.id}
-          onClose={() => setSheet(null)} onSaved={saved} />
-      )}
       {attaching && <AttachmentModal works={editable} onClose={() => setAttaching(false)} onAdded={saved} />}
       {peopleOpen && (
         <PeopleModal works={a.mine} onClose={() => setPeopleOpen(false)} onSent={saved}
-          onOpen={(w, cid) => { setPeopleOpen(false); setSheet({ work: w, no: trackNo.get(w.id), focus: { field: 'confirm', contributorId: cid } }); }} />
+          onOpen={w => { setPeopleOpen(false); goWork(w, 'rights'); }} />
       )}
     </div>
   );

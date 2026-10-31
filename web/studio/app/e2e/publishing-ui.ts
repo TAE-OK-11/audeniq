@@ -76,37 +76,25 @@ try {
   await page.getByRole('button', { name: '이전으로 돌아가기', exact: true }).click();
   await page.getByRole('button', { name: '이전으로 돌아가기', exact: true }).click();
   await page.locator('#view-ar').waitFor();
-  // Album tab: the prep check opens the song sheet at the field to fix, edits show before → after, and saving returns to the list.
+  // Album tab: prep summary, and songs open their own page.
   await page.setViewportSize({ width: 390, height: 900 });
   await page.goto(base + '/releases/r2?tab=publishing');
   const prep = page.locator('.aq-album-pub .aq-prep');
   await prep.waitFor();
   assert.match(await prep.locator('.aq-prep-sub').innerText(), /신청 가능|확인 필요|정리 전/);
-  await page.locator('.aq-pbl-trackrow', { hasText: '파도' }).click();
-  const sheet = page.locator('#modal .aq-pbl-sheet');
-  await sheet.waitFor();
-  await sheet.getByRole('button', { name: /수정/ }).click();
-  assert.equal(await sheet.getByRole('button', { name: '저장' }).count(), 1);
-  await sheet.getByLabel('창작 지분', { exact: true }).first().fill('50');
-  assert.match(await sheet.locator('.aq-pbl-diff').innerText(), /60% → 50%/);
-  await noOverflow(page, 'work sheet edit');
-  await page.screenshot({ path: `${out}/album-sheet-390.png` });
-  await sheet.getByRole('button', { name: '취소' }).click();
-  await page.locator('#modal').getByRole('button', { name: '닫기' }).click();
-  await sheet.waitFor({ state: 'detached' });
-  // Album tracks open directly; selection controls and the floating action bar are absent.
+  // Album tracks open the song's own page directly (no sheet in between); it returns to the same album tab.
   assert.equal(await page.locator('.aq-pbl-pick, .aq-pbl-selbar').count(), 0);
   assert.equal(await page.getByRole('button', { name: '전체 선택', exact: true }).count(), 0);
-  // Attach materials from a dialog, then preview them inside the song sheet.
+  // Attach materials from a dialog.
   await page.getByRole('button', { name: '자료 첨부' }).first().click();
   await page.locator('#modal #attachWork').waitFor();
   await page.screenshot({ path: `${out}/album-attach-390.png` });
   await page.locator('#modal').getByRole('button', { name: '닫기' }).click();
   await page.locator('#modal #attachWork').waitFor({ state: 'detached' });
-  // A song's full page still returns to the same album tab.
-  await page.setViewportSize({ width: 1440, height: 900 });
   await page.locator('.aq-pbl-trackrow', { hasText: '파도' }).click();
-  await page.locator('#modal').getByRole('link', { name: /곡 전체 정보 보기/ }).click();
+  await page.waitForURL(/\/works\/[^/?]+\?release=r2/);
+  assert.equal(await page.locator('#modal .aq-pbl-sheet').count(), 0);
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByRole('button', { name: '앨범으로 돌아가기' }).click();
   await page.waitForURL('**/releases/r2?tab=publishing');
   // Lyrics attached to a song open inside the song page.
