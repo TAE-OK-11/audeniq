@@ -1,5 +1,5 @@
 /* Publishing layout only. Cards, controls, colors and typography use Studio's shared components/tokens.
-   anchors: aq-pbl-split aq-pbl-dashboard aq-pbl-album-stats aq-pbl-wizard aq-pbl-work aq-pbl-ar-form aq-pbl-guide aq-pbl-sheet aq-pbl-diff aq-pbl-files aq-pbl-selbar aq-pbl-trackline aq-pbl-people-board aq-pbl-reuse aq-pbl-filter aq-split-writer aq-pbl-missed aq-pen-editor aq-pbl-checks */
+   anchors: aq-pbl-split aq-pbl-dashboard aq-pbl-album-stats aq-pbl-wizard aq-pbl-work aq-pbl-ar-form aq-pbl-guide aq-pbl-sheet aq-pbl-diff aq-pbl-files aq-pbl-selbar aq-pbl-trackline aq-pbl-people-board aq-pbl-reuse aq-pbl-filter aq-split-writer aq-pbl-missed aq-pen-editor aq-pbl-checks aq-pbl-evidence */
 .aq-pbl-split{display:grid;gap:16px;margin:0}
 .aq-pbl-split>.ui-meter{margin-top:-8px}
 .aq-pbl-split>.ui-field-help{margin:0}
@@ -379,3 +379,7 @@
 .aq-pen-list li{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,9.5rem) auto;align-items:center}
 .aq-pen-list li .ui-input{width:100%!important;min-width:0;height:36px}
 .aq-pen-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+/* 신청 › 권리 확인 — 증빙 자료가 없는 곡의 다른 증빙 방법 */
+.aq-pbl-evidence{display:grid;gap:8px;padding-top:8px;border-top:1px solid var(--aq-line)}
+.aq-pbl-evidence-head{margin:0;font-size:var(--aq-fs-sm);font-weight:700}
+.aq-pbl-evidence-opts{display:flex;flex-wrap:wrap;gap:6px}

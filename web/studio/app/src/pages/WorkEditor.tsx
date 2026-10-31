@@ -590,7 +590,7 @@ export function WorkEditor() {
         <h2 className="subhead">첨부 자료</h2>
         <p className="ui-field-help">{fromTrack && form.attachments.length
           ? '배급 신청서의 음원·가사를 미리 붙여 두었어요. 악보나 권리 증빙이 있으면 더해 주세요.'
-          : released ? '저장은 자료 없이도 돼요. 저작권 관리를 신청하려면 창작 증빙 자료(데모·작업 파일·악보·가사·합의서)가 하나 이상 있어야 해요.'
+          : released ? '없어도 저장·신청돼요. 데모·작업 파일·악보·가사·합의서를 올려 두면 내가 만든 곡이라는 근거가 되고 심사가 빨라요.'
           : '데모 음원이 있어야 Open A&R에 제출할 수 있어요. 가사·악보는 있으면 더해 주세요.'}</p>
         {/* 배급 신청서의 곡 카드(track-editor)처럼 자료 칸을 카드 한 장으로 감싼다 */}
         <section className="track-editor aq-pbl-attach-card" aria-label="첨부 자료">

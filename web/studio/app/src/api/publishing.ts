@@ -842,9 +842,7 @@ const mockApi = {
       const demo = works.find(w => workOrigin(w) === 'unreleased');
       if (demo) throw new ApiError(`‘${demo.title}’은(는) 아직 발매 전이에요. 발매 전 곡은 Open A&R로 피칭하고, 발매되면 신청해 주세요.`, 422, 'WORK_NOT_RELEASED');
       if (input.policyVersion !== POLICY.version) throw new ApiError('계약 조건이 바뀌었어요. 새 조건을 확인하고 다시 신청해 주세요.', 409, 'POLICY_CHANGED');
-      // 서버와 같게 — 곡마다 창작 증빙 자료 1개 이상, 서명하는 사람은 본인인증 (0176)
-      const bare = works.find(w => !w.attachments.length);
-      if (bare) throw new ApiError(`‘${bare.title}’에 창작 증빙 자료를 하나 이상 올려 주세요. 데모·작업 파일·악보·가사·공동 작곡 합의서 중 무엇이든 돼요.`, 422, 'WORK_EVIDENCE_REQUIRED');
+      // 서버와 같게 — 서명하는 계정은 한 번 본인인증 (0176). 창작 증빙은 없어도 접수하고 담당자가 필요하면 요청한다
       if (!getAccountSnapshot().verified) throw new ApiError('저작권 관리 신청서에 서명하려면 본인인증이 필요해요. 계정 정보에서 인증해 주세요.', 422, 'APPLICATION_IDENTITY_REQUIRED');
       const now = stampNow();
       const n = d.applications.length + 20;

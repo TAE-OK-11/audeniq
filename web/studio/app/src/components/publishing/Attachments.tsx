@@ -35,6 +35,7 @@ const KIND_ACCEPT: Record<WorkAttachment['kind'], string> = {
 /** 파일 대신 글로 남길 수 있는 자료 — 가사 본문, 작업 기록 */
 const TEXT_KINDS: Partial<Record<WorkAttachment['kind'], { label: string; help: string; placeholder: string; name: string }>> = {
   lyrics: { label: '가사 붙여 넣기', help: '여기에 붙여 넣으면 곡 화면에서 바로 읽을 수 있어요. 파일이 있으면 아래에서 올려도 돼요.', placeholder: '1절\n…\n\n후렴\n…', name: '가사' },
+  proof: { label: '링크·설명 남기기', help: '크레딧이 보이는 발매 페이지 주소(멜론·스포티파이·유튜브 등)나 기존 등록 확인 내용을 적어 주세요.', placeholder: 'https://www.melon.com/song/detail.htm?songId=…\n작사·작곡 크레딧에 제 이름(하람)이 있어요.', name: '증빙 메모' },
   project: { label: '작업 기록 남기기', help: '언제, 어떤 프로그램으로, 어떻게 만들었는지 — 버전별 날짜가 있으면 함께 적어 주세요.', placeholder: '2026-03-02 Logic에서 피아노 스케치\n2026-03-10 가사 붙이고 1차 편곡\n2026-04-01 최종 믹스', name: '작업 기록' },
 };
 const KINDS = Object.keys(KIND_LABEL) as WorkAttachment['kind'][];
@@ -83,17 +84,19 @@ export function AttachmentList({ items, empty = '아직 올린 자료가 없어�
 }
 
 /** 자료 첨부 창 — 곡(여러 곡이면 고르기) · 자료 종류 · 파일. 올리면 그 곡의 자료 목록에 바로 보인다 */
-export function AttachmentModal({ works, workId, onClose, onAdded }: {
+export function AttachmentModal({ works, workId, initialKind = 'demo', onClose, onAdded }: {
   works: readonly Work[];
   /** 정해진 곡 — 없으면 창에서 고른다 */
   workId?: string;
+  /** 처음 고른 자료 종류 — 신청 화면의 '글로 남기기'·'링크 남기기'처럼 바로 그 칸으로 */
+  initialKind?: WorkAttachment['kind'];
   onClose: () => void;
   onAdded: (w: Work) => void;
 }) {
   const toast = useToast();
   const editable = works.filter(w => w.myRole === 'owner' || w.myRole === 'editor');
   const [target, setTarget] = useState(workId ?? editable[0]?.id ?? '');
-  const [kind, setKind] = useState<WorkAttachment['kind']>('demo');
+  const [kind, setKind] = useState<WorkAttachment['kind']>(initialKind);
   const [busy, setBusy] = useState(false);
   const [text, setText] = useState('');
   const work = works.find(w => w.id === target);

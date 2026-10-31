@@ -6,7 +6,7 @@
 // 모양은 배급 신청과 같다: 신청서 틀(WizardShell), 선택 줄(ui-check), 동의 묶음(aq-agree-box), 손 서명(SignaturePad), 아래 고정 버튼(step-actions)
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from '../lib/router';
-import { pubApi, type Work } from '../api/publishing';
+import { pubApi, type Work, type WorkAttachment } from '../api/publishing';
 import { ApiError, errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { useAuth } from '../api/auth';
@@ -116,7 +116,9 @@ export function PublishingApply() {
   const chosen = mine.filter(w => picked.includes(w.id) && canPick(w));
   // 신청을 막는 일 — 지분(합계·역할·작곡가·이의)과 창작 증빙 (서버 WORK_SPLIT_INCOMPLETE · WORK_EVIDENCE_REQUIRED와 같다)
   const blocked = chosen.filter(w => !splitReady(w.contributors) || workIssues(w).some(i => i.blocking && i.field !== 'fix'));
-  const [attachFor, setAttachFor] = useState<Work | null>(null);
+  const [attachFor, setAttachFor] = useState<{ work: Work; kind: WorkAttachment['kind'] } | null>(null);
+  // 증빙 자료가 없는 곡 — 파일·글·링크로 남기거나, 담당자가 요청하면 그때 내겠다고 확인한다 (없어도 신청은 된다)
+  const [later, setLater] = useState<string[]>([]);
   // 내 필명인데 다른 사람으로 들어간 참여자 — 남처럼 확인을 기다리고 내 몫이 남의 몫으로 등록된다
   const { data: me } = useAsync(() => pubApi.myCreator(), [], { key: 'my-creator' });
   const penAsOther = (w: Work) => penAsOthers(w.contributors, me);
@@ -125,7 +127,7 @@ export function PublishingApply() {
 
   const canNext = [
     chosen.length > 0 && !chosen.some(activeApp),
-    blocked.length === 0 && territories.length > 0 && rights.length > 0,
+    blocked.length === 0 && territories.length > 0 && rights.length > 0 && chosen.every(w => w.attachments.length > 0 || later.includes(w.id)),
     true,
     agreed.length === AGREE.length && drawn && !!account.verified,
   ][step];
@@ -224,7 +226,10 @@ export function PublishingApply() {
 
       {step === 1 && (
         <>
-          {blocked.length > 0 && <Callout tone="danger"><b>아직 신청할 수 없는 곡이 있어요.</b> {blocked.map(w => `‘${w.title}’`).join(', ')} — 지분을 맞추고 창작 증빙 자료를 하나 이상 올려 주세요. 고르던 내용은 그대로 남아요.</Callout>}
+          {chosen.some(w => !w.attachments.length && !later.includes(w.id)) && (
+            <Callout tone="neutral"><b>증빙 자료가 없는 곡이 있어요.</b> 곡 아래에서 파일·글·링크로 남기거나 ‘담당자가 요청하면 그때 낼게요’를 체크하면 다음으로 넘어가요.</Callout>
+          )}
+          {blocked.length > 0 && <Callout tone="danger"><b>아직 신청할 수 없는 곡이 있어요.</b> {blocked.map(w => `‘${w.title}’`).join(', ')} — 지분을 맞춰 주세요. 고르던 내용은 그대로 남아요.</Callout>}
           {conflicts.length > 0 && <Callout tone="warn"><b>기존 저작권 관리 계약과 겹칠 수 있어요.</b> {conflicts.map(w => `‘${w.title}’(${w.priorPublisher || '기존 퍼블리셔'})`).join(', ')} — 신청은 되고, 담당자가 먼저 검토해요.</Callout>}
           {chosen.some(w => w.contributors.some(c => c.isMe && !c.society)) && <SocietyJoin />}
           {/* 원곡 허락을 확인했다고 적은 곡은 빼고 — 남은 곡만 짚는다 */}
@@ -267,9 +272,23 @@ export function PublishingApply() {
                       {checks.map(i => <li key={i.text} className={i.blocking ? 'is-block' : ''}><Glyph name={i.blocking ? 'warning' : 'info'} size={14} />{i.text}</li>)}
                     </ul>
                   ) : <p className="ui-field-help">등록에 필요한 정보와 창작 증빙이 모두 있어요.</p>}
-                  {(w.myRole === 'owner' || w.myRole === 'editor') && (
-                    <button type="button" className="ui-btn is-soft is-sm" onClick={() => setAttachFor(w)}><Glyph name="clip" size={14} className="aq-glyph-lead" />증빙 자료 올리기</button>
-                  )}
+                  {(w.myRole === 'owner' || w.myRole === 'editor') && (w.attachments.length ? (
+                    <button type="button" className="ui-btn is-soft is-sm" onClick={() => setAttachFor({ work: w, kind: 'demo' })}><Glyph name="clip" size={14} className="aq-glyph-lead" />자료 더 올리기</button>
+                  ) : (
+                    // 파일이 없어도 증빙할 수 있게 — 만든 과정을 글로, 크레딧이 보이는 발매 페이지 링크로, 아니면 나중에 요청받아서
+                    <div className="aq-pbl-evidence">
+                      <p className="aq-pbl-evidence-head">이렇게 증빙할 수 있어요</p>
+                      <div className="aq-pbl-evidence-opts">
+                        <button type="button" className="ui-btn is-soft is-sm" onClick={() => setAttachFor({ work: w, kind: 'demo' })}><Glyph name="clip" size={14} className="aq-glyph-lead" />파일 올리기</button>
+                        <button type="button" className="ui-btn is-soft is-sm" onClick={() => setAttachFor({ work: w, kind: 'project' })}><Glyph name="pencil" size={14} className="aq-glyph-lead" />만든 과정 글로 남기기</button>
+                        <button type="button" className="ui-btn is-soft is-sm" onClick={() => setAttachFor({ work: w, kind: 'proof' })}><Glyph name="link" size={14} className="aq-glyph-lead" />발매 페이지 링크 남기기</button>
+                      </div>
+                      <label className="ui-check is-plain">
+                        <input type="checkbox" checked={later.includes(w.id)} onChange={() => setLater(l => (l.includes(w.id) ? l.filter(x => x !== w.id) : [...l, w.id]))} />
+                        <span>지금은 자료가 없어요. 담당자가 요청하면 그때 낼게요.</span>
+                      </label>
+                    </div>
+                  ))}
                 </div>
               </div>
             );
@@ -344,7 +363,7 @@ export function PublishingApply() {
         </>
       )}
 
-      {attachFor && <AttachmentModal works={[attachFor]} workId={attachFor.id} onClose={() => setAttachFor(null)} onAdded={() => reloadWorks()} />}
+      {attachFor && <AttachmentModal works={[attachFor.work]} workId={attachFor.work.id} initialKind={attachFor.kind} onClose={() => setAttachFor(null)} onAdded={() => reloadWorks()} />}
     </WizardShell>
   );
 }

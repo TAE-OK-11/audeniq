@@ -3208,18 +3208,8 @@ pub async fn submit_application(
     {
         return Err(Error::PolicyGate("WORK_SPLIT_INCOMPLETE"));
     }
-    // Evidence of authorship (0176): at least one file or text per work — demo, project files, score, lyrics,
-    // split sheet or other proof (a release's audio is attached when works are prepared from it).
-    let bare: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM unnest($1::uuid[]) w(id)
-                        WHERE NOT EXISTS(SELECT 1 FROM portal.pub_work_attachments f WHERE f.work_id=w.id))",
-    )
-    .bind(&works)
-    .fetch_one(&mut *tx)
-    .await?;
-    if bare {
-        return Err(Error::PolicyGate("WORK_EVIDENCE_REQUIRED"));
-    }
+    // Evidence of authorship (0176) is asked for on the screen but not required here: a work without any is
+    // flagged to staff (staff review), who ask for proof with a correction request when they need it.
     // Societies register a real person: the signer's identity is verified (본인인증), as for payouts.
     let identity = crate::consents::signer_identity(&mut tx, a.user).await?;
     if identity["verified"] != true {

@@ -41,12 +41,13 @@ describe('신청 전 준비 점검', () => {
     expect(g.tracks.state).toBe('todo');
   });
 
-  it('창작 증빙이 없으면 신청할 수 없고, 가사·창작일·합의서는 권하기만 한다', async () => {
+  it('창작 증빙은 없어도 신청할 수 있고 권하기만 한다 — 가사·창작일·합의서도', async () => {
     const { workIssues } = await import('./publishingPrep');
     const bare = work({ id: 'e', attachments: [] });
-    expect(workStage(bare)).toBe('blocked');
-    expect(workIssues(bare).find(i => i.field === 'evidence')?.blocking).toBe(true);
-    expect(albumReadiness([bare], 0).groups.find(g => g.key === 'evidence')?.works.map(w => w.id)).toEqual(['e']);
+    expect(workStage(bare)).toBe('ready');
+    expect(workIssues(bare).find(i => i.field === 'evidence')?.blocking).toBe(false);
+    const g = albumReadiness([bare], 0).groups.find(x => x.key === 'evidence');
+    expect([g?.state, g?.works.map(w => w.id)]).toEqual(['wait', ['e']]);
     const soft = workIssues(waiting).filter(i => i.field === 'evidence');
     expect(soft.every(i => !i.blocking)).toBe(true);
     expect(soft.map(i => i.text.slice(0, 6))).toEqual(['가사가 없어', '창작을 마친', '공동 작가가']);
