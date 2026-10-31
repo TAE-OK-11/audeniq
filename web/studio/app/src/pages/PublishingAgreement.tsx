@@ -7,7 +7,6 @@ import { useNavigate, useParams } from '../lib/router';
 import { pubApi } from '../api/publishing';
 import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
-import { useAuth } from '../api/auth';
 import { useAccount } from '../store/account';
 import { useProfile } from '../store/profile';
 import { compactSignature, hashLabel } from '../lib/application';
@@ -20,6 +19,7 @@ import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
 import { SignaturePad, type SignaturePadHandle } from '../components/SignaturePad';
 import { Badge } from '../ui';
+import { VerifyGate } from '../components/publishing/VerifyGate';
 import '../styles/split/Upload.css';
 import '../styles/split/Publishing.css';
 
@@ -27,10 +27,10 @@ export function PublishingAgreement() {
   const { id = '' } = useParams();
   const nav = useNavigate();
   const toast = useToast();
-  const { user } = useAuth();
   const account = useAccount();
   const profile = useProfile();
-  const signerName = account.realName.trim() || profile.name.trim() || user?.email || '';
+  // 저작권 관리 계약은 본인인증한 실명으로만 — 활동명·필명으로는 맺지 않는다 (서버도 실명으로 기록한다)
+  const signerName = account.verified ? account.realName.trim() : '';
   const { data: list, error, reload } = useAsync(() => pubApi.listContracts(), [], { key: 'pub-contracts' });
   const c = list?.find(x => x.id === id);
   const [ticked, setTicked] = useState<string[]>([]);
@@ -141,7 +141,7 @@ export function PublishingAgreement() {
               ))}
             </ol>
           ) : (
-            <div className="aq-pbl-sign">
+            <div className="aq-doc-sign">
               <div className="aq-agree-box">
                 <label className="ui-check is-plain aq-agree-all-line">
                   <input type="checkbox" checked={all} onChange={e => setTicked(e.target.checked ? items.map(([k]) => k) : [])} />
@@ -154,14 +154,17 @@ export function PublishingAgreement() {
                   </label>
                 ))}
               </div>
-              <div className="ui-field">
-                <label htmlFor="pubContractPad">서명 <span className="required">*</span></label>
-                <SignaturePad ref={pad} id="pubContractPad" label="계약자 서명 입력" height={170} onChange={setDrawn} />
-                <small className="ui-field-help">계약자 <b>{signerName || '이름 없음'}</b>{account.realName.trim() ? ' (본인인증 실명)' : ' — 본인인증을 하면 실명으로 기록돼요'}</small>
-              </div>
-              <button type="button" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={!all || !drawn || busy} onClick={() => void sign()}>
-                {busy ? '서명하는 중' : '서명하고 계약 맺기'}
-              </button>
+              {/* 본인인증 전에는 서명 대신 인증이 먼저 할 일 — 큰 버튼 하나만 */}
+              {!signerName ? <VerifyGate what="계약" /> : <>
+                <div className="ui-field">
+                  <label htmlFor="pubContractPad">서명 <span className="required">*</span></label>
+                  <SignaturePad ref={pad} id="pubContractPad" label="계약자 서명 입력" height={170} onChange={setDrawn} />
+                  <small className="ui-field-help">계약자 <b>{signerName}</b> (본인인증 실명) · 활동명이나 필명으로는 계약할 수 없어요.</small>
+                </div>
+                <button type="button" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={!all || !drawn || busy} onClick={() => void sign()}>
+                  {busy ? '서명하는 중' : '서명하고 계약 맺기'}
+                </button>
+              </>}
             </div>
           )}
         </section>

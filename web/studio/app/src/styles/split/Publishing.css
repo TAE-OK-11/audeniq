@@ -1,5 +1,5 @@
 /* Publishing layout only. Cards, controls, colors and typography use Studio's shared components/tokens.
-   anchors: aq-pbl-split aq-pbl-dashboard aq-pbl-album-stats aq-pbl-wizard aq-pbl-work aq-pbl-ar-form aq-pbl-guide aq-pbl-sheet aq-pbl-diff aq-pbl-files aq-pbl-selbar aq-pbl-trackline aq-pbl-people-board aq-pbl-reuse aq-pbl-filter aq-split-writer aq-pbl-missed aq-pen-editor aq-pbl-checks */
+   anchors: aq-pbl-split aq-pbl-dashboard aq-pbl-album-stats aq-pbl-wizard aq-pbl-work aq-pbl-ar-form aq-pbl-guide aq-pbl-sheet aq-pbl-diff aq-pbl-files aq-pbl-selbar aq-pbl-trackline aq-pbl-people-board aq-pbl-reuse aq-pbl-filter aq-split-writer aq-pbl-missed aq-pen-editor aq-pbl-checks aq-pbl-evidence aq-pbl-income aq-pbl-rcard aq-pbl-scope */
 .aq-pbl-split{display:grid;gap:16px;margin:0}
 .aq-pbl-split>.ui-meter{margin-top:-8px}
 .aq-pbl-split>.ui-field-help{margin:0}
@@ -379,3 +379,45 @@
 .aq-pen-list li{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,9.5rem) auto;align-items:center}
 .aq-pen-list li .ui-input{width:100%!important;min-width:0;height:36px}
 .aq-pen-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+/* 신청 › 권리 확인 — 증빙 자료가 없는 곡의 다른 증빙 방법 */
+.aq-pbl-evidence{display:grid;gap:8px;padding-top:8px;border-top:1px solid var(--aq-line)}
+.aq-pbl-evidence-head{margin:0;font-size:var(--aq-fs-sm);font-weight:700}
+.aq-pbl-evidence-opts{display:flex;flex-wrap:wrap;gap:6px}
+/* 저작권 관리 신청·계약 — 본인인증 전 안내와 큰 버튼 */
+.aq-pbl-verify{display:grid;gap:12px}
+/* 앨범 퍼블리싱 탭 — 퍼블리싱 수익(저작권료) 카드: 이름과 큰 금액만 (누르면 저작권료 리포트) */
+.aq-pbl-income{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:4px 12px;padding:22px 22px;text-decoration:none;color:inherit}
+.aq-pbl-income-cap{grid-column:1;font-size:var(--aq-fs-md);font-weight:700;color:var(--aq-text-2)}
+.aq-pbl-income-num{grid-column:1;font-size:36px;line-height:1.15;font-weight:800;letter-spacing:-.02em;color:var(--aq-primary-text)}
+.aq-pbl-income-go{grid-column:2;grid-row:1 / span 2;color:var(--aq-text-4)}
+.aq-pbl-checks-gap{display:grid;gap:8px;padding:10px 12px;border-radius:var(--aq-r-md);background:var(--aq-amber-50, #fff7ed)}
+.aq-pbl-checks-gap p{display:flex;gap:6px;align-items:flex-start;margin:0;font-size:var(--aq-fs-sm);line-height:1.5;color:var(--aq-text-2)}
+.aq-pbl-checks-gap svg{flex:none;margin-top:3px;color:var(--aq-amber-600, #c2410c)}
+.aq-pbl-checks-gap .ui-btn{justify-self:start}
+/* 곡 '저작권·계약' 탭 카드 — 등록 정보 · 관리 단체 · 계약 (components/publishing/WorkRightsCards) */
+.aq-pbl-rcard{display:grid;gap:14px}
+.aq-pbl-rcard .ui-section-head{margin:0}
+.aq-pbl-rcard .ui-field-help{margin:0}
+.aq-pbl-soc{margin:0}
+.aq-pbl-soc .ui-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px}
+.aq-pbl-term{display:grid;gap:8px}
+.aq-pbl-term p{margin:0;font-size:var(--aq-fs-md)}
+.aq-pbl-term b{font-size:22px;font-weight:800;color:var(--aq-text)}
+.aq-pbl-scope-view{display:grid;gap:12px}
+.aq-pbl-scope-view span{display:block;margin-bottom:6px;font-size:var(--aq-fs-sm);color:var(--aq-text-3)}
+.aq-pbl-scope-view p{display:flex;flex-wrap:wrap;gap:6px;margin:0}
+.aq-pbl-req{display:flex;gap:6px;align-items:center}
+.aq-pbl-contract-btns{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+.aq-pbl-end{justify-self:center}
+.aq-pbl-scope{display:grid;gap:12px}
+.aq-pbl-scope .aq-track-sheet-h{margin:4px 0 0}
+/* 저작권료 내역 — 내려받기 묶음 (명세서 CSV · 분기 명세서) */
+.aq-pbl-royalty-tools{flex-wrap:wrap!important}
+.aq-pbl-royalty-actions{display:flex;gap:8px;margin-left:auto;flex:none}
+@media (max-width:600px){
+  .aq-pbl-royalty-tools>.ui-chips{flex:1 1 100%!important}
+  .aq-pbl-royalty-actions{margin-left:0;width:100%}
+  .aq-pbl-royalty-actions>.ui-btn{flex:1 1 0}
+}
+/* 상세 화면 쌓기 안에서도 퍼블리싱 수익 카드는 이름 위 · 금액 아래 */
+.aq-detail-stack>.aq-pbl-income,.aq-pbl-income{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important}

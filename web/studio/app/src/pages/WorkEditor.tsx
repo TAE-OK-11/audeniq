@@ -15,6 +15,9 @@ import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { readJSON, removeKey, writeJSON } from '../lib/storage';
 import { stampNow, todayStr } from '../lib/date';
+import { DateField } from '../components/Picker';
+import { GenreSelect } from '../components/GenreSelect';
+import { genreLabel } from '../lib/catalog';
 import { localStamp, fileSize } from '../lib/format';
 import { uid } from '../lib/store';
 import { draftTrackOf } from '../lib/albumPrep';
@@ -382,7 +385,7 @@ export function WorkEditor() {
                 </span>
               </div>
               <KeyValue cols={2} items={[
-                ['장르', form.genre || '—'],
+                ['장르', form.genre ? genreLabel(form.genre) : '—'],
                 ['언어', LANGUAGES.find(x => x[0] === form.language)?.[1] ?? form.language],
                 ['ISRC', track.isrc || '발매 때 발급'],
                 ['버전', track.version || '원곡'],
@@ -419,7 +422,7 @@ export function WorkEditor() {
                   <input id="extTitle" className={inputClass()} value={ext.title} maxLength={300} onChange={e => setExt({ title: e.target.value })} placeholder={form.title || '예: 겨울 편지'} autoComplete="off" />
                 </Field>
                 <Field label="발매일" htmlFor="extDate">
-                  <input id="extDate" type="date" className={inputClass()} value={ext.releaseDate ?? ''} onChange={e => setExt({ releaseDate: e.target.value || null })} />
+                  <DateField id="extDate" value={ext.releaseDate ?? ''} max={todayStr()} placeholder="발매일을 골라 주세요" onChange={v => setExt({ releaseDate: v || null })} />
                 </Field>
                 <Field label="ISRC" htmlFor="extIsrc" warn={isrcErr} help={!isrcErr ? '음원 사이트·유통사에서 볼 수 있어요. 모르면 비워 두세요.' : undefined}>
                   <input id="extIsrc" className={inputClass()} value={ext.isrc ?? ''} maxLength={15} onChange={e => setExt({ isrc: e.target.value.trim() || null })} placeholder="KR-A26-25-00011" />
@@ -459,7 +462,7 @@ export function WorkEditor() {
               </select>
             </Field>
             <Field label="장르" htmlFor="workGenre">
-              <input id="workGenre" className={inputClass()} value={form.genre} onChange={e => set('genre', e.target.value)} placeholder="예: Indie Pop" />
+              <GenreSelect id="workGenre" value={form.genre} onChange={v => set('genre', v)} />
             </Field>
           </>}
           <Field label="공개 범위" htmlFor="workVis" help={form.visibility === 'shared' ? '참여자와 담당자가 볼 수 있어요.' : '나와 작업 공간 멤버만 볼 수 있어요.'}>
@@ -522,7 +525,7 @@ export function WorkEditor() {
         </Reveal>
         <Reveal open={form.hasPriorPublisher}>
           <Field label="기존 계약 종료일" htmlFor="workPriorUntil" help="이 날 다음부터 AUDENIQ이 저작권료를 받아요. 모르면 비워 두세요 — 담당자가 확인해요.">
-            <input id="workPriorUntil" type="date" className={inputClass()} value={form.priorPublisherUntil ?? ''} onChange={e => set('priorPublisherUntil', e.target.value || null)} />
+            <DateField id="workPriorUntil" value={form.priorPublisherUntil ?? ''} placeholder="종료일을 골라 주세요" onChange={v => set('priorPublisherUntil', v || null)} />
           </Field>
         </Reveal>
 
@@ -579,7 +582,7 @@ export function WorkEditor() {
         <p className="ui-field-help">언제, 어떻게 만들었는지 남겨 두면 다른 사람이 같은 곡을 주장할 때 내 곡이라는 근거가 돼요.</p>
         <div className="form-grid">
           <Field label="창작을 마친 날" htmlFor="workCreatedOn" help="정확하지 않으면 대략적인 날이라도 괜찮아요.">
-            <input id="workCreatedOn" type="date" className={inputClass()} max={todayStr()} value={form.createdOn ?? ''} onChange={e => set('createdOn', e.target.value || null)} />
+            <DateField id="workCreatedOn" value={form.createdOn ?? ''} max={todayStr()} placeholder="창작을 마친 날을 골라 주세요" onChange={v => set('createdOn', v || null)} />
           </Field>
         </div>
         <Field label="만든 과정" htmlFor="workCreationNote" help="예) 어떤 프로그램·악기로, 누가 어느 부분을 맡았는지, 버전별 날짜">
@@ -590,7 +593,7 @@ export function WorkEditor() {
         <h2 className="subhead">첨부 자료</h2>
         <p className="ui-field-help">{fromTrack && form.attachments.length
           ? '배급 신청서의 음원·가사를 미리 붙여 두었어요. 악보나 권리 증빙이 있으면 더해 주세요.'
-          : released ? '저장은 자료 없이도 돼요. 저작권 관리를 신청하려면 창작 증빙 자료(데모·작업 파일·악보·가사·합의서)가 하나 이상 있어야 해요.'
+          : released ? '없어도 저장·신청돼요. 데모·작업 파일·악보·가사·합의서를 올려 두면 내가 만든 곡이라는 근거가 되고 심사가 빨라요.'
           : '데모 음원이 있어야 Open A&R에 제출할 수 있어요. 가사·악보는 있으면 더해 주세요.'}</p>
         {/* 배급 신청서의 곡 카드(track-editor)처럼 자료 칸을 카드 한 장으로 감싼다 */}
         <section className="track-editor aq-pbl-attach-card" aria-label="첨부 자료">
@@ -633,7 +636,7 @@ export function WorkEditor() {
       {step === LAST && (<>
         <div className="aq-catalog-cards aq-stagger">
           <ReviewCard head={fromTrack ? '곡 확인' : '기본 정보'} missing={!form.title.trim()} onEdit={() => setStep(0)}>
-            {form.title.trim() || '제목 없음'} · {[WORK_TYPES.find(x => x[0] === form.workType)?.[1], LANGUAGES.find(x => x[0] === form.language)?.[1], form.genre].filter(Boolean).join(' · ')}
+            {form.title.trim() || '제목 없음'} · {[WORK_TYPES.find(x => x[0] === form.workType)?.[1], LANGUAGES.find(x => x[0] === form.language)?.[1], form.genre && genreLabel(form.genre)].filter(Boolean).join(' · ')}
             {origin === 'other_release' && <><br />{[`${ext.artist.trim() || '아티스트 입력 전'} 발매`, ext.title.trim() || form.title.trim(), ext.releaseDate, ext.isrc].filter(Boolean).join(' · ')}</>}
           </ReviewCard>
           <ReviewCard head="참여자·지분" missing={!form.contributors.length} onEdit={() => setStep(1)}>

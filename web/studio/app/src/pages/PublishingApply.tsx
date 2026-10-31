@@ -6,12 +6,10 @@
 // 모양은 배급 신청과 같다: 신청서 틀(WizardShell), 선택 줄(ui-check), 동의 묶음(aq-agree-box), 손 서명(SignaturePad), 아래 고정 버튼(step-actions)
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from '../lib/router';
-import { pubApi, type Work } from '../api/publishing';
+import { pubApi, type Work, type WorkAttachment } from '../api/publishing';
 import { ApiError, errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
-import { useAuth } from '../api/auth';
 import { useAccount } from '../store/account';
-import { useProfile } from '../store/profile';
 import { compactSignature } from '../lib/application';
 import { readJSON, removeKey, writeJSON } from '../lib/storage';
 import { uid } from '../lib/store';
@@ -24,7 +22,11 @@ import { SignaturePad, type SignaturePadHandle } from '../components/SignaturePa
 import { SplitBar, roleText } from '../components/publishing/parts';
 import { SocietyJoin } from '../components/publishing/SocietyJoin';
 import { AttachmentModal } from '../components/publishing/Attachments';
-import { penAsOthers, workIssues } from '../lib/publishingPrep';
+import { VerifyGate } from '../components/publishing/VerifyGate';
+import { creditGaps, penAsOthers, workIssues } from '../lib/publishingPrep';
+import { draftTrackOf } from '../lib/albumPrep';
+import { api } from '../api/client';
+import { WorkSheet } from '../components/publishing/WorkSheet';
 import { Badge, Callout, EmptyState, StatGrid, StatTile } from '../ui';
 import '../styles/split/Upload.css';
 import '../styles/split/Publishing.css';
@@ -53,10 +55,9 @@ const DERIVED = ['arrangement', 'translation', 'medley'];
 export function PublishingApply() {
   const [params] = useSearchParams();
   const nav = useNavigate();
-  const { user } = useAuth();
   const account = useAccount();
-  const profile = useProfile();
-  const signerName = account.realName.trim() || profile.name.trim() || user?.email || '';
+  // 신청서는 본인인증한 실명으로만 — 활동명·필명은 곡의 참여자 이름에만 쓴다 (서버도 실명으로 기록한다)
+  const signerName = account.verified ? account.realName.trim() : '';
   const preset = params.get('work');
   // 앨범 퍼블리싱 탭에서 여러 곡을 골라 '신청 대상으로 묶기'로 왔으면 그 곡들만
   const bundled = params.get('works')?.split(',').filter(Boolean) ?? [];
@@ -116,16 +117,33 @@ export function PublishingApply() {
   const chosen = mine.filter(w => picked.includes(w.id) && canPick(w));
   // 신청을 막는 일 — 지분(합계·역할·작곡가·이의)과 창작 증빙 (서버 WORK_SPLIT_INCOMPLETE · WORK_EVIDENCE_REQUIRED와 같다)
   const blocked = chosen.filter(w => !splitReady(w.contributors) || workIssues(w).some(i => i.blocking && i.field !== 'fix'));
-  const [attachFor, setAttachFor] = useState<Work | null>(null);
+  const [attachFor, setAttachFor] = useState<{ work: Work; kind: WorkAttachment['kind'] } | null>(null);
+  // 증빙 자료가 없는 곡 — 파일·글·링크로 남기거나, 담당자가 요청하면 그때 내겠다고 확인한다 (없어도 신청은 된다)
+  const [later, setLater] = useState<string[]>([]);
   // 내 필명인데 다른 사람으로 들어간 참여자 — 남처럼 확인을 기다리고 내 몫이 남의 몫으로 등록된다
   const { data: me } = useAsync(() => pubApi.myCreator(), [], { key: 'my-creator' });
   const penAsOther = (w: Work) => penAsOthers(w.contributors, me);
+  // 발매 크레딧과 곡 참여자가 다른 곡 — 관리 단체는 크레딧과 같은 작사·작곡가로 등록한다. 신청할 때 걸러서 그 자리에서 고치게 한다
+  const relIds = Array.from(new Set(chosen.flatMap(w => w.recordings.map(r => r.releaseId)))).sort();
+  const { data: rels } = useAsync(() => Promise.all(relIds.map(id => api.getRelease(id).catch(() => null))), [relIds.join(',')]);
+  const gapsOf = (w: Work) => {
+    for (const r of w.recordings) {
+      const rel = rels?.find(x => x?.id === r.releaseId);
+      const t = rel?.tracks.find(x => x.id === r.trackId);
+      if (!rel || !t) continue;
+      const d = draftTrackOf(t, rel.draft);
+      const g = creditGaps(w, { composers: t.composers ?? d?.composers, lyricists: t.lyricists ?? d?.lyricists, arrangers: d?.arrangers, instrumental: d?.instrumental });
+      if (g.missing.length || g.extra.length) return g;
+    }
+    return null;
+  };
+  const [sheetFor, setSheetFor] = useState<Work | null>(null);
   const conflicts = chosen.filter(w => w.hasPriorPublisher);
   const pendingPeople = chosen.flatMap(w => w.contributors.filter(c => !c.isMe && c.confirm !== 'confirmed').map(c => ({ w, c })));
 
   const canNext = [
     chosen.length > 0 && !chosen.some(activeApp),
-    blocked.length === 0 && territories.length > 0 && rights.length > 0,
+    blocked.length === 0 && territories.length > 0 && rights.length > 0 && chosen.every(w => w.attachments.length > 0 || later.includes(w.id)),
     true,
     agreed.length === AGREE.length && drawn && !!account.verified,
   ][step];
@@ -173,7 +191,8 @@ export function PublishingApply() {
         <button type="button" id="wizardBack" className="ui-btn is-soft" onClick={back} disabled={busy}>{step ? '이전' : '나가기'}</button>
         {step < 3
           ? <button type="button" id="wizardNext" className="ui-btn is-primary" disabled={!canNext} onClick={() => setStep(step + 1)}>다음으로</button>
-          : <button type="button" id="wizardNext" className={`ui-btn is-primary${busy ? ' is-busy' : ''}`} disabled={!canNext || busy} onClick={() => void submit()}>{busy ? '신청하는 중' : '신청서 서명하고 제출'}</button>}
+          // 본인인증 전에는 잠긴 제출 버튼 대신 화면 안의 '본인인증하기'가 할 일이다
+          : account.verified && <button type="button" id="wizardNext" className={`ui-btn is-primary${busy ? ' is-busy' : ''}`} disabled={!canNext || busy} onClick={() => void submit()}>{busy ? '신청하는 중' : '신청서 서명하고 제출'}</button>}
       </>}
     >
       {step === 0 && (
@@ -224,7 +243,10 @@ export function PublishingApply() {
 
       {step === 1 && (
         <>
-          {blocked.length > 0 && <Callout tone="danger"><b>아직 신청할 수 없는 곡이 있어요.</b> {blocked.map(w => `‘${w.title}’`).join(', ')} — 지분을 맞추고 창작 증빙 자료를 하나 이상 올려 주세요. 고르던 내용은 그대로 남아요.</Callout>}
+          {chosen.some(w => !w.attachments.length && !later.includes(w.id)) && (
+            <Callout tone="neutral"><b>증빙 자료가 없는 곡이 있어요.</b> 곡 아래에서 파일·글·링크로 남기거나 ‘담당자가 요청하면 그때 낼게요’를 체크하면 다음으로 넘어가요.</Callout>
+          )}
+          {blocked.length > 0 && <Callout tone="danger"><b>아직 신청할 수 없는 곡이 있어요.</b> {blocked.map(w => `‘${w.title}’`).join(', ')} — 지분을 맞춰 주세요. 고르던 내용은 그대로 남아요.</Callout>}
           {conflicts.length > 0 && <Callout tone="warn"><b>기존 저작권 관리 계약과 겹칠 수 있어요.</b> {conflicts.map(w => `‘${w.title}’(${w.priorPublisher || '기존 퍼블리셔'})`).join(', ')} — 신청은 되고, 담당자가 먼저 검토해요.</Callout>}
           {chosen.some(w => w.contributors.some(c => c.isMe && !c.society)) && <SocietyJoin />}
           {/* 원곡 허락을 확인했다고 적은 곡은 빼고 — 남은 곡만 짚는다 */}
@@ -259,6 +281,15 @@ export function PublishingApply() {
                     <span>창작 증빙 · 등록 정보</span>
                     <span className="muted">{w.attachments.length ? `자료 ${w.attachments.length}개` : '자료 없음'}{w.createdOn ? ` · 창작 ${w.createdOn}` : ''}</span>
                   </p>
+                  {(() => {
+                    const g = gapsOf(w);
+                    return g && (
+                      <div className="aq-pbl-checks-gap">
+                        <p><Glyph name="warning" size={14} /><span><b>발매 크레딧과 참여자가 달라요.</b> 관리 단체는 크레딧과 같은 작사·작곡가로 등록해요.{g.missing.length > 0 && ` 크레딧에만: ${g.missing.join(', ')}.`}{g.extra.length > 0 && ` 참여자에만: ${g.extra.join(', ')}.`}</span></p>
+                        {(w.myRole === 'owner' || w.myRole === 'editor') && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setSheetFor(w)}>참여자 고치기</button>}
+                      </div>
+                    );
+                  })()}
                   {penAsOther(w).map(c => (
                     <p key={c.id} className="aq-pbl-checks-pen"><Glyph name="user" size={14} />‘{c.name}’은(는) 내 필명인데 다른 사람으로 들어가 있어요. <Link to={`/works/${w.id}?tab=rights`}>곡 화면에서 나로 합치기</Link></p>
                   ))}
@@ -267,9 +298,23 @@ export function PublishingApply() {
                       {checks.map(i => <li key={i.text} className={i.blocking ? 'is-block' : ''}><Glyph name={i.blocking ? 'warning' : 'info'} size={14} />{i.text}</li>)}
                     </ul>
                   ) : <p className="ui-field-help">등록에 필요한 정보와 창작 증빙이 모두 있어요.</p>}
-                  {(w.myRole === 'owner' || w.myRole === 'editor') && (
-                    <button type="button" className="ui-btn is-soft is-sm" onClick={() => setAttachFor(w)}><Glyph name="clip" size={14} className="aq-glyph-lead" />증빙 자료 올리기</button>
-                  )}
+                  {(w.myRole === 'owner' || w.myRole === 'editor') && (w.attachments.length ? (
+                    <button type="button" className="ui-btn is-soft is-sm" onClick={() => setAttachFor({ work: w, kind: 'demo' })}><Glyph name="clip" size={14} className="aq-glyph-lead" />자료 더 올리기</button>
+                  ) : (
+                    // 파일이 없어도 증빙할 수 있게 — 만든 과정을 글로, 크레딧이 보이는 발매 페이지 링크로, 아니면 나중에 요청받아서
+                    <div className="aq-pbl-evidence">
+                      <p className="aq-pbl-evidence-head">이렇게 증빙할 수 있어요</p>
+                      <div className="aq-pbl-evidence-opts">
+                        <button type="button" className="ui-btn is-soft is-sm" onClick={() => setAttachFor({ work: w, kind: 'demo' })}><Glyph name="clip" size={14} className="aq-glyph-lead" />파일 올리기</button>
+                        <button type="button" className="ui-btn is-soft is-sm" onClick={() => setAttachFor({ work: w, kind: 'project' })}><Glyph name="pencil" size={14} className="aq-glyph-lead" />만든 과정 글로 남기기</button>
+                        <button type="button" className="ui-btn is-soft is-sm" onClick={() => setAttachFor({ work: w, kind: 'proof' })}><Glyph name="link" size={14} className="aq-glyph-lead" />발매 페이지 링크 남기기</button>
+                      </div>
+                      <label className="ui-check is-plain">
+                        <input type="checkbox" checked={later.includes(w.id)} onChange={() => setLater(l => (l.includes(w.id) ? l.filter(x => x !== w.id) : [...l, w.id]))} />
+                        <span>지금은 자료가 없어요. 담당자가 요청하면 그때 낼게요.</span>
+                      </label>
+                    </div>
+                  ))}
                 </div>
               </div>
             );
@@ -316,35 +361,38 @@ export function PublishingApply() {
           <ReviewCard head="조건" onEdit={() => setStep(2)}>관리 수수료 {policy.commissionRate}% · 최초 계약 기간 {termLabel(policy.initialTermMonths)}</ReviewCard>
           <Callout tone="neutral">신청서에 서명해도 바로 계약되지 않아요. 담당자가 참여자·지분을 확인하고 승인하면, 확정된 조건으로 만든 저작권 관리 계약서를 계약서 화면에서 확인하고 서명해요.</Callout>
           {/* 관리 단체는 실제 사람으로 등록한다 — 필명으로 올라간 곡도 본인인증한 실명과 함께 접수한다 (서버 APPLICATION_IDENTITY_REQUIRED) */}
-          {!account.verified ? (
-            <Callout tone="danger" action={<Link to="/profile?open=verify" className="ui-btn is-white is-sm">본인인증</Link>}>
-              저작권 관리 신청서에 서명하려면 본인인증이 필요해요. 관리 단체에는 필명이 아니라 인증한 실명으로 등록돼요.
-            </Callout>
-          ) : <p className="ui-field-help">관리 단체에는 본인인증한 실명으로 등록하고, 필명은 곡에 적은 이름 그대로 함께 올려요. 정산 계좌는 배급과 같아 저작권료도 같은 잔액에 쌓여요.</p>}
-          <div className="ui-field">
-            <label htmlFor="pubSignPad">서명 <span className="required">*</span></label>
-            <SignaturePad ref={pad} id="pubSignPad" label="신청인 서명 입력" height={170} onChange={setDrawn} />
-            <small className="ui-field-help">신청인 <b>{signerName || '이름 없음'}</b>{account.realName.trim() ? ' (본인인증 실명)' : ' — 본인인증을 하면 실명으로 기록돼요'}</small>
-          </div>
-          <div className="aq-agree-box">
-            <label className="ui-check is-plain aq-agree-all-line">
-              <input type="checkbox" checked={agreed.length === AGREE.length} onChange={e => setAgreed(e.target.checked ? AGREE.map(a => a[0]) : [])} />
-              <span><strong>아래 내용에 모두 동의해요</strong></span>
-            </label>
-            {AGREE.map(([k, t]) => (
-              <label key={k} className="ui-check is-plain">
-                <input type="checkbox" checked={agreed.includes(k)} onChange={() => toggle(agreed, setAgreed, k)} />
-                <span>{t}</span>
+          {/* 본인인증 전에는 서명 대신 인증이 먼저 할 일 — 카드 아래 큰 버튼 하나만 (아래 고정 버튼은 잠긴다) */}
+          {!account.verified ? <VerifyGate what="신청서" /> : <>
+            <p className="ui-field-help">관리 단체에는 본인인증한 실명으로 등록하고, 필명은 곡에 적은 이름 그대로 함께 올려요. 정산 계좌는 배급과 같아 저작권료도 같은 잔액에 쌓여요.</p>
+            <div className="ui-field">
+              <label htmlFor="pubSignPad">서명 <span className="required">*</span></label>
+              <SignaturePad ref={pad} id="pubSignPad" label="신청인 서명 입력" height={170} onChange={setDrawn} />
+              <small className="ui-field-help">신청인 <b>{signerName}</b> (본인인증 실명) · 활동명이나 필명으로는 신청할 수 없어요.</small>
+            </div>
+            <div className="aq-agree-box">
+              <label className="ui-check is-plain aq-agree-all-line">
+                <input type="checkbox" checked={agreed.length === AGREE.length} onChange={e => setAgreed(e.target.checked ? AGREE.map(a => a[0]) : [])} />
+                <span><strong>아래 내용에 모두 동의해요</strong></span>
               </label>
-            ))}
-          </div>
+              {AGREE.map(([k, t]) => (
+                <label key={k} className="ui-check is-plain">
+                  <input type="checkbox" checked={agreed.includes(k)} onChange={() => toggle(agreed, setAgreed, k)} />
+                  <span>{t}</span>
+                </label>
+              ))}
+            </div>
+          </>}
           {failure && (
             <Callout tone="danger" action={<button type="button" className="ui-btn is-white is-sm" onClick={() => void submit()}>다시 시도</button>}>{failure}</Callout>
           )}
         </>
       )}
 
-      {attachFor && <AttachmentModal works={[attachFor]} workId={attachFor.id} onClose={() => setAttachFor(null)} onAdded={() => reloadWorks()} />}
+      {sheetFor && (
+        <WorkSheet work={works?.find(x => x.id === sheetFor.id) ?? sheetFor} all={works ?? []} focus={{ field: 'split' }}
+          releaseId={sheetFor.recordings[0]?.releaseId} onClose={() => setSheetFor(null)} onSaved={() => reloadWorks()} />
+      )}
+      {attachFor && <AttachmentModal works={[attachFor.work]} workId={attachFor.work.id} initialKind={attachFor.kind} onClose={() => setAttachFor(null)} onAdded={() => reloadWorks()} />}
     </WizardShell>
   );
 }

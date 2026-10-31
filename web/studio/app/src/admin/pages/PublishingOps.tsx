@@ -15,7 +15,7 @@ import { FilePicker } from '../../components/FilePicker';
 import { SplitDiffList } from '../../components/publishing/WorkSheet';
 import { splitDiff } from '../../lib/publishingPrep';
 import { parseCsv } from '../../lib/workImport';
-import { SOCIETIES, societyName } from '../../lib/publishing';
+import { SOCIETIES, rightName, societyName, territoryName } from '../../lib/publishing';
 import { money } from '../../lib/format';
 import { staffApi, type ArDecisionAction, type PubChange, type PubContractRequest, type RoyaltyImportResult, type StaffArSubmission } from '../api';
 import { ago } from '../labels';
@@ -98,8 +98,11 @@ function Contracts() {
   const [open, setOpen] = useState<PubContractRequest | null>(null);
   if (error) return <ErrorBox message={error} onRetry={reload} />;
   if (loading && !data) return <SkeletonList />;
-  if (!data?.items.length) return <EmptyState title="기다리는 계약 요청이 없어요">아티스트가 연장이나 종료를 요청하면 이곳에 쌓여요.</EmptyState>;
-  const kind = (c: PubContractRequest) => (c.renewal ? 'renewal' : 'termination') as 'renewal' | 'termination';
+  if (!data?.items.length) return <EmptyState title="기다리는 계약 요청이 없어요">아티스트가 연장·종료·관리 범위 변경을 요청하면 이곳에 쌓여요.</EmptyState>;
+  const kind = (c: PubContractRequest) => (c.renewal ? 'renewal' : c.scope ? 'scope' : 'termination') as 'renewal' | 'termination' | 'scope';
+  const TITLE = { renewal: '계약 연장 요청', termination: '계약 종료 요청', scope: '관리 범위 변경 요청' } as const;
+  const APPROVE = { renewal: '연장 처리', termination: '종료 처리', scope: '범위 변경 처리' } as const;
+  const scopeLine = (t?: string[], r?: string[]) => `${(t ?? []).map(territoryName).join(', ')} · ${(r ?? []).map(rightName).join(', ')}`;
   return (
     <>
       <div className="ui-list">
@@ -111,14 +114,14 @@ function Contracts() {
               <span className="ui-row-meta"><span>{c.orgName}</span><span>종료일 {c.endDate ?? '—'}</span><span className="is-mono">{c.number}</span></span>
             </span>
             <span className="ui-row-end">
-              {c.renewal ? <Badge tone="blue">{c.renewal.months}개월 연장</Badge> : <Badge tone="red">종료 요청</Badge>}
-              <small>{ago(c.renewal?.requestedAt ?? c.terminationRequestedAt ?? '') || '—'}</small>
+              {c.renewal ? <Badge tone="blue">{c.renewal.months}개월 연장</Badge> : c.scope ? <Badge tone="violet">범위 변경</Badge> : <Badge tone="red">종료 요청</Badge>}
+              <small>{ago(c.renewal?.requestedAt ?? c.scope?.requestedAt ?? c.terminationRequestedAt ?? '') || '—'}</small>
             </span>
           </button>
         ))}
       </div>
       {open && (
-        <Decide title={kind(open) === 'renewal' ? '계약 연장 요청' : '계약 종료 요청'} approveLabel={kind(open) === 'renewal' ? '연장 처리' : '종료 처리'} rejectLabel="반려"
+        <Decide title={TITLE[kind(open)]} approveLabel={APPROVE[kind(open)]} rejectLabel="반려"
           onClose={() => setOpen(null)}
           onDecide={async (approve, reason) => {
             try { await staffApi.pubContractDecide(open.id, { kind: kind(open), approve, reason }); toast(approve ? '처리했어요.' : '반려했어요.', 'success'); reload(); }
@@ -128,7 +131,12 @@ function Contracts() {
             <div><dt>계약</dt><dd>{open.number} · {open.orgName}</dd></div>
             <div><dt>곡</dt><dd>{open.works.join(', ')}</dd></div>
             <div><dt>지금 종료일</dt><dd>{open.endDate ?? '—'}</dd></div>
-            <div><dt>요청</dt><dd>{open.renewal ? `${open.renewal.months}개월 연장 — 종료일이 그만큼 늘어나요` : '종료 — 관리 단체 절차를 마친 뒤 처리해 주세요. 처리하면 오늘로 끝나요'}</dd></div>
+            {open.scope ? (
+              <>
+                <div><dt>지금 범위</dt><dd>{scopeLine(open.territories, open.rights)}</dd></div>
+                <div><dt>바꿀 범위</dt><dd>{scopeLine(open.scope.territories, open.scope.rights)} — 관리 단체 위임을 맞춘 뒤 처리해 주세요</dd></div>
+              </>
+            ) : <div><dt>요청</dt><dd>{open.renewal ? `${open.renewal.months}개월 연장 — 종료일이 그만큼 늘어나요` : '종료 — 관리 단체 절차를 마친 뒤 처리해 주세요. 처리하면 오늘로 끝나요'}</dd></div>}
           </dl>
         </Decide>
       )}

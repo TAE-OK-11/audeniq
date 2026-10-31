@@ -4,13 +4,14 @@
 // 곡 상세 → 권리 확인 → 저작권 관리 신청 → 계약 → 진행 상태까지 다른 화면을 거의 거치지 않고 이어진다 (기획안 10.2)
 import { useEffect, useState } from 'react';
 import { todayStr } from '../lib/date';
+import { genreLabel } from '../lib/catalog';
 import { Link, useNavigate, useParams, useSearchParams } from '../lib/router';
 import { api } from '../api/client';
 import { pubApi, type Work, type WorkContributor } from '../api/publishing';
 import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { MOCK } from '../lib/mode';
-import { APP_LABEL, APP_TONE, AR_LABEL, AR_TONE, CONTRACT_LABEL, CONTRACT_TONE, FIX_FIELDS, LANGUAGES, ORIGIN_LABEL, fixNote, isFixField, type FixField, REG_LABEL, REG_SENTENCE, REG_STEPS, WORK_TYPES, AI_USE_OPTIONS, APPLICABLE_REG, PAYOUT_TIMING, estimateRoyalty, firstRoyaltyWindow, recordedRevenue, canEditInfo, editMode, pct, societyName, regStep, splitIssues, splitReady, workOrigin } from '../lib/publishing';
+import { APP_LABEL, APP_TONE, FIX_FIELDS, LANGUAGES, fixNote, isFixField, type FixField, REG_LABEL, REG_SENTENCE, REG_STEPS, WORK_TYPES, AI_USE_OPTIONS, APPLICABLE_REG, PAYOUT_TIMING, estimateRoyalty, firstRoyaltyWindow, recordedRevenue, canEditInfo, editMode, pct, regStep, splitIssues, splitReady, workOrigin } from '../lib/publishing';
 import { StageCard } from '../components/StageCard';
 import { STATUS_LABEL, localStamp, money, statusTone } from '../lib/format';
 import { useToast } from '../components/Toast';
@@ -20,10 +21,10 @@ import { SkeletonBlock } from '../components/Skeleton';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { ReviewNote } from '../components/CorrectionList';
 import { Glyph } from '../components/Glyph';
-import { RegBadge, RegProgress, roleText } from '../components/publishing/parts';
+import { roleText } from '../components/publishing/parts';
 import { SplitEditor } from '../components/publishing/SplitEditor';
 import { RoyaltyTable } from '../components/publishing/Royalties';
-import { ContractManage } from '../components/publishing/PublishingContracts';
+import { ContractCard, RightsInfoCard, RoyaltyInCard, SocietiesCard } from '../components/publishing/WorkRightsCards';
 import { AttachmentList, AttachmentModal } from '../components/publishing/Attachments';
 import { InviteModal } from '../components/publishing/InviteModal';
 import { Badge, Callout, EmptyState, KeyValue, Segmented, StatGrid, StatTile, Tabs } from '../ui';
@@ -63,7 +64,7 @@ function nextAction(w: Work): { text: string; tab?: Tab; to?: string; btn: strin
  *  맨 아래 다시 심사받기 하나. 담당자가 따로 의견을 남겼을 때만 검토팀 말풍선을 보인다 (발매의 REVIEW_NOTE와 같다).
  *  아티스트가 담당자에게 적는 칸은 두지 않는다 — 고친 내용이 곧 답이다.
  *  요청한 서류는 발매 보완과 같은 '권리·보완 서류'에서 낸다 — 같은 제출 화면·알림·담당자 확인을 쓴다 */
-function FixPanel({ work, onDone, goRights }: { work: Work; onDone: (w: Work) => void; goRights: () => void }) {
+function FixPanel({ work, onDone, goRights }: { work: Work; onDone: (w: Work) => void; goRights: (f: FixField) => void }) {
   const toast = useToast();
   const nav = useNavigate();
   const [busy, setBusy] = useState(false);
@@ -72,7 +73,7 @@ function FixPanel({ work, onDone, goRights }: { work: Work; onDone: (w: Work) =>
   const docs = fix.documents ?? [];
   const note = fixNote(fix);
   const open = fields.length + docs.length;
-  const goField = (f: FixField) => (f.startsWith('contributors.') ? goRights() : nav(`/works/${work.id}/edit`));
+  const goField = (f: FixField) => (f.startsWith('contributors.') ? goRights(f) : nav(`/works/${work.id}/edit`));
   const send = async () => {
     if (busy) return;
     setBusy(true);
@@ -200,6 +201,17 @@ export function WorkDetail() {
   }, [data?.recordings.map(r => r.releaseId).join(',')]);
   const { data: policy } = useAsync(() => pubApi.policy(), [], { key: 'pub-policy' });
   const [splitDraft, setSplitDraft] = useState<WorkContributor[] | null>(null);
+  // 보완 요청에서 눌러 왔으면 고칠 참여자 줄 — 배급 보완처럼 그 칸을 펼치고 바로 입력하게
+  const [splitFocus, setSplitFocus] = useState<{ id: string; field: FixField } | null>(null);
+  useEffect(() => {
+    if (!splitFocus || !splitDraft) return;
+    const t = window.setTimeout(() => {
+      const input = document.getElementById(`pbl-person-${splitFocus.id}-${splitFocus.field === 'contributors.ipi' ? 'ipi' : splitFocus.field === 'contributors.society' ? 'society' : 'share'}`) as HTMLElement | null;
+      (input ?? document.getElementById(`pbl-person-${splitFocus.id}`))?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      input?.focus({ preventScroll: true });
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [splitFocus, splitDraft]);
   const [savingSplit, setSavingSplit] = useState(false);
   const [linking, setLinking] = useState(false);
   const [attaching, setAttaching] = useState(false);
@@ -264,6 +276,7 @@ export function WorkDetail() {
       const nw = await pubApi.updateWork(w.id, { contributors: splitDraft }, w.rowVersion);
       update(nw);
       setSplitDraft(null);
+      setSplitFocus(null);
       toast(nw.pendingChange ? '변경을 요청했어요.' : '지분을 저장했어요.', { tone: 'success', sub: nw.pendingChange ? '참여자 확인과 담당자 검토가 끝날 때까지 지금 값으로 관리돼요.' : splitReady(nw.contributors) ? '바뀐 지분은 참여자에게 확인을 요청해요.' : '합계가 100%가 아니에요. 신청 전에 맞춰 주세요.' });
     } catch (err) {
       toast(errorMessage(err, '지분을 저장하지 못했어요.'), { tone: 'error', action: { label: '다시 시도', onClick: h => { h.close(); void saveSplit(); } } });
@@ -327,15 +340,12 @@ export function WorkDetail() {
       <div className="aq-detail-hero" aria-label="곡 정보">
         <ReleaseCover id={w.recordings[0]?.releaseId ?? w.id} className="cover aq-detail-cover" />
         <div className="aq-detail-info">
-          <div className="aq-detail-top">
-            <span className="eyebrow">곡 · {ORIGIN_LABEL[origin]}</span>
-            {signing(w) ? <Badge tone="amber">계약서 서명 필요</Badge> : released ? <RegBadge status={w.registration} /> : ar && <Badge tone={AR_TONE[ar.status]}>A&R {AR_LABEL[ar.status]}</Badge>}
-          </div>
+          {/* 머리에는 제목·참여자만 — 갈래·상태 배지는 아래 진행 단계 카드와 정보 탭이 말한다 (겹쳐 보여 지저분했다) */}
           <h1>{w.title}</h1>
           {/* 발매 상세처럼 이름만 — 지분은 정보 탭의 참여자·지분에서 */}
           <p className="aq-detail-artist">{w.contributors.map(c => c.name).join(' · ') || '참여자 없음'}</p>
           {/* 항목 단위로만 줄을 바꾼다 — ISWC 번호가 'T-' / '345…'로 쪼개지지 않게 */}
-          <p className="aq-detail-meta">{[label(WORK_TYPES, w.workType), w.genre, w.iswc && `ISWC ${w.iswc}`, w.myRole === 'contributor' && '공동 참여 곡'].filter(Boolean)
+          <p className="aq-detail-meta">{[label(WORK_TYPES, w.workType), w.genre && genreLabel(w.genre), w.iswc && `ISWC ${w.iswc}`, w.myRole === 'contributor' && '공동 참여 곡'].filter(Boolean)
             .map((x, i) => <span key={i}>{i > 0 && ' · '}<span className="aq-nowrap">{x}</span></span>)}</p>
         </div>
         <div className="aq-detail-actions is-wide">{buttons}</div>
@@ -350,7 +360,14 @@ export function WorkDetail() {
       </div>
 
       {/* 보완 요청은 발매 상세처럼 머리 카드와 탭 사이 — 어느 탭을 보고 있어도 먼저 보인다 */}
-      {w.fix && canEdit && <FixPanel work={w} onDone={update} goRights={() => setTab('rights')} />}
+      {w.fix && canEdit && <FixPanel work={w} onDone={update} goRights={f => {
+        // 배급 보완처럼 — 지분 편집을 열고 고칠 사람(IPI·단체가 빈 첫 사람, 아니면 첫 줄)의 칸으로 바로
+        setTab('rights');
+        const list = structuredClone(w.contributors);
+        const target = (f === 'contributors.ipi' ? list.find(c => !c.ipi) : f === 'contributors.society' ? list.find(c => !c.society) : undefined) ?? list[0];
+        if (mode !== 'locked') setSplitDraft(d => d ?? list);
+        setSplitFocus(target ? { id: target.id, field: f } : null);
+      }} />}
 
       {/* 고를 탭이 '정보' 하나뿐이면(맡기기 전 · 미발매) 탭 줄을 그리지 않는다 — 혼자 화면 폭을 차지한 탭은 누를 일이 없다 */}
       {shownTabs.length > 1 && (
@@ -384,7 +401,7 @@ export function WorkDetail() {
               <KeyValue cols={2} items={[
                 ['곡 유형', label(WORK_TYPES, w.workType)],
                 ['주요 언어', label(LANGUAGES, w.language)],
-                ['장르', w.genre || <Empty>입력 전</Empty>],
+                ['장르', w.genre ? genreLabel(w.genre) : <Empty>입력 전</Empty>],
                 ['공개 범위', w.visibility === 'shared' ? '참여자에게 공개' : '비공개'],
                 ['ISWC', w.iswc ?? <Empty>{`발급 전 · ${w.internalCode}`}</Empty>],
                 ['기존 퍼블리셔', w.hasPriorPublisher ? (w.priorPublisher || '있음') : '없음'],
@@ -432,7 +449,7 @@ export function WorkDetail() {
               {canEdit && mode === 'locked' && <p className="ui-field-help">{signing(w) ? '계약서 서명을 기다리는 곡이라 지금은 지분을 바꿀 수 없어요. 서명한 뒤에는 변경을 요청할 수 있어요.' : '담당자가 심사하는 동안에는 지분을 바꿀 수 없어요. 보완 요청이 오면 고칠 수 있고, 급하면 신청을 철회한 뒤 고쳐요.'}</p>}
               {splitDraft ? (
                 <>
-                  <SplitEditor value={splitDraft} onChange={setSplitDraft} reuse={reusableWorks(allWorks ?? [], w.id)} />
+                  <SplitEditor value={splitDraft} onChange={setSplitDraft} reuse={reusableWorks(allWorks ?? [], w.id)} focusId={splitFocus?.id} />
                   <SplitDiffList title="바뀌는 내용" changes={splitDiff(w.pendingChange?.contributors ?? w.contributors, splitDraft)} />
                   {changeNeedsReview(w) && <p className="ui-field-help">관리 중인 곡이라 지금 적용값은 그대로 두고, 모든 참여자가 확인하고 담당자가 검토한 뒤 바뀐 값으로 관리해요.</p>}
                   <div className="ui-actions">
@@ -467,20 +484,12 @@ export function WorkDetail() {
 
         {view === 'register' && (
           <div className="aq-detail-stack">
-            <div className="aq-relinfo-card">
-              <h2 className="subhead">저작권 등록 현황</h2>
-              {/* 진행 단계는 머리 카드에 한 번만 — 여기서 같은 단계 판(카드 안 카드)과 같은 문장을 또 보여 주지 않는다.
-                  등록이 끝났으면 어디에 언제 등록됐는지만 */}
-              {w.registration === 'registered' ? (
-                <KeyValue cols={2} items={[
-                  ['관리 단체', societyName([...w.registrationLog].reverse().find(l => l.society)?.society) || <Empty>확인 중</Empty>],
-                  ['등록일', (() => { const at = [...w.registrationLog].reverse().find(l => l.status === 'registered')?.at; return at ? localStamp(at).replace(/ 오[전후].*$/, '') : <Empty>확인 중</Empty>; })()],
-                  ['ISWC', w.iswc ?? <Empty>{`발급 전 · ${w.internalCode}`}</Empty>],
-                ]} />
-              ) : regStep(w.registration) < 0 && <p className="ui-field-help">{REG_SENTENCE[w.registration]}</p>}
-              <RegProgress status={w.registration} log={w.registrationLog} head={false} />
-              {w.registration !== 'registered' && <p className="ui-field-help">신청이 승인돼도 관리 단체 등록은 따로 진행돼요. 등록이 끝나야 사용료를 받을 수 있어요.</p>}
-            </div>
+            {/* 할 말마다 한 장씩 — 들어온 돈 · 등록 정보 · 맡긴 관리 단체 · 계약 · 신청 (예전엔 한 카드에 다 몰려 복잡했다) */}
+            {royalties && <RoyaltyInCard royalties={royalties} to={`/works/${encodeURIComponent(w.id)}?tab=revenue`} />}
+            <RightsInfoCard w={w} />
+            {w.registration !== 'none' && <SocietiesCard w={w} royalties={royalties ?? []} />}
+            {w.contractId && (contract ? <ContractCard contract={contract} canEdit={canEdit} />
+              : w.myRole === 'contributor' ? <div className="aq-relinfo-card"><h2 className="subhead">계약</h2><p className="muted small">곡 소유자의 계약으로 관리되고 있어요.</p></div> : <SkeletonBlock height={160} />)}
             <div className="aq-relinfo-card">
               <div className="ui-section-head"><h2 className="subhead">저작권 관리 신청</h2>{app && <Badge tone={APP_TONE[app.status]}>{APP_LABEL[app.status]}</Badge>}</div>
               {app && app.status !== 'withdrawn' ? (
@@ -489,11 +498,6 @@ export function WorkDetail() {
                     <div className="aq-kv-code"><dt>신청 번호</dt><dd className="aq-nowrap">{app.number}</dd></div>
                     <div className="aq-kv-code"><dt>제출</dt><dd>{application?.submittedAt ? localStamp(application.submittedAt) : '—'}</dd></div>
                   </dl>
-                  {application && (
-                    <ol className="ui-timeline is-latest-first">
-                      {[...application.history].reverse().map((h, i) => <li key={i}><strong>{h.text}</strong><small>{localStamp(h.at)}</small></li>)}
-                    </ol>
-                  )}
                   {/* 신청서와 계약서는 따로 — 승인되면 계약서가 만들어지고 계약서 화면에서 서명한다 */}
                   {application?.contractId && !w.contractId && (
                     <Callout tone="info" action={<Link to={`/contracts/publishing/${encodeURIComponent(application.contractId)}`} className="ui-btn is-primary is-sm">확인하고 서명</Link>}>
@@ -514,16 +518,6 @@ export function WorkDetail() {
                 </div>
               )}
             </div>
-            {w.contractId && (
-              <div className="aq-relinfo-card">
-                <div className="ui-section-head"><h2 className="subhead">계약</h2>{contract && <Badge tone={CONTRACT_TONE[contract.status]}>{CONTRACT_LABEL[contract.status]}</Badge>}</div>
-                {contract ? (
-                  <>
-                    <ContractManage contract={contract} canEdit={canEdit} doc={<Link to={`/contracts/publishing/${contract.id}`} className="ui-btn is-soft is-sm">계약서 보기</Link>} />
-                  </>
-                ) : w.myRole === 'contributor' ? <p className="muted small">곡 소유자의 계약으로 관리되고 있어요.</p> : <SkeletonBlock height={64} />}
-              </div>
-            )}
           </div>
         )}
 

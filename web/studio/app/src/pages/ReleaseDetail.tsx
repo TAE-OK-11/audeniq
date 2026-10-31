@@ -257,7 +257,8 @@ export function ReleaseDetail() {
   });
   const wizard = `/upload?edit=${encodeURIComponent(rel.id)}`;
   const prepGo = (key: PrepItem['key']): (() => void) | null => {
-    if (key === 'agreement' && agreementDoc) return () => nav(`/contracts?doc=${encodeURIComponent(agreementDoc.id)}`);
+    // 배급 계약서는 계약서 화면 안에서 확인하고 서명한다 (저작권 관리 계약서와 같은 틀)
+    if (key === 'agreement' && agreementDoc) return () => nav(`/contracts/${encodeURIComponent(agreementDoc.id)}${agreementDoc.reviewStatus === 'approved' && !agreementDoc.localSignatureAt ? '?sign=1' : ''}`);
     if (key === 'proofs') { const due = pendingProofs(allDocs, rel.id, rel.title); return () => nav(proofPath(due[0])); }
     if (['cover', 'audio', 'credits', 'date'].includes(key)) return needsFix ? () => nav(fixPath(rel.id)) : editInWizard ? () => nav(wizard) : null;
     return null;

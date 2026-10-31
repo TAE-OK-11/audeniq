@@ -26,7 +26,7 @@ export const PUB_STATUS: Record<PubAppStatus, [string, Tone]> = {
 const FILTERS: PubAppStatus[] = ['submitted', 'in_review', 'needs_fix', 'approved', 'rejected'];
 const TERRITORY: Record<string, string> = { KR: '대한민국', JP: '일본', US: '미국', WORLD: '전 세계' };
 const RIGHT: Record<string, string> = { performance: '공연권', mechanical: '복제권', digital: '전송권', sync: '싱크' };
-const DOCS = ['공동 작곡 합의서', '공동 작사 합의서', '기존 퍼블리셔 해지 확인서', '편곡·번안 허락서'];
+const DOCS = ['창작 증빙 자료 (데모·작업 파일·악보)', '공동 작곡 합의서', '공동 작사 합의서', '기존 퍼블리셔 해지 확인서', '편곡·번안 허락서'];
 const ACTION_TITLE: Record<PubDecisionAction, string> = { APPROVE: '승인', REQUEST_CORRECTION: '보완 요청', REJECT: '반려', REGISTER: '관리 단체 등록' };
 
 export function PublishingReviews() {
@@ -180,6 +180,8 @@ export function PublishingReviewDetail() {
   const problems = works.filter(w => !splitReady(w.contributors));
   const missingIpi = works.flatMap(w => w.contributors.filter(c => !c.ipi).map(c => `${w.title} · ${c.name}`));
   // 신청인 본인이 필명으로 올라간 곡 — 관리 단체에는 서명한 실명과 묶어 등록한다 (0176)
+  // 증빙 자료 없이 신청한 곡 — 필요하면 보완 요청으로 '창작 증빙 자료'를 요청한다 (0176)
+  const bare = works.filter(w => !w.attachments.length);
   const penNames = Array.from(new Set(works.flatMap(w => w.contributors.filter(c => c.penName).map(c => c.name))));
   const statusLine = app.status === 'submitted' ? '담당하면 심사를 시작할 수 있어요.'
     : app.status === 'in_review' ? (app.replyNote ? '아티스트가 보완해서 다시 냈어요.' : '참여자·지분·권리 정보를 확인하고 결정해 주세요.')
@@ -223,6 +225,9 @@ export function PublishingReviewDetail() {
           {done && <div className="ui-callout is-success" role="status">{done}</div>}
           {app.replyNote && <div className="ui-callout is-row"><span><b>아티스트 답변</b> · {app.replyNote}</span></div>}
           {app.fixReason && app.status !== 'in_review' && <div className={`ui-callout ${app.status === 'rejected' ? 'is-danger' : 'is-warn'}`}>{app.status === 'rejected' ? '반려 사유' : '보낸 보완 요청'} · {app.fixReason}</div>}
+          {bare.length > 0 && (
+            <div className="ui-callout is-warn"><span><b>증빙 자료 없이 신청</b> · {bare.map(w => `‘${w.title}’`).join(', ')}{bare.some(w => w.creationNote) ? ' — 만든 과정 설명은 있어요' : ''}. 확인이 필요하면 보완 요청에서 ‘창작 증빙 자료’를 요청해 주세요.</span></div>
+          )}
           {penNames.length > 0 && (
             <div className="ui-callout is-row"><span><b>필명</b> · {penNames.map(n => `‘${n}’`).join(', ')}은(는) 신청인 본인이에요{app.signerName ? ` (본인인증 실명 서명: ${app.signerName})` : ''}. 관리 단체에는 실명으로 등록하고 필명을 함께 올려 주세요.</span></div>
           )}

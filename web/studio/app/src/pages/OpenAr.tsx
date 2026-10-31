@@ -18,6 +18,7 @@ import '../styles/split/Dashboard.css';
 import '../styles/split/Publishing.css';
 import { AttachmentModal } from '../components/publishing/Attachments';
 import { StageCard } from '../components/StageCard';
+import { GenreSelect } from '../components/GenreSelect';
 
 const MOODS = ['신나는', '잔잔한', '신비로운', '슬픈', '설레는', '강렬한', '따뜻한', '어두운', '청량한'];
 const AR_STEPS = ['제출', '심사', '심사 완료', '제안'];
@@ -103,7 +104,7 @@ function SubmitForm({ works, preset, busyIds, releasedPreset, onDone, onClose, o
       </>}
       {step === 1 && <>
             <div className="form-grid">
-              <Field label="장르" htmlFor="arGenre" required><input id="arGenre" className={inputClass()} value={genre} onChange={e => setGenre(e.target.value)} /></Field>
+              <Field label="장르" htmlFor="arGenre" required><GenreSelect id="arGenre" value={genre} onChange={setGenre} required /></Field>
               <Field label="공개 범위">
                 <Segmented fill label="공개 범위" value={scope} onChange={setScope} options={[{ value: 'internal', label: 'AUDENIQ만' }, { value: 'partners', label: '승인 파트너까지' }]} />
               </Field>

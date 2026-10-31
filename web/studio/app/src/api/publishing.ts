@@ -226,6 +226,8 @@ export interface PublishingContract {
   rights: string[];
   renewal: { months: number; requestedAt: string } | null;
   terminationRequestedAt: string | null;
+  /** 관리 국가·권리 변경 요청 — 담당자가 처리할 때까지 (0177) */
+  scopeRequest?: { territories: string[]; rights: string[]; requestedAt: string } | null;
   signedAt: string | null;
   /** 계약서 본문(한 줄에 한 조) — 승인할 때 확정된 조건으로 만든다 */
   body?: string;
@@ -237,7 +239,7 @@ export interface PublishingContract {
   applicationId?: string;
   applicationNumber?: string;
   /** 연장·종료 요청에 담당자가 한 답 (0173) */
-  requestDecision?: { outcome: 'renewed' | 'renewal_rejected' | 'ended' | 'termination_rejected'; note: string | null; at: string | null } | null;
+  requestDecision?: { outcome: 'renewed' | 'renewal_rejected' | 'ended' | 'termination_rejected' | 'scope_changed' | 'scope_rejected'; note: string | null; at: string | null } | null;
   /** 계약한 곡이 실린 발매 — 계약서 화면에서 그 발매 묶음에 보인다 */
   releaseIds?: string[];
   rowVersion?: number;
@@ -842,16 +844,14 @@ const mockApi = {
       const demo = works.find(w => workOrigin(w) === 'unreleased');
       if (demo) throw new ApiError(`‘${demo.title}’은(는) 아직 발매 전이에요. 발매 전 곡은 Open A&R로 피칭하고, 발매되면 신청해 주세요.`, 422, 'WORK_NOT_RELEASED');
       if (input.policyVersion !== POLICY.version) throw new ApiError('계약 조건이 바뀌었어요. 새 조건을 확인하고 다시 신청해 주세요.', 409, 'POLICY_CHANGED');
-      // 서버와 같게 — 곡마다 창작 증빙 자료 1개 이상, 서명하는 사람은 본인인증 (0176)
-      const bare = works.find(w => !w.attachments.length);
-      if (bare) throw new ApiError(`‘${bare.title}’에 창작 증빙 자료를 하나 이상 올려 주세요. 데모·작업 파일·악보·가사·공동 작곡 합의서 중 무엇이든 돼요.`, 422, 'WORK_EVIDENCE_REQUIRED');
+      // 서버와 같게 — 서명하는 계정은 한 번 본인인증 (0176). 창작 증빙은 없어도 접수하고 담당자가 필요하면 요청한다
       if (!getAccountSnapshot().verified) throw new ApiError('저작권 관리 신청서에 서명하려면 본인인증이 필요해요. 계정 정보에서 인증해 주세요.', 422, 'APPLICATION_IDENTITY_REQUIRED');
       const now = stampNow();
       const n = d.applications.length + 20;
       const app: PublishingApplication = {
         id: `a_${input.idempotencyKey}`, number: `PUB-${now.slice(0, 4)}-${String(n).padStart(4, '0')}`, status: 'submitted',
         workIds: works.map(w => w.id), workTitles: works.map(w => w.title), territories: input.territories, rights: input.rights,
-        submittedAt: now, contractId: null, history: [{ at: now, text: '제출 완료' }], signerName: input.signature.name, documentCode: null,
+        submittedAt: now, contractId: null, history: [{ at: now, text: '제출 완료' }], signerName: getAccountSnapshot().realName.trim() || input.signature.name, documentCode: null,
       };
       d.applications.unshift(app);
       for (const w of works) {
@@ -951,12 +951,15 @@ const mockApi = {
       if (!c) throw notFound();
       if (c.status !== 'pending_sign') throw new ApiError('이미 서명한 계약서예요.', 409, 'CONTRACT_ALREADY_SIGNED');
       if (!CONTRACT_CONFIRMATIONS.every(([k]) => input.confirmations.includes(k))) throw new ApiError('확인 항목을 모두 체크해 주세요.', 422, 'AGREEMENT_CONFIRMATION_REQUIRED');
+      // 서버와 같게 — 본인인증한 실명으로만 계약한다 (활동명·필명 불가)
+      const acct = getAccountSnapshot();
+      if (!acct.verified || !acct.realName.trim()) throw new ApiError('저작권 관리 계약은 본인인증한 실명으로만 맺을 수 있어요. 계정 정보에서 인증해 주세요.', 422, 'APPLICATION_IDENTITY_REQUIRED');
       const today = stampNow().slice(0, 10);
       const end = new Date(`${today}T00:00:00`);
       end.setMonth(end.getMonth() + c.termMonths);
       Object.assign(c, {
         status: 'active', signedAt: stampNow(), startDate: today, endDate: end.toISOString().slice(0, 10),
-        signerName: input.signerName, signature: input.signature, contentHash: 'demo'.padEnd(64, '0'), rowVersion: (c.rowVersion ?? 1) + 1,
+        signerName: acct.realName.trim(), signature: input.signature, contentHash: 'demo'.padEnd(64, '0'), rowVersion: (c.rowVersion ?? 1) + 1,
       });
       for (const w of d.works.filter(x => c.works.some(cw => cw.id === x.id))) w.contractId = c.id;
       return structuredClone(c);
@@ -969,6 +972,18 @@ const mockApi = {
       if (!c) throw notFound();
       if (!POLICY.renewalOptions.includes(months)) throw new ApiError('고를 수 없는 연장 기간이에요.', 400, 'VALIDATION');
       c.renewal = { months, requestedAt: stampNow() };
+      return structuredClone(c);
+    });
+  },
+  async requestScope(id: string, territories: string[], rights: string[]) {
+    await wait(400);
+    return mutate(d => {
+      const c = d.contracts.find(x => x.id === id);
+      if (!c) throw notFound();
+      if (!territories.length || !rights.length) throw new ApiError('관리할 국가와 권리를 하나 이상 골라 주세요.', 400, 'VALIDATION');
+      const same = (a: string[], b: string[]) => a.length === b.length && a.every(x => b.includes(x));
+      if (same(c.territories, territories) && same(c.rights, rights)) throw new ApiError('지금과 같은 범위예요. 바꿀 국가나 권리를 골라 주세요.', 422, 'CONTRACT_SCOPE_UNCHANGED');
+      c.scopeRequest = { territories, rights, requestedAt: stampNow() };
       return structuredClone(c);
     });
   },
@@ -1110,6 +1125,7 @@ const remoteApi = {
   simulateApprove: (_id: string) => Promise.reject(new ApiError('담당자 승인을 기다려 주세요.', 400, 'NOT_DEMO')) as Promise<PublishingContract>,
   renewContract: (id: string, months: number) => req<PublishingContract>(orgPath(`/publishing/contracts/${enc(id)}/renewal`), { method: 'POST', body: { months } }),
   requestTermination: (id: string) => req<PublishingContract>(orgPath(`/publishing/contracts/${enc(id)}/termination`), { method: 'POST' }),
+  requestScope: (id: string, territories: string[], rights: string[]) => req<PublishingContract>(orgPath(`/publishing/contracts/${enc(id)}/scope`), { method: 'POST', body: { territories, rights } }),
   listRoyalties: (workId?: string) => orEmpty(req<{ items: Royalty[] }>(orgPath(workId ? `/works/${enc(workId)}/royalties` : '/publishing/royalties')).then(r => r.items), [] as Royalty[]),
   listAr: () => orEmpty(req<{ items: ArSubmission[] }>(orgPath('/ar/submissions')).then(r => r.items), [] as ArSubmission[]),
   submitAr: (input: ArInput) => req<ArSubmission>(orgPath('/ar/submissions'), { method: 'POST', body: input }),

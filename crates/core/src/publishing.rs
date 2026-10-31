@@ -352,6 +352,28 @@ fn creation_note(v: Option<&str>) -> Result<Option<String>> {
     }
 }
 
+/// The account's verified legal name (본인인증 실명), opened from its sealed form; None when not verified.
+async fn legal_name(c: &mut PgConnection, s: &AppState, user: Uuid) -> Result<Option<String>> {
+    let Some(r) = sqlx::query(
+        "SELECT real_name, real_name_cipher FROM portal.account_identities WHERE user_id=$1",
+    )
+    .bind(user)
+    .fetch_optional(&mut *c)
+    .await?
+    else {
+        return Ok(None);
+    };
+    Ok(crate::pii::open(
+        &s.payout_keys,
+        crate::payout_keys::Field::IdentityRealName,
+        user,
+        r.get("real_name"),
+        r.get::<Option<Vec<u8>>, _>("real_name_cipher").as_deref(),
+    )?
+    .map(|n| n.trim().to_string())
+    .filter(|n| !n.is_empty()))
+}
+
 /// A name compared as people write it: case and spaces do not matter.
 fn name_key(v: &str) -> String {
     v.chars()
@@ -1571,7 +1593,7 @@ pub struct StaffAnswerIn {
     pub approve: bool,
     #[serde(default)]
     pub reason: String,
-    /// Contract requests: "renewal" or "termination".
+    /// Contract requests: "renewal", "termination" or "scope" (0177).
     #[serde(default)]
     pub kind: String,
 }
@@ -1680,12 +1702,13 @@ pub async fn staff_contract_requests(s: &AppState, h: &HeaderMap) -> Result<Valu
     let mut c = s.pool.acquire().await?;
     let rows = sqlx::query(
         "SELECT c.id, c.org_id, o.name AS org_name, c.contract_no, c.status, c.end_date, c.renewal_months, c.renewal_requested_at,
-                c.termination_requested_at, c.commission_bps,
+                c.termination_requested_at, c.commission_bps, c.territories, c.rights,
+                c.scope_territories, c.scope_rights, c.scope_requested_at,
                 COALESCE((SELECT jsonb_agg(w.title ORDER BY w.title) FROM portal.pub_application_works aw JOIN portal.pub_works w ON w.id=aw.work_id
                            WHERE aw.application_id=c.application_id),'[]') AS works
            FROM portal.pub_contracts c JOIN identity.orgs o ON o.id=c.org_id
-          WHERE c.renewal_requested_at IS NOT NULL OR c.status='terminating'
-          ORDER BY COALESCE(c.renewal_requested_at, c.termination_requested_at) LIMIT 200",
+          WHERE c.renewal_requested_at IS NOT NULL OR c.status='terminating' OR c.scope_requested_at IS NOT NULL
+          ORDER BY COALESCE(c.renewal_requested_at, c.termination_requested_at, c.scope_requested_at) LIMIT 200",
     )
     .fetch_all(&mut *c)
     .await?;
@@ -1696,6 +1719,10 @@ pub async fn staff_contract_requests(s: &AppState, h: &HeaderMap) -> Result<Valu
         "commissionRate": pct(r.get("commission_bps")), "works": r.get::<Value, _>("works"),
         "renewal": r.get::<Option<i32>, _>("renewal_months").map(|m| json!({"months": m, "requestedAt": r.get::<Option<DateTime<Utc>>, _>("renewal_requested_at").map(ts)})),
         "terminationRequestedAt": r.get::<Option<DateTime<Utc>>, _>("termination_requested_at").map(ts),
+        "territories": r.get::<Vec<String>, _>("territories"), "rights": r.get::<Vec<String>, _>("rights"),
+        "scope": r.get::<Option<DateTime<Utc>>, _>("scope_requested_at").map(|at| json!({
+            "territories": r.get::<Option<Vec<String>>, _>("scope_territories"),
+            "rights": r.get::<Option<Vec<String>>, _>("scope_rights"), "requestedAt": ts(at)})),
     })).collect::<Vec<_>>()}))
 }
 
@@ -1714,7 +1741,7 @@ pub async fn staff_contract_decide(
     }
     let mut tx = s.pool.begin().await?;
     let row = sqlx::query(
-        "SELECT org_id, status, renewal_months FROM portal.pub_contracts WHERE id=$1 FOR UPDATE",
+        "SELECT org_id, status, renewal_months, scope_requested_at FROM portal.pub_contracts WHERE id=$1 FOR UPDATE",
     )
     .bind(id)
     .fetch_optional(&mut *tx)
@@ -1724,6 +1751,17 @@ pub async fn staff_contract_decide(
     let (sql, outcome, action) = match (i.kind.as_str(), i.approve) {
         ("renewal", _) if row.get::<Option<i32>, _>("renewal_months").is_none() => return Err(Error::PolicyGate("CONTRACT_NO_REQUEST")),
         ("termination", _) if row.get::<String, _>("status") != "terminating" => return Err(Error::PolicyGate("CONTRACT_NO_REQUEST")),
+        ("scope", _) if row.get::<Option<DateTime<Utc>>, _>("scope_requested_at").is_none() => return Err(Error::PolicyGate("CONTRACT_NO_REQUEST")),
+        ("scope", true) => (
+            "UPDATE portal.pub_contracts SET territories=scope_territories, rights=scope_rights, scope_territories=NULL, scope_rights=NULL,
+                    scope_requested_at=NULL, request_outcome=$2, request_note=NULLIF($3,''), request_decided_at=now(), row_version=row_version+1 WHERE id=$1",
+            "scope_changed", "publishing.contract_scope_changed",
+        ),
+        ("scope", false) => (
+            "UPDATE portal.pub_contracts SET scope_territories=NULL, scope_rights=NULL, scope_requested_at=NULL, request_outcome=$2,
+                    request_note=NULLIF($3,''), request_decided_at=now(), row_version=row_version+1 WHERE id=$1",
+            "scope_rejected", "publishing.contract_scope_rejected",
+        ),
         ("renewal", true) => (
             "UPDATE portal.pub_contracts SET end_date=end_date + make_interval(months => renewal_months), term_months=LEAST(term_months + renewal_months, 120),
                     status='active', renewal_months=NULL, renewal_requested_at=NULL, request_outcome=$2, request_note=NULLIF($3,''),
@@ -3116,8 +3154,7 @@ pub async fn submit_application(
     {
         return Err(Error::InvalidCode("APPLICATION_AGREEMENT_REQUIRED"));
     }
-    let signer = clean(&i.signature.name, 120, "APPLICATION_SIGNATURE_INVALID")?;
-    if signer.is_empty() || i.signature.method != "drawn" {
+    if i.signature.method != "drawn" {
         return Err(Error::InvalidCode("APPLICATION_SIGNATURE_INVALID"));
     }
     // The same signature check (and AV scan) as 배급 신청서.
@@ -3208,23 +3245,17 @@ pub async fn submit_application(
     {
         return Err(Error::PolicyGate("WORK_SPLIT_INCOMPLETE"));
     }
-    // Evidence of authorship (0176): at least one file or text per work — demo, project files, score, lyrics,
-    // split sheet or other proof (a release's audio is attached when works are prepared from it).
-    let bare: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM unnest($1::uuid[]) w(id)
-                        WHERE NOT EXISTS(SELECT 1 FROM portal.pub_work_attachments f WHERE f.work_id=w.id))",
-    )
-    .bind(&works)
-    .fetch_one(&mut *tx)
-    .await?;
-    if bare {
-        return Err(Error::PolicyGate("WORK_EVIDENCE_REQUIRED"));
-    }
+    // Evidence of authorship (0176) is asked for on the screen but not required here: a work without any is
+    // flagged to staff (staff review), who ask for proof with a correction request when they need it.
     // Societies register a real person: the signer's identity is verified (본인인증), as for payouts.
     let identity = crate::consents::signer_identity(&mut tx, a.user).await?;
     if identity["verified"] != true {
         return Err(Error::PolicyGate("APPLICATION_IDENTITY_REQUIRED"));
     }
+    // Signed under the verified legal name, never an artist or pen name: the society registers that person.
+    let signer = legal_name(&mut tx, s, a.user)
+        .await?
+        .ok_or(Error::PolicyGate("APPLICATION_IDENTITY_REQUIRED"))?;
     // The server's own copy of what was signed: every work as it stands now.
     let no = application_no()?;
     let submitted = Utc::now().to_rfc3339();
@@ -4092,6 +4123,7 @@ async fn contracts_json(
                 c.signer_name, c.signature, c.confirmations, c.content_hash, c.signed_at, c.start_date, c.end_date,
                 c.renewal_months, c.renewal_requested_at, c.termination_requested_at, c.row_version, c.created_at,
                 c.request_outcome, c.request_note, c.request_decided_at,
+                c.scope_territories, c.scope_rights, c.scope_requested_at,
                 a.id AS application_id, ra.application_no,
                 COALESCE((SELECT jsonb_agg(jsonb_build_object('id',w.id,'title',w.title) ORDER BY w.title)
                             FROM portal.pub_application_works aw JOIN portal.pub_works w ON w.id=aw.work_id
@@ -4129,6 +4161,10 @@ async fn contracts_json(
                 "works": r.get::<Value, _>("works"), "territories": r.get::<Vec<String>, _>("territories"),
                 "rights": r.get::<Vec<String>, _>("rights"), "renewal": renewal,
                 "terminationRequestedAt": r.get::<Option<DateTime<Utc>>, _>("termination_requested_at").map(ts),
+                // A territories / rights change waiting for staff (0177).
+                "scopeRequest": r.get::<Option<DateTime<Utc>>, _>("scope_requested_at").map(|at| json!({
+                    "territories": r.get::<Option<Vec<String>>, _>("scope_territories"),
+                    "rights": r.get::<Option<Vec<String>>, _>("scope_rights"), "requestedAt": ts(at)})),
                 "signedAt": r.get::<Option<DateTime<Utc>>, _>("signed_at").map(ts),
                 "body": r.get::<String, _>("body"),
                 "confirmations": CONTRACT_CONFIRMATIONS.iter().map(|(k, t)| json!({"id": k, "text": t})).collect::<Vec<_>>(),
@@ -4155,6 +4191,8 @@ pub async fn list_contracts(s: &AppState, a: &Actor, org: Uuid) -> Result<Value>
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ContractSignIn {
+    /// Ignored: the verified legal name is used (kept so older screens still send it).
+    #[serde(default)]
     pub signer_name: String,
     /// The drawn signature (data URL), checked like 배급 계약서.
     pub signature: String,
@@ -4188,10 +4226,7 @@ pub async fn sign_contract(
     id: Uuid,
     i: ContractSignIn,
 ) -> Result<Value> {
-    let name = clean(&i.signer_name, 120, "CONTRACT_SIGNER_INVALID")?;
-    if name.is_empty() {
-        return Err(Error::InvalidCode("CONTRACT_SIGNER_INVALID"));
-    }
+    // A publishing contract is signed under the verified legal name, whatever name the screen sends (no pen names).
     if !CONTRACT_CONFIRMATIONS
         .iter()
         .all(|(k, _)| i.confirmations.iter().any(|x| x == k))
@@ -4204,6 +4239,9 @@ pub async fn sign_contract(
     let sig = crate::upload_safety::signature(s, &i.signature).await?;
     let mut tx = s.pool.begin().await?;
     auth::membership(&mut tx, a, org, true).await?;
+    let name = legal_name(&mut tx, s, a.user)
+        .await?
+        .ok_or(Error::PolicyGate("APPLICATION_IDENTITY_REQUIRED"))?;
     let (status, rv, months) = lock_contract(&mut tx, org, id).await?;
     if rv != i.row_version {
         return Err(Error::Conflict);
@@ -4278,6 +4316,74 @@ pub async fn renew_contract(
         .execute(&mut *tx)
         .await?;
     audit(&mut tx, a, org, id, "publishing.contract_renewal_requested").await?;
+    let out = contract_out(&mut tx, org, id).await?;
+    tx.commit().await?;
+    Ok(out)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScopeIn {
+    pub territories: Vec<String>,
+    pub rights: Vec<String>,
+}
+
+/// Ask to change where and what a signed contract covers (0177); staff apply it.
+pub async fn request_scope(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    id: Uuid,
+    i: ScopeIn,
+) -> Result<Value> {
+    let dedup = |v: &[String]| {
+        let mut out: Vec<String> = Vec::new();
+        for x in v {
+            if !out.contains(x) {
+                out.push(x.clone());
+            }
+        }
+        out
+    };
+    let (territories, rights) = (dedup(&i.territories), dedup(&i.rights));
+    if territories.is_empty()
+        || territories
+            .iter()
+            .any(|t| !TERRITORIES.iter().any(|(c, _)| c == t))
+    {
+        return Err(Error::InvalidCode("APPLICATION_TERRITORY_INVALID"));
+    }
+    if rights.is_empty()
+        || rights
+            .iter()
+            .any(|r| !RIGHTS.iter().any(|(k, _, _)| k == r))
+    {
+        return Err(Error::InvalidCode("APPLICATION_RIGHTS_INVALID"));
+    }
+    let mut tx = s.pool.begin().await?;
+    auth::membership(&mut tx, a, org, true).await?;
+    let (status, _, _) = lock_contract(&mut tx, org, id).await?;
+    if !["active", "expiring"].contains(&status.as_str()) {
+        return Err(Error::PolicyGate("CONTRACT_STATE"));
+    }
+    let (now_t, now_r): (Vec<String>, Vec<String>) =
+        sqlx::query_as("SELECT territories, rights FROM portal.pub_contracts WHERE id=$1")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await?;
+    let same = |a: &[String], b: &[String]| a.len() == b.len() && a.iter().all(|x| b.contains(x));
+    if same(&now_t, &territories) && same(&now_r, &rights) {
+        return Err(Error::PolicyGate("CONTRACT_SCOPE_UNCHANGED"));
+    }
+    sqlx::query(
+        "UPDATE portal.pub_contracts SET scope_territories=$2, scope_rights=$3, scope_requested_at=now(), row_version=row_version+1 WHERE id=$1",
+    )
+    .bind(id)
+    .bind(&territories)
+    .bind(&rights)
+    .execute(&mut *tx)
+    .await?;
+    audit(&mut tx, a, org, id, "publishing.contract_scope_requested").await?;
     let out = contract_out(&mut tx, org, id).await?;
     tx.commit().await?;
     Ok(out)
@@ -4656,6 +4762,16 @@ async fn h_contract_renew(
         renew_contract(&s, &writer(&s, &h).await?, org, id, i).await?,
     ))
 }
+async fn h_contract_scope(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+    Json(i): Json<ScopeIn>,
+) -> Result<Json<Value>> {
+    Ok(Json(
+        request_scope(&s, &writer(&s, &h).await?, org, id, i).await?,
+    ))
+}
 async fn h_contract_end(
     State(s): State<AppState>,
     Path((org, id)): Path<(Uuid, Uuid)>,
@@ -4755,6 +4871,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/orgs/{org}/publishing/contracts/{id}/termination",
             post(h_contract_end),
+        )
+        .route(
+            "/api/orgs/{org}/publishing/contracts/{id}/scope",
+            post(h_contract_scope),
         )
         .route("/api/orgs/{org}/publishing/royalties", get(h_empty))
         .route("/api/orgs/{org}/works", get(h_works).post(h_create))

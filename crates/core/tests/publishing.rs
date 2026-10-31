@@ -532,7 +532,8 @@ async fn work_to_application_to_review(pool: PgPool) {
     .await;
     assert_eq!(s, StatusCode::OK, "{c}");
     assert_eq!(c["status"], "active");
-    assert_eq!(c["signerName"], "서린");
+    // Signed under the verified legal name, not the name the screen sent (서린 is the artist name).
+    assert_eq!(c["signerName"], "테스트");
     assert!(c["contentHash"].as_str().is_some_and(|h| h.len() == 64));
     assert!(
         !c["startDate"].as_str().unwrap().is_empty() && !c["endDate"].as_str().unwrap().is_empty()
@@ -1530,6 +1531,72 @@ async fn staff_answer_artist_requests(pool: PgPool) {
         (Some("active"), Some("termination_rejected"))
     );
 
+    // Territories / rights change (0177): the same scope is refused; a new one waits for staff, who apply it.
+    let (s, e) = call(&app, "POST", &format!("{base}/publishing/contracts/{cid}/scope"),
+        json!({"territories": list["items"][0]["territories"], "rights": list["items"][0]["rights"]}), Some(&u)).await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("CONTRACT_SCOPE_UNCHANGED")
+        ),
+        "{e}"
+    );
+    let (s, asked) = call(
+        &app,
+        "POST",
+        &format!("{base}/publishing/contracts/{cid}/scope"),
+        json!({"territories": ["KR", "JP"], "rights": ["performance", "mechanical"]}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{asked}");
+    assert_eq!(asked["scopeRequest"]["territories"], json!(["KR", "JP"]));
+    let (_, reqs) = call(
+        &app,
+        "GET",
+        "/api/staff/publishing/contract-requests",
+        json!({}),
+        Some(&st),
+    )
+    .await;
+    assert!(
+        reqs["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["scope"]["rights"] == json!(["performance", "mechanical"])),
+        "{reqs}"
+    );
+    let (s, d) = call(
+        &app,
+        "POST",
+        &format!("/api/staff/publishing/contracts/{cid}/request"),
+        json!({"kind": "scope", "approve": true}),
+        Some(&st),
+    )
+    .await;
+    assert_eq!(
+        (s, d["outcome"].as_str()),
+        (StatusCode::OK, Some("scope_changed")),
+        "{d}"
+    );
+    let (_, list) = call(
+        &app,
+        "GET",
+        &format!("{base}/publishing/contracts"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (
+            list["items"][0]["territories"].clone(),
+            list["items"][0]["scopeRequest"].is_null()
+        ),
+        (json!(["KR", "JP"]), true)
+    );
+
     // Open A&R review: claim, fix, the artist answers, reviewed, proposing, closed.
     let (_, demo) = call(
         &app,
@@ -1727,6 +1794,7 @@ async fn staff_answer_artist_requests(pool: PgPool) {
         "‘겨울 편지’ 지분 변경이 반영됐어요.",
         "저작권 관리 계약이 연장됐어요.",
         "저작권 관리 계약 종료 요청이 반려됐어요.",
+        "저작권 관리 범위가 바뀌었어요.",
         "‘새벽 네 시’ A&R 보완 요청이 있어요.",
         "‘새벽 네 시’ A&R 심사가 끝났어요.",
         "새 저작권료 예상 내역이 들어왔어요.",
@@ -2005,7 +2073,7 @@ async fn prepare_reuses_known_co_writers(pool: PgPool) {
 }
 
 /// Pen names and evidence (0176): a song credited under the writer's pen name is the writer's own row, not a
-/// co-writer's; an application needs evidence on every work and the signer's verified identity; when and how the
+/// co-writer's; an application needs the signer's verified identity (signed under the legal name), not evidence; when and how the
 /// song was made is kept with it.
 #[sqlx::test]
 async fn pen_names_evidence_and_identity(pool: PgPool) {
@@ -2118,7 +2186,7 @@ async fn pen_names_evidence_and_identity(pool: PgPool) {
     );
     let id = w["id"].as_str().unwrap().to_string();
 
-    // No evidence yet, then no verified identity.
+    // Identity is checked once per account; evidence is not required (staff are told what has none).
     let (s, e) = call(
         &app,
         "POST",
@@ -2131,7 +2199,7 @@ async fn pen_names_evidence_and_identity(pool: PgPool) {
         (s, e["error"]["code"].as_str()),
         (
             StatusCode::UNPROCESSABLE_ENTITY,
-            Some("WORK_EVIDENCE_REQUIRED")
+            Some("APPLICATION_IDENTITY_REQUIRED")
         ),
         "{e}"
     );
@@ -2179,14 +2247,26 @@ async fn pen_names_evidence_and_identity(pool: PgPool) {
         ),
         "{e}"
     );
-    ready(&pool, &u).await;
+    // Verified once on the account; '아침' has no evidence at all and is still accepted.
+    sqlx::query(
+        "INSERT INTO portal.account_identities(user_id,real_name,birth_date,provider,method,transaction_id,ci_hash)
+         VALUES($1,'테스트','1990-01-01','test','PASS','tx-pen',repeat('c',64))",
+    )
+    .bind(u.user)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let morning_id = morning["id"].as_str().unwrap().to_string();
+    assert!(morning["attachments"].as_array().unwrap().is_empty());
     let (s, a) = call(
         &app,
         "POST",
         &format!("{base}/publishing/applications"),
-        apply(&[&id], "key-pen-3"),
+        apply(&[&id, &morning_id], "key-pen-3"),
         Some(&u),
     )
     .await;
     assert_eq!(s, StatusCode::OK, "{a}");
+    // The application is signed under the verified legal name, not the pen or artist name sent.
+    assert_eq!(a["signerName"], "테스트", "{a}");
 }

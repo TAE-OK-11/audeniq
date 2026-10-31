@@ -301,9 +301,10 @@ export function addMonths(date: string, n: number): string {
 }
 
 /** 남은 날 — 만료 안내 */
+/** 종료일까지 남은 날 — 한국 날짜로 오늘에서 종료일까지 (2026-10-31 ~ 2027-10-31이면 오늘 365일). 오늘을 하루로 더 세지 않는다 */
 export function daysLeft(end: string, now = new Date()): number {
-  const d = new Date(`${end}T23:59:59+09:00`).getTime() - now.getTime();
-  return Math.ceil(d / 86_400_000);
+  const today = new Date(now.getTime() + 9 * 3_600_000).toISOString().slice(0, 10);
+  return Math.round((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000);
 }
 
 /** 녹음 배급 수익 중 이 곡 몫 — 곡별 행은 그대로, 발매 전체 행(실서버 리포트는 발매 단위, track '전체')은 그 발매 곡 수로 나눈 몫.

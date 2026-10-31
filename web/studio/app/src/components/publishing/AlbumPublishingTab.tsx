@@ -5,18 +5,17 @@
 //  · 자료 첨부: 창에서 곡·종류·파일을 골라 올린다
 // 번 돈은 한 장으로만 — 월별 추이·곡별·자세한 내역은 퍼블리싱 메뉴에서 이 앨범을 골라 본다
 import { useMemo, useState } from 'react';
-import { Link } from '../../lib/router';
+import { Link, useNavigate } from '../../lib/router';
 import type { ReleaseDetail } from '../../api/types';
 import { pubApi, type Work } from '../../api/publishing';
 import { errorMessage } from '../../api/errors';
 import { useAsync } from '../../hooks/useAsync';
 import { estimateRoyalty, pct, recordedRevenue } from '../../lib/publishing';
-import { draftTrackOf } from '../../lib/albumPrep';
 import { useReportRows } from '../../hooks/useReportRows';
 import { money } from '../../lib/format';
 import {
-  CONFIRM_LABEL, CONFIRM_TONE, STAGE_LABEL, STAGE_TONE, albumReadiness, confirmationBoard, creditGaps, workStage,
-  type ConfirmState, type PrepField, type PrepGroup,
+  CONFIRM_LABEL, CONFIRM_TONE, STAGE_LABEL, STAGE_TONE, albumReadiness, confirmationBoard, workStage,
+  type ConfirmState, type PrepGroup,
 } from '../../lib/publishingPrep';
 import { Glyph, type GlyphName } from '../Glyph';
 import { SkeletonBlock } from '../Skeleton';
@@ -27,10 +26,9 @@ import { royaltyTotals } from './Royalties';
 import { Money } from '../Money';
 import { albumPublishing } from './ReleasePublishing';
 import { Modal } from '../Modal';
-import { WorkSheet } from './WorkSheet';
 import { AttachmentModal } from './Attachments';
 import { InviteModal } from './InviteModal';
-import { Badge, ChipGroup, IconTile } from '../../ui';
+import { Badge, ChipGroup } from '../../ui';
 
 import '../../styles/split/Dashboard.css';
 import '../../styles/split/ReleaseDetail.css';
@@ -44,7 +42,6 @@ const START_STEPS = [
   ['신청·서명', '맡길 곡을 골라 신청하면 담당자가 등록까지 맡아요'],
 ] as const;
 
-interface Sheet { work: Work; no?: number; focus?: { field: PrepField; contributorId?: string } | null }
 
 /** 신청 준비 점검 — 발매 상세 '발매 준비 항목'(AlbumPrep)과 같은 카드: 숫자 · 막대 · 할 일 줄 */
 function ApplyPrep({ title, summary, groups, readyCount, total, onGo, applyTo }: {
@@ -176,7 +173,9 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
   const { data: royalties } = useAsync(() => pubApi.listRoyalties(), [], { key: 'royalties:all' });
   const { data: contracts } = useAsync(() => pubApi.listContracts(), [], { key: 'pub-contracts' });
   const [busy, setBusy] = useState(false);
-  const [sheet, setSheet] = useState<Sheet | null>(null);
+  // 곡을 누르면 중간 창 없이 그 곡의 퍼블리싱 화면으로 — 고칠 곳이 있으면 그 칸(참여자·지분, 자료)으로
+  const nav = useNavigate();
+  const goWork = (w: Work, tab?: 'rights' | 'files') => nav(`/works/${encodeURIComponent(w.id)}?release=${encodeURIComponent(rel.id)}${tab ? `&tab=${tab}` : ''}`);
   const [attaching, setAttaching] = useState(false);
   const [peopleOpen, setPeopleOpen] = useState(false);
   const { rows: reportRows } = useReportRows();
@@ -194,9 +193,8 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
   const albumRoyalties = (royalties ?? []).filter(r => workIds.has(r.workId));
   const totals = royaltyTotals(albumRoyalties);
   const fixWork = a.mine.find(w => w.registration === 'needs_fix' || w.application?.status === 'needs_fix');
-  // 이 앨범이 번 돈 — 녹음 배급 수익(발매 단위 리포트)과 저작권료를 한 줄에
-  const albumRec = recordedRevenue(reportRows, rel.tracks.map(t => ({ releaseId: rel.id, releaseTitle: rel.title, title: t.title })), { [rel.id]: rel.tracks.length });
-  const earned = albumRec.all + totals.confirmed + totals.paid;
+  // 퍼블리싱 수익 — 이 앨범 곡의 저작권료만 따로 카드로 (녹음 배급 수익은 '성과' 탭에서)
+  const royaltyIn = totals.confirmed + totals.paid;
   // 예상 저작권료 — 아직 맡기지 않은 트랙만. 곡이 있으면 내 지분, 아직 정리 전이면 작사·작곡 몫 전체 기준
   const perTrack = (t: { title: string }) => recordedRevenue(reportRows, [{ releaseId: rel.id, releaseTitle: rel.title, title: t.title }], { [rel.id]: rel.tracks.length }).recent;
   const open = rel.tracks.filter(t => { const w = byTrack.get(t.id); return !w || ['ready', 'blocked'].includes(workStage(w)); });
@@ -206,14 +204,6 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
     const [l, h] = estimateRoyalty(perTrack(t), share, policy.commissionRate);
     return [acc[0] + l, acc[1] + h];
   }, [0, 0]) : [0, 0];
-  // 발매 크레딧과 곡 참여자가 다른 트랙 — 관리 단체 등록은 크레딧과 맞아야 한다
-  const gaps = rel.tracks.flatMap(t => {
-    const w = byTrack.get(t.id);
-    if (!w || w.myRole === 'contributor') return [];
-    const d = draftTrackOf(t, rel.draft);
-    const g = creditGaps(w, { composers: t.composers ?? d?.composers, lyricists: t.lyricists ?? d?.lyricists, arrangers: d?.arrangers, instrumental: d?.instrumental });
-    return g.missing.length || g.extra.length ? [{ t, w, g }] : [];
-  });
   // 숫자는 트랙 기준으로 — 한 곡이 원곡·Inst.처럼 두 트랙에 실리면 '2곡 중 1곡'으로 어긋났다
   const trackCount = (list: Work[]) => rel.tracks.filter(t => { const w = byTrack.get(t.id); return !!w && list.includes(w); }).length;
   const managedTracks = trackCount(a.managed);
@@ -235,7 +225,6 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
     ['prepared', '정리함', preparedTracks], ['missing', '정리 전', missing],
   ] as const).filter(([, , n]) => n > 0);
   const editable = a.mine.filter(w => w.myRole === 'owner' || w.myRole === 'editor');
-  const contractId = a.managed.find(w => w.contractId)?.contractId ?? null;
   // 이 앨범에서 아직 아무 곡도 정리하지 않았으면 처음 시작하는 화면
   const fresh = a.mine.length === 0 && missing > 0;
   const openPrep = !fresh && (prep.groups.some(g => g.state !== 'done') || prep.ready.length > 0);
@@ -254,8 +243,7 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
     if (g.key === 'tracks') { void prepare(); return; }
     if (g.key === 'confirm') { setPeopleOpen(true); return; }
     const w = g.works[0];
-    const issue = w && g.key === 'ipi' ? w.contributors.find(c => !c.isMe && !c.ipi) : null;
-    if (w) setSheet({ work: w, no: trackNo.get(w.id), focus: { field: g.key, contributorId: issue?.id } });
+    if (w) goWork(w, g.key === 'evidence' ? 'files' : g.key === 'fix' ? undefined : 'rights');
   };
   const saved = () => reload();
 
@@ -286,7 +274,7 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
             <span>{fixWork?.fix?.reason ?? '아래 곡을 눌러 고쳐 주세요. 고쳐서 다시 내면 심사가 이어져요.'}</span>
           </span>
           {fixWork && (
-            <button type="button" className="ui-btn is-primary aq-hero-cta" onClick={() => setSheet({ work: fixWork, no: trackNo.get(fixWork.id), focus: { field: 'fix' } })}>
+            <button type="button" className="ui-btn is-primary aq-hero-cta" onClick={() => goWork(fixWork)}>
               보완하기
               <span className="aq-cta-arrow" aria-hidden="true">
                 <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4" /></svg>
@@ -325,31 +313,18 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
               </ul>
             </div>
             {!a.fix && <p className="aq-pbl-cover-note">{text}</p>}
-            {/* 계약·저작권료는 한 줄씩 — 따로 카드를 두면 탭이 길어지기만 했다. 자세한 건 계약서·리포트에서 */}
-            {(contractId || earned > 0) && (
-              <div className="ui-list is-inset aq-pbl-head-rows">
-                {contractId && (
-                  <Link to={`/contracts/publishing/${encodeURIComponent(contractId)}`} className="ui-row">
-                    <IconTile size="sm"><Glyph name="sign" size={16} /></IconTile>
-                    <span className="min-0"><span className="ui-row-title">저작권 관리 계약</span><span className="ui-row-meta"><span>{managedTracks}곡 관리 중</span></span></span>
-                    <Glyph name="chevron-right" size={16} />
-                  </Link>
-                )}
-                {earned > 0 && (
-                  <Link to={`/releases/${encodeURIComponent(rel.id)}?tab=stats`} className="ui-row">
-                    <IconTile size="sm"><Glyph name="won" size={16} /></IconTile>
-                    <span className="min-0">
-                      <span className="ui-row-title">이 앨범이 번 돈 <Money value={earned} /></span>
-                      <span className="ui-row-meta"><span>녹음 <Money value={albumRec.all} /></span><span>저작권료 <Money value={totals.confirmed + totals.paid} /></span>{totals.estimated > 0 && <span>확정 전 예상 <Money value={totals.estimated} /></span>}</span>
-                    </span>
-                    <Glyph name="chevron-right" size={16} />
-                  </Link>
-                )}
-              </div>
-            )}
           </>
         )}
       </section>
+
+      {/* 퍼블리싱 수익 — 저작권료만 크게. 계약·곡별 상태는 아래 '곡별 저작권'에 있어 여기서 되풀이하지 않는다 */}
+      {royaltyIn > 0 && (
+        <Link to={`/reports?type=publishing&release=${encodeURIComponent(rel.id)}`} className="ui-card aq-pbl-income" aria-label={`퍼블리싱 수익 ${money(royaltyIn)} · 저작권료 리포트 보기`}>
+          <span className="aq-pbl-income-cap">퍼블리싱 수익</span>
+          <strong className="aq-pbl-income-num"><Money value={royaltyIn} /></strong>
+          <Glyph name="chevron-right" size={18} className="aq-pbl-income-go" />
+        </Link>
+      )}
 
       {openPrep && (
         <ApplyPrep
@@ -363,27 +338,6 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
       {/* 맡기지 않은 곡의 예상 저작권료 — 신청을 망설일 때 판단 근거 */}
       {openPrep && est[1] > 0 && prep.ready.length > 0 && (
         <p className="aq-pbl-estimate is-inline">신청 가능한 곡을 맡기면 <b>분기마다 약 {money(est[0])}~{money(est[1])}</b>을 기대할 수 있어요. <small>내 지분 · 최근 3개월 재생 · 수수료 뺀 추정</small></p>
-      )}
-
-      {gaps.length > 0 && (
-        <section className="aq-relinfo-card" aria-labelledby="pubCreditGaps">
-          <h2 className="subhead" id="pubCreditGaps">발매 크레딧과 참여자가 다른 곡 {gaps.length}곡</h2>
-          <p className="ui-field-help">관리 단체는 발매 크레딧과 같은 작사·작곡가로 등록해요. 다르면 등록이 늦어지거나 반려될 수 있어요 — 곡 참여자나 발매 크레딧을 맞춰 주세요.</p>
-          <div className="ui-list is-inset">
-            {gaps.map(({ t, w, g }) => (
-              <button key={t.id} type="button" className="ui-row" onClick={() => setSheet({ work: w, no: trackNo.get(w.id), focus: { field: 'split' } })}>
-                <span className="min-0">
-                  <span className="ui-row-title">{t.title}</span>
-                  <span className="ui-row-meta">
-                    {g.missing.length > 0 && <span>크레딧에만: {g.missing.join(', ')}</span>}
-                    {g.extra.length > 0 && <span>참여자에만: {g.extra.join(', ')}</span>}
-                  </span>
-                </span>
-                <Glyph name="chevron-right" size={16} />
-              </button>
-            ))}
-          </div>
-        </section>
       )}
 
       <div className="aq-relinfo-card aq-pbl-track-list">
@@ -413,7 +367,7 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
             const stage = workStage(w);
             return (
               <li key={t.id}>
-                  <button type="button" className="aq-trackrow aq-pbl-trackrow" onClick={() => setSheet({ work: w, no: i + 1 })} aria-label={`${i + 1}번 곡 ${t.title} 저작권 보기`}>
+                  <button type="button" className="aq-trackrow aq-pbl-trackrow" onClick={() => goWork(w)} aria-label={`${i + 1}번 곡 ${t.title} 저작권 보기`}>
                     <span className="aq-trackrow-no" aria-hidden="true">{i + 1}</span>
                     <span className="aq-trackrow-main">
                       <span className="aq-trackrow-title">{t.title || w.title}</span>
@@ -440,14 +394,10 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
         )}
       </div>
 
-      {sheet && (
-        <WorkSheet work={works.find(x => x.id === sheet.work.id) ?? sheet.work} no={sheet.no} all={works} focus={sheet.focus} releaseId={rel.id}
-          onClose={() => setSheet(null)} onSaved={saved} />
-      )}
       {attaching && <AttachmentModal works={editable} onClose={() => setAttaching(false)} onAdded={saved} />}
       {peopleOpen && (
         <PeopleModal works={a.mine} onClose={() => setPeopleOpen(false)} onSent={saved}
-          onOpen={(w, cid) => { setPeopleOpen(false); setSheet({ work: w, no: trackNo.get(w.id), focus: { field: 'confirm', contributorId: cid } }); }} />
+          onOpen={w => { setPeopleOpen(false); goWork(w, 'rights'); }} />
       )}
     </div>
   );
