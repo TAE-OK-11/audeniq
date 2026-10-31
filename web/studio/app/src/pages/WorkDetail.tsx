@@ -24,6 +24,7 @@ import { SplitEditor } from '../components/publishing/SplitEditor';
 import { RoyaltyTable } from '../components/publishing/Royalties';
 import { ContractManage } from '../components/publishing/PublishingContracts';
 import { AttachmentList, AttachmentModal } from '../components/publishing/Attachments';
+import { InviteModal } from '../components/publishing/InviteModal';
 import { Badge, Callout, EmptyState, KeyValue, Segmented, StatGrid, StatTile, Tabs } from '../ui';
 import { SplitDiffList } from '../components/publishing/WorkSheet';
 import { changeNeedsReview, reusableWorks, signing, splitDiff } from '../lib/publishingPrep';
@@ -194,6 +195,7 @@ export function WorkDetail() {
   const [linking, setLinking] = useState(false);
   const [attaching, setAttaching] = useState(false);
   const [splitView, setSplitView] = useState<'now' | 'pending'>('pending');
+  const [inviting, setInviting] = useState<WorkContributor[] | null>(null);
   const { data: allWorks } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
   // 발매 전 곡의 A&R 제출 — 진행 중이면 '제출' 대신 진행 상황으로 (같은 곡을 두 번 내지 않게)
   const { data: arList } = useAsync(() => pubApi.listAr(), [], { key: 'ar-submissions' });
@@ -407,7 +409,7 @@ export function WorkDetail() {
                   </>
                 )}
                 <SplitEditor value={w.pendingChange && splitView === 'pending' ? w.pendingChange.contributors : w.contributors} onChange={() => {}} readOnly
-                  onRequestConfirm={canEdit ? c => void pubApi.requestSplitConfirm(w.id, c.id).then(nw => { update(nw); toast(`${c.name} 님에게 확인을 요청했어요.`, 'success'); }).catch(err => toast(errorMessage(err), 'error')) : undefined}
+                  onRequestConfirm={canEdit ? list => setInviting(list) : undefined}
                   onSimulate={MOCK && canEdit ? c => void pubApi.simulateConfirm(w.id, c.id).then(update) : undefined} />
                 </>
               )}
@@ -516,6 +518,7 @@ export function WorkDetail() {
                 {canEdit && <button type="button" className="ui-btn is-white is-sm" onClick={() => setLinking(true)}>발매 곡 연결 <Glyph name="chevron-right" size={13} /></button>}
               </div>
             )}
+            {inviting && <InviteModal work={w} people={inviting} onClose={() => setInviting(null)} onDone={reload} />}
             {linking && <LinkRecordingModal work={w} onClose={() => setLinking(false)} onLinked={update} />}
           </div>
         )}

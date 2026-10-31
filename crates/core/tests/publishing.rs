@@ -992,3 +992,157 @@ async fn work_origin_decides_what_can_be_applied(pool: PgPool) {
     .await;
     assert_eq!(s, StatusCode::OK, "{a}");
 }
+
+/// A co-writer confirms their share from a link (migration 0171): copied by the writer and/or mailed,
+/// no account needed, one answer per link.
+#[sqlx::test]
+async fn co_writer_confirms_from_a_link(pool: PgPool) {
+    let (app, _store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let base = format!("/api/orgs/{}", u.org);
+    let (s, w) = call(
+        &app,
+        "POST",
+        &format!("{base}/works"),
+        json!({"title": "파도", "contributors": people(&u, 60.0, 40.0)}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{w}");
+    let id = w["id"].as_str().unwrap().to_string();
+    let me = w["contributors"][0]["id"].as_str().unwrap().to_string();
+    let co = w["contributors"][1]["id"].as_str().unwrap().to_string();
+
+    // Not the writer's own row; a bad address is refused.
+    let (s, e) = call(
+        &app,
+        "POST",
+        &format!("{base}/works/{id}/rights/{me}/invite"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (StatusCode::UNPROCESSABLE_ENTITY, Some("WORK_INVITE_SELF"))
+    );
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("{base}/works/{id}/rights/{co}/invite"),
+        json!({"email": "nope"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+
+    // A copied link, then a mailed one: asking again replaces the link.
+    let (s, first) = call(
+        &app,
+        "POST",
+        &format!("{base}/works/{id}/rights/{co}/invite"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, first["emailed"].as_bool()),
+        (StatusCode::OK, Some(false)),
+        "{first}"
+    );
+    let old = first["token"].as_str().unwrap().to_string();
+    let co_email = format!("cowriter-{}@example.com", Uuid::new_v4().simple());
+    let (_, second) = call(
+        &app,
+        "POST",
+        &format!("{base}/works/{id}/rights/{co}/invite"),
+        json!({"email": co_email}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(second["emailed"], true);
+    let token = second["token"].as_str().unwrap().to_string();
+    let (s, _) = call(
+        &app,
+        "GET",
+        &format!("/api/pub-invites/{old}"),
+        json!({}),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::NOT_FOUND, "the first link stopped working");
+    let plain: bool = sqlx::query_scalar("SELECT bool_or(position('example.com' in encode(email_cipher,'escape'))>0) FROM portal.pub_split_invites")
+        .fetch_one(&pool).await.unwrap();
+    assert!(!plain, "the address is sealed");
+
+    // The mail carries the same link.
+    unsafe {
+        std::env::set_var("EMAIL_FROM", "AUDENIQ <no-reply@audeniq.test>");
+        std::env::set_var("EMAIL_PROVIDERS", "test");
+    }
+    let mailer = audeniq_core::email::Mailer::from_env("https://studio.audeniq.test")
+        .unwrap()
+        .unwrap();
+    let keys = audeniq_core::payout_keys::KeyRing::from_env(false).unwrap();
+    assert_eq!(
+        audeniq_core::publishing::dispatch_invites(&pool, &keys, &mailer)
+            .await
+            .unwrap(),
+        1
+    );
+    let sent = audeniq_core::email::test_sent_to(&co_email);
+    assert_eq!(sent.len(), 1);
+    assert!(
+        sent[0].text.contains(&format!("/split-confirm/{token}")),
+        "{}",
+        sent[0].text
+    );
+
+    // The co-writer sees the split without an account, disputes once with a note.
+    let (s, inv) = call(
+        &app,
+        "GET",
+        &format!("/api/pub-invites/{token}"),
+        json!({}),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{inv}");
+    assert_eq!(inv["title"], "파도");
+    assert_eq!(inv["people"][1]["you"], true);
+    let (s, a) = call(
+        &app,
+        "POST",
+        &format!("/api/pub-invites/{token}/answer"),
+        json!({"agree": false, "note": "제 몫은 50%예요."}),
+        None,
+    )
+    .await;
+    assert_eq!(
+        (s, a["answer"].as_str()),
+        (StatusCode::OK, Some("disputed")),
+        "{a}"
+    );
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("/api/pub-invites/{token}/answer"),
+        json!({"agree": true}),
+        None,
+    )
+    .await;
+    assert_ne!(s, StatusCode::OK, "one answer per link");
+    let (_, w) = call(
+        &app,
+        "GET",
+        &format!("{base}/works/{id}"),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(w["contributors"][1]["confirm"], "disputed");
+    assert_eq!(w["contributors"][1]["inviteNote"], "제 몫은 50%예요.");
+    let erased: bool = sqlx::query_scalar("SELECT bool_and(email_cipher IS NULL AND token_cipher IS NULL) FROM portal.pub_split_invites")
+        .fetch_one(&pool).await.unwrap();
+    assert!(erased, "address and link are erased with the answer");
+}

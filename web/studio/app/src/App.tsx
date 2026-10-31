@@ -44,6 +44,7 @@ const ArtistNews = lazyPage(pageLoaders.ArtistNews, m => m.ArtistNews);
 const ArtistDiscography = lazyPage(pageLoaders.ArtistDiscography, m => m.ArtistDiscography);
 const ArtistStudio = lazyPage(pageLoaders.ArtistStudio, m => m.ArtistStudio);
 const SplitInvite = lazyPage(pageLoaders.SplitInvite, m => m.SplitInvite);
+const SplitConfirm = lazyPage(pageLoaders.SplitConfirm, m => m.SplitConfirm);
 const SettlementTerms = lazyPage(pageLoaders.Terms, m => m.SettlementTerms);
 const PrivacyPolicy = lazyPage(pageLoaders.Terms, m => m.PrivacyPolicy);
 const Dashboard = lazyPage(pageLoaders.Dashboard, m => m.Dashboard);
@@ -58,6 +59,7 @@ const Agreement = lazyPage(pageLoaders.Agreement, m => m.Agreement);
 const PublishingAgreement = lazyPage(pageLoaders.PublishingAgreement, m => m.PublishingAgreement);
 const PublishingApplicationDoc = lazyPage(pageLoaders.PublishingApplicationDoc, m => m.PublishingApplicationDoc);
 const SplitSheet = lazyPage(pageLoaders.SplitSheet, m => m.SplitSheet);
+const WorkImport = lazyPage(pageLoaders.WorkImport, m => m.WorkImport);
 const Rights = lazyPage(pageLoaders.Rights, m => m.Rights);
 const WorkDetail = lazyPage(pageLoaders.WorkDetail, m => m.WorkDetail);
 const WorkEditor = lazyPage(pageLoaders.WorkEditor, m => m.WorkEditor);
@@ -211,6 +213,7 @@ function PortalRoutes() {
             {/* 곡 — 음악 라이브러리의 '곡' 탭에서 들어온다 (저작권 관리) */}
             <Route path="/works" element={<Navigate to="/releases?tab=works" replace />} />
             <Route path="/works/new" element={<WorkEditorRoute />} />
+            <Route path="/works/import" element={<WorkImport />} />
             <Route path="/works/:id" element={<WorkDetailRoute />} />
             <Route path="/works/:id/edit" element={<WorkEditorRoute />} />
             <Route path="/works/:id/split-sheet" element={<SplitSheet />} />
@@ -283,6 +286,8 @@ export function App() {
                     <Route path="/a/:slug/press" element={<MovedLink to={artistPressPath} />} />
                     {/* 공동작업 수익 분배 요청 — 메일 링크, 수락은 로그인 후 */}
                     <Route path="/splits/:token" element={<SplitInvite />} />
+                    {/* 공동 작가 지분 확인 — 작가가 보낸 링크, 계정 없이 답한다 */}
+                    <Route path="/split-confirm/:token" element={<SplitConfirm />} />
                     <Route path="/terms/privacy" element={<Navigate to="/privacy" replace />} />
                     <Route path="/content-admin" element={<Navigate to="/admin/content" replace />} />
                     {/* 스태프 관리자 — 같은 로그인 세션 + 서버의 스태프 역할(/api/staff/me)로 접근 */}

@@ -3,7 +3,7 @@
 // 다른 아티스트가 발매한 곡 · 발매 전 곡은 고른 갈래(?type=)로 등록 화면을 연다.
 // 모양은 배급 신청서와 같다: 신청서 틀(WizardShell), 고르기 카드(aq-choice), 아래 고정 버튼
 import { useState } from 'react';
-import { useNavigate } from '../../lib/router';
+import { Link, useNavigate } from '../../lib/router';
 import { api } from '../../api/client';
 import type { Work, WorkOrigin } from '../../api/publishing';
 import { useAsync } from '../../hooks/useAsync';
@@ -53,6 +53,14 @@ export function WorkOriginStart({ works, onPick }: { works: Work[] | null; onPic
         ))}
       </div>
 
+      {/* 남에게 곡을 많이 써 준 작가 — 한 곡씩 채우지 않고 표로 한 번에 */}
+      {origin === 'other_release' && (
+        <Link to="/works/import" className="ui-row aq-pbl-import-entry">
+          <Glyph name="table" size={18} />
+          <span className="min-0"><span className="ui-row-title">여러 곡이면 표로 한 번에 등록</span><span className="ui-row-meta"><span>엑셀·구글 시트 · CSV</span></span></span>
+          <Glyph name="chevron-right" size={16} />
+        </Link>
+      )}
       {origin === 'own_release' && (
         <>
           <h2 className="subhead">어느 곡인가요?</h2>

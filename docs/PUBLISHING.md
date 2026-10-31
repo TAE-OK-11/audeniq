@@ -65,8 +65,23 @@ Rules:
 - Attachments are not part of the work body: the client posts each new one to `/works/{id}/attachments` after create/update
   (asset id or lyrics text), so uploaded and imported files are kept.
 
+## Co-writer invites (migration 0171)
+
+- `POST /works/{id}/rights/{contributor}/invite` (`{email?}`) makes a link `/split-confirm/{token}` (only the hash is kept;
+  asking again replaces it). The writer copies it and/or gives an address: address and link are sealed
+  (`Field::PubInviteEmail` / `PubInviteToken`), mailed by the notification loop (`publishing::dispatch_invites`) and erased
+  on the answer.
+- The co-writer opens it without an account (`GET /api/pub-invites/{token}`) and answers once
+  (`POST …/answer` `{agree, note?}`): the contributor becomes confirmed or disputed, a dispute keeps the note (`inviteNote`).
+
+## Other additions
+
+- Rights include `youtube` (유튜브 작곡 권리: Content ID on videos using the song).
+- `/works/import`: songs released by others from a CSV (one row per song, the writer's own details from the profile).
+- `/works/{id}/split-sheet`: a printable 공동 작곡 합의서 from the work's splits.
+
 ## Stage 2 — not yet
 
-- Contributor invites and their own confirmation (`rights/confirmation` answers 501 `NOT_IMPLEMENTED`), mail.
+- A contributor with an AUDENIQ account answering inside the studio (`rights/confirmation` answers 501); link invites cover it.
 - Society registration feeds, royalties (statements, posting to the shared balance), CSV from the server.
 - Attachment preview links (signed URLs for demo/score/proof); Open A&R submissions.

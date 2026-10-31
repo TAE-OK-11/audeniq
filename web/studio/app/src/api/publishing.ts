@@ -36,7 +36,7 @@ export type ApplicationStatus = 'draft' | 'submitted' | 'in_review' | 'needs_fix
 export type ContractStatus = 'pending_sign' | 'active' | 'expiring' | 'terminating' | 'ended';
 export type ContributorRole = 'lyricist' | 'composer' | 'arranger' | 'other';
 export type CreatorRole = 'artist' | 'composer' | 'lyricist' | 'arranger' | 'producer' | 'label';
-export type RoyaltyKind = 'performance' | 'mechanical' | 'digital' | 'sync' | 'print' | 'other';
+export type RoyaltyKind = 'performance' | 'mechanical' | 'digital' | 'sync' | 'youtube' | 'print' | 'other';
 export type RoyaltyStatus = 'estimated' | 'confirmed' | 'paid';
 export type ArStatus = 'submitted' | 'in_review' | 'needs_fix' | 'reviewed' | 'proposing' | 'closed';
 /** 퍼블리싱은 곡을 세 갈래로 받는다 — 화면도 갈래마다 다르다
@@ -81,7 +81,15 @@ export interface WorkContributor {
   confirm: 'confirmed' | 'pending' | 'disputed';
   external: boolean;
   isMe?: boolean;
+  /** 확인 링크를 보냈고 아직 답이 없다 (0171) */
+  invited?: boolean;
+  /** 이의를 남기며 적은 말 */
+  inviteNote?: string | null;
+  /** 메일로 보냈으면 그 상태 (PENDING · SENT · FAILED) */
+  inviteMail?: string | null;
 }
+/** 공동 작가가 링크로 여는 확인 화면 — 계정 없이 (링크가 열쇠) */
+export interface SplitInvite { title: string; from: string; people: { name: string; roles: string[]; share: number; you: boolean }[]; answer: 'confirmed' | 'disputed' | null }
 
 export interface WorkAttachment {
   id: string; kind: 'demo' | 'lyrics' | 'score' | 'proof'; name: string; size?: number; at: string;
@@ -278,6 +286,7 @@ const POLICY: PublishingPolicy = {
     { key: 'mechanical', label: '복제권', desc: '음반·다운로드 등 복제에서 생기는 사용료' },
     { key: 'digital', label: '전송권', desc: '스트리밍 서비스에서 생기는 사용료' },
     { key: 'sync', label: '싱크 라이선스', desc: '영상·광고·게임에 쓰일 때의 이용 허락' },
+    { key: 'youtube', label: '유튜브 작곡 권리', desc: '유튜브 영상(커버·쇼츠 포함)에 쓰인 곡의 작곡 사용료' },
   ],
   version: '2026-11',
 };
@@ -435,7 +444,7 @@ function seedAr(): ArSubmission[] {
   }];
 }
 
-interface PubDb { works: Work[]; contracts: PublishingContract[]; applications: PublishingApplication[]; royalties: Royalty[]; ar: ArSubmission[]; me: Creator; sentKeys: string[] }
+interface PubDb { invites?: Record<string, { workId: string; contributorId: string }>; works: Work[]; contracts: PublishingContract[]; applications: PublishingApplication[]; royalties: Royalty[]; ar: ArSubmission[]; me: Creator; sentKeys: string[] }
 const seed = (): PubDb => ({ works: seedWorks(), contracts: seedContracts(), applications: seedApplications(), royalties: seedRoyalties(), ar: seedAr(), me: CREATORS[0], sentKeys: [] });
 const db = /* @__PURE__ */ createStore<PubDb>(seed, {
   persist: MOCK ? 'publishing.v2' : undefined,
@@ -648,6 +657,42 @@ const mockApi = {
     });
   },
   /** 체험 모드: 상대가 확인한 것처럼 */
+  /** 공동 작가 확인 링크 — 체험 모드는 링크를 이 브라우저에 기억해 확인 화면을 열 수 있게 */
+  async inviteContributor(workId: string, contributorId: string, email?: string) {
+    await wait(200);
+    return mutate(d => {
+      const w = d.works.find(x => x.id === workId);
+      const c = w?.contributors.find(x => x.id === contributorId);
+      if (!w || !c) throw notFound();
+      if (c.isMe) throw new ApiError('내 줄은 확인을 요청하지 않아요.', 422, 'WORK_INVITE_SELF');
+      if (c.confirm === 'confirmed') throw new ApiError('이미 확인한 참여자예요.', 422, 'WORK_ALREADY_CONFIRMED');
+      const token = Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2, '0')).join('');
+      d.invites = { ...(d.invites ?? {}), [token]: { workId, contributorId } };
+      for (const [k, v] of Object.entries(d.invites)) if (k !== token && v.workId === workId && v.contributorId === contributorId) delete d.invites[k];
+      w.contributors = w.contributors.map(x => (x.id === contributorId ? { ...x, confirm: 'pending', invited: true, inviteNote: null, inviteMail: email ? 'SENT' : null } : x));
+      return { token, emailed: !!email };
+    });
+  },
+  async splitInvite(token: string): Promise<SplitInvite> {
+    await wait(120);
+    const inv = db.get().invites?.[token];
+    const w = inv && db.get().works.find(x => x.id === inv.workId);
+    const me = w?.contributors.find(c => c.id === inv!.contributorId);
+    if (!w || !me) throw notFound();
+    return { title: w.title, from: db.get().me.name, answer: me.invited === false ? me.confirm as 'confirmed' | 'disputed' : null,
+      people: w.contributors.map(c => ({ name: c.name, roles: c.roles, share: c.share, you: c.id === me.id })) };
+  },
+  async answerSplitInvite(token: string, agree: boolean, note?: string) {
+    await wait(200);
+    return mutate(d => {
+      const inv = d.invites?.[token];
+      const w = inv && d.works.find(x => x.id === inv.workId);
+      if (!inv || !w) throw notFound();
+      w.contributors = w.contributors.map(c => (c.id === inv.contributorId ? { ...c, confirm: agree ? 'confirmed' : 'disputed', invited: false, inviteNote: agree ? null : note?.trim() || null } : c));
+      delete d.invites![token];
+      return { answer: agree ? 'confirmed' : 'disputed' };
+    });
+  },
   async simulateConfirm(workId: string, contributorId: string) {
     await wait(120);
     return mutate(d => {
@@ -992,6 +1037,10 @@ const remoteApi = {
   requestSplitConfirm: (workId: string, contributorId: string) => work(req<Work>(orgPath(`/works/${enc(workId)}/rights/${enc(contributorId)}/confirmation`), { method: 'POST' })),
   respondSplit: (workId: string, agree: boolean) => work(req<Work>(orgPath(`/works/${enc(workId)}/rights/confirmation`), { method: 'POST', body: { agree } })),
   simulateConfirm: (workId: string) => work(req<Work>(orgPath(`/works/${enc(workId)}`))),
+  inviteContributor: (workId: string, contributorId: string, email?: string) =>
+    req<{ token: string; emailed: boolean }>(orgPath(`/works/${enc(workId)}/rights/${enc(contributorId)}/invite`), { method: 'POST', body: email ? { email } : {} }),
+  splitInvite: (token: string) => req<SplitInvite>(`/api/pub-invites/${enc(token)}`, { quiet401: true }),
+  answerSplitInvite: (token: string, agree: boolean, note?: string) => req<{ answer: string }>(`/api/pub-invites/${enc(token)}/answer`, { method: 'POST', body: { agree, note } }),
   searchCreators: (q: string) => req<{ items: Creator[] }>(orgPath(`/creators?q=${enc(q)}`)).then(r => r.items),
   myCreator: () => req<Creator>('/api/me/creator'),
   saveMyCreator: (c: Creator) => req<Creator>('/api/me/creator', { method: 'PUT', body: c }),

@@ -290,3 +290,23 @@
 .aq-pbl-payout li{display:flex;gap:10px;align-items:flex-start}
 .aq-pbl-payout strong{display:block;font-size:var(--aq-fs-sm);color:var(--aq-text)}
 .aq-pbl-payout small{display:block;font-size:var(--aq-fs-xs);color:var(--aq-text-3)}
+/* 곡 등록 첫 화면 — 표로 한 번에 등록 입구 */
+.aq-pbl-import-entry{margin-top:4px}
+.aq-pbl-import-list{margin-top:16px}
+.aq-pbl-import-list .ui-field-help{display:block;margin-top:4px}
+
+/* 지분 확인 링크 보내기 창 */
+.aq-pbl-invite-list{display:grid;gap:14px;margin:12px 0 0;padding:0;list-style:none}
+.aq-pbl-invite-list>li{display:grid;gap:8px;padding:14px 0;border-top:1px solid var(--aq-gray-150)}
+.aq-pbl-invite-head{display:flex;align-items:center;gap:8px}
+.aq-pbl-invite-head span{color:var(--aq-text-3);font-weight:700}
+.aq-pbl-invite-head .ui-badge{margin-left:auto}
+.aq-pbl-invite-link,.aq-pbl-invite-mail{display:flex;gap:8px;align-items:center}
+.aq-pbl-invite-link code{flex:1;min-width:0;padding:8px 10px;border-radius:var(--aq-r-md);background:var(--aq-gray-50);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-pbl-invite-mail .ui-input{flex:1;min-width:0}
+.aq-pbl-invite>.ui-btn{justify-self:stretch}
+/* 이의 제기 의견 */
+.aq-pbl-dispute{color:var(--aq-red-600);font-style:normal}
+/* 긴 링크가 창 폭을 밀어내지 않게 — 그리드 칸의 최소 폭을 0으로 */
+.aq-pbl-invite,.aq-pbl-invite-list,.aq-pbl-invite-list>li,.aq-pbl-invite-link,.aq-pbl-invite-mail{min-width:0;max-width:100%}
+.aq-pbl-invite-link code{display:block}

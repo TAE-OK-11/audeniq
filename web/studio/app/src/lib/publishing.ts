@@ -122,7 +122,7 @@ export const CONTRACT_CONFIRMATIONS = [
 ] as const;
 
 const TERRITORY_NAME: Record<string, string> = { KR: '대한민국', JP: '일본', US: '미국', WORLD: '전 세계(그 밖의 국가)' };
-const RIGHT_NAME: Record<string, string> = { performance: '공연권', mechanical: '복제권', digital: '전송권', sync: '싱크 라이선스' };
+const RIGHT_NAME: Record<string, string> = { performance: '공연권', mechanical: '복제권', digital: '전송권', sync: '싱크 라이선스', youtube: '유튜브 작곡 권리' };
 export const territoryName = (c: string) => TERRITORY_NAME[c] ?? c;
 export const rightName = (k: string) => RIGHT_NAME[k] ?? k;
 
@@ -163,7 +163,7 @@ export const ROLE_LABEL: Record<ContributorRole, string> = {
 };
 
 export const ROYALTY_KIND_LABEL: Record<RoyaltyKind, string> = {
-  performance: '공연권', mechanical: '복제권', digital: '전송권', sync: '싱크', print: '출판', other: '기타',
+  performance: '공연권', mechanical: '복제권', digital: '전송권', sync: '싱크', youtube: '유튜브', print: '출판', other: '기타',
 };
 export const ROYALTY_STATUS_LABEL: Record<RoyaltyStatus, string> = { estimated: '예상', confirmed: '확정', paid: '지급 완료' };
 export const ROYALTY_STATUS_TONE: Record<RoyaltyStatus, Tone> = { estimated: 'gray', confirmed: 'blue', paid: 'green' };

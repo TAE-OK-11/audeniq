@@ -543,6 +543,11 @@ pub fn spawn(state: AppState, mailer: Option<Mailer>) {
                     Ok(n) => busy |= n as i64 >= crate::splits::BATCH,
                     Err(error) => tracing::warn!(%error, "split invite dispatch failed"),
                 }
+                match crate::publishing::dispatch_invites(&state.pool, &state.payout_keys, m).await
+                {
+                    Ok(n) => busy |= n as i64 >= crate::publishing::INVITE_BATCH,
+                    Err(error) => tracing::warn!(%error, "co-writer invite dispatch failed"),
+                }
             }
             if !busy {
                 tokio::time::sleep(if mailer.is_some() {
