@@ -528,6 +528,19 @@ async fn work_to_application_to_review(pool: PgPool) {
     )
     .await;
     assert_eq!(w["contractId"], cid);
+    // Signed but not registered yet: the contract is in force, so a share change waits for review too.
+    let rv = w["rowVersion"].as_i64().unwrap();
+    let (s, signed) = call(
+        &app,
+        "PUT",
+        &format!("{base}/works/{id}/rights"),
+        json!({"contributors": people(&u, 55.0, 45.0), "row_version": rv}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{signed}");
+    assert_eq!(signed["contributors"][0]["share"], 60.0);
+    assert_eq!(signed["pendingChange"]["contributors"][0]["share"], 55.0);
 
     let (s, _) = decide(json!({"action": "REGISTER", "society": "KOMCA"})).await;
     assert_eq!(s, StatusCode::OK);

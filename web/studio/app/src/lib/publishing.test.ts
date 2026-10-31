@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Work, WorkContributor } from '../api/publishing';
-import { evenSplit, isReleased, matchFilter, workOrigin, regStep, similarWorks, splitIssues, splitNames, splitReady, sumShares } from './publishing';
+import { addMonths, canEditInfo, editMode, evenSplit, isReleased, matchFilter, workOrigin, regStep, similarWorks, splitIssues, splitNames, splitReady, sumShares } from './publishing';
 
 const person = (p: Partial<WorkContributor>): WorkContributor => ({
   id: p.name ?? 'x', creatorId: null, name: '서린', roles: ['composer'], share: 100, publisherShare: 0, confirm: 'confirmed', external: false, ...p,
@@ -83,5 +83,31 @@ describe('곡 갈래 (퍼블리싱 접수 세 갈래)', () => {
     expect(isReleased(work({ origin: 'unreleased' }))).toBe(false);
     expect(isReleased(work({ origin: 'other_release', externalRelease: { artist: '이온', title: '겨울 편지' } }))).toBe(true);
     expect(matchFilter(work({ origin: 'other_release', externalRelease: { artist: '이온', title: '겨울 편지' } }), 'unreleased')).toBe(false);
+  });
+});
+
+describe('고칠 수 있는 때 (서버 update_work · put_rights와 같은 규칙)', () => {
+  it('신청 전·보완·반려는 바로 고친다', () => {
+    for (const r of ['none', 'preparing', 'needs_fix', 'rejected'] as const) expect(editMode(work({ registration: r }))).toBe('direct');
+  });
+  it('심사 중·서명 대기는 잠근다', () => {
+    expect(editMode(work({ registration: 'internal_review' }))).toBe('locked');
+    expect(editMode(work({ registration: 'ready' }))).toBe('locked');
+  });
+  it('계약 중·등록 완료는 지분을 변경 요청으로, 곡 정보는 등록이 끝난 뒤에만', () => {
+    expect(editMode(work({ registration: 'ready', contractId: 'c1' }))).toBe('review');
+    expect(canEditInfo(work({ registration: 'ready', contractId: 'c1' }))).toBe(false);
+    expect(canEditInfo(work({ registration: 'registered', contractId: 'c1' }))).toBe(true);
+  });
+});
+
+describe('계약 연장 종료일', () => {
+  it('날짜 글자로 더한다 (하루 밀리지 않는다)', () => {
+    expect(addMonths('2026-12-31', 12)).toBe('2027-12-31');
+    expect(addMonths('2026-03-05', 6)).toBe('2026-09-05');
+  });
+  it('그 달에 없는 날은 그 달 마지막 날', () => {
+    expect(addMonths('2026-01-31', 1)).toBe('2026-02-28');
+    expect(addMonths('2027-11-30', 3)).toBe('2028-02-29');
   });
 });

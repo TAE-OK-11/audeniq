@@ -18,7 +18,7 @@ import { stampNow } from '../lib/date';
 import { localStamp, fileSize } from '../lib/format';
 import { uid } from '../lib/store';
 import { draftTrackOf } from '../lib/albumPrep';
-import { LANGUAGES, ORIGIN_LABEL, WORK_TYPES, pct, similarWorks, splitIssues, splitNames, splitReady, workOrigin } from '../lib/publishing';
+import { LANGUAGES, ORIGIN_LABEL, canEditInfo, editMode, WORK_TYPES, pct, similarWorks, splitIssues, splitNames, splitReady, workOrigin } from '../lib/publishing';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { FilePicker } from '../components/FilePicker';
@@ -184,6 +184,21 @@ export function WorkEditor() {
     );
   }
 
+  // 심사 중·계약서 서명 대기·등록 진행 중인 곡은 서버가 곡 정보를 받지 않는다 — 고쳐 놓고 저장에서 막히지 않게 먼저 알린다
+  if (existing && !canEditInfo(existing)) {
+    return (
+      <div className="view">
+        <div className="ui-empty">
+          <h2>지금은 곡 정보를 고칠 수 없어요.</h2>
+          <p>{editMode(existing) === 'locked'
+            ? '담당자가 심사하거나 계약서 서명을 기다리는 곡이에요. 보완 요청이 오면 고칠 수 있어요.'
+            : '관리 단체 등록이 진행 중이에요. 등록이 끝나면 고칠 수 있고, 지분은 곡 화면에서 변경을 요청할 수 있어요.'}</p>
+          <Link to={`/works/${existing.id}`} className="ui-btn is-soft">곡 보기</Link>
+        </div>
+      </div>
+    );
+  }
+
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm(f => (f ? { ...f, [k]: v } : f));
   const titleErr = tried && !form.title.trim() ? '곡 제목을 입력해 주세요.' : '';
   const iswcErr = form.iswc && !ISWC_RE.test(form.iswc) ? 'T-123.456.789-0 모양이에요. 모르면 비워 두세요 — 내부 번호로 관리해요.' : '';
@@ -191,7 +206,8 @@ export function WorkEditor() {
   const fromTrack = !editing && !!track;
   const fromDraft = track && release ? draftTrackOf(track, release.draft) : undefined;
   const needsSplitCheck = fromTrack && !splitChecked && form.contributors.length > 0;
-  const locked = existing && existing.application && ['submitted', 'in_review', 'approved'].includes(existing.application.status);
+  // 등록이 끝난 곡 — 곡 정보는 바로 고치고, 지분은 변경 요청으로 남는다 (참여자 확인·담당자 검토 뒤 반영)
+  const locked = !!existing && editMode(existing) === 'review';
   const origin = form.origin ?? 'unreleased';
   const released = origin !== 'unreleased';
   const ext = form.externalRelease ?? NO_RELEASE;
@@ -241,7 +257,10 @@ export function WorkEditor() {
     try {
       let w: Work;
       if (existing) {
-        w = await pubApi.updateWork(existing.id, clean, existing.rowVersion);
+        // 지분을 안 바꿨으면 보내지 않는다 — 관리 중인 곡은 보내기만 해도 같은 값의 '변경 요청'이 생겼다
+        const same = JSON.stringify(clean.contributors) === JSON.stringify(existing.pendingChange?.contributors ?? existing.contributors);
+        const { contributors, ...meta } = clean;
+        w = await pubApi.updateWork(existing.id, same ? meta : { ...meta, contributors }, existing.rowVersion);
       } else {
         const recording: Omit<WorkRecording, 'id'> | null = track && release
           ? { releaseId: release.id, trackId: track.id, title: track.title, releaseTitle: release.title, version: track.version, isrc: track.isrc, status: release.status }
@@ -302,7 +321,7 @@ export function WorkEditor() {
             <b>{localStamp(restored.at)}에 쓰던 내용이 있어요.</b> 저장하기 전에 화면을 떠났어요.
           </Callout>
         )}
-        {locked && <Callout tone="warn">저작권 관리 심사 중이거나 관리 중인 곡이에요. 지금 고친 내용은 담당자가 확인한 뒤 반영돼요.</Callout>}
+        {locked && <Callout tone="warn">관리 중인 곡이에요. 곡 정보는 바로 바뀌고, 지분을 바꾸면 참여자 확인과 담당자 검토가 끝날 때까지 지금 값으로 관리돼요.</Callout>}
 
       </>}
       actions={<>

@@ -198,8 +198,11 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
   const prepare = async () => {
     setBusy(true);
     try {
-      await pubApi.prepareWorksFromRelease(rel.id, false); reload();
-      toast(`${missing}곡을 크레딧으로 정리했어요. 지분이 맞는지 확인해 주세요.`, 'success');
+      // 실제로 한 일을 알린다 — 같은 제목의 곡이 이미 있으면 새로 만들지 않고 그 곡에 연결하고, 제목 없는 곡은 건너뛴다
+      const r = await pubApi.prepareWorksFromRelease(rel.id, false); reload();
+      const done = [r.created && `${r.created}곡을 크레딧으로 정리`, r.linked && `${r.linked}곡을 같은 제목의 곡에 연결`].filter(Boolean).join('하고 ');
+      if (done) toast(`${done}했어요. 지분이 맞는지 확인해 주세요.`, { tone: 'success', sub: r.skipped ? `제목이 없는 ${r.skipped}곡은 건너뛰었어요. 곡 제목을 적은 뒤 다시 정리해 주세요.` : undefined });
+      else toast('새로 정리할 곡이 없어요.', { tone: 'info', sub: r.skipped ? `제목이 없는 ${r.skipped}곡은 정리할 수 없어요.` : undefined });
     } catch (err) { toast(errorMessage(err, '정리하지 못했어요. 다시 시도해 주세요.'), 'error'); } finally { setBusy(false); }
   };
   const goPrep = (g: PrepGroup) => {

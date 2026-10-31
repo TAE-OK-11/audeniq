@@ -199,6 +199,21 @@ export function evenSplit(n: number): number[] {
   return Array.from({ length: n }, (_, i) => (i === n - 1 ? round2(100 - each * (n - 1)) : each));
 }
 
+/** 곡 정보·지분을 지금 어떻게 고칠 수 있는지 — 서버 update_work · put_rights와 같은 규칙.
+ *  · direct: 신청 전·보완 요청·반려 — 바로 고친다
+ *  · review: 계약 중이거나 등록이 끝난 곡 — 지분은 변경 요청(참여자 확인·담당자 검토 뒤 반영), 곡 정보는 등록이 끝난 뒤에만
+ *  · locked: 담당자가 심사 중이거나 승인 뒤 계약서 서명을 기다리는 곡 — 고칠 수 없다(보완 요청이 오거나 철회하면 고친다) */
+export type EditMode = 'direct' | 'review' | 'locked';
+export function editMode(w: Pick<Work, 'registration' | 'contractId'>): EditMode {
+  if (['none', 'preparing', 'needs_fix', 'rejected'].includes(w.registration)) return 'direct';
+  if (w.registration === 'registered' || w.contractId) return 'review';
+  return 'locked';
+}
+/** 곡 정보(제목·장르·설명…)를 고칠 수 있는지 — 서버는 신청 전·보완·반려와 등록이 끝난 곡만 받는다 */
+export const canEditInfo = (w: Pick<Work, 'registration' | 'contractId'>) => editMode(w) === 'direct' || w.registration === 'registered';
+/** 저작권 관리를 (다시) 신청할 수 있는 등록 상태 — 서버 submit_application과 같다 (발매 신청에서 함께 고른 'preparing'도 포함) */
+export const APPLICABLE_REG: readonly RegistrationStatus[] = ['none', 'preparing', 'rejected'];
+
 /** 저작권 관리에 들어가 있는(신청 이후) 곡인지 */
 export const isManaged = (w: Pick<Work, 'registration'>) => !['none', 'preparing', 'rejected'].includes(w.registration);
 
@@ -246,6 +261,16 @@ export function similarWorks(title: string, works: readonly Work[], exceptId?: s
 /** 계약 기간 개월 → '6개월', '1년', '3년' */
 export function termLabel(months: number): string {
   return months % 12 === 0 ? `${months / 12}년` : `${months}개월`;
+}
+
+/** 'YYYY-MM-DD' + n개월 — 날짜 글자로만 계산한다. 전에는 로컬 자정을 UTC로 바꿔(toISOString) 한국에서 하루 앞 날짜가 보였고,
+ *  1월 31일 + 1개월이 3월 3일로 넘어갔다. 그 달에 없는 날이면 그 달 마지막 날로 */
+export function addMonths(date: string, n: number): string {
+  const [y, m, d] = date.split('-').map(Number);
+  const k = y * 12 + (m - 1) + n;
+  const ny = Math.floor(k / 12), nm = (k % 12) + 1;
+  const last = new Date(Date.UTC(ny, nm, 0)).getUTCDate();
+  return `${ny}-${String(nm).padStart(2, '0')}-${String(Math.min(d, last)).padStart(2, '0')}`;
 }
 
 /** 남은 날 — 만료 안내 */

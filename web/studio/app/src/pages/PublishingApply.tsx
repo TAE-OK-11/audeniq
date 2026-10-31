@@ -36,7 +36,7 @@ const STEPS: WizardStep[] = [
 // 배급처럼 신청서와 계약서는 따로 — 여기서는 신청 내용이 맞다는 확인과 신청서 서명만. 계약은 승인 뒤 계약서 화면에서
 const AGREE = APPLICATION_AGREE;
 
-interface Saved { step: number; workIds: string[]; territories: string[]; rights: string[]; key: string }
+interface Saved { step: number; workIds: string[]; territories: string[]; rights: string[]; key: string; from?: string }
 const SAVE_KEY = 'publishing-apply';
 const activeApp = (w: Work) => !!w.application && ['submitted', 'in_review', 'needs_fix', 'approved'].includes(w.application.status);
 // 저작권 관리는 발매된 곡(내 발매 · 다른 아티스트 발매)만 — 발매 전 곡은 Open A&R로 피칭한다 (서버도 WORK_NOT_RELEASED로 막는다)
@@ -60,7 +60,9 @@ export function PublishingApply() {
   const [preparing, setPreparing] = useState(false);
 
   const saved = useRef(readJSON<Saved | null>(SAVE_KEY, null));
-  const resume = saved.current && !bundled.length && (!preset || saved.current.workIds.includes(preset)) ? saved.current : null;
+  // 이어 쓰기는 같은 자리에서 들어왔을 때만 — 다른 발매·곡에서 들어왔는데 예전에 고르던 곡과 단계가 그대로 열렸다
+  const from = fromRelease ? `release:${fromRelease}` : preset ? `work:${preset}` : '';
+  const resume = saved.current && !bundled.length && (saved.current.from ?? '') === from && (!preset || saved.current.workIds.includes(preset)) ? saved.current : null;
   const [step, setStep] = useState(resume?.step && resume.step < 4 ? resume.step : 0);
   const [picked, setPicked] = useState<string[]>(resume?.workIds ?? (bundled.length ? bundled : preset ? [preset] : []));
   // 발매에서 왔으면 그 발매에 연결된(아직 신청 전인) 곡을 모두 고른다
@@ -87,8 +89,8 @@ export function PublishingApply() {
   }, [policy]);
 
   useEffect(() => {
-    writeJSON(SAVE_KEY, { step, workIds: picked, territories, rights, key } satisfies Saved);
-  }, [step, picked, territories, rights, key]);
+    writeJSON(SAVE_KEY, { step, workIds: picked, territories, rights, key, from } satisfies Saved);
+  }, [step, picked, territories, rights, key, from]);
 
   // 단계를 옮기면 맨 위로 — 긴 계약서를 읽고 내려온 자리에서 다음 단계가 시작되지 않게
   // 지나온 단계는 위 진행 칸·왼쪽 목록에서 눌러 돌아갈 수 있다

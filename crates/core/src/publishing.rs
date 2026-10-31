@@ -1004,7 +1004,16 @@ pub async fn put_rights(
     if version != i.row_version {
         return Err(Error::Conflict);
     }
-    if registration == "registered" {
+    // A work under a signed contract is in force before the society registers it too: its shares change
+    // only through review, as for a registered work (the screen asks for a change in both cases).
+    let contracted: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM portal.pub_contracts c JOIN portal.pub_application_works aw ON aw.application_id=c.application_id
+                        WHERE aw.work_id=$1 AND c.status <> 'pending_sign')",
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if registration == "registered" || (contracted && !EDITABLE.contains(&registration.as_str())) {
         sqlx::query(
             "UPDATE portal.pub_works SET pending_contributors=$2, pending_at=now() WHERE id=$1",
         )

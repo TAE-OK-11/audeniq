@@ -6,7 +6,7 @@ import { Link } from '../../lib/router';
 import { pubApi, type Work, type WorkContributor } from '../../api/publishing';
 import { errorMessage } from '../../api/errors';
 import { MOCK } from '../../lib/mode';
-import { splitReady } from '../../lib/publishing';
+import { editMode, splitReady } from '../../lib/publishing';
 import { STAGE_LABEL, STAGE_TONE, changeNeedsReview, reusableWorks, splitDiff, workIssues, workStage, type PrepField, type SplitChange } from '../../lib/publishingPrep';
 import { localStamp } from '../../lib/format';
 import { Modal } from '../Modal';
@@ -53,7 +53,8 @@ export function WorkSheet({ work, no, all, focus, onClose, onSaved, releaseId }:
   const toast = useToast();
   const [w, setW] = useState(work);
   useEffect(() => setW(work), [work]);
-  const canEdit = w.myRole === 'owner' || w.myRole === 'editor';
+  // 심사 중·계약서 서명 대기 중인 곡은 서버가 지분 변경을 받지 않는다 — 고치기를 열지 않는다
+  const canEdit = (w.myRole === 'owner' || w.myRole === 'editor') && editMode(w) !== 'locked';
   const startEdit = canEdit && (focus?.field === 'split' || focus?.field === 'ipi');
   const [draft, setDraft] = useState<WorkContributor[] | null>(startEdit ? structuredClone(w.pendingChange?.contributors ?? w.contributors) : null);
   const [saving, setSaving] = useState(false);
@@ -115,6 +116,9 @@ export function WorkSheet({ work, no, all, focus, onClose, onSaved, releaseId }:
           <Callout tone="warn">{blocking[0].text}{blocking.length > 1 && ` 외 ${blocking.length - 1}건`}</Callout>
         ))}
 
+        {(w.myRole === 'owner' || w.myRole === 'editor') && editMode(w) === 'locked' && (
+          <p className="ui-field-help">{stage === 'signing' ? '계약서 서명을 기다리는 곡이라 지금은 고칠 수 없어요. 서명한 뒤에는 지분 변경을 요청할 수 있어요.' : '담당자가 심사하는 동안에는 고칠 수 없어요. 보완 요청이 오면 고칠 수 있어요.'}</p>
+        )}
         <section ref={splitRef} className="aq-pbl-sheet-sec" aria-labelledby="wsSplit">
           <div className="ui-section-head">
             <h3 id="wsSplit" className="aq-track-sheet-h">참여자·지분</h3>

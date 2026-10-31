@@ -6,7 +6,7 @@ import { useNavigate, useSearchParams } from '../../lib/router';
 import { pubApi, type PublishingContract } from '../../api/publishing';
 import { errorMessage } from '../../api/errors';
 import { useAsync } from '../../hooks/useAsync';
-import { CONTRACT_LABEL, CONTRACT_TONE, daysLeft, rightName, termLabel, territoryName } from '../../lib/publishing';
+import { CONTRACT_LABEL, CONTRACT_TONE, addMonths, daysLeft, rightName, termLabel, territoryName } from '../../lib/publishing';
 import { localStamp, niceDate } from '../../lib/format';
 import { useToast } from '../Toast';
 import { useConfirm } from '../Confirm';
@@ -24,12 +24,7 @@ function RenewModal({ c, onClose, onDone }: { c: PublishingContract; onClose: ()
   const [months, setMonths] = useState<string>('');
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (policy && !months) setMonths(String(policy.renewalOptions[1] ?? policy.renewalOptions[0])); }, [policy]); // eslint-disable-line react-hooks/exhaustive-deps
-  const end = (() => {
-    if (!months) return '';
-    const d = new Date(`${c.endDate}T00:00:00`);
-    d.setMonth(d.getMonth() + Number(months));
-    return d.toISOString().slice(0, 10);
-  })();
+  const end = months ? addMonths(c.endDate, Number(months)) : '';
   const go = async () => {
     setBusy(true);
     try { onDone(await pubApi.renewContract(c.id, Number(months))); toast('연장을 요청했어요. 담당자가 확인하면 새 기간이 적용돼요.', 'success'); onClose(); }

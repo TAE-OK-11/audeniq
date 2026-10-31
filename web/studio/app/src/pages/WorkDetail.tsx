@@ -9,7 +9,7 @@ import { pubApi, type Work, type WorkContributor } from '../api/publishing';
 import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { MOCK } from '../lib/mode';
-import { APP_LABEL, APP_TONE, AR_LABEL, AR_TONE, CONTRACT_LABEL, CONTRACT_TONE, FIX_FIELDS, LANGUAGES, ORIGIN_LABEL, fixNote, isFixField, type FixField, REG_LABEL, REG_SENTENCE, REG_STEPS, WORK_TYPES, pct, regStep, splitIssues, splitReady, workOrigin } from '../lib/publishing';
+import { APP_LABEL, APP_TONE, AR_LABEL, AR_TONE, CONTRACT_LABEL, CONTRACT_TONE, FIX_FIELDS, LANGUAGES, ORIGIN_LABEL, fixNote, isFixField, type FixField, REG_LABEL, REG_SENTENCE, REG_STEPS, WORK_TYPES, APPLICABLE_REG, canEditInfo, editMode, pct, regStep, splitIssues, splitReady, workOrigin } from '../lib/publishing';
 import { StageCard } from '../components/StageCard';
 import { STATUS_LABEL, localStamp, statusTone } from '../lib/format';
 import { useToast } from '../components/Toast';
@@ -26,7 +26,7 @@ import { ContractManage } from '../components/publishing/PublishingContracts';
 import { AttachmentList, AttachmentModal } from '../components/publishing/Attachments';
 import { Badge, Callout, EmptyState, KeyValue, Segmented, StatGrid, StatTile, Tabs } from '../ui';
 import { SplitDiffList } from '../components/publishing/WorkSheet';
-import { changeNeedsReview, reusableWorks, splitDiff } from '../lib/publishingPrep';
+import { changeNeedsReview, reusableWorks, signing, splitDiff } from '../lib/publishingPrep';
 import { Money } from '../components/Money';
 import { useReportRows } from '../hooks/useReportRows';
 import '../styles/split/ReleaseDetail.css';
@@ -51,7 +51,7 @@ function nextAction(w: Work): { text: string; tab?: Tab; to?: string; btn: strin
   const mine = w.contributors.find(c => c.isMe && c.confirm === 'pending');
   if (mine) return { text: `내 지분 ${pct(mine.share)}를 확인해 주세요. 맞으면 확인, 다르면 변경을 요청해요.`, tab: 'rights', btn: '확인하기', tone: 'warn' };
   if (!canEdit) return null;
-  if (!splitReady(w.contributors)) return { text: splitIssues(w.contributors).find(i => i.level === 'error')?.text ?? '지분을 맞춰 주세요.', tab: 'rights', btn: '지분 고치기', tone: 'warn' };
+  if (editMode(w) === 'direct' && !splitReady(w.contributors)) return { text: splitIssues(w.contributors).find(i => i.level === 'error')?.text ?? '지분을 맞춰 주세요.', tab: 'rights', btn: '지분 고치기', tone: 'warn' };
   // 맡기기 전 안내('저작권 관리 시작')는 두지 않는다 — 머리 카드의 '저작권 관리 신청' 버튼과 같은 일을 한 화면에 두 번 권했다
   return null;
 }
@@ -182,7 +182,8 @@ export function WorkDetail() {
   useEffect(() => { if (data) setWork(data); }, [data]);
   const w = work ?? data ?? null;
   const { data: royalties } = useAsync(() => pubApi.listRoyalties(id), [id], { key: `royalties:${id}` });
-  const { data: contracts } = useAsync(() => (tab === 'register' ? pubApi.listContracts() : Promise.resolve(null)), [tab === 'register'], { key: 'pub-contracts' });
+  // 계약서는 늘 불러 둔다 — 승인 뒤 서명을 기다리는 계약서를 머리 카드에서 바로 열 수 있게
+  const { data: contracts } = useAsync(() => pubApi.listContracts(), [], { key: 'pub-contracts' });
   const { data: apps } = useAsync(() => (tab === 'register' ? pubApi.listApplications() : Promise.resolve(null)), [tab === 'register'], { key: 'pub-applications' });
 
   // 연결된 녹음의 배급 수익 — 음악 리포트와 같은 행(곡 이름이 맞는 행만)
@@ -225,7 +226,11 @@ export function WorkDetail() {
   // 세 갈래(lib/publishing WORK_ORIGINS): 발매 전 곡은 A&R 피칭, 발매된 곡(내 발매·다른 아티스트 발매)은 저작권 관리 신청
   const origin = workOrigin(w);
   const released = origin !== 'unreleased';
-  const canApply = canEdit && released && w.registration === 'none' && (!app || app.status === 'withdrawn');
+  // 서버(submit_application)와 같은 조건 — 발매 신청에서 함께 고른 곡('preparing')과 반려된 곡도 (다시) 신청할 수 있다
+  const canApply = canEdit && released && APPLICABLE_REG.includes(w.registration) && (!app || app.status === 'withdrawn' || app.status === 'rejected');
+  // 지분·곡 정보를 고칠 수 있는지 — 심사 중·계약서 서명 대기 중에는 서버가 받지 않는다
+  const mode = editMode(w);
+  const toSign = signing(w) ? contracts?.find(c => c.status === 'pending_sign' && c.works.some(x => x.id === w.id)) ?? null : null;
   const ar = arList?.find(a => a.workId === w.id && a.status !== 'closed') ?? null;
   const me = w.contributors.find(c => c.isMe);
 
@@ -279,7 +284,9 @@ export function WorkDetail() {
   // 이미 신청·관리 중인 곡에는 옆 버튼이 없다 (진행은 아래 단계와 '저작권·계약' 탭)
   const buttons = canEdit && (
     <>
-      <Link to={`/works/${w.id}/edit${backToAlbum ? `?release=${encodeURIComponent(fromRelease!)}` : ''}`} className="ui-btn is-soft">정보 고치기</Link>
+      {canEditInfo(w) && <Link to={`/works/${w.id}/edit${backToAlbum ? `?release=${encodeURIComponent(fromRelease!)}` : ''}`} className="ui-btn is-soft">정보 고치기</Link>}
+      {/* 승인됐는데 계약서 서명 전 — 이 곡에서 이용자가 할 일은 서명 하나 */}
+      {toSign && <Link to={`/contracts/publishing/${encodeURIComponent(toSign.id)}`} className="ui-btn is-primary">계약서 서명</Link>}
       {/* 지분이 맞지 않으면 신청이 막힌다 — 그때는 진한 버튼을 신청에 두지 않는다 (위 안내의 '지분 고치기'가 할 일) */}
       {canApply && <Link to={`/publishing/apply?work=${w.id}`} className={`ui-btn ${splitReady(w.contributors) ? 'is-primary' : 'is-soft'}`}>저작권 관리 신청</Link>}
       {!released && (ar
@@ -299,7 +306,7 @@ export function WorkDetail() {
         <div className="aq-detail-info">
           <div className="aq-detail-top">
             <span className="eyebrow">곡 · {ORIGIN_LABEL[origin]}</span>
-            {released ? <RegBadge status={w.registration} /> : ar && <Badge tone={AR_TONE[ar.status]}>A&R {AR_LABEL[ar.status]}</Badge>}
+            {signing(w) ? <Badge tone="amber">계약서 서명 필요</Badge> : released ? <RegBadge status={w.registration} /> : ar && <Badge tone={AR_TONE[ar.status]}>A&R {AR_LABEL[ar.status]}</Badge>}
           </div>
           <h1>{w.title}</h1>
           {/* 발매 상세처럼 이름만 — 지분은 정보 탭의 참여자·지분에서 */}
@@ -311,9 +318,10 @@ export function WorkDetail() {
         <div className="aq-detail-actions is-wide">{buttons}</div>
         {/* 진행 단계는 발매 상세처럼 머리 카드 안 아래쪽 흰 판으로 — 맡기기 전과 등록이 끝난 뒤에는 배지만 */}
         {regStep(w.registration) >= 0 && w.registration !== 'registered' && (
-          <StageCard steps={REG_STEPS.map((x, i) => (i === regStep(w.registration) && (w.registration === 'needs_fix' || w.registration === 'rejected') ? REG_LABEL[w.registration] : x))} current={Math.min(regStep(w.registration), REG_STEPS.length - 1)}
-            tone={w.registration === 'rejected' ? 'error' : w.registration === 'needs_fix' ? 'warn' : undefined}
-            note={REG_SENTENCE[w.registration]} label="저작권 등록 진행 단계" />
+          <StageCard steps={REG_STEPS.map((x, i) => (i === regStep(w.registration) && (w.registration === 'needs_fix' || w.registration === 'rejected') ? REG_LABEL[w.registration] : i === 2 && signing(w) ? '계약서 서명' : x))} current={Math.min(regStep(w.registration), REG_STEPS.length - 1)}
+            tone={w.registration === 'rejected' ? 'error' : w.registration === 'needs_fix' || signing(w) ? 'warn' : undefined}
+            // 승인 뒤 '등록 준비'는 이용자 차례 — 계약서에 서명해야 관리 단체 등록이 시작된다 (전에는 AUDENIQ이 준비 중인 것처럼 보였다)
+            note={signing(w) ? '담당자가 승인했어요. 계약서에 서명하면 관리 단체 등록이 시작돼요.' : REG_SENTENCE[w.registration]} label="저작권 등록 진행 단계" />
         )}
         <div className="aq-detail-actions is-narrow">{buttons}</div>
       </div>
@@ -372,8 +380,9 @@ export function WorkDetail() {
             <div className="aq-relinfo-card">
               <div className="ui-section-head">
                 <h2 className="subhead">참여자·지분</h2>
-                {canEdit && !splitDraft && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setSplitDraft(structuredClone(w.pendingChange?.contributors ?? w.contributors))}>{w.pendingChange ? '변경값 고치기' : '지분 고치기'}</button>}
+                {canEdit && !splitDraft && mode !== 'locked' && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setSplitDraft(structuredClone(w.pendingChange?.contributors ?? w.contributors))}>{w.pendingChange ? '변경값 고치기' : '지분 고치기'}</button>}
               </div>
+              {canEdit && mode === 'locked' && <p className="ui-field-help">{signing(w) ? '계약서 서명을 기다리는 곡이라 지금은 지분을 바꿀 수 없어요. 서명한 뒤에는 변경을 요청할 수 있어요.' : '담당자가 심사하는 동안에는 지분을 바꿀 수 없어요. 보완 요청이 오면 고칠 수 있고, 급하면 신청을 철회한 뒤 고쳐요.'}</p>}
               {splitDraft ? (
                 <>
                   <SplitEditor value={splitDraft} onChange={setSplitDraft} reuse={reusableWorks(allWorks ?? [], w.id)} />

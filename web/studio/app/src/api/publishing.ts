@@ -24,7 +24,7 @@ import { statementsStore } from '../store/settlement';
 import { api } from './client';
 import { draftTrackOf } from '../lib/albumPrep';
 import { STATUS_LABEL } from '../lib/format';
-import { CONTRACT_CONFIRMATIONS, contractBody, workOrigin } from '../lib/publishing';
+import { CONTRACT_CONFIRMATIONS, canEditInfo, contractBody, editMode, workOrigin } from '../lib/publishing';
 import { uiStatus } from './remote';
 import { getProfileSnapshot } from '../store/profile';
 import { getAccountSnapshot } from '../store/account';
@@ -559,6 +559,9 @@ const mockApi = {
       const key = (list: WorkContributor[]) => JSON.stringify(list.map(c => [c.name, c.share, c.publisherShare, c.roles, c.society, c.ipi]));
       const before = key(w.contributors);
       const { recording: _r, contributors, attachments, ...rest } = patch;
+      // 서버와 같은 잠금 — 심사 중·서명 대기는 아무것도, 계약 중(등록 전)은 곡 정보를 받지 않는다 (지분은 변경 요청)
+      const mode = editMode(w);
+      if (mode === 'locked' || (Object.keys(rest).length && !canEditInfo(w))) throw new ApiError('심사 중인 곡은 지분을 바꿀 수 없어요. 보완 요청이 오면 고칠 수 있어요.', 422, 'WORK_UNDER_REVIEW');
       if (rest.origin === 'own_release') throw new ApiError('내가 발매한 곡은 발매 곡을 연결하면 정해져요.', 400, 'WORK_ORIGIN_INVALID');
       if (rest.origin === 'other_release' && !(rest.externalRelease ?? w.externalRelease)) throw new ApiError('발매한 아티스트와 발매 제목을 적어 주세요.', 400, 'WORK_RELEASE_INFO_REQUIRED');
       Object.assign(w, rest);
