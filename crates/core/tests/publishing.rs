@@ -637,6 +637,19 @@ async fn prepare_from_credits_withdraw_and_isolation(pool: PgPool) {
         .await
         .unwrap();
     }
+    // What the release form already holds: genre, language, lyrics, and a second track marked instrumental.
+    sqlx::query("UPDATE catalog.releases SET draft = draft || jsonb_build_object('genre','R&B','language','en','draftTracks',jsonb_build_array(jsonb_build_object('serverId',$2::text,'instrumental',true))), row_version=row_version+1 WHERE id=$1")
+        .bind(release)
+        .bind(t2)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE catalog.tracks SET lyrics=$2 WHERE id=$1")
+        .bind(t1)
+        .bind("한낮의 햇살 아래\n걸어가")
+        .execute(&pool)
+        .await
+        .unwrap();
     let (s, r) = call(
         &app,
         "POST",
@@ -670,6 +683,16 @@ async fn prepare_from_credits_withdraw_and_isolation(pool: PgPool) {
     assert_eq!(shares.iter().sum::<f64>(), 100.0);
     let second = items.iter().find(|w| w["title"] == "밤바다").unwrap();
     assert_eq!(second["contributors"][0]["isMe"], true);
+    // Nothing typed twice: genre and language from the release, lyrics as a lyrics file, instrumental kept.
+    assert_eq!(
+        (first["genre"].as_str(), first["language"].as_str()),
+        (Some("R&B"), Some("en"))
+    );
+    assert_eq!(first["workType"], "original");
+    assert_eq!(first["attachments"][0]["kind"], "lyrics");
+    assert_eq!(first["attachments"][0]["text"], "한낮의 햇살 아래\n걸어가");
+    assert_eq!(second["workType"], "instrumental");
+    assert!(second["attachments"].as_array().unwrap().is_empty());
 
     // Apply both, then withdraw: the works return to 'none'.
     let ids: Vec<&str> = items.iter().map(|w| w["id"].as_str().unwrap()).collect();

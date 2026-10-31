@@ -699,8 +699,12 @@ const mockApi = {
         list.forEach((c, i) => { c.share = i === list.length - 1 ? Math.round((100 - each * (list.length - 1)) * 100) / 100 : each; c.publisherShare = enroll && c.isMe ? c.share : 0; });
         d.works.unshift({
           id: `w_${uid()}`, title: t.title, altTitles: [], origin: 'own_release', externalRelease: null, workType: dt?.instrumental ? 'instrumental' : 'original', language: rel.draft?.language ?? 'ko',
-          genre: rel.draft?.genre ?? '', description: '', visibility: 'private', iswc: null, internalCode: nextCode(d), hasPriorPublisher: false, priorPublisher: null,
-          contributors: list, attachments: [], recordings: [{ id: uid(), releaseId: rel.id, trackId: t.id, title: t.title, releaseTitle: rel.title, version: t.version, isrc: t.isrc, status: rel.status }],
+          genre: rel.draft?.genreCustom?.trim() || rel.draft?.genre || '', description: '', visibility: 'private', iswc: null, internalCode: nextCode(d), hasPriorPublisher: false, priorPublisher: null,
+          // 서버와 같게 — 배급 신청서의 음원(같은 파일)·가사(본문)를 곡 자료로 붙인다. 다시 올리지 않게
+          contributors: list, attachments: [
+            ...((t.audioName || dt?.audioName) ? [{ id: uid(), kind: 'demo' as const, name: (t.audioName || dt?.audioName)!, size: dt?.audioSize || undefined, at: now, assetId: t.assetId ?? dt?.assetId ?? null }] : []),
+            ...(dt?.lyrics?.trim() && !dt.instrumental ? [{ id: uid(), kind: 'lyrics' as const, name: `${t.title} 가사 (배급 신청서)`, at: now, text: dt.lyrics }] : []),
+          ], recordings: [{ id: uid(), releaseId: rel.id, trackId: t.id, title: t.title, releaseTitle: rel.title, version: t.version, isrc: t.isrc, status: rel.status }],
           registration: enroll ? 'preparing' : 'none', registrationLog: enroll ? [{ status: 'preparing', at: now, note: '발매 신청에서 함께 신청' }] : [],
           application: null, contractId: null, fix: null, myRole: 'owner', rowVersion: 1,
           activity: [{ at: now, text: `‘${rel.title}’ 발매 신청에서 크레딧으로 만들었어요. 지분이 맞는지 확인해 주세요.`, kind: 'link', who: d.me.name }],

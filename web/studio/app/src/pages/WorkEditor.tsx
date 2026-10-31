@@ -124,7 +124,7 @@ export function WorkEditor() {
         ...(d?.lyrics?.trim() && !d.instrumental ? [{ id: uid(), kind: 'lyrics' as const, name: `${track.title} 가사 (배급 신청서)`, at: stampNow(), text: d.lyrics }] : []),
       ];
       start = {
-        ...EMPTY, origin: 'own_release', title: track.title, genre: release.draft?.genre ?? '', language: release.draft?.language ?? 'ko', attachments: fromRelease,
+        ...EMPTY, origin: 'own_release', title: track.title, genre: release.draft?.genreCustom?.trim() || release.draft?.genre || '', language: release.draft?.language ?? 'ko', attachments: fromRelease,
         workType: d?.instrumental ? 'instrumental' : 'original', contributors: [...people.values()].map(c => (c.isMe ? { ...c, confirm: 'confirmed', external: false } : c)),
       };
     } else if (pickedType) {

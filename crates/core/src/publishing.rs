@@ -1144,6 +1144,33 @@ pub struct AttachmentIn {
     pub text: Option<String>,
 }
 
+#[allow(clippy::too_many_arguments)]
+async fn attach(
+    c: &mut PgConnection,
+    org: Uuid,
+    work: Uuid,
+    user: Uuid,
+    kind: &str,
+    name: &str,
+    size: Option<i64>,
+    asset: Option<Uuid>,
+    text: Option<&str>,
+) -> Result<()> {
+    sqlx::query("INSERT INTO portal.pub_work_attachments(id,org_id,work_id,kind,name,size_bytes,asset_id,text_body,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)")
+        .bind(Uuid::new_v4())
+        .bind(org)
+        .bind(work)
+        .bind(kind)
+        .bind(name)
+        .bind(size)
+        .bind(asset)
+        .bind(text)
+        .bind(user)
+        .execute(&mut *c)
+        .await?;
+    Ok(())
+}
+
 pub async fn add_attachment(
     s: &AppState,
     a: &Actor,
@@ -1181,18 +1208,18 @@ pub async fn add_attachment(
             return Err(Error::InvalidCode("WORK_FILE_INVALID"));
         }
     }
-    sqlx::query("INSERT INTO portal.pub_work_attachments(id,org_id,work_id,kind,name,size_bytes,asset_id,text_body,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)")
-        .bind(Uuid::new_v4())
-        .bind(org)
-        .bind(id)
-        .bind(&i.kind)
-        .bind(&name)
-        .bind(i.size)
-        .bind(i.asset_id)
-        .bind(text)
-        .bind(a.user)
-        .execute(&mut *tx)
-        .await?;
+    attach(
+        &mut tx,
+        org,
+        id,
+        a.user,
+        &i.kind,
+        &name,
+        i.size,
+        i.asset_id,
+        text.as_deref(),
+    )
+    .await?;
     touch(&mut tx, id).await?;
     audit(&mut tx, a, org, id, "publishing.file_added").await?;
     let out = one(&mut tx, org, a, &role, id).await?;
@@ -1226,7 +1253,12 @@ pub async fn prepare_from_release(
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, release, "release", true).await?;
     let tracks = sqlx::query(
-        "SELECT t.id, t.title FROM catalog.tracks t
+        "SELECT t.id, t.title, t.asset_id, a.size_bytes, NULLIF(btrim(coalesce(t.lyrics,'')),'') AS lyrics,
+                -- The track's row in the release form: audio file name and the instrumental flag.
+                (SELECT d FROM jsonb_array_elements(CASE WHEN jsonb_typeof(r.draft->'draftTracks')='array' THEN r.draft->'draftTracks' ELSE '[]'::jsonb END) d
+                  WHERE d->>'serverId' = t.id::text OR d->>'id' = t.id::text LIMIT 1) AS draft_track
+           FROM catalog.tracks t JOIN catalog.releases r ON r.id=t.release_id
+           LEFT JOIN catalog.assets a ON a.id=t.asset_id
           WHERE t.org_id=$1 AND t.release_id=$2 AND t.archived_at IS NULL
             AND NOT EXISTS(SELECT 1 FROM portal.pub_work_recordings x JOIN portal.pub_works w ON w.id=x.work_id
                             WHERE x.track_id=t.id AND w.archived_at IS NULL)
@@ -1236,6 +1268,19 @@ pub async fn prepare_from_release(
     .bind(release)
     .fetch_all(&mut *tx)
     .await?;
+    // What the release form already has for the whole release — genre and language are not asked again.
+    let (genre, language): (Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT COALESCE(NULLIF(draft->>'genreCustom',''), NULLIF(draft->>'genre','')), NULLIF(draft->>'language','')
+           FROM catalog.releases WHERE org_id=$1 AND id=$2",
+    )
+    .bind(org)
+    .bind(release)
+    .fetch_one(&mut *tx)
+    .await?;
+    let genre: String = genre.unwrap_or_default().trim().chars().take(60).collect();
+    let language = language
+        .filter(|l| LANGUAGES.contains(&l.as_str()))
+        .unwrap_or_else(|| "ko".into());
     let (mut created, mut linked, mut skipped) = (0, 0, 0);
     for t in tracks {
         let track: Uuid = t.get("id");
@@ -1295,20 +1340,76 @@ pub async fn prepare_from_release(
                 }
             })
             .collect();
+        let draft: Option<Value> = t.get("draft_track");
+        let instrumental = draft
+            .as_ref()
+            .and_then(|d| d["instrumental"].as_bool())
+            .unwrap_or(false);
         let id = Uuid::new_v4();
         sqlx::query(
-            "INSERT INTO portal.pub_works(id,org_id,internal_code,title,registration,created_by,origin)
-             VALUES($1,$2,'AQW-'||lpad(nextval('portal.pub_work_code_seq')::text,6,'0'),$3,$4,$5,'own_release')",
+            "INSERT INTO portal.pub_works(id,org_id,internal_code,title,registration,created_by,origin,genre,language,work_type)
+             VALUES($1,$2,'AQW-'||lpad(nextval('portal.pub_work_code_seq')::text,6,'0'),$3,$4,$5,'own_release',$6,$7,$8)",
         )
         .bind(id)
         .bind(org)
         .bind(&title)
         .bind(if i.enroll { "preparing" } else { "none" })
         .bind(a.user)
+        .bind(&genre)
+        .bind(&language)
+        .bind(if instrumental { "instrumental" } else { "original" })
         .execute(&mut *tx)
         .await?;
         write_contributors(&mut tx, org, id, a.party, plan).await?;
         link_recording(&mut tx, org, id, release, track).await?;
+        // The audio and lyrics sent with the release are the work's files too — the artist does not upload them again.
+        if let Some(asset) = t.get::<Option<Uuid>, _>("asset_id") {
+            let name: String = draft
+                .as_ref()
+                .and_then(|d| d["audioName"].as_str())
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+                .map(String::from)
+                .unwrap_or_else(|| format!("{title} 음원"))
+                .chars()
+                .take(200)
+                .collect();
+            attach(
+                &mut tx,
+                org,
+                id,
+                a.user,
+                "demo",
+                &name,
+                t.get("size_bytes"),
+                Some(asset),
+                None,
+            )
+            .await?;
+        }
+        if let Some(text) = t
+            .get::<Option<String>, _>("lyrics")
+            .filter(|_| !instrumental)
+            && text.chars().count() <= 200_000
+            && crate::text_policy::check_multiline(&text).is_ok()
+        {
+            let name: String = format!("{title} 가사 (배급 신청서)")
+                .chars()
+                .take(200)
+                .collect();
+            attach(
+                &mut tx,
+                org,
+                id,
+                a.user,
+                "lyrics",
+                &name,
+                None,
+                None,
+                Some(&text),
+            )
+            .await?;
+        }
         created += 1;
     }
     audit(&mut tx, a, org, release, "publishing.works_prepared").await?;
