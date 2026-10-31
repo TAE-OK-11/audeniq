@@ -10,6 +10,12 @@ import { MOCK } from '../lib/mode';
 import { useToast } from './Toast';
 import { ManageHead } from './ManageHead';
 import { Badge } from '../ui';
+import { api } from '../api/client';
+import { pubApi } from '../api/publishing';
+import { draftTrackOf } from '../lib/albumPrep';
+import { writerSplit } from '../lib/publishing';
+import { useProfile } from '../store/profile';
+import { useAccount } from '../store/account';
 
 interface Share {
   id: string; name: string; email: string | null; share_bps: number;
@@ -33,6 +39,9 @@ export function SplitsCard({ releaseId, embedded = false, registerSave }: {
   registerSave?: (save: (() => Promise<boolean>) | null) => void;
 }) {
   const toast = useToast();
+  const profile = useProfile();
+  const account = useAccount();
+  const [filling, setFilling] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const [rows, setRows] = useState<Record<string, Row[]>>({});
@@ -117,6 +126,39 @@ export function SplitsCard({ releaseId, embedded = false, registerSave }: {
     }
   };
   saveRef.current = save;
+  // 작사·작곡 지분대로 — 곡 정보가 있으면 그 지분, 없으면 발매 크레딧을 고르게. 같은 이름이 이미 있으면 비율만 바꾸고,
+  // 다른 곡에 적은 이메일은 그대로 쓴다. 저장은 직접 (이메일을 확인하고)
+  const fillFromWriters = async () => {
+    setFilling(true);
+    try {
+      const [rel, works] = await Promise.all([api.getRelease(releaseId), pubApi.listWorks().catch(() => [])]);
+      const meNames = [profile.name, account.realName, rel.artist ?? ''];
+      const known = new Map<string, string>();
+      for (const list of Object.values(rows)) for (const r of list) if (r.email.trim()) known.set(r.name.trim(), r.email.trim());
+      let filled = 0;
+      const next = { ...rows };
+      for (const t of sheet.tracks) {
+        const track = rel.tracks.find(x => x.id === t.track_id);
+        const dt = track ? draftTrackOf(track, rel.draft) : undefined;
+        const work = works.find(w => w.recordings.some(r => r.trackId === t.track_id));
+        const people = writerSplit(work, { composers: track?.composers || dt?.composers, lyricists: dt?.instrumental ? '' : track?.lyricists || dt?.lyricists, arrangers: dt?.arrangers }, meNames);
+        if (!people.length) continue;
+        const list = [...(next[t.track_id] ?? [])];
+        for (const p of people) {
+          const i = list.findIndex(r => r.name.trim().replace(/\s+/g, '') === p.name.replace(/\s+/g, ''));
+          if (i >= 0) list[i] = { ...list[i], pct: String(p.pct) };
+          else if (list.length < 10) list.push({ name: p.name, email: known.get(p.name) ?? '', pct: String(p.pct) });
+          filled++;
+        }
+        next[t.track_id] = list;
+      }
+      if (!filled) { toast('크레딧에 나 말고 다른 작사·작곡자가 없어요.', 'info'); return; }
+      setRows(next);
+      setDirty(true);
+      toast('작사·작곡 지분대로 채웠어요.', { tone: 'success', sub: '이메일을 확인하고 분배 저장을 눌러 주세요' });
+    } catch (e) { toast(errorMessage(e, '크레딧을 불러오지 못했어요.'), 'error'); }
+    finally { setFilling(false); }
+  };
   const resend = async (share: string) => {
     try { await req(`${base()}/${encodeURIComponent(share)}/resend`, { method: 'POST', body: {} }); toast('수락 요청 메일을 다시 보내요.', 'success'); }
     catch (e) { toast(errorMessage(e), 'error'); }
@@ -130,6 +172,11 @@ export function SplitsCard({ releaseId, embedded = false, registerSave }: {
         수락하면 그분 계정 잔액으로 바로 정산돼요(출금·세금도 각자). 수락 전 몫은 보관했다가 수락하면 옮기고, 거절하면 내 정산으로 돌아와요.
         {sheet.editable ? ' 발매 신청을 마치면 바꿀 수 없어요.' : ''}
       </p>
+      {sheet.editable && (
+        <button type="button" className={`ui-btn is-soft is-sm aq-splits-fill${filling ? ' is-busy' : ''}`} disabled={filling} onClick={() => void fillFromWriters()}>
+          작사·작곡 지분대로 채우기
+        </button>
+      )}
       {sheet.tracks.map(t => {
         const list = rows[t.track_id] ?? [];
         const server = new Map(t.shares.map(s => [s.id, s]));

@@ -124,6 +124,12 @@ Studio: `/reports/publishing/statement?q=YYYY-Qn` prints a quarterly royalty sta
   shares on that track's works (matched by name, ignoring spaces) still to confirm. Accept or decline can carry
   `{"writer": true|false, "note"}`; the shares are confirmed or disputed and any co-writer link for them is closed.
 
+- **Missed royalties.** Home "확인할 작업" and the 곡 저작권 tab estimate what unmanaged songs on earning releases would
+  bring per quarter (`missedRoyalties`: last 3 months of report revenue per track × my share, 10–15%, less commission).
+- **Splits from writer shares.** The revenue split card fills collaborators and percentages from the work's shares
+  (or the release credits split evenly); the applicant adds emails and saves.
+- **Writer profile.** Home asks to fill the creator profile (roles, IPI) once publishing is in use; it opens the empty field.
+
 ## Stage 2 — not yet
 
 - A contributor with an AUDENIQ account answering inside the studio (`rights/confirmation` answers 501); link invites cover it.

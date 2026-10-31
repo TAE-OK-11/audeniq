@@ -1,5 +1,5 @@
 /* Publishing layout only. Cards, controls, colors and typography use Studio's shared components/tokens.
-   anchors: aq-pbl-split aq-pbl-dashboard aq-pbl-album-stats aq-pbl-wizard aq-pbl-work aq-pbl-ar-form aq-pbl-guide aq-pbl-sheet aq-pbl-diff aq-pbl-files aq-pbl-selbar aq-pbl-trackline aq-pbl-people-board aq-pbl-reuse aq-pbl-filter aq-split-writer */
+   anchors: aq-pbl-split aq-pbl-dashboard aq-pbl-album-stats aq-pbl-wizard aq-pbl-work aq-pbl-ar-form aq-pbl-guide aq-pbl-sheet aq-pbl-diff aq-pbl-files aq-pbl-selbar aq-pbl-trackline aq-pbl-people-board aq-pbl-reuse aq-pbl-filter aq-split-writer aq-pbl-missed */
 .aq-pbl-split{display:grid;gap:16px;margin:0}
 .aq-pbl-split>.ui-meter{margin-top:-8px}
 .aq-pbl-split>.ui-field-help{margin:0}
@@ -333,3 +333,7 @@
 .aq-split-writer legend{float:left;width:100%;padding:0;margin:0 0 6px;font-weight:700;font-size:16px}
 .aq-split-writer-list{margin:10px 0 6px;padding:0;list-style:none;display:grid;gap:4px}
 .aq-split-writer textarea{width:100%;margin-top:8px}
+/* 곡 저작권 탭 — 놓치고 있는 저작권료 (앨범별) */
+.aq-pbl-missed{display:grid;gap:10px}
+.aq-pbl-missed .ui-field-help{margin:0}
+.aq-pbl-missed .ui-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px}

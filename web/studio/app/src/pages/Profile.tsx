@@ -198,6 +198,8 @@ export function Profile() {
   const [showConnected, setShowConnected] = useState(false);
   const [showAi, setShowAi] = useState(false);
   const [showDev, setShowDev] = useState(false);
+  // 홈 '작가 정보 채우기'에서 왔으면 퍼블리싱 카드의 빈 칸을 바로 연다
+  const [creatorOpen, setCreatorOpen] = useState(false);
   // 홈 '확인할 작업'·왼쪽 메뉴 알림에서 바로 온 경우 — 정산 계좌 등록·본인인증 창을 곧장 연다 (주소의 ?open=은 지운다).
   // 이미 이 화면에 있을 때 눌러도 열리도록 주소가 바뀔 때마다 읽는다
   const [params, setParams] = useSearchParams();
@@ -208,6 +210,7 @@ export function Profile() {
     else if (openParam === 'verify') setAccountEdit('verify');
     else if (openParam === 'ai' && !MOCK) setShowAi(true);
     else if (openParam === 'developer' && !MOCK) setShowDev(true);
+    else if (openParam === 'creator') setCreatorOpen(true);
     setParams({}, { replace: true });
   }, [openParam, setParams]);
   // Google·Apple 연결을 마치고 돌아온 경우
@@ -293,7 +296,7 @@ export function Profile() {
       </section>
 
       {/* 퍼블리싱 — 작가로서의 정보(역할·관리 단체·IPI·소속)는 아티스트와 따로 고친다. 곡을 등록할 때 내 줄에 자동으로 들어간다 */}
-      <CreatorProfile />
+      <CreatorProfile openEmpty={creatorOpen} onOpened={() => setCreatorOpen(false)} />
 
       <section className="aq-set-card" aria-labelledby="setPayout">
         <h2 id="setPayout">수익 받기</h2>

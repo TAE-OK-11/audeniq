@@ -159,3 +159,34 @@ describe('녹음 수익과 예상 저작권료', () => {
     expect(estimateRoyalty(0, 100, 10)).toEqual([0, 0]);
   });
 });
+
+describe('놓치는 저작권료 · 지분대로 수익 분배', () => {
+  const me = (share: number) => ({ id: 'c1', creatorId: 'me', name: '서린', roles: ['composer'], society: null, ipi: null, share, publisherShare: 0, confirm: 'confirmed', external: false, isMe: true }) as WorkContributor;
+  const other = (name: string, share: number) => ({ ...me(share), id: name, name, isMe: false, creatorId: null }) as WorkContributor;
+  it('관리 안 된 곡 몫만 예상 저작권료로 — 관리 중인 곡과 수익 없는 발매는 빼고, 곡 정보가 있으면 내 지분만큼', async () => {
+    const { missedRoyalties } = await import('./publishing');
+    const rows = [
+      { period: '2026-07', release: 'A', releaseId: 'r1', revenue: 100000 },
+      { period: '2026-08', release: 'A', releaseId: 'r1', revenue: 100000 },
+      { period: '2026-08', release: 'B', releaseId: 'r2', revenue: 50000 },
+      { period: '2026-06', release: 'B', releaseId: 'r2', revenue: 0 },
+      { period: '2026-01', release: 'A', releaseId: 'r1', revenue: 999999 },
+    ];
+    const works = [
+      { registration: 'registered', contractId: 'k', application: null, recordings: [{ releaseId: 'r2' }], contributors: [me(100)] },
+      { registration: 'none', contractId: null, application: null, recordings: [{ releaseId: 'r1' }], contributors: [me(50), other('김하늘', 50)] },
+    ] as unknown as Work[];
+    const out = missedRoyalties([{ id: 'r1', title: 'A', track_count: 2 }, { id: 'r2', title: 'B', track_count: 1 }, { id: 'r3', title: 'C', track_count: 3 }], works, rows, 10);
+    // r1: 최근 3개월 200,000 → 곡당 100,000 · 곡 정보 없는 곡 100% + 내 지분 50% = 150,000 → 10~15% · 수수료 10%
+    expect(out.items).toEqual([{ releaseId: 'r1', title: 'A', songs: 2, low: 13500, high: 20200 }]);
+    expect(out.songs).toBe(2);
+  });
+  it('곡 정보가 있으면 그 지분, 없으면 크레딧을 고르게 — 나는 빼고', async () => {
+    const { writerSplit } = await import('./publishing');
+    expect(writerSplit({ contributors: [me(60), other('김하늘', 40)] }, {}, ['서린'])).toEqual([{ name: '김하늘', pct: 40 }]);
+    expect(writerSplit(undefined, { composers: '서린, 김하늘', lyricists: '박도윤', arrangers: '김 하늘' }, ['서린'])).toEqual([
+      { name: '김하늘', pct: 33.33 }, { name: '박도윤', pct: 33.34 },
+    ]);
+    expect(writerSplit(undefined, { composers: '' }, ['서린'])).toEqual([]);
+  });
+});

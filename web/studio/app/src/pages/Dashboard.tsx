@@ -35,6 +35,7 @@ import type { NewsItem } from '../lib/home';
 import { MOCK } from '../lib/mode';
 import type { Release } from '../api/types';
 import { pubApi } from '../api/publishing';
+import { missedRoyalties, societyName } from '../lib/publishing';
 import { MiniTrend } from '../components/MiniTrend';
 import '../styles/split/Dashboard.css';
 
@@ -303,6 +304,11 @@ export function Dashboard() {
   const { data: pub } = useAsync(() => pubApi.summary(), [], { key: 'pub-summary' });
   const pubActive = !!pub && (pub.enrolled || pub.works.total > 0);
   const pubRevenue = pub?.revenue.publishing.confirmed ?? 0;
+  // 배급 수익이 나는데 저작권 관리가 안 된 곡 — 맡기면 받을 예상 저작권료 (리포트 · 곡 정보 · 수수료로 계산)
+  const { data: pubWorks } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
+  const { data: pubPolicy } = useAsync(() => pubApi.policy(), [], { key: 'pub-policy' });
+  const { data: me } = useAsync(() => pubApi.myCreator(), [], { key: 'my-creator' });
+  const missed = !loading && pub && pubWorks && pubPolicy ? missedRoyalties(releases, pubWorks, reportRows, pubPolicy.commissionRate) : null;
   // 나중에 불러온 카드도 같은 등장 연출로 — 카드가 생기면 다시 맡긴다
 
   const needs = releases.filter(r => r.status === 'needs').length;
@@ -355,8 +361,25 @@ export function Dashboard() {
       btn: t.kind === 'fix' ? '보완' : t.kind === 'sign' ? '서명' : t.kind === 'renew' ? '갱신' : '확인', to: t.to, tone: t.kind === 'fix' ? 'warn' : 'info',
     });
   }
+  // 놓치고 있는 저작권료 — 곡 하나 제안보다 먼저 (얼마를 더 받을 수 있는지가 보인다)
+  if (missed?.items.length) {
+    const one = missed.items.length === 1 ? missed.items[0] : undefined;
+    tasks.push({
+      icon: 'won', name: `저작권료를 놓치고 있는 곡 ${missed.songs}곡`,
+      sub: `${one ? `‘${one.title}’ ` : ''}작사·작곡 저작권을 맡기면 분기마다 약 ${money(missed.low)}~${money(missed.high)}을 더 받을 수 있어요.`,
+      btn: '맡기기', to: one ? `/releases/${encodeURIComponent(one.releaseId)}?tab=publishing` : '/releases?tab=works', tone: 'info',
+    });
+  }
+  // 작가 정보(역할·IPI)는 한 번 적어 두면 모든 곡의 내 줄에 들어간다 — 퍼블리싱을 쓰기 시작했는데 비어 있으면
+  if (pubActive && me && (!me.roles.length || (me.society && !me.ipi))) {
+    tasks.push({
+      icon: 'user', name: '작가 정보 채우기',
+      sub: me.roles.length ? `${societyName(me.society)} IPI 번호를 적어 두면 앞으로 모든 곡에 자동으로 들어가요.` : '작곡·작사 같은 역할과 관리 단체를 한 번만 적어 두면 앞으로 모든 곡에 자동으로 들어가요.',
+      btn: '채우기', to: '/profile?open=creator', tone: 'info',
+    });
+  }
   // 아직 저작권 관리를 쓰지 않으면 곡이 없는 발매 곡 하나만 제안 — 할 일 목록의 한 줄로
-  if (!pubActive && pub?.suggestion) {
+  if (!pubActive && pub?.suggestion && !missed?.items.length) {
     const sg = pub.suggestion;
     tasks.push({ icon: 'scale', name: `‘${sg.title}’ 저작권도 관리할까요?`, sub: `‘${sg.releaseTitle}’ 곡의 작사·작곡 지분을 정리하면 저작권료까지 받을 수 있어요.`, btn: '시작', to: `/works/new?release=${encodeURIComponent(sg.releaseId)}&track=${encodeURIComponent(sg.trackId)}`, tone: 'info' });
   }
