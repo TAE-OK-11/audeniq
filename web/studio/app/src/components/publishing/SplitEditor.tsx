@@ -108,7 +108,7 @@ function ReuseFrom({ works, value, onChange }: { works: readonly Work[]; value: 
   );
 }
 
-export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSimulate, showErrors = false, reuse, focusId }: {
+export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSimulate, showErrors = false, reuse, focusId, quiet = false }: {
   value: WorkContributor[];
   onChange: (next: WorkContributor[]) => void;
   readOnly?: boolean;
@@ -120,6 +120,8 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
   reuse?: readonly Work[];
   /** 이 참여자 줄을 펼치고 그 칸으로 (준비 점검에서 눌러 들어왔을 때) */
   focusId?: string;
+  /** 읽기 화면에서 카드 머리가 이미 합계를 한 문장으로 말하면 큰 합계 줄은 그리지 않는다 */
+  quiet?: boolean;
 }) {
   const total = sumShares(value);
   const issues = splitIssues(value);
@@ -164,10 +166,10 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
 
   return (
     <div className="aq-pbl-split">
-      <div className="aq-pbl-split-total" aria-live="polite">
+      {!(quiet && readOnly) && <div className="aq-pbl-split-total" aria-live="polite">
         <span>창작 지분 합계 <strong className={total > 100 ? 'aq-danger-text' : ''}>{pct(total)} <small>/ 100%</small></strong></span>
         {!readOnly && value.length > 1 && <button type="button" className="ui-btn is-soft is-sm" onClick={even}>균등 분배</button>}
-      </div>
+      </div>}
       <SplitBar list={value} />
       {!readOnly && total < 100 && <p className="ui-field-help">남은 {pct(rest)}를 참여자에게 나눠 주세요. 미완성 정보도 저장할 수 있어요.</p>}
       {!readOnly && imported && <p className="ui-field-help aq-pbl-import-note"><Glyph name="info" size={14} />가져온 참여자의 지분은 비어 있어요. 이번 곡의 몫을 직접 확인해서 적어 주세요.</p>}

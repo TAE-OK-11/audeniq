@@ -13,7 +13,7 @@ import { useAsync } from '../hooks/useAsync';
 import { MOCK } from '../lib/mode';
 import { FIX_FIELDS, LANGUAGES, fixNote, isFixField, type FixField, REG_LABEL, REG_SENTENCE, REG_STEPS, WORK_TYPES, AI_USE_OPTIONS, APPLICABLE_REG, PAYOUT_TIMING, estimateRoyalty, firstRoyaltyWindow, recordedRevenue, canEditInfo, editMode, pct, regStep, splitIssues, splitReady, workOrigin } from '../lib/publishing';
 import { StageCard } from '../components/StageCard';
-import { STATUS_LABEL, localStamp, money, statusTone } from '../lib/format';
+import { STATUS_LABEL, localStamp, money } from '../lib/format';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { Modal } from '../components/Modal';
@@ -24,10 +24,10 @@ import { Glyph } from '../components/Glyph';
 import { roleText } from '../components/publishing/parts';
 import { SplitEditor } from '../components/publishing/SplitEditor';
 import { RoyaltyTable } from '../components/publishing/Royalties';
-import { ApplicationCard, ContractCard, RightsInfoCard, RoyaltyInCard, SocietiesCard } from '../components/publishing/WorkRightsCards';
+import { ApplicationCard, ContractCard, InfoRow, RightsInfoCard, RoyaltyInCard, SocietiesCard } from '../components/publishing/WorkRightsCards';
 import { AttachmentList, AttachmentModal } from '../components/publishing/Attachments';
 import { InviteModal } from '../components/publishing/InviteModal';
-import { Badge, Callout, EmptyState, KeyValue, Segmented, StatGrid, StatTile, Tabs } from '../ui';
+import { Badge, Callout, EmptyState, Segmented, StatGrid, StatTile, Tabs } from '../ui';
 import { SplitDiffList } from '../components/publishing/WorkSheet';
 import { changeNeedsReview, mergeIntoMe, penAsOthers, reusableWorks, signing, splitDiff } from '../lib/publishingPrep';
 import { Money } from '../components/Money';
@@ -396,28 +396,31 @@ export function WorkDetail() {
                 </Callout>
               );
             })()}
-            <div className="aq-relinfo-card">
-              <h2 className="subhead">곡 정보</h2>
-              <KeyValue cols={2} items={[
-                ['곡 유형', label(WORK_TYPES, w.workType)],
-                ['주요 언어', label(LANGUAGES, w.language)],
-                ['장르', w.genre ? genreLabel(w.genre) : <Empty>입력 전</Empty>],
-                ['공개 범위', w.visibility === 'shared' ? '참여자에게 공개' : '비공개'],
-                ['ISWC', w.iswc ?? <Empty>{`발급 전 · ${w.internalCode}`}</Empty>],
-                ['기존 퍼블리셔', w.hasPriorPublisher ? (w.priorPublisher || '있음') : '없음'],
-                ['AI 사용', AI_USE_OPTIONS.find(x => x[0] === (w.aiUse ?? 'none'))?.[1] ?? 'AI 없음'],
-                ...(w.originalWork ? [['원곡', `${w.originalWork.title}${w.originalWork.writers ? ` · ${w.originalWork.writers}` : ''}${w.originalWork.permission ? ' · 허락 받음' : ' · 허락 확인 전'}`] as [string, string]] : []),
-                ...(w.samples?.length ? [['샘플·인용', w.samples.map(x => `${x.title}${x.artist ? `(${x.artist})` : ''}`).join(', ')] as [string, string]] : []),
-                ...(w.hasPriorPublisher && w.priorPublisherUntil ? [['기존 계약 종료', w.priorPublisherUntil] as [string, string]] : []),
-                ['내 역할', me ? `${roleText(me)} · ${pct(me.share)}${me.penName ? ` · 필명 ‘${me.name}’` : ''}` : <Empty>참여하지 않음</Empty>],
-                ['창작을 마친 날', w.createdOn ?? <Empty>입력 전</Empty>],
-                ...(w.societyCode ? [['관리 단체 작품 코드', w.societyCode] as [string, string]] : []),
-                ['발매', origin === 'other_release' ? `${w.externalRelease?.artist ?? '다른 아티스트'} 발매` : w.recordings.length ? `녹음 ${w.recordings.length}개` : <Empty>발매 전</Empty>],
-              ]} />
-              {w.altTitles.length > 0 && <KeyValue items={[[ '대체 제목', w.altTitles.join(' · ') ]]} />}
-              {w.description && <><h2 className="subhead">곡 설명</h2><p className="muted small break">{w.description}</p></>}
-              {w.creationNote && <><h2 className="subhead">만든 과정</h2><p className="muted small break" style={{ whiteSpace: 'pre-line' }}>{w.creationNote}</p></>}
-            </div>
+            {/* 곡 정보 — 다른 카드·탭에 있는 것(ISWC·내 역할·발매)은 빼고, 이 곡이 어떤 곡인지만 한 줄씩 */}
+            <section className="aq-relinfo-card aq-pbl-ccard" aria-labelledby="wiInfo">
+              <p className="aq-pbl-ccard-cap" id="wiInfo">곡 정보</p>
+              <h2 className="aq-pbl-ccard-title">{[label(WORK_TYPES, w.workType), w.genre && genreLabel(w.genre), label(LANGUAGES, w.language)].filter(Boolean).join(' · ')}</h2>
+              {w.description && <p className="aq-pbl-ccard-lead break">{w.description}</p>}
+              <ul className="aq-pbl-kvs">
+                {w.altTitles.length > 0 && <InfoRow k="다른 제목" v={w.altTitles.join(' · ')} />}
+                <InfoRow k="공개 범위" v={w.visibility === 'shared' ? '참여자에게 공개' : '비공개'} />
+                <InfoRow k="기존 퍼블리셔" v={w.hasPriorPublisher ? `${w.priorPublisher || '있음'}${w.priorPublisherUntil ? ` · ${w.priorPublisherUntil}까지` : ''}` : '없음'} />
+                {w.originalWork && <InfoRow k="원곡" v={`${w.originalWork.title}${w.originalWork.permission ? ' · 허락 받음' : ' · 허락 확인 전'}`} />}
+                {!!w.samples?.length && <InfoRow k="샘플·인용" v={w.samples.map(x => x.title).join(', ')} />}
+              </ul>
+            </section>
+            {/* 창작 기록 — 언제·어떻게 만들었는지 (내가 만든 곡이라는 근거) */}
+            <section className="aq-relinfo-card aq-pbl-ccard" aria-labelledby="wiMade">
+              <p className="aq-pbl-ccard-cap" id="wiMade">창작 기록</p>
+              <h2 className="aq-pbl-ccard-title">{w.createdOn ? `${w.createdOn.slice(0, 4)}년 ${Number(w.createdOn.slice(5, 7))}월에 만들었어요` : '언제 만들었는지 적어 두세요'}</h2>
+              {w.creationNote ? <p className="aq-pbl-ccard-lead" style={{ whiteSpace: 'pre-line' }}>{w.creationNote}</p>
+                : <p className="aq-pbl-ccard-lead">만든 날과 과정을 남겨 두면 다른 사람이 같은 곡을 주장할 때 근거가 돼요.</p>}
+              <ul className="aq-pbl-kvs">
+                <InfoRow k="창작을 마친 날" v={w.createdOn ?? <Empty>입력 전</Empty>} />
+                <InfoRow k="AI 사용" v={AI_USE_OPTIONS.find(x => x[0] === (w.aiUse ?? 'none'))?.[1] ?? 'AI 없음'} />
+                {canEdit && <li><Link to={`/works/${encodeURIComponent(w.id)}/edit`} className="aq-pbl-kv is-link"><span>창작 기록 고치기</span><b className="aq-pbl-ccard-go">고치기<Glyph name="chevron-right" size={15} /></b></Link></li>}
+              </ul>
+            </section>
           </div>
         )}
 
@@ -433,13 +436,19 @@ export function WorkDetail() {
                 {me.confirm === 'disputed' ? '변경을 요청했어요. 곡 소유자가 지분을 다시 나누면 알려 드려요.' : <>이 곡에서 내 몫은 <b>{pct(me.share)}</b>({roleText(me)})예요. 맞나요?</>}
               </Callout>
             )}
-            <div className="aq-relinfo-card">
-              <div className="ui-section-head">
-                <h2 className="subhead">참여자·지분</h2>
-                {/* 함께 쓴 곡이면 지분으로 공동 작곡 합의서를 바로 — 따로 서류를 만들지 않게 */}
-                {w.contributors.length > 1 && !splitDraft && <Link to={`/works/${w.id}/split-sheet`} className="ui-btn is-text is-sm">합의서 만들기</Link>}
-                {canEdit && !splitDraft && mode !== 'locked' && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setSplitDraft(structuredClone(w.pendingChange?.contributors ?? w.contributors))}>{w.pendingChange ? '변경값 고치기' : '지분 고치기'}</button>}
-              </div>
+            {/* 참여자·지분 — 다른 카드처럼 작은 제목 · 상태 한 문장 · 사람 줄 · 할 일 줄 */}
+            <div className="aq-relinfo-card aq-pbl-ccard">
+              <p className="aq-pbl-ccard-cap">참여자·지분</p>
+              {!splitDraft && (() => {
+                const total = w.contributors.reduce((n, c) => n + c.share, 0);
+                const waiting = w.contributors.filter(c => !c.isMe && c.confirm === 'pending').length;
+                const disputed = w.contributors.some(c => c.confirm === 'disputed');
+                return <h2 className="aq-pbl-ccard-title">{!w.contributors.length ? '참여자를 아직 적지 않았어요'
+                  : Math.round(total * 100) !== 10000 ? `지분 합계가 ${pct(total)}예요. 100%로 맞춰 주세요`
+                  : disputed ? '지분이 다르다는 의견이 있어요'
+                  : waiting ? `${waiting}명이 확인을 기다리고 있어요`
+                  : w.contributors.length > 1 ? `${w.contributors.length}명이 나눈 지분을 모두 확인했어요` : '혼자 만든 곡이에요'}</h2>;
+              })()}
               {/* 지난 변경 요청에 담당자가 한 답 — 반려면 사유를 그대로 */}
               {!w.pendingChange && w.changeDecision && (
                 w.changeDecision.outcome === 'rejected'
@@ -472,9 +481,17 @@ export function WorkDetail() {
                     ‘{c.name}’은(는) 내 필명이에요. 다른 사람으로 들어가 있어 지분 확인을 기다리고 있어요.
                   </Callout>
                 ))}
-                <SplitEditor value={w.pendingChange && splitView === 'pending' ? w.pendingChange.contributors : w.contributors} onChange={() => {}} readOnly
+                <SplitEditor quiet value={w.pendingChange && splitView === 'pending' ? w.pendingChange.contributors : w.contributors} onChange={() => {}} readOnly
                   onRequestConfirm={canEdit ? list => setInviting(list) : undefined}
                   onSimulate={MOCK && canEdit ? c => void pubApi.simulateConfirm(w.id, c.id).then(update) : undefined} />
+                {/* 할 일은 아래 줄로 — 머리에 버튼 두 개가 붙어 있으면 제목이 밀리고 복잡했다 */}
+                {((canEdit && mode !== 'locked') || w.contributors.length > 1) && (
+                  <ul className="aq-pbl-kvs">
+                    {canEdit && mode !== 'locked' && <li><button type="button" className="aq-pbl-kv is-link" onClick={() => setSplitDraft(structuredClone(w.pendingChange?.contributors ?? w.contributors))}><span>{w.pendingChange ? '변경값 고치기' : '지분 고치기'}</span><b className="aq-pbl-ccard-go">고치기<Glyph name="chevron-right" size={15} /></b></button></li>}
+                    {/* 함께 쓴 곡이면 지분으로 공동 작곡 합의서를 바로 — 따로 서류를 만들지 않게 */}
+                    {w.contributors.length > 1 && <li><Link to={`/works/${w.id}/split-sheet`} className="aq-pbl-kv is-link"><span>공동 작곡 합의서</span><b className="aq-pbl-ccard-go">만들기<Glyph name="chevron-right" size={15} /></b></Link></li>}
+                  </ul>
+                )}
                 </>
               )}
             </div>
@@ -498,42 +515,39 @@ export function WorkDetail() {
         )}
 
         {view === 'overview' && (
-          <div className="aq-relinfo-card" id="workRecordings">
-            <div className="ui-section-head">
-              <h2 className="subhead">{origin === 'other_release' ? '발매 정보' : '연결된 녹음·발매'}</h2>
-              {canEdit && origin !== 'other_release' && w.recordings.length > 0 && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setLinking(true)}>녹음 연결</button>}
-            </div>
+          <div className="aq-relinfo-card aq-pbl-ccard" id="workRecordings">
+            <p className="aq-pbl-ccard-cap">{origin === 'other_release' ? '발매 정보' : '연결된 녹음'}</p>
+            <h2 className="aq-pbl-ccard-title">{origin === 'other_release' ? `${w.externalRelease?.artist ?? '다른 아티스트'}이(가) 발매한 곡이에요` : w.recordings.length ? `녹음 ${w.recordings.length}개에 실렸어요` : '아직 발매 전이에요'}</h2>
             {/* 다른 아티스트가 낸 발매는 AUDENIQ 카탈로그에 없다 — 곡을 등록할 때 적은 발매 정보를 그대로 보여 준다 */}
             {origin === 'other_release' && w.externalRelease && (
-              <KeyValue cols={2} items={[
-                ['발매 아티스트', w.externalRelease.artist],
-                ['발매 제목', w.externalRelease.title],
-                ['발매일', w.externalRelease.releaseDate || <Empty>모름</Empty>],
-                ['ISRC', w.externalRelease.isrc || <Empty>모름</Empty>],
-                ['레이블·유통사', w.externalRelease.label || <Empty>모름</Empty>],
-              ]} />
+              <ul className="aq-pbl-kvs">
+                <InfoRow k="발매 제목" v={w.externalRelease.title} />
+                <InfoRow k="발매일" v={w.externalRelease.releaseDate || <Empty>모름</Empty>} />
+                <InfoRow k="ISRC" v={w.externalRelease.isrc || <Empty>모름</Empty>} />
+                {w.externalRelease.label && <InfoRow k="레이블·유통사" v={w.externalRelease.label} />}
+              </ul>
             )}
             {w.recordings.length ? (
               <div className="ui-list aq-stagger">
                 {w.recordings.map(r => (
-                  <div key={r.id} className="ui-row">
+                  // 커버 · 제목(발매 · 상태 · ISRC) · 풀기 — 배지와 버튼을 오른쪽에 함께 두면 제목이 글자마다 줄바꿈됐다
+                  <div key={r.id} className="ui-row aq-pbl-rec">
                     <ReleaseCover id={r.releaseId} />
                     <Link to={`/releases/${r.releaseId}?track=${encodeURIComponent(r.trackId)}`} className="min-0">
                       <span className="ui-row-title">{r.title}{r.version && ` (${r.version})`}</span>
-                      <span className="ui-row-meta"><span>{r.releaseTitle}</span><span>{r.isrc ?? 'ISRC 발급 전'}</span></span>
+                      <span className="ui-row-meta"><span>{r.releaseTitle}</span>{r.status && <span>{STATUS_LABEL[r.status] ?? r.status}</span>}<span className="aq-nowrap">{r.isrc ?? 'ISRC 발급 전'}</span></span>
                     </Link>
-                    <span className="ui-row-end">
-                      {r.status && <Badge tone={statusTone(r.status)}>{STATUS_LABEL[r.status] ?? r.status}</Badge>}
-                      {canEdit && <button type="button" className="ui-btn is-text is-sm" onClick={() => void unlink(r.id, r.title)}>연결 풀기</button>}
-                    </span>
+                    {canEdit && <button type="button" className="ui-btn is-text is-sm aq-pbl-rec-off" onClick={() => void unlink(r.id, r.title)}>풀기</button>}
                   </div>
                 ))}
               </div>
             ) : origin !== 'other_release' && (
-              <div className="empty-note">
-                아직 발매 전이에요. 발매되면 저작권 관리를 신청할 수 있어요.<br />다른 아티스트가 냈다면 ‘정보 고치기’에서 발매 정보를 적어 주세요.<br />
-                {canEdit && <button type="button" className="ui-btn is-white is-sm" onClick={() => setLinking(true)}>발매 곡 연결 <Glyph name="chevron-right" size={13} /></button>}
-              </div>
+              <p className="aq-pbl-ccard-lead">발매되면 저작권 관리를 신청할 수 있어요. 다른 아티스트가 냈다면 ‘정보 고치기’에서 발매 정보를 적어 주세요.</p>
+            )}
+            {canEdit && origin !== 'other_release' && (
+              <ul className="aq-pbl-kvs">
+                <li><button type="button" className="aq-pbl-kv is-link" onClick={() => setLinking(true)}><span>{w.recordings.length ? '다른 녹음 연결' : '발매 곡 연결'}</span><b className="aq-pbl-ccard-go">연결<Glyph name="chevron-right" size={15} /></b></button></li>
+              </ul>
             )}
             {inviting && <InviteModal work={w} people={inviting} onClose={() => setInviting(null)} onDone={reload} />}
             {linking && <LinkRecordingModal work={w} onClose={() => setLinking(false)} onLinked={update} />}
@@ -570,12 +584,15 @@ export function WorkDetail() {
 
         {view === 'overview' && (
           <div className="aq-detail-stack">
-            <div className="aq-relinfo-card" id="workFiles">
-              <div className="ui-section-head">
-                <h2 className="subhead">자료</h2>
-                {canEdit && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setAttaching(true)}><Glyph name="clip" size={14} className="aq-glyph-lead" />자료 첨부</button>}
-              </div>
-              <AttachmentList items={w.attachments} />
+            <div className="aq-relinfo-card aq-pbl-ccard" id="workFiles">
+              <p className="aq-pbl-ccard-cap">자료</p>
+              <h2 className="aq-pbl-ccard-title">{w.attachments.length ? `자료 ${w.attachments.length}개를 모아 뒀어요` : '아직 올린 자료가 없어요'}</h2>
+              <AttachmentList items={w.attachments} empty="데모·가사·악보·작업 파일·합의서를 올려 두면 내가 만든 곡이라는 근거가 돼요." />
+              {canEdit && (
+                <ul className="aq-pbl-kvs">
+                  <li><button type="button" className="aq-pbl-kv is-link" onClick={() => setAttaching(true)}><span>자료 올리기</span><b className="aq-pbl-ccard-go">올리기<Glyph name="chevron-right" size={15} /></b></button></li>
+                </ul>
+              )}
             </div>
             {w.myRole === 'owner' && (!app || app.status === 'withdrawn') && (
               <div className="row-actions"><button type="button" className="ui-btn is-text is-sm aq-danger-text" onClick={() => void remove()}>이 곡 지우기</button></div>
