@@ -56,7 +56,8 @@ export function Contracts() {
 
   const openSignature = () => {
     if (!openDoc) return;
-    // 라이브 openSignatureFlow(c, readOnly): 미승인 문서는 절차 확인 모드
+    // 배급 계약서는 계약서 화면 안에서 확인하고 서명한다 (따로 뜨는 서명 창 대신) — 그 밖의 서류는 서명 창으로
+    if (openDoc.kind === 'agreements') { nav(`/contracts/${encodeURIComponent(openDoc.id)}?sign=1`); return; }
     setSigning(true);
   };
 

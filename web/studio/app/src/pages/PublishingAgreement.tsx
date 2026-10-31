@@ -141,7 +141,7 @@ export function PublishingAgreement() {
               ))}
             </ol>
           ) : (
-            <div className="aq-pbl-sign">
+            <div className="aq-doc-sign">
               <div className="aq-agree-box">
                 <label className="ui-check is-plain aq-agree-all-line">
                   <input type="checkbox" checked={all} onChange={e => setTicked(e.target.checked ? items.map(([k]) => k) : [])} />

@@ -1,21 +1,30 @@
-// 배급 계약서 최종본 (/contracts/:id) — 서버가 만든 계약서 본문을 신청서와 같은 정식 서류로 보여 주고 인쇄·PDF로 저장한다.
-import { useEffect, useMemo, useState } from 'react';
+// 배급 계약서 (/contracts/:id) — 서버가 만든 계약서 본문을 신청서와 같은 정식 서류로 보여 주고 인쇄·PDF로 저장한다.
+// 서명도 이 화면에서 — 저작권 관리 계약서와 같은 틀: 위 '서명 전' 안내 → 본문 → '계약 확인'(확인 항목 체크 · 서명자 · 손 서명) → 서명란.
+// 따로 뜨는 서명 창을 거치지 않는다 (?sign=1로 들어오면 '계약 확인'으로 바로 내려간다)
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { printWithStamp } from '../lib/printStamp';
-import { Link, useNavigate, useParams } from '../lib/router';
-import { useDocs, setDocs, docState, docBadgeTone } from '../store/docs';
+import { Link, useNavigate, useParams, useSearchParams } from '../lib/router';
+import { useDocs, setDocs, docState, docBadgeTone, updateDoc } from '../store/docs';
 import { Badge } from '../ui';
-import { fetchDocuments } from '../api/portal';
+import { checkDocument, fetchDocuments, signDocument } from '../api/portal';
 import { MOCK } from '../lib/mode';
 import { errorMessage } from '../api/errors';
-import { localStamp } from '../lib/format';
-import { parseStamp } from '../lib/date';
-import { hashLabel } from '../lib/application';
+import { localStamp, stripSampleSuffix } from '../lib/format';
+import { parseStamp, stampNow } from '../lib/date';
+import { compactSignature, hashLabel } from '../lib/application';
 import { SkeletonBlock } from '../components/Skeleton';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
 import { parseAgreement, type Block } from '../lib/agreementDoc';
 import { COMPANY, companyRows, companySeal } from '../lib/company';
 import { useProfile } from '../store/profile';
+import { useAccount } from '../store/account';
+import { uid } from '../lib/store';
+import { pushNotice } from '../store/support';
+import { refreshDocs } from '../store/portalSync';
+import { useToast } from '../components/Toast';
+import { SignaturePad, type SignaturePadHandle } from '../components/SignaturePad';
+import '../styles/split/Upload.css';
 
 function longDate(stamp: string): string {
   const d = parseStamp(stamp);
@@ -27,6 +36,16 @@ export function Agreement() {
   const nav = useNavigate();
   const doc = useDocs().find(d => d.id === id && d.kind === 'agreements');
   const profile = useProfile();
+  const account = useAccount();
+  const toast = useToast();
+  const [params, setParams] = useSearchParams();
+  const signRef = useRef<HTMLElement>(null);
+  const pad = useRef<SignaturePadHandle>(null);
+  const [ticked, setTicked] = useState<string[]>([]);
+  const [drawn, setDrawn] = useState(false);
+  const [busy, setBusy] = useState(false);
+  // 서명자 — 본인인증 실명이 있으면 그것, 없으면 활동명 (레이블·법인은 고쳐 적는다)
+  const [signer, setSigner] = useState('');
   const [loading, setLoading] = useState(!MOCK);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -38,6 +57,15 @@ export function Agreement() {
     return () => { live = false; };
   }, [id]);
   const parsed = useMemo(() => parseAgreement(doc?.content ?? ''), [doc?.content]);
+  useEffect(() => { setSigner(s => s || doc?.signerName || (account.verified ? account.realName.trim() : '') || profile.name.trim()); }, [doc?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 계약서 목록·발매 상세의 '확인하고 서명'에서 왔으면 '계약 확인'으로 바로
+  const wantSign = params.get('sign') === '1';
+  useEffect(() => {
+    if (!wantSign || !doc) return;
+    const t = window.setTimeout(() => signRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+    setParams({}, { replace: true });
+    return () => window.clearTimeout(t);
+  }, [wantSign, doc?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading && !doc) return <div className="view aq-doc-view"><SkeletonBlock height={640} /></div>;
   if (error || !doc) {
@@ -51,6 +79,41 @@ export function Agreement() {
   }
 
   const signed = !!doc.localSignatureAt;
+  const canSign = !signed && doc.reviewStatus === 'approved';
+  // 계약서 별첨의 확인 항목 — 없는 계약서(예전 양식)는 '내용을 읽었다'는 한 줄만 체크한다 (서버에는 보내지 않는다)
+  const termBoxes = doc.agreementTerms?.confirmations ?? [];
+  const boxes = termBoxes.length ? termBoxes : [{ id: '__read', text: '계약서 내용을 모두 읽고 확인했어요.', required: true }];
+  const all = boxes.every(b => ticked.includes(b.id));
+  const toggle = (k: string) => setTicked(t => (t.includes(k) ? t.filter(x => x !== k) : [...t, k]));
+  const sign = async () => {
+    if (busy || !all || !drawn || !signer.trim()) return;
+    setBusy(true);
+    try {
+      const data = pad.current?.toDataURL() ?? '';
+      if (MOCK) {
+        const at = stampNow();
+        updateDoc(doc.id, {
+          ...(termBoxes.length ? { confirmations: { items: termBoxes.map(b => ({ ...b, checked: ticked.includes(b.id) })), content_hash: '' } } : {}),
+          signerName: signer.trim(), localSignatureData: data, localSignatureAt: at,
+          reviewHistory: [...doc.reviewHistory, { status: '계약 체결', time: at, detail: '확인 항목을 체크하고 서명했어요' }],
+        });
+        pushNotice({
+          id: uid('n'), kind: '서류', time: at, link: `/contracts/${doc.id}`,
+          title: `${stripSampleSuffix(doc.releaseTitle || doc.title)} 계약서에 서명했어요.`,
+          detail: '계약서 사본은 계약서 메뉴에서 언제든 볼 수 있어요.',
+        });
+      } else {
+        // 확인 기록은 여러 번 해도 같고 서버의 지금 문서 버전을 돌려준다 — 화면을 연 뒤 조건이 바뀌어도 옛 버전으로 거절되지 않게
+        const rv = await checkDocument(doc.id);
+        const compact = await compactSignature(data);
+        await signDocument(doc.id, signer.trim(), compact || data, rv, termBoxes.filter(b => ticked.includes(b.id)).map(b => b.id));
+        await refreshDocs();
+      }
+      toast('계약을 맺었어요. 발매일에 맞춰 배급을 시작해요.', 'success');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (e) { toast(errorMessage(e, '서명하지 못했어요. 다시 시도해 주세요.'), 'error'); }
+    finally { setBusy(false); }
+  };
   const terms = doc.agreementTerms;
   const checked = (text: string) => doc.confirmations?.items.find(i => i.text === text)?.checked;
   const docNo = `AUD-DIST-${doc.id.replace(/[^0-9a-z]/gi, '').slice(0, 8).toUpperCase()}`;
@@ -109,7 +172,7 @@ export function Agreement() {
             <strong>{doc.reviewStatus === 'approved' ? '서명 전 계약서예요.' : '담당자 검토 중인 계약서예요.'}</strong>
             <span>{doc.reviewStatus === 'approved' ? '내용을 읽고 권리 확인 항목에 체크한 뒤 서명하면 계약이 체결돼요.' : '검토가 끝나면 계약 조건이 확정되고 서명할 수 있어요.'}</span>
           </div>
-          {doc.reviewStatus === 'approved' && <button type="button" className="ui-btn is-primary" onClick={() => nav(`/contracts?doc=${encodeURIComponent(doc.id)}`)}>확인하고 서명</button>}
+          {canSign && <button type="button" className="ui-btn is-primary" onClick={() => signRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>확인하고 서명</button>}
         </div>
       )}
 
@@ -141,6 +204,40 @@ export function Agreement() {
             {renderBlocks(a.blocks)}
           </section>
         ))}
+
+        {/* 계약 확인 — 저작권 관리 계약서와 같은 칸: 확인 항목 모두 체크 → 서명자 → 손 서명 → 서명하고 계약 맺기 */}
+        {canSign && (
+          <section className="aq-paper-sec aq-doc-sign-sec" ref={signRef}>
+            <h2>계약 확인</h2>
+            <div className="aq-doc-sign">
+              {(
+                <div className="aq-agree-box">
+                  <label className="ui-check is-plain aq-agree-all-line">
+                    <input type="checkbox" checked={all} onChange={e => setTicked(e.target.checked ? boxes.map(b => b.id) : [])} />
+                    <span><strong>아래 내용을 모두 확인했어요</strong></span>
+                  </label>
+                  {boxes.map(b => (
+                    <label key={b.id} className="ui-check is-plain">
+                      <input type="checkbox" checked={ticked.includes(b.id)} onChange={() => toggle(b.id)} />
+                      <span><b className="aq-paper-req">{b.required ? '필수' : '해당 시'}</b> {b.text}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+              <div className="ui-field">
+                <label htmlFor="distSigner">서명자 <span className="required">*</span></label>
+                <input id="distSigner" className="ui-input" maxLength={80} value={signer} onChange={e => setSigner(e.target.value)} placeholder="실명 또는 법인명" />
+              </div>
+              <div className="ui-field">
+                <label htmlFor="distContractPad">서명 <span className="required">*</span></label>
+                <SignaturePad ref={pad} id="distContractPad" label="이용자 서명 입력" height={170} onChange={setDrawn} />
+              </div>
+              <button type="button" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={!all || !drawn || !signer.trim() || busy} onClick={() => void sign()}>
+                {busy ? '서명하는 중' : '서명하고 계약 맺기'}
+              </button>
+            </div>
+          </section>
+        )}
 
         <section className="aq-paper-signoff">
           <p>위 계약의 내용을 확인하고 체결합니다.</p>
