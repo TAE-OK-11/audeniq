@@ -3821,6 +3821,7 @@ mod tests {
             share,
             publisher_share: 0.0,
             is_me: None,
+            publisher: None,
         }
     }
 
