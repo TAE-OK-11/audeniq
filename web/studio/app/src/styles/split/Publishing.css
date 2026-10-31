@@ -1,5 +1,5 @@
 /* Publishing layout only. Cards, controls, colors and typography use Studio's shared components/tokens.
-   anchors: aq-pbl-split aq-pbl-dashboard aq-pbl-album-stats aq-pbl-wizard aq-pbl-work aq-pbl-ar-form aq-pbl-guide aq-pbl-sheet aq-pbl-diff aq-pbl-files aq-pbl-selbar aq-pbl-trackline aq-pbl-people-board aq-pbl-reuse aq-pbl-filter aq-split-writer aq-pbl-missed aq-pen-editor aq-pbl-checks aq-pbl-evidence aq-pbl-income aq-pbl-rcard aq-pbl-scope aq-pbl-ccard */
+   anchors: aq-pbl-split aq-pbl-dashboard aq-pbl-album-stats aq-pbl-wizard aq-pbl-work aq-pbl-ar-form aq-pbl-guide aq-pbl-sheet aq-pbl-diff aq-pbl-files aq-pbl-selbar aq-pbl-trackline aq-pbl-people-board aq-pbl-reuse aq-pbl-filter aq-split-writer aq-pbl-missed aq-pen-editor aq-pbl-checks aq-pbl-evidence aq-pbl-income aq-pbl-rcard aq-pbl-scope aq-pbl-ccard aq-pbl-kvs */
 .aq-pbl-split{display:grid;gap:16px;margin:0}
 .aq-pbl-split>.ui-meter{margin-top:-8px}
 .aq-pbl-split>.ui-field-help{margin:0}
@@ -440,3 +440,17 @@
 .aq-pbl-end{justify-self:center;color:var(--aq-text-4)!important}
 .aq-pbl-ccard .aq-pbl-end{display:flex;width:auto;margin:0 auto}
 .aq-pbl-ccard{display:grid!important}
+/* 이름·값 줄 — 카드 안 정보 한 줄씩 (이름 왼쪽 흐리게 · 값 오른쪽 굵게). 누르는 줄은 is-link */
+.aq-pbl-kvs{list-style:none;margin:0;padding:4px 16px;border-radius:var(--aq-r-lg);background:var(--aq-bg)}
+.aq-pbl-kvs>li+li{border-top:1px solid var(--aq-line)}
+.aq-pbl-kv{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:52px;padding:10px 0;color:inherit;text-decoration:none}
+.aq-pbl-kv>span{display:grid;gap:2px;min-width:0;font-size:var(--aq-fs-md);color:var(--aq-text-3)}
+.aq-pbl-kv>span small{font-size:var(--aq-fs-xs);color:var(--aq-text-4)}
+.aq-pbl-kv>b{font-size:var(--aq-fs-md);font-weight:700;color:var(--aq-text);text-align:right;overflow-wrap:anywhere}
+.aq-pbl-kv.is-link>span{color:var(--aq-text);font-weight:600}
+.aq-pbl-kv.is-strong>span{color:var(--aq-primary-text);font-weight:700}
+/* 계약 카드 줄도 같은 판 위에 — 곧 끝나는 연장 줄은 주황으로 */
+.aq-pbl-ccard-rows{padding:4px 16px!important;border-radius:var(--aq-r-lg);background:var(--aq-bg)}
+.aq-pbl-ccard-rows .ui-row{padding:12px 0!important;background:none!important}
+.aq-pbl-ccard-rows .ui-row.is-soon .ui-row-title,.aq-pbl-ccard-rows .ui-row.is-soon .aq-pbl-ccard-go{color:var(--aq-amber-700)}
+.aq-pbl-ccard-rows>li+li{border-top:1px solid var(--aq-line)}
