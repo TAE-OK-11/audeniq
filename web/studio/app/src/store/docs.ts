@@ -14,6 +14,8 @@ export interface DocRecord {
   title: string;
   releaseId?: string;
   releaseTitle: string;
+  /** 곡(작사·작곡 저작권)에 요청된 서류면 그 곡 — 발매 대신 곡에 묶인다 */
+  workId?: string;
   version: string;
   created: string;
   content: string;

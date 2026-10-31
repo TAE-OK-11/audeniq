@@ -226,7 +226,9 @@ export function DocumentModal({
       <section className="aq-dm-sec" aria-label="문서 정보">
         <h4>문서 정보</h4>
         <dl className="aq-dm-kv">
-          <div><dt>관련 발매</dt><dd>{doc.releaseTitle || '공통'}</dd></div>
+          {doc.workId
+            ? <div><dt>관련 곡</dt><dd><button type="button" className="aq-inline-link" onClick={() => nav(`/works/${encodeURIComponent(doc.workId!)}?tab=register`)}>저작권 관리 보완 보기</button></dd></div>
+            : <div><dt>관련 발매</dt><dd>{doc.releaseTitle || '공통'}</dd></div>}
           <div><dt>작성일</dt><dd>{localStamp(doc.created)}</dd></div>
           {doc.fileName && <div><dt>첨부 원본</dt><dd className="break">{doc.fileName}</dd></div>}
         </dl>

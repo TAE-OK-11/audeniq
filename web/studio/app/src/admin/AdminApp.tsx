@@ -18,6 +18,8 @@ const PAGE_LOADERS = {
   ReviewQueue: () => import('./pages/ReviewQueue'),
   ReviewDetail: () => import('./pages/ReviewDetail'),
   Approvals: () => import('./pages/Approvals'),
+  PublishingReviews: () => import('./pages/PublishingReviews'),
+  PublishingReviewDetail: () => import('./pages/PublishingReviews'),
   Documents: () => import('./pages/Documents'),
   Inquiries: () => import('./pages/Inquiries'),
   IdentityDesk: () => import('./pages/IdentityDesk'),
@@ -54,6 +56,8 @@ const page = (name: keyof typeof PAGE_LOADERS) =>
 const ReviewQueue = page('ReviewQueue');
 const ReviewDetail = page('ReviewDetail');
 const Approvals = page('Approvals');
+const PublishingReviews = page('PublishingReviews');
+const PublishingReviewDetail = page('PublishingReviewDetail');
 const Documents = page('Documents');
 const Inquiries = page('Inquiries');
 const IdentityDesk = page('IdentityDesk');
@@ -130,7 +134,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
     group: '심사',
     items: [
       // 2차 승인은 발매 심사 안의 탭
-      { to: '/admin/reviews', label: '발매 심사', icon: 'review', count: o => (o ? o.review + o.second_approvals : 0), hot: true, also: ['/admin/approvals'] },
+      { to: '/admin/reviews', label: '발매 심사', icon: 'review', count: o => (o ? o.review + o.second_approvals : 0), hot: true, also: ['/admin/approvals', '/admin/publishing'] },
       { to: '/admin/documents', label: '서류 검토', icon: 'doc', count: o => (o ? o.documents : 0) },
     ],
   },
@@ -334,6 +338,8 @@ export function AdminApp() {
               <Route path="/admin/reviews" element={<ReviewQueue />} />
               <Route path="/admin/reviews/:id" element={<ReviewDetail />} />
               <Route path="/admin/approvals" element={<Approvals />} />
+              <Route path="/admin/publishing" element={<PublishingReviews />} />
+              <Route path="/admin/publishing/:id" element={<PublishingReviewDetail />} />
               <Route path="/admin/documents" element={<Documents />} />
               <Route path="/admin/inquiries" element={<Inquiries />} />
               <Route path="/admin/inquiries/:id" element={<Inquiries />} />

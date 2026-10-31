@@ -82,6 +82,17 @@ export function SubTabs({ tabs }: { tabs: { to: string; label: string; count?: n
   return <LinkTabs tabs={tabs} />;
 }
 
+/** '발매 심사' 메뉴의 하위 탭 — 발매 심사 · (2인 승인을 쓰면) 2차 승인 · 저작권 관리 신청을 한 메뉴 안에서 */
+export function ReviewTabs() {
+  const { counts } = useStaff();
+  const dual = useDualApproval();
+  return <SubTabs tabs={[
+    { to: '/admin/reviews', label: '발매 심사', count: counts?.review },
+    ...(dual ? [{ to: '/admin/approvals', label: '2차 승인', count: counts?.second_approvals }] : []),
+    { to: '/admin/publishing', label: '저작권 관리' },
+  ]} />;
+}
+
 /** 고르기 토글 — [값, 이름] 짝 목록 (담당 · 정렬) */
 export function Seg<T extends string>({ value, options, onChange, label, size }: {
   value: T;

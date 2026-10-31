@@ -7,13 +7,13 @@ import { errorMessage } from '../../api/errors';
 import { useAsync } from '../../hooks/useAsync';
 import { staffApi, type ApprovalItem } from '../api';
 import { ago, checkLabel, shortId, when } from '../labels';
-import { Badge, EmptyState, ErrorBox, NoDuty, PageHeader, SkeletonList, SubTabs, useDualApproval, useStaff } from '../ui';
+import { Badge, EmptyState, ErrorBox, NoDuty, PageHeader, SkeletonList, ReviewTabs, useDualApproval, useStaff } from '../ui';
 import { Glyph } from '../../components/Glyph';
 
 export function Approvals() {
   const toast = useToast();
   const confirm = useConfirm();
-  const { me, can, refreshCounts, counts } = useStaff();
+  const { me, can, refreshCounts } = useStaff();
   const dual = useDualApproval();
   // 2인 승인이 꺼져 있으면 남은 요청을 올린 사람도 직접 닫을 수 있다
   const selfBlocked = me.dual_approval !== false;
@@ -48,7 +48,7 @@ export function Approvals() {
         sub="중복 음원·권리 같은 민감 항목은 두 사람이 확인해요. 내가 올린 요청은 다른 담당자가 처리해요."
         actions={<button type="button" className="ui-btn is-soft is-sm" onClick={reload}>새로고침</button>}
       />
-      {dual && <SubTabs tabs={[{ to: '/admin/reviews', label: '심사 목록', count: counts?.review }, { to: '/admin/approvals', label: '2차 승인', count: counts?.second_approvals }]} />}
+      {dual && <ReviewTabs />}
       {!can('REVIEW') && <NoDuty duty="발매 심사" />}
       {error && <ErrorBox message={error} onRetry={reload} />}
       {loading && !data ? <SkeletonList rows={3} /> : items.length === 0 ? (
