@@ -18,7 +18,7 @@ import { MiniTrend } from '../components/MiniTrend';
 import { publishingReport } from '../lib/publishingReport';
 import { periodLabel } from '../data/reports';
 import { money, num } from '../lib/format';
-import { Badge, EmptyState, IconTile, KeyValue, Meter } from '../ui';
+import { Badge, ChipGroup, EmptyState, IconTile, KeyValue, Meter } from '../ui';
 import { MonthField } from '../components/Picker';
 import {
   ROYALTY_PERIODS, filterFromParams, filterRoyalties, filterToParams, isDefaultFilter, royaltyFilterLabel, type RoyaltyFilter, type RoyaltyPeriod,
@@ -89,13 +89,11 @@ function Songs({ filter, setFilter, scope, onApply }: { filter: WorkFilter; setF
         <input id="pubSongSearch" className="ui-input" type="search" aria-label="곡 검색" placeholder="곡·참여자·발매 검색" value={query} onChange={e => setQuery(e.target.value)} />
       </div>
       {/* 발매 목록과 같은 칩 — 숫자를 붙이고, 해당하는 곡이 없는 칩은 숨긴다 */}
-      <div className="ui-chips" role="group" aria-label="저작권 상태">
-        {SONG_FILTERS.map(([v, label]) => {
-          const n = (works ?? []).filter(w => matchFilter(w, v)).length;
-          if (v !== 'all' && !n && filter !== v) return null;
-          return <button key={v} type="button" className={`ui-chip${filter === v ? ' is-on' : ''}`} aria-pressed={filter === v} onClick={() => setFilter(v)}>{label}<small>{n}</small></button>;
-        })}
-      </div>
+      <ChipGroup label="저작권 상태" value={filter} onChange={setFilter} hideZero={false}
+        options={SONG_FILTERS.map(([value, label]) => {
+          const count = (works ?? []).filter(w => matchFilter(w, value)).length;
+          return { value, label, count, hidden: value !== 'all' && !count && filter !== value };
+        })} />
       <div className="aq-pub-count">
         <span className="studio-result-count" aria-live="polite">{works ? `${shown.length}개의 곡` : ''}</span>
         {/* 발매 전 곡도 작사·작곡 정보와 지분을 먼저 정리해 둘 수 있다 */}

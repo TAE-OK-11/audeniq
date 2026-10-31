@@ -146,7 +146,7 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
               </div>}
             </div>
           ) : (
-            <fieldset key={c.id} className={`aq-pbl-person${focusId === c.id ? ' is-focus' : ''}`} id={`${prefix}`}>
+            <fieldset key={c.id} className={`ui-card aq-pbl-person${focusId === c.id ? ' is-focus' : ''}`} id={`${prefix}`}>
               <legend className="sr-only">참여자 {i + 1}: {c.name || '이름 없음'}</legend>
               <div className="aq-pbl-person-head">
                 <IconTile size="sm" tone="gray"><Glyph name="user" size={17} /></IconTile>

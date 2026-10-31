@@ -359,7 +359,7 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
 
       {/* 고른 곡으로 이어서 하는 일 — 화면 아래에 붙어 따라온다 */}
       {selected.length > 0 && (
-        <div className="aq-pbl-selbar" role="region" aria-label="고른 곡으로 할 일">
+        <div className="ui-card aq-pbl-selbar" role="region" aria-label="고른 곡으로 할 일">
           <span className="aq-pbl-selbar-count"><b>{selected.length}곡</b> 골랐어요</span>
           <button type="button" className="ui-btn is-soft is-sm" onClick={() => document.getElementById('pubPrepTitle')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>준비 상태</button>
           <button type="button" className="ui-btn is-soft is-sm" onClick={download}><Glyph name="download" size={14} className="aq-glyph-lead" />내역</button>
