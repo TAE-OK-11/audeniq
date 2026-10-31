@@ -788,11 +788,14 @@ async fn prepare_from_credits_withdraw_and_isolation(pool: PgPool) {
     .await;
     assert_eq!(s, StatusCode::NOT_FOUND);
 
-    // Archive an unapplied work; it leaves the list.
+    // Archive an unapplied work (by title: both were made in one transaction, so list order is by id); it leaves the list.
+    let night = items.iter().find(|w| w["title"] == "밤바다").unwrap()["id"]
+        .as_str()
+        .unwrap();
     let (s, _) = call(
         &app,
         "DELETE",
-        &format!("{base}/works/{}", ids[1]),
+        &format!("{base}/works/{night}"),
         json!({}),
         Some(&u),
     )

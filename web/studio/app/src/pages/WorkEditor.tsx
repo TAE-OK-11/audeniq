@@ -80,6 +80,8 @@ export function WorkEditor() {
   const { data: works } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
   const { data: release } = useAsync(() => (releaseId ? api.getRelease(releaseId) : Promise.resolve(null)), [releaseId]);
   const track = release?.tracks.find(t => t.id === trackId) ?? null;
+  // 내 관리 단체·IPI — 발매 곡에서 가져올 때 내 줄에 바로 채운다 (계정 정보에 한 번 적어 두면 곡마다 다시 적지 않는다)
+  const { data: myCreator, loading: creatorLoading } = useAsync(() => (!editing ? pubApi.myCreator().catch(() => null) : Promise.resolve(null)), [editing], { key: !editing ? 'my-creator' : undefined });
 
   const [form, setForm] = useState<Form | null>(null);
   const [restored, setRestored] = useState<Saved | null>(null);
@@ -99,6 +101,7 @@ export function WorkEditor() {
     if (editing && !existing) return;
     if (!editing && !releaseId && !pickedType) return; // 갈래를 고른 뒤에 채운다
     if (releaseId && !release) return;
+    if (!editing && creatorLoading) return;
     let start: Form = EMPTY;
     if (existing) {
       const { title, altTitles, workType, language, genre, description, visibility, iswc, hasPriorPublisher, priorPublisher, contributors, attachments } = existing;
@@ -111,7 +114,8 @@ export function WorkEditor() {
           const cur = people.get(n);
           if (cur) { if (!cur.roles.includes(role)) cur.roles.push(role); continue; }
           // 크레딧은 가져오되 지분은 0 — 사용자가 직접 나눠야 한다 (기획안 4.2)
-          people.set(n, { id: uid(), creatorId: null, name: n, roles: [role], society: null, ipi: null, share: 0, publisherShare: 0, confirm: 'pending', external: true, isMe: n === release.artist });
+          const isMe = n === release.artist || (!!myCreator && n === myCreator.name);
+          people.set(n, { id: uid(), creatorId: null, name: n, roles: [role], society: isMe ? myCreator?.society ?? null : null, ipi: isMe ? myCreator?.ipi ?? null : null, share: 0, publisherShare: 0, confirm: 'pending', external: true, isMe });
         }
       };
       add(splitNames(track.composers ?? d?.composers), 'composer');
@@ -128,13 +132,19 @@ export function WorkEditor() {
         workType: d?.instrumental ? 'instrumental' : 'original', contributors: [...people.values()].map(c => (c.isMe ? { ...c, confirm: 'confirmed', external: false } : c)),
       };
     } else if (pickedType) {
-      start = { ...EMPTY, origin: pickedType, externalRelease: pickedType === 'other_release' ? NO_RELEASE : null };
+      // 직접 등록하는 새 곡은 나부터 넣어 둔다 — 혼자 쓴 곡이 많으니 100%, 역할·관리 단체·IPI는 작가 프로필 그대로
+      const roles = (myCreator?.roles ?? []).flatMap(r => (r === 'composer' || r === 'lyricist' || r === 'arranger' ? [r] : []));
+      const me: WorkContributor[] = myCreator ? [{
+        id: uid(), creatorId: myCreator.id, name: myCreator.name, roles: roles.length ? roles : ['composer'], society: myCreator.society ?? null, ipi: myCreator.ipi ?? null,
+        share: 100, publisherShare: 0, confirm: 'confirmed', external: false, isMe: true,
+      }] : [];
+      start = { ...EMPTY, origin: pickedType, externalRelease: pickedType === 'other_release' ? NO_RELEASE : null, contributors: me };
     }
     base.current = JSON.stringify(start);
     const saved = readJSON<Saved | null>(draftKey, null);
     if (saved && JSON.stringify(saved.form) !== base.current) setRestored(saved);
     setForm(start);
-  }, [existing, release, track, pickedType]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [existing, release, track, pickedType, creatorLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 자동 저장 — 손을 멈추고 0.8초 뒤 이 브라우저에
   useEffect(() => {

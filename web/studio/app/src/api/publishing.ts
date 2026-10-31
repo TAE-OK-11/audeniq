@@ -467,6 +467,14 @@ function mutate<T>(fn: (d: PubDb) => T): T {
   return out;
 }
 
+/** 서버 write_contributors와 같게 — 내 줄의 빈 관리 단체·IPI는 작가 프로필로 채우고, 곡에서 처음 적은 값은 빈 프로필에 남긴다 */
+function rememberMe(d: PubDb, list: WorkContributor[]): WorkContributor[] {
+  const mine = list.find(c => c.isMe);
+  if (!mine) return list;
+  d.me = { ...d.me, society: d.me.society ?? mine.society ?? null, ipi: d.me.ipi ?? mine.ipi ?? null };
+  return list.map(c => (c.isMe ? { ...c, society: c.society || d.me.society, ipi: c.ipi || d.me.ipi } : c));
+}
+
 function nextCode(d: PubDb) {
   const n = d.works.reduce((m, w) => Math.max(m, Number(w.internalCode.replace(/\D/g, '')) || 0), 100) + 1;
   return `AQW-${String(n).padStart(6, '0')}`;
@@ -539,7 +547,7 @@ const mockApi = {
       const origin: WorkOrigin = recording ? 'own_release' : rest.origin ?? 'unreleased';
       if (origin === 'other_release' && !(rest.externalRelease?.artist.trim() && rest.externalRelease.title.trim())) throw new ApiError('발매한 아티스트와 발매 제목을 적어 주세요.', 400, 'WORK_RELEASE_INFO_REQUIRED');
       const w: Work = {
-        ...rest, origin, externalRelease: origin === 'other_release' ? rest.externalRelease : null,
+        ...rest, contributors: rememberMe(d, rest.contributors), origin, externalRelease: origin === 'other_release' ? rest.externalRelease : null,
         id: `w_${uid()}`, internalCode: nextCode(d), recordings: recording ? [{ ...recording, id: uid() }] : [],
         registration: 'none', registrationLog: [], application: null, contractId: null, fix: null, myRole: 'owner', rowVersion: 1,
         activity: [{ at: now, text: recording ? `‘${recording.releaseTitle}’ 발매 곡에서 곡을 만들었어요.` : '곡을 만들었어요.', kind: 'edit', who: d.me.name }],
@@ -571,7 +579,7 @@ const mockApi = {
       const rightsChanged = !!contributors && before !== key(contributors);
       // 관리 중인 곡은 바로 바꾸지 않는다 — 참여자 확인과 담당자 검토가 끝나면 반영 (그동안 지금 값이 적용된다)
       if (rightsChanged && (w.registration === 'registered' || !!w.contractId)) w.pendingChange = { contributors: structuredClone(contributors), requestedAt: now };
-      else if (contributors) { w.contributors = contributors; w.pendingChange = null; }
+      else if (contributors) { w.contributors = rememberMe(d, contributors); w.pendingChange = null; }
       w.activity.unshift({ at: now, text: rightsChanged ? `지분을 ${contributors!.map(c => `${c.name} ${c.share}%`).join(' · ')}로 ${w.pendingChange ? '바꾸도록 요청' : '바꿨'}어요.` : '곡 정보를 고쳤어요.', kind: rightsChanged ? 'rights' : 'edit', who: d.me.name });
       w.rowVersion += 1;
       w.updatedAt = now;
@@ -653,9 +661,18 @@ const mockApi = {
   async searchCreators(q: string) {
     await wait(140);
     const k = q.trim().toLowerCase();
-    if (!k) return [];
     const me = withAccount(db.get().me);
-    return [me, ...CREATORS.filter(c => !c.isMe)].filter(c => c.name.toLowerCase().includes(k) || (c.ipi ?? '').includes(k)).map(c => ({ ...c, legalName: c.isMe ? c.legalName : null }));
+    // 서버처럼 지난 곡의 외부 참여자도 관리 단체·IPI와 함께 — 빈 검색은 '최근 함께한 사람'(곡 수 많은 순)
+    const past = new Map<string, Creator>();
+    for (const w of db.get().works) for (const c of w.contributors) {
+      if (c.isMe || c.creatorId || !c.name.trim()) continue;
+      const cur = past.get(c.name) ?? { id: `name:${c.name}`, name: c.name, roles: [], society: null, ipi: null, linked: false, workCount: 0 };
+      cur.society ??= c.society ?? null; cur.ipi ??= c.ipi ?? null; cur.workCount = (cur.workCount ?? 0) + 1;
+      for (const r of c.roles) if (!cur.roles.includes(r as CreatorRole)) cur.roles.push(r as CreatorRole);
+      past.set(c.name, cur);
+    }
+    const all = [me, ...CREATORS.filter(c => !c.isMe), ...[...past.values()].sort((a, b) => (b.workCount ?? 0) - (a.workCount ?? 0))];
+    return all.filter(c => !k || c.name.toLowerCase().includes(k) || (c.ipi ?? '').includes(k)).map(c => ({ ...c, legalName: c.isMe ? c.legalName : null }));
   },
   async myCreator() { await wait(80); return withAccount(db.get().me); },
   /** 작가 정보 중 역할·관리 단체·IPI·소속만 저장한다 — 활동명·국가·실명은 계정 정보의 값을 쓴다 */

@@ -17,6 +17,10 @@ function CreatorSearch({ onPick, onExternal, taken }: { onPick: (c: Creator) => 
   const [q, setQ] = useState('');
   const dq = useDeferredValue(q);
   const [items, setItems] = useState<Creator[] | null>(null);
+  // 칸을 누르면 '최근 함께한 사람' — 같이 쓰는 사람을 매번 이름부터 치지 않게 (지난 곡의 관리 단체·IPI까지 함께 들어간다)
+  const [recent, setRecent] = useState<Creator[] | null>(null);
+  const [focused, setFocused] = useState(false);
+  const loadRecent = () => { if (!recent) pubApi.searchCreators('').then(r => setRecent(r.filter(c => !c.isMe))).catch(() => setRecent([])); };
   useEffect(() => {
     if (!dq.trim()) { setItems(null); return; }
     let alive = true;
@@ -27,7 +31,21 @@ function CreatorSearch({ onPick, onExternal, taken }: { onPick: (c: Creator) => 
   return (
     <div className="aq-pbl-search">
       <input className="ui-input" type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="작가 이름·IPI로 찾아 추가" aria-label="참여자 찾기"
+        onFocus={() => { setFocused(true); loadRecent(); }} onBlur={() => window.setTimeout(() => setFocused(false), 150)}
         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); const first = items?.find(c => !taken.has(c.id)); if (first) add(first); else if (q.trim()) { onExternal(q.trim()); setQ(''); } } }} />
+      {!q.trim() && focused && !!recent?.filter(c => !taken.has(c.id)).length && (
+        <div className="aq-pbl-recent" aria-label="최근 함께한 사람">
+          <small>최근 함께한 사람</small>
+          <div className="ui-chips is-wrap">
+            {recent.filter(c => !taken.has(c.id)).slice(0, 8).map(c => (
+              <button key={c.id} type="button" className="ui-chip is-sm" onMouseDown={e => e.preventDefault()} onClick={() => add(c)}
+                title={[c.society, c.ipi && `IPI ${c.ipi}`].filter(Boolean).join(' · ') || undefined}>
+                <Glyph name="plus" size={13} />{c.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {q.trim() && items && (
         <ul className="ui-list aq-pbl-search-list" aria-label="찾은 작가">
           {items.map(c => (
@@ -108,7 +126,17 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
     roles: (cr.roles as string[]).filter((r): r is ContributorRole => (ROLES as string[]).includes(r)).slice(0, 2),
     share: rest, publisherShare: 0, confirm: cr.isMe ? 'confirmed' : 'pending',
   }]);
-  const external = (name: string) => onChange([...value, { id: uid(), creatorId: null, name, roles: [], society: null, ipi: null, external: true, share: rest, publisherShare: 0, confirm: 'pending' }]);
+  // 지난 곡에 같은 이름이 있으면 그때 적은 역할·관리 단체·IPI를 그대로 — 같은 사람 정보를 곡마다 다시 적지 않게
+  const known = (name: string) => {
+    const k = name.trim();
+    const hits = (reuse ?? []).flatMap(w => w.contributors).filter(c => !c.isMe && c.name.trim() === k);
+    if (!hits.length) return null;
+    return { society: hits.find(c => c.society)?.society ?? null, ipi: hits.find(c => c.ipi)?.ipi ?? null, roles: hits[0].roles };
+  };
+  const external = (name: string) => {
+    const k = known(name);
+    onChange([...value, { id: uid(), creatorId: null, name, roles: k?.roles ?? [], society: k?.society ?? null, ipi: k?.ipi ?? null, external: true, share: rest, publisherShare: 0, confirm: 'pending' }]);
+  };
   const even = () => { const s = evenSplit(value.length); onChange(value.map((c, i) => ({ ...c, share: s[i], publisherShare: Math.min(c.publisherShare, s[i]) }))); };
   const num = (v: string) => (v === '' ? 0 : Number(v.replace(/[^0-9.]/g, '')) || 0);
   const invalid = showErrors || total > 100;
@@ -157,6 +185,16 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
               {c.external && <Field label="이름·활동명" htmlFor={`${prefix}-name`}>
                 <input id={`${prefix}-name`} className="ui-input" maxLength={100} value={c.name} onChange={e => set(c.id, { name: e.target.value })} />
               </Field>}
+              {(() => {
+                // 크레딧으로 들어온 참여자 — 지난 곡에서 이 사람의 관리 단체·IPI를 적은 적이 있으면 한 번에 채운다
+                const k = c.external && (!c.society || !c.ipi) ? known(c.name) : null;
+                if (!k || (!k.society && !k.ipi) || (k.society === c.society && k.ipi === c.ipi)) return null;
+                return (
+                  <button type="button" className="aq-pbl-fill" onClick={() => set(c.id, { society: c.society || k.society, ipi: c.ipi || k.ipi })}>
+                    <Glyph name="repeat" size={14} />지난 곡 정보 채우기<span>{[k.society, k.ipi && `IPI ${k.ipi}`].filter(Boolean).join(' · ')}</span>
+                  </button>
+                );
+              })()}
               <div className="aq-pbl-person-fields">
                 <Field label="참여 역할">
                   <div className="ui-chips is-wrap" role="group" aria-label={`${c.name} 역할`}>
@@ -177,7 +215,7 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
                   <Field label="저작권 관리 단체" htmlFor={`${prefix}-society`}>
                     <select id={`${prefix}-society`} className="ui-select" value={c.society ?? ''} onChange={e => set(c.id, { society: e.target.value || null })}><option value="">모름·입력 전</option>{SOCIETIES.map(s => <option key={s} value={s}>{s}</option>)}</select>
                   </Field>
-                  <Field label="IPI/CAE 번호" htmlFor={`${prefix}-ipi`} help="모르면 비워 두세요.">
+                  <Field label="IPI/CAE 번호" htmlFor={`${prefix}-ipi`} help={c.isMe ? '한 번 적으면 계정 정보에 저장돼 다음 곡부터 자동으로 채워져요.' : '모르면 비워 두세요.'}>
                     <input id={`${prefix}-ipi`} className="ui-input" inputMode="numeric" placeholder="작가 식별 번호" value={c.ipi ?? ''} readOnly={!c.external && !c.isMe} onChange={e => set(c.id, { ipi: e.target.value.replace(/\D/g, '').slice(0, 11) || null })} />
                   </Field>
                 </div>

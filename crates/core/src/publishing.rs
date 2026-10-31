@@ -660,8 +660,40 @@ async fn write_contributors(
     org: Uuid,
     work: Uuid,
     party: Uuid,
-    plan: Vec<Planned>,
+    user: Uuid,
+    mut plan: Vec<Planned>,
 ) -> Result<()> {
+    // The writer's own society and IPI are typed once: an empty one on the writer's row is filled from the
+    // profile (계정 정보), and one typed on a work fills an empty profile, so the next work has it already.
+    // A profile value is never overwritten from a work — that stays a choice in 계정 정보.
+    if let Some(me) = plan.iter_mut().find(|p| p.me) {
+        let (society, ipi): (Option<String>, Option<String>) =
+            sqlx::query_as("SELECT society, ipi FROM portal.pub_creator_profiles WHERE user_id=$1")
+                .bind(user)
+                .fetch_optional(&mut *c)
+                .await?
+                .unwrap_or((None, None));
+        let learn =
+            (society.is_none() && me.society.is_some()) || (ipi.is_none() && me.ipi.is_some());
+        if learn {
+            sqlx::query(
+                "INSERT INTO portal.pub_creator_profiles(user_id,roles,society,ipi) VALUES($1,'{}',$2,$3)
+                 ON CONFLICT (user_id) DO UPDATE SET society=COALESCE(portal.pub_creator_profiles.society, EXCLUDED.society),
+                   ipi=COALESCE(portal.pub_creator_profiles.ipi, EXCLUDED.ipi), updated_at=now()",
+            )
+            .bind(user)
+            .bind(&me.society)
+            .bind(&me.ipi)
+            .execute(&mut *c)
+            .await?;
+        }
+        if me.society.is_none() {
+            me.society = society;
+        }
+        if me.ipi.is_none() {
+            me.ipi = ipi;
+        }
+    }
     let existing: HashMap<Uuid, (i32, i32, String)> = sqlx::query("SELECT id, share_bps, publisher_share_bps, confirm FROM portal.pub_work_contributors WHERE work_id=$1")
         .bind(work)
         .fetch_all(&mut *c)
@@ -887,7 +919,7 @@ pub async fn create_work(s: &AppState, a: &Actor, org: Uuid, i: WorkIn) -> Resul
     .bind(external)
     .execute(&mut *tx)
     .await?;
-    write_contributors(&mut tx, org, id, a.party, plan).await?;
+    write_contributors(&mut tx, org, id, a.party, a.user, plan).await?;
     if let Some(r) = i.recording {
         link_recording(&mut tx, org, id, r.release_id, r.track_id).await?;
     }
@@ -979,7 +1011,7 @@ pub async fn update_work(s: &AppState, a: &Actor, org: Uuid, id: Uuid, i: WorkIn
         if registration == "registered" {
             return Err(Error::PolicyGate("WORK_RIGHTS_VIA_REVIEW"));
         }
-        write_contributors(&mut tx, org, id, a.party, plan).await?;
+        write_contributors(&mut tx, org, id, a.party, a.user, plan).await?;
     }
     touch(&mut tx, id).await?;
     audit(&mut tx, a, org, id, "publishing.work_updated").await?;
@@ -1023,7 +1055,7 @@ pub async fn put_rights(
         .await?;
         audit(&mut tx, a, org, id, "publishing.rights_change_requested").await?;
     } else if EDITABLE.contains(&registration.as_str()) {
-        write_contributors(&mut tx, org, id, a.party, plan).await?;
+        write_contributors(&mut tx, org, id, a.party, a.user, plan).await?;
         audit(&mut tx, a, org, id, "publishing.rights_saved").await?;
     } else {
         return Err(Error::PolicyGate("WORK_UNDER_REVIEW"));
@@ -1360,7 +1392,7 @@ pub async fn prepare_from_release(
         .bind(if instrumental { "instrumental" } else { "original" })
         .execute(&mut *tx)
         .await?;
-        write_contributors(&mut tx, org, id, a.party, plan).await?;
+        write_contributors(&mut tx, org, id, a.party, a.user, plan).await?;
         link_recording(&mut tx, org, id, release, track).await?;
         // The audio and lyrics sent with the release are the work's files too — the artist does not upload them again.
         if let Some(asset) = t.get::<Option<Uuid>, _>("asset_id") {
