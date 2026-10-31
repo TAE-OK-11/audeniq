@@ -14,7 +14,7 @@ import { useProfile } from '../store/profile';
 import { compactSignature } from '../lib/application';
 import { readJSON, removeKey, writeJSON } from '../lib/storage';
 import { uid } from '../lib/store';
-import { APP_LABEL, pct, splitIssues, splitReady, termLabel } from '../lib/publishing';
+import { APP_LABEL, APP_TONE, pct, splitIssues, splitReady, termLabel } from '../lib/publishing';
 import { money } from '../lib/format';
 import { ReviewCard, WizardShell, type WizardStep } from '../components/WizardShell';
 import { SkeletonBlock } from '../components/Skeleton';
@@ -204,11 +204,14 @@ export function PublishingApply() {
                 return (
                   <label key={w.id} className="ui-check is-plain">
                     <input type="checkbox" checked={picked.includes(w.id)} disabled={busyApp} onChange={() => toggle(picked, setPicked, w.id)} />
-                    <span className="min-0">
-                      <strong>{w.title}</strong>{' '}
-                      {busyApp ? <Badge tone="blue">{APP_LABEL[w.application!.status]}</Badge>
-                        : splitReady(w.contributors) ? <Badge tone="green">지분 확인</Badge> : <Badge tone="amber">지분 확인 필요</Badge>}
-                      <br /><small className="muted">{w.contributors.map(c => `${c.name} ${pct(c.share)}`).join(' · ') || '참여자 없음'}</small>
+                    {/* 상태 색은 앱 전체 규칙 그대로 — 심사 중 보라, 보완 주황, 승인 초록. 고를 수 있는 곡은 '신청 가능'만 파랑 */}
+                    <span className="aq-pbl-song-pick">
+                      <span className="min-0">
+                        <strong>{w.title}</strong>
+                        <small>{w.contributors.map(c => `${c.name} ${pct(c.share)}`).join(' · ') || '참여자 없음'}</small>
+                      </span>
+                      {busyApp ? <Badge tone={APP_TONE[w.application!.status]}>{APP_LABEL[w.application!.status]}</Badge>
+                        : splitReady(w.contributors) ? <Badge tone="blue">신청 가능</Badge> : <Badge tone="amber">지분 확인 필요</Badge>}
                     </span>
                   </label>
                 );

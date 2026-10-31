@@ -12,6 +12,8 @@ export interface WorkIssue { field: PrepField; text: string; blocking: boolean; 
 
 export type WorkStage = 'ready' | 'blocked' | 'applied' | 'managed' | 'readonly';
 export const STAGE_LABEL: Record<WorkStage, string> = { ready: '신청 가능', blocked: '확인 필요', applied: '심사 중', managed: '관리 중', readonly: '공동 참여' };
+/** 상태 색 — 신청 가능은 할 수 있는 일(파랑), 심사 중 보라, 관리 중은 끝난 일(초록) */
+export const STAGE_TONE = { ready: 'blue', blocked: 'amber', applied: 'violet', managed: 'green', readonly: 'gray' } as const satisfies Record<WorkStage, string>;
 
 const canEdit = (w: Work) => w.myRole === 'owner' || w.myRole === 'editor';
 const applying = (w: Work) => !!w.application && ['submitted', 'in_review', 'needs_fix'].includes(w.application.status);

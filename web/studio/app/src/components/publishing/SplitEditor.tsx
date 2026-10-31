@@ -134,7 +134,8 @@ export function SplitEditor({ value, onChange, readOnly, onRequestConfirm, onSim
               <div className="min-0">
                 <strong>{c.name || '이름 없는 참여자'}{c.isMe && ' (나)'}</strong>
                 <span className="ui-row-meta">{roleText(c)}{c.society && ` · ${c.society}`}{c.ipi && <> · <span className="aq-nowrap">IPI {c.ipi}</span></>}</span>
-                <span className="ui-row-meta">AUDENIQ 관리 {pct(c.publisherShare)}</span>
+                {/* 맡기기 전(0%)에는 줄을 두지 않는다 — 'AUDENIQ 관리 0%'가 참여자마다 되풀이됐다 */}
+                {c.publisherShare > 0 && <span className="ui-row-meta">AUDENIQ 관리 {pct(c.publisherShare)}</span>}
               </div>
               <div className="aq-pbl-person-end">
                 <b>{pct(c.share)}</b>

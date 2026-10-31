@@ -7,7 +7,7 @@ import { pubApi, type Work, type WorkContributor } from '../../api/publishing';
 import { errorMessage } from '../../api/errors';
 import { MOCK } from '../../lib/mode';
 import { splitReady } from '../../lib/publishing';
-import { STAGE_LABEL, changeNeedsReview, reusableWorks, splitDiff, workIssues, workStage, type PrepField, type SplitChange } from '../../lib/publishingPrep';
+import { STAGE_LABEL, STAGE_TONE, changeNeedsReview, reusableWorks, splitDiff, workIssues, workStage, type PrepField, type SplitChange } from '../../lib/publishingPrep';
 import { localStamp } from '../../lib/format';
 import { Modal } from '../Modal';
 import { Glyph } from '../Glyph';
@@ -19,7 +19,6 @@ import { AttachmentList, AttachmentModal } from './Attachments';
 import '../../styles/split/ReleaseDetail.css';
 import '../../styles/split/Publishing.css';
 
-const STAGE_TONE = { ready: 'green', blocked: 'amber', applied: 'violet', managed: 'blue', readonly: 'gray' } as const;
 
 /** 바뀌는 내용 — 참여자마다 '창작 지분 60% → 50%' */
 export function SplitDiffList({ changes, title }: { changes: SplitChange[]; title: string }) {

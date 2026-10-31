@@ -98,6 +98,8 @@ async fn work_to_application_to_review(pool: PgPool) {
     assert_eq!(w["registration"], "none");
     assert_eq!(w["myRole"], "owner");
     assert_eq!(w["recordings"][0]["trackId"], t1.to_string());
+    // The linked recording reads like the release list (Studio chip), not the raw pipeline stage.
+    assert_eq!(w["recordings"][0]["status"], "draft");
     assert_eq!(w["contributors"][0]["isMe"], true);
     assert_eq!(w["contributors"][0]["confirm"], "confirmed");
     assert_eq!(w["contributors"][1]["confirm"], "pending");
