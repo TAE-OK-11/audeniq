@@ -1779,3 +1779,127 @@ async fn release_live_suggests_publishing(pool: PgPool) {
     );
     assert_eq!(hints[0].1, format!("/releases/{fresh}?tab=publishing"));
 }
+
+/// One link for both: the distribution revenue split invite of a track also asks the collaborator about their
+/// songwriter shares on that track's work — confirmed, or disputed with a note — whether they take the revenue or not.
+#[sqlx::test]
+async fn split_invite_also_confirms_writer_shares(pool: PgPool) {
+    let (app, _store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let base = format!("/api/orgs/{}", u.org);
+    let release = create_release(&app, &u).await;
+    let t1 = track(&app, &pool, &u, release, "한낮", 1).await;
+    let t2 = track(&app, &pool, &u, release, "밤바다", 2).await;
+    let co = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO identity.parties(id,org_id,kind,display_name) VALUES($1,$2,'PERSON','박도윤')",
+    )
+    .bind(co)
+    .bind(u.org)
+    .execute(&pool)
+    .await
+    .unwrap();
+    for (t, p, r) in [
+        (t1, u.party, "COMPOSER"),
+        (t1, co, "LYRICIST"),
+        (t2, u.party, "COMPOSER"),
+        (t2, co, "LYRICIST"),
+    ] {
+        sqlx::query(
+            "INSERT INTO catalog.credits(track_id,org_id,party_id,role) VALUES($1,$2,$3,$4)",
+        )
+        .bind(t)
+        .bind(u.org)
+        .bind(p)
+        .bind(r)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let (s, r) = call(
+        &app,
+        "POST",
+        &format!("{base}/releases/{release}/works"),
+        json!({"enroll": true}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{r}");
+    // The revenue split names the co-writer a little differently (a space): still the same person.
+    let mut tokens = Vec::new();
+    for t in [t1, t2] {
+        let token = audeniq_core::auth::random_token();
+        sqlx::query(
+            "INSERT INTO portal.split_shares(id,org_id,release_id,track_id,name,email_bidx,share_bps,invite_token_hash,invite_status,created_by)
+             VALUES($1,$2,$3,$4,'박 도윤',$5,2000,$6,'SENT',$7)",
+        )
+        .bind(Uuid::new_v4())
+        .bind(u.org)
+        .bind(release)
+        .bind(t)
+        .bind("a".repeat(64))
+        .bind(audeniq_core::domain::sha256_hex(&token))
+        .bind(u.user)
+        .execute(&pool)
+        .await
+        .unwrap();
+        tokens.push(token);
+    }
+    let (_, inv) = call(
+        &app,
+        "GET",
+        &format!("/api/split-invites/{}", tokens[0]),
+        json!({}),
+        None,
+    )
+    .await;
+    assert_eq!(inv["writer"][0]["title"], "한낮", "{inv}");
+    assert_eq!(inv["writer"][0]["roles"][0], "lyricist", "{inv}");
+    // Declining the revenue, confirming the shares; then disputing the other song's shares.
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/split-invites/{}/decline", tokens[0]),
+        json!({"writer": true}),
+        None,
+    )
+    .await;
+    assert_eq!((s, v["writer"].as_i64()), (StatusCode::OK, Some(1)), "{v}");
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/split-invites/{}/decline", tokens[1]),
+        json!({"writer": false, "note": "작곡에도 참여했어요"}),
+        None,
+    )
+    .await;
+    assert_eq!((s, v["writer"].as_i64()), (StatusCode::OK, Some(1)), "{v}");
+    let confirms: Vec<(String, String)> = sqlx::query_as(
+        "SELECT w.title, c.confirm FROM portal.pub_work_contributors c JOIN portal.pub_works w ON w.id=c.work_id
+          WHERE w.org_id=$1 AND c.name='박도윤' ORDER BY w.title",
+    )
+    .bind(u.org)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        confirms,
+        vec![
+            ("밤바다".into(), "disputed".into()),
+            ("한낮".into(), "confirmed".into())
+        ]
+    );
+    // The link is used up with the answer.
+    let (_, gone) = call(
+        &app,
+        "GET",
+        &format!("/api/split-invites/{}", tokens[0]),
+        json!({}),
+        None,
+    )
+    .await;
+    assert!(
+        gone["writer"].as_array().is_none_or(|w| w.is_empty()),
+        "{gone}"
+    );
+}

@@ -2352,6 +2352,84 @@ pub async fn answer_split_invite(s: &AppState, token: &str, i: InviteAnswerIn) -
     Ok(json!({"answer": answer}))
 }
 
+/// A co-writer's shares still to confirm on the works of one track, found by name — the distribution revenue split
+/// invite for that track ([`crate::splits`]) asks about them too, so a collaborator answers both from one link.
+pub(crate) async fn writer_shares(
+    c: &mut PgConnection,
+    org: Uuid,
+    track: Uuid,
+    name: &str,
+) -> Result<Vec<(Uuid, Uuid, String, i32, Vec<String>)>> {
+    Ok(sqlx::query(
+        "SELECT c.work_id, c.id, w.title, c.share_bps, c.roles
+           FROM portal.pub_work_recordings r
+           JOIN portal.pub_works w ON w.id=r.work_id AND w.archived_at IS NULL
+           JOIN portal.pub_work_contributors c ON c.work_id=w.id
+          WHERE r.org_id=$1 AND r.track_id=$2 AND c.confirm NOT IN ('confirmed','disputed')
+            AND lower(regexp_replace(c.name, '\\s', '', 'g')) = lower(regexp_replace($3, '\\s', '', 'g'))
+          ORDER BY w.title, c.position",
+    )
+    .bind(org)
+    .bind(track)
+    .bind(name)
+    .fetch_all(&mut *c)
+    .await?
+    .into_iter()
+    .map(|r| (r.get("work_id"), r.get("id"), r.get("title"), r.get("share_bps"), r.get("roles")))
+    .collect())
+}
+
+/// The shares as the invite page shows them.
+pub(crate) fn writer_shares_json(rows: &[(Uuid, Uuid, String, i32, Vec<String>)]) -> Value {
+    json!(rows
+        .iter()
+        .map(|(_, _, title, share, roles)| json!({"title": title, "share": pct(*share), "roles": roles}))
+        .collect::<Vec<_>>())
+}
+
+/// Answer those shares from the split invite: as the co-writer link would (confirm or dispute), and that link,
+/// if one was sent, is closed with the answer.
+pub(crate) async fn answer_writer_shares(
+    c: &mut PgConnection,
+    org: Uuid,
+    track: Uuid,
+    name: &str,
+    agree: bool,
+    note: Option<&str>,
+) -> Result<usize> {
+    let note =
+        opt_clean(note, 1000, "WORK_INVITE_NOTE_INVALID")?.filter(|n| !n.is_empty() && !agree);
+    if let Some(n) = &note {
+        crate::text_policy::check_multiline(n)?;
+    }
+    let answer = if agree { "confirmed" } else { "disputed" };
+    let rows = writer_shares(c, org, track, name).await?;
+    for (work, contributor, ..) in &rows {
+        sqlx::query(
+            "UPDATE portal.pub_work_contributors SET confirm=$3 WHERE work_id=$1 AND id=$2",
+        )
+        .bind(work)
+        .bind(contributor)
+        .bind(answer)
+        .execute(&mut *c)
+        .await?;
+        sqlx::query(
+            "UPDATE portal.pub_split_invites SET answer=$3, note=$4, answered_at=now(), email_cipher=NULL, token_cipher=NULL, token_hash=$5,
+                    invite_status=CASE WHEN invite_status='PENDING' THEN 'SKIPPED' ELSE invite_status END
+              WHERE work_id=$1 AND contributor_id=$2 AND answer IS NULL",
+        )
+        .bind(work)
+        .bind(contributor)
+        .bind(answer)
+        .bind(&note)
+        .bind(crate::domain::sha256_hex(auth::random_token()))
+        .execute(&mut *c)
+        .await?;
+        touch(c, *work).await?;
+    }
+    Ok(rows.len())
+}
+
 /// Invites sent per round.
 pub const INVITE_BATCH: i64 = 20;
 

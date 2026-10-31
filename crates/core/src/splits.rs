@@ -22,6 +22,7 @@ use crate::{
 };
 use axum::{
     Json, Router,
+    body::Bytes,
     extract::{Path, State},
     http::HeaderMap,
     routing::{get, post},
@@ -430,7 +431,7 @@ async fn by_token(c: &mut PgConnection, token: &str) -> Result<sqlx::postgres::P
         return Err(Error::NotFound);
     }
     sqlx::query(
-        "SELECT sh.id, sh.org_id, sh.release_id, sh.share_bps, sh.status, sh.name, sh.recipient_org_id,
+        "SELECT sh.id, sh.org_id, sh.release_id, sh.track_id, sh.share_bps, sh.status, sh.name, sh.recipient_org_id,
                 r.title, r.draft->>'artist' AS artist, t.title AS track_title, o.name AS org_name
            FROM portal.split_shares sh
            JOIN catalog.releases r ON r.id=sh.release_id
@@ -448,17 +449,69 @@ async fn by_token(c: &mut PgConnection, token: &str) -> Result<sqlx::postgres::P
 pub async fn invite(s: &AppState, token: &str) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     let r = by_token(&mut tx, token).await?;
+    // The same person's songwriter shares on this track, to confirm in the same answer.
+    let writer = if r.get::<String, _>("status") == "INVITED" {
+        crate::publishing::writer_shares(
+            &mut tx,
+            r.get("org_id"),
+            r.get("track_id"),
+            &r.get::<String, _>("name"),
+        )
+        .await?
+    } else {
+        Vec::new()
+    };
     tx.rollback().await?;
     Ok(json!({
         "title": r.get::<String, _>("title"), "artist": r.get::<Option<String>, _>("artist"),
         "track_title": r.get::<String, _>("track_title"), "from": r.get::<String, _>("org_name"),
         "name": r.get::<String, _>("name"), "share_bps": r.get::<i32, _>("share_bps"),
         "status": r.get::<String, _>("status"),
+        "writer": crate::publishing::writer_shares_json(&writer),
     }))
 }
 
+/// With the answer, optionally: are the songwriter shares on this track right (`writer`), and if not, why.
+#[derive(Deserialize, Default)]
+pub struct AnswerIn {
+    #[serde(default)]
+    pub writer: Option<bool>,
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+fn answer_in(body: &[u8]) -> Result<AnswerIn> {
+    if body.iter().all(u8::is_ascii_whitespace) {
+        return Ok(AnswerIn::default());
+    }
+    serde_json::from_slice::<Option<AnswerIn>>(body)
+        .map(Option::unwrap_or_default)
+        .map_err(|_| Error::Invalid)
+}
+
+async fn answer_writer(
+    c: &mut PgConnection,
+    r: &sqlx::postgres::PgRow,
+    i: &AnswerIn,
+) -> Result<usize> {
+    match i.writer {
+        Some(agree) => {
+            crate::publishing::answer_writer_shares(
+                c,
+                r.get("org_id"),
+                r.get("track_id"),
+                &r.get::<String, _>("name"),
+                agree,
+                i.note.as_deref(),
+            )
+            .await
+        }
+        None => Ok(0),
+    }
+}
+
 /// Accept into `org` (the collaborator's own account, as its OWNER).
-pub async fn accept(s: &AppState, a: &Actor, org: Uuid, token: &str) -> Result<Value> {
+pub async fn accept(s: &AppState, a: &Actor, org: Uuid, token: &str, i: AnswerIn) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     if auth::membership(&mut tx, a, org, true).await? != "OWNER" {
         return Err(Error::PolicyGate("SPLIT_OWNER_REQUIRED"));
@@ -485,6 +538,7 @@ pub async fn accept(s: &AppState, a: &Actor, org: Uuid, token: &str) -> Result<V
         .bind(id)
         .fetch_one(&mut *tx)
         .await?;
+    let writer = answer_writer(&mut tx, &r, &i).await?;
     operations::audit(
         &mut tx,
         Some(a.user),
@@ -496,11 +550,11 @@ pub async fn accept(s: &AppState, a: &Actor, org: Uuid, token: &str) -> Result<V
     )
     .await?;
     tx.commit().await?;
-    Ok(json!({"status": "ACCEPTED", "moved": moved}))
+    Ok(json!({"status": "ACCEPTED", "moved": moved, "writer": writer}))
 }
 
 /// Decline (no account needed: the link is the secret).
-pub async fn decline(s: &AppState, token: &str) -> Result<Value> {
+pub async fn decline(s: &AppState, token: &str, i: AnswerIn) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     let r = by_token(&mut tx, token).await?;
     if r.get::<String, _>("status") != "INVITED" {
@@ -520,8 +574,10 @@ pub async fn decline(s: &AppState, token: &str) -> Result<Value> {
         .bind(id)
         .execute(&mut *tx)
         .await?;
+    // Turning down the revenue share does not make the songwriter shares wrong: those are answered on their own.
+    let writer = answer_writer(&mut tx, &r, &i).await?;
     tx.commit().await?;
-    Ok(json!({"status": "DECLINED"}))
+    Ok(json!({"status": "DECLINED", "writer": writer}))
 }
 
 /// Shares this account receives from other people's releases.
@@ -558,6 +614,7 @@ pub fn render(
     title: &str,
     track: &str,
     share_bps: i32,
+    writer: bool,
 ) -> Rendered {
     let from = one_line(from);
     let title = one_line(title);
@@ -568,7 +625,12 @@ pub fn render(
     let body = format!(
         "'{title}'에 실린 '{track}'의 정산 수익(AUDENIQ 수수료 공제 후) 중 {share}가 공동작업 몫으로 정해졌어요. \
          수락하면 이 곡 수익이 들어올 때마다 내 AUDENIQ 계정 잔액에 쌓이고, 내 계좌로 출금할 수 있어요. \
-         계정이 없으면 가입한 뒤 수락하면 돼요. 수락 전에 들어온 몫은 보관했다가 수락할 때 함께 옮겨 드려요."
+         계정이 없으면 가입한 뒤 수락하면 돼요. 수락 전에 들어온 몫은 보관했다가 수락할 때 함께 옮겨 드려요.{}",
+        if writer {
+            " 같은 링크에서 이 곡의 작사·작곡 지분이 맞는지도 함께 확인할 수 있어요."
+        } else {
+            ""
+        }
     );
     let footer = "이 링크는 받으신 분만 쓸 수 있어요. 모르는 내용이면 거절하거나 무시해 주세요.";
     let text = format!("{headline}\n\n{body}\n\n확인하기: {url}\n\n--\n{footer}\n");
@@ -600,7 +662,7 @@ pub async fn dispatch_once(pool: &PgPool, keys: &KeyRing, mailer: &Mailer) -> Re
           WHERE sh.id IN (SELECT id FROM portal.split_shares
                            WHERE invite_status='PENDING' AND invite_next_at <= now()
                            ORDER BY invite_next_at LIMIT $1 FOR UPDATE SKIP LOCKED)
-          RETURNING sh.id, sh.invite_attempts, sh.email_cipher, sh.status, sh.share_bps,
+          RETURNING sh.id, sh.invite_attempts, sh.email_cipher, sh.status, sh.share_bps, sh.org_id, sh.track_id, sh.name,
             (SELECT o.name FROM identity.orgs o WHERE o.id=sh.org_id) AS org_name,
             (SELECT r.title FROM catalog.releases r WHERE r.id=sh.release_id) AS title,
             (SELECT t.title FROM catalog.tracks t WHERE t.id=sh.track_id) AS track_title",
@@ -649,6 +711,15 @@ pub async fn dispatch_once(pool: &PgPool, keys: &KeyRing, mailer: &Mailer) -> Re
             // Changed since we leased it; the new version is sent on its own.
             continue;
         }
+        let mut c = pool.acquire().await?;
+        let writer = crate::publishing::writer_shares(
+            &mut c,
+            row.get("org_id"),
+            row.get("track_id"),
+            &row.get::<String, _>("name"),
+        )
+        .await?;
+        drop(c);
         let mail = render(
             &mailer.origin,
             &token,
@@ -656,6 +727,7 @@ pub async fn dispatch_once(pool: &PgPool, keys: &KeyRing, mailer: &Mailer) -> Re
             &row.get::<String, _>("title"),
             &row.get::<String, _>("track_title"),
             row.get("share_bps"),
+            !writer.is_empty(),
         );
         match attempt(mailer.send(Uuid::new_v4(), &to, &mail).await, attempts) {
             Attempt::Sent(_) => done("SENT").await?,
@@ -708,12 +780,17 @@ async fn h_accept(
     State(s): State<AppState>,
     Path((org, token)): Path<(Uuid, String)>,
     h: HeaderMap,
+    body: Bytes,
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, true).await?;
-    Ok(Json(accept(&s, &a, org, &token).await?))
+    Ok(Json(accept(&s, &a, org, &token, answer_in(&body)?).await?))
 }
-async fn h_decline(State(s): State<AppState>, Path(token): Path<String>) -> Result<Json<Value>> {
-    Ok(Json(decline(&s, &token).await?))
+async fn h_decline(
+    State(s): State<AppState>,
+    Path(token): Path<String>,
+    body: Bytes,
+) -> Result<Json<Value>> {
+    Ok(Json(decline(&s, &token, answer_in(&body)?).await?))
 }
 async fn h_received(
     State(s): State<AppState>,

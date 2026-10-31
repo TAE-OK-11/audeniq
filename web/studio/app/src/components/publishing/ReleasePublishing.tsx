@@ -1,15 +1,19 @@
 // 배급 화면 곳곳에 붙는 퍼블리싱 조각 — 앨범 단위 설정은 발매 상세 '퍼블리싱' 탭에서.
 //  · takePublishingIntent: 발매를 접수할 때 적은 크레딧으로 곡 정보를 미리 정리해 둘지 (기본: 정리)
 //  · PublishingLinkRow: 발매 상세·곡 시트의 '작사·작곡 저작권' 한 줄 (앨범이면 발매 상세 '퍼블리싱' 탭으로)
+//  · PublishingAlongside / applyAlongRelease: 발매 신청서 서명 한 번으로 같은 앨범의 저작권 관리 신청서도 접수
 //  · PublishingBundleStep: 공유하는 계약서 화면의 발매 계약 묶음 — 배급 계약 다음 줄에 같은 앨범의 저작권 관리 계약
 import { Link, useNavigate } from '../../lib/router';
 import { pubApi, type Work } from '../../api/publishing';
 import { signing } from '../../lib/publishingPrep';
+import { APPLICATION_AGREE, isReleased, splitReady } from '../../lib/publishing';
 import { useAsync } from '../../hooks/useAsync';
 import { readJSON, removeKey } from '../../lib/storage';
+import { uid } from '../../lib/store';
 import { Glyph } from '../Glyph';
 import { IconTile } from '../../ui';
 import { CheckIcon } from '../Check';
+import '../../styles/split/Upload.css';
 
 export type PublishingIntent = 'works' | 'enroll' | 'none';
 const intentKey = (draftId: string | null | undefined) => `publishing-intent:${draftId || 'new'}`;
@@ -20,6 +24,68 @@ export function takePublishingIntent(draftId: string | null | undefined): Publis
   removeKey(intentKey(draftId));
   removeKey(intentKey(null));
   return v ?? 'works';
+}
+
+/** 발매 신청서 서명 아래 — '작사·작곡 저작권도 함께 맡기기'. 켜면 저작권 관리 신청서의 확인 항목도 여기서 체크하고,
+ *  접수할 때 같은 서명으로 저작권 관리 신청서가 함께 나간다. 계약서는 배급처럼 담당자 승인 뒤 따로 서명한다 */
+export function PublishingAlongside({ on, onToggle, agreed, onAgree }: {
+  on: boolean; onToggle: (v: boolean) => void; agreed: readonly string[]; onAgree: (v: string[]) => void;
+}) {
+  const { data: policy } = useAsync(() => pubApi.policy(), [], { key: 'pub-policy' });
+  const all = APPLICATION_AGREE.every(([k]) => agreed.includes(k));
+  return (
+    <div className="aq-agree-box aq-pub-along">
+      <label className="ui-check is-plain aq-agree-all-line">
+        <input type="checkbox" id="pubAlong" checked={on} onChange={e => onToggle(e.target.checked)} />
+        <span>
+          <strong>작사·작곡 저작권도 함께 맡기기</strong>
+          <small className="aq-pub-along-sub">
+            같은 서명으로 저작권 관리 신청서도 접수돼요.{policy ? ` 수수료는 실제로 받은 저작권료의 ${policy.commissionRate}%예요.` : ''} 곡 정보는 크레딧에서 채우고, 계약서는 담당자 확인 뒤 따로 보내 드려요.
+          </small>
+        </span>
+      </label>
+      {on && (
+        <>
+          <label className="ui-check is-plain">
+            <input type="checkbox" checked={all} onChange={e => onAgree(e.target.checked ? APPLICATION_AGREE.map(([k]) => k) : [])} />
+            <span><strong>저작권 관리 신청 내용에 모두 동의해요</strong></span>
+          </label>
+          {APPLICATION_AGREE.map(([k, text]) => (
+            <label key={k} className="ui-check is-plain">
+              <input type="checkbox" id={`pub-agree-${k}`} checked={agreed.includes(k)}
+                onChange={e => onAgree(e.target.checked ? [...agreed, k] : agreed.filter(x => x !== k))} />
+              <span>{text}</span>
+            </label>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** 발매 접수 직후 — 크레딧으로 곡 정보를 만들고, 신청할 수 있는 곡은 발매 신청서와 같은 서명으로 저작권 관리 신청서를 낸다.
+ *  지분이 맞지 않는 곡 등은 남겨 두고(앨범 퍼블리싱 탭에서 이어서) 몇 곡을 냈는지 돌려준다 */
+export async function applyAlongRelease(releaseId: string, coverTitles: string[], signature: { name: string; data: string }): Promise<{ applied: number; waiting: number }> {
+  await pubApi.prepareWorksFromRelease(releaseId, true, coverTitles);
+  const [works, policy] = await Promise.all([pubApi.listWorks(), pubApi.policy()]);
+  const mine = works.filter(w => w.recordings.some(r => r.releaseId === releaseId) && (w.myRole === 'owner' || w.myRole === 'editor'));
+  const ready = mine.filter(w => !w.application && isReleased(w) && w.aiUse !== 'generated' && splitReady(w.contributors));
+  const scope = readJSON<{ territories: string[]; rights: string[] } | null>('publishing-apply-scope', null);
+  const pick = <T,>(last: string[] | undefined, all: T[], key: (x: T) => string) => {
+    const keep = (last ?? []).filter(c => all.some(x => key(x) === c));
+    return keep.length ? keep : all.map(key);
+  };
+  if (ready.length) {
+    await pubApi.submitApplication({
+      workIds: ready.map(w => w.id),
+      territories: pick(scope?.territories, policy.territories, t => t.code),
+      rights: pick(scope?.rights, policy.rights, r => r.key),
+      policyVersion: policy.version, agreed: APPLICATION_AGREE.map(([k]) => k),
+      signature: { name: signature.name, method: 'drawn', data: signature.data },
+      idempotencyKey: uid('pub'),
+    });
+  }
+  return { applied: ready.length, waiting: mine.filter(w => !w.application).length - ready.length };
 }
 
 /** 배급 화면에 남기는 퍼블리싱 연결 한 줄 — 이 발매 곡들의 작사·작곡 저작권이 어디까지 왔는지 + 퍼블리싱에서 보기.

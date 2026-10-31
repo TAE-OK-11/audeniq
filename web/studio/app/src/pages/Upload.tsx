@@ -28,7 +28,8 @@ import { artistIssue, COVER_MAX, COVER_MIN, coverIssue, expectedReleaseType, isr
 import { uid } from '../lib/store';
 import { CheckIcon } from '../components/Check';
 import { AddonSummary, addonProblem } from '../components/AddonOptions';
-import { takePublishingIntent } from '../components/publishing/ReleasePublishing';
+import { PublishingAlongside, applyAlongRelease, takePublishingIntent } from '../components/publishing/ReleasePublishing';
+import { APPLICATION_AGREE } from '../lib/publishing';
 import { pubApi } from '../api/publishing';
 import { mockOrdersFromApplication } from '../lib/addons';
 import { Glyph } from '../components/Glyph';
@@ -95,6 +96,9 @@ export function Upload() {
   const [signed, setSigned] = useState(false);
   const [signer, setSigner] = useState({ name: '', role: SIGNER_ROLES[0], touched: false });
   const [agreed, setAgreed] = useState<Record<string, boolean>>({});
+  // 발매 신청서 서명 한 번으로 저작권 관리 신청서도 함께 (켜면 그 확인 항목도 함께 체크)
+  const [pubAlong, setPubAlong] = useState(false);
+  const [pubAgreed, setPubAgreed] = useState<string[]>([]);
   const [form, setForm] = useState<WizardForm>(() => ({ ...EMPTY, artist: profile.name || '', tracks: [newTrack()] }));
   // 예전 발매에 쓴 크레딧 이름 — 곡 정보 칸 아래 제안 칩 (못 불러오면 칩만 없다)
   const [creditNames, setCreditNames] = useState<CreditHistory | undefined>();
@@ -652,6 +656,8 @@ export function Upload() {
       if (!signed || signRef.current?.isEmpty()) return fail('신청인 서명을 그려 주세요.', '#aqApplyPad');
       const missing = AGREEMENTS.find(a => !agreed[a.id]);
       if (missing) return fail('신청 확인 항목에 모두 동의해 주세요.', `#agree-${missing.id}`);
+      const pubMissing = pubAlong && APPLICATION_AGREE.find(([k]) => !pubAgreed.includes(k));
+      if (pubMissing) return fail('저작권 관리 신청 확인 항목에 모두 동의해 주세요.', `#pub-agree-${pubMissing[0]}`);
     }
     setError('');
     clearFieldError();
@@ -717,8 +723,9 @@ export function Upload() {
       // 기다리는 동안 자동 저장이 서버 트랙 id를 받아 왔을 수 있다 — 클로저의 form이 아니라 최신 상태로 보낸다(트랙 중복 방지)
       const f = formRef.current;
       const payload = toPayload(f, step);
+      const signature = resubmit ? '' : await compactSignature(signRef.current?.toDataURL() ?? '');
       const application = resubmit ? undefined : await createApplication({
-        payload, signature: await compactSignature(signRef.current?.toDataURL() ?? ''), signerName, signerRole: signer.role,
+        payload, signature, signerName, signerRole: signer.role,
         agreements: AGREEMENTS.map(a => a.id),
       });
       const intentDraft = draftIdRef.current;
@@ -726,8 +733,22 @@ export function Upload() {
       draftIdRef.current = r.id;
       // 신청서에서 고른 대로 곡 크레딧으로 저작물을 만들고(퍼블리싱을 고르면 신청 준비까지) — 실패해도 발매 접수는 그대로
       const intent = takePublishingIntent(intentDraft);
-      if (intent !== 'none') {
-        const coverTitles = f.options.cover ? f.tracks.filter(t => f.options.coverTracks.some(c => c.trackId === t.id || c.trackId === t.serverId)).map(t => t.title) : [];
+      const coverTitles = f.options.cover ? f.tracks.filter(t => f.options.coverTracks.some(c => c.trackId === t.id || c.trackId === t.serverId)).map(t => t.title) : [];
+      if (pubAlong && !resubmit) {
+        // 같은 서명으로 저작권 관리 신청서도 — 기다리지 않는다. 낸 곡·남은 곡은 알림(실서버는 토스트)으로 알려 준다
+        const tell = (title: string, detail: string, tone: 'success' | 'info' | 'error') => {
+          pushNotice({ id: uid('n'), kind: '발매', time: stampNow(), link: `/releases/${r.id}?tab=publishing`, title, detail });
+          if (!MOCK) toast(title, tone);
+        };
+        void applyAlongRelease(r.id, coverTitles, { name: signerName.trim(), data: signature }).then(({ applied, waiting }) => {
+          if (!applied && !waiting) return;
+          tell(
+            applied ? `저작권 관리 신청서도 ${applied}곡 함께 접수했어요.` : `${r.title} 곡 정보를 확인하고 저작권 관리를 신청해 주세요.`,
+            waiting ? `${waiting}곡은 참여자·지분을 확인한 뒤 앨범 퍼블리싱 탭에서 신청할 수 있어요.` : '담당자 확인이 끝나면 계약서를 보내 드려요.',
+            applied ? 'success' : 'info',
+          );
+        }).catch(() => tell(`${r.title} 저작권 관리 신청을 마치지 못했어요.`, '발매 신청은 접수됐어요. 앨범 퍼블리싱 탭에서 다시 신청해 주세요.', 'error'));
+      } else if (intent !== 'none') {
         void pubApi.prepareWorksFromRelease(r.id, intent === 'enroll', coverTitles).catch(() => {});
       }
       dirtyRef.current = false;
@@ -1671,6 +1692,7 @@ export function Upload() {
                   </label>
                 ))}
               </div>
+              <PublishingAlongside on={pubAlong} onToggle={setPubAlong} agreed={pubAgreed} onAgree={setPubAgreed} />
             </section>
             )}
           </section>

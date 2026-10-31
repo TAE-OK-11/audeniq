@@ -113,6 +113,17 @@ Studio: `/reports/publishing/statement?q=YYYY-Qn` prints a quarterly royalty sta
   `audeniq_staff_ops`) — per org DEBIT `ROYALTY_RECEIVED`, CREDIT `AUDENIQ_FEE` / `ROYALTY_PAYABLE`; rows become paid, once.
   The API role only moves estimated → confirmed; paid means posted.
 
+## Distribution ↔ publishing (migration 0175)
+
+- **Release live → suggestion.** When the first platform puts a release live (`execution.live_bindings`) and some of
+  its tracks have no work yet, one notice links to the release's publishing tab (`portal.release_publishing_hint`).
+- **One signature.** The release application's sign step has "작사·작곡 저작권도 함께 맡기기": with its four
+  application ticks, the same drawn signature also submits the administration application for the release's songs
+  (works prepared from the credits; songs whose shares are not ready wait in the album publishing tab).
+- **One invite.** The distribution revenue split invite (`/splits/:token`) also lists the collaborator's songwriter
+  shares on that track's works (matched by name, ignoring spaces) still to confirm. Accept or decline can carry
+  `{"writer": true|false, "note"}`; the shares are confirmed or disputed and any co-writer link for them is closed.
+
 ## Stage 2 — not yet
 
 - A contributor with an AUDENIQ account answering inside the studio (`rights/confirmation` answers 501); link invites cover it.

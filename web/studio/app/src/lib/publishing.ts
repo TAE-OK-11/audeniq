@@ -212,7 +212,7 @@ export function splitIssues(list: readonly WorkContributor[]): SplitIssue[] {
     if (c.confirm === 'disputed') out.push({ level: 'error', text: `${who}이(가) 지분에 이의를 제기했어요. 지분을 다시 맞춰 주세요.`, contributorId: c.id });
     else if (c.confirm === 'pending') out.push({ level: 'warn', text: `${who}의 지분 확인을 기다리고 있어요.`, contributorId: c.id });
   }
-  if (list.every(c => !c.roles.includes('composer'))) out.push({ level: 'warn', text: '작곡가가 없어요. 연주곡이라도 작곡가는 꼭 있어야 해요.' });
+  if (list.every(c => !c.roles.includes('composer'))) out.push({ level: 'error', text: '작곡가가 없어요. 연주곡이라도 작곡가는 꼭 있어야 해요.' });
   return out;
 }
 
