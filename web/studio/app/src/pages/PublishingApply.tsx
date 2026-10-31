@@ -15,7 +15,7 @@ import { useProfile } from '../store/profile';
 import { compactSignature } from '../lib/application';
 import { readJSON, removeKey, writeJSON } from '../lib/storage';
 import { uid } from '../lib/store';
-import { APPLICATION_AGREE, APP_LABEL, APP_TONE, pct, splitIssues, splitReady, termLabel } from '../lib/publishing';
+import { APPLICATION_AGREE, APP_LABEL, APP_TONE, isReleased, pct, societyName, splitIssues, splitReady, termLabel } from '../lib/publishing';
 import { money } from '../lib/format';
 import { ReviewCard, WizardShell, type WizardStep } from '../components/WizardShell';
 import { SkeletonBlock } from '../components/Skeleton';
@@ -36,9 +36,11 @@ const STEPS: WizardStep[] = [
 // 배급처럼 신청서와 계약서는 따로 — 여기서는 신청 내용이 맞다는 확인과 신청서 서명만. 계약은 승인 뒤 계약서 화면에서
 const AGREE = APPLICATION_AGREE;
 
-interface Saved { step: number; workIds: string[]; territories: string[]; rights: string[]; key: string }
+interface Saved { step: number; workIds: string[]; territories: string[]; rights: string[]; key: string; from?: string }
 const SAVE_KEY = 'publishing-apply';
 const activeApp = (w: Work) => !!w.application && ['submitted', 'in_review', 'needs_fix', 'approved'].includes(w.application.status);
+// 저작권 관리는 발매된 곡(내 발매 · 다른 아티스트 발매)만 — 발매 전 곡은 Open A&R로 피칭한다 (서버도 WORK_NOT_RELEASED로 막는다)
+const canPick = (w: Work) => !activeApp(w) && isReleased(w);
 
 export function PublishingApply() {
   const [params] = useSearchParams();
@@ -58,7 +60,9 @@ export function PublishingApply() {
   const [preparing, setPreparing] = useState(false);
 
   const saved = useRef(readJSON<Saved | null>(SAVE_KEY, null));
-  const resume = saved.current && !bundled.length && (!preset || saved.current.workIds.includes(preset)) ? saved.current : null;
+  // 이어 쓰기는 같은 자리에서 들어왔을 때만 — 다른 발매·곡에서 들어왔는데 예전에 고르던 곡과 단계가 그대로 열렸다
+  const from = fromRelease ? `release:${fromRelease}` : preset ? `work:${preset}` : '';
+  const resume = saved.current && !bundled.length && (saved.current.from ?? '') === from && (!preset || saved.current.workIds.includes(preset)) ? saved.current : null;
   const [step, setStep] = useState(resume?.step && resume.step < 4 ? resume.step : 0);
   const [picked, setPicked] = useState<string[]>(resume?.workIds ?? (bundled.length ? bundled : preset ? [preset] : []));
   // 발매에서 왔으면 그 발매에 연결된(아직 신청 전인) 곡을 모두 고른다
@@ -85,16 +89,18 @@ export function PublishingApply() {
   }, [policy]);
 
   useEffect(() => {
-    writeJSON(SAVE_KEY, { step, workIds: picked, territories, rights, key } satisfies Saved);
-  }, [step, picked, territories, rights, key]);
+    writeJSON(SAVE_KEY, { step, workIds: picked, territories, rights, key, from } satisfies Saved);
+  }, [step, picked, territories, rights, key, from]);
 
   // 단계를 옮기면 맨 위로 — 긴 계약서를 읽고 내려온 자리에서 다음 단계가 시작되지 않게
   // 지나온 단계는 위 진행 칸·왼쪽 목록에서 눌러 돌아갈 수 있다
   const [reached, setReached] = useState(step);
   useEffect(() => { setReached(r => Math.max(r, step)); window.scrollTo({ top: 0, behavior: 'smooth' }); }, [step]);
 
-  const mine = useMemo(() => (works ?? []).filter(w => w.myRole === 'owner' || w.myRole === 'editor'), [works]);
-  const chosen = mine.filter(w => picked.includes(w.id) && !activeApp(w));
+  // 고를 수 있는 곡이 먼저 — 신청할 수 없는(발매 전·진행 중) 곡이 위에 쌓여 고를 곡을 찾기 어려웠다
+  const mine = useMemo(() => (works ?? []).filter(w => w.myRole === 'owner' || w.myRole === 'editor')
+    .sort((a, b) => Number(!canPick(a)) - Number(!canPick(b)) || Number(!isReleased(b)) - Number(!isReleased(a))), [works]);
+  const chosen = mine.filter(w => picked.includes(w.id) && canPick(w));
   const blocked = chosen.filter(w => !splitReady(w.contributors));
   const conflicts = chosen.filter(w => w.hasPriorPublisher);
   const pendingPeople = chosen.flatMap(w => w.contributors.filter(c => !c.isMe && c.confirm !== 'confirmed').map(c => ({ w, c })));
@@ -153,7 +159,7 @@ export function PublishingApply() {
     >
       {step === 0 && (
         <>
-          <p className="ui-field-help">{releaseTitle ? `‘${releaseTitle}’ 발매 곡을 골라 두었어요. ` : ''}지분이 맞지 않는 곡은 먼저 고쳐 주세요.</p>
+          <p className="ui-field-help">{releaseTitle ? `‘${releaseTitle}’ 발매 곡을 골라 두었어요. ` : ''}발매된 곡만 신청할 수 있어요. 지분이 맞지 않는 곡은 먼저 고쳐 주세요.</p>
           {fromRelease && (
             <Callout tone="neutral" action={
               <button type="button" className={`ui-btn is-white is-sm${preparing ? ' is-busy' : ''}`} disabled={preparing}
@@ -168,9 +174,10 @@ export function PublishingApply() {
             <div className="aq-agree-box aq-pbl-song-picker">
               {mine.map(w => {
                 const busyApp = activeApp(w);
+                const demo = !isReleased(w);
                 return (
                   <label key={w.id} className="ui-check is-plain">
-                    <input type="checkbox" checked={picked.includes(w.id)} disabled={busyApp} onChange={() => toggle(picked, setPicked, w.id)} />
+                    <input type="checkbox" checked={picked.includes(w.id) && !demo} disabled={busyApp || demo} onChange={() => toggle(picked, setPicked, w.id)} />
                     {/* 상태 색은 앱 전체 규칙 그대로 — 심사 중 보라, 보완 주황, 승인 초록. 고를 수 있는 곡은 '신청 가능'만 파랑 */}
                     <span className="aq-pbl-song-pick">
                       <span className="min-0">
@@ -178,6 +185,7 @@ export function PublishingApply() {
                         <small>{w.contributors.map(c => `${c.name} ${pct(c.share)}`).join(' · ') || '참여자 없음'}</small>
                       </span>
                       {busyApp ? <Badge tone={APP_TONE[w.application!.status]}>{APP_LABEL[w.application!.status]}</Badge>
+                        : demo ? <Badge tone="gray">발매 전 · A&R 대상</Badge>
                         : splitReady(w.contributors) ? <Badge tone="blue">신청 가능</Badge> : <Badge tone="amber">지분 확인 필요</Badge>}
                     </span>
                   </label>
@@ -212,7 +220,7 @@ export function PublishingApply() {
                     <div key={c.id} className="ui-row is-flat">
                       <span className="min-0">
                         <span className="ui-row-title">{c.name}{c.isMe && ' (나)'} · {pct(c.share)}</span>
-                        <span className="ui-row-meta"><span>{roleText(c)}</span>{c.society && <span>{c.society}</span>}</span>
+                        <span className="ui-row-meta"><span>{roleText(c)}</span>{c.society && <span>{societyName(c.society)}</span>}</span>
                       </span>
                       {c.confirm === 'confirmed' ? <Badge tone="green">확인</Badge> : c.confirm === 'disputed' ? <Badge tone="red">이의</Badge> : <Badge tone="amber">확인 필요</Badge>}
                     </div>

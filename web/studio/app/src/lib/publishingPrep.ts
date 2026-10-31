@@ -1,7 +1,7 @@
 // 앨범 퍼블리싱 탭이 함께 쓰는 계산 — 신청 전 준비 점검 · 참여자 확인 현황 · 지분 변경 전후 · 참여자 재사용 · 저작권료 기간·조건.
 // 화면(AlbumPublishingTab · WorkSheet · Publishing)은 이 결과만 그린다 (테스트: publishingPrep.test.ts)
 import type { Royalty, Work, WorkContributor } from '../api/publishing';
-import { ROLE_LABEL, isManaged, pct, splitIssues, sumShares } from './publishing';
+import { ROLE_LABEL, isManaged, pct, societyName, splitIssues, sumShares } from './publishing';
 import { uid } from './store';
 
 // ---------- 신청 전 준비 점검 ----------
@@ -10,10 +10,10 @@ import { uid } from './store';
 export type PrepField = 'split' | 'confirm' | 'ipi' | 'fix';
 export interface WorkIssue { field: PrepField; text: string; blocking: boolean; contributorId?: string }
 
-export type WorkStage = 'ready' | 'blocked' | 'applied' | 'signing' | 'managed' | 'readonly';
-export const STAGE_LABEL: Record<WorkStage, string> = { ready: '신청 가능', blocked: '확인 필요', applied: '심사 중', signing: '계약서 서명', managed: '관리 중', readonly: '공동 참여' };
+export type WorkStage = 'ready' | 'blocked' | 'fix' | 'applied' | 'signing' | 'managed' | 'readonly';
+export const STAGE_LABEL: Record<WorkStage, string> = { ready: '신청 가능', blocked: '확인 필요', fix: '보완 요청', applied: '심사 중', signing: '계약서 서명', managed: '관리 중', readonly: '공동 참여' };
 /** 상태 색 — 신청 가능은 할 수 있는 일(파랑), 심사 중 보라, 관리 중은 끝난 일(초록) */
-export const STAGE_TONE = { ready: 'blue', blocked: 'amber', applied: 'violet', signing: 'blue', managed: 'green', readonly: 'gray' } as const satisfies Record<WorkStage, string>;
+export const STAGE_TONE = { ready: 'blue', blocked: 'amber', fix: 'amber', applied: 'violet', signing: 'blue', managed: 'green', readonly: 'gray' } as const satisfies Record<WorkStage, string>;
 
 const canEdit = (w: Work) => w.myRole === 'owner' || w.myRole === 'editor';
 const applying = (w: Work) => !!w.application && ['submitted', 'in_review', 'needs_fix'].includes(w.application.status);
@@ -44,6 +44,8 @@ export function workStage(w: Work): WorkStage {
   if (signing(w)) return 'signing';
   if (isManaged(w) && !applying(w)) return 'managed';
   if (applying(w) && !w.fix) return 'applied';
+  // 담당자 보완 요청 — 곡 목록 배지가 '확인 필요'로 보여 앨범 머리의 '보완 요청'과 다른 말을 했다
+  if (w.fix) return 'fix';
   return workIssues(w).some(i => i.blocking) ? 'blocked' : 'ready';
 }
 
@@ -143,7 +145,7 @@ export function splitDiff(before: readonly WorkContributor[], after: readonly Wo
     if (p.share !== c.share) lines.push(`창작 지분 ${pct(p.share)} → ${pct(c.share)}`);
     if (p.publisherShare !== c.publisherShare) lines.push(`관리 지분 ${pct(p.publisherShare)} → ${pct(c.publisherShare)}`);
     if (roleList(p) !== roleList(c)) lines.push(`역할 ${roleList(p)} → ${roleList(c)}`);
-    if ((p.society ?? '') !== (c.society ?? '')) lines.push(`관리 단체 ${p.society || '없음'} → ${c.society || '없음'}`);
+    if ((p.society ?? '') !== (c.society ?? '')) lines.push(`관리 단체 ${societyName(p.society) || '없음'} → ${societyName(c.society) || '없음'}`);
     if ((p.ipi ?? '') !== (c.ipi ?? '')) lines.push(`IPI ${p.ipi || '없음'} → ${c.ipi || '없음'}`);
     if (p.name !== c.name) lines.push(`이름 ${p.name} → ${c.name}`);
     if (lines.length) out.push({ key: c.id, name, kind: 'changed', lines });

@@ -528,6 +528,19 @@ async fn work_to_application_to_review(pool: PgPool) {
     )
     .await;
     assert_eq!(w["contractId"], cid);
+    // Signed but not registered yet: the contract is in force, so a share change waits for review too.
+    let rv = w["rowVersion"].as_i64().unwrap();
+    let (s, signed) = call(
+        &app,
+        "PUT",
+        &format!("{base}/works/{id}/rights"),
+        json!({"contributors": people(&u, 55.0, 45.0), "row_version": rv}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{signed}");
+    assert_eq!(signed["contributors"][0]["share"], 60.0);
+    assert_eq!(signed["pendingChange"]["contributors"][0]["share"], 55.0);
 
     let (s, _) = decide(json!({"action": "REGISTER", "society": "KOMCA"})).await;
     assert_eq!(s, StatusCode::OK);
@@ -624,6 +637,19 @@ async fn prepare_from_credits_withdraw_and_isolation(pool: PgPool) {
         .await
         .unwrap();
     }
+    // What the release form already holds: genre, language, lyrics, and a second track marked instrumental.
+    sqlx::query("UPDATE catalog.releases SET draft = draft || jsonb_build_object('genre','R&B','language','en','draftTracks',jsonb_build_array(jsonb_build_object('serverId',$2::text,'instrumental',true))), row_version=row_version+1 WHERE id=$1")
+        .bind(release)
+        .bind(t2)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE catalog.tracks SET lyrics=$2 WHERE id=$1")
+        .bind(t1)
+        .bind("한낮의 햇살 아래\n걸어가")
+        .execute(&pool)
+        .await
+        .unwrap();
     let (s, r) = call(
         &app,
         "POST",
@@ -657,6 +683,16 @@ async fn prepare_from_credits_withdraw_and_isolation(pool: PgPool) {
     assert_eq!(shares.iter().sum::<f64>(), 100.0);
     let second = items.iter().find(|w| w["title"] == "밤바다").unwrap();
     assert_eq!(second["contributors"][0]["isMe"], true);
+    // Nothing typed twice: genre and language from the release, lyrics as a lyrics file, instrumental kept.
+    assert_eq!(
+        (first["genre"].as_str(), first["language"].as_str()),
+        (Some("R&B"), Some("en"))
+    );
+    assert_eq!(first["workType"], "original");
+    assert_eq!(first["attachments"][0]["kind"], "lyrics");
+    assert_eq!(first["attachments"][0]["text"], "한낮의 햇살 아래\n걸어가");
+    assert_eq!(second["workType"], "instrumental");
+    assert!(second["attachments"].as_array().unwrap().is_empty());
 
     // Apply both, then withdraw: the works return to 'none'.
     let ids: Vec<&str> = items.iter().map(|w| w["id"].as_str().unwrap()).collect();
@@ -752,11 +788,14 @@ async fn prepare_from_credits_withdraw_and_isolation(pool: PgPool) {
     .await;
     assert_eq!(s, StatusCode::NOT_FOUND);
 
-    // Archive an unapplied work; it leaves the list.
+    // Archive an unapplied work (by title: both were made in one transaction, so list order is by id); it leaves the list.
+    let night = items.iter().find(|w| w["title"] == "밤바다").unwrap()["id"]
+        .as_str()
+        .unwrap();
     let (s, _) = call(
         &app,
         "DELETE",
-        &format!("{base}/works/{}", ids[1]),
+        &format!("{base}/works/{night}"),
         json!({}),
         Some(&u),
     )
@@ -804,4 +843,129 @@ async fn prepare_from_credits_withdraw_and_isolation(pool: PgPool) {
         (s, c["items"].as_array().map(Vec::len)),
         (StatusCode::OK, Some(0))
     );
+}
+
+/// Publishing takes a song three ways (migration 0169): not released yet (Open A&R), released by the
+/// artist (read from the catalog), released by someone else (the artist gives the release).
+#[sqlx::test]
+async fn work_origin_decides_what_can_be_applied(pool: PgPool) {
+    let (app, _store) = app(pool.clone()).await;
+    admit_signature(&pool).await;
+    let u = user(&app).await;
+    let base = format!("/api/orgs/{}", u.org);
+    let new_work = |title: &str, extra: Value| {
+        let mut body = json!({"title": title, "contributors": people(&u, 60.0, 40.0)});
+        for (k, v) in extra.as_object().unwrap() {
+            body[k] = v.clone();
+        }
+        body
+    };
+
+    // Not released yet: kept, but administration waits for a release.
+    let (s, demo) = call(
+        &app,
+        "POST",
+        &format!("{base}/works"),
+        new_work("새벽 네 시", json!({})),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{demo}");
+    assert_eq!(demo["origin"], "unreleased");
+    assert!(demo["externalRelease"].is_null());
+    let demo_id = demo["id"].as_str().unwrap().to_string();
+    let (s, e) = call(
+        &app,
+        "POST",
+        &format!("{base}/publishing/applications"),
+        apply(&[&demo_id], "key-unreleased"),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (StatusCode::UNPROCESSABLE_ENTITY, Some("WORK_NOT_RELEASED"))
+    );
+
+    // Released by someone else: the release is needed and kept as given.
+    let (s, e) = call(
+        &app,
+        "POST",
+        &format!("{base}/works"),
+        new_work("겨울 편지", json!({"origin": "other_release"})),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("WORK_RELEASE_INFO_REQUIRED"))
+    );
+    let (s, other) = call(&app, "POST", &format!("{base}/works"), new_work("겨울 편지", json!({
+        "origin": "other_release",
+        "externalRelease": {"artist": "이온", "title": "겨울 편지", "releaseDate": "2025-11-20", "isrc": "kr-a26-25-00011", "label": null}
+    })), Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{other}");
+    assert_eq!(other["origin"], "other_release");
+    assert_eq!(other["externalRelease"]["artist"], "이온");
+    assert_eq!(other["externalRelease"]["isrc"], "KRA262500011");
+    let other_id = other["id"].as_str().unwrap().to_string();
+    let (s, a) = call(
+        &app,
+        "POST",
+        &format!("{base}/publishing/applications"),
+        apply(&[&other_id], "key-other-release"),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{a}");
+
+    // The pitched song was released by another artist: it moves to other_release with that release.
+    let rv = demo["rowVersion"].as_i64().unwrap();
+    let (s, e) = call(
+        &app,
+        "PATCH",
+        &format!("{base}/works/{demo_id}"),
+        json!({"origin": "own_release", "row_version": rv}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("WORK_ORIGIN_INVALID"))
+    );
+    let (s, e) = call(
+        &app,
+        "PATCH",
+        &format!("{base}/works/{demo_id}"),
+        json!({"origin": "other_release", "row_version": rv}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (s, e["error"]["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("WORK_RELEASE_INFO_REQUIRED"))
+    );
+
+    // Released by the artist: linking a recording of the org's own release makes it own_release.
+    let release = create_release(&app, &u).await;
+    let t = track(&app, &pool, &u, release, "새벽 네 시", 1).await;
+    let (s, w) = call(
+        &app,
+        "POST",
+        &format!("{base}/works/{demo_id}/recordings"),
+        json!({"release_id": release, "track_id": t}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{w}");
+    assert_eq!(w["origin"], "own_release");
+    let (s, a) = call(
+        &app,
+        "POST",
+        &format!("{base}/publishing/applications"),
+        apply(&[&demo_id], "key-own-release"),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{a}");
 }

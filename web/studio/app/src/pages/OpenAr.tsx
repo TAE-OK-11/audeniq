@@ -6,7 +6,7 @@ import { pubApi, type ArSubmission, type Work } from '../api/publishing';
 import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { uid } from '../lib/store';
-import { AR_LABEL, AR_TONE } from '../lib/publishing';
+import { AR_LABEL, AR_TONE, isReleased } from '../lib/publishing';
 import { localStamp } from '../lib/format';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
@@ -29,13 +29,13 @@ const AR_PATH = [
 ] as const;
 const arStep = (s: ArSubmission['status']) => ({ submitted: 0, in_review: 1, needs_fix: 1, reviewed: 2, proposing: 3, closed: 4 }[s]);
 
-function SubmitForm({ works, preset, onDone, onClose, onWorkChanged }: { works: Work[]; preset: string | null; onDone: (s: ArSubmission) => void; onClose: () => void; onWorkChanged: () => void }) {
+function SubmitForm({ works, preset, busyIds, releasedPreset, onDone, onClose, onWorkChanged }: { works: Work[]; preset: string | null; busyIds: Set<string>; releasedPreset: Work | null; onDone: (s: ArSubmission) => void; onClose: () => void; onWorkChanged: () => void }) {
   const [attaching, setAttaching] = useState(false);
   const [step, setStep] = useState(0);
   const [reached, setReached] = useState(0);
   const go = (next: number) => { setStep(next); setReached(r => Math.max(r, next)); window.scrollTo({ top: 0 }); };
   const toast = useToast();
-  const [workId, setWorkId] = useState(preset && works.some(w => w.id === preset) ? preset : '');
+  const [workId, setWorkId] = useState(preset && works.some(w => w.id === preset) && !busyIds.has(preset) ? preset : '');
   const work = works.find(w => w.id === workId) ?? null;
   const [genre, setGenre] = useState('');
   const [mood, setMood] = useState<string[]>([]);
@@ -81,18 +81,24 @@ function SubmitForm({ works, preset, onDone, onClose, onWorkChanged }: { works: 
       </>}
     >
       {step === 0 && <>
-      <Field label="곡" htmlFor="arWork" required help={!works.length ? undefined : '데모 음원이 있는 곡을 골라 주세요.'}>
+      {/* 발매된 곡은 피칭 대상이 아니다 — 곡 화면에서 이 화면으로 와도 고를 수 없게 하고 저작권 관리로 안내한다 */}
+      {releasedPreset && (
+        <Callout tone="neutral" action={<Link to={`/works/${releasedPreset.id}`} className="ui-btn is-white is-sm">곡 화면으로</Link>}>
+          ‘{releasedPreset.title}’은(는) 이미 발매된 곡이라 A&R 피칭 대상이 아니에요. 곡 화면에서 저작권 관리를 신청해 주세요.
+        </Callout>
+      )}
+      <Field label="곡" htmlFor="arWork" required help={!works.length ? undefined : '아직 발매 전이고 데모 음원이 있는 곡을 골라 주세요.'}>
         <select id="arWork" className={selectClass()} value={workId} onChange={e => setWorkId(e.target.value)}>
           <option value="">곡 고르기</option>
-          {works.map(w => <option key={w.id} value={w.id}>{w.title}{w.attachments.some(a => a.kind === 'demo') ? '' : ' (데모 없음)'}</option>)}
+          {works.map(w => <option key={w.id} value={w.id} disabled={busyIds.has(w.id)}>{w.title}{busyIds.has(w.id) ? ' (제출해 둔 곡)' : w.attachments.some(a => a.kind === 'demo') ? '' : ' (데모 없음)'}</option>)}
         </select>
       </Field>
       {work && <KeyValue cols={1} items={[
-        ['데모 음원', demo?.name || '등록된 데모가 없어요'],
-        ['가사', lyrics?.name || '등록된 가사가 없어요. 없어도 보낼 수 있어요.'],
+        ['데모 음원', demo?.name || <span className="aq-empty-val">등록된 데모가 없어요</span>],
+        ['가사', lyrics?.name || <span className="aq-empty-val">없음 · 없어도 보낼 수 있어요</span>],
       ]} />}
       {work && !demo && <Callout tone="warn" action={<button type="button" className="ui-btn is-white is-sm" onClick={() => setAttaching(true)}>음원 올리기</button>}>곡에 데모 음원을 먼저 올려 주세요.</Callout>}
-      {!works.length && <EmptyState compact title="제출할 곡이 없어요" actions={<Link to="/works/new" className="ui-btn is-primary">새 곡 등록</Link>}>곡을 등록하고 데모 음원을 올려 주세요.</EmptyState>}
+      {!works.length && <EmptyState compact title="제출할 곡이 없어요" actions={<Link to="/works/new?type=unreleased" className="ui-btn is-primary">발매 전 곡 등록</Link>}>발매 전 곡을 등록하고 데모 음원을 올려 주세요.</EmptyState>}
       </>}
       {step === 1 && <>
             <div className="form-grid">
@@ -137,7 +143,10 @@ export function OpenAr() {
   const submitting = params.get('submit') === '1' || !!preset;
   const openSubmit = () => setParams(new URLSearchParams({ submit: '1' }));
   const closeSubmit = () => setParams(new URLSearchParams(), { replace: true });
-  const mine = useMemo(() => (works ?? []).filter(w => w.myRole === 'owner' || w.myRole === 'editor'), [works]);
+  // 피칭은 발매 전 곡만 — 발매된 곡(내 발매·다른 아티스트 발매)은 저작권 관리 대상이다
+  const mine = useMemo(() => (works ?? []).filter(w => (w.myRole === 'owner' || w.myRole === 'editor') && !isReleased(w)), [works]);
+  const busyIds = useMemo(() => new Set((list ?? []).filter(s => s.status !== 'closed').map(s => s.workId)), [list]);
+  const releasedPreset = (preset && works?.find(w => w.id === preset && isReleased(w))) || null;
 
   const withdraw = async (s: ArSubmission) => {
     if (!(await confirm({ title: '제출을 취소할까요?', message: '심사가 멈추고 카탈로그에서도 내려가요. 곡 정보는 그대로예요.', confirmLabel: '제출 취소', danger: true }))) return;
@@ -145,7 +154,7 @@ export function OpenAr() {
   };
 
   if (submitting) return works
-    ? <SubmitForm works={mine} preset={preset} onWorkChanged={reloadWorks} onClose={closeSubmit} onDone={() => { reload(); closeSubmit(); }} />
+    ? <SubmitForm works={mine} preset={preset} busyIds={busyIds} releasedPreset={releasedPreset} onWorkChanged={reloadWorks} onClose={closeSubmit} onDone={() => { reload(); closeSubmit(); }} />
     : <div className="view"><SkeletonRows count={3} /></div>;
 
   return (

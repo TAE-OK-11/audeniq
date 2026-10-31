@@ -2,8 +2,26 @@
 // 서버 응답 모양은 api/publishing.ts, 여기는 계산과 글자만 (테스트: publishing.test.ts)
 import type { Tone } from '../ui/tone';
 import type {
-  ApplicationStatus, ArStatus, ContractStatus, ContributorRole, RegistrationStatus, RoyaltyKind, RoyaltyStatus, Work, WorkContributor, WorkFix,
+  ApplicationStatus, ArStatus, ContractStatus, ContributorRole, RegistrationStatus, RoyaltyKind, RoyaltyStatus, Work, WorkContributor, WorkFix, WorkOrigin,
 } from '../api/publishing';
+
+/** 퍼블리싱 접수 세 갈래 — [값, 이름, 한 줄 설명]. 곡 등록 첫 화면과 곡 화면이 같은 말을 쓴다 */
+export const WORK_ORIGINS: readonly (readonly [WorkOrigin, string, string])[] = [
+  ['own_release', '내가 발매한 곡', 'AUDENIQ으로 낸 발매에서 곡 정보·크레딧·음원·가사·커버를 가져와요. 저작권 관리를 신청할 수 있어요.'],
+  ['other_release', '다른 아티스트가 발매한 곡', '내가 작사·작곡하고 다른 사람이 낸 곡이에요. 발매 정보를 적고 저작권 관리를 신청해요.'],
+  ['unreleased', '아직 발매 전인 곡', '데모를 Open A&R에 보내 아티스트·레이블에 피칭해요. 발매되면 저작권 관리를 신청할 수 있어요.'],
+];
+export const ORIGIN_LABEL: Record<WorkOrigin, string> = { own_release: '내가 발매한 곡', other_release: '다른 아티스트 발매', unreleased: '발매 전' };
+
+/** 곡이 들어온 갈래 — 저장된 값이 없는 예전 곡은 녹음·발매 정보로 읽는다.
+ *  발매 전 곡에 내 발매 녹음이 붙으면(직접 발매했으면) 내가 발매한 곡으로 본다 */
+export function workOrigin(w: Pick<Work, 'recordings'> & Partial<Pick<Work, 'origin' | 'externalRelease'>>): WorkOrigin {
+  if (w.origin === 'other_release' || (!w.origin && w.externalRelease)) return 'other_release';
+  if (w.recordings.length || w.origin === 'own_release') return 'own_release';
+  return 'unreleased';
+}
+/** 발매된 곡(내 발매·다른 아티스트 발매) — 저작권 관리 신청 대상. 발매 전 곡은 A&R 피칭 대상 */
+export const isReleased = (w: Parameters<typeof workOrigin>[0]) => workOrigin(w) !== 'unreleased';
 
 /** 곡 등록(권리 관리) 진행 — 기획안 7.1
  *  색은 발매 상태와 같은 규칙(DESIGN_SYSTEM 규칙 5): 확인·심사가 진행 중이면 보라, 보완 주황, 완료 초록, 불가 빨강 */
@@ -143,6 +161,13 @@ export const WORK_TYPES = [
 ] as const;
 export const LANGUAGES = [['ko', '한국어'], ['en', '영어'], ['ja', '일본어'], ['zh', '중국어'], ['es', '스페인어'], ['zxx', '가사 없음'], ['other', '기타']] as const;
 export const SOCIETIES = ['KOMCA', '함께하는음악저작인협회', 'JASRAC', 'ASCAP', 'BMI', 'SESAC', 'PRS', 'GEMA', 'SACEM', '없음'] as const;
+/** 관리 단체를 화면에 보이는 이름으로 — 저장값(KOMCA 등)은 그대로 두고 국내 두 단체는 정식 이름(약칭)으로.
+ *  '음저협'·'함저협'으로 부르는 곳이라 영문 약칭만 보면 어느 단체인지 헷갈렸다 */
+const SOCIETY_NAME: Record<string, string> = {
+  KOMCA: '한국음악저작권협회(KOMCA)', 한국음악저작권협회: '한국음악저작권협회(KOMCA)',
+  함께하는음악저작인협회: '함께하는음악저작인협회(KOSCAP)', KOSCAP: '함께하는음악저작인협회(KOSCAP)',
+};
+export const societyName = (s: string | null | undefined) => (s ? SOCIETY_NAME[s] ?? s : '');
 
 /** 저장 단위 소수점 둘째 자리까지 — 33.33 + 33.33 + 33.34 같은 나누기를 받는다 */
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -181,6 +206,21 @@ export function evenSplit(n: number): number[] {
   return Array.from({ length: n }, (_, i) => (i === n - 1 ? round2(100 - each * (n - 1)) : each));
 }
 
+/** 곡 정보·지분을 지금 어떻게 고칠 수 있는지 — 서버 update_work · put_rights와 같은 규칙.
+ *  · direct: 신청 전·보완 요청·반려 — 바로 고친다
+ *  · review: 계약 중이거나 등록이 끝난 곡 — 지분은 변경 요청(참여자 확인·담당자 검토 뒤 반영), 곡 정보는 등록이 끝난 뒤에만
+ *  · locked: 담당자가 심사 중이거나 승인 뒤 계약서 서명을 기다리는 곡 — 고칠 수 없다(보완 요청이 오거나 철회하면 고친다) */
+export type EditMode = 'direct' | 'review' | 'locked';
+export function editMode(w: Pick<Work, 'registration' | 'contractId'>): EditMode {
+  if (['none', 'preparing', 'needs_fix', 'rejected'].includes(w.registration)) return 'direct';
+  if (w.registration === 'registered' || w.contractId) return 'review';
+  return 'locked';
+}
+/** 곡 정보(제목·장르·설명…)를 고칠 수 있는지 — 서버는 신청 전·보완·반려와 등록이 끝난 곡만 받는다 */
+export const canEditInfo = (w: Pick<Work, 'registration' | 'contractId'>) => editMode(w) === 'direct' || w.registration === 'registered';
+/** 저작권 관리를 (다시) 신청할 수 있는 등록 상태 — 서버 submit_application과 같다 (발매 신청에서 함께 고른 'preparing'도 포함) */
+export const APPLICABLE_REG: readonly RegistrationStatus[] = ['none', 'preparing', 'rejected'];
+
 /** 저작권 관리에 들어가 있는(신청 이후) 곡인지 */
 export const isManaged = (w: Pick<Work, 'registration'>) => !['none', 'preparing', 'rejected'].includes(w.registration);
 
@@ -203,10 +243,11 @@ export function matchFilter(w: Work, f: WorkFilter): boolean {
     case 'mine': return w.contributors.some(c => c.isMe);
     case 'owned': return w.myRole === 'owner' || w.myRole === 'editor';
     case 'managed': return isManaged(w) && w.registration !== 'needs_fix';
-    case 'none': return w.registration === 'none' || w.registration === 'preparing';
+    // 미신청은 신청할 수 있는(발매된) 곡만 — 발매 전 곡은 '발매 전'에서 본다
+    case 'none': return (w.registration === 'none' || w.registration === 'preparing') && isReleased(w);
     case 'review': return w.registration === 'internal_review' || w.application?.status === 'in_review' || w.application?.status === 'submitted';
     case 'fix': return w.registration === 'needs_fix' || w.application?.status === 'needs_fix';
-    case 'unreleased': return w.recordings.length === 0;
+    case 'unreleased': return workOrigin(w) === 'unreleased';
   }
 }
 
@@ -228,6 +269,16 @@ export function similarWorks(title: string, works: readonly Work[], exceptId?: s
 /** 계약 기간 개월 → '6개월', '1년', '3년' */
 export function termLabel(months: number): string {
   return months % 12 === 0 ? `${months / 12}년` : `${months}개월`;
+}
+
+/** 'YYYY-MM-DD' + n개월 — 날짜 글자로만 계산한다. 전에는 로컬 자정을 UTC로 바꿔(toISOString) 한국에서 하루 앞 날짜가 보였고,
+ *  1월 31일 + 1개월이 3월 3일로 넘어갔다. 그 달에 없는 날이면 그 달 마지막 날로 */
+export function addMonths(date: string, n: number): string {
+  const [y, m, d] = date.split('-').map(Number);
+  const k = y * 12 + (m - 1) + n;
+  const ny = Math.floor(k / 12), nm = (k % 12) + 1;
+  const last = new Date(Date.UTC(ny, nm, 0)).getUTCDate();
+  return `${ny}-${String(nm).padStart(2, '0')}-${String(Math.min(d, last)).padStart(2, '0')}`;
 }
 
 /** 남은 날 — 만료 안내 */

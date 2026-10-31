@@ -174,7 +174,9 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
   // 숫자는 트랙 기준으로 — 한 곡이 원곡·Inst.처럼 두 트랙에 실리면 '2곡 중 1곡'으로 어긋났다
   const trackCount = (list: Work[]) => rel.tracks.filter(t => { const w = byTrack.get(t.id); return !!w && list.includes(w); }).length;
   const managedTracks = trackCount(a.managed);
-  const applyingTracks = trackCount(a.applying);
+  // 보완 요청은 심사 중과 따로 센다 — 이용자가 할 일이 있는 곡이라 막대·이름표에서도 구분한다
+  const fixTracks = trackCount(a.applying.filter(w => !!w.fix || w.application?.status === 'needs_fix'));
+  const applyingTracks = trackCount(a.applying) - fixTracks;
   const signingTracks = trackCount(a.toSign);
   // 승인돼 계약서가 만들어졌는데 아직 서명 전 — 배급처럼 계약서 화면에서 서명한다
   const toSign = (contracts ?? []).find(c => c.status === 'pending_sign' && c.releaseIds?.includes(rel.id));
@@ -184,9 +186,9 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
     : prep.ready.length ? `${prep.ready.length}곡을 바로 신청할 수 있어요. 신청하면 담당자가 참여자와 지분을 확인해요.`
     : '이 앨범 곡의 작사·작곡 저작권도 맡기면 방송·스트리밍 저작권료까지 받아 드려요. 맡기지 않아도 배급은 그대로예요.';
   // 앨범 곡이 지금 어디에 있는지 한 막대로 — 정산 화면의 '쌓인 정산금' 막대와 같은 읽는 법(큰 숫자 · 막대 · 이름표)
-  const preparedTracks = rel.tracks.length - managedTracks - applyingTracks - signingTracks - missing;
+  const preparedTracks = rel.tracks.length - managedTracks - applyingTracks - fixTracks - signingTracks - missing;
   const cover = ([
-    ['managed', '관리 중', managedTracks], ['signing', '서명 필요', signingTracks], ['applying', '심사 중', applyingTracks],
+    ['managed', '관리 중', managedTracks], ['signing', '서명 필요', signingTracks], ['fix', '보완 필요', fixTracks], ['applying', '심사 중', applyingTracks],
     ['prepared', '정리함', preparedTracks], ['missing', '정리 전', missing],
   ] as const).filter(([, , n]) => n > 0);
   const editable = a.mine.filter(w => w.myRole === 'owner' || w.myRole === 'editor');
@@ -198,8 +200,11 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
   const prepare = async () => {
     setBusy(true);
     try {
-      await pubApi.prepareWorksFromRelease(rel.id, false); reload();
-      toast(`${missing}곡을 크레딧으로 정리했어요. 지분이 맞는지 확인해 주세요.`, 'success');
+      // 실제로 한 일을 알린다 — 같은 제목의 곡이 이미 있으면 새로 만들지 않고 그 곡에 연결하고, 제목 없는 곡은 건너뛴다
+      const r = await pubApi.prepareWorksFromRelease(rel.id, false); reload();
+      const done = [r.created && `${r.created}곡을 크레딧으로 정리`, r.linked && `${r.linked}곡을 같은 제목의 곡에 연결`].filter(Boolean).join('하고 ');
+      if (done) toast(`${done}했어요. 지분이 맞는지 확인해 주세요.`, { tone: 'success', sub: r.skipped ? `제목이 없는 ${r.skipped}곡은 건너뛰었어요. 곡 제목을 적은 뒤 다시 정리해 주세요.` : undefined });
+      else toast('새로 정리할 곡이 없어요.', { tone: 'info', sub: r.skipped ? `제목이 없는 ${r.skipped}곡은 정리할 수 없어요.` : undefined });
     } catch (err) { toast(errorMessage(err, '정리하지 못했어요. 다시 시도해 주세요.'), 'error'); } finally { setBusy(false); }
   };
   const goPrep = (g: PrepGroup) => {
@@ -213,6 +218,40 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
 
   return (
     <div className="aq-detail-stack aq-album-pub">
+      {/* 먼저 할 일은 큰 카드 밖, 탭 맨 위에 따로 — 카드 안 카드로 들어가 모바일에서 답답했다 (곡 상세의 보완 카드처럼) */}
+      {/* 보완 요청이 있으면 그 일이 이 탭의 판단 하나 — 홈 '먼저 할 일'과 같은 주황 면 */}
+      {!fresh && !a.fix && toSign && (
+        <div className="aq-pbl-hero-fix is-sign">
+          <span className="min-0">
+            <small>먼저 할 일</small>
+            <strong>저작권 관리 계약서에 서명해 주세요</strong>
+            <span>담당자가 {toSign.works.map(w => `‘${w.title}’`).join(', ')} 신청을 승인했어요. 서명하면 계약이 맺어지고 관리 단체 등록이 시작돼요.</span>
+          </span>
+          <Link to={`/contracts/publishing/${encodeURIComponent(toSign.id)}`} className="ui-btn is-primary aq-hero-cta">
+            확인하고 서명
+            <span className="aq-cta-arrow" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4" /></svg>
+            </span>
+          </Link>
+        </div>
+      )}
+      {!fresh && a.fix && (
+        <div className="aq-pbl-hero-fix ui-tone-warn">
+          <span className="min-0">
+            <small>먼저 할 일</small>
+            <strong>{fixWork ? `‘${fixWork.title}’에 보완 요청이 왔어요` : '보완 요청이 왔어요'}</strong>
+            <span>{fixWork?.fix?.reason ?? '아래 곡을 눌러 고쳐 주세요. 고쳐서 다시 내면 심사가 이어져요.'}</span>
+          </span>
+          {fixWork && (
+            <button type="button" className="ui-btn is-primary aq-hero-cta" onClick={() => setSheet({ work: fixWork, no: trackNo.get(fixWork.id), focus: { field: 'fix' } })}>
+              보완하기
+              <span className="aq-cta-arrow" aria-hidden="true">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4" /></svg>
+              </span>
+            </button>
+          )}
+        </div>
+      )}
       <section className="ui-card aq-manage-card aq-pbl-hero" aria-labelledby="albumPubHead">
         <ManageHead id="albumPubHead" icon="scale" title="작사·작곡 저작권 관리" status={a.status} />
         {fresh ? (
@@ -231,42 +270,9 @@ export function AlbumPublishingTab({ rel }: { rel: ReleaseDetail }) {
           </>
         ) : (
           <>
-            {/* 보완 요청이 있으면 그 일이 이 탭의 판단 하나 — 홈 '먼저 할 일'과 같은 주황 면을 카드 맨 위에 */}
-            {!a.fix && toSign && (
-              <div className="aq-pbl-hero-fix is-sign">
-                <span className="min-0">
-                  <small>먼저 할 일</small>
-                  <strong>저작권 관리 계약서에 서명해 주세요</strong>
-                  <span>담당자가 {toSign.works.map(w => `‘${w.title}’`).join(', ')} 신청을 승인했어요. 서명하면 계약이 맺어지고 관리 단체 등록이 시작돼요.</span>
-                </span>
-                <Link to={`/contracts/publishing/${encodeURIComponent(toSign.id)}`} className="ui-btn is-primary aq-hero-cta">
-                  확인하고 서명
-                  <span className="aq-cta-arrow" aria-hidden="true">
-                    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4" /></svg>
-                  </span>
-                </Link>
-              </div>
-            )}
-            {a.fix && (
-              <div className="aq-pbl-hero-fix ui-tone-warn">
-                <span className="min-0">
-                  <small>먼저 할 일</small>
-                  <strong>{fixWork ? `‘${fixWork.title}’에 보완 요청이 왔어요` : '보완 요청이 왔어요'}</strong>
-                  <span>{fixWork?.fix?.reason ?? '아래 곡을 눌러 고쳐 주세요. 고쳐서 다시 내면 심사가 이어져요.'}</span>
-                </span>
-                {fixWork && (
-                  <button type="button" className="ui-btn is-primary aq-hero-cta" onClick={() => setSheet({ work: fixWork, no: trackNo.get(fixWork.id), focus: { field: 'fix' } })}>
-                    보완하기
-                    <span className="aq-cta-arrow" aria-hidden="true">
-                      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4" /></svg>
-                    </span>
-                  </button>
-                )}
-              </div>
-            )}
             <div className="aq-pbl-cover" role="group" aria-label={`${rel.tracks.length}곡 중 ${cover.map(([, l, n]) => `${l} ${n}곡`).join(', ')}`}>
               <p className="aq-pbl-cover-cap" aria-hidden="true">저작권을 맡긴 곡</p>
-              <strong className="aq-pbl-cover-num" aria-hidden="true"><b>{managedTracks + signingTracks + applyingTracks}</b><small>/ {rel.tracks.length}곡</small></strong>
+              <strong className="aq-pbl-cover-num" aria-hidden="true"><b>{managedTracks + signingTracks + applyingTracks + fixTracks}</b><small>/ {rel.tracks.length}곡</small></strong>
               <div className="aq-pbl-cover-bar" aria-hidden="true">
                 {cover.map(([k, , n]) => <i key={k} className={`is-${k}`} style={{ flexGrow: n }} />)}
               </div>

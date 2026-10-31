@@ -11,7 +11,7 @@ import { useAsync } from '../../hooks/useAsync';
 import { Glyph } from '../../components/Glyph';
 import { SplitEditor } from '../../components/publishing/SplitEditor';
 import { RegBadge } from '../../components/publishing/parts';
-import { FIX_FIELDS, SOCIETIES, fixNote, pct, splitReady, sumShares, type FixField } from '../../lib/publishing';
+import { FIX_FIELDS, SOCIETIES, societyName, fixNote, pct, splitReady, sumShares, type FixField } from '../../lib/publishing';
 import { staffApi, type PubAppStatus, type PubApplication, type PubDecisionAction } from '../api';
 import { ago, when } from '../labels';
 import { Badge, ChipGroup, EmptyState, ErrorBox, NoDuty, PageHeader, ReviewTabs, Section, SkeletonList, StatusBadge, useStaff } from '../ui';
@@ -101,7 +101,7 @@ function DecisionForm({ app, action, onDone }: { app: PubApplication; action: Pu
       const documents = [...docs, ...other.split(',').map(d => d.trim()).filter(Boolean)];
       if (fixing && !fields.length && !documents.length && !reason.trim()) { toast('고칠 항목이나 서류를 골라 주세요.', 'error'); return; }
       await staffApi.pubDecide(app.id, { action, reason: reason.trim(), work_ids: fixing ? works : undefined, fields: fixing ? fields : undefined, documents: fixing ? documents : undefined, society: action === 'REGISTER' ? society : undefined });
-      onDone(action === 'APPROVE' ? '승인했어요. 관리 단체 등록을 준비해 주세요.' : action === 'REQUEST_CORRECTION' ? `보완을 요청했어요.${documents.length ? ' 서류는 아티스트의 권리·보완 서류에 올라가요.' : ''}` : action === 'REJECT' ? '반려했어요.' : `${society} 등록 완료로 기록했어요.`);
+      onDone(action === 'APPROVE' ? '승인했어요. 관리 단체 등록을 준비해 주세요.' : action === 'REQUEST_CORRECTION' ? `보완을 요청했어요.${documents.length ? ' 서류는 아티스트의 권리·보완 서류에 올라가요.' : ''}` : action === 'REJECT' ? '반려했어요.' : `${societyName(society)} 등록 완료로 기록했어요.`);
     } catch (err) { toast(errorMessage(err, '처리하지 못했어요.'), 'error'); } finally { setBusy(false); }
   };
   return (
@@ -145,7 +145,7 @@ function DecisionForm({ app, action, onDone }: { app: PubApplication; action: Pu
         <div className="ui-field">
           <label htmlFor="pubSociety">등록한 관리 단체</label>
           <select id="pubSociety" className="ui-select" value={society} onChange={e => setSociety(e.target.value)}>
-            {SOCIETIES.filter(s => s !== '없음').map(s => <option key={s} value={s}>{s}</option>)}
+            {SOCIETIES.filter(s => s !== '없음').map(s => <option key={s} value={s}>{societyName(s)}</option>)}
           </select>
         </div>
       )}

@@ -18,7 +18,10 @@ const routes = [
   ['work-files', '/works/w1?tab=files', '.aq-pbl-files'],
   ['ar', '/ar', '.aq-ar-card'],
   ['ar-submit', '/ar?work=w4', '#arWork'],
-  ['apply', '/publishing/apply?work=w4', '.aq-pbl-song-picker'],
+  ['apply', '/publishing/apply?work=w2', '.aq-pbl-song-picker'],
+  ['work-new', '/works/new', '.aq-pbl-origin-row'],
+  ['work-other-release', '/works/new?type=other_release', '#extArtist'],
+  ['work-released-by-other', '/works/w5', '.aq-detail-hero'],
   ['contracts', '/contracts?pub=c1', '.aq-pbl-contract'],
 ] as const;
 
@@ -60,7 +63,7 @@ try {
   // Open A&R opens the shared application shell; review links retain entered data.
   await page.goto(base + '/ar');
   await page.getByRole('button', { name: '데모 제출', exact: true }).click();
-  await page.locator('#arWork').selectOption('w4');
+  await page.locator('#arWork').selectOption('w6');
   await page.locator('#wizardNext').click();
   await page.locator('#arGenre').fill('R&B');
   await page.getByRole('button', { name: '잔잔한', exact: true }).click();
@@ -172,7 +175,7 @@ try {
   await page.locator('.ui-callout.is-success').waitFor();
   await page.locator('.adm-release-hero').getByText('보완 요청', { exact: true }).waitFor();
   assert.deepEqual(errors, []);
-  console.log('Publishing UI passed: 12 pages × 4 widths, album prep/sheet/attach, split editing, return navigation, filters, album scope, and report amounts, admin review.');
+  console.log('Publishing UI passed: 15 pages × 4 widths, album prep/sheet/attach, split editing, return navigation, filters, album scope, and report amounts, admin review.');
 } finally {
   await browser.close();
   if (server && 'close' in server) await server.close();

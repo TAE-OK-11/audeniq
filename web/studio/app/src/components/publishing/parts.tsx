@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { Link } from '../../lib/router';
 import type { RegistrationStatus, RegistrationStep, Work, WorkContributor } from '../../api/publishing';
-import { APP_LABEL, APP_TONE, REG_LABEL, REG_SENTENCE, REG_STEPS, REG_TONE, ROLE_LABEL, pct, regStep, sumShares } from '../../lib/publishing';
+import { APP_LABEL, APP_TONE, REG_LABEL, REG_SENTENCE, REG_STEPS, REG_TONE, ORIGIN_LABEL, ROLE_LABEL, pct, regStep, societyName, sumShares, workOrigin } from '../../lib/publishing';
 import { localStamp } from '../../lib/format';
 import { Badge, IconTile, Meter } from '../../ui';
 import { StageCard } from '../StageCard';
@@ -19,13 +19,13 @@ const TIMELINE_TONE: Partial<Record<RegistrationStatus, string>> = { needs_fix: 
 
 /** 등록 진행 — 발매 진행 단계와 같은 카드. 처리 이력은 눌러서 펼친다 (기획안 7.2).
  *  stage={false}: 곡 상세처럼 머리 카드가 이미 진행 막대를 보여 주면 여기서는 한 문장과 이력만 — 같은 막대를 두 번 그리지 않는다 */
-export function RegProgress({ status, log, stage: showStage = true }: { status: RegistrationStatus; log: RegistrationStep[]; stage?: boolean }) {
+export function RegProgress({ status, log, stage: showStage = true, head = true }: { status: RegistrationStatus; log: RegistrationStep[]; stage?: boolean; head?: boolean }) {
   const [open, setOpen] = useState(false);
   const step = regStep(status);
   const warn = status === 'needs_fix';
   return (
     <>
-      {step < 0 || !showStage ? (
+      {!head ? null : step < 0 || !showStage ? (
         <p className="ui-field-help">{REG_SENTENCE[status]}</p>
       ) : (
         <StageCard
@@ -44,7 +44,7 @@ export function RegProgress({ status, log, stage: showStage = true }: { status: 
             <ol className="ui-timeline is-latest-first">
               {[...log].reverse().map((l, i) => (
                 <li key={i} className={TIMELINE_TONE[l.status]}>
-                  <strong>{REG_LABEL[l.status]}{l.society && ` · ${l.society}`}{l.note && ` — ${l.note}`}</strong>
+                  <strong>{REG_LABEL[l.status]}{l.society && ` · ${societyName(l.society)}`}{l.note && ` — ${l.note}`}</strong>
                   <small>{localStamp(l.at)}</small>
                 </li>
               ))}
@@ -88,7 +88,7 @@ export function WorkRow({ work: w, to, onClick, end }: { work: Work; to?: string
         <span className="ui-row-title">{w.title || '제목 없는 곡'}</span>
         <span className="ui-row-meta">
           <span>{peopleLine(w.contributors)}</span>
-          <span>{w.recordings.length ? `녹음 ${w.recordings.length}개` : '미공개 곡'}</span>
+          <span>{w.recordings.length ? `녹음 ${w.recordings.length}개` : ORIGIN_LABEL[workOrigin(w)]}</span>
           <span>{w.iswc ?? w.internalCode}</span>
         </span>
       </span>

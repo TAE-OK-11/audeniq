@@ -5,9 +5,9 @@
 // 신청·곡 정리·계약 같은 '관리'는 발매 상세 '퍼블리싱' 탭에서. 할 일은 홈 '확인할 작업', 계약서·정산·알림·문의·계정은 배급과 함께 쓴다
 import { useDeferredValue, useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from '../lib/router';
-import { pubApi, type Royalty, type Work } from '../api/publishing';
+import { pubApi, type ArSubmission, type Royalty, type Work } from '../api/publishing';
 import { useAsync } from '../hooks/useAsync';
-import { APP_LABEL, APP_TONE, matchFilter, type WorkFilter } from '../lib/publishing';
+import { APP_LABEL, APP_TONE, AR_LABEL, AR_TONE, matchFilter, workOrigin, type WorkFilter } from '../lib/publishing';
 import { Glyph } from '../components/Glyph';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { SkeletonRows } from '../components/Skeleton';
@@ -30,22 +30,29 @@ import '../styles/split/Publishing.css';
 /** 앨범 하나만 볼 때 — 그 앨범에 실린 곡과 그 곡들의 저작권료만 */
 interface Scope { releaseId: string; title: string }
 const inScope = (w: Work, scope: Scope | null) => !scope || w.recordings.some(r => r.releaseId === scope.releaseId);
-const SONG_FILTERS: [WorkFilter, string][] = [['all', '전체'], ['managed', '관리 중'], ['review', '심사 중'], ['fix', '보완 필요'], ['none', '미신청'], ['unreleased', '미발매']];
+const SONG_FILTERS: [WorkFilter, string][] = [['all', '전체'], ['managed', '관리 중'], ['review', '심사 중'], ['fix', '보완 필요'], ['none', '미신청'], ['unreleased', '발매 전']];
 const shortWon = (n: number) => (n >= 10000 ? `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}만` : num(n));
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, '');
 // 손이 가야 하는 곡이 먼저 — 보완 요청 → 맡기지 않음 → 심사 중 → 관리 중
 const urgency = (w: Work) => (matchFilter(w, 'fix') ? 0 : matchFilter(w, 'none') ? 1 : matchFilter(w, 'review') ? 2 : 3);
 
-function SongRow({ w, releaseId }: { w: Work; releaseId?: string }) {
+/** 곡이 실린 발매 한 줄 — 내 발매는 발매 제목, 다른 아티스트 발매는 '이온 발매', 아니면 발매 전 (목록·리포트가 같은 말) */
+const releaseLine = (w?: Work) => !w ? '발매 정보 없음' : w.recordings[0]?.releaseTitle
+  ?? (workOrigin(w) === 'other_release' ? `${w.externalRelease?.artist ?? '다른 아티스트'} 발매` : '발매 전');
+
+function SongRow({ w, releaseId, ar }: { w: Work; releaseId?: string; ar?: ArSubmission }) {
   const rec = w.recordings[0];
   return (
     <Link to={`/works/${w.id}${releaseId ? `?release=${encodeURIComponent(releaseId)}` : ''}`} className="track-row ui-row aq-track-row" aria-label={`${w.title || '제목 없는 곡'} 저작권 보기`}>
       <ReleaseCover id={rec?.releaseId ?? w.id} />
       <div className="min-0">
         <span className="ui-row-title">{w.title || '제목 없는 곡'}</span>
-        <span className="ui-row-meta">{rec ? rec.releaseTitle : '미발매'} · {w.contributors.map(c => c.name).join(' · ') || '참여자 없음'}</span>
+        <span className="ui-row-meta">{releaseLine(w)} · {w.contributors.map(c => c.name).join(' · ') || '참여자 없음'}</span>
       </div>
-      {w.application && !['approved', 'withdrawn'].includes(w.application.status)
+      {/* 발매 전 곡은 저작권 관리 대상이 아니라 '미신청'이 아니다 — A&R 진행 상태나 '발매 전'으로 */}
+      {workOrigin(w) === 'unreleased' && w.registration === 'none'
+        ? (ar ? <Badge tone={AR_TONE[ar.status]}>A&R {AR_LABEL[ar.status]}</Badge> : <Badge tone="gray">발매 전</Badge>)
+        : w.application && !['approved', 'withdrawn'].includes(w.application.status)
         ? <Badge tone={APP_TONE[w.application.status]}>{APP_LABEL[w.application.status]}</Badge>
         : <RegBadge status={w.registration} />}
     </Link>
@@ -78,6 +85,7 @@ function Songs({ filter, setFilter, scope, onApply }: { filter: WorkFilter; setF
   const nav = useNavigate();
   const { data: all, loading } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
   const works = useMemo(() => all && all.filter(w => inScope(w, scope)), [all, scope]);
+  const { data: arList } = useAsync(() => pubApi.listAr(), [], { key: 'ar-submissions' });
   const [query, setQuery] = useState('');
   const q = norm(useDeferredValue(query));
   const shown = useMemo(() => (works ?? []).filter(w => matchFilter(w, filter)
@@ -103,7 +111,7 @@ function Songs({ filter, setFilter, scope, onApply }: { filter: WorkFilter; setF
         </span>
       </div>
       {loading && !works ? <SkeletonRows count={4} /> : shown.length ? (
-        <div className="aq-catalog-cards aq-stagger">{shown.map(w => <SongRow key={w.id} w={w} releaseId={scope?.releaseId} />)}</div>
+        <div className="aq-catalog-cards aq-stagger">{shown.map(w => <SongRow key={w.id} w={w} releaseId={scope?.releaseId} ar={arList?.find(a => a.workId === w.id && a.status !== 'closed')} />)}</div>
       ) : (
         <div className="ui-empty">
           <h2>{query || filter !== 'all' ? '조건에 맞는 곡이 없어요.' : '아직 곡이 없어요.'}</h2>
@@ -172,7 +180,7 @@ function SongRoyalties({ rows, works, label }: { rows: Royalty[] | null; works: 
             <ReleaseCover id={rec(s.id)?.releaseId ?? s.id} />
             <div className="min-0">
               <span className="ui-row-title">{s.title}</span>
-              <span className="ui-row-meta">{rec(s.id)?.releaseTitle ?? '미발매'} · 확정 {s.count}건</span>
+              <span className="ui-row-meta">{releaseLine(works?.find(w => w.id === s.id))} · 확정 {s.count}건</span>
               <Meter parts={[{ value: s.net }]} total={max} label={`${s.title} 저작권료`} />
             </div>
             <div className="ui-row-end"><b className="aq-pub-amount"><Money value={s.net} /></b></div>
