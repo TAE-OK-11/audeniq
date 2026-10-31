@@ -26,7 +26,7 @@ export function RegProgress({ status, log, stage: showStage = true }: { status: 
   return (
     <>
       {step < 0 || !showStage ? (
-        <p className="ui-row-meta">{REG_SENTENCE[status]}</p>
+        <p className="ui-field-help">{REG_SENTENCE[status]}</p>
       ) : (
         <StageCard
           steps={REG_STEPS.map((s, i) => (i === step && (warn || status === 'rejected') ? REG_LABEL[status] : s))}
