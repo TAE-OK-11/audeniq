@@ -13,13 +13,12 @@ export function StageCard({ steps, current, complete, tone, note, label }: {
   note?: string;
   label: string;
 }) {
+  // 머리에 지금 단계와 몇 번째인지, 안내 한 줄, 막대, '다음: …' 한 줄 — 막대 밑 단계 이름 4~5개는 글자가 많아 답답해서 화면 읽기용으로만 둔다
+  const next = complete ? null : steps[current + 1];
   return (
-    <section className={`aq-stage${tone ? ` is-${tone}` : ''}`} aria-label={label}>
+    <section className={`aq-stage is-compact${tone ? ` is-${tone}` : ''}`} aria-label={label}>
       <div className="aq-stage-head">
-        <div className="min-0">
-          <span className="aq-stage-kicker">진행 단계</span>
-          <strong className="aq-stage-now">{steps[current]}</strong>
-        </div>
+        <strong className="aq-stage-now">{steps[current]}</strong>
         <span className="aq-stage-count" aria-label={`${steps.length}단계 중 ${current + 1}단계`}>
           {current + 1}<small>/ {steps.length}</small>
         </span>
@@ -31,14 +30,12 @@ export function StageCard({ steps, current, complete, tone, note, label }: {
           return (
             <li key={i} className={done ? 'is-done' : i === current ? 'is-current' : ''} aria-current={i === current ? 'step' : undefined}>
               <span className="aq-stage-bar" aria-hidden="true" />
-              <span className="aq-stage-label">
-                {done && <CheckIcon size={10} />}
-                {s}
-              </span>
+              <span className="sr-only">{s}{done ? ' (완료)' : ''}</span>
             </li>
           );
         })}
       </ol>
+      <p className="aq-stage-next">{complete ? <><CheckIcon size={11} /> 모든 단계를 마쳤어요</> : next ? <>다음 · {next}</> : '마지막 단계예요'}</p>
     </section>
   );
 }

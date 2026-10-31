@@ -23,14 +23,13 @@ import { ReviewNote } from '../components/CorrectionList';
 import { Glyph } from '../components/Glyph';
 import { roleText } from '../components/publishing/parts';
 import { SplitEditor } from '../components/publishing/SplitEditor';
-import { RoyaltyTable } from '../components/publishing/Royalties';
+import { IncomeCards, RecordingIncomeCard, RoyaltyHistoryCard } from '../components/publishing/WorkRevenueCards';
 import { ApplicationCard, ContractCard, InfoRow, RightsInfoCard, RoyaltyInCard, SocietiesCard } from '../components/publishing/WorkRightsCards';
 import { AttachmentList, AttachmentModal } from '../components/publishing/Attachments';
 import { InviteModal } from '../components/publishing/InviteModal';
-import { Badge, Callout, EmptyState, Segmented, StatGrid, StatTile, Tabs } from '../ui';
+import { Badge, Callout, EmptyState, Segmented, Tabs } from '../ui';
 import { SplitDiffList } from '../components/publishing/WorkSheet';
 import { changeNeedsReview, mergeIntoMe, penAsOthers, reusableWorks, signing, splitDiff } from '../lib/publishingPrep';
-import { Money } from '../components/Money';
 import { useReportRows } from '../hooks/useReportRows';
 import '../styles/split/ReleaseDetail.css';
 import '../styles/split/Publishing.css';
@@ -537,28 +536,15 @@ export function WorkDetail() {
 
         {view === 'revenue' && (
           <div className="aq-detail-stack">
-            {/* 한 곡이 번 돈을 한 화면에 — 녹음 배급 수익과 저작권료는 다른 돈이라 나란히 두되 더하지 않는다 */}
-            <StatGrid cols={2}>
-              <StatTile label="녹음 배급 수익" value={<Money value={distRevenue} />} hint={recorded.split ? '앨범 수익을 곡 수로 나눈 추정' : `녹음 ${w.recordings.length}개 · 스트리밍·다운로드`} to={w.recordings[0] ? `/releases/${w.recordings[0].releaseId}?tab=stats` : '/reports'} />
-              <StatTile label="저작권료 (확정·지급)" value={<Money value={(royalties ?? []).filter(r => r.status !== 'estimated').reduce((n, r) => n + r.net, 0)} />} hint="작사·작곡 몫 · 관리 단체" />
-            </StatGrid>
-            <div className="aq-relinfo-card">
-              <h2 className="subhead">저작권료 내역</h2>
-              {royalties ? <RoyaltyTable rows={royalties} showWork={false} summary={false} emptyText={w.registration === 'registered' ? `아직 들어온 저작권료가 없어요. ${firstPay ? `첫 저작권료는 ${firstPay} 예상이에요. 그 뒤로는 관리 단체가 나눠 줄 때마다(보통 분기마다) 정산 잔액에 쌓여요.` : PAYOUT_TIMING}` : `저작권 등록이 끝나면 관리 단체가 나눠 주는 사용료가 여기에 들어와요. ${PAYOUT_TIMING}`} /> : <SkeletonBlock height={160} />}
-            </div>
+            {/* 한 곡이 번 돈 — 저작권료와 녹음 수익은 다른 돈이라 한 장씩, 더하지 않는다 */}
+            <IncomeCards royalties={royalties ?? []} recorded={distRevenue} split={recorded.split}
+              statsTo={w.recordings[0] ? `/releases/${w.recordings[0].releaseId}?tab=stats` : '/reports'} />
+            {royalties ? (
+              <RoyaltyHistoryCard rows={royalties} csvLabel={w.title}
+                emptyText={w.registration === 'registered' ? (firstPay ? `첫 저작권료는 ${firstPay} 예상이에요. 그 뒤로는 관리 단체가 나눠 줄 때마다(보통 분기마다) 정산 잔액에 쌓여요.` : PAYOUT_TIMING) : `저작권 등록이 끝나면 관리 단체가 나눠 주는 사용료가 여기에 들어와요. ${PAYOUT_TIMING}`} />
+            ) : <SkeletonBlock height={160} />}
             {distRows.length > 0 && (
-              <div className="aq-relinfo-card">
-                <h2 className="subhead">녹음 배급 수익</h2>
-                <div className="ui-list is-inset">
-                  {distRows.map((r, i) => (
-                    <div key={i} className="ui-row is-flat">
-                      <span className="min-0"><span className="ui-row-title">{r.platform}</span><span className="ui-row-meta"><span>{r.release}{partOf(r) > 1 && ` · 앨범 ÷ ${partOf(r)}곡`}</span><span>{r.period}</span><span>{r.plays.toLocaleString('ko-KR')}회</span></span></span>
-                      <Money value={Math.round(r.revenue / partOf(r))} />
-                    </div>
-                  ))}
-                </div>
-                <p className="ui-field-help">두 수익 모두 같은 정산 잔액에 쌓여 한 번에 받아요. <Link to="/settlement" className="aq-inline-link">정산·지급 보기</Link></p>
-              </div>
+              <RecordingIncomeCard rows={distRows.map((r, i) => ({ key: `${i}`, platform: r.platform, period: r.period, plays: r.plays, amount: Math.round(r.revenue / partOf(r)), note: partOf(r) > 1 ? `앨범 ÷ ${partOf(r)}곡` : undefined }))} />
             )}
           </div>
         )}
