@@ -146,6 +146,9 @@ GRANT SELECT,INSERT,UPDATE ON portal.pub_contracts TO audeniq_api;
 GRANT SELECT,INSERT,UPDATE ON portal.pub_split_invites TO audeniq_api;
 -- Open A&R 제출 (0172): 제출·목록·취소. 이력은 operations.audit_events.
 GRANT SELECT,INSERT,UPDATE ON portal.pub_ar_submissions TO audeniq_api;
+-- 퍼블리싱 저작권료 (0173): 담당자가 관리 단체 명세서를 올리고(INSERT) 확정·지급 표시를 고친다(UPDATE). 아티스트는 읽기만.
+-- 정산 잔액 반영(posting)은 다른 저작권료처럼 finance owner CLI.
+GRANT SELECT,INSERT,UPDATE ON portal.pub_royalty_statements, portal.pub_royalties TO audeniq_api;
 GRANT USAGE ON SCHEMA finance TO audeniq_api;
 GRANT SELECT ON finance.ledger_transactions,finance.ledger_entries,finance.payout_orders,finance.royalty_reports,finance.report_lines,finance.finance_holds TO audeniq_api;
 -- Held (disputed) royalties are not withdrawable (0124).
