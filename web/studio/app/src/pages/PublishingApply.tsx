@@ -16,12 +16,12 @@ import { readJSON, removeKey, writeJSON } from '../lib/storage';
 import { uid } from '../lib/store';
 import { APP_LABEL, pct, splitIssues, splitReady, termLabel } from '../lib/publishing';
 import { money } from '../lib/format';
-import { WizardShell, type WizardStep } from '../components/WizardShell';
+import { ReviewCard, WizardShell, type WizardStep } from '../components/WizardShell';
 import { SkeletonBlock } from '../components/Skeleton';
 import { Glyph } from '../components/Glyph';
 import { SignaturePad, type SignaturePadHandle } from '../components/SignaturePad';
 import { SplitBar, roleText } from '../components/publishing/parts';
-import { Badge, Callout, EmptyState, KeyValue, StatGrid, StatTile, Steps } from '../ui';
+import { Badge, Callout, EmptyState, StatGrid, StatTile, Steps } from '../ui';
 import { CheckIcon } from '../components/Check';
 import '../styles/split/Upload.css';
 import '../styles/split/Publishing.css';
@@ -278,15 +278,10 @@ export function PublishingApply() {
             <StatTile label="관리 수수료" value={policy.commissionRate} unit="%" hint="징수한 사용료에서만 떼요. 가입비·월 이용료는 없어요." />
             <StatTile label="최초 계약 기간" value={termLabel(policy.initialTermMonths)} hint={`${policy.renewalOptions.map(termLabel).join(' · ')} 단위로 연장할 수 있어요.`} />
           </StatGrid>
-          <div className="ui-card">
-            <h2>계약 내용</h2>
-            <KeyValue cols={2} items={[
-              ['적용 곡', chosen.map(w => w.title).join(', ')],
-              ['관리 대상 국가', territories.map(terrLabel).join(', ')],
-              ['관리할 권리', rights.map(rightLabel).join(', ')],
-              ['예시', `${money(100000)} 징수 → 수수료 ${money(fee)} · 받는 금액 ${money(100000 - fee)}`],
-            ]} />
-          </div>
+          <ReviewCard head="신청할 곡" onEdit={() => setStep(0)}>{chosen.map(w => w.title).join(', ')}</ReviewCard>
+          <ReviewCard head="관리 대상 국가" onEdit={() => setStep(1)}>{territories.map(terrLabel).join(', ')}</ReviewCard>
+          <ReviewCard head="관리할 권리" onEdit={() => setStep(1)}>{rights.map(rightLabel).join(', ')}</ReviewCard>
+          <Callout tone="neutral">{money(100000)} 징수 시 수수료 {money(fee)}를 제외한 {money(100000 - fee)}를 받아요.</Callout>
           <Callout tone="neutral">계약이 끝나도 그동안의 등록·정산 기록은 그대로 남아요. 종료 후에는 새 곡을 관리에 넣을 수 없어요.</Callout>
         </>
       )}

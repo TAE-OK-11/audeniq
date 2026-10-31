@@ -17,7 +17,7 @@ const routes = [
   ['work-income', '/works/w1?tab=revenue', '.settle-entry'],
   ['work-files', '/works/w1?tab=files', '.aq-pbl-files'],
   ['ar', '/ar', '.aq-ar-card'],
-  ['ar-submit', '/ar?work=w4', '#arGenre'],
+  ['ar-submit', '/ar?work=w4', '#arWork'],
   ['apply', '/publishing/apply?work=w4', '.aq-pbl-song-picker'],
   ['contracts', '/contracts?pub=c1', '.aq-pbl-contract'],
 ] as const;
@@ -57,6 +57,22 @@ try {
     }
     console.log(`Layout passed: ${width}px`);
   }
+  // Open A&R opens the shared application shell; review links retain entered data.
+  await page.goto(base + '/ar');
+  await page.getByRole('button', { name: '데모 제출', exact: true }).click();
+  await page.locator('#arWork').selectOption('w4');
+  await page.locator('#wizardNext').click();
+  await page.locator('#arGenre').fill('R&B');
+  await page.getByRole('button', { name: '잔잔한', exact: true }).click();
+  await page.locator('#wizardNext').click();
+  assert.equal(await page.locator('#wizardNext').isDisabled(), true);
+  await page.getByRole('checkbox').check();
+  assert.equal(await page.locator('#wizardNext').isEnabled(), true);
+  await page.getByRole('button', { name: '곡 소개 수정', exact: true }).click();
+  assert.equal(await page.locator('#arGenre').inputValue(), 'R&B');
+  await page.getByRole('button', { name: '이전으로 돌아가기', exact: true }).click();
+  await page.getByRole('button', { name: '이전으로 돌아가기', exact: true }).click();
+  await page.locator('#view-ar').waitFor();
   // Album tab: the prep check opens the song sheet at the field to fix, edits show before → after, and saving returns to the list.
   await page.setViewportSize({ width: 390, height: 900 });
   await page.goto(base + '/releases/r2?tab=publishing');

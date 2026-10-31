@@ -12,10 +12,11 @@ import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { SkeletonRows } from '../components/Skeleton';
 import { Glyph } from '../components/Glyph';
-import { Badge, Callout, EmptyState, Field, IconTile, Segmented, Tabs, inputClass, selectClass } from '../ui';
-import { Reveal } from '../ui/Reveal';
+import { Badge, Callout, EmptyState, Field, IconTile, KeyValue, Segmented, inputClass, selectClass } from '../ui';
+import { ReviewCard, WizardShell } from '../components/WizardShell';
 import '../styles/split/Dashboard.css';
 import '../styles/split/Publishing.css';
+import { AttachmentModal } from '../components/publishing/Attachments';
 import { StageCard } from '../components/StageCard';
 
 const MOODS = ['신나는', '잔잔한', '신비로운', '슬픈', '설레는', '강렬한', '따뜻한', '어두운', '청량한'];
@@ -28,7 +29,11 @@ const AR_PATH = [
 ] as const;
 const arStep = (s: ArSubmission['status']) => ({ submitted: 0, in_review: 1, needs_fix: 1, reviewed: 2, proposing: 3, closed: 4 }[s]);
 
-function SubmitForm({ works, preset, onDone }: { works: Work[]; preset: string | null; onDone: (s: ArSubmission) => void }) {
+function SubmitForm({ works, preset, onDone, onClose, onWorkChanged }: { works: Work[]; preset: string | null; onDone: (s: ArSubmission) => void; onClose: () => void; onWorkChanged: () => void }) {
+  const [attaching, setAttaching] = useState(false);
+  const [step, setStep] = useState(0);
+  const [reached, setReached] = useState(0);
+  const go = (next: number) => { setStep(next); setReached(r => Math.max(r, next)); window.scrollTo({ top: 0 }); };
   const toast = useToast();
   const [workId, setWorkId] = useState(preset && works.some(w => w.id === preset) ? preset : '');
   const work = works.find(w => w.id === workId) ?? null;
@@ -38,6 +43,7 @@ function SubmitForm({ works, preset, onDone }: { works: Work[]; preset: string |
   const [refs, setRefs] = useState('');
   const [scope, setScope] = useState<'internal' | 'partners'>('partners');
   const [consent, setConsent] = useState(false);
+  useEffect(() => setConsent(false), [workId, scope]);
   const [busy, setBusy] = useState(false);
   const [key, setKey] = useState(() => uid('ar'));
   // 곡을 고르면 곡에 있던 정보로 채운다
@@ -47,7 +53,7 @@ function SubmitForm({ works, preset, onDone }: { works: Work[]; preset: string |
   const ready = !!work && !!demo && !!genre.trim() && mood.length > 0 && consent;
 
   const submit = async () => {
-    if (!work || busy) return;
+    if (!ready || !work || busy) return;
     setBusy(true);
     try {
       const s = await pubApi.submitAr({ workId: work.id, genre: genre.trim(), mood, description: desc.trim(), references: refs.trim(), scope, consent, demoName: demo?.name, lyrics: lyrics?.name, idempotencyKey: key });
@@ -60,21 +66,35 @@ function SubmitForm({ works, preset, onDone }: { works: Work[]; preset: string |
   };
 
   return (
-    <section className="ui-card aq-pbl-ar-form" aria-labelledby="arForm">
-      <h2 id="arForm">데모 제출</h2>
+    <WizardShell className="aq-pbl-wizard" label="데모 제출" title="데모 제출"
+      steps={[
+        { short: '곡·음원', title: '어떤 곡을 보낼까요?', sub: '등록한 곡과 데모 음원을 확인해 주세요.' },
+        { short: '곡 소개', title: '곡을 소개해 주세요', sub: '장르와 분위기를 알려 주시면 피칭에 도움이 돼요.' },
+        { short: '최종 확인', title: '제출 내용을 확인해 주세요', sub: '공개 범위를 확인하고 A&R에 보내 주세요.' },
+      ]} step={step} reached={reached} onStep={i => { if (!busy) go(i); }} onBack={() => { if (!busy) step ? go(step - 1) : onClose(); }}
+      summary={{ title: work?.title || '곡을 골라 주세요', lines: ['Open A&R', demo?.name || '데모 음원 확인 전'] }}
+      actions={<>
+        <button type="button" id="wizardBack" className="ui-btn is-soft" disabled={busy} onClick={() => step ? go(step - 1) : onClose()}>{step ? '이전' : '나가기'}</button>
+        <button type="button" id="wizardNext" className={`ui-btn is-primary${busy ? ' is-busy' : ''}`}
+          disabled={busy || (step === 0 ? !work || !demo : step === 1 ? !genre.trim() || !mood.length : !ready)}
+          onClick={() => step < 2 ? go(step + 1) : void submit()}>{busy ? '제출하는 중' : step < 2 ? '다음으로' : 'A&R에 제출'}</button>
+      </>}
+    >
+      {step === 0 && <>
       <Field label="곡" htmlFor="arWork" required help={!works.length ? undefined : '데모 음원이 있는 곡을 골라 주세요.'}>
         <select id="arWork" className={selectClass()} value={workId} onChange={e => setWorkId(e.target.value)}>
           <option value="">곡 고르기</option>
           {works.map(w => <option key={w.id} value={w.id}>{w.title}{w.attachments.some(a => a.kind === 'demo') ? '' : ' (데모 없음)'}</option>)}
         </select>
       </Field>
-      <Reveal open={!!work}>
-        {work && (
-          <div>
-            <dl className="ui-kv is-2">
-              <div><dt>데모 음원</dt><dd className="break">{demo ? demo.name : <span className="aq-empty-val">없음 — <Link to={`/works/${work.id}?tab=files`} className="aq-inline-link">곡에서 올리기</Link></span>}</dd></div>
-              <div><dt>가사</dt><dd className="break">{lyrics ? lyrics.name : <span className="aq-empty-val">없음 (선택)</span>}</dd></div>
-            </dl>
+      {work && <KeyValue cols={1} items={[
+        ['데모 음원', demo?.name || '등록된 데모가 없어요'],
+        ['가사', lyrics?.name || '등록된 가사가 없어요 (선택)'],
+      ]} />}
+      {work && !demo && <Callout tone="warn" action={<button type="button" className="ui-btn is-white is-sm" onClick={() => setAttaching(true)}>음원 올리기</button>}>곡에 데모 음원을 먼저 올려 주세요.</Callout>}
+      {!works.length && <EmptyState compact title="제출할 곡이 없어요" actions={<Link to="/works/new" className="ui-btn is-primary">새 곡 등록</Link>}>곡을 등록하고 데모 음원을 올려 주세요.</EmptyState>}
+      </>}
+      {step === 1 && <>
             <div className="form-grid">
               <Field label="장르" htmlFor="arGenre" required><input id="arGenre" className={inputClass()} value={genre} onChange={e => setGenre(e.target.value)} /></Field>
               <Field label="공개 범위">
@@ -92,33 +112,41 @@ function SubmitForm({ works, preset, onDone }: { works: Work[]; preset: string |
             <Field label="참고 자료" htmlFor="arRefs" help="레퍼런스 곡 링크 등 (선택)">
               <input id="arRefs" className={inputClass()} value={refs} onChange={e => setRefs(e.target.value)} placeholder="https://" />
             </Field>
+      </>}
+      {step === 2 && <>
+        <ReviewCard head="곡·음원" onEdit={() => go(0)}>{work?.title}<br />{demo?.name}</ReviewCard>
+        <ReviewCard head="곡 소개" onEdit={() => go(1)}>{genre} · {mood.join(' · ')}{desc && <p>{desc}</p>}{refs && <p>{refs}</p>}</ReviewCard>
+        <ReviewCard head="공개 범위" onEdit={() => go(1)}>{scope === 'partners' ? '승인 파트너까지' : 'AUDENIQ 내부만'}</ReviewCard>
             <label className="ui-check">
               <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />
               <span><b>(필수) 피칭에 동의해요.</b> {scope === 'partners' ? '승인된 곡만 지정된 외부 관계자(레이블·기획사·A&R)에게 비공개로 공개돼요.' : 'AUDENIQ 내부 A&R만 들어요.'} 언제든 제출을 취소할 수 있어요.</span>
             </label>
-            <button type="button" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={!ready || busy} onClick={() => void submit()}>{busy ? '제출하는 중' : 'A&R에 제출'}</button>
-          </div>
-        )}
-      </Reveal>
-    </section>
+      </>}
+      {attaching && work && <AttachmentModal works={works} workId={work.id} onClose={() => setAttaching(false)} onAdded={onWorkChanged} />}
+    </WizardShell>
   );
 }
 
 export function OpenAr() {
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const preset = params.get('work');
   const toast = useToast();
   const confirm = useConfirm();
   const { data: list, loading, reload } = useAsync(() => pubApi.listAr(), [], { key: 'ar-submissions' });
-  const { data: works } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
-  const [view, setView] = useState<'submit' | 'list'>(preset ? 'submit' : 'list');
+  const { data: works, reload: reloadWorks } = useAsync(() => pubApi.listWorks(), [], { key: 'works' });
+  const submitting = params.get('submit') === '1' || !!preset;
+  const openSubmit = () => setParams(new URLSearchParams({ submit: '1' }));
+  const closeSubmit = () => setParams(new URLSearchParams(), { replace: true });
   const mine = useMemo(() => (works ?? []).filter(w => w.myRole === 'owner' || w.myRole === 'editor'), [works]);
-  const active = (list ?? []).filter(s => s.status !== 'closed');
 
   const withdraw = async (s: ArSubmission) => {
     if (!(await confirm({ title: '제출을 취소할까요?', message: '심사가 멈추고 카탈로그에서도 내려가요. 곡 정보는 그대로예요.', confirmLabel: '제출 취소', danger: true }))) return;
     try { await pubApi.withdrawAr(s.id); toast('제출을 취소했어요.', 'success'); reload(); } catch (e) { toast(errorMessage(e), 'error'); }
   };
+
+  if (submitting) return works
+    ? <SubmitForm works={mine} preset={preset} onWorkChanged={reloadWorks} onClose={closeSubmit} onDone={() => { reload(); closeSubmit(); }} />
+    : <div className="view"><SkeletonRows count={3} /></div>;
 
   return (
     <div className="view" id="view-ar">
@@ -128,20 +156,9 @@ export function OpenAr() {
           <h1>Open A&R</h1>
           <p>곡 데모를 AUDENIQ A&R에 보내면 심사 후 레이블·아티스트에게 피칭해 드려요.</p>
         </div>
-        {view === 'list' && <button type="button" className="ui-btn is-primary" onClick={() => setView('submit')}><Glyph name="plus" size={14} />데모 제출</button>}
+        <button type="button" className="ui-btn is-primary" onClick={openSubmit}><Glyph name="plus" size={14} />데모 제출</button>
       </div>
-      <Tabs label="Open A&R" value={view} onChange={setView}
-        items={[{ value: 'list', label: '내 제출', count: active.length }, { value: 'submit', label: '새로 제출' }]} />
-
-      {view === 'submit' ? (
-        <div className="ui-tab-panel" key="submit">
-          {works && !mine.length ? (
-            <EmptyState title="제출할 곡이 없어요" actions={<Link to="/works/new" className="ui-btn is-primary">새 곡 등록</Link>}>먼저 곡을 등록하고 데모 음원을 올려 주세요.</EmptyState>
-          ) : works ? (
-            <SubmitForm works={mine} preset={preset} onDone={() => { reload(); setView('list'); }} />
-          ) : <SkeletonRows count={2} />}
-        </div>
-      ) : (
+      <div className="ui-section-head"><h2>내 제출</h2><span className="ui-row-meta">{list ? `${list.length}건` : ''}</span></div>
         <div className="ui-tab-panel" key="list">
           {loading && !list ? <SkeletonRows count={2} /> : list?.length ? (
             <div className="aq-stagger">
@@ -168,12 +185,11 @@ export function OpenAr() {
               ))}
             </div>
           ) : (
-            <EmptyState icon={<Glyph name="megaphone" size={22} />} title="아직 제출한 곡이 없어요" actions={<button type="button" className="ui-btn is-primary" onClick={() => setView('submit')}>첫 데모 제출</button>}>
+            <EmptyState icon={<Glyph name="megaphone" size={22} />} title="아직 제출한 곡이 없어요" actions={<button type="button" className="ui-btn is-primary" onClick={openSubmit}>첫 데모 제출</button>}>
               발매 전 데모도 돼요. 심사를 통과한 곡은 비공개 카탈로그에 올라가 관계자에게 소개돼요.
             </EmptyState>
           )}
         </div>
-      )}
 
       {/* 진행 순서 — 계약서 화면의 '계약은 이렇게 진행돼요'와 같은 목록 */}
       <details className="aq-doc-path-wrap aq-pbl-guide" open={!list?.length}>
